@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Checks;
 using Headless.Messaging.Transport;
@@ -35,7 +34,7 @@ internal sealed class PulsarConsumerClient(
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     // Tracks in-flight handler tasks so shutdown can let them settle before it closes the consumer.
-    private readonly ConcurrentDictionary<Task, byte> _inFlightHandlers = new();
+    private readonly InFlightHandlerTracker _inFlightHandlers = new();
     private int _disposed;
     private CancellationTokenSource? _receiveCts = new();
     private readonly PulsarMessagingOptions _pulsarOptions = options.Value;
@@ -228,13 +227,13 @@ internal sealed class PulsarConsumerClient(
                         CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
                     );
 
-                    _TrackHandler(handlerTask);
+                    _inFlightHandlers.Track(handlerTask);
                     _ObserveBackgroundHandler(handlerTask);
                 }
                 else
                 {
                     var inlineTask = consumeAsync(consumerResult);
-                    _TrackHandler(inlineTask);
+                    _inFlightHandlers.Track(inlineTask);
                     await inlineTask.ConfigureAwait(false);
                 }
 
@@ -389,18 +388,6 @@ internal sealed class PulsarConsumerClient(
         }
     }
 
-    private void _TrackHandler(Task task)
-    {
-        _inFlightHandlers[task] = 0;
-        _ = task.ContinueWith(
-            static (completed, state) => ((ConcurrentDictionary<Task, byte>)state!).TryRemove(completed, out _),
-            _inFlightHandlers,
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default
-        );
-    }
-
     private void _ObserveBackgroundHandler(Task task)
     {
         _ = task.ContinueWith(
@@ -508,32 +495,21 @@ internal sealed class PulsarConsumerClient(
         // Drain in-flight handlers while the consumer is still open, so each one can acknowledge or negatively
         // acknowledge its message. Bounded so a stuck handler cannot block shutdown; a message whose handler is still
         // running past the budget stays unacknowledged, and the broker redelivers it (at-least-once).
-        var inFlight = _inFlightHandlers.Keys.ToArray();
-        if (inFlight.Length > 0)
+        try
         {
-            try
-            {
-                if (timeout <= TimeSpan.Zero)
+            await _inFlightHandlers.DrainAsync(timeout, _timeProvider).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Handler faults are already surfaced by _ObserveBackgroundHandler; on a drain timeout or fault,
+            // log and proceed, because disposal must never block or throw.
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
                 {
-                    throw new System.TimeoutException("The shared messaging shutdown deadline has expired.");
+                    LogType = MqLogType.ConsumeError,
+                    Reason = $"Timed out or faulted draining in-flight Pulsar handlers during shutdown: {ex}",
                 }
-
-                await Task.WhenAll(inFlight)
-                    .WaitAsync(timeout, _timeProvider, CancellationToken.None)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                // Handler faults are already surfaced by _ObserveBackgroundHandler; on a drain timeout or fault,
-                // log and proceed, because disposal must never block or throw.
-                OnLogCallback?.Invoke(
-                    new LogMessageEventArgs
-                    {
-                        LogType = MqLogType.ConsumeError,
-                        Reason = $"Timed out or faulted draining in-flight Pulsar handlers during shutdown: {ex}",
-                    }
-                );
-            }
+            );
         }
 
         _semaphore.Dispose();

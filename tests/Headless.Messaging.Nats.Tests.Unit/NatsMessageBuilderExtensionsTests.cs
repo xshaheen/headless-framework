@@ -78,5 +78,62 @@ public sealed class NatsMessageBuilderExtensionsTests
         tuning.Build().ProviderConfigs.Values.Single().Should().BeEquivalentTo(new NatsConsumerConfig(IsSharded: true));
     }
 
+    [Fact]
+    public void should_store_consumer_limits_when_tuning_a_declared_consumer()
+    {
+        var tuning = new ConsumerTuningBuilder("tests.nats.tuned");
+
+        tuning.UseNats(nats =>
+            nats.AckWait(TimeSpan.FromMinutes(2))
+                .MaxAckPending(64)
+                .MaxDeliver(5)
+                .InactiveThreshold(TimeSpan.FromDays(1))
+        );
+
+        tuning
+            .Build()
+            .ProviderConfigs.Values.Single()
+            .Should()
+            .BeEquivalentTo(
+                new NatsConsumerConfig(
+                    IsSharded: false,
+                    AckWait: TimeSpan.FromMinutes(2),
+                    MaxAckPending: 64,
+                    MaxDeliver: 5,
+                    InactiveThreshold: TimeSpan.FromDays(1)
+                )
+            );
+    }
+
+    [Fact]
+    public void should_reject_non_positive_consumer_limits()
+    {
+        var builder = new NatsConsumerConfigBuilder();
+
+        ((Action)(() => builder.AckWait(TimeSpan.Zero))).Should().Throw<ArgumentOutOfRangeException>();
+        ((Action)(() => builder.MaxAckPending(0))).Should().Throw<ArgumentOutOfRangeException>();
+        ((Action)(() => builder.MaxDeliver(-1))).Should().Throw<ArgumentOutOfRangeException>();
+        ((Action)(() => builder.InactiveThreshold(TimeSpan.FromSeconds(-1))))
+            .Should()
+            .Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void should_leave_unset_consumer_limits_as_configured_when_applied()
+    {
+        var config = new NATS.Client.JetStream.Models.ConsumerConfig("durable")
+        {
+            AckWait = TimeSpan.FromSeconds(30),
+            MaxAckPending = 1000,
+        };
+
+        new NatsConsumerConfig(IsSharded: false, MaxDeliver: 3).ApplyTo(config);
+
+        config.AckWait.Should().Be(TimeSpan.FromSeconds(30));
+        config.MaxAckPending.Should().Be(1000);
+        config.MaxDeliver.Should().Be(3);
+        config.InactiveThreshold.Should().Be(TimeSpan.Zero);
+    }
+
     private sealed record TestMessage(string TenantId);
 }

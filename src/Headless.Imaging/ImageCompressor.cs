@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Imaging.Internal;
 
 namespace Headless.Imaging;
 
@@ -34,10 +35,7 @@ internal sealed class ImageCompressor(IEnumerable<IImageCompressorContributor> c
 
         if (!stream.CanSeek)
         {
-            var memoryStream = new MemoryStream();
-            await stream.CopyToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
-            _SeekToBegin(memoryStream);
-            stream = memoryStream;
+            stream = await SeekableBuffer.ReadAsync(stream, cancellationToken).ConfigureAwait(false);
         }
 
         foreach (var compressorContributor in _contributors)

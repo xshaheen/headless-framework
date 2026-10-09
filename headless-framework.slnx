@@ -274,7 +274,7 @@
     <Folder Name="/Imaging/">
         <Project Path="src\Headless.Imaging.Abstractions\Headless.Imaging.Abstractions.csproj" />
         <Project Path="src\Headless.Imaging\Headless.Imaging.csproj" />
-        <Project Path="src\Headless.Imaging.ImageSharp\Headless.Imaging.ImageSharp.csproj" />
+        <Project Path="src\Headless.Imaging.NetVips\Headless.Imaging.NetVips.csproj" />
     </Folder>
     <Folder Name="/Coordination/Tests/">
         <Project Path="tests\Headless.Coordination.Abstractions.Tests.Unit\Headless.Coordination.Abstractions.Tests.Unit.csproj" />
@@ -289,7 +289,7 @@
         <Project Path="src/Headless.Dashboard.Authentication/Headless.Dashboard.Authentication.csproj" />
     </Folder>
     <Folder Name="/Imaging/Tests/">
-        <Project Path="tests\Headless.Imaging.ImageSharp.Tests.Unit\Headless.Imaging.ImageSharp.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Imaging.NetVips.Tests.Unit\Headless.Imaging.NetVips.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Jobs/">
         <Project Path="src/Headless.Jobs.Abstractions/Headless.Jobs.Abstractions.csproj" />

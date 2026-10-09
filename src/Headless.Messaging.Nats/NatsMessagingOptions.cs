@@ -30,12 +30,13 @@ public sealed class NatsMessagingOptions
     public int ConnectionPoolSize { get; set; } = 1;
 
     /// <summary>
-    /// The number of consecutive consume-loop failures (JetStream consumer create/update or message fetch)
-    /// tolerated on a single subject listener before it is terminated for a supervised restart with a fresh
-    /// connection. The counter resets to zero on any forward progress (a successful consumer bind or fetch).
-    /// This bounds in-place spinning when a connection stays unusable but the surfaced error is not one of the
-    /// classified connection-failure types; the NATS client keeps reconnecting on its own without a limit, so
-    /// this counter is what hands a stuck listener back for a rebuild. Defaults to <c>10</c>.
+    /// The number of consecutive consume-loop failures (a JetStream consumer create/update, a consume that fails, or a
+    /// pull that misses its idle heartbeats) tolerated on a single subject listener before it is terminated for a
+    /// supervised restart with a fresh connection. The counter resets to zero when a message arrives. This bounds
+    /// in-place spinning when a connection stays unusable but the surfaced error is not one of the classified
+    /// connection-failure types; the NATS client keeps reconnecting on its own without a limit, so this counter is what
+    /// hands a stuck listener back for a rebuild. A pull misses its heartbeats after 10 silent seconds, so at the
+    /// default a pull that stays silent for about 100 seconds is rebuilt. Defaults to <c>10</c>.
     /// </summary>
     public int MaxConsecutiveConsumeFailures { get; set; } = 10;
 
@@ -79,6 +80,19 @@ public sealed class NatsMessagingOptions
     /// created before this default, fails as divergent; <see cref="NatsStreamProvisioning.Reconcile"/> updates it.
     /// </remarks>
     public TimeSpan DefaultStreamMaxAge { get; set; } = TimeSpan.FromDays(7);
+
+    /// <summary>
+    /// How long a stream Headless owns remembers a published message ID when its declaration sets no duplicate window of
+    /// its own. Every publish carries the Headless message ID as <c>Nats-Msg-Id</c>, and the stream drops a repeat of an
+    /// ID it still remembers. Capped at the stream's <c>MaxAge</c>. Defaults to <c>2 minutes</c>, the NATS server default.
+    /// </summary>
+    /// <remarks>
+    /// The window bounds broker-side deduplication only. An outbox retry that lands after it, such as a publish whose
+    /// acknowledgement was lost and that retries minutes later, stores a second copy of the message on the stream; the
+    /// consumer's inbox, keyed by message ID, still delivers it to the handler once. A longer window costs server memory
+    /// for every message ID it remembers.
+    /// </remarks>
+    public TimeSpan DefaultDuplicateWindow { get; set; } = TimeSpan.FromMinutes(2);
 
     /// <summary>
     /// Customises the underlying NATS connection options. Because <c>NatsOpts</c> is a record,
@@ -178,5 +192,6 @@ internal sealed class NatsMessagingOptionsValidator : AbstractValidator<NatsMess
         RuleFor(x => x.StreamCreateTimeout).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.StreamProvisioning).IsInEnum();
         RuleFor(x => x.DefaultStreamMaxAge).GreaterThanOrEqualTo(TimeSpan.Zero);
+        RuleFor(x => x.DefaultDuplicateWindow).GreaterThan(TimeSpan.Zero);
     }
 }

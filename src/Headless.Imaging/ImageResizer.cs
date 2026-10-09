@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Imaging.Internal;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Imaging;
@@ -44,10 +45,7 @@ internal sealed class ImageResizer(
 
         if (!stream.CanSeek)
         {
-            var memoryStream = new MemoryStream();
-            await stream.CopyToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
-            _SeekToBegin(memoryStream);
-            stream = memoryStream;
+            stream = await SeekableBuffer.ReadAsync(stream, cancellationToken).ConfigureAwait(false);
         }
 
         foreach (var resizerContributor in _contributors)

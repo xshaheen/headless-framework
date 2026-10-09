@@ -435,6 +435,103 @@ public sealed class NatsStreamProvisionerTests : TestBase
     }
 
     [Fact]
+    public async Task should_create_a_declared_owned_stream_with_its_duplicate_window()
+    {
+        // given
+        var js = _CreateJetStreamWithoutStreams();
+        var options = new NatsMessagingOptions();
+        options.Streams.Own(
+            "ORDERS",
+            stream => stream.Subjects("headless.bus.orders.>").DuplicateWindow(TimeSpan.FromMinutes(30))
+        );
+        var provisioner = _CreateProvisioner(options);
+
+        // when
+        await provisioner.EnsureForPublishAsync(js, MessageLane.Bus, "orders.placed", false, AbortToken);
+
+        // then
+        await js.Received(1)
+            .CreateStreamAsync(
+                Arg.Is<StreamConfig>(config => config.DuplicateWindow == TimeSpan.FromMinutes(30)),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Theory]
+    [InlineData(10, 2)] // the default window
+    [InlineData(1, 1)] // shrunk to a shorter age limit, which JetStream requires
+    [InlineData(0, 2)] // no age limit leaves the default window
+    public async Task should_give_a_derived_stream_the_default_duplicate_window_within_its_max_age(
+        int maxAgeMinutes,
+        int expectedWindowMinutes
+    )
+    {
+        // given
+        var js = _CreateJetStreamWithoutStreams();
+        var provisioner = _CreateProvisioner(
+            new NatsMessagingOptions { DefaultStreamMaxAge = TimeSpan.FromMinutes(maxAgeMinutes) }
+        );
+
+        // when
+        await provisioner.EnsureForPublishAsync(js, MessageLane.Bus, "orders.placed", false, AbortToken);
+
+        // then
+        await js.Received(1)
+            .CreateStreamAsync(
+                Arg.Is<StreamConfig>(config => config.DuplicateWindow == TimeSpan.FromMinutes(expectedWindowMinutes)),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_fail_when_a_declared_duplicate_window_exceeds_the_default_max_age()
+    {
+        // given — the declaration sets a window but leaves the age to DefaultStreamMaxAge
+        var js = _CreateJetStreamWithoutStreams();
+        var options = new NatsMessagingOptions { DefaultStreamMaxAge = TimeSpan.FromMinutes(1) };
+        options.Streams.Own(
+            "ORDERS",
+            stream => stream.Subjects("headless.bus.orders.>").DuplicateWindow(TimeSpan.FromMinutes(5))
+        );
+        var provisioner = _CreateProvisioner(options);
+
+        // when
+        var act = () => provisioner.EnsureForPublishAsync(js, MessageLane.Bus, "orders.placed", false, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*duplicate window*MaxAge*");
+        await js.DidNotReceive().CreateStreamAsync(Arg.Any<StreamConfig>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_fail_under_verify_when_an_existing_stream_has_another_duplicate_window()
+    {
+        // given - a stream whose duplicate window someone else chose
+        var js = Substitute.For<INatsJSContext>();
+        var live = _CreateStream(
+            new StreamConfig
+            {
+                Name = "headless-bus-orders",
+                Subjects = ["headless.bus.orders.>"],
+                Storage = StreamConfigStorage.File,
+                Retention = StreamConfigRetention.Interest,
+                NoAck = false,
+                MaxAge = TimeSpan.FromDays(7),
+                DuplicateWindow = TimeSpan.FromHours(1),
+            }
+        );
+        js.GetStreamAsync("headless-bus-orders", Arg.Any<StreamInfoRequest?>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<INatsJSStream>(live));
+        var provisioner = _CreateProvisioner(NatsStreamProvisioning.Verify);
+
+        // when
+        var act = () => provisioner.EnsureAsync(js, MessageLane.Bus, ["orders.placed"], _NoShards, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*DuplicateWindow*");
+    }
+
+    [Fact]
     public async Task should_fail_under_verify_when_an_existing_stream_lacks_the_default_max_age()
     {
         // given - a stream created without an age limit

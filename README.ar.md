@@ -428,7 +428,7 @@ Image processing بـ backends قابلة للتبديل: resize، وcrop، وco
 |---------|-------|
 | [Headless.Imaging.Abstractions](src/Headless.Imaging.Abstractions/README.md) | الـ interfaces بتاعة الـ image processing |
 | [Headless.Imaging](src/Headless.Imaging/README.md) | الـ image processing الأساسي |
-| [Headless.Imaging.ImageSharp](src/Headless.Imaging.ImageSharp/README.md) | Implementation على ImageSharp |
+| [Headless.Imaging.NetVips](src/Headless.Imaging.NetVips/README.md) | Implementation على libvips عن طريق NetVips |
 
 ### Logging
 
