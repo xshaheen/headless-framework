@@ -6,6 +6,7 @@ using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Pulsar.Client.Api;
+using Pulsar.Client.Common;
 
 namespace Headless.Messaging.Pulsar;
 
@@ -234,9 +235,12 @@ internal sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
     /// <summary>Applies the transport's producer settings to <paramref name="builder"/>.</summary>
     internal static ProducerBuilder<byte[]> Configure(ProducerBuilder<byte[]> builder, PulsarProducerOptions options)
     {
+        // The broker dispatches a batch whole, by its first message's key. Key-based batching keeps one key per batch,
+        // so a Key_Shared subscription still sends every message to the consumer that owns its key.
         return builder
             .CompressionType(options.CompressionType)
             .EnableBatching(options.EnableBatching)
+            .BatchBuilder(BatchBuilder.KeyBased)
             .BatchingMaxPublishDelay(options.BatchingMaxPublishDelay)
             .SendTimeout(options.SendTimeout);
     }

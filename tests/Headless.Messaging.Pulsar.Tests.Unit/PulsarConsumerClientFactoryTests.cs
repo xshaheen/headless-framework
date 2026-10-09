@@ -164,4 +164,97 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
         var exception = await act.Should().ThrowAsync<OperationCanceledException>();
         exception.Which.CancellationToken.Should().Be(cts.Token);
     }
+
+    [Fact]
+    public async Task should_reject_key_shared_for_an_every_instance_consumer_before_reaching_the_broker()
+    {
+        // given
+        var registry = _Registry(MessageLane.Bus, "orders.audit", new PulsarConsumerConfig(KeyShared: true));
+        var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options, registry);
+        var request = new ConsumerClientRequest(
+            "orders.audit",
+            1,
+            MessageLane.Bus,
+            ConsumerSubscriptionKind.EveryInstance,
+            Guid.NewGuid()
+        );
+
+        // when
+        var act = async () => await factory.CreateAsync(request, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*every-instance*Key_Shared*");
+        await _connectionFactory.DidNotReceive().RentClientAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_reject_conflicting_pulsar_options_on_one_subscription_before_reaching_the_broker()
+    {
+        // given
+        var registry = _Registry(
+            MessageLane.Queue,
+            "orders.placed",
+            new PulsarConsumerConfig(KeyShared: true),
+            new PulsarConsumerConfig(KeyShared: false, MaxRedeliveryCount: 3)
+        );
+        var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options, registry);
+
+        // when
+        var act = async () =>
+            await factory.CreateAsync(new ConsumerClientRequest("orders.placed", 1, MessageLane.Queue), AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*conflicting*");
+        await _connectionFactory.DidNotReceive().RentClientAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_reach_the_broker_when_a_competing_consumer_uses_key_shared()
+    {
+        // given
+        var registry = _Registry(MessageLane.Queue, "orders.placed", new PulsarConsumerConfig(KeyShared: true));
+        _connectionFactory
+            .RentClientAsync(Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("Cannot mock PulsarClient"));
+        var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options, registry);
+
+        // when
+        var act = async () =>
+            await factory.CreateAsync(new ConsumerClientRequest("orders.placed", 1, MessageLane.Queue), AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<BrokerConnectionException>();
+        await _connectionFactory.Received(1).RentClientAsync(Arg.Any<CancellationToken>());
+    }
+
+    private static IConsumerRegistry _Registry(MessageLane lane, string name, params PulsarConsumerConfig[] configs)
+    {
+        var registry = Substitute.For<IConsumerRegistry>();
+        registry
+            .GetAll()
+            .Returns(
+                configs
+                    .Select(
+                        (config, index) =>
+                            new ConsumerMetadata(
+                                typeof(object),
+                                typeof(object),
+                                name,
+                                1,
+                                lane,
+                                lane == MessageLane.Bus ? name : $"{name}.consumer-{index}",
+                                "v1"
+                            )
+                            {
+                                ProviderConfigs = new Dictionary<Type, object>
+                                {
+                                    [typeof(PulsarConsumerConfig)] = config,
+                                },
+                            }
+                    )
+                    .ToArray()
+            );
+
+        return registry;
+    }
 }
