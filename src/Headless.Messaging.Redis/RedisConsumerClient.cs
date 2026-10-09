@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using Headless.Checks;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
@@ -32,7 +31,7 @@ internal sealed class RedisConsumerClient(
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     // Tracks the handler tasks of the concurrent path so shutdown can drain them before disposing the semaphore.
-    private readonly ConcurrentDictionary<Task, byte> _inFlightHandlers = new();
+    private readonly InFlightHandlerTracker _inFlightHandlers = new();
 
     private readonly RedisConsumerNameLease _consumerName =
         consumerName ?? new RedisConsumerNames().Acquire(RedisPhysicalAddress.ConsumerGroup(lane, subscriptionName));
@@ -161,26 +160,15 @@ internal sealed class RedisConsumerClient(
         // Drain in-flight concurrent handlers before disposing the semaphore, so a running handler settles its entry
         // and releases its slot. Bounded so a stuck handler cannot block shutdown; an entry it never settles stays
         // pending and is claimed by another consumer (at-least-once).
-        var inFlight = _inFlightHandlers.Keys.ToArray();
-        if (inFlight.Length > 0)
+        try
         {
-            try
-            {
-                if (timeout <= TimeSpan.Zero)
-                {
-                    throw new TimeoutException("The shared messaging shutdown deadline has expired.");
-                }
-
-                await Task.WhenAll(inFlight)
-                    .WaitAsync(timeout, _timeProvider, CancellationToken.None)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                // Handler faults are already logged by _ObserveBackgroundHandler; on a drain timeout or fault, log and
-                // proceed, because shutdown must never block or throw.
-                logger.RedisShutdownDrainIncomplete(ex, _groupName);
-            }
+            await _inFlightHandlers.DrainAsync(timeout, _timeProvider).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Handler faults are already logged by _ObserveBackgroundHandler; on a drain timeout or fault, log and
+            // proceed, because shutdown must never block or throw.
+            logger.RedisShutdownDrainIncomplete(ex, _groupName);
         }
 
         _semaphore.Dispose();
@@ -279,7 +267,7 @@ internal sealed class RedisConsumerClient(
                             CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
                         );
 
-                        _TrackBackgroundHandler(handlerTask);
+                        _inFlightHandlers.Track(handlerTask);
                         _ObserveBackgroundHandler(handlerTask);
                     }
                     else
@@ -375,18 +363,6 @@ internal sealed class RedisConsumerClient(
         };
 
         return new RedisMessagingOptions.ConsumeErrorContext(safeException, new StreamEntry(entry.Id, []));
-    }
-
-    private void _TrackBackgroundHandler(Task task)
-    {
-        _inFlightHandlers[task] = 0;
-        _ = task.ContinueWith(
-            static (completed, state) => ((ConcurrentDictionary<Task, byte>)state!).TryRemove(completed, out _),
-            _inFlightHandlers,
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default
-        );
     }
 
     private void _ObserveBackgroundHandler(Task task)

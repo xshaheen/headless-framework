@@ -348,12 +348,6 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         {
             try
             {
-                if (timeout <= TimeSpan.Zero)
-                {
-                    consumer.StopDispatching();
-                    throw new TimeoutException("The shared messaging shutdown deadline has expired.");
-                }
-
                 await consumer.DrainAsync(timeout, _timeProvider).ConfigureAwait(false);
             }
             catch (Exception ex)
