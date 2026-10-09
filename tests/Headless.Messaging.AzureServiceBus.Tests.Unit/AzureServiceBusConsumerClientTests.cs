@@ -275,6 +275,48 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_dead_letter_a_malformed_envelope_on_a_session_processor()
+    {
+        // given — no message name, so the envelope cannot reach the core
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
+        client.OnMessageCallback = (_, _) => Task.CompletedTask;
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: new BinaryData("test"u8.ToArray()),
+            sessionId: "session-1",
+            properties: new Dictionary<string, object>(StringComparer.Ordinal) { [Headers.MessageId] = "message-1" }
+        );
+        var receiver = Substitute.For<ServiceBusSessionReceiver>();
+        var args = new ProcessSessionMessageEventArgs(message, receiver, AbortToken);
+        var processMethod = typeof(AzureServiceBusConsumerClient).GetMethod(
+            "_ServiceBusProcessor_ProcessSessionMessageAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(ProcessSessionMessageEventArgs)],
+            null
+        )!;
+
+        // when
+        await (Task)processMethod.Invoke(client, [args])!;
+
+        // then
+        await receiver
+            .Received(1)
+            .DeadLetterMessageAsync(
+                message,
+                "MalformedEnvelope",
+                nameof(InvalidDataException),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_stamp_entity_path_as_transport_address_when_wire_and_builder_spoof_it()
     {
         // given
