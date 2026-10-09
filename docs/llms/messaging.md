@@ -1340,7 +1340,7 @@ With the framework default, a message that keeps failing runs 3 attempts at once
 - a fail rule or the built-in permanent set matches;
 - the payload fails to deserialize at execution;
 - the stored message's consumer is no longer registered;
-- the message is poisoned on arrival (rejected before any consume attempt; the callback gets no storage id). The transport message is dead-lettered with a reason code where the transport supports it (Azure Service Bus, and RabbitMQ with a dead-letter exchange) and committed elsewhere; the poison row stays the record the dashboard shows and re-executes.
+- the message is poisoned on arrival (rejected before any consume attempt; the callback gets no storage id). The transport message is dead-lettered with a reason code where the transport supports it (Azure Service Bus, RabbitMQ with a dead-letter exchange, and NATS JetStream, which terminates it) and committed elsewhere; the poison row stays the record the dashboard shows and re-executes.
 
 An every-instance consumer has no failure policy and never calls `OnExhausted`; see [Every-instance Bus delivery](#every-instance-bus-delivery).
 
@@ -2369,7 +2369,7 @@ While a delivery waits for a handler slot and runs its receive stage (receive mi
 
 Reject sends a `NAK` with a redelivery delay of about one second for the first delivery, doubling with each redelivery to 30 seconds and jittered. The core rejects every delivery while a consumer's circuit is open or its half-open probe is out, and a plain `NAK` would redeliver on the next pull, so without the delay those deliveries would spin.
 
-A malformed transport envelope (a missing message ID or name, unreadable headers) is terminated with `AckTerminate`, not acknowledged, so the consumer's statistics count it and JetStream publishes a `MSG_TERMINATED` advisory for it. On NATS server 2.10.4 and later the terminate carries the reason (`malformed headless envelope: <exception type>`); an older server ignores a terminate with a reason, so the consumer sends a plain one there.
+A malformed transport envelope (a missing message ID or name, unreadable headers) is terminated with `AckTerminate`, not acknowledged, so the consumer's statistics count it and JetStream publishes a `MSG_TERMINATED` advisory for it. On NATS server 2.10.4 and later the terminate carries the reason (`malformed headless envelope: <exception type>`); an older server ignores a terminate with a reason, so the consumer sends a plain one there. A message Core poisons on arrival is terminated the same way, with Core's reason code and description (`SubscriberNotFound: <description>`) as the reason; JetStream has no dead-letter queue, so the `MSG_TERMINATED` advisory is where it can still be found, and Core's poison row stays the record the dashboard shows.
 
 `Tune(identity, c => c.UseNats(nats => ...))` sets one consumer's JetStream limits on each of its durables. They apply after `NatsMessagingOptions.ConsumerOptions`, so a consumer's own limit wins over the host-wide callback; neither may change the durable name, filter subject, or delivery policy.
 
