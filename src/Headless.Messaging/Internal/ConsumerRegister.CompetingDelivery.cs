@@ -350,8 +350,21 @@ internal sealed partial class ConsumerRegister
                     )
                     .ConfigureAwait(false);
 
-                // Settlement is must-complete: never abandon a commit on host shutdown.
-                await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
+                // Settlement is must-complete: never abandon it on host shutdown. Only the delivery that stored the
+                // poison row dead-letters; a redelivery of a message already recorded terminal is committed, so the
+                // broker's dead-letter destination holds one copy per poisoned message.
+                if (stored)
+                {
+                    var (reason, description) = _DescribeDeadLetter(dispatchBypassException, receiveRejectIsPolicy);
+                    await client
+                        .DeadLetterAsync(sender, reason, description, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
+                }
+
                 transportSettled = true;
 
                 // A request rejected on arrival never reaches a consumer; its caller learns so at once. Only the delivery
@@ -574,6 +587,30 @@ internal sealed partial class ConsumerRegister
                 _circuitBreakerStateManager?.ReleaseHalfOpenProbe(circuitKey, admissionEpoch);
             }
         }
+    }
+
+    /// <summary>
+    /// The reason code and description a poisoned-on-arrival delivery is dead-lettered with. The codes are stable so an
+    /// operator can filter a broker's dead-letter destination by them; the description is the exception message, kept
+    /// short because brokers store it as a message property.
+    /// </summary>
+    private static (string Reason, string? Description) _DescribeDeadLetter(Exception? cause, bool isPolicyReject)
+    {
+        var reason = cause switch
+        {
+            SubscriberNotFoundException => DeadLetterReasons.SubscriberNotFound,
+            _ when isPolicyReject => DeadLetterReasons.ReceiveRejected,
+            MessageDeserializationException => DeadLetterReasons.DeserializationFailed,
+            _ => DeadLetterReasons.ReceiveFailed,
+        };
+
+        var description = cause?.Message;
+        if (description is { Length: > DeadLetterReasons.MaxDescriptionLength })
+        {
+            description = description[..DeadLetterReasons.MaxDescriptionLength];
+        }
+
+        return (reason, description);
     }
 
     /// <summary>

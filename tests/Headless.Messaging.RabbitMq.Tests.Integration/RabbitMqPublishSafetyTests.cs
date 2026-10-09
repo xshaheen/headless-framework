@@ -139,6 +139,56 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
     }
 
     [Fact]
+    public async Task should_move_a_dead_lettered_message_to_the_dead_letter_queue_when_dead_lettering_is_enabled()
+    {
+        // given
+        var options = _CreateOptions();
+        options.QueueArguments.EnableDeadLettering = true;
+        var name = $"orders-{Guid.NewGuid():N}";
+        await using var pool = _CreatePool(options);
+        await using var transport = new RabbitMqTransport(
+            NullLogger<RabbitMqTransport>.Instance,
+            pool,
+            MessageLane.Queue
+        );
+        await using var services = new ServiceCollection().BuildServiceProvider();
+        await using var consumer = new RabbitMqConsumerClient(
+            "group",
+            1,
+            pool,
+            Options.Create(options),
+            services,
+            lane: MessageLane.Queue
+        );
+        consumer.AttachCallbacks(
+            async (_, sender) =>
+                await consumer.DeadLetterAsync(sender, "SubscriberNotFound", "no consumer", CancellationToken.None),
+            _ => { }
+        );
+        await consumer.SubscribeAsync([name], AbortToken);
+        using var listening = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listeningTask = consumer.ListeningAsync(TimeSpan.FromSeconds(1), listening.Token).AsTask();
+
+        try
+        {
+            await consumer.WaitUntilReadyAsync(AbortToken);
+
+            // when
+            var result = await transport.SendAsync(_CreateMessage(name), AbortToken);
+
+            // then
+            result.Succeeded.Should().BeTrue(result.Exception?.ToString());
+            await _WaitForMessageCountAsync($"queue.{name}.dlq", expected: 1);
+            (await _MessageCountAsync($"queue.{name}")).Should().Be(0);
+        }
+        finally
+        {
+            await listening.CancelAsync();
+            await listeningTask;
+        }
+    }
+
+    [Fact]
     public async Task should_ack_in_flight_message_before_closing_channel_on_shutdown()
     {
         // given

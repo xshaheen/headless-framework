@@ -609,6 +609,51 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     }
 
     [Fact]
+    public async Task should_reject_without_requeue_when_dead_lettering()
+    {
+        // given
+        _channel.IsOpen.Returns(true);
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            1,
+            (_, _) => Task.CompletedTask,
+            _ => { },
+            null,
+            _serviceProvider
+        );
+
+        // when
+        await consumer.BasicDeadLetter(42UL, AbortToken);
+
+        // then — the queue's dead-letter exchange receives it, or the broker discards it when there is none
+        await _channel.Received(1).BasicRejectAsync(42UL, false, Arg.Any<CancellationToken>());
+        await _channel.DidNotReceive().BasicRejectAsync(42UL, true, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_not_dead_letter_when_channel_closed()
+    {
+        // given
+        _channel.IsOpen.Returns(false);
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            1,
+            (_, _) => Task.CompletedTask,
+            _ => { },
+            null,
+            _serviceProvider
+        );
+
+        // when
+        await consumer.BasicDeadLetter(42UL, AbortToken);
+
+        // then
+        await _channel
+            .DidNotReceive()
+            .BasicRejectAsync(Arg.Any<ulong>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task should_not_reject_when_channel_closed()
     {
         // given

@@ -357,6 +357,19 @@ internal sealed class RabbitMqBasicConsumer(
         }
     }
 
+    /// <summary>
+    /// Rejects the delivery without requeue, so the queue's dead-letter exchange receives it when one is set, through
+    /// <see cref="RabbitMqMessagingOptions.QueueArgumentsOptions.EnableDeadLettering"/> or a broker policy; without one,
+    /// the broker discards it exactly as an acknowledgement would.
+    /// </summary>
+    public async Task BasicDeadLetter(ulong deliveryTag, CancellationToken cancellationToken = default)
+    {
+        if (Channel.IsOpen)
+        {
+            await Channel.BasicRejectAsync(deliveryTag, requeue: false, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     protected override async Task OnCancelAsync(string[] consumerTags, CancellationToken cancellationToken = default)
     {
         await base.OnCancelAsync(consumerTags, cancellationToken).ConfigureAwait(false);

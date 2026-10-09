@@ -1167,10 +1167,11 @@ public sealed class ConsumerRegisterTests : TestBase
         IReadOnlyDictionary<string, string?>? publisherHeaders = null,
         Action<IServiceCollection>? configureServices = null,
         MessageLane lane = MessageLane.Bus,
-        bool queueResponder = false
+        bool queueResponder = false,
+        bool nativeDeadLetter = false
     )
     {
-        await using var client = new InboxConsumerClient();
+        await using var client = new InboxConsumerClient { NativeDeadLetter = nativeDeadLetter };
         var dispatcher = Substitute.For<IDispatcher>();
         List<Message> dispatchedOrigins = [];
         dispatcher
@@ -2007,6 +2008,122 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
+    public async Task receive_poison_is_dead_lettered_with_deserialization_reason_when_the_transport_can()
+    {
+        // given / when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-dead-letter-json",
+            "{invalid"u8.ToArray(),
+            nativeDeadLetter: true
+        );
+
+        // then — dead-lettering replaces the commit, and the poison row is still kept for the dashboard
+        run.Client.CommitCount.Should().Be(0);
+        run.Storage.ReceivedExceptionRows.Should().ContainSingle();
+        var (reason, description) = run.Client.DeadLetters.Should().ContainSingle().Subject;
+        reason.Should().Be("DeserializationFailed");
+        description.Should().StartWith("Failed to deserialize the message body");
+    }
+
+    [Fact]
+    public async Task receive_poison_is_dead_lettered_with_subscriber_not_found_reason()
+    {
+        // given
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageName] = "unknown-messageName",
+        };
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-dead-letter-unknown",
+            "{}"u8.ToArray(),
+            publisherHeaders: headers,
+            nativeDeadLetter: true
+        );
+
+        // then
+        run.Client.DeadLetters.Should().ContainSingle().Which.Reason.Should().Be("SubscriberNotFound");
+    }
+
+    [Fact]
+    public async Task receive_policy_reject_is_dead_lettered_with_receive_rejected_reason()
+    {
+        // given
+        var middleware = new RecordingReceiveMiddleware
+        {
+            Behavior = (context, _) =>
+            {
+                context.Reject("envelope-defect", new InvalidOperationException("bad envelope"));
+                return ValueTask.CompletedTask;
+            },
+        };
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            middleware,
+            "receive-dead-letter-reject",
+            "{}"u8.ToArray(),
+            nativeDeadLetter: true
+        );
+
+        // then
+        var (reason, description) = run.Client.DeadLetters.Should().ContainSingle().Subject;
+        reason.Should().Be("ReceiveRejected");
+        description.Should().Be("bad envelope");
+    }
+
+    [Fact]
+    public async Task receive_middleware_fault_is_dead_lettered_with_receive_failed_reason()
+    {
+        // given
+        var middleware = new RecordingReceiveMiddleware
+        {
+            Behavior = (_, _) => throw new InvalidOperationException(new string('x', 5000)),
+        };
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            middleware,
+            "receive-dead-letter-fault",
+            "{}"u8.ToArray(),
+            nativeDeadLetter: true
+        );
+
+        // then — the description is capped, because brokers keep it as a message property
+        var (reason, description) = run.Client.DeadLetters.Should().ContainSingle().Subject;
+        reason.Should().Be("ReceiveFailed");
+        description.Should().HaveLength(1024);
+    }
+
+    [Fact]
+    public async Task receive_poison_redelivery_already_recorded_terminal_is_committed_not_dead_lettered_again()
+    {
+        // given — the first delivery stored the poison row and dead-lettered
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-dead-letter-redelivery",
+            "{invalid"u8.ToArray(),
+            nativeDeadLetter: true
+        );
+        run.Client.DeadLetters.Should().ContainSingle();
+
+        // when — the broker redelivers the same message
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "receive-dead-letter-redelivery",
+            [Headers.MessageName] = "ready-messageName",
+        };
+        await run.Client.OnMessageCallback!(new TransportMessage(headers, "{invalid"u8.ToArray()), null);
+
+        // then — one copy in the dead-letter destination per poisoned message
+        run.Client.DeadLetters.Should().ContainSingle();
+        run.Client.CommitCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task receive_empty_body_typed_consumer_is_deserialization_poison_untyped_passes()
     {
         await using var typed = await _RunReceiveDeliveryAsync(null, "receive-empty-typed", []);
@@ -2501,6 +2618,11 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public int RejectCount => Volatile.Read(ref _rejectCount);
 
+        // Off, the client behaves like a transport without a dead-letter destination: dead-lettering commits.
+        public bool NativeDeadLetter { get; init; }
+
+        public List<(string Reason, string? Description)> DeadLetters { get; } = [];
+
         public BrokerAddress BrokerAddress => new("test", "inbox");
 
         public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -2538,6 +2660,26 @@ public sealed class ConsumerRegisterTests : TestBase
         public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _rejectCount);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DeadLetterAsync(
+            object? sender,
+            string reason,
+            string? description,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (!NativeDeadLetter)
+            {
+                return CommitAsync(sender, cancellationToken);
+            }
+
+            lock (DeadLetters)
+            {
+                DeadLetters.Add((reason, description));
+            }
+
             return ValueTask.CompletedTask;
         }
 

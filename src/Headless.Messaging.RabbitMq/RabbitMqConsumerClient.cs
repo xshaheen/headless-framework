@@ -243,6 +243,18 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         await _consumer!.BasicReject((ulong)sender!, cancellationToken).ConfigureAwait(false);
     }
 
+    // AMQP's reject carries no reason: the dead-lettered copy's x-death header records "rejected", and the reason stays
+    // in the core's poison record.
+    public async ValueTask DeadLetterAsync(
+        object? sender,
+        string reason,
+        string? description,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await _consumer!.BasicDeadLetter((ulong)sender!, cancellationToken).ConfigureAwait(false);
+    }
+
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
         if (Volatile.Read(ref _disposed) != 0)
