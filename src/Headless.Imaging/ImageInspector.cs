@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Imaging.Internal;
 
 namespace Headless.Imaging;
 
@@ -29,10 +30,7 @@ internal sealed class ImageInspector(IEnumerable<IImageInspectorContributor> con
 
         if (!stream.CanSeek)
         {
-            var memoryStream = new MemoryStream();
-            await stream.CopyToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
-            memoryStream.Seek(0, SeekOrigin.Begin);
-            stream = memoryStream;
+            stream = await SeekableBuffer.ReadAsync(stream, cancellationToken).ConfigureAwait(false);
         }
 
         foreach (var contributor in _contributors)

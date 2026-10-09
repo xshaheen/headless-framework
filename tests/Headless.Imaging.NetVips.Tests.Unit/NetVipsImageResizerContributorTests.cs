@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.CompilerServices;
 using Headless.Http;
 using Headless.Imaging;
 using Headless.Testing.Tests;
@@ -505,6 +506,91 @@ public sealed class NetVipsImageResizerContributorTests : TestBase
         // then
         using var output = TestImages.Decode(result.Result!.Content);
         ((string)output.Get("jpeg-chroma-subsample")).Should().Be(expected);
+    }
+
+    #endregion
+
+    #region Input reading
+
+    [Fact]
+    public async Task should_pass_through_after_reading_only_the_header()
+    {
+        // given: a 7 MB camera JPEG
+        await using var file = File.OpenRead(TestImages.AssetPath("happy-young-man-with-q-letter.jpg"));
+        await using var input = new CountingStream(file);
+        var args = new ImageResizeArgs(ImageResizeMode.Max, 10, 10) { Mode = ImageResizeMode.None };
+
+        // when
+        var result = await _CreateResizer().TryResizeAsync(input, args, AbortToken);
+
+        // then
+        result.Result!.Content.Should().BeSameAs(input);
+        input.BytesRead.Should().BeLessThanOrEqualTo(256 * 1024);
+    }
+
+    [Fact]
+    public async Task should_refuse_an_image_over_the_pixel_limit_after_reading_only_the_header()
+    {
+        // given: a 7 MB, 4391 x 3833 JPEG against a one-megapixel limit
+        await using var file = File.OpenRead(TestImages.AssetPath("happy-young-man-with-q-letter.jpg"));
+        await using var input = new CountingStream(file);
+        var resizer = _CreateResizer(new NetVipsOptions { MaxPixels = 1_000_000 });
+
+        // when
+        var result = await resizer.TryResizeAsync(input, new ImageResizeArgs(ImageResizeMode.Max, 10, 10), AbortToken);
+
+        // then
+        result.State.Should().Be(ImageProcessState.Failed);
+        input.BytesRead.Should().BeLessThanOrEqualTo(256 * 1024);
+    }
+
+    [Fact]
+    public async Task should_never_read_an_unknown_stream_type_synchronously()
+    {
+        // given: a seekable stream that throws on synchronous reads, like a partly buffered ASP.NET Core request body
+        await using var input = new AsyncOnlyStream(TestImages.Encode(".jpg", 400, 200));
+
+        // when
+        var result = await _CreateResizer()
+            .TryResizeAsync(input, new ImageResizeArgs(ImageResizeMode.Max, 100, 100), AbortToken);
+
+        // then
+        result.State.Should().Be(ImageProcessState.Done);
+        result.Result!.Width.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task should_not_keep_the_caller_streams_alive_after_resizing()
+    {
+        // given: libvips' operation cache is on (the default) and keeps some operations, with the source each read
+        // from; without detaching, a few of these 40 streams stay reachable through it
+        var bytes = await File.ReadAllBytesAsync(TestImages.AssetPath("happy-young-man-with-q-letter.jpg"), AbortToken);
+        var references = new List<WeakReference>();
+
+        for (var i = 0; i < 40; i++)
+        {
+            references.Add(await _ResizeAndForgetAsync(bytes));
+        }
+
+        // when
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        // then
+        references.Should().AllSatisfy(reference => reference.IsAlive.Should().BeFalse());
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task<WeakReference> _ResizeAndForgetAsync(byte[] bytes)
+    {
+        var input = new MemoryStream(bytes);
+        var result = await _CreateResizer()
+            .TryResizeAsync(input, new ImageResizeArgs(ImageResizeMode.Max, 100, 100), AbortToken);
+        await result.Result!.Content.DisposeAsync();
+        await input.DisposeAsync();
+
+        return new WeakReference(input);
     }
 
     #endregion

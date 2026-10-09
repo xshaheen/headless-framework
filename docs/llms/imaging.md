@@ -203,7 +203,7 @@ Orchestration layer that routes image processing calls to registered contributor
 - `AddHeadlessImaging(Action<HeadlessImagingSetupBuilder>)` — registers the pipeline and the providers chosen on the builder
 - `HeadlessImagingSetupBuilder` — `Configure(...)` binds `ImagingOptions` (`IConfiguration`, `Action<ImagingOptions>`, or `Action<ImagingOptions, IServiceProvider>`); provider packages add `Use…` members
 - `IImagingProviderOptionsExtension` — the hook a provider's `Use…` member registers through `RegisterExtension`; `AddHeadlessImaging` calls its `AddServices` after the core services
-- Automatic MemoryStream buffering for non-seekable input streams
+- Automatic buffering of non-seekable input streams into an exact-size `MemoryStream`, read in 80 KB chunks so the growing copies of a plain `CopyToAsync` never reach the large-object heap
 - Options validation via FluentValidation at startup
 
 ### Design constraints
@@ -290,18 +290,27 @@ Without either, the contributors throw `InvalidOperationException` naming both o
 
 **Decoding is strict.** Loaders run with `fail_on=error`, so a truncated or corrupt file returns `Unsupported` with "The encoded image contains invalid content." instead of a half-grey image.
 
-**Process-wide libvips settings stay with the application.** libvips keeps an operation cache (100 operations, 100 MB, 100 open files by default) and a worker pool per operation (one thread per core). Both are process globals, so the package does not own them. The cache does not hold the input buffers; a host that resizes many distinct images can still turn it off at startup, where the `global::` prefix avoids a clash with the `Headless.Imaging` namespace:
+**Process-wide libvips settings stay with the application.** libvips keeps an operation cache (100 operations, 100 MB, 100 open files by default) and a worker pool per operation (one thread per core). Both are process globals, so the package does not own them. The contributors read through a stream view that they cut off from the input when each call ends, so a cached operation never keeps the caller's stream or buffer alive. Without that, a cached operation would keep the input reachable until eviction: in testing, 7 of 40 callers' 7 MB streams stayed alive after garbage collection. The cache can still hold the operations' own results, so a host that resizes many distinct images can turn it off at startup; the `global::` prefix avoids a clash with the `Headless.Imaging` namespace:
 
 ```csharp
 global::NetVips.Cache.Max = 0;               // no operation cache
 global::NetVips.NetVips.Concurrency = 2;     // threads per libvips operation
 ```
 
-**Libvips work is synchronous, and cancellable.** The contributors read the input asynchronously, then decode and encode on the calling thread. Cancelling the token sets libvips' kill flag on the image being written, which stops the worker threads within a tile or two (about 10 ms for a 12000 × 12000 JPEG encode in testing) and throws `OperationCanceledException`.
+**Libvips work is synchronous, and cancellable.** The contributors read the header asynchronously; libvips then reads the pixels and encodes on the calling thread and its own workers. Cancelling the token sets libvips' kill flag on the image being written, which stops the worker threads within a tile or two (about 10 ms for a 12000 × 12000 JPEG encode in testing) and throws `OperationCanceledException`.
 
-**Inspection reads only what it needs.** On a seekable stream the inspector reads the first 64 KB and grows the window fourfold until libvips parses the header: a JPEG with large EXIF or ICC segments, a TIFF whose directory follows its pixel data (libtiff writes it there), or an AVIF whose metadata follows its pixel data needs more. A GIF or WebP is read whole, because counting frames walks the file. A file no allowed loader claims is refused from the first window; a HEIC, or a corrupt or truncated file of an allowed format, is refused only after the window has grown to the whole file. The inspector reads from the start of the stream wherever its position was left, like the resizer and compressor. In testing, inspecting a 7 MB camera JPEG read at most 256 KB. Every read is asynchronous.
+**Every operation reads the header first.** On a seekable stream the contributors read the first 64 KB asynchronously and grow the window fourfold until libvips parses the header: a JPEG with large EXIF or ICC segments, a TIFF whose directory follows its pixel data (libtiff writes it there), or an AVIF whose metadata follows its pixel data needs more. A GIF or WebP is read whole, because counting frames walks the file. The format allowlist, the input pixel limit, and an `ImageResizeMode.None` pass-through are all decided from the header, so a refused upload or a pass-through costs kilobytes: in testing, a 7 MB camera JPEG over the limit, passed through, or inspected was read for at most 256 KB. A file no allowed loader claims is refused from the first window; a HEIC, or a corrupt or truncated file of an allowed format, is refused only after the window has grown to the whole file. Every operation reads from the start of the stream wherever its position was left.
 
-**Resize and compress read the whole input into memory first, deliberately.** libvips could read from the .NET stream directly, but it reads synchronously from its own threads, and ASP.NET Core throws on synchronous reads from a request body that is not fully buffered. Both operations need every byte anyway, so one asynchronous copy is the robust choice.
+**libvips reads the pixels straight from a `MemoryStream` or `FileStream`; other streams are copied once.** libvips reads its input synchronously, from its own worker threads. A `MemoryStream` or `FileStream` is safe to read that way, so the contributors hand it to libvips and the upload is never copied. Any other stream type gets one asynchronous copy into an exact-size buffer first, because a synchronous read can fail on it: ASP.NET Core, for one, throws on a synchronous read from a request body that is not fully buffered. `IFormFile.OpenReadStream()` takes that copy; to avoid it, copy the upload to a temporary `FileStream` or pass a `MemoryStream`. A non-seekable stream is buffered by the pipeline in 80 KB chunks and copied once into an exact-size `MemoryStream`, which libvips then reads directly.
+
+Measured with four concurrent workers resizing a 7 MB camera JPEG to 300 × 300, 40 times:
+
+| Input | Managed allocation | Peak resident memory |
+|---|---|---|
+| `FileStream` or `MemoryStream` | 3 MB | 176–199 MB |
+| Non-seekable stream | 545 MB (about two copies of each upload) | 297–319 MB |
+
+Reading the whole upload into a byte array first, as an earlier design did, allocated 272 MB for a seekable stream and 907 MB for a non-seekable one, at the same speed.
 
 ### Install
 

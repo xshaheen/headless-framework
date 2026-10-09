@@ -60,11 +60,11 @@ internal sealed class NetVipsImageResizerContributor : IImageResizerContributor
             return ImageStreamResizeResult.NotSupportedMimeType(args.OutputMimeType);
         }
 
-        var bytes = await stream.GetAllBytesAsync(cancellationToken).ConfigureAwait(false);
-
         try
         {
-            var (source, state, error) = VipsImageSource.Open(bytes, _options, _logger);
+            var (source, state, error) = await VipsImageSource
+                .OpenAsync(stream, _options, _logger, cancellationToken)
+                .ConfigureAwait(false);
 
             if (source is null)
             {
@@ -80,12 +80,8 @@ internal sealed class NetVipsImageResizerContributor : IImageResizerContributor
 
                 if (!resizes && format == source.Format)
                 {
-                    // A stream the contributor cannot rewind has been read to its end, so hand back the bytes instead.
-                    var content = stream.CanSeek ? stream : new MemoryStream(bytes);
-                    content.Position = 0;
-
                     return ImageStreamResizeResult.Done(
-                        content,
+                        source.OpenOriginal(),
                         format.MimeType,
                         source.UprightWidth,
                         source.UprightHeight
@@ -118,6 +114,8 @@ internal sealed class NetVipsImageResizerContributor : IImageResizerContributor
                     );
                 }
 
+                await source.LoadContentAsync(cancellationToken).ConfigureAwait(false);
+
                 using var resized = keepsFrames ? _ResizeFrames(source, plan) : _ResizeSingle(source, plan);
                 var encoded = format.Save(resized, _options, cancellationToken);
 
@@ -145,16 +143,7 @@ internal sealed class NetVipsImageResizerContributor : IImageResizerContributor
 
     private static Image _ResizeSingle(VipsImageSource source, VipsResizePlan plan)
     {
-        // fail_on goes through the loader option string: thumbnail's own failOn argument does not reach the loader
-        // (libvips 8.18), so a truncated JPEG or PNG would resize with its missing rows filled in.
-        using var thumbnail = Image.ThumbnailBuffer(
-            source.Bytes,
-            plan.Width,
-            optionString: "fail_on=error",
-            height: plan.Height,
-            size: plan.Size,
-            crop: plan.Crop
-        );
+        using var thumbnail = source.Thumbnail(plan);
 
         return _Pad(thumbnail, plan);
     }

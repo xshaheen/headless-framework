@@ -61,11 +61,11 @@ internal sealed class NetVipsImageCompressorContributor : IImageCompressorContri
             return ImageStreamCompressResult.NotSupportedMimeType(args.MimeType);
         }
 
-        var bytes = await stream.GetAllBytesAsync(cancellationToken).ConfigureAwait(false);
-
         try
         {
-            var (source, state, error) = VipsImageSource.Open(bytes, _options, _logger);
+            var (source, state, error) = await VipsImageSource
+                .OpenAsync(stream, _options, _logger, cancellationToken)
+                .ConfigureAwait(false);
 
             if (source is null)
             {
@@ -83,6 +83,8 @@ internal sealed class NetVipsImageCompressorContributor : IImageCompressorContri
                     return ImageStreamCompressResult.NotSupportedMimeType(source.Format.MimeType);
                 }
 
+                await source.LoadContentAsync(cancellationToken).ConfigureAwait(false);
+
                 var keepsFrames = source.IsAnimation && format.IsAnimated;
                 using var decoded = source.Decode(allFrames: keepsFrames);
 
@@ -91,7 +93,7 @@ internal sealed class NetVipsImageCompressorContributor : IImageCompressorContri
                 using var upright = _options.StripMetadata && !keepsFrames ? decoded.Autorot() : decoded.Copy();
                 var encoded = format.Save(upright, _options, cancellationToken);
 
-                return encoded.Length < bytes.Length
+                return encoded.Length < source.Length
                     ? ImageStreamCompressResult.Done(new MemoryStream(encoded))
                     : ImageStreamCompressResult.Failed(_LargerOutputError);
             }

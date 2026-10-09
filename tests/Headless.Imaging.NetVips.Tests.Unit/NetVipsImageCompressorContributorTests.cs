@@ -133,6 +133,35 @@ public sealed class NetVipsImageCompressorContributorTests : TestBase
     }
 
     [Fact]
+    public async Task should_never_read_an_unknown_stream_type_synchronously()
+    {
+        // given: a seekable stream that throws on synchronous reads, like a partly buffered ASP.NET Core request body
+        var original = TestImages.Encode(".jpg", 128, 128, options: "Q=100");
+        await using var input = new AsyncOnlyStream(original);
+
+        // when
+        var result = await _CreateCompressor().TryCompressAsync(input, new ImageCompressArgs(), AbortToken);
+
+        // then
+        result.State.Should().Be(ImageProcessState.Done);
+        result.Result!.Length.Should().BeLessThan(original.Length);
+    }
+
+    [Fact]
+    public async Task should_compress_a_file_stream_read_by_libvips_directly()
+    {
+        // given: a FileStream is read by libvips itself, without a copy
+        await using var input = File.OpenRead(TestImages.AssetPath("happy-young-man-with-q-letter.jpg"));
+
+        // when
+        var result = await _CreateCompressor().TryCompressAsync(input, new ImageCompressArgs(), AbortToken);
+
+        // then
+        result.State.Should().Be(ImageProcessState.Done);
+        result.Result!.Length.Should().BeLessThan(input.Length);
+    }
+
+    [Fact]
     public async Task should_throw_when_cancelled()
     {
         // given

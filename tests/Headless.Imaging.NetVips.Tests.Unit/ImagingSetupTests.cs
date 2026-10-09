@@ -203,6 +203,44 @@ public sealed class ImagingSetupTests : TestBase
     }
 
     [Fact]
+    public async Task should_buffer_a_large_non_seekable_upload_across_chunks()
+    {
+        // given: a 7 MB request-body-like stream, many 80 KB chunks long
+        var services = _CreateServices();
+        services.AddHeadlessImaging(imaging => imaging.UseNetVips());
+        await using var provider = services.BuildServiceProvider();
+        var bytes = await File.ReadAllBytesAsync(TestImages.AssetPath("happy-young-man-with-q-letter.jpg"), AbortToken);
+        await using var input = new NonSeekableStream(bytes);
+
+        // when
+        var result = await provider
+            .GetRequiredService<IImageCompressor>()
+            .CompressAsync(input, new ImageCompressArgs(), AbortToken);
+
+        // then
+        result.State.Should().Be(ImageProcessState.Done);
+        result.Result!.Length.Should().BeLessThan(bytes.Length);
+    }
+
+    [Fact]
+    public async Task should_report_an_empty_non_seekable_upload_as_unsupported()
+    {
+        // given
+        var services = _CreateServices();
+        services.AddHeadlessImaging(imaging => imaging.UseNetVips());
+        await using var provider = services.BuildServiceProvider();
+        await using var input = new NonSeekableStream([]);
+
+        // when
+        var result = await provider
+            .GetRequiredService<IImageResizer>()
+            .ResizeAsync(input, new ImageResizeArgs(ImageResizeMode.Max, 10, 10), AbortToken);
+
+        // then
+        result.State.Should().Be(ImageProcessState.Unsupported);
+    }
+
+    [Fact]
     public async Task should_report_unsupported_when_no_contributor_handles_the_image()
     {
         // given
@@ -243,10 +281,5 @@ public sealed class ImagingSetupTests : TestBase
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
 
         return services;
-    }
-
-    private sealed class NonSeekableStream(byte[] bytes) : MemoryStream(bytes)
-    {
-        public override bool CanSeek => false;
     }
 }
