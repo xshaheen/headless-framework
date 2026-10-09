@@ -179,7 +179,7 @@ public sealed class MessagingTelemetryTests : TestBase
             invokeMessage,
             _Method,
             broker.Name,
-            new SubscriberExecutionFailedException("failed", new ArgumentException("bad", "message")),
+            new SubscriberExecutionFailedException("failed", new FormatException("bad")),
             elapsedMs: 20
         );
 
@@ -255,7 +255,7 @@ public sealed class MessagingTelemetryTests : TestBase
             );
         processed
             .Should()
-            .ContainSingle(m => _HasTag(m.Tags, "error.type", typeof(ArgumentException).FullName))
+            .ContainSingle(m => _HasTag(m.Tags, "error.type", typeof(FormatException).FullName))
             .Which.Value.Should()
             .Be(0.02);
 
@@ -381,14 +381,14 @@ public sealed class MessagingTelemetryTests : TestBase
             invokeMessage,
             _Method,
             messagingSystem: null,
-            new SubscriberExecutionFailedException("failed", new ArgumentException("bad", "message")),
+            new SubscriberExecutionFailedException("failed", new FormatException("bad")),
             elapsedMs: 5
         );
 
         publish!.GetTagItem("error.type").Should().Be(typeof(TimeoutException).FullName);
         ambiguous!.GetTagItem("error.type").Should().Be("ambiguous_delivery");
         consume!.GetTagItem("error.type").Should().Be(typeof(InvalidOperationException).FullName);
-        subscriber!.GetTagItem("error.type").Should().Be(typeof(ArgumentException).FullName);
+        subscriber!.GetTagItem("error.type").Should().Be(typeof(FormatException).FullName);
         subscriber.GetTagItem("messaging.system").Should().BeNull();
     }
 
