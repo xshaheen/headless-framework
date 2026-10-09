@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Pulsar;
@@ -110,6 +111,127 @@ public sealed class PulsarConsumerClientLifecycleTests : TestBase
 
         // then
         received.Headers[Headers.TransportAddress].Should().Be(topic);
+    }
+
+    [Fact]
+    public async Task should_let_in_flight_handler_acknowledge_before_closing_when_shutdown_async()
+    {
+        // given
+        var (client, consumer, handlerStarted, releaseHandler, listening, cts) = await _StartWithBlockedHandlerAsync();
+        await cts.CancelAsync();
+        await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        var shutdown = client.ShutdownAsync(TimeSpan.FromSeconds(5), AbortToken).AsTask();
+        await Task.Delay(100, AbortToken);
+        var completedBeforeHandler = shutdown.IsCompleted;
+        releaseHandler.TrySetResult();
+        await shutdown.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        completedBeforeHandler.Should().BeFalse("shutdown waits for the in-flight handler");
+        Received.InOrder(() =>
+        {
+            _ = consumer.AcknowledgeAsync(Arg.Any<MessageId>());
+            _ = consumer.DisposeAsync();
+        });
+        cts.Dispose();
+    }
+
+    [Fact]
+    public async Task should_close_after_the_budget_when_a_handler_outlives_shutdown()
+    {
+        // given
+        var logs = new ConcurrentQueue<LogMessageEventArgs>();
+        var (client, consumer, _, releaseHandler, listening, cts) = await _StartWithBlockedHandlerAsync(logs);
+        await cts.CancelAsync();
+        await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        await client.ShutdownAsync(TimeSpan.FromMilliseconds(50), AbortToken);
+
+        // then
+        await consumer.Received(1).DisposeAsync();
+        await consumer.DidNotReceive().AcknowledgeAsync(Arg.Any<MessageId>());
+        logs.Should().Contain(x => x.Reason!.Contains("draining in-flight Pulsar handlers", StringComparison.Ordinal));
+        releaseHandler.TrySetResult();
+        cts.Dispose();
+    }
+
+    [Fact]
+    public async Task should_skip_the_drain_when_the_shared_deadline_already_expired()
+    {
+        // given
+        var logs = new ConcurrentQueue<LogMessageEventArgs>();
+        var (client, consumer, _, releaseHandler, listening, cts) = await _StartWithBlockedHandlerAsync(logs);
+        await cts.CancelAsync();
+        await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        await client.ShutdownAsync(TimeSpan.Zero, AbortToken);
+
+        // then
+        await consumer.Received(1).DisposeAsync();
+        logs.Should().Contain(x => x.Reason!.Contains("deadline has expired", StringComparison.Ordinal));
+        releaseHandler.TrySetResult();
+        cts.Dispose();
+    }
+
+    private async Task<(
+        PulsarConsumerClient Client,
+        IConsumer<byte[]> Consumer,
+        TaskCompletionSource HandlerStarted,
+        TaskCompletionSource ReleaseHandler,
+        Task Listening,
+        CancellationTokenSource Cts
+    )> _StartWithBlockedHandlerAsync(ConcurrentQueue<LogMessageEventArgs>? logs = null)
+    {
+        var client = new PulsarConsumerClient(
+            Options.Create(new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" }),
+            client: null!,
+            new ConsumerClientRequest("shutdown-test", concurrency: 2, MessageLane.Bus)
+        );
+        var delivery = _CreateMessage(
+            "persistent://public/default/orders.created",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "msg-1",
+                [Headers.MessageName] = "TestEvent",
+            }
+        );
+        var consumer = Substitute.For<IConsumer<byte[]>>();
+        var receiveCount = 0;
+        consumer
+            .ReceiveAsync(Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                if (Interlocked.Increment(ref receiveCount) == 1)
+                {
+                    return delivery;
+                }
+
+                await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>());
+                return delivery;
+            });
+        _SetField(client, "_consumerClient", consumer);
+
+        var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.AttachCallbacks(
+            async (_, sender) =>
+            {
+                handlerStarted.TrySetResult();
+                await releaseHandler.Task.ConfigureAwait(false);
+                await client.CommitAsync(sender).ConfigureAwait(false);
+            },
+            log => logs?.Enqueue(log)
+        );
+
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+        await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        return (client, consumer, handlerStarted, releaseHandler, listening, cts);
     }
 
     // Pulsar.Client builds Message<T> only on receipt and exposes no public constructor or factory for it.

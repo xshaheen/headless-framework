@@ -4,6 +4,7 @@ using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using FluentValidation;
 using Pulsar.Client.Api;
+using Pulsar.Client.Common;
 
 namespace Headless.Messaging.Pulsar;
 
@@ -40,6 +41,41 @@ public sealed class PulsarMessagingOptions
     /// and the client connects over plain-text.
     /// </summary>
     public PulsarTlsOptions? TlsOptions { get; set; }
+
+    /// <summary>Settings applied to every producer the transport creates.</summary>
+    public PulsarProducerOptions Producer { get; set; } = new();
+}
+
+/// <summary>Settings applied to every producer the Pulsar transport creates.</summary>
+/// <remarks>Each default matches the Pulsar.Client default.</remarks>
+public sealed class PulsarProducerOptions
+{
+    private static readonly ProducerConfiguration _Default = ProducerConfiguration.Default;
+
+    /// <summary>
+    /// The codec that compresses message payloads (or whole batches) before they are sent. Consumers decompress
+    /// transparently. Defaults to <see cref="CompressionType.None"/>.
+    /// </summary>
+    public CompressionType CompressionType { get; set; } = _Default.CompressionType;
+
+    /// <summary>
+    /// When <see langword="true"/> (default), the producer groups messages sent close together into one broker
+    /// request.
+    /// </summary>
+    public bool EnableBatching { get; set; } = _Default.BatchingEnabled;
+
+    /// <summary>
+    /// How long the producer waits for more messages before it sends a batch. Defaults to one millisecond. Every
+    /// publish waits for its own send, so a longer delay adds up to this much latency to each publish in exchange for
+    /// larger batches.
+    /// </summary>
+    public TimeSpan BatchingMaxPublishDelay { get; set; } = _Default.BatchingMaxPublishDelay;
+
+    /// <summary>
+    /// How long a send may wait for the broker's acknowledgement before it fails; <see cref="TimeSpan.Zero"/> waits
+    /// indefinitely. Defaults to 30 seconds. A send that times out fails the publish.
+    /// </summary>
+    public TimeSpan SendTimeout { get; set; } = _Default.SendTimeout;
 }
 
 /// <summary>TLS settings applied to the Pulsar client connection.</summary>
@@ -85,5 +121,9 @@ internal sealed class PulsarMessagingOptionsValidator : AbstractValidator<Pulsar
     {
         RuleFor(x => x.ServiceUrl).NotEmpty();
         RuleFor(x => x.NegativeAckRedeliveryDelay).GreaterThanOrEqualTo(TimeSpan.FromMilliseconds(100));
+        RuleFor(x => x.Producer).NotNull();
+        RuleFor(x => x.Producer.CompressionType).IsInEnum().When(x => x.Producer is not null);
+        RuleFor(x => x.Producer.BatchingMaxPublishDelay).GreaterThan(TimeSpan.Zero).When(x => x.Producer is not null);
+        RuleFor(x => x.Producer.SendTimeout).GreaterThanOrEqualTo(TimeSpan.Zero).When(x => x.Producer is not null);
     }
 }
