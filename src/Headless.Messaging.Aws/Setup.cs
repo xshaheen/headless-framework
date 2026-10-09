@@ -16,7 +16,8 @@ namespace Headless.Messaging;
 /// </summary>
 /// <remarks>
 /// Topics are modelled as SNS topics and queues as SQS queues. SNS fan-out to SQS subscriptions
-/// is wired automatically. AWS credentials are resolved through the standard AWS SDK credential
+/// is wired automatically, with raw message delivery; set <see cref="AmazonSqsMessagingOptions.AutoProvision"/>
+/// to <see langword="false"/> when the topology is managed externally. AWS credentials are resolved through the standard AWS SDK credential
 /// chain unless <see cref="AmazonSqsMessagingOptions.Credentials"/> is provided explicitly.
 /// </remarks>
 public static class SetupMessagingAws
