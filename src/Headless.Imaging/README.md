@@ -4,7 +4,7 @@ Orchestration layer that routes image processing calls to registered contributor
 
 ## Why use this package
 
-Provides the `IImageResizer` and `IImageCompressor` implementations that dispatch to one or more backend contributors, buffers non-seekable streams transparently, and applies the configured default resize mode.
+Provides the `IImageResizer`, `IImageCompressor`, and `IImageInspector` implementations that dispatch to one or more backend contributors, buffers non-seekable streams transparently, and applies the configured default resize mode.
 
 ## Install
 

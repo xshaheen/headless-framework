@@ -8,8 +8,8 @@ namespace Headless.Imaging;
 
 /// <summary>
 /// Configures imaging during <c>AddHeadlessImaging(imaging =&gt; …)</c>: the shared <see cref="ImagingOptions" />, and
-/// at least one provider chosen through a <c>Use…</c> call such as <c>UseImageSharp</c> from
-/// <c>Headless.Imaging.ImageSharp</c>.
+/// at least one provider chosen through a <c>Use…</c> call such as <c>UseNetVips</c> from
+/// <c>Headless.Imaging.NetVips</c>.
 /// </summary>
 [PublicAPI]
 public sealed class HeadlessImagingSetupBuilder

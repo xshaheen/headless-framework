@@ -13,9 +13,10 @@ public static class SetupImaging
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Registers <see cref="IImageResizer" />, <see cref="IImageCompressor" />, and the providers chosen in
-        /// <paramref name="configure" />. At least one <c>Use…</c> call, such as <c>UseImageSharp</c> from
-        /// <c>Headless.Imaging.ImageSharp</c>, is required.
+        /// Registers <see cref="IImageResizer" />, <see cref="IImageCompressor" />, <see cref="IImageInspector" />, and the
+        /// providers chosen in
+        /// <paramref name="configure" />. At least one <c>Use…</c> call, such as <c>UseNetVips</c> from
+        /// <c>Headless.Imaging.NetVips</c>, is required.
         /// </summary>
         /// <param name="configure">Binds <see cref="ImagingOptions" /> and chooses the providers.</param>
         /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
@@ -41,7 +42,7 @@ public static class SetupImaging
         if (setup.Extensions.Count == 0)
         {
             throw new InvalidOperationException(
-                "Headless.Imaging requires at least one provider. Call `UseImageSharp` (Headless.Imaging.ImageSharp)."
+                "Headless.Imaging requires at least one provider. Call `UseNetVips` (Headless.Imaging.NetVips)."
             );
         }
 
@@ -57,6 +58,7 @@ public static class SetupImaging
         services.AddOptions<ImagingOptions, ImagingOptionsValidator>();
         services.TryAddSingleton<IImageResizer, ImageResizer>();
         services.TryAddSingleton<IImageCompressor, ImageCompressor>();
+        services.TryAddSingleton<IImageInspector, ImageInspector>();
 
         foreach (var extension in setup.Extensions)
         {
