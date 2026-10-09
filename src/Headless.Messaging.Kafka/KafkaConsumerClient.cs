@@ -46,6 +46,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private readonly Func<AdminClientConfig, IAdminClient> _adminClientFactory;
     private readonly KafkaOffsetCommitTracker? _offsetCommitTracker;
     private readonly HashSet<TopicPartition> _ownedPartitions = [];
+    private readonly KafkaConsumerLagTracker _lagTracker;
 
     // Every dispatched delivery, keyed by its handler task, so shutdown and a revoke can wait for the ones they affect.
     private readonly ConcurrentDictionary<Task, TopicPartition> _inFlightHandlers = new();
@@ -78,6 +79,13 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         _consumerConfig = consumerConfig;
         _consumerFactory = consumerFactory ?? _BuildConsumer;
         _adminClientFactory = adminClientFactory ?? _BuildAdminClient;
+
+        // Lag is reported under the group the consumer actually joins, which MainConfig may override.
+        _lagTracker = new KafkaConsumerLagTracker(
+            _kafkaOptions.MainConfig.GetValueOrDefault("group.id") is { Length: > 0 } configuredGroupId
+                ? configuredGroupId
+                : _groupId
+        );
     }
 
     /// <summary>Returns the consumer group of a Queue subscription, which is named after its message.</summary>
@@ -517,6 +525,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         }
 
         _semaphore?.Dispose();
+        _lagTracker.Dispose();
     }
 
     public void Connect()
@@ -769,7 +778,43 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             .SetPartitionsAssignedHandler((_, partitions) => PartitionsAssigned(partitions))
             .SetPartitionsRevokedHandler((_, partitions) => PartitionsRevoked(partitions))
             .SetPartitionsLostHandler((_, partitions) => PartitionsLost(partitions))
+            .SetStatisticsHandler((_, statistics) => OnStatistics(statistics))
             .Build();
+    }
+
+    /// <summary>
+    /// Records consumer lag from a librdkafka statistics payload. librdkafka emits one only when
+    /// <c>statistics.interval.ms</c> is above zero, and calls this from <c>Consume</c> on the poll thread.
+    /// </summary>
+    internal void OnStatistics(string statistics)
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
+
+        HashSet<TopicPartition> owned;
+        lock (_lock)
+        {
+            owned = [.. _ownedPartitions];
+        }
+
+        try
+        {
+            _lagTracker.Update(statistics, owned.Contains);
+        }
+#pragma warning disable CA1031 // Native callback boundary: a bad payload must cost one metric sample, never the poll loop.
+        catch (Exception e)
+#pragma warning restore CA1031
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason = $"Failed to read Kafka consumer lag from librdkafka statistics: {e}",
+                }
+            );
+        }
     }
 
     internal void PartitionsAssigned(IEnumerable<TopicPartition> partitions)
@@ -859,6 +904,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             {
                 _ownedPartitions.Remove(partition);
                 _offsetCommitTracker?.Reset(partition);
+                _lagTracker.Remove(partition);
             }
         }
     }
