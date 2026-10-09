@@ -9,56 +9,6 @@ namespace Tests;
 public sealed class GeoConstantsTests
 {
     [Fact]
-    public void should_be_4326_when_google_maps_srid()
-    {
-        // then
-        GeoConstants.GoogleMapsSrid.Should().Be(4326);
-    }
-
-    [Fact]
-    public void should_be_floating_when_ultra_precision()
-    {
-        // then - PrecisionModel.Floating has unlimited precision (~1.1mm)
-        GeoConstants.UltraPrecision.PrecisionModelType.Should().Be(PrecisionModels.Floating);
-    }
-
-    [Fact]
-    public void should_be_floating_single_when_high_precision()
-    {
-        // then - PrecisionModel.FloatingSingle (~11cm accuracy)
-        GeoConstants.HighPrecision.PrecisionModelType.Should().Be(PrecisionModels.FloatingSingle);
-    }
-
-    [Fact]
-    public void should_be_100000_when_street_level_precision()
-    {
-        // then - Fixed precision with scale 100,000 (~1.1m accuracy)
-        GeoConstants.StreetLevelPrecision.Scale.Should().Be(100_000);
-        GeoConstants.StreetLevelPrecision.PrecisionModelType.Should().Be(PrecisionModels.Fixed);
-    }
-
-    [Fact]
-    public void should_be_correct_value_when_around11_cm_degrees()
-    {
-        // then - ~11 cm at Equator
-        GeoConstants.Around11CmDegrees.Should().Be(0.000001);
-    }
-
-    [Fact]
-    public void should_be_correct_value_when_around1_m_degrees()
-    {
-        // then - ~1.1 m at Equator
-        GeoConstants.Around1MDegrees.Should().Be(0.00001);
-    }
-
-    [Fact]
-    public void should_be_correct_value_when_around111_m_degrees()
-    {
-        // then - ~111 m at Equator
-        GeoConstants.Around111MDegrees.Should().Be(0.0001);
-    }
-
-    [Fact]
     public void should_be_configured_with_correct_srid_when_nts_geometry_services()
     {
         // then

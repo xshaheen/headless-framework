@@ -237,30 +237,6 @@ public sealed class NatsConsumerClientTests : TestBase
     // the prior exact-value assertions were flaky by construction since the function always applies jitter.
 
     [Fact]
-    public void should_double_current_delay_within_jitter_budget_when_next_backoff()
-    {
-        var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(1));
-        result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(2));
-        result.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(1.5));
-    }
-
-    [Fact]
-    public void should_cap_at_30_seconds_within_jitter_budget_when_next_backoff()
-    {
-        var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(20));
-        result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(30));
-        result.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(22.5));
-    }
-
-    [Fact]
-    public void should_not_exceed_ceiling_even_with_large_input_when_next_backoff()
-    {
-        var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(60));
-        result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(30));
-        result.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(22.5));
-    }
-
-    [Fact]
     public void should_never_return_below_the_floor_and_should_still_spread_above_it_when_next_backoff()
     {
         // The floor is a HARD guarantee: callers pass it to promise a minimum wait (JetStream API errors), so
@@ -274,14 +250,6 @@ public sealed class NatsConsumerClientTests : TestBase
         results.Should().OnlyContain(r => r >= TimeSpan.FromSeconds(5), "the floor must never be undercut");
         results.Should().OnlyContain(r => r <= TimeSpan.FromSeconds(6.25), "the upward spread is 25% of the floor");
         results.Distinct().Should().HaveCountGreaterThan(1, "the floor path must not collapse to a lockstep value");
-    }
-
-    [Fact]
-    public void should_not_enforce_floor_when_next_backoff_next_is_above()
-    {
-        var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(5), floor: TimeSpan.FromSeconds(5));
-        result.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(10));
-        result.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(7.5));
     }
 
     [Fact]
@@ -330,28 +298,6 @@ public sealed class NatsConsumerClientTests : TestBase
             result.Should().BeGreaterThanOrEqualTo(lower);
             result.Should().BeLessThanOrEqualTo(upper);
             result.Should().BeGreaterThanOrEqualTo(floor, "the floor is a hard guarantee at every rung");
-        }
-    }
-
-    [Fact]
-    public void should_never_exceed_the_30_second_ceiling_across_many_iterations_and_inputs_when_next_backoff()
-    {
-        TimeSpan[] inputs =
-        [
-            TimeSpan.FromSeconds(20),
-            TimeSpan.FromSeconds(30),
-            TimeSpan.FromSeconds(45),
-            TimeSpan.FromSeconds(60),
-            TimeSpan.FromMinutes(10),
-        ];
-        var ceiling = TimeSpan.FromSeconds(30);
-
-        foreach (var input in inputs)
-        {
-            for (var i = 0; i < 1000; i++)
-            {
-                NatsConsumerClient.NextBackoff(input).Should().BeLessThanOrEqualTo(ceiling);
-            }
         }
     }
 

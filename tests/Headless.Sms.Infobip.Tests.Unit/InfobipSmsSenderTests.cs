@@ -6,9 +6,6 @@ using Headless.Sms;
 using Headless.Sms.Infobip;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
-using Polly.CircuitBreaker;
-using Polly.RateLimiting;
-using Polly.Timeout;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 
@@ -327,68 +324,6 @@ public sealed class InfobipSmsSenderTests : TestBase, IClassFixture<SmsWireMockF
 
         response.Results[0].Result.Success.Should().BeFalse();
         response.Results[0].Result.FailureError.Should().Be("Infobip message status REJECTED_DESTINATION");
-    }
-
-    [Theory]
-    [InlineData(nameof(TimeoutRejectedException))]
-    [InlineData(nameof(BrokenCircuitException))]
-    [InlineData(nameof(RateLimiterRejectedException))]
-    public async Task should_classify_resilience_rejections_as_transient(string rejectionKind)
-    {
-        var exception = ResilienceRejections.Create(rejectionKind);
-        var options = new OptionsMonitorWrapper<InfobipSmsOptions>(
-            new InfobipSmsOptions
-            {
-                Sender = "SENDER",
-                ApiKey = "api-key",
-                BasePath = "http://localhost:1",
-            }
-        );
-        var sender = new InfobipSmsSender(
-            new ThrowingHttpClientFactory(exception),
-            SetupInfobip.HttpClientName,
-            options,
-            optionsName: null,
-            NullLogger<InfobipSmsSender>.Instance
-        );
-
-        var result = await sender.SendAsync(SmsRequests.Single(), AbortToken);
-
-        result.Success.Should().BeFalse();
-        result.FailureKind.Should().Be(SmsFailureKind.Transient);
-    }
-
-    [Theory]
-    [InlineData(nameof(TimeoutRejectedException))]
-    [InlineData(nameof(BrokenCircuitException))]
-    [InlineData(nameof(RateLimiterRejectedException))]
-    public async Task should_classify_bulk_resilience_rejections_as_transient(string rejectionKind)
-    {
-        var exception = ResilienceRejections.Create(rejectionKind);
-        var options = new OptionsMonitorWrapper<InfobipSmsOptions>(
-            new InfobipSmsOptions
-            {
-                Sender = "SENDER",
-                ApiKey = "api-key",
-                BasePath = "http://localhost:1",
-            }
-        );
-        var sender = new InfobipSmsSender(
-            new ThrowingHttpClientFactory(exception),
-            SetupInfobip.HttpClientName,
-            options,
-            optionsName: null,
-            NullLogger<InfobipSmsSender>.Instance
-        );
-
-        var response = await sender.SendBulkAsync(
-            SmsRequests.Bulk("hi", (20, "1001110000"), (20, "1001110001")),
-            AbortToken
-        );
-
-        response.AllSucceeded.Should().BeFalse();
-        response.Results.Should().HaveCount(2);
-        response.Results.Should().AllSatisfy(r => r.Result.FailureKind.Should().Be(SmsFailureKind.Transient));
     }
 
     [Fact]

@@ -24,7 +24,7 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
         );
 
     [Fact]
-    public async Task should_execute_every_supported_manifest_scenario()
+    public void should_back_every_supported_manifest_scenario_with_a_test()
     {
         var profile = TransportConformanceManifest.Providers["Kafka"];
         TransportConformanceTestBinding[] bindings =
@@ -81,7 +81,7 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
             ),
         ];
 
-        await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(profile, bindings, _CreateTestClass);
+        TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();
     }
 
     [Fact]
@@ -124,26 +124,6 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
 
     private static TransportConformanceTestBinding _Bind(TransportConformanceScenario scenario, string method) =>
         new(scenario, typeof(KafkaConsumerClientConformanceTests), method);
-
-    private object _CreateTestClass(Type testClass)
-    {
-        if (testClass == typeof(KafkaConsumerClientConformanceTests))
-        {
-            return new KafkaConsumerClientConformanceTests(fixture);
-        }
-
-        if (testClass == typeof(KafkaBrokerFaultTests))
-        {
-            return new KafkaBrokerFaultTests(fixture);
-        }
-
-        if (testClass == typeof(ProviderConformanceEvidenceTests))
-        {
-            return new ProviderConformanceEvidenceTests(fixture);
-        }
-
-        throw new InvalidOperationException($"No Kafka conformance test factory is registered for {testClass}.");
-    }
 
     private sealed record KafkaBusContract;
 

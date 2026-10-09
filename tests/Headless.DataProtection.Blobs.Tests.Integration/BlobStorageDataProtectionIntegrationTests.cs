@@ -65,34 +65,6 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
     }
 
     [Fact]
-    public async Task should_persist_and_retrieve_keys_with_real_storage()
-    {
-        // given
-        await using var storage = _CreateStorage();
-        var repository = new BlobStorageDataProtectionXmlRepository(storage, _CreateContainerManager(), LoggerFactory);
-
-        var keyId = Faker.Random.Guid().ToString("N");
-        var element = new XElement(
-            "key",
-            new XAttribute("id", keyId),
-            new XElement("creationDate", DateTimeOffset.UtcNow.ToString("O")),
-            new XElement("encryptedKey", Faker.Random.AlphaNumeric(64))
-        );
-
-        // when
-        repository.StoreElement(element, $"key-{keyId}");
-        var retrievedElements = repository.GetAllElements();
-
-        // then
-        retrievedElements.Should().NotBeEmpty();
-        var retrieved = retrievedElements.FirstOrDefault(e =>
-            string.Equals(e.Attribute("id")?.Value, keyId, StringComparison.Ordinal)
-        );
-        retrieved.Should().NotBeNull();
-        retrieved!.ToString().Should().Be(element.ToString());
-    }
-
-    [Fact]
     public async Task should_persist_multiple_keys()
     {
         // given

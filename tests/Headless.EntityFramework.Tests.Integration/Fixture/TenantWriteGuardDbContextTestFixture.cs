@@ -114,7 +114,7 @@ public sealed class TenantWriteGuardDisabledFixture : TenantWriteGuardDbContextT
     protected override string ContainerLabel => "tenant-write-guard-disabled";
 }
 
-[CollectionDefinition(DisableParallelization = true)]
+[CollectionDefinition]
 public sealed class TenantWriteGuardCollection
     : ICollectionFixture<TenantWriteGuardEnabledFixture>,
         ICollectionFixture<TenantWriteGuardDisabledFixture>;

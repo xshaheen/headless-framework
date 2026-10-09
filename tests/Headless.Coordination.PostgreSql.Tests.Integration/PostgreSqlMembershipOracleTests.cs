@@ -13,6 +13,12 @@ public sealed class PostgreSqlMembershipOracleTests(PostgreSqlMembershipFixture 
     }
 
     [Fact]
+    public override Task should_hide_retention_expired_rows_from_the_snapshot_before_they_are_pruned()
+    {
+        return base.should_hide_retention_expired_rows_from_the_snapshot_before_they_are_pruned();
+    }
+
+    [Fact]
     public override Task should_match_the_model_at_every_step_of_generated_histories()
     {
         return base.should_match_the_model_at_every_step_of_generated_histories();

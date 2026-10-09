@@ -7,6 +7,7 @@ using Headless.Idempotency.Caching;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -163,7 +164,8 @@ public sealed class CacheIdempotencyRecordStoreTests : TestBase
     [Fact]
     public async Task should_refuse_a_recovery_point_from_an_attempt_that_lost_the_key()
     {
-        await using var services = _CreateServices();
+        var time = new FakeTimeProvider();
+        await using var services = _CreateServices(time);
         var operations = services.GetRequiredService<IIdempotentOperations>();
         var key = _Key();
 
@@ -174,7 +176,7 @@ public sealed class CacheIdempotencyRecordStoreTests : TestBase
             retention: _Retention,
             cancellationToken: AbortToken
         );
-        await Task.Delay(TimeSpan.FromSeconds(1.2), AbortToken);
+        time.Advance(TimeSpan.FromSeconds(1.2));
 
         var expired = async () =>
             await operations.SetRecoveryPointAsync(first, "late", _Bytes("x"), _Contract, AbortToken);
@@ -195,7 +197,8 @@ public sealed class CacheIdempotencyRecordStoreTests : TestBase
     [Fact]
     public async Task should_hand_a_takeover_the_last_point_and_clear_it_on_completion()
     {
-        await using var services = _CreateServices();
+        var time = new FakeTimeProvider();
+        await using var services = _CreateServices(time);
         var operations = services.GetRequiredService<IIdempotentOperations>();
         var key = _Key();
 
@@ -208,7 +211,7 @@ public sealed class CacheIdempotencyRecordStoreTests : TestBase
         );
         await operations.SetRecoveryPointAsync(first, "reserved", _Bytes("r-1"), _Contract, AbortToken);
         await operations.SetRecoveryPointAsync(first, "charged", _Bytes("c-1"), _Contract, AbortToken);
-        await Task.Delay(TimeSpan.FromSeconds(1.2), AbortToken);
+        time.Advance(TimeSpan.FromSeconds(1.2));
 
         var second = await _AdmitAsync(operations, key);
 
@@ -275,10 +278,15 @@ public sealed class CacheIdempotencyRecordStoreTests : TestBase
         both.Should().Throw<InvalidOperationException>().WithMessage("*exactly one storage provider*");
     }
 
-    private static ServiceProvider _CreateServices()
+    private static ServiceProvider _CreateServices(FakeTimeProvider? time = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        if (time is not null)
+        {
+            services.AddSingleton<TimeProvider>(time);
+        }
+
         services.AddHeadlessCaching(static setup => setup.UseInMemory());
         services.AddHeadlessIdempotency(static setup =>
         {

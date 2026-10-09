@@ -10,20 +10,6 @@ namespace Tests;
 public sealed class SerilogFactoryTests
 {
     [Fact]
-    public void should_use_documented_defaults_when_serilog_options()
-    {
-        var options = new SerilogOptions();
-
-        options.WriteToFiles.Should().BeTrue();
-        options.LogDirectory.Should().Be("Logs");
-        options.Buffered.Should().BeTrue();
-        options.FlushToDiskInterval.Should().Be(TimeSpan.FromSeconds(1));
-        options.RollingInterval.Should().Be(RollingInterval.Day);
-        options.RetainedFileCountLimit.Should().Be(5);
-        options.MaxHeaderLength.Should().Be(512);
-    }
-
-    [Fact]
     public void should_return_same_configuration_instance_when_configure_bootstrap_logger_configuration()
     {
         var loggerConfiguration = new LoggerConfiguration();

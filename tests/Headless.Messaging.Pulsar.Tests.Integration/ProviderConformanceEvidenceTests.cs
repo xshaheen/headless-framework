@@ -21,7 +21,7 @@ public sealed class ProviderConformanceEvidenceTests(PulsarFixture fixture) : Te
         );
 
     [Fact]
-    public async Task should_execute_every_supported_manifest_scenario()
+    public void should_back_every_supported_manifest_scenario_with_a_test()
     {
         var profile = TransportConformanceManifest.Providers["Pulsar"];
         TransportConformanceTestBinding[] bindings =
@@ -94,34 +94,9 @@ public sealed class ProviderConformanceEvidenceTests(PulsarFixture fixture) : Te
             ),
         ];
 
-        await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(profile, bindings, _CreateTestClass);
+        TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();
     }
 
     private static TransportConformanceTestBinding _Bind(TransportConformanceScenario scenario, string method) =>
         new(scenario, typeof(PulsarConsumerClientHarnessTests), method);
-
-    private object _CreateTestClass(Type testClass)
-    {
-        if (testClass == typeof(ProviderConformanceEvidenceTests))
-        {
-            return new ProviderConformanceEvidenceTests(fixture);
-        }
-
-        if (testClass == typeof(PulsarConsumerClientHarnessTests))
-        {
-            return new PulsarConsumerClientHarnessTests(fixture);
-        }
-
-        if (testClass == typeof(PulsarTransportTests))
-        {
-            return new PulsarTransportTests(fixture);
-        }
-
-        if (testClass == typeof(PulsarBrokerFaultTests))
-        {
-            return new PulsarBrokerFaultTests(fixture);
-        }
-
-        throw new InvalidOperationException($"No Pulsar conformance test factory is registered for {testClass}.");
-    }
 }

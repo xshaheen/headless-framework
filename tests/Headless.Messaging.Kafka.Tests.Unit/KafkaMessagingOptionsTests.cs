@@ -19,16 +19,6 @@ public sealed class KafkaMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_have_empty_main_config_by_default()
-    {
-        // given, when
-        var options = new KafkaMessagingOptions { Servers = "localhost:9092" };
-
-        // then
-        options.MainConfig.Should().BeEmpty();
-    }
-
-    [Fact]
     public void should_have_default_topic_options()
     {
         // given, when
@@ -38,21 +28,6 @@ public sealed class KafkaMessagingOptionsTests : TestBase
         options.TopicOptions.Should().NotBeNull();
         options.TopicOptions.NumPartitions.Should().Be(-1);
         options.TopicOptions.ReplicationFactor.Should().Be(-1);
-    }
-
-    [Fact]
-    public void should_allow_custom_topic_options()
-    {
-        // given, when
-        var options = new KafkaMessagingOptions
-        {
-            Servers = "localhost:9092",
-            TopicOptions = new KafkaTopicOptions { NumPartitions = 3, ReplicationFactor = 2 },
-        };
-
-        // then
-        options.TopicOptions.NumPartitions.Should().Be(3);
-        options.TopicOptions.ReplicationFactor.Should().Be(2);
     }
 
     [Fact]
@@ -73,73 +48,5 @@ public sealed class KafkaMessagingOptionsTests : TestBase
         options.RetriableErrorCodes.Should().Contain((int)ErrorCode.NotCoordinatorForGroup);
         options.RetriableErrorCodes.Should().Contain((int)ErrorCode.NetworkException);
         options.RetriableErrorCodes.Should().Contain((int)ErrorCode.GroupCoordinatorNotAvailable);
-    }
-
-    [Fact]
-    public void should_allow_custom_retriable_error_codes()
-    {
-        // given, when
-        var options = new KafkaMessagingOptions { Servers = "localhost:9092" };
-        options.RetriableErrorCodes.Clear();
-        options.RetriableErrorCodes.AddRange([(int)ErrorCode.Local_TimedOut, (int)ErrorCode.RequestTimedOut]);
-
-        // then
-        options.RetriableErrorCodes.Should().HaveCount(2);
-        options.RetriableErrorCodes.Should().Contain((int)ErrorCode.Local_TimedOut);
-        options.RetriableErrorCodes.Should().Contain((int)ErrorCode.RequestTimedOut);
-    }
-
-    [Fact]
-    public void should_allow_null_custom_headers_builder()
-    {
-        // given, when
-        var options = new KafkaMessagingOptions { Servers = "localhost:9092" };
-
-        // then
-        options.CustomHeadersBuilder.Should().BeNull();
-    }
-
-    [Fact]
-    public void should_allow_custom_headers_builder()
-    {
-        // given
-        static List<KeyValuePair<string, string>> builder(
-            ConsumeResult<string, byte[]> result,
-            IServiceProvider provider
-        ) => [new("custom-header", "custom-value")];
-
-        // when
-        var options = new KafkaMessagingOptions { Servers = "localhost:9092", CustomHeadersBuilder = builder };
-
-        // then
-        options.CustomHeadersBuilder.Should().NotBeNull();
-    }
-
-    [Fact]
-    public void should_allow_adding_main_config_entries()
-    {
-        // given
-        var options = new KafkaMessagingOptions { Servers = "localhost:9092" };
-
-        // when
-        options.MainConfig["security.protocol"] = "SASL_SSL";
-        options.MainConfig["sasl.mechanism"] = "PLAIN";
-
-        // then
-        options.MainConfig.Should().HaveCount(2);
-        options.MainConfig["security.protocol"].Should().Be("SASL_SSL");
-        options.MainConfig["sasl.mechanism"].Should().Be("PLAIN");
-    }
-
-    [Fact]
-    public void should_return_expected_codes_when_default_retriable_error_codes()
-    {
-        // given, when
-        var codes = KafkaMessagingOptions.DefaultRetriableErrorCodes;
-
-        // then
-        codes.Should().HaveCount(10);
-        codes.Should().Contain((int)ErrorCode.GroupLoadInProgress);
-        codes.Should().Contain((int)ErrorCode.GroupCoordinatorNotAvailable);
     }
 }

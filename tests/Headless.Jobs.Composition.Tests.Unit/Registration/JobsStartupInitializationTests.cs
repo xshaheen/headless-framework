@@ -17,7 +17,6 @@ namespace Tests.Registration;
 /// <c>DisableStartupInitialization()</c> drops the startup work that touches the store, keeps the post-commit worker
 /// able to drain, and is refused while background services would dispatch without the activation drain.
 /// </summary>
-[Collection<JobsHelperCollection>]
 public sealed class JobsStartupInitializationTests : TestBase
 {
     [Fact]

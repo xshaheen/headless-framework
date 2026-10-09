@@ -10,7 +10,6 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
-[Collection<JobsHelperCollection>]
 public sealed class JobSchedulerTests : TestBase
 {
     [Theory]
@@ -766,6 +765,3 @@ public sealed class JobSchedulerTests : TestBase
 
     private sealed class CustomCronJob : CronJobEntity;
 }
-
-[CollectionDefinition(DisableParallelization = true)]
-public sealed class JobsHelperCollection;

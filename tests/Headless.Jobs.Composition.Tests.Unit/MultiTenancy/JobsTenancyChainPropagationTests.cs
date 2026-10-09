@@ -13,7 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Tests.MultiTenancy;
 
-[Collection<JobsHelperCollection>]
 public sealed class JobsTenancyChainPropagationTests : TestBase
 {
     // Signal workers are never started here, but the service owns a channel and a cancellation source.

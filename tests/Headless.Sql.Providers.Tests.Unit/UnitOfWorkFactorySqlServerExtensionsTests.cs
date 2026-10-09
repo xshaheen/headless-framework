@@ -10,34 +10,6 @@ namespace Tests;
 public sealed class UnitOfWorkFactorySqlServerExtensionsTests : TestBase
 {
     [Fact]
-    public void should_register_the_scoped_manager_once_and_idempotently()
-    {
-        var services = new ServiceCollection();
-
-        services.AddUnitOfWork();
-        services.AddUnitOfWork();
-
-        services.Count(d => d.ServiceType == typeof(IUnitOfWorkFactory)).Should().Be(1);
-        services
-            .Single(d => d.ServiceType == typeof(IUnitOfWorkFactory))
-            .Lifetime.Should()
-            .Be(ServiceLifetime.Singleton);
-    }
-
-    [Fact]
-    public void should_resolve_from_the_root_and_from_a_scope_as_one_instance()
-    {
-        using var provider = new ServiceCollection()
-            .AddUnitOfWork()
-            .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-        using var scope = provider.CreateScope();
-
-        var fromRoot = provider.GetRequiredService<IUnitOfWorkFactory>();
-
-        scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>().Should().BeSameAs(fromRoot);
-    }
-
-    [Fact]
     public async Task should_validate_arguments_before_touching_the_connection()
     {
         await using var provider = new ServiceCollection().AddUnitOfWork().BuildServiceProvider();

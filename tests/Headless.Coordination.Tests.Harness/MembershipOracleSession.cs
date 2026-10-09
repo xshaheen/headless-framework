@@ -35,6 +35,7 @@ public sealed class MembershipOracleSession : IMembershipOracleTarget
     public static async Task<MembershipOracleSession> StartAsync(
         ICoordinationOracleFixture fixture,
         MembershipOracleScope scope,
+        bool pruneOnEverySnapshot,
         CancellationToken cancellationToken
     )
     {
@@ -57,7 +58,14 @@ public sealed class MembershipOracleSession : IMembershipOracleTarget
             )
             .ConfigureAwait(false);
 
-        return new MembershipOracleSession(fixture, scope, host, cluster);
+        var session = new MembershipOracleSession(fixture, scope, host, cluster);
+
+        if (pruneOnEverySnapshot)
+        {
+            fixture.PruneOnEverySnapshot(session._store);
+        }
+
+        return session;
     }
 
     public async Task<string> ExecuteAsync(MembershipOracleOp op, CancellationToken cancellationToken)

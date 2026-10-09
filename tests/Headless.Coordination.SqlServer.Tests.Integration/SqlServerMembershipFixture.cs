@@ -62,6 +62,11 @@ public sealed class SqlServerMembershipFixture
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public void PruneOnEverySnapshot(IMembershipStore store)
+    {
+        ((RelationalMembershipStore)store).MinPruneInterval = TimeSpan.Zero;
+    }
+
     public async Task<StoredMembership> ReadRowsAsync(string clusterName, CancellationToken cancellationToken)
     {
         await using var connection = new SqlConnection(ConnectionString);

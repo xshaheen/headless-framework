@@ -8,7 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-[Collection<JobsHelperCollection>]
 public sealed class KeyedJobSchedulingTests : TestBase
 {
     [Fact]

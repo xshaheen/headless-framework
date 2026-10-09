@@ -15,7 +15,6 @@ namespace Tests.Infrastructure;
 /// A job with a cluster-wide limit fails startup, not the first claim, when the host would claim through the portable
 /// CAS path that cannot honor the limit.
 /// </summary>
-[Collection<JobsHelperCollection>]
 public sealed class JobsClusterConcurrencyStartupValidatorTests : TestBase
 {
     [Fact]

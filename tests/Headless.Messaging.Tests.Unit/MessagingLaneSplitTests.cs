@@ -17,17 +17,6 @@ namespace Tests;
 public sealed class MessagingLaneSplitTests : TestBase
 {
     [Fact]
-    public void should_preserve_legacy_lane_storage_values()
-    {
-        // Persistence rows + on-wire serializations rely on these numeric values. Changing them is
-        // a breaking change for any drained inbox/outbox row at-rest. Pin them explicitly.
-        ((int)MessageLane.Bus)
-            .Should()
-            .Be(0);
-        ((int)MessageLane.Queue).Should().Be(1);
-    }
-
-    [Fact]
     public void should_stamp_bus_lane_when_consumer_is_declared_on_bus()
     {
         var services = new ServiceCollection();

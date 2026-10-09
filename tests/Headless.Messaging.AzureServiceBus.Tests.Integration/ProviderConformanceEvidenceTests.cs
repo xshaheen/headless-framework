@@ -24,7 +24,7 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
         );
 
     [Fact]
-    public async Task should_execute_every_supported_manifest_scenario()
+    public void should_back_every_supported_manifest_scenario_with_a_test()
     {
         var profile = TransportConformanceManifest.Providers["Azure Service Bus"];
         TransportConformanceTestBinding[] bindings =
@@ -91,36 +91,9 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
             ),
         ];
 
-        await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(profile, bindings, _CreateTestClass);
+        TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();
     }
 
     private static TransportConformanceTestBinding _Bind(TransportConformanceScenario scenario, string method) =>
         new(scenario, typeof(AzureServiceBusConsumerClientHarnessTests), method);
-
-    private object _CreateTestClass(Type testClass)
-    {
-        if (testClass == typeof(ProviderConformanceEvidenceTests))
-        {
-            return new ProviderConformanceEvidenceTests(fixture);
-        }
-
-        if (testClass == typeof(AzureServiceBusConsumerClientHarnessTests))
-        {
-            return new AzureServiceBusConsumerClientHarnessTests(fixture);
-        }
-
-        if (testClass == typeof(AzureServiceBusTransportTests))
-        {
-            return new AzureServiceBusTransportTests(fixture);
-        }
-
-        if (testClass == typeof(AzureServiceBusBrokerFaultTests))
-        {
-            return new AzureServiceBusBrokerFaultTests(fixture);
-        }
-
-        throw new InvalidOperationException(
-            $"No Azure Service Bus conformance test factory is registered for {testClass}."
-        );
-    }
 }

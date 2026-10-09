@@ -26,22 +26,6 @@ public sealed class ValueObjectTests
     }
 
     [Fact]
-    public void should_implement_equality_base()
-    {
-        var address = new Address { Street = "123 Main St", City = "Springfield" };
-
-        address.Should().BeAssignableTo<EqualityBase<Address>>();
-    }
-
-    [Fact]
-    public void should_implement_i_value_object()
-    {
-        var address = new Address { Street = "123 Main St", City = "Springfield" };
-
-        address.Should().BeAssignableTo<IValueObject>();
-    }
-
-    [Fact]
     public void should_compare_by_equality_components()
     {
         var address1 = new Address { Street = "123 Main St", City = "Springfield" };

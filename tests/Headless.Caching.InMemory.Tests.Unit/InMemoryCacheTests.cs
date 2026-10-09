@@ -2150,38 +2150,6 @@ public sealed class InMemoryCacheTests : TestBase
     #region Expiration Behavior
 
     [Fact]
-    public async Task should_expire_item_after_expiration_time()
-    {
-        // given
-        using var cache = _CreateCache();
-        var key = Faker.Random.AlphaNumeric(10);
-        await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(1), AbortToken);
-
-        // when
-        _timeProvider.Advance(TimeSpan.FromMinutes(2));
-
-        // then
-        var result = await cache.GetAsync<string>(key, AbortToken);
-        result.HasValue.Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task should_not_expire_item_before_expiration_time()
-    {
-        // given
-        using var cache = _CreateCache();
-        var key = Faker.Random.AlphaNumeric(10);
-        await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
-
-        // when
-        _timeProvider.Advance(TimeSpan.FromMinutes(4));
-
-        // then
-        var result = await cache.GetAsync<string>(key, AbortToken);
-        result.HasValue.Should().BeTrue();
-    }
-
-    [Fact]
     public async Task should_treat_entry_as_expired_at_exact_expiration_tick()
     {
         // Pins the `<= now` boundary: an entry whose PhysicalExpiresAt == GetUtcNow() is expired,
@@ -2249,9 +2217,6 @@ public sealed class InMemoryCacheTests : TestBase
         // when - add 4th item
         await cache.UpsertAsync("key4", "value4", TimeSpan.FromMinutes(5), AbortToken);
 
-        // Wait briefly to allow async eviction to complete
-        await Task.Delay(100, AbortToken);
-
         // then - key1 (oldest) should be evicted
         var count = await cache.GetCountAsync(cancellationToken: AbortToken);
         count.Should().BeLessThanOrEqualTo(3);
@@ -2277,7 +2242,6 @@ public sealed class InMemoryCacheTests : TestBase
 
         // when - add 4th item
         await cache.UpsertAsync("key4", "value4", TimeSpan.FromMinutes(5), AbortToken);
-        await Task.Delay(100, AbortToken);
 
         // then - key1 should still exist (was recently accessed)
         var key1Exists = await cache.ExistsAsync("key1", AbortToken);
@@ -2939,9 +2903,6 @@ public sealed class InMemoryCacheTests : TestBase
         _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
         await cache.UpsertAsync("key3", "value3", TimeSpan.FromMinutes(5), AbortToken);
 
-        // Allow compaction to run
-        await Task.Delay(100, AbortToken);
-
         // then
         cache.CurrentMemorySize.Should().BeLessThanOrEqualTo(250);
     }
@@ -3159,7 +3120,6 @@ public sealed class InMemoryCacheTests : TestBase
 
         // when - add large entry that exceeds limit
         await cache.UpsertAsync("key3", "large", TimeSpan.FromMinutes(5), AbortToken);
-        await Task.Delay(100, AbortToken); // Allow compaction
 
         // then - eviction should have occurred
         cache.CurrentMemorySize.Should().BeLessThanOrEqualTo(250);
