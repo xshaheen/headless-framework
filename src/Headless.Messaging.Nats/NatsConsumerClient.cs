@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Net.Sockets;
 using System.Threading.Channels;
 using Headless.Checks;
@@ -37,7 +36,7 @@ internal sealed class NatsConsumerClient(
 
     // Tracks in-flight fire-and-forget handler tasks on the concurrent (groupConcurrent > 0) path so
     // DisposeAsync can drain them before disposing the semaphore and connection.
-    private readonly ConcurrentDictionary<Task, byte> _inFlightHandlers = new();
+    private readonly InFlightHandlerTracker _inFlightHandlers = new();
 
     // Bounded drain budget on shutdown. Aligned with the default AckWait (30s): a handler still
     // running past this would have its message redelivered by JetStream anyway (at-least-once).
@@ -714,7 +713,7 @@ internal sealed class NatsConsumerClient(
                 CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
             );
 
-            _TrackBackgroundHandler(handlerTask);
+            _inFlightHandlers.Track(handlerTask);
             _ObserveBackgroundHandler(handlerTask);
         }
         else
@@ -742,18 +741,6 @@ internal sealed class NatsConsumerClient(
                 LogType = MqLogType.AsyncErrorEvent,
                 Reason = $"NATS in-progress acknowledgement failed: {exception}",
             }
-        );
-    }
-
-    private void _TrackBackgroundHandler(Task task)
-    {
-        _inFlightHandlers[task] = 0;
-        _ = task.ContinueWith(
-            static (completed, state) => ((ConcurrentDictionary<Task, byte>)state!).TryRemove(completed, out _),
-            _inFlightHandlers,
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default
         );
     }
 
@@ -1104,32 +1091,21 @@ internal sealed class NatsConsumerClient(
         // running handler does not Ack/Nak on a disposed connection. Bounded so a stuck handler cannot
         // block shutdown indefinitely; any handler still running past the budget has its Ack/Nak
         // swallowed and the message is redelivered (at-least-once).
-        var inFlight = _inFlightHandlers.Keys.ToArray();
-        if (inFlight.Length > 0)
+        try
         {
-            try
-            {
-                if (timeout <= TimeSpan.Zero)
+            await _inFlightHandlers.DrainAsync(timeout, _timeProvider).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Handler faults are already surfaced via _ObserveBackgroundHandler; on a drain timeout
+            // or fault, log and proceed — disposal must never block or throw.
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
                 {
-                    throw new TimeoutException("The shared messaging shutdown deadline has expired.");
+                    LogType = MqLogType.ExceptionReceived,
+                    Reason = $"Timed out or faulted draining in-flight handlers during shutdown: {ex}",
                 }
-
-                await Task.WhenAll(inFlight)
-                    .WaitAsync(timeout, _timeProvider, CancellationToken.None)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                // Handler faults are already surfaced via _ObserveBackgroundHandler; on a drain timeout
-                // or fault, log and proceed — disposal must never block or throw.
-                OnLogCallback?.Invoke(
-                    new LogMessageEventArgs
-                    {
-                        LogType = MqLogType.ExceptionReceived,
-                        Reason = $"Timed out or faulted draining in-flight handlers during shutdown: {ex}",
-                    }
-                );
-            }
+            );
         }
 
         ReceiveTokenState? receiveTokenStateToDispose = null;

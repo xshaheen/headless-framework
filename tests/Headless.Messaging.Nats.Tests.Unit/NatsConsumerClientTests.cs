@@ -1117,15 +1117,14 @@ public sealed class NatsConsumerClientTests : TestBase
             _serviceProvider,
             timeProvider: timeProvider
         );
-        var inFlightHandlers =
-            (ConcurrentDictionary<Task, byte>)
-                typeof(NatsConsumerClient)
-                    .GetField(
-                        "_inFlightHandlers",
-                        BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
-                    )!
-                    .GetValue(client)!;
-        inFlightHandlers.TryAdd(stuckHandler.Task, 0).Should().BeTrue();
+        var inFlightHandlers = (InFlightHandlerTracker)
+            typeof(NatsConsumerClient)
+                .GetField(
+                    "_inFlightHandlers",
+                    BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                )!
+                .GetValue(client)!;
+        inFlightHandlers.Track(stuckHandler.Task);
 
         var shutdown = client.ShutdownAsync(TimeSpan.FromSeconds(2), AbortToken).AsTask();
         shutdown.IsCompleted.Should().BeFalse();
