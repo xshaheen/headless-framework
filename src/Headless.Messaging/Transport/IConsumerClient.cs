@@ -6,7 +6,7 @@ namespace Headless.Messaging.Transport;
 /// <remarks>
 /// <b>Evolution policy:</b> this is a transport-provider extension point, so it evolves additively.
 /// New members ship as default interface methods with a behavior-preserving fallback (see
-/// <see cref="ShutdownAsync"/> and <see cref="WaitUntilReadyAsync"/>); existing member signatures
+/// <see cref="ShutdownAsync"/>, <see cref="WaitUntilReadyAsync"/>, and <see cref="DeadLetterAsync"/>); existing member signatures
 /// do not change within a major version, so custom transport implementations keep compiling
 /// across minor releases and may override new defaults when they can do better.
 /// </remarks>
@@ -108,6 +108,38 @@ public interface IConsumerClient : IAsyncDisposable
     /// <param name="cancellationToken">Token to cancel the reject operation. Implementations may treat reject as must-complete.</param>
     /// <returns>A task that represents the asynchronous reject operation</returns>
     ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Settles a message the core will never deliver to a consumer, such as one no consumer handles or one that cannot
+    /// be read, by moving it to the broker's dead-letter destination with a reason. The core calls it after it recorded
+    /// the message as poisoned on arrival.
+    /// </summary>
+    /// <remarks>
+    /// The default commits the message, as the core did before transports could dead-letter, so a transport without a
+    /// dead-letter destination keeps working unchanged. Override it when the broker can keep the message aside: the copy
+    /// there lets broker-native tooling inspect or move the message, while the core's own poison record stays the source
+    /// for dashboards and replay. A transport that cannot attach <paramref name="reason"/> or
+    /// <paramref name="description"/> to the dead-lettered message may drop them.
+    /// </remarks>
+    /// <param name="sender">
+    /// The transport-specific settlement token, exactly as passed to <see cref="OnMessageCallback"/>; see
+    /// <see cref="CommitAsync"/>.
+    /// </param>
+    /// <param name="reason">A short, stable reason code, such as <c>SubscriberNotFound</c>.</param>
+    /// <param name="description">A human-readable explanation, or <see langword="null"/> when there is none.</param>
+    /// <param name="cancellationToken">
+    /// Token to cancel the operation. Implementations may treat dead-lettering as must-complete.
+    /// </param>
+    /// <returns>A task that represents the asynchronous dead-letter operation.</returns>
+    ValueTask DeadLetterAsync(
+        object? sender,
+        string reason,
+        string? description,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return CommitAsync(sender, cancellationToken);
+    }
 
     /// <summary>
     /// Pauses message consumption. Idempotent — calling on an already-paused client is a no-op.

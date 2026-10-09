@@ -96,7 +96,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer. One exception: an app on NATS that also uses NATS directly (key-value store, object store) registers its own connection and hands it to Headless with `NatsMessagingOptions.UseConnection(...)` instead of opening a second one. See [Headless.Messaging.Nats](#headlessmessagingnats).
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` and leave the consumer's `Concurrency` at 1 for strict ordering.
 - **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
-- **AWS SQS redrive is external**: Configure a dead-letter queue and redrive policy with a bounded receive count for handler failures. Headless terminally deletes malformed transport envelopes to prevent requeue storms and does not provision redrive infrastructure.
+- **AWS SQS redrive is external**: Configure a dead-letter queue and redrive policy with a bounded receive count for handler failures. Headless terminally deletes malformed transport envelopes and messages poisoned on arrival to prevent requeue storms, and does not provision redrive infrastructure: SQS moves a message to a dead-letter queue only after `maxReceiveCount` receives, so dead-lettering a poisoned message would re-run its poison handling that many times, with no way to attach a reason.
 - **Message-name mapping**: `m.Message<TMessage>("message.name")` is the normal way to name a message. `setup.WithMessageNameMapping<TMessage>("message.name")` is a type-global name mapping without a version or lane settings; with neither, the name comes from `UseConventions(...)` (the type name by default).
 - **Fail-fast defaults**: Duplicate consumer identities and duplicate runtime subscriptions are rejected by default. Anonymous runtime delegates must set `RuntimeSubscriptionOptions.HandlerId`.
 - **Telemetry parity**: Existing diagnostic listener and metric names stay stable across direct publish, outbox publish, and runtime subscriptions.
@@ -120,8 +120,8 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Retry pressure is quadrant-isolated**: Published-Bus, Published-Queue, Received-Bus, and Received-Queue own independent atomic claims, workers, lock resources, counters, failure state, cadence, and adaptive interval. `IRetryProcessorMonitor` remains an aggregate compatibility projection (maximum interval, backed off when any quadrant is backed off, reset all four); that aggregate never drives runtime scheduling or lock TTL.
 - **Distributed lock**: see [Distributed Lock Integration](#distributed-lock-integration) for when to enable, when to skip, and the two-layer model (per-row `LockedUntil` lease + coarse-grained distributed lock).
 - **Never write framework metadata through provider hatches**. For publish options, use typed properties; raw `Headers.TenantId` is accepted only by the tenant-integrity path and should not be authored directly.
-- **Treat provider hatches as physical broker routing/configuration**. Message-side hatches live only on the lane builders of a contract: `.OnBus(b => b.UseNats(...) / .UseAzureServiceBus(...) / .UseAws(...))` and `.OnQueue(q => q.UseNats(...) / .UseAzureServiceBus(...) / .UseAws(...) / .UseKafka(...))`. Consumer-side hatches live only on `Tune(identity, c => ...)`: `c.UseRabbitMq(...)`, `c.UseKafka(...)`, and `c.UseNats(...)`.
-- **Kafka, RabbitMQ, and NATS expose consumer-side hatches**. AWS and Azure Service Bus expose message-side hatches only.
+- **Treat provider hatches as physical broker routing/configuration**. Message-side hatches live only on the lane builders of a contract: `.OnBus(b => b.UseNats(...) / .UseAzureServiceBus(...) / .UseAws(...))` and `.OnQueue(q => q.UseNats(...) / .UseAzureServiceBus(...) / .UseAws(...) / .UseKafka(...))`. Consumer-side hatches live only on `Tune(identity, c => ...)`: `c.UseRabbitMq(...)`, `c.UseKafka(...)`, `c.UseNats(...)`, and `c.UsePulsar(...)`.
+- **Kafka, RabbitMQ, NATS, and Pulsar expose consumer-side hatches**. AWS and Azure Service Bus expose message-side hatches only.
 - **Keep this canonical guide aligned with public messaging behavior.** Package READMEs remain small discovery pages and do not mirror this reference.
 
 ## Core Concepts
@@ -202,7 +202,7 @@ Two unit-of-work behaviors are documented, not defects. `IUnitOfWork.OnCompleted
 | InMemory | One copy per consumer identity | One owned copy | Yes | None | None | In-process reply channel |
 | Kafka | No | Topic; Kafka consumer group named after the message | Not applicable; Queue-only | `OnQueue` only: `UseKafka(k => k.PartitionBy(...))` | `UseKafka(k => k.WithIsolationLevel(...))` | No; startup fails |
 | NATS | Interest-retained lane stream, one durable per consumer identity | Work-queue-retained lane stream | Yes | `UseNats(n => n.SubjectShard(...))` | `UseNats(n => n.Sharded())` | Core NATS subject outside JetStream |
-| Pulsar | Lane topic + identity subscription | Lane topic + owned subscription | Yes | None | None | Not yet; startup fails |
+| Pulsar | Lane topic + identity subscription | Lane topic + owned subscription | Yes | None | `UsePulsar(p => p.KeyShared().DeadLetter(...).AckTimeout(...))` | Not yet; startup fails |
 | RabbitMQ | Lane topic exchange, one queue per consumer identity | Lane direct exchange | Yes | None | `UseRabbitMq(r => r.PrefetchCount(...))` | Exclusive reply queue |
 | Redis | Lane Redis Stream + Redis consumer group named after the identity | Lane Redis Stream + Redis consumer group named after the message | Yes | None | None | Pub/sub channel |
 
@@ -543,6 +543,7 @@ On the Bus lane, derive the broker-legal subscription name from the identity wit
 - **`SubscribeAsync`** binds the client's subscription (the Bus consumer identity's subscription name, or the Queue message's destination) to the names `FetchMessageNamesAsync` resolved. Pass the linked per-client token through subscription and topology operations, with the same cancellation-aware wait rule.
 - **`ListeningAsync`** owns the long-running receive loop. For every delivery, build a `TransportMessage`, leave `Headers.ConsumerIdentity` alone (Core stamps it on receipt and overwrites any value the transport or publisher set), and pass a broker-specific commit token to `OnMessageCallback(message, commitToken)`. Do not swallow `OnMessageCallback` exceptions; Core decides whether to commit, reject, retry, or trip the circuit breaker.
 - **`CommitAsync` and `RejectAsync`** map the callback token back to broker semantics: ack or nack, delete or abandon, commit or seek, complete, dead-letter, or requeue. If the broker cannot reject, make that explicit and implement the best available no-op or requeue behavior.
+- **`DeadLetterAsync(sender, reason, description)`** settles a message poisoned on arrival after Core stored its poison row. Core calls it only for the delivery that stored the row; a redelivery of a message already recorded terminal is committed, so the dead-letter destination holds one copy per poisoned message. The default implementation calls `CommitAsync`, so a transport without a dead-letter destination needs no change. Override it when the broker can keep the message aside, and attach `reason` and `description` when the broker can carry them. Reason codes: `SubscriberNotFound`, `ReceiveRejected` (a receive middleware's `Reject`), `DeserializationFailed`, and `ReceiveFailed` (a contract-version mismatch, a receive middleware fault, or an undeclared outcome). An explicit `Reject` is `ReceiveRejected` whatever cause it carries. The description is the sanitized exception message capped at 1024 characters, except for `ReceiveFailed`, which carries only the exception type, because a middleware's own exception message can echo header values such as a signature or token.
 - **`PauseAsync` and `ResumeAsync`** serve circuit-breaker backpressure. They must be idempotent, safe to call concurrently, and stop new message pulls once `PauseAsync` returns. In-flight deliveries may complete. Pause and resume keep the long-running listener alive; a provider may cancel an in-flight broker receive to reach its pause gate, but it must install fresh receive state before reopening the gate.
 - **`OnLogCallback`** emits `MqLogType` events for connection failures, broker shutdown, consumer registration and cancellation, and receive-loop errors. Core relies on them to keep transport health and restart behavior accurate.
 - **`DisposeAsync`** disposes only resources owned by that client instance, never shared pools or connections still used elsewhere in the package.
@@ -1345,7 +1346,7 @@ With the framework default, a message that keeps failing runs 3 attempts at once
 - a fail rule or the built-in permanent set matches;
 - the payload fails to deserialize at execution;
 - the stored message's consumer is no longer registered;
-- the message is poisoned on arrival (rejected before any consume attempt; the callback gets no storage id).
+- the message is poisoned on arrival (rejected before any consume attempt; the callback gets no storage id). The transport message is dead-lettered with a reason code where the transport supports it (Azure Service Bus, RabbitMQ with a dead-letter exchange, and NATS JetStream, which terminates it) and committed elsewhere; the poison row stays the record the dashboard shows and re-executes.
 
 An every-instance consumer has no failure policy and never calls `OnExhausted`; see [Every-instance Bus delivery](#every-instance-bus-delivery).
 
@@ -1661,7 +1662,7 @@ Receive middleware intercepts the raw transport envelope (`ReceiveContext.Header
 - **Outcome ownership:** `ConsumerRegister` owns all transport settlement, storage writes, and circuit-breaker signals:
   - `Accept`: `next()` completes; persists admitted message, commits transport, dispatches to consumer.
   - `Skip`: commits transport, drops message without storage rows or `OnExhausted`.
-  - `Reject`: stores received-exception poison row (`data:` URI), commits transport, fires `OnExhausted`. Explicit policy `Reject(reason, cause)` releases the circuit-breaker probe without reporting failure; thrown exceptions or undeclared outcomes report breaker failures.
+  - `Reject`: stores received-exception poison row (`data:` URI), dead-letters the transport message with reason `ReceiveRejected` (`IConsumerClient.DeadLetterAsync`, which commits on a transport without a dead-letter destination; a redelivery of a message whose row already exists is committed instead), fires `OnExhausted`. Explicit policy `Reject(reason, cause)` releases the circuit-breaker probe without reporting failure; thrown exceptions or undeclared outcomes report breaker failures.
   - `Cancelled`: bound `OperationCanceledException` requeues delivery without storage rows.
   - `Post-success throw`: exception after `next()` succeeds is logged and suppressed, preserving the accepted delivery.
 - **Ordering rule:** byte-exact verification middleware (HMAC/signature) must register with lower `Priority` than any body-transforming middleware (`ReplaceBody`/`SetHeader`), because `ReceiveContext` deliberately exposes only the current transformed envelope.
@@ -2187,7 +2188,7 @@ Registers SNS/SQS clients, bus/queue transports, and AWS consumer client service
 
 Headless disables Azure SDK auto-complete internally and settles messages explicitly after durable receive storage and handler outcome.
 
-Structurally malformed envelopes, including envelopes with missing or invalid required Messaging headers, are terminally completed after sanitized logging to prevent poison redelivery. Retryable handler or custom-header hook failures are not classified as terminal malformed failures; they remain unsettled or are abandoned according to the runtime failure path.
+Structurally malformed envelopes, including envelopes with missing or invalid required Messaging headers, are moved to the entity's dead-letter subqueue after sanitized logging, with `DeadLetterReason` `MalformedEnvelope` and the exception type as `DeadLetterErrorDescription`; they never reach Core, so the subqueue is the only record of them. A message poisoned on arrival in Core is dead-lettered the same way, with Core's reason code (`SubscriberNotFound`, `ReceiveRejected`, `DeserializationFailed`, or `ReceiveFailed`) and its description. Retryable handler or custom-header hook failures are not classified as terminal malformed failures; they remain unsettled or are abandoned according to the runtime failure path.
 
 ### Install
 
@@ -2414,7 +2415,7 @@ While a delivery waits for a handler slot and runs its receive stage (receive mi
 
 Reject sends a `NAK` with a redelivery delay of about one second for the first delivery, doubling with each redelivery to 30 seconds and jittered. The core rejects every delivery while a consumer's circuit is open or its half-open probe is out, and a plain `NAK` would redeliver on the next pull, so without the delay those deliveries would spin.
 
-A malformed transport envelope (a missing message ID or name, unreadable headers) is terminated with `AckTerminate`, not acknowledged, so the consumer's statistics count it and JetStream publishes a `MSG_TERMINATED` advisory for it. On NATS server 2.10.4 and later the terminate carries the reason (`malformed headless envelope: <exception type>`); an older server ignores a terminate with a reason, so the consumer sends a plain one there.
+A malformed transport envelope (a missing message ID or name, unreadable headers) is terminated with `AckTerminate`, not acknowledged, so the consumer's statistics count it and JetStream publishes a `MSG_TERMINATED` advisory for it. On NATS server 2.10.4 and later the terminate carries the reason (`malformed headless envelope: <exception type>`); an older server ignores a terminate with a reason, so the consumer sends a plain one there. A message Core poisons on arrival is terminated the same way, with Core's reason code and description (`SubscriberNotFound: <description>`) as the reason; JetStream has no dead-letter queue, so the `MSG_TERMINATED` advisory is where it can still be found, and Core's poison row stays the record the dashboard shows.
 
 `Tune(identity, c => c.UseNats(nats => ...))` sets one consumer's JetStream limits on each of its durables. They apply after `NatsMessagingOptions.ConsumerOptions`, so a consumer's own limit wins over the host-wide callback; neither may change the durable name, filter subject, or delivery policy.
 
@@ -2506,13 +2507,14 @@ Registers NATS connection pool, transports, consumer factory, stream provisionin
 - TLS-related options through provider configuration.
 - Configurable negative-ack redelivery with a one-minute default and a validated 100-millisecond minimum.
 - Producer settings through `PulsarMessagingOptions.Producer`: compression, batching and its publish delay, and send timeout.
+- Consumer hatch: `Tune(identity, c => c.UsePulsar(pulsar => pulsar.KeyShared().DeadLetter(maxRedeliveryCount: 5).AckTimeout(TimeSpan.FromMinutes(1))))`.
 - Shutdown lets in-flight handlers settle within the shutdown budget (30 seconds on a plain dispose) before it closes the consumer.
 - Consumer startup honors host cancellation while acquiring the client and subscribing, while preserving configured timeouts.
 - Request/reply is not supported yet: a host that sends requests or declares a responder fails startup until the provider's reply channel ships. See [Request/reply](#requestreply).
 
 ### Design constraints
 
-Bus topics insert `headless-bus-` before the local topic name and use one lane-qualified `headless-bus-{consumer-identity}` subscription per consumer identity. Queue topics insert `headless-queue-` and use one owned `headless-queue` subscription per physical topic. Replicas within a subscription compete; distinct Bus consumer identities each receive one copy. Malformed transport envelopes are terminally acknowledged so they cannot create negative-ack redelivery storms. A handler still running when the shutdown budget runs out never acknowledges its message, so the broker redelivers it after the consumer closes (at-least-once). Negative-ack redelivery uses one fixed delay: Pulsar.Client 3.19 has no redelivery backoff. The package has no consumer hatch yet, so `Key_Shared` subscriptions, dead-letter policies, and ack timeouts are not configurable. Message chunking is not offered: with Pulsar.Client 3.19.4 a chunked message read through a `Shared` subscription, which every competing and Bus consumer uses, arrives truncated to its first chunk. Keep payloads under the broker's `maxMessageSize` (5 MB by default).
+Bus topics insert `headless-bus-` before the local topic name and use one lane-qualified `headless-bus-{consumer-identity}` subscription per consumer identity. Queue topics insert `headless-queue-` and use one owned `headless-queue` subscription per physical topic. Replicas within a subscription compete; distinct Bus consumer identities each receive one copy. Malformed transport envelopes are terminally acknowledged so they cannot create negative-ack redelivery storms. A handler still running when the shutdown budget runs out never acknowledges its message, so the broker redelivers it after the consumer closes (at-least-once). Negative-ack redelivery uses one fixed delay: Pulsar.Client 3.19 has no redelivery backoff. Producers batch by key (`BatchBuilder.KeyBased`): the broker dispatches a batch whole, by its first message's key, so a batch holds one key and a `Key_Shared` subscription still places every message by its own key. Message chunking is not offered: with Pulsar.Client 3.19.4 a chunked message read through a `Shared` subscription, which every competing and Bus consumer uses, arrives truncated to its first chunk. Keep payloads under the broker's `maxMessageSize` (5 MB by default).
 
 ### Install
 
@@ -2532,11 +2534,32 @@ services.ConfigureMessaging(messaging =>
 
 A `[BusConsumer("orders.projection")]` consumer of `OrderPlaced` subscribes as `headless-bus-orders.projection`.
 
+```csharp
+setup.Tune("orders.projection", consumer => consumer.UsePulsar(pulsar => pulsar
+    .KeyShared()
+    .DeadLetter(maxRedeliveryCount: 5)
+    .AckTimeout(TimeSpan.FromMinutes(1))));
+```
+
 ### Configuration
 
-`RoutingAffinityKey` on publish/enqueue options maps to the native Pulsar message key on registered Bus and Queue routes. The optional `PulsarMessagingHeaders.PulsarKey` adapter must agree. The configured client uses its built-in key hashing; Headless adds no key-length limit beyond broker message limits. Keep routing configuration and partition topology fixed while relying on placement. This does not select a `Key_Shared` subscription, guarantee FIFO, or prevent concurrent handling.
+`RoutingAffinityKey` on publish/enqueue options maps to the native Pulsar message key on registered Bus and Queue routes. The optional `PulsarMessagingHeaders.PulsarKey` adapter must agree. The configured client uses its built-in key hashing; Headless adds no key-length limit beyond broker message limits. Keep routing configuration and partition topology fixed while relying on placement. The key alone does not select a `Key_Shared` subscription, guarantee FIFO, or prevent concurrent handling; the consumer hatch below selects `Key_Shared`.
 
 Configure service URL, authentication, TLS, negative-ack redelivery, and producer settings through `PulsarMessagingOptions`. `Producer` applies to every producer the transport creates, and each default matches Pulsar.Client: `CompressionType` (`None`; also `LZ4`, `ZLib`, `ZStd`, `Snappy`, decompressed transparently by consumers), `EnableBatching` (`true`), `BatchingMaxPublishDelay` (1 ms; each publish waits for its own send, so a longer delay adds up to that much latency per publish in exchange for larger batches), and `SendTimeout` (30 seconds; `TimeSpan.Zero` waits indefinitely, and a send that times out fails the publish). `NegativeAckRedeliveryDelay` defaults to one minute and must be at least 100 milliseconds; smaller values fail startup validation instead of being silently clamped by Pulsar.Client.
+
+The consumer hatch, `Tune(identity, c => c.UsePulsar(...))`, sets three options. Each `UsePulsar` call replaces the Pulsar settings of an earlier one for the same consumer.
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `KeyShared()` | `Shared` subscription | Subscribes with `Key_Shared` and an auto-split key hash range: the broker sends every message with one key (the publish-side `RoutingAffinityKey`) to the same consumer, in publish order. An every-instance consumer subscribes exclusively, so `KeyShared()` on one fails its creation with `InvalidOperationException` |
+| `DeadLetter(maxRedeliveryCount, deadLetterTopic = null)` | No dead-letter policy; a rejected message is redelivered forever | After `maxRedeliveryCount` redeliveries the message moves to `deadLetterTopic`, by default `{topic}-{subscription}-DLQ` for each subscribed topic. `maxRedeliveryCount` must be positive |
+| `AckTimeout(TimeSpan)` | Off, or 30 seconds with `DeadLetter` | Pulsar.Client asks the broker to redeliver a message still unacknowledged after the timeout. Must be at least one second, the shortest Pulsar.Client accepts |
+
+- **`DeadLetter` without `AckTimeout` turns on a 30-second ack timeout.** Pulsar.Client 3.19.4 sets it whenever a dead-letter policy is present and the ack timeout is zero.
+- **Broker redeliveries come only from failures to admit a message.** The consumer rejects a message only when the messaging core cannot admit it, for example while storage is down or the consumer's circuit breaker is open. A handler failure retries from storage, so it never counts toward `maxRedeliveryCount`. A dead-lettered message was never stored, and nothing in the framework consumes the dead-letter topic.
+- **`AckTimeout` bounds admission, not handler time.** The consumer acknowledges a message once the core has stored or skipped it, before the handler runs.
+- **`Key_Shared` keeps per-key order only up to the consumer client.** Handlers run in key order only with `Concurrency(1)` and a single dispatcher thread.
+- **Every consumer of one subscription must set the same options.** The Queue subscription (`headless-queue`) is shared by every consumer of the queue message in every process, and the broker refuses a consumer whose subscription type differs from the one already attached. Two consumers of one subscription in the same host with different Pulsar options fail creation with `InvalidOperationException`.
 
 ### Runtime behavior
 
@@ -2592,7 +2615,7 @@ Configure host, credentials, exchange, queue arguments, QoS defaults, and custom
 | --- | --- | --- |
 | `PublishConfirms` | `true` | Publish waits for the broker acknowledgement; a negative acknowledgement or an unroutable Queue-lane return fails it |
 | `AutoProvision` | `true` | `false` declares every exchange and shared queue passively (a missing one fails with `NOT_FOUND`) and creates no binding, for topology managed outside the application. An every-instance consumer's exclusive queue and the request/reply queue are per-process and are still declared and bound |
-| `QueueArguments.EnableDeadLettering` | `false` | Each shared queue dead-letters to the direct exchange `{lane exchange}.dlx` (for example `myapp.events.queue.dlx`) with the queue name as routing key, into a durable `{queue}.dlq` queue the transport declares and binds. Malformed envelopes, messages whose `MessageTTL` expires, and messages past `DeliveryLimit` land there instead of being dropped. Nothing in the framework consumes a dead-letter queue: inspect, shovel, or purge it with broker tooling |
+| `QueueArguments.EnableDeadLettering` | `false` | Each shared queue dead-letters to the direct exchange `{lane exchange}.dlx` (for example `myapp.events.queue.dlx`) with the queue name as routing key, into a durable `{queue}.dlq` queue the transport declares and binds. Malformed envelopes, messages Core poisons on arrival, messages whose `MessageTTL` expires, and messages past `DeliveryLimit` land there instead of being dropped. AMQP's reject carries no reason, so a dead-lettered copy's `x-death` header records `rejected`; Core's reason code stays in its poison row. Nothing in the framework consumes a dead-letter queue: inspect, shovel, or purge it with broker tooling |
 | `QueueArguments.DeliveryLimit` | `null` | Sets `x-delivery-limit`: how many times a quorum queue redelivers a returned message before dropping it, or dead-lettering it with `EnableDeadLettering`. Requires `QueueType = "quorum"`; must be greater than 0. RabbitMQ 4.x quorum queues apply a broker default of 20 when it is unset |
 
 RabbitMQ never changes the arguments of an existing queue: changing `EnableDeadLettering`, `DeliveryLimit`, `QueueType`, `QueueMode`, or `MessageTTL` for a queue that already exists fails its declare with `PRECONDITION_FAILED`. Delete the queue, or apply the setting by broker policy instead.
@@ -2623,6 +2646,7 @@ Registers RabbitMQ connection/channel pool, bus/queue transport, consumer client
 - A pending entry, read and not acknowledged, is claimed by another consumer of the group once it has been idle for `PendingClaimMinIdleTime` (60 s by default), so a crashed consumer's entries move on within a minute.
 - A rejected delivery stays pending in its place in the stream and is delivered again by that claim; the stream does not grow and the entry keeps its position.
 - Each publish trims, approximately, the entries older than `StreamMaxAge` (7 days by default) from its stream.
+- A message published to an idle stream is read within a round trip, not at the consumer's next poll: each publish announces its entry on the stream's pub/sub wake channel, and consumers subscribed to it read at once (`WakeConsumersOnPublish`, on by default).
 - Streams consumer startup honors host cancellation through connection, provisioning, and subscription.
 - Request/reply over pub/sub on the literal channel `headless.reply.{32 hex}`; replies write no key, and every host that exchanges requests must use the same `ChannelPrefix`. See [Request/reply](#requestreply).
 
@@ -2654,6 +2678,7 @@ Configure Redis connection and Stream behavior through `RedisMessagingOptions`:
 | `PendingClaimMinIdleTime` | 60 s | How long an entry stays pending before another consumer claims it with `XAUTOCLAIM`. Must be positive. |
 | `IdleConsumerDeleteAfter` | 1 hour | How long a consumer with no pending entries stays idle before it is deleted from its group. `TimeSpan.Zero` keeps every consumer. |
 | `StreamMaxAge` | 7 days | Age past which each publish trims entries from its stream with `XADD MINID ~`. `TimeSpan.Zero` keeps entries without an age limit; otherwise it must exceed `PendingClaimMinIdleTime`. |
+| `WakeConsumersOnPublish` | `true` | Each publish follows its `XADD` with a fire-and-forget `PUBLISH` on `{stream}:wake`, and consumers subscribed to that channel read the stream at once instead of at their next poll. `false` stops this process from publishing and subscribing to wake-ups. |
 | `ConnectionPoolSize` | `10` | Multiplexers in the shared connection pool. |
 
 Trade-offs and limits:
@@ -2661,6 +2686,7 @@ Trade-offs and limits:
 - **Pending window.** A durable consumer acknowledges an entry once the core admits it into the inbox, before its handler runs, so `PendingClaimMinIdleTime` bounds admission, not handler duration. A runtime subscription, which has no consumer identity, acknowledges after an inline handler returns; set the option above that handler's longest run. Keep the time the core takes to admit one batch of `StreamEntriesCount` entries well below it, or another consumer claims entries still waiting their turn and the inbox discards the duplicates.
 - **Retention is not acknowledgement-aware.** Trimming removes an entry whether or not a group read or acknowledged it, so a group offline longer than `StreamMaxAge` misses the trimmed entries, and an entry that keeps failing admission is dropped once it is older than `StreamMaxAge`. The age is measured against the publishing process's clock. Approximate trimming removes whole internal nodes only, so entries can outlive the limit slightly; it never removes them early. No length cap (`MAXLEN`) is applied.
 - **Every-instance reads.** A group-less every-instance reader that falls further behind than `StreamMaxAge` skips the trimmed entries.
+- **Reads of new entries poll, woken by publishes.** StackExchange.Redis never sends a blocking `XREADGROUP BLOCK` over its shared multiplexer, so each consumer polls its streams at the core's consumer poll interval and reads on at once while a read returns a full batch. With `WakeConsumersOnPublish`, a publish ends that wait early. An idle stream costs no extra commands. Each publish costs one `PUBLISH`, which a Redis Cluster forwards to every node, and wakes every poll loop subscribed to the stream (one per consumer group per process, plus each every-instance consumer) for one read; under steady traffic a loop reads at most once every 50 milliseconds, so a busy stream adds at most 20 reads a second per loop. Pub/sub delivers at most once, so a wake-up lost during a disconnect only delays an entry to the next poll. The wake-up needs `PUBLISH` and `SUBSCRIBE` on the `{stream}:wake` channels; where an ACL denies them, set `WakeConsumersOnPublish` to `false`, or consumers log one warning and keep polling. Set the same value on every process: a publisher with wake-ups off leaves consumers to their poll.
 
 ### Runtime behavior
 

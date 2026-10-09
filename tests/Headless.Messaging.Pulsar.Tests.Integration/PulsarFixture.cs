@@ -66,6 +66,23 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
         );
     }
 
+    /// <summary>Opens a Queue session whose consumer subscribes with the tuned Pulsar consumer options.</summary>
+    internal ValueTask<TransportConsumerConformanceSession> CreateTunedQueueSessionAsync(
+        string destination,
+        PulsarConsumerConfig consumerConfig,
+        CancellationToken cancellationToken
+    )
+    {
+        return CreateSessionAsync(
+            ConnectionString,
+            MessageLane.Queue,
+            cancellationToken,
+            destination,
+            createReplacement: false,
+            consumerConfig: consumerConfig
+        );
+    }
+
     public ValueTask<TransportConsumerConformanceSession> CreateMalformedSessionAsync(
         string destination,
         string group,
@@ -91,7 +108,8 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
         bool createReplacement = true,
         bool failEnvelopeBuild = false,
         ConsumerClientRequest? request = null,
-        Action<PulsarMessagingOptions>? configureOptions = null
+        Action<PulsarMessagingOptions>? configureOptions = null,
+        PulsarConsumerConfig? consumerConfig = null
     )
     {
         destination ??= $"persistent://public/default/conf-{Guid.NewGuid():N}";
@@ -135,6 +153,7 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
                 options,
                 client,
                 request,
+                consumerConfig,
                 transportMessageFactory: transportMessageFactory
             );
 #pragma warning restore CA2000
@@ -161,7 +180,8 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
                                 createReplacement: false,
                                 failEnvelopeBuild,
                                 request,
-                                configureOptions
+                                configureOptions,
+                                consumerConfig
                             )
                         : null
                 );

@@ -126,6 +126,7 @@ public sealed class ConnectionFactoryTests : TestBase
             configuration.BatchingEnabled.Should().BeFalse();
             configuration.BatchingMaxPublishDelay.Should().Be(TimeSpan.FromMilliseconds(20));
             configuration.SendTimeout.Should().Be(TimeSpan.FromSeconds(5));
+            configuration.BatchBuilder.Should().Be(Pulsar.Client.Common.BatchBuilder.KeyBased);
         }
         finally
         {

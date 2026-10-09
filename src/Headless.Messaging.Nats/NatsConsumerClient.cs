@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Net.Sockets;
 using System.Threading.Channels;
 using Headless.Checks;
@@ -37,7 +36,7 @@ internal sealed class NatsConsumerClient(
 
     // Tracks in-flight fire-and-forget handler tasks on the concurrent (groupConcurrent > 0) path so
     // DisposeAsync can drain them before disposing the semaphore and connection.
-    private readonly ConcurrentDictionary<Task, byte> _inFlightHandlers = new();
+    private readonly InFlightHandlerTracker _inFlightHandlers = new();
 
     // Bounded drain budget on shutdown. Aligned with the default AckWait (30s): a handler still
     // running past this would have its message redelivered by JetStream anyway (at-least-once).
@@ -714,7 +713,7 @@ internal sealed class NatsConsumerClient(
                 CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
             );
 
-            _TrackBackgroundHandler(handlerTask);
+            _inFlightHandlers.Track(handlerTask);
             _ObserveBackgroundHandler(handlerTask);
         }
         else
@@ -742,18 +741,6 @@ internal sealed class NatsConsumerClient(
                 LogType = MqLogType.AsyncErrorEvent,
                 Reason = $"NATS in-progress acknowledgement failed: {exception}",
             }
-        );
-    }
-
-    private void _TrackBackgroundHandler(Task task)
-    {
-        _inFlightHandlers[task] = 0;
-        _ = task.ContinueWith(
-            static (completed, state) => ((ConcurrentDictionary<Task, byte>)state!).TryRemove(completed, out _),
-            _inFlightHandlers,
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default
         );
     }
 
@@ -900,7 +887,10 @@ internal sealed class NatsConsumerClient(
                     new AckOpts
                     {
                         DoubleAck = true,
-                        TerminateReason = TerminateReason(_connection?.ServerInfo?.Version, exception),
+                        TerminateReason = TerminateReason(
+                            _connection?.ServerInfo?.Version,
+                            $"malformed headless envelope: {exception.GetType().Name}"
+                        ),
                     },
                     CancellationToken.None
                 )
@@ -923,7 +913,7 @@ internal sealed class NatsConsumerClient(
     /// before 2.10.4 matches the exact <c>+TERM</c> bytes and silently ignores <c>+TERM reason</c>, so sending one there
     /// would leave the poison message to redeliver forever.
     /// </summary>
-    internal static string? TerminateReason(string? serverVersion, Exception exception)
+    internal static string? TerminateReason(string? serverVersion, string reason)
     {
         if (serverVersion is null)
         {
@@ -934,9 +924,7 @@ internal sealed class NatsConsumerClient(
         var dash = serverVersion.IndexOf('-', StringComparison.Ordinal);
         var core = dash < 0 ? serverVersion : serverVersion[..dash];
 
-        return Version.TryParse(core, out var version) && version >= _TerminateReasonServerVersion
-            ? $"malformed headless envelope: {exception.GetType().Name}"
-            : null;
+        return Version.TryParse(core, out var version) && version >= _TerminateReasonServerVersion ? reason : null;
     }
 
     private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers)
@@ -968,6 +956,46 @@ internal sealed class NatsConsumerClient(
                 {
                     LogType = MqLogType.AsyncErrorEvent,
                     Reason = $"NATS message ACK failed: {ex}",
+                }
+            );
+        }
+    }
+
+    // JetStream has no dead-letter destination: a terminate stops redelivery, counts the message as terminated in the
+    // consumer's stats, and publishes a MSG_TERMINATED advisory carrying the reason, which is where an operator or a
+    // stream sourced from the advisory subject finds the poisoned message.
+    public async ValueTask DeadLetterAsync(
+        object? sender,
+        string reason,
+        string? description,
+        CancellationToken cancellationToken = default
+    )
+    {
+        try
+        {
+            if (await _SettlingMessageAsync(sender).ConfigureAwait(false) is { } msg)
+            {
+                await msg.AckTerminateAsync(
+                        new AckOpts
+                        {
+                            DoubleAck = true,
+                            TerminateReason = TerminateReason(
+                                _connection?.ServerInfo?.Version,
+                                description is null ? reason : $"{reason}: {description}"
+                            ),
+                        },
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.AsyncErrorEvent,
+                    Reason = $"NATS message terminate failed: {ex}",
                 }
             );
         }
@@ -1104,32 +1132,21 @@ internal sealed class NatsConsumerClient(
         // running handler does not Ack/Nak on a disposed connection. Bounded so a stuck handler cannot
         // block shutdown indefinitely; any handler still running past the budget has its Ack/Nak
         // swallowed and the message is redelivered (at-least-once).
-        var inFlight = _inFlightHandlers.Keys.ToArray();
-        if (inFlight.Length > 0)
+        try
         {
-            try
-            {
-                if (timeout <= TimeSpan.Zero)
+            await _inFlightHandlers.DrainAsync(timeout, _timeProvider).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Handler faults are already surfaced via _ObserveBackgroundHandler; on a drain timeout
+            // or fault, log and proceed — disposal must never block or throw.
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
                 {
-                    throw new TimeoutException("The shared messaging shutdown deadline has expired.");
+                    LogType = MqLogType.ExceptionReceived,
+                    Reason = $"Timed out or faulted draining in-flight handlers during shutdown: {ex}",
                 }
-
-                await Task.WhenAll(inFlight)
-                    .WaitAsync(timeout, _timeProvider, CancellationToken.None)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                // Handler faults are already surfaced via _ObserveBackgroundHandler; on a drain timeout
-                // or fault, log and proceed — disposal must never block or throw.
-                OnLogCallback?.Invoke(
-                    new LogMessageEventArgs
-                    {
-                        LogType = MqLogType.ExceptionReceived,
-                        Reason = $"Timed out or faulted draining in-flight handlers during shutdown: {ex}",
-                    }
-                );
-            }
+            );
         }
 
         ReceiveTokenState? receiveTokenStateToDispose = null;

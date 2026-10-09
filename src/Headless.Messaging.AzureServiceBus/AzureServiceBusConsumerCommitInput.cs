@@ -5,7 +5,7 @@ using Azure.Messaging.ServiceBus;
 namespace Headless.Messaging.AzureServiceBus;
 
 /// <summary>
-/// Carries the Azure Service Bus settlement context needed to complete or abandon a received message.
+/// Carries the Azure Service Bus settlement context needed to complete, abandon, or dead-letter a received message.
 /// Wraps either a <c>ProcessMessageEventArgs</c> (non-session) or a
 /// <c>ProcessSessionMessageEventArgs</c> (session-enabled) transparently.
 /// </summary>
@@ -45,5 +45,21 @@ internal sealed class AzureServiceBusConsumerCommitInput
         return ProcessMessageArgs != null
             ? ProcessMessageArgs.AbandonMessageAsync(Message, cancellationToken: cancellationToken)
             : ProcessSessionMessageArgs!.AbandonMessageAsync(Message, cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Moves the message to its entity's dead-letter subqueue, which Service Bus keeps for every queue and
+    /// subscription, with <paramref name="reason"/> and <paramref name="description"/> as its
+    /// <c>DeadLetterReason</c> and <c>DeadLetterErrorDescription</c>.
+    /// </summary>
+    public Task DeadLetterMessageAsync(
+        string reason,
+        string? description,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return ProcessMessageArgs != null
+            ? ProcessMessageArgs.DeadLetterMessageAsync(Message, reason, description, cancellationToken)
+            : ProcessSessionMessageArgs!.DeadLetterMessageAsync(Message, reason, description, cancellationToken);
     }
 }

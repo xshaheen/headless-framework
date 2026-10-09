@@ -93,14 +93,14 @@ public sealed class AzureServiceBusConsumerClientHarnessTests(AzureServiceBusFix
     }
 
     [Fact]
-    public async Task should_terminally_complete_missing_required_headers_across_consumer_restart()
+    public async Task should_dead_letter_missing_required_headers_across_consumer_restart()
     {
         var terminalLogs = 0;
         await using var session = await fixture.CreateQueueSessionAsync(AbortToken);
         await session.StartAsync(
             onLog: log =>
             {
-                if (log.Reason?.Contains("terminally completed", StringComparison.Ordinal) == true)
+                if (log.Reason?.Contains("dead-lettered", StringComparison.Ordinal) == true)
                 {
                     Interlocked.Increment(ref terminalLogs);
                 }
@@ -126,6 +126,16 @@ public sealed class AzureServiceBusConsumerClientHarnessTests(AzureServiceBusFix
 
         (await replacement.RemainsEmptyAsync(TimeSpan.FromSeconds(5), AbortToken)).Should().BeTrue();
         Volatile.Read(ref terminalLogs).Should().Be(1);
+
+        // The envelope never reached the core, so the dead-letter subqueue is where an operator still finds it.
+        await using var deadLetters = client.CreateReceiver(
+            session.Destination,
+            new ServiceBusReceiverOptions { SubQueue = SubQueue.DeadLetter }
+        );
+        var deadLettered = await deadLetters.ReceiveMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
+        deadLettered.Should().NotBeNull();
+        deadLettered!.DeadLetterReason.Should().Be("MalformedEnvelope");
+        deadLettered.DeadLetterErrorDescription.Should().Be(nameof(InvalidDataException));
     }
 
     [Fact]
