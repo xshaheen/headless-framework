@@ -2046,6 +2046,8 @@ All instruments register on the `Headless.Messaging` meter. Names and standard d
 
 Framework span attributes: `headless.messaging.intent` (`bus`/`queue`), `tenant.id` (named and switched by `TenantTelemetryOptions`), `headless.messaging.retry_count` (suppressible), plus per-phase duration attributes (`headless.messaging.persistence.duration_ms`, `send.duration_ms`, `receive.duration_ms`, `invoke.duration_ms`) retained verbatim from the pre-migration bridge.
 
+Provider-specific instruments also register on the `Headless.Messaging` meter: Kafka reports consumer lag as `headless.messaging.kafka.consumer.lag` (see [Consumer lag metric](#consumer-lag-metric)).
+
 ## Headless.Messaging.Aws
 
 ### API and behavior
@@ -2255,6 +2257,7 @@ Registers in-memory storage and monitoring services. State is lost when the proc
 - One idempotent producer, built on first publish, serves every publish in the process; disposal flushes it for up to `message.timeout.ms`. A fatal producer error discards it, and the next publish builds a new one.
 - Consumers use `cooperative-sticky` partition assignment by default, so a rebalance moves only the partitions that change owner.
 - A handler's settlement stores its offset; the background auto-commit sends stored offsets to the broker. A partition revoke waits up to 30 seconds for in-flight handlers on the revoked partitions, then commits synchronously. Shutdown drains in-flight handlers within the shutdown budget, then closes the consumer, which commits the stored offsets synchronously.
+- Consumer lag per assigned partition is reported as the `headless.messaging.kafka.consumer.lag` gauge on the `Headless.Messaging` meter once `MainConfig["statistics.interval.ms"]` is above zero. See [Consumer lag metric](#consumer-lag-metric).
 
 ### Design constraints
 
@@ -2303,6 +2306,30 @@ public sealed class PlaceOrderWorker : IConsume<PlaceOrder>
 `QueueOptions.RoutingAffinityKey` maps to the native UTF-8 string key on registered Queue routes. The optional `KafkaMessagingHeaders.KafkaKey` adapter must match it. `RequireRoutingAffinity()` rejects configurations with a random or unrecognized `MainConfig["partitioner"]`; accepted partitioners are `consistent`, `consistent_random` (default), `murmur2`, `murmur2_random`, `fnv1a`, and `fnv1a_random`, all deterministic for a nonempty key. Headless adds no key-length limit beyond broker message limits. Keep partition count, encoding, and partitioner fixed while relying on placement. Different keys may share partitions; affinity promises neither FIFO nor exclusive handling.
 
 Configure bootstrap servers, main Kafka config, topic options, custom headers, and retriable error codes through `KafkaMessagingOptions`. `MainConfig` applies to both the producer and the consumers. The producer turns on `enable.idempotence` unless `MainConfig` sets it, or sets `acks` other than `all`, more than five in-flight requests, zero retries, or a non-FIFO `queuing.strategy`, which librdkafka cannot combine with idempotence; each setting is recognized under every name librdkafka accepts (for example `request.required.acks` for `acks`). It keeps librdkafka's own `queue.buffering.max.messages` and defaults `message.timeout.ms` to 5000 and `request.timeout.ms` to 3000. Consumers default `partition.assignment.strategy` to `cooperative-sticky`. The transport owns offset commits, so it always overrides `enable.auto.commit` and `enable.auto.offset.store`; `auto.commit.interval.ms` (librdkafka default 5000) still sets how often stored offsets reach the broker. `RetriableErrorCodes` / `DefaultRetriableErrorCodes` are `int` values of Confluent's `ErrorCode` enum (not the native enum type), so configuring retries needs no compile-time `Confluent.Kafka` reference; the framework casts back to `ErrorCode` internally.
+
+### Consumer lag metric
+
+Each consumer reads librdkafka's statistics and reports, per partition it currently owns, how many messages sit between the group's committed offset and the end of the partition (the high watermark, or the last stable offset under `read_committed`). librdkafka emits statistics only when `statistics.interval.ms` is above zero; its default is 0, so the metric is off until you set it:
+
+```csharp
+setup.UseKafka(options =>
+{
+    options.Servers = "localhost:9092";
+    options.MainConfig["statistics.interval.ms"] = "15000";
+});
+```
+
+| Instrument | Kind | Unit | Dimensions |
+| --- | --- | --- | --- |
+| `headless.messaging.kafka.consumer.lag` | ObservableGauge (`long`) | `{message}` | `messaging.system` (`kafka`), `messaging.destination.name` (topic), `messaging.destination.partition.id` (partition number as a string), `messaging.consumer.group.name` (the Kafka `group.id`) |
+
+Subscribe it with `AddMessagingInstrumentation()` like the other messaging instruments. The OpenTelemetry messaging conventions define no consumer-lag instrument, so the name carries the framework prefix while the dimensions use the convention names.
+
+- The value is the latest statistics sample, so it is up to one `statistics.interval.ms` old. It is measured from the committed offset, which trails handler completion by up to `auto.commit.interval.ms`.
+- A partition is reported only while this consumer owns it. A revoke or a lost assignment removes it at once, and shutdown removes every partition of that consumer, so a rebalance never leaves a stale value behind. A partition whose lag librdkafka does not know yet (no committed offset or no watermark) is omitted rather than reported as -1.
+- `MainConfig` also configures the producer, so the setting turns on producer statistics too; the transport does not read them.
+- A statistics payload the transport cannot parse is logged as a consume error and leaves the previous values in place; it never interrupts consumption.
+- Cardinality grows with assigned partitions per group. Keep the interval coarse (seconds, not milliseconds): each sample is a JSON document that grows with the number of brokers and partitions.
 
 ### Runtime behavior
 
