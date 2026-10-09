@@ -1746,6 +1746,36 @@ public sealed class NatsConsumerClientTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_cancel_each_receive_lease_with_its_own_token_when_leases_overlap()
+    {
+        // given — two listeners hold leases at once, each linked to its own stopping token
+        await using var client = _CreateClient("test-group");
+        using var firstStop = new CancellationTokenSource();
+        using var secondStop = new CancellationTokenSource();
+        using var first = client.AcquireReceiveLease(firstStop.Token);
+        using var second = client.AcquireReceiveLease(secondStop.Token);
+
+        // when
+        await firstStop.CancelAsync();
+
+        // then — the earlier lease still cancels, though a later one linked another token
+        first.Token.IsCancellationRequested.Should().BeTrue();
+        second.Token.IsCancellationRequested.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_cancel_every_held_receive_lease_when_pause_async()
+    {
+        await using var client = _CreateClient("test-group");
+        using var stop = new CancellationTokenSource();
+        using var lease = client.AcquireReceiveLease(stop.Token);
+
+        await client.PauseAsync(AbortToken);
+
+        lease.Token.IsCancellationRequested.Should().BeTrue();
+    }
+
     // Stands in for INatsJSConsumer.ConsumeAsync: each call is one consume, given its zero-based index and its token.
     private static void _OnConsume(
         INatsJSConsumer consumer,
