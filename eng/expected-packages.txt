@@ -97,6 +97,9 @@ Headless.Identity.Storage.EntityFramework
 Headless.Imaging
 Headless.Imaging.Abstractions
 Headless.Imaging.NetVips
+Headless.IpGeolocation
+Headless.IpGeolocation.Abstractions
+Headless.IpGeolocation.MaxMind
 Headless.Jobs
 Headless.Jobs.Abstractions
 Headless.Jobs.Dashboard
