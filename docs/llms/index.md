@@ -80,6 +80,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | Process Paymob cash-in, cash-out, or service operations | [Payments](payments.md) |
 | Implement resumable TUS uploads | [TUS](tus.md) |
 | Resize, encode, or inspect images | [Imaging](imaging.md) |
+| Find the country, city, or network owner of an IP address | [IP Geolocation](ip-geolocation.md) |
 | Extract text from documents for indexing | [Media Indexing](media.md) |
 
 ### Foundations and tooling

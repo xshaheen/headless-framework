@@ -31,6 +31,9 @@
 
 *.pdf binary
 
+# MaxMind GeoIP databases
+*.mmdb binary
+
 *.avif binary
 *.gif binary
 *.ico binary
