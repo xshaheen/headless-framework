@@ -265,21 +265,30 @@ internal sealed class NatsMessageConfig<TMessage>(
 
     public override int GetHashCode() => HashCode.Combine(_selector, _externalSubject);
 
-    // A wildcard filter is not a subject, so without the payload PublishTo needs the message has nowhere to go. A
-    // literal filter is a subject, so a payload-less publish still goes there.
+    // A wildcard filter is not a subject, so a payload-less message has nowhere to go: PublishTo needs the payload, and
+    // without PublishTo the lane is consume-only. Refusing here keeps it out of the outbox, where every send attempt
+    // would fail. A literal filter is a subject, so a payload-less publish still goes there.
     public void ValidateMissingPayload(string messageName, MessageLane lane)
     {
-        if (
-            _externalSubject is { PublishSelector: not null } externalSubject
-            && !NatsExternalSubjectRules.IsLiteral(externalSubject.Filter)
-        )
+        if (_externalSubject is not { } externalSubject || NatsExternalSubjectRules.IsLiteral(externalSubject.Filter))
+        {
+            return;
+        }
+
+        if (externalSubject.PublishSelector is null)
         {
             throw new InvalidOperationException(
                 $"Message '{messageName}' on the {lane} lane is bound to the NATS wildcard subject "
-                    + $"'{externalSubject.Filter}' and computes its publish subject with PublishTo, which needs the "
-                    + "payload. Publish it with a payload."
+                    + $"'{externalSubject.Filter}' without PublishTo, so it is consume-only. Declare PublishTo to "
+                    + "publish it."
             );
         }
+
+        throw new InvalidOperationException(
+            $"Message '{messageName}' on the {lane} lane is bound to the NATS wildcard subject "
+                + $"'{externalSubject.Filter}' and computes its publish subject with PublishTo, which needs the "
+                + "payload. Publish it with a payload."
+        );
     }
 
     public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =

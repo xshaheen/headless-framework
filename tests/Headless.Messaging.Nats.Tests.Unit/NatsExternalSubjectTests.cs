@@ -83,11 +83,25 @@ public sealed class NatsExternalSubjectTests : TestBase
             .WithMessage($"*'{_Name}'*Queue lane*'{_Filter}'*PublishTo*payload*");
     }
 
+    [Fact]
+    public void should_refuse_a_null_payload_when_a_wildcard_filter_has_no_publish_to()
+    {
+        // given
+        var config = (IProviderMissingPayloadValidation)_Config(n => n.ExternalSubject(_Filter));
+
+        // when
+        var act = () => config.ValidateMissingPayload(_Name, MessageLane.Queue);
+
+        // then
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage($"*'{_Name}'*Queue lane*'{_Filter}'*without PublishTo*consume-only*");
+    }
+
     [Theory]
     [InlineData("literal filter with PublishTo")]
     [InlineData("literal filter")]
-    [InlineData("wildcard filter without PublishTo")]
-    public void should_accept_a_null_payload_when_publish_to_does_not_decide_the_subject(string scenario)
+    public void should_accept_a_null_payload_when_the_filter_is_the_publish_subject(string scenario)
     {
         // given
         var config = (IProviderMissingPayloadValidation)_Config(n =>
@@ -97,8 +111,7 @@ public sealed class NatsExternalSubjectTests : TestBase
                     "acme.runs.result",
                     s => s.PublishTo(_ => "acme.runs.result")
                 ),
-                "literal filter" => n.ExternalSubject("acme.runs.result"),
-                _ => n.ExternalSubject(_Filter),
+                _ => n.ExternalSubject("acme.runs.result"),
             }
         );
 
