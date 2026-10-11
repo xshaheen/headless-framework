@@ -15,6 +15,8 @@ public class AuditTestDbContext(DbContextOptions options, IOptions<AuditLogStora
 
     public DbSet<GeneratedOrderLine> GeneratedOrderLines => Set<GeneratedOrderLine>();
 
+    public DbSet<VersionedOrder> VersionedOrders => Set<VersionedOrder>();
+
     public override string DefaultSchema => "";
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -36,6 +38,13 @@ public class AuditTestDbContext(DbContextOptions options, IOptions<AuditLogStora
             b.IsAudited();
             b.Property(e => e.Id).ValueGeneratedOnAdd();
             b.HasOne(e => e.Order).WithMany().HasForeignKey(e => e.GeneratedOrderId);
+        });
+        modelBuilder.Entity<VersionedOrder>(b =>
+        {
+            b.IsAudited();
+            b.Property(e => e.Id).ValueGeneratedNever();
+            b.Property(e => e.NameUpper).HasComputedColumnSql("upper(\"CustomerName\")", stored: true);
+            b.ConfigureConcurrencyStamp();
         });
         modelBuilder.ConfigureHeadlessAuditLog(
             auditLogStorage.Value,

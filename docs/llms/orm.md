@@ -125,6 +125,8 @@ The full save-transaction order within a `HeadlessDbContext` pipeline-owned tran
 4. Integration events enqueued to the outbox via `IHeadlessOutboxDispatcher` (before commit)
 5. Transaction commit
 
+Audit persistence suppresses the saved entries around its own audit-row save (Unchanged, Detached for deletes) and then restores them, current values included. An entity saved with audit rows therefore keeps its saved values and store-generated reads-back (concurrency tokens, computed columns) in the change tracker, and a second `SaveChanges` on the same tracked entity in the same scope matches rows normally instead of failing the concurrency check.
+
 ### DDD aggregate support
 
 `HeadlessDbContext` supports domain-driven design aggregate patterns:
