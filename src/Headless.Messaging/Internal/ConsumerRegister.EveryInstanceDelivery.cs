@@ -320,6 +320,13 @@ internal sealed partial class ConsumerRegister
 
         try
         {
+            // Throttled after the receive stage accepted the message and before any consume middleware runs, as a
+            // competing delivery is.
+            if (_rateLimiters is not null)
+            {
+                await _rateLimiters.WaitAsync(executor, hostShutdownToken).ConfigureAwait(false);
+            }
+
             // The invoker opens a fresh scope and runs the consume middleware, then the generated dispatch or the
             // runtime handler, exactly as a durable delivery's final attempt would.
             await _subscribeInvoker

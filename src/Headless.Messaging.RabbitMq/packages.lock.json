@@ -223,11 +223,6 @@
         "resolved": "10.0.12",
         "contentHash": "jDix4bBMYnpZdSPcnY+KDV6ik3SRMzpMKby/bZl/XUwIiflwRNAFZ0oOl61R/pSaveIJ8t1gs2BUlrGsPs/bcg=="
       },
-      "System.Threading.RateLimiting": {
-        "type": "Transitive",
-        "resolved": "8.0.0",
-        "contentHash": "7mu9v0QDv66ar3DpGSZHg9NuNcxDaaAcnMULuZlaTpP9+hwXhrxNGsF5GmLkSHxFdb5bBc1TzeujsRgTrPWi+Q=="
-      },
       "headless.checks": {
         "type": "Project"
       },
@@ -332,7 +327,8 @@
           "Microsoft.Extensions.Diagnostics": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )",
           "OpenTelemetry.Api": "[1.19.1, )",
-          "Polly.Core": "[8.8.0, )"
+          "Polly.Core": "[8.8.0, )",
+          "System.Threading.RateLimiting": "[10.0.12, )"
         }
       },
       "headless.messaging.abstractions": {
@@ -555,6 +551,12 @@
         "requested": "[8.8.0, )",
         "resolved": "8.8.0",
         "contentHash": "TewV9uNFsoRFggoFbTAGFwsMYPuckA+wTIpQPyhLL9BANRPQRENz2S4bwATrB3HBOakN5oKLFIllPiDnVecmJg=="
+      },
+      "System.Threading.RateLimiting": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "Y3f2aLAgynO44Q9xYHR35NC1KuSTcZwo49xjHuq0gQWyOWw8fvipIdoc+1e8FS+9neYZuQ1K4iwl5frNJXekgw=="
       }
     }
   }

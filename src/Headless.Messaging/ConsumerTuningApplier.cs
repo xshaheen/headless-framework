@@ -84,6 +84,7 @@ internal static class ConsumerTuningApplier
             InboxRetention = tuning.InboxRetention ?? metadata.InboxRetention,
             CircuitBreakerOverride = tuning.CircuitBreaker ?? metadata.CircuitBreakerOverride,
             FailurePolicy = tuning.FailurePolicy ?? metadata.FailurePolicy,
+            RateLimit = tuning.RateLimit ?? metadata.RateLimit,
         };
     }
 
@@ -152,7 +153,8 @@ internal static class ConsumerTuningApplier
                 Middleware: [],
                 ProviderConfigs: new Dictionary<Type, object>(),
                 settings.InboxRetention,
-                settings.CircuitBreaker
+                settings.CircuitBreaker,
+                RateLimit: settings.RateLimit
             );
 
             if (
@@ -227,6 +229,7 @@ internal static class ConsumerTuningApplier
         TimeSpan? inboxRetention = null;
         ConsumerCircuitBreakerOptions? circuitBreaker = null;
         FailurePolicyOverrides? failurePolicy = null;
+        ConsumerRateLimit? rateLimit = null;
 
         foreach (var setting in consumer.GetChildren())
         {
@@ -256,16 +259,138 @@ internal static class ConsumerTuningApplier
             {
                 failurePolicy = _ReadFailurePolicy(setting, errors);
             }
+            else if (string.Equals(setting.Key, "RateLimit", StringComparison.OrdinalIgnoreCase))
+            {
+                rateLimit = _ReadRateLimit(setting, errors);
+            }
             else
             {
                 errors.Add(
                     $"Configuration '{setting.Path}' is not a consumer setting. The supported settings are "
-                        + "Concurrency, InboxRetention, CircuitBreaker, and FailurePolicy."
+                        + "Concurrency, InboxRetention, CircuitBreaker, FailurePolicy, and RateLimit."
                 );
             }
         }
 
-        return new ConfiguredSettings(concurrency, inboxRetention, circuitBreaker, failurePolicy);
+        return new ConfiguredSettings(concurrency, inboxRetention, circuitBreaker, failurePolicy, rateLimit);
+    }
+
+    // The section names one algorithm, keyed like the ConsumerRateLimit factory that builds it, so a configured rate
+    // reads the same as the code that would set it and two algorithms are never half-merged.
+    private static ConsumerRateLimit? _ReadRateLimit(IConfigurationSection section, List<string> errors)
+    {
+        var algorithms = section.GetChildren().ToArray();
+        if (algorithms.Length != 1)
+        {
+            errors.Add(
+                $"Configuration '{section.Path}' must hold exactly one of FixedWindow or TokenBucket, such as "
+                    + "'FixedWindow:PermitLimit' and 'FixedWindow:Window'."
+            );
+            return null;
+        }
+
+        var algorithm = algorithms[0];
+        if (string.Equals(algorithm.Key, nameof(ConsumerRateLimit.FixedWindow), StringComparison.OrdinalIgnoreCase))
+        {
+            if (!_HasOnlyRateLimitSettings(algorithm, ["PermitLimit", "Window"], errors))
+            {
+                return null;
+            }
+
+            var permitLimit = _ReadRateLimitCount(algorithm, "PermitLimit", errors);
+            var window = _ReadRateLimitPeriod(algorithm, "Window", errors);
+
+            return permitLimit is { } permits && window is { } length
+                ? _CreateRateLimit(algorithm, () => ConsumerRateLimit.FixedWindow(permits, length), errors)
+                : null;
+        }
+
+        if (string.Equals(algorithm.Key, nameof(ConsumerRateLimit.TokenBucket), StringComparison.OrdinalIgnoreCase))
+        {
+            if (!_HasOnlyRateLimitSettings(algorithm, ["TokenLimit", "TokensPerPeriod", "ReplenishmentPeriod"], errors))
+            {
+                return null;
+            }
+
+            var tokenLimit = _ReadRateLimitCount(algorithm, "TokenLimit", errors);
+            var tokensPerPeriod = _ReadRateLimitCount(algorithm, "TokensPerPeriod", errors);
+            var replenishmentPeriod = _ReadRateLimitPeriod(algorithm, "ReplenishmentPeriod", errors);
+
+            return tokenLimit is { } limit && tokensPerPeriod is { } tokens && replenishmentPeriod is { } period
+                ? _CreateRateLimit(algorithm, () => ConsumerRateLimit.TokenBucket(limit, tokens, period), errors)
+                : null;
+        }
+
+        errors.Add(
+            $"Configuration '{algorithm.Path}' is not a rate limit algorithm. The supported algorithms are FixedWindow "
+                + "and TokenBucket."
+        );
+
+        return null;
+    }
+
+    private static bool _HasOnlyRateLimitSettings(
+        IConfigurationSection algorithm,
+        string[] supported,
+        List<string> errors
+    )
+    {
+        var valid = true;
+        foreach (var setting in algorithm.GetChildren())
+        {
+            if (!supported.Contains(setting.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                errors.Add(
+                    $"Configuration '{setting.Path}' is not a {algorithm.Key} setting. The supported settings are "
+                        + $"{string.Join(", ", supported)}."
+                );
+                valid = false;
+            }
+        }
+
+        return valid;
+    }
+
+    // Range checks are left to the factory, so configuration and code reject the same values.
+    private static int? _ReadRateLimitCount(IConfigurationSection algorithm, string name, List<string> errors)
+    {
+        var setting = algorithm.GetSection(name);
+        if (int.TryParse(setting.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count))
+        {
+            return count;
+        }
+
+        errors.Add($"Configuration '{setting.Path}' must be an integer.");
+        return null;
+    }
+
+    private static TimeSpan? _ReadRateLimitPeriod(IConfigurationSection algorithm, string name, List<string> errors)
+    {
+        var setting = algorithm.GetSection(name);
+        if (TimeSpan.TryParse(setting.Value, CultureInfo.InvariantCulture, out var period))
+        {
+            return period;
+        }
+
+        errors.Add($"Configuration '{setting.Path}' must be a duration such as '00:00:01'.");
+        return null;
+    }
+
+    private static ConsumerRateLimit? _CreateRateLimit(
+        IConfigurationSection algorithm,
+        Func<ConsumerRateLimit> create,
+        List<string> errors
+    )
+    {
+        try
+        {
+            return create();
+        }
+        catch (ArgumentException exception)
+        {
+            errors.Add($"Configuration '{algorithm.Path}' does not describe a valid rate limit: {exception.Message}");
+            return null;
+        }
     }
 
     // Only the numbers are configurable: fail rules are code, so they always come from the resolved policy.
@@ -377,11 +502,16 @@ internal static class ConsumerTuningApplier
         byte? Concurrency,
         TimeSpan? InboxRetention,
         ConsumerCircuitBreakerOptions? CircuitBreaker,
-        FailurePolicyOverrides? FailurePolicy
+        FailurePolicyOverrides? FailurePolicy,
+        ConsumerRateLimit? RateLimit
     )
     {
         public bool IsEmpty =>
-            Concurrency is null && InboxRetention is null && CircuitBreaker is null && FailurePolicy is null;
+            Concurrency is null
+            && InboxRetention is null
+            && CircuitBreaker is null
+            && FailurePolicy is null
+            && RateLimit is null;
     }
 }
 

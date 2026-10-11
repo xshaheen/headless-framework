@@ -291,6 +291,14 @@
     <Folder Name="/Imaging/Tests/">
         <Project Path="tests\Headless.Imaging.NetVips.Tests.Unit\Headless.Imaging.NetVips.Tests.Unit.csproj" />
     </Folder>
+    <Folder Name="/IpGeolocation/">
+        <Project Path="src\Headless.IpGeolocation.Abstractions\Headless.IpGeolocation.Abstractions.csproj" />
+        <Project Path="src\Headless.IpGeolocation\Headless.IpGeolocation.csproj" />
+        <Project Path="src\Headless.IpGeolocation.MaxMind\Headless.IpGeolocation.MaxMind.csproj" />
+    </Folder>
+    <Folder Name="/IpGeolocation/Tests/">
+        <Project Path="tests\Headless.IpGeolocation.MaxMind.Tests.Unit\Headless.IpGeolocation.MaxMind.Tests.Unit.csproj" />
+    </Folder>
     <Folder Name="/Jobs/">
         <Project Path="src/Headless.Jobs.Abstractions/Headless.Jobs.Abstractions.csproj" />
         <Project Path="src/Headless.Jobs/Headless.Jobs.csproj" />

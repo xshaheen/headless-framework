@@ -916,7 +916,7 @@ internal sealed partial class RelationalDataStorage
                         command =>
                         {
                             _BindVersion(command);
-                            _dialect.AddDuration(command, "Lookahead", _DelayedMessageLookahead);
+                            _dialect.AddDuration(command, "Lookahead", DelayedMessageLookahead);
                             _dialect.AddDuration(command, "Lookback", _QueuedMessageLookback);
                             _dialect.AddParameter(command, "BatchSize", SqlColumnType.Int32, batchSize);
                         },
@@ -1063,7 +1063,7 @@ internal sealed partial class RelationalDataStorage
                                     _StatusType,
                                     nameof(StatusName.Queued)
                                 );
-                                _dialect.AddDuration(command, "Lookahead", _DelayedMessageLookahead);
+                                _dialect.AddDuration(command, "Lookahead", DelayedMessageLookahead);
                                 _dialect.AddDuration(command, "Lookback", _QueuedMessageLookback);
                                 _dialect.AddParameter(
                                     command,

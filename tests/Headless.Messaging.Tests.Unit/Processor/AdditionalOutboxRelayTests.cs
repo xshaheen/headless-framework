@@ -137,7 +137,8 @@ public sealed class AdditionalOutboxRelayTests : TestBase
             .BuildServiceProvider();
         var delayed = new MessageDelayedProcessor(
             NullLogger<MessageDelayedProcessor>.Instance,
-            Substitute.For<IDispatcher, ICommittedDelayedMessageDispatcher>()
+            Substitute.For<IDispatcher, ICommittedDelayedMessageDispatcher>(),
+            Options.Create(new MessagingOptions())
         );
         var collector = new CollectorProcessor(
             NullLogger<CollectorProcessor>.Instance,
@@ -217,7 +218,11 @@ public sealed class AdditionalOutboxRelayTests : TestBase
             .ClaimDelayedMessagesAsync(Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IReadOnlyList<MediumMessage>>([billingMessage]));
         var dispatcher = Substitute.For<IDispatcher, ICommittedDelayedMessageDispatcher>();
-        var sut = new MessageDelayedProcessor(NullLogger<MessageDelayedProcessor>.Instance, dispatcher);
+        var sut = new MessageDelayedProcessor(
+            NullLogger<MessageDelayedProcessor>.Instance,
+            dispatcher,
+            Options.Create(new MessagingOptions())
+        );
         await using var context = _CreateContext(TimeSpan.FromMilliseconds(200));
 
         // when

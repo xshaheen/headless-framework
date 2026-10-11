@@ -536,14 +536,6 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
-      "headless.dashboard.authentication": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )"
-        }
-      },
       "headless.distributedlocks.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -605,7 +597,8 @@
           "Microsoft.Extensions.Diagnostics": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )",
           "OpenTelemetry.Api": "[1.19.1, )",
-          "Polly.Core": "[8.8.0, )"
+          "Polly.Core": "[8.8.0, )",
+          "System.Threading.RateLimiting": "[10.0.12, )"
         }
       },
       "headless.messaging.abstractions": {
@@ -627,26 +620,10 @@
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.messaging.azureservicebus.inmemory.demo": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging.AzureServiceBus": "[1.0.0, )",
-          "Headless.Messaging.Dashboard": "[1.0.0, )",
-          "Headless.Messaging.Storage.InMemory": "[1.0.0, )"
-        }
-      },
       "headless.messaging.bus.abstractions": {
         "type": "Project",
         "dependencies": {
           "Headless.Messaging.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.messaging.dashboard": {
-        "type": "Project",
-        "dependencies": {
-          "Consul": "[1.8.0, )",
-          "Headless.Dashboard.Authentication": "[1.0.0, )",
-          "Headless.Messaging": "[1.0.0, )"
         }
       },
       "headless.messaging.queue.abstractions": {
@@ -755,15 +732,6 @@
           "Azure.Core": "1.62.0",
           "Azure.Core.Amqp": "1.3.1",
           "Microsoft.Azure.Amqp": "2.7.0"
-        }
-      },
-      "Consul": {
-        "type": "CentralTransitive",
-        "requested": "[1.8.0, )",
-        "resolved": "1.8.0",
-        "contentHash": "flKNz6Swyt+pYBJ5dekN1X6PJYUaeNAaNC0dAWhudTd0t2vR34G0QXmr5KyApI7OP1rGMwY3xx133Dc9IvOS6Q==",
-        "dependencies": {
-          "Newtonsoft.Json": "13.0.1"
         }
       },
       "FastExpressionCompiler": {
@@ -950,6 +918,12 @@
         "requested": "[8.8.0, )",
         "resolved": "8.8.0",
         "contentHash": "TewV9uNFsoRFggoFbTAGFwsMYPuckA+wTIpQPyhLL9BANRPQRENz2S4bwATrB3HBOakN5oKLFIllPiDnVecmJg=="
+      },
+      "System.Threading.RateLimiting": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "Y3f2aLAgynO44Q9xYHR35NC1KuSTcZwo49xjHuq0gQWyOWw8fvipIdoc+1e8FS+9neYZuQ1K4iwl5frNJXekgw=="
       },
       "xunit.v3.assert": {
         "type": "CentralTransitive",

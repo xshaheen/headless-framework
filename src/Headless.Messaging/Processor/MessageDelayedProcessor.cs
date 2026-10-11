@@ -7,13 +7,17 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Processor;
 
-internal sealed class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> logger, IDispatcher dispatcher)
-    : IProcessor
+internal sealed class MessageDelayedProcessor(
+    ILogger<MessageDelayedProcessor> logger,
+    IDispatcher dispatcher,
+    IOptions<MessagingOptions> options
+) : IProcessor
 {
-    private readonly TimeSpan _waitingInterval = TimeSpan.FromSeconds(60);
+    private readonly TimeSpan _pollInterval = options.Value.DelayedMessagePollInterval;
 
     public async Task ProcessAsync(ProcessingContext context)
     {
@@ -44,7 +48,7 @@ internal sealed class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> l
                 .ConfigureAwait(false);
         }
 
-        await context.WaitAsync(_waitingInterval).ConfigureAwait(false);
+        await context.WaitAsync(_pollInterval).ConfigureAwait(false);
     }
 
     private async Task _ProcessDelayedAsync(

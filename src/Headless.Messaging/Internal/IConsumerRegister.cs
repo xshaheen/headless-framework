@@ -49,7 +49,9 @@ internal sealed partial class ConsumerRegister(
     private readonly IMessagingCapabilityModel _capabilityModel =
         serviceProvider.GetRequiredService<IMessagingCapabilityModel>();
 
-    private readonly TimeSpan _pollingDelay = TimeSpan.FromSeconds(1);
+#pragma warning disable CA2213 // False positive: the container owns the shared singleton and disposes it with the host.
+    private readonly ConsumerRateLimiters? _rateLimiters = serviceProvider.GetService<ConsumerRateLimiters>();
+#pragma warning restore CA2213
 
     private readonly Guid _instanceId = (
         serviceProvider.GetService<MessagingInstanceId>() ?? new MessagingInstanceId()
@@ -994,12 +996,12 @@ internal sealed partial class ConsumerRegister(
             await readinessTask.ConfigureAwait(false);
             onReady?.Invoke();
             startupReady.TrySetResult();
-            await innerClient.ListeningAsync(_pollingDelay, cancellationToken).ConfigureAwait(false);
+            await innerClient.ListeningAsync(_options.ConsumerPollTimeout, cancellationToken).ConfigureAwait(false);
             return;
         }
 
         var listeningTask = Task.Run(
-            () => innerClient.ListeningAsync(_pollingDelay, cancellationToken).AsTask(),
+            () => innerClient.ListeningAsync(_options.ConsumerPollTimeout, cancellationToken).AsTask(),
             CancellationToken.None
         );
 

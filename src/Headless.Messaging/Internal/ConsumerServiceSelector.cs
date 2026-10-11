@@ -108,6 +108,7 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
                 OnSubscriptionEstablished = consumer.OnSubscriptionEstablished,
                 ResponseType = consumer.ResponseType,
                 Middleware = consumer.Middleware,
+                RateLimit = consumer.RateLimit,
                 // The registry resolves a policy for every competing consumer; an every-instance one never retries.
                 FailurePolicy = consumer.FailurePolicy ?? FailurePolicyDefinition.None,
             };

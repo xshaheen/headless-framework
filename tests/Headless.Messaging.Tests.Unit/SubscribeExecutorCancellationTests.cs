@@ -471,6 +471,66 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<CancellationToken>()
             );
     }
+
+    [Fact]
+    public async Task should_wait_for_the_rate_limit_before_leasing_and_release_the_wait_on_shutdown()
+    {
+        // given - a consumer allowed one delivery an hour, so the second delivery can only wait
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, null!, null, null)));
+        var executor = _CreateExecutor(invoker, storage);
+        var descriptor = new ConsumerExecutorDescriptor
+        {
+            FailurePolicy = MessagingOptions.FrameworkDefaultFailurePolicy,
+            Lane = MessageLane.Bus,
+            ConsumerType = typeof(CancellationExecutorTestConsumer),
+            MessageType = typeof(CancellationExecutorTestMessage),
+            MessageName = "test.messageName",
+            SubscriptionName = CancellationExecutorTestConsumer.Identity,
+            ConsumerIdentity = CancellationExecutorTestConsumer.Identity,
+            RateLimit = ConsumerRateLimit.FixedWindow(1, TimeSpan.FromHours(1)),
+        };
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, descriptor, AbortToken);
+        using var shutdown = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+
+        // when
+#pragma warning disable AsyncFixer04 // False positive: the task is started to observe it while it waits, and is awaited before the using scope ends.
+        var throttled = executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, descriptor, shutdown.Token);
+#pragma warning restore AsyncFixer04
+        await Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
+        var stillWaiting = !throttled.IsCompleted;
+        await shutdown.CancelAsync();
+        var act = () => throttled.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then - only the first delivery leased its row, ran the handler, and wrote its state; the throttled one never
+        // reached its lease, and its cancellation wrote nothing
+        stillWaiting.Should().BeTrue();
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        await invoker.Received(1).InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>());
+        await storage
+            .Received(1)
+            .LeaseReceiveAndReserveAttemptAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+        await storage
+            .Received(1)
+            .ChangeReceiveRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
 }
 
 // Supporting types

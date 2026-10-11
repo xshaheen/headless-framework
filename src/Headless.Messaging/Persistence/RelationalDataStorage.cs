@@ -34,8 +34,11 @@ internal sealed partial class RelationalDataStorage
         IRelationalOutboxStorage,
         IMessageRevocationStorage
 {
-    /// <summary>Delayed messages due within this window are claimed ahead of time for scheduling.</summary>
-    private static readonly TimeSpan _DelayedMessageLookahead = TimeSpan.FromMinutes(2);
+    /// <summary>
+    /// Delayed messages due within this window are claimed ahead of time for scheduling. The delayed-message poll must
+    /// run at least this often, or a message can come due between two polls without having been claimed.
+    /// </summary>
+    internal static readonly TimeSpan DelayedMessageLookahead = TimeSpan.FromMinutes(2);
 
     /// <summary>Queued messages older than this are claimed again, in case their dispatch was lost.</summary>
     private static readonly TimeSpan _QueuedMessageLookback = TimeSpan.FromMinutes(1);

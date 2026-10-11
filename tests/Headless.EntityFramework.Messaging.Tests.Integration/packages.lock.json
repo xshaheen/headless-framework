@@ -685,11 +685,6 @@
         "resolved": "9.0.18",
         "contentHash": "1/iz9Eex1TBMYdAk+m3igaMvL+nk+rY1EqL6u93an/j1ghxmB24vGOKXkVFy3NSPA39s1H/+SNoK257tHoXoLA=="
       },
-      "System.Threading.RateLimiting": {
-        "type": "Transitive",
-        "resolved": "9.0.18",
-        "contentHash": "pxuHw/tQXaHMRXEaKzzgpoGO8VeTPIzHbnp0KclXp6js5wPHn7VaqSCa8yRTAsZDcZ2XuIEnXGM2MbRDJFLBog=="
-      },
       "xunit.analyzers": {
         "type": "Transitive",
         "resolved": "2.1.0",
@@ -963,7 +958,8 @@
           "Microsoft.Extensions.Diagnostics": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )",
           "OpenTelemetry.Api": "[1.19.1, )",
-          "Polly.Core": "[8.8.0, )"
+          "Polly.Core": "[8.8.0, )",
+          "System.Threading.RateLimiting": "[10.0.12, )"
         }
       },
       "headless.messaging.abstractions": {
@@ -1477,6 +1473,12 @@
           "Microsoft.IdentityModel.JsonWebTokens": "8.23.0",
           "Microsoft.IdentityModel.Tokens": "8.23.0"
         }
+      },
+      "System.Threading.RateLimiting": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "Y3f2aLAgynO44Q9xYHR35NC1KuSTcZwo49xjHuq0gQWyOWw8fvipIdoc+1e8FS+9neYZuQ1K4iwl5frNJXekgw=="
       },
       "Testcontainers": {
         "type": "CentralTransitive",
