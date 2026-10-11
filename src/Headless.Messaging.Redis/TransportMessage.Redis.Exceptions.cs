@@ -21,10 +21,16 @@ public sealed class RedisConsumeMissingBodyException(string entryId)
 
 /// <summary>
 /// Thrown when a Redis stream entry's headers field exists but cannot be deserialized into the
-/// expected message header format.
+/// expected message header format, or when the deserialized headers do not form a valid Messaging envelope.
 /// </summary>
+/// <remarks>
+/// An envelope rejection carries an <see cref="InvalidDataException"/> whose message says what is wrong, such as a
+/// missing message id, a message name that conflicts with the stream's contract, or an over-long message id. The
+/// error context passed to <see cref="RedisMessagingOptions.OnConsumeError"/> keeps that reason and replaces a
+/// deserialization failure with a generic one, because a serializer message can quote the raw headers.
+/// </remarks>
 /// <param name="entryId">The Redis stream entry identifier the parse failure originated from.</param>
-/// <param name="ex">The underlying deserialization failure.</param>
+/// <param name="ex">The underlying deserialization failure or envelope rejection.</param>
 [PublicAPI]
 public sealed class RedisConsumeInvalidHeadersException(string entryId, Exception ex)
     : Exception($"Redis entry [{entryId}] has not headers that are formatted properly as message headers.", ex);

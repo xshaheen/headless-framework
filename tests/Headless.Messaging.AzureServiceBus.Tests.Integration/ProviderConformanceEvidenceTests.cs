@@ -30,6 +30,13 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
         TransportConformanceTestBinding[] bindings =
         [
             new(
+                TransportConformanceScenario.RawPayloadConsumption,
+                typeof(AzureServiceBusRawPayloadTests),
+                nameof(
+                    AzureServiceBusRawPayloadTests.should_run_the_handler_once_when_azure_redelivers_a_headerless_message_it_already_handled
+                )
+            ),
+            new(
                 TransportConformanceScenario.RoutingAffinityMappingOrRejection,
                 typeof(ProviderConformanceEvidenceTests),
                 nameof(should_prove_routing_affinity_mapping_or_rejection)

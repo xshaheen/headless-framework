@@ -219,7 +219,7 @@ internal sealed class MessagePublishRequestFactory(
             headers[Headers.RoutingAffinityKey] = affinityKey;
         }
 
-        _ApplyProviderHeaderContributions(headers, metadata, contentObj, declaredMessageType);
+        _ApplyProviderHeaderContributions(headers, metadata, contentObj, declaredMessageType, messageName, lane);
         if (options?.RoutingAffinityKey is { } contributedAffinityKey)
         {
             capabilityGate!.EnsureRoutingAffinitySupported(messageName, lane, contributedAffinityKey, headers);
@@ -386,11 +386,28 @@ internal sealed class MessagePublishRequestFactory(
         Dictionary<string, string?> headers,
         MessageMetadata? metadata,
         T? contentObj,
-        Type messageType
+        Type messageType,
+        string messageName,
+        MessageLane lane
     )
     {
-        if (metadata is null || contentObj is null || metadata.ProviderConfigs.Count == 0)
+        if (metadata is null || metadata.ProviderConfigs.Count == 0)
         {
+            return;
+        }
+
+        if (contentObj is null)
+        {
+            // Contributions are computed from the payload, so none run; a provider that cannot send without its
+            // contributed value refuses here, before the message is stored and retried with no way to deliver it.
+            foreach (var config in metadata.ProviderConfigs.Values)
+            {
+                if (config is IProviderMissingPayloadValidation validation)
+                {
+                    validation.ValidateMissingPayload(messageName, lane);
+                }
+            }
+
             return;
         }
 

@@ -48,6 +48,9 @@ internal sealed class AmazonSqsConsumerClient(
     private readonly TransportEnvelopeGate _envelopeGate =
         serviceProvider?.GetService<TransportEnvelopeGate>() ?? TransportEnvelopeGate.Strict;
 
+    // Shared by every client of the process, so a topic is created once rather than once per client and start step.
+    private readonly SnsTopicArnCache _topicArns = serviceProvider?.GetService<SnsTopicArnCache>() ?? new();
+
     private ImmutableArray<string> _queueUrls = [];
 
     // The message name each polled queue belongs to, built when the client subscribes: on the Queue lane a queue URL
@@ -114,7 +117,7 @@ internal sealed class AmazonSqsConsumerClient(
             }
 
             // The Bus lane hands the message names on, so the client that subscribes knows which messages its queue
-            // carries; it resolves their topics again, which CreateTopic answers idempotently.
+            // carries; it finds their topic ARNs in the process-wide cache this step fills.
             List<string> names = [.. messageNames];
             _ = _ResolveBusArrivalName(names);
 
@@ -165,7 +168,22 @@ internal sealed class AmazonSqsConsumerClient(
 
             await _ConnectAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
             var topicArns = await _CreateTopicsAsync(names, cancellationToken).ConfigureAwait(false);
-            await _SubscribeToTopics(topicArns, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _SubscribeToTopics(topicArns, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Amazon.SimpleNotificationService.Model.NotFoundException)
+            {
+                // A topic deleted after this process cached its ARN; forget the names so the supervised retry recreates
+                // the topics instead of failing on the stale ARN forever.
+                foreach (var name in names)
+                {
+                    _topicArns.Forget(AwsPhysicalAddress.BusTopic(name));
+                }
+
+                throw;
+            }
+
             _ready.TrySetResult();
         }
         catch (AmazonServiceException exception)
@@ -919,13 +937,11 @@ internal sealed class AmazonSqsConsumerClient(
         var topicArns = new List<string>(messageNames.Count);
         foreach (var messageName in messageNames)
         {
-            var createTopicRequest = AwsPhysicalAddress.BusTopic(messageName).ToSnsCreateTopicRequest();
-
-            var createTopicResponse = await _snsClient!
-                .CreateTopicAsync(createTopicRequest, cancellationToken)
+            var topicArn = await _topicArns
+                .GetOrCreateAsync(_snsClient!, AwsPhysicalAddress.BusTopic(messageName), cancellationToken)
                 .ConfigureAwait(false);
 
-            topicArns.Add(createTopicResponse.TopicArn);
+            topicArns.Add(topicArn);
         }
 
         return topicArns;

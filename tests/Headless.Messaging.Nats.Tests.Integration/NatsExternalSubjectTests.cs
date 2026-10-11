@@ -127,6 +127,29 @@ public sealed class NatsExternalSubjectTests(NatsFixture fixture) : TestBase
     }
 
     [Fact]
+    public async Task should_refuse_a_durable_publish_without_a_payload_before_storing_it()
+    {
+        // given
+        var scope = TestScope.Create();
+        await using var host = await _StartHostAsync(
+            scope,
+            streams => streams.Own(scope.Stream, s => s.Subjects(scope.StreamSubjects)),
+            consume: false
+        );
+
+        // when
+        var act = () =>
+            host
+                .Services.GetRequiredService<IQueue>()
+                .EnqueueAsync<ExternalRun>(null, new QueueOptions { DeliveryMode = DeliveryMode.Durable }, AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*'{scope.MessageName}'*Queue lane*'{scope.Filter}'*PublishTo*payload*");
+    }
+
+    [Fact]
     public async Task should_fail_startup_when_no_declared_stream_covers_the_filter()
     {
         // given: a declared stream that carries only one tenant's subjects

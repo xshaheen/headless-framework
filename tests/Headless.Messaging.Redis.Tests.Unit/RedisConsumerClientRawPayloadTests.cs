@@ -141,7 +141,83 @@ public sealed class RedisConsumerClientRawPayloadTests : TestBase
         // then
         message.Should().BeNull();
         error!.Exception.Should().BeOfType<RedisConsumeInvalidHeadersException>();
+        error.Exception.InnerException.Should().BeOfType<InvalidDataException>();
+        error
+            .Exception.InnerException!.Message.Should()
+            .Be($"The Redis delivery names message '{_StrictName}' but arrived on the address of '{_RawName}'.");
         await _streams.Received(1).Ack(_RawStream, "group", _EntryId, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task should_report_the_missing_header_reason_when_a_strict_entry_has_no_message_id()
+    {
+        // given
+        var entry = new StreamEntry(
+            _EntryId,
+            [
+                new NameValueEntry("headers", $$"""{"{{MessagingHeaders.MessageName}}":"{{_StrictName}}"}"""),
+                new NameValueEntry("body", "{}"u8.ToArray()),
+            ]
+        );
+
+        // when
+        var (message, error) = await _ConsumeAsync(_StrictStream, _StrictName, entry);
+
+        // then
+        message.Should().BeNull();
+        error!.Exception.Should().BeOfType<RedisConsumeInvalidHeadersException>();
+        error
+            .Exception.InnerException!.Message.Should()
+            .Be("The Redis transport envelope is missing a required Messaging header.");
+    }
+
+    [Fact]
+    public async Task should_report_the_over_long_id_reason_when_a_message_id_exceeds_the_limit()
+    {
+        // given
+        var longId = new string('a', MessageOptions.MessageIdMaxLength + 1);
+        var entry = new StreamEntry(
+            _EntryId,
+            [
+                new NameValueEntry("headers", $$"""{"{{MessagingHeaders.MessageId}}":"{{longId}}"}"""),
+                new NameValueEntry("body", "{}"u8.ToArray()),
+            ]
+        );
+
+        // when
+        var (message, error) = await _ConsumeAsync(_RawStream, _RawName, entry);
+
+        // then
+        message.Should().BeNull();
+        error!.Exception.Should().BeOfType<RedisConsumeInvalidHeadersException>();
+        var reason = error.Exception.InnerException!.Message;
+        reason.Should().Contain($"longer than {MessageOptions.MessageIdMaxLength} characters");
+        reason.Should().NotContain(longId);
+    }
+
+    [Fact]
+    public async Task should_report_a_sanitized_and_bounded_reason_when_the_header_name_carries_control_characters()
+    {
+        // given
+        // A JSON escape, so the parsed name carries a real line feed.
+        var hostileName = "evil\\u000Aforged-log-line" + new string('x', 2_000);
+        var entry = new StreamEntry(
+            _EntryId,
+            [
+                new NameValueEntry("headers", $$"""{"{{MessagingHeaders.MessageName}}":"{{hostileName}}"}"""),
+                new NameValueEntry("body", "{}"u8.ToArray()),
+            ]
+        );
+
+        // when
+        var (message, error) = await _ConsumeAsync(_RawStream, _RawName, entry);
+
+        // then
+        message.Should().BeNull();
+        var reason = error!.Exception.InnerException!.Message;
+        reason.Should().StartWith("The Redis delivery names message 'evilforged-log-line");
+        reason.Should().NotContain("\n");
+        reason.Length.Should().BeLessThanOrEqualTo(512 + 3);
     }
 
     [Fact]
@@ -159,6 +235,8 @@ public sealed class RedisConsumerClientRawPayloadTests : TestBase
         // then
         message.Should().BeNull();
         error!.Exception.Should().BeOfType<RedisConsumeInvalidHeadersException>();
+        error.Exception.InnerException.Should().BeOfType<InvalidDataException>();
+        error.Exception.InnerException!.Message.Should().Be("The Redis message headers could not be parsed.");
     }
 
     [Fact]

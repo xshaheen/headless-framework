@@ -19,6 +19,13 @@ public sealed class ProviderConformanceEvidenceTests(NatsFixture fixture) : Test
         TransportConformanceTestBinding[] bindings =
         [
             new(
+                TransportConformanceScenario.RawPayloadConsumption,
+                typeof(NatsRawPayloadTests),
+                nameof(
+                    NatsRawPayloadTests.should_consume_a_headerless_message_once_across_a_redelivery_of_the_stored_message
+                )
+            ),
+            new(
                 TransportConformanceScenario.RoutingAffinityMappingOrRejection,
                 typeof(ProviderConformanceEvidenceTests),
                 nameof(should_prove_routing_affinity_mapping_or_rejection)

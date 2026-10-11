@@ -19,6 +19,11 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
         TransportConformanceTestBinding[] bindings =
         [
             new(
+                TransportConformanceScenario.RawPayloadConsumption,
+                typeof(RabbitMqRawPayloadTests),
+                nameof(RabbitMqRawPayloadTests.should_run_the_handler_once_when_a_raw_message_id_is_delivered_twice)
+            ),
+            new(
                 TransportConformanceScenario.RoutingAffinityMappingOrRejection,
                 typeof(ProviderConformanceEvidenceTests),
                 nameof(should_prove_routing_affinity_mapping_or_rejection)

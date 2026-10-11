@@ -19,6 +19,11 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
         TransportConformanceTestBinding[] bindings =
         [
             new(
+                TransportConformanceScenario.RawPayloadConsumption,
+                typeof(RedisRawPayloadTests),
+                nameof(RedisRawPayloadTests.should_consume_a_headerless_entry_once_and_poison_a_malformed_body)
+            ),
+            new(
                 TransportConformanceScenario.RoutingAffinityMappingOrRejection,
                 typeof(ProviderConformanceEvidenceTests),
                 nameof(should_prove_routing_affinity_mapping_or_rejection)

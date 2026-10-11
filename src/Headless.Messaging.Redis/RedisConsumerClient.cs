@@ -2,6 +2,7 @@
 
 using System.Collections.Frozen;
 using Headless.Checks;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -24,6 +25,9 @@ internal sealed class RedisConsumerClient(
 ) : IConsumerClient
 {
     private const string _TransportName = "Redis";
+
+    // The longest envelope rejection reason an error context carries; it reaches logs.
+    private const int _MaxLoggedReasonLength = 512;
 
     // A client built without a container still hands a custom headers builder a provider, one with no services.
     private static readonly IServiceProvider _NoServices = new NoServices();
@@ -429,6 +433,15 @@ internal sealed class RedisConsumerClient(
         {
             RedisConsumeMissingHeadersException => new RedisConsumeMissingHeadersException(entryId),
             RedisConsumeMissingBodyException => new RedisConsumeMissingBodyException(entryId),
+            // Only the envelope gate wraps an InvalidDataException. Its reason tells a missing id from a conflicting
+            // name or an over-long id, and quotes no header value except a sanitized, bounded message name, so it is
+            // kept; it is sanitized again here because it reaches logs. A JSON parse failure keeps the generic text
+            // because the serializer's message can quote the raw headers field.
+            RedisConsumeInvalidHeadersException { InnerException: InvalidDataException rejection } =>
+                new RedisConsumeInvalidHeadersException(
+                    entryId,
+                    new InvalidDataException(LogSanitizer.Sanitize(rejection.Message, _MaxLoggedReasonLength))
+                ),
             RedisConsumeInvalidHeadersException => new RedisConsumeInvalidHeadersException(
                 entryId,
                 new InvalidDataException("The Redis message headers could not be parsed.")

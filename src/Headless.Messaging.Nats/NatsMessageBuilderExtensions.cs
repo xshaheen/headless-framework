@@ -174,7 +174,9 @@ public sealed class NatsExternalSubjectBuilder<TMessage>
     /// A delegate that derives the subject from the message instance. The subject must be literal (no <c>*</c> or
     /// <c>&gt;</c>, no empty token, no whitespace or control characters) and match the binding's filter; otherwise the
     /// publish throws an <see cref="InvalidOperationException"/> before anything is stored. Without a selector, a literal
-    /// filter is the publish subject, and a wildcard filter makes the lane consume-only.
+    /// filter is the publish subject, and a wildcard filter makes the lane consume-only. A publish with a
+    /// <see langword="null"/> payload has nothing to compute from: it goes to a literal filter, and on a wildcard filter
+    /// it throws an <see cref="InvalidOperationException"/> before anything is stored.
     /// </param>
     /// <returns>The same builder for chaining.</returns>
     public NatsExternalSubjectBuilder<TMessage> PublishTo(Func<TMessage, string> selector)
@@ -244,7 +246,7 @@ internal sealed record NatsExternalSubjectSpec<TMessage>(
 internal sealed class NatsMessageConfig<TMessage>(
     Func<TMessage, string?>? subjectShardSelector,
     NatsExternalSubjectSpec<TMessage>? externalSubject = null
-) : IProviderHeaderContributions, INatsMessageConfig
+) : IProviderHeaderContributions, IProviderMissingPayloadValidation, INatsMessageConfig
     where TMessage : class
 {
     // A message contract merges with an identical redeclaration from another module, so two configs holding the same
@@ -262,6 +264,23 @@ internal sealed class NatsMessageConfig<TMessage>(
         && Equals(_externalSubject, other._externalSubject);
 
     public override int GetHashCode() => HashCode.Combine(_selector, _externalSubject);
+
+    // A wildcard filter is not a subject, so without the payload PublishTo needs the message has nowhere to go. A
+    // literal filter is a subject, so a payload-less publish still goes there.
+    public void ValidateMissingPayload(string messageName, MessageLane lane)
+    {
+        if (
+            _externalSubject is { PublishSelector: not null } externalSubject
+            && !NatsExternalSubjectRules.IsLiteral(externalSubject.Filter)
+        )
+        {
+            throw new InvalidOperationException(
+                $"Message '{messageName}' on the {lane} lane is bound to the NATS wildcard subject "
+                    + $"'{externalSubject.Filter}' and computes its publish subject with PublishTo, which needs the "
+                    + "payload. Publish it with a payload."
+            );
+        }
+    }
 
     public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =
         _BuildContributions(subjectShardSelector, externalSubject);

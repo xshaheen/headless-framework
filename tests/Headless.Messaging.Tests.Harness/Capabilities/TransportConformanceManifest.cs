@@ -31,6 +31,7 @@ public enum TransportConformanceScenario
     RequestReplyForeignAddressRefusal,
     RequestReplyCallerCleanup,
     RequestReplyStartupRejection,
+    RawPayloadConsumption,
 }
 
 /// <summary>
@@ -238,6 +239,7 @@ public static class TransportConformanceManifest
         {
             ["NATS"] = TransportConformanceProfile
                 .CreateDisabled("NATS")
+                .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.RoutingAffinityMappingOrRejection,
                     ConformanceSupport.Supported
@@ -273,6 +275,7 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["RabbitMQ"] = TransportConformanceProfile
                 .CreateDisabled("RabbitMQ")
+                .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.RoutingAffinityMappingOrRejection,
                     ConformanceSupport.Supported
@@ -308,6 +311,7 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["AWS/LocalStack"] = TransportConformanceProfile
                 .CreateDisabled("AWS/LocalStack")
+                .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.RoutingAffinityMappingOrRejection,
                     ConformanceSupport.Supported
@@ -348,6 +352,7 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["Kafka"] = TransportConformanceProfile
                 .CreateDisabled("Kafka")
+                .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.RoutingAffinityMappingOrRejection,
                     ConformanceSupport.Supported
@@ -407,6 +412,7 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["Pulsar"] = TransportConformanceProfile
                 .CreateDisabled("Pulsar")
+                .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.RoutingAffinityMappingOrRejection,
                     ConformanceSupport.Supported
@@ -443,6 +449,7 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["Azure Service Bus"] = TransportConformanceProfile
                 .CreateDisabled("Azure Service Bus")
+                .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.RoutingAffinityMappingOrRejection,
                     ConformanceSupport.Supported
@@ -475,6 +482,12 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["InMemory"] = TransportConformanceProfile
                 .CreateDisabled("InMemory")
+                .WithScenario(
+                    TransportConformanceScenario.RawPayloadConsumption,
+                    ConformanceSupport.NotApplicable(
+                        "The in-memory transport carries only messages Headless publishes; no foreign producer can reach it."
+                    )
+                )
                 .WithScenario(
                     TransportConformanceScenario.RoutingAffinityMappingOrRejection,
                     ConformanceSupport.Supported
@@ -510,6 +523,7 @@ public static class TransportConformanceManifest
                 ),
             ["Redis"] = TransportConformanceProfile
                 .CreateDisabled("Redis")
+                .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.RoutingAffinityMappingOrRejection,
                     ConformanceSupport.Supported

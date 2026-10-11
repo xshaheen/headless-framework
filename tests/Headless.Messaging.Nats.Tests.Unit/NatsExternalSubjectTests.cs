@@ -66,6 +66,49 @@ public sealed class NatsExternalSubjectTests : TestBase
         act.Should().Throw<InvalidOperationException>().WithMessage("*consume-only*");
     }
 
+    [Fact]
+    public void should_refuse_a_null_payload_when_publish_to_computes_the_subject_of_a_wildcard_filter()
+    {
+        // given
+        var config = (IProviderMissingPayloadValidation)_Config(n =>
+            n.ExternalSubject(_Filter, s => s.PublishTo(_SharedSelector))
+        );
+
+        // when
+        var act = () => config.ValidateMissingPayload(_Name, MessageLane.Queue);
+
+        // then
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage($"*'{_Name}'*Queue lane*'{_Filter}'*PublishTo*payload*");
+    }
+
+    [Theory]
+    [InlineData("literal filter with PublishTo")]
+    [InlineData("literal filter")]
+    [InlineData("wildcard filter without PublishTo")]
+    public void should_accept_a_null_payload_when_publish_to_does_not_decide_the_subject(string scenario)
+    {
+        // given
+        var config = (IProviderMissingPayloadValidation)_Config(n =>
+            _ = scenario switch
+            {
+                "literal filter with PublishTo" => n.ExternalSubject(
+                    "acme.runs.result",
+                    s => s.PublishTo(_ => "acme.runs.result")
+                ),
+                "literal filter" => n.ExternalSubject("acme.runs.result"),
+                _ => n.ExternalSubject(_Filter),
+            }
+        );
+
+        // when
+        var act = () => config.ValidateMissingPayload(_Name, MessageLane.Queue);
+
+        // then
+        act.Should().NotThrow();
+    }
+
     [Theory]
     [InlineData("acme.*.runs.r9.result", "must be literal")]
     [InlineData("acme.t1.runs.>", "must be literal")]

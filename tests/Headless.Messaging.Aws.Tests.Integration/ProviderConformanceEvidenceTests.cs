@@ -27,6 +27,13 @@ public sealed class ProviderConformanceEvidenceTests(LocalStackTestFixture fixtu
         TransportConformanceTestBinding[] bindings =
         [
             new(
+                TransportConformanceScenario.RawPayloadConsumption,
+                typeof(AmazonSqsRawPayloadTests),
+                nameof(
+                    AmazonSqsRawPayloadTests.should_consume_a_headerless_queue_message_once_across_a_redelivery_and_poison_a_malformed_body
+                )
+            ),
+            new(
                 TransportConformanceScenario.RoutingAffinityMappingOrRejection,
                 typeof(ProviderConformanceEvidenceTests),
                 nameof(should_prove_routing_affinity_mapping_or_rejection)

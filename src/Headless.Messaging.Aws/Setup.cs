@@ -129,6 +129,7 @@ public static class SetupMessagingAws
             configureOptions(services);
             services.AddSingleton<IBusTransport, AmazonSnsBusTransport>();
             services.AddSingleton<IQueueTransport, AmazonSqsQueueTransport>();
+            services.AddSingleton<SnsTopicArnCache>();
             services.AddSingleton<IConsumerClientFactory, AmazonSqsConsumerClientFactory>();
         }
     }
