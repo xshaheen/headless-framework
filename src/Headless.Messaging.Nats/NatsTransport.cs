@@ -12,9 +12,12 @@ internal sealed class NatsTransport(
     ILogger<NatsTransport> logger,
     INatsConnectionPool connectionPool,
     NatsStreamProvisioner streamProvisioner,
-    MessageLane lane = MessageLane.Bus
+    MessageLane lane = MessageLane.Bus,
+    NatsExternalSubjects? externalSubjects = null
 ) : IBusTransport, IQueueTransport
 {
+    private readonly NatsExternalSubjects _externalSubjects = externalSubjects ?? NatsExternalSubjects.Empty;
+
     // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
     private int _disposed;
 
@@ -41,11 +44,20 @@ internal sealed class NatsTransport(
             // NatsJSContext is a stateless wrapper around the connection, so it's safe to create per call.
             var js = new NatsJSContext(connection);
 
-            subject = ResolveSubject(message, lane, logger);
+            var external = _externalSubjects.Find(lane, message.Name);
+            subject = external is null
+                ? ResolveSubject(message, lane, logger)
+                : ResolveExternalSubject(message, external);
 
             // A publish-only host creates the stream itself rather than waiting for a consumer host to have started.
             var stream = await streamProvisioner
-                .EnsureForPublishAsync(js, lane, message.Name, _IsSharded(message), cancellationToken)
+                .EnsureForPublishAsync(
+                    js,
+                    lane,
+                    message.Name,
+                    external is null && _IsSharded(message),
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             _WarnIfNoConsumer(stream);
@@ -117,7 +129,10 @@ internal sealed class NatsTransport(
         NatsHeaders? headers = null;
         foreach (var header in message.Headers)
         {
-            if (header.Value is not null)
+            if (
+                header.Value is not null
+                && !string.Equals(header.Key, NatsMessagingHeaders.ExternalSubject, StringComparison.Ordinal)
+            )
             {
                 headers ??= [];
                 headers[header.Key] = header.Value;
@@ -184,6 +199,16 @@ internal sealed class NatsTransport(
     private static bool _IsSharded(TransportMessage message) =>
         message.Headers.TryGetValue(NatsMessagingHeaders.SubjectShard, out var shard)
         && !string.IsNullOrWhiteSpace(shard);
+
+    /// <summary>
+    /// Returns the subject a message of an external binding goes to: the subject stored with it when its publish request
+    /// was created, or the binding's literal filter. Unlike a shard, an invalid subject never falls back to another one.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The message has no valid subject.</exception>
+    internal static string ResolveExternalSubject(TransportMessage message, NatsExternalBinding binding) =>
+        binding.PublishSubject(
+            message.Headers.TryGetValue(NatsMessagingHeaders.ExternalSubject, out var computed) ? computed : null
+        );
 
     internal static string ResolveSubject(
         TransportMessage message,

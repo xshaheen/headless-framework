@@ -108,6 +108,18 @@ public sealed class RedisMessagingOptions
     public int ConnectionPoolSize { get; set; } = 10;
 
     /// <summary>
+    /// Optional callback that adds headers to an inbound message from its stream entry. Use this to surface the
+    /// entry id or a field a foreign producer wrote as framework message headers, or to translate a foreign value.
+    /// </summary>
+    /// <remarks>
+    /// A header the callback returns overwrites the same header read from the entry's <c>headers</c> field. The
+    /// transport stamps <c>headless-transport-address</c> after the callback, so the callback cannot choose it. An
+    /// exception from the callback settles the entry as malformed: it is acknowledged and reported through
+    /// <see cref="OnConsumeError"/>, and no handler runs.
+    /// </remarks>
+    public Func<StreamEntry, IServiceProvider, List<KeyValuePair<string, string>>>? CustomHeadersBuilder { get; set; }
+
+    /// <summary>
     /// Optional callback invoked when an error occurs during message consumption. Use this to
     /// log or alert on failed entries.
     /// When <see langword="null"/>, consume errors are logged and the entry is skipped.

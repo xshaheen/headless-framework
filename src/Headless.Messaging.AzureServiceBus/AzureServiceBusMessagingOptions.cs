@@ -151,9 +151,15 @@ public sealed class AzureServiceBusMessagingOptions
     public TokenCredential? TokenCredential { get; set; }
 
     /// <summary>
-    /// Use this function to write additional headers from the original ASB Message or any Custom Header, i.e. to allow
-    /// compatibility with heterogeneous systems, into <see cref="MessageHeader" />
+    /// Optional callback that writes headers for an inbound message from the native <see cref="ServiceBusReceivedMessage" />,
+    /// for example to translate a foreign producer's properties into framework message headers.
     /// </summary>
+    /// <remarks>
+    /// A header the callback returns overwrites the application property of the same name, so the callback can correct a
+    /// value the producer sent. It cannot set <c>headless-transport-address</c>, which the consumer stamps afterwards. An
+    /// exception from the callback dead-letters the message as a malformed envelope, with the reason
+    /// <c>MalformedEnvelope</c>.
+    /// </remarks>
     public Func<
         ServiceBusReceivedMessage,
         IServiceProvider,

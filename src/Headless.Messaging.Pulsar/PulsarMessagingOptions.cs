@@ -37,6 +37,20 @@ public sealed class PulsarMessagingOptions
     public TimeSpan NegativeAckRedeliveryDelay { get; set; } = TimeSpan.FromMinutes(1);
 
     /// <summary>
+    /// Optional callback that adds headers to an inbound message from native Pulsar metadata, such as the message key,
+    /// event time, or a foreign producer's own property names. Each returned header overwrites a message property of the
+    /// same name, and runs before the envelope is checked, so it can supply a message id or name a foreign producer
+    /// wrote under another property. It cannot choose <c>headless-transport-address</c>, which the transport always
+    /// stamps from the topic. A callback that throws settles the message like a malformed envelope: it is logged and
+    /// acknowledged, so it is not redelivered.
+    /// </summary>
+    public Func<
+        Message<byte[]>,
+        IServiceProvider,
+        List<KeyValuePair<string, string>>
+    >? CustomHeadersBuilder { get; set; }
+
+    /// <summary>
     /// TLS configuration for the Pulsar connection. When <see langword="null"/>, TLS is disabled
     /// and the client connects over plain-text.
     /// </summary>

@@ -90,6 +90,12 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         }
     }
 
+    /// <summary>Creates a queue with a short lock and no sessions, deleted when the fixture is disposed.</summary>
+    public async ValueTask CreateQueueAsync(string queueName, CancellationToken cancellationToken)
+    {
+        await _CreateQueueAsync(queueName, cancellationToken);
+    }
+
     public async ValueTask<string> CreateTopicAsync(CancellationToken cancellationToken)
     {
         var topicName = _UniqueName("topic");

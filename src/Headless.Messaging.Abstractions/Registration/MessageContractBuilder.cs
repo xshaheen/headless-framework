@@ -82,6 +82,15 @@ public interface IBusContractBuilder<TMessage>
     /// <param name="mode">The delivery mode.</param>
     /// <returns>This builder, for chaining.</returns>
     IBusContractBuilder<TMessage> WithDeliveryMode(DeliveryMode mode);
+
+    /// <summary>
+    /// Accepts deliveries of this message that arrive without the Headless envelope headers, such as JSON a non-.NET
+    /// producer published with its broker's own client. The address the delivery arrived on names the contract, the
+    /// message identifier is derived from the broker's own metadata so a redelivery is still deduplicated, and the body
+    /// reaches the serializer unchanged. A delivery that carries the envelope headers takes the normal path.
+    /// </summary>
+    /// <returns>This builder, for chaining.</returns>
+    IBusContractBuilder<TMessage> RawPayload();
 }
 
 /// <summary>Configures the Queue route of one message contract.</summary>
@@ -102,6 +111,15 @@ public interface IQueueContractBuilder<TMessage>
     /// <param name="mode">The delivery mode.</param>
     /// <returns>This builder, for chaining.</returns>
     IQueueContractBuilder<TMessage> WithDeliveryMode(DeliveryMode mode);
+
+    /// <summary>
+    /// Accepts deliveries of this message that arrive without the Headless envelope headers, such as JSON a non-.NET
+    /// producer published with its broker's own client. The address the delivery arrived on names the contract, the
+    /// message identifier is derived from the broker's own metadata so a redelivery is still deduplicated, and the body
+    /// reaches the serializer unchanged. A delivery that carries the envelope headers takes the normal path.
+    /// </summary>
+    /// <returns>This builder, for chaining.</returns>
+    IQueueContractBuilder<TMessage> RawPayload();
 }
 
 internal sealed class MessageContractBuilder<TMessage> : MessageContractBuilder, IMessageContractBuilder<TMessage>
@@ -173,6 +191,7 @@ internal sealed class MessageContractBuilder<TMessage> : MessageContractBuilder,
         private readonly ProviderConfigBag _providerConfigs = new();
         private bool _requiresRoutingAffinity;
         private DeliveryMode? _deliveryMode;
+        private bool _rawPayload;
 
         IBusContractBuilder<TMessage> IBusContractBuilder<TMessage>.RequireRoutingAffinity()
         {
@@ -183,6 +202,18 @@ internal sealed class MessageContractBuilder<TMessage> : MessageContractBuilder,
         IBusContractBuilder<TMessage> IBusContractBuilder<TMessage>.WithDeliveryMode(DeliveryMode mode)
         {
             _SetDeliveryMode(mode);
+            return this;
+        }
+
+        IBusContractBuilder<TMessage> IBusContractBuilder<TMessage>.RawPayload()
+        {
+            _SetRawPayload();
+            return this;
+        }
+
+        IQueueContractBuilder<TMessage> IQueueContractBuilder<TMessage>.RawPayload()
+        {
+            _SetRawPayload();
             return this;
         }
 
@@ -205,12 +236,18 @@ internal sealed class MessageContractBuilder<TMessage> : MessageContractBuilder,
         }
 
         public MessageContractLaneSettings Build() =>
-            new(_requiresRoutingAffinity, _deliveryMode, _providerConfigs.Build());
+            new(_requiresRoutingAffinity, _deliveryMode, _providerConfigs.Build(), _rawPayload);
 
         private void _RequireRoutingAffinity()
         {
             owner.EnsureNotCompleted();
             _requiresRoutingAffinity = true;
+        }
+
+        private void _SetRawPayload()
+        {
+            owner.EnsureNotCompleted();
+            _rawPayload = true;
         }
 
         private void _SetDeliveryMode(DeliveryMode mode)
@@ -226,10 +263,12 @@ internal sealed class MessageContractBuilder<TMessage> : MessageContractBuilder,
 /// <param name="RequiresRoutingAffinity">Whether startup requires a native affinity mapping for the route.</param>
 /// <param name="DeliveryMode">The pinned delivery mode, or <see langword="null"/> for the host default.</param>
 /// <param name="ProviderConfigs">Provider settings for the route, such as a partition key, keyed by config type.</param>
+/// <param name="RawPayload">Whether the route accepts deliveries without the Headless envelope headers.</param>
 internal sealed record MessageContractLaneSettings(
     bool RequiresRoutingAffinity,
     DeliveryMode? DeliveryMode,
-    IReadOnlyDictionary<Type, object> ProviderConfigs
+    IReadOnlyDictionary<Type, object> ProviderConfigs,
+    bool RawPayload = false
 )
 {
     // Provider configs compare by value: the provider config types define equality over the selectors they hold, so two
@@ -239,17 +278,19 @@ internal sealed record MessageContractLaneSettings(
         return other is not null
             && RequiresRoutingAffinity == other.RequiresRoutingAffinity
             && DeliveryMode == other.DeliveryMode
+            && RawPayload == other.RawPayload
             && ProviderConfigs.Count == other.ProviderConfigs.Count
             && ProviderConfigs.All(pair =>
                 other.ProviderConfigs.TryGetValue(pair.Key, out var value) && Equals(pair.Value, value)
             );
     }
 
-    public override int GetHashCode() => HashCode.Combine(RequiresRoutingAffinity, DeliveryMode, ProviderConfigs.Count);
+    public override int GetHashCode() =>
+        HashCode.Combine(RequiresRoutingAffinity, DeliveryMode, RawPayload, ProviderConfigs.Count);
 
     public string Describe()
     {
-        if (!RequiresRoutingAffinity && DeliveryMode is null && ProviderConfigs.Count == 0)
+        if (!RequiresRoutingAffinity && DeliveryMode is null && !RawPayload && ProviderConfigs.Count == 0)
         {
             return "defaults";
         }
@@ -260,6 +301,7 @@ internal sealed record MessageContractLaneSettings(
             {
                 RequiresRoutingAffinity ? "routing affinity required" : null,
                 DeliveryMode is { } mode ? $"delivery mode {mode}" : null,
+                RawPayload ? "raw payload" : null,
                 ProviderConfigs.Count == 0
                     ? null
                     : "provider settings "

@@ -9,6 +9,7 @@ internal static class RedisMessage
     private const string _Headers = "headers";
     private const string _Body = "body";
     private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly long _MaxUnixMilliseconds = DateTimeOffset.MaxValue.ToUnixTimeMilliseconds();
 
     public static NameValueEntry[] AsStreamEntries(this TransportMessage message)
     {
@@ -51,12 +52,21 @@ internal static class RedisMessage
         );
     }
 
-    public static TransportMessage Create(StreamEntry streamEntry)
+    /// <summary>Reads the <c>headers</c> and <c>body</c> fields of a stream entry.</summary>
+    /// <param name="streamEntry">The entry read from the stream.</param>
+    /// <param name="headersOptional">
+    /// Whether the entry may omit the <c>headers</c> field, as an entry a foreign producer wrote to a raw route does.
+    /// An absent field then reads as no headers; a present one must still be a JSON object of strings.
+    /// </param>
+    /// <exception cref="RedisConsumeMissingHeadersException">The headers field is required and absent or empty.</exception>
+    /// <exception cref="RedisConsumeMissingBodyException">The entry has no body field.</exception>
+    /// <exception cref="RedisConsumeInvalidHeadersException">The headers field is not a JSON object of strings.</exception>
+    public static TransportMessage Create(StreamEntry streamEntry, bool headersOptional = false)
     {
         Dictionary<string, string?> headers;
 
-        // The entry always carries exactly the two fields written by AsStreamEntries; a per-entry
-        // ToDictionary allocated a Dictionary (plus boxing) just to look them up by name.
+        // An entry written by AsStreamEntries carries exactly two fields; a per-entry ToDictionary allocated a
+        // Dictionary (plus boxing) just to look them up by name.
         RedisValue headersRaw = RedisValue.Null;
         RedisValue bodyRaw = RedisValue.Null;
 
@@ -74,7 +84,7 @@ internal static class RedisMessage
 
         var entryId = streamEntry.Id.ToString();
 
-        if (headersRaw.IsNullOrEmpty)
+        if (headersRaw.IsNullOrEmpty && !headersOptional)
         {
             throw new RedisConsumeMissingHeadersException(entryId);
         }
@@ -84,33 +94,45 @@ internal static class RedisMessage
             throw new RedisConsumeMissingBodyException(entryId);
         }
 
-        try
+        if (headersRaw.IsNullOrEmpty)
         {
-            headers = JsonSerializer.Deserialize<Dictionary<string, string?>>(json: headersRaw!, _JsonOptions)!;
+            headers = new Dictionary<string, string?>(StringComparer.Ordinal);
         }
-        catch (Exception ex)
+        else
         {
-            throw new RedisConsumeInvalidHeadersException(entryId, ex);
+            try
+            {
+                headers =
+                    JsonSerializer.Deserialize<Dictionary<string, string?>>(json: headersRaw!, _JsonOptions)
+                    ?? throw new JsonException("The Redis headers field is JSON null.");
+            }
+            catch (Exception ex)
+            {
+                throw new RedisConsumeInvalidHeadersException(entryId, ex);
+            }
         }
 
-        _ValidateRequiredHeaders(headers, entryId);
         return new TransportMessage(headers, (ReadOnlyMemory<byte>)bodyRaw);
     }
 
-    private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers, string entryId)
+    /// <summary>
+    /// Reads the time the server stored an entry from its id, <c>&lt;milliseconds&gt;-&lt;sequence&gt;</c>, or
+    /// <see langword="null"/> when the producer chose an id that does not carry one.
+    /// </summary>
+    public static DateTimeOffset? StoredAt(string entryId)
     {
+        var dash = entryId.IndexOf('-', StringComparison.Ordinal);
+        var milliseconds = dash < 0 ? entryId.AsSpan() : entryId.AsSpan(0, dash);
+
         if (
-            !headers.TryGetValue(Headers.MessageId, out var messageId)
-            || string.IsNullOrWhiteSpace(messageId)
-            || !headers.TryGetValue(Headers.MessageName, out var messageName)
-            || string.IsNullOrWhiteSpace(messageName)
+            !long.TryParse(milliseconds, NumberStyles.None, CultureInfo.InvariantCulture, out var unixMilliseconds)
+            || unixMilliseconds > _MaxUnixMilliseconds
         )
         {
-            throw new RedisConsumeInvalidHeadersException(
-                entryId,
-                new InvalidDataException("The Redis transport envelope is missing a required Messaging header.")
-            );
+            return null;
         }
+
+        return DateTimeOffset.FromUnixTimeMilliseconds(unixMilliseconds);
     }
 
     private static RedisValue _ToJson(object? obj)

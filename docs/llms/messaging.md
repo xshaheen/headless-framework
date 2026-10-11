@@ -93,7 +93,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Provider behavior is capability-gated**: immutable transport, storage, and coordination descriptors declare lanes, delayed scheduling, and physical lane-topology support. Bootstrap freezes and validates them before readiness or resolving provider implementations; direct and outbox calls reject unsupported combinations before middleware, storage writes, client creation, or transport I/O. Raw transport DI registration is not capability evidence.
 - **Durable inbox guarantees fail closed**: durable consumers require `MessagingOptions.MinimumInboxGuarantee`, which defaults to `Transactional`. Selecting `Durable` is an explicit opt-down when duplicate suppression may commit separately from application state; selecting `ProcessLocal` is reserved for process-local development storage. Bootstrap validates the storage provider's declared inbox guarantee before subscription creation or retry pickup.
 - **The lane discriminator remains wire-compatible**: public/runtime APIs use `MessageLane`, while storage columns use the `IntentType` name and the `headless-intent` header retains its stable literal and `0`/`1` values. Retry drainers dispatch Bus rows through `IBusTransport` and Queue rows through `IQueueTransport`. A persisted row whose value has no matching capability fails terminally; undefined values never default to Bus.
-- **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer. One exception: an app on NATS that also uses NATS directly (key-value store, object store) registers its own connection and hands it to Headless with `NatsMessagingOptions.UseConnection(...)` instead of opening a second one. See [Headless.Messaging.Nats](#headlessmessagingnats).
+- **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer. One exception: an app on NATS that also uses NATS directly (key-value store, object store) registers its own connection and hands it to Headless with `NatsMessagingOptions.UseConnection(...)` instead of opening a second one. See [Headless.Messaging.Nats](#headlessmessagingnats). Messages a non-.NET producer publishes with its broker's own client are consumed through a `RawPayload()` contract (on NATS, on subjects of their own through `ExternalSubject(...)`), not a raw client loop; see [Foreign producers and raw payloads](#foreign-producers-and-raw-payloads).
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` and leave the consumer's `Concurrency` at 1 for strict ordering.
 - **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
 - **AWS SQS redrive is external**: Configure a dead-letter queue and redrive policy with a bounded receive count for handler failures. Headless terminally deletes malformed transport envelopes and messages poisoned on arrival to prevent requeue storms, and does not provision redrive infrastructure: SQS moves a message to a dead-letter queue only after `maxReceiveCount` receives, so dead-lettering a poisoned message would re-run its poison handling that many times, with no way to attach a reason.
@@ -137,7 +137,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Reserved headers**: `MessageId`, `ContractVersion`, `CorrelationId`, `CausationId`, `CorrelationSequence`, `CallbackName`, `MessageName`, `Type`, `SentTime`, `DelayTime`, `Intent`, and the request/reply headers `RequestId` (`headless-request-id`), `ReplyTo` (`headless-reply-to`), `RequestDeadline` (`headless-request-deadline`), `InReplyTo` (`headless-in-reply-to`), and `ReplyStatus` (`headless-reply-status`), and `TransportAddress` (`headless-transport-address`) are rejected in custom publish headers, `RequestOptions.Headers`, and provider contributions. `TenantId` is also framework-owned; provider contributions cannot write it, while raw publish headers are handled by the stricter tenant-integrity policy for compatibility.
 - **Header validation**: custom header names, custom header values, and framework/provider-stamped header values all reject control characters before publish. This includes explicit `MessageId`, `CorrelationId`, `CallbackName`, and typed `TenantId`.
 - **Explicit message names**: `PublishOptions.MessageName` follows the same validator as registered message mappings. Invalid dot shapes and invalid characters are rejected before publish.
-- **Contract version**: `Message<T>(name, version)` is the normal authority and defaults to version `"1"`. `PublishOptions.ContractVersion` is an explicit per-send override for controlled compatibility work. Consumers validate the header before deserialization, expose it through `ConsumeContext.ContractVersion`, and treat a missing header as version `"1"` for legacy or external producers.
+- **Contract version**: `Message<T>(name, version)` is the normal authority and defaults to version `"1"`. `PublishOptions.ContractVersion` is an explicit per-send override for controlled compatibility work. Consumers validate the header before deserialization, expose it through `ConsumeContext.ContractVersion`, and treat a missing header as version `"1"` for legacy or external producers, except on a `RawPayload()` lane, which fills in the contract's own version.
 - **Transport address**: `ConsumeContext.TransportAddress` is the native address the delivery arrived on: the NATS subject (shard token included), the Kafka or Pulsar topic, the RabbitMQ routing key, the Azure Service Bus entity path, the Amazon SQS queue URL, or the Redis stream key. Read routing tokens such as a tenant or a run identifier from it instead of the payload. It is `null` on the in-memory transport. Each broker consumer client stamps `headless-transport-address` on receipt and overwrites any wire value, so a producer cannot choose it; it is stored with the received message, so a retry from storage sees the original address.
 - **Correlation and causation**: `PublishOptions.CorrelationId` wins. If absent, the contract's `CorrelateBy(...)` selector runs against the payload. If absent, publishes inside a consumer preserve ambient `ConsumeContext.CorrelationId`. If absent, the message id becomes the root correlation id. `PublishOptions.CausationId` wins for the immediate parent; otherwise an ambient consume context contributes its current message id. Consumers read it from `ConsumeContext.CausationId`.
 - **Tenant integrity**: use `MessageOptions.TenantId` or ambient tenancy. Do not write `Headers.TenantId` directly.
@@ -475,6 +475,100 @@ services.AddHeadlessMessaging(setup =>
 - **Jobs.** Jobs keeps one store. To schedule a job atomically with a unit on an additional outbox's database,
   publish a message through `unit.Outbox` and schedule the job from that message's consumer on the Jobs database.
   The outbox row commits with the unit, and the consumer's inbox and `unit.Jobs` give the job the same guarantee.
+
+## Foreign producers and raw payloads
+
+A producer that does not use Headless, such as a Python worker publishing JSON with its broker's own client, sends none of the Headless envelope headers. By default every consumer client settles such a delivery as malformed before any middleware runs. Declare the contract's lane with `RawPayload()` to consume it through the normal pipeline instead, with retry policy, circuit breaker, poison storage, and inbox deduplication:
+
+```csharp
+services.ConfigureMessaging(m => m.Message<OrderPlaced>("orders.placed", "2").OnQueue(q => q.RawPayload()));
+```
+
+`RawPayload()` exists on both lane builders (`OnBus` and `OnQueue`). Consumers stay `[BusConsumer]` or `[QueueConsumer]` over `IConsume<T>`. A delivery that carries the envelope headers takes the normal path on the same lane, so Headless and foreign producers can share one message. Two declarations of one contract merge only when both declare `RawPayload()` on the same lanes.
+
+### How a raw delivery is completed
+
+- **The address names the contract.** On a raw lane, the topic, queue, routing key, subject, or stream a delivery arrived on decides its contract. A `headless-msg-name` header that names a different message makes the delivery malformed, so a foreign header cannot steer a message to a contract its producer did not publish against. Lanes without `RawPayload()` keep header routing, and a header that names a raw contract never completes a delivery that arrived on another message's address. Where an address names no single message, such as a topic reached only through a Kafka pattern subscription, a raw delivery must carry `headless-msg-name`; the rest is completed as below.
+- **Only missing headers are filled**: the message name, a message id derived from the broker (below), the contract's declared version (without it, a raw message on a contract versioned `"2"` would fail the version check, because a missing version reads as `"1"`), `headless-sent-time` from the broker's storage timestamp where the broker has one, and `headless-corr-id` set to the message id, as a Headless publish does when nothing else gives one. A header the producer sent is never replaced.
+- **The body is passed unchanged** to the host's `IMessageSerializer`. A body the serializer cannot read takes the poison path at once and is not redelivered The default serializer matches property names case-sensitively, so a producer writing camelCase JSON needs `[JsonPropertyName]` on the message type or `MessagingOptions.JsonSerializerOptions` configured for it.
+- **Trace context continues**: `traceparent`, `tracestate`, and `baggage` headers from the producer are read as for any delivery.
+
+### Message identity
+
+The message id keys inbox deduplication, so a raw message's id must be the same every time the broker delivers it. First match wins:
+
+1. `headless-msg-id`, when the producer sets it.
+2. The producer's idempotency key in the broker's native field: the NATS `Nats-Msg-Id` header, the AMQP `message-id` property on RabbitMQ, or the Azure Service Bus `MessageId`.
+3. The broker's position for the stored message:
+
+| Provider | Position id | Redelivery |
+| --- | --- | --- |
+| NATS JetStream | `nats:{stream}:{sequence}:{storedUnixNanos}` | Same id; the stored timestamp changes after a stream is recreated, so a reused sequence never matches an old inbox row |
+| NATS every-instance (core) | a new id per delivery | No inbox on this path, so nothing to deduplicate |
+| Kafka | `kafka:{topic}:{partition}:{offset}:{timestampMs}` | Same id; the timestamp guards against a recreated topic. It is the producer's create time unless the topic uses `message.timestamp.type=LogAppendTime`, so a producer that replays records with fixed timestamps into a recreated topic can collide with old inbox rows; use `LogAppendTime` on raw topics |
+| Azure Service Bus | `asb:{entityPath}:{sequenceNumber}:{enqueuedTicks}` | Same id |
+| Amazon SQS | `sqs:{MessageId}` | Same id: SQS keeps its message id across receives |
+| Pulsar | `pulsar:{topic}:{ledger}:{entry}:{partition}:{batch}` | Same id |
+| Redis | `redis:{streamKey}:{entryId}` | Same id |
+| RabbitMQ | none | A delivery tag changes on every redelivery and restarts on every channel, so it is never used. A raw RabbitMQ delivery without `headless-msg-id` or `message-id` is terminally rejected (it dead-letters where a dead-letter exchange is configured) |
+
+A position id longer than 200 characters, which a long topic or stream name can produce, is replaced by `{provider}:sha256:{hex}` of itself. A producer-chosen key (rules 1 and 2) is trusted as-is: two different messages sent with one key are deduplicated, and only the first runs.
+
+### Interop header contract
+
+These headers are a stable wire contract in both directions. A foreign producer may set any of them; every Headless publish writes them, so a foreign consumer of Headless messages can rely on them too. Names are lower case and matched case-sensitively.
+
+| Header | Meaning | Format | On a raw lane, when absent |
+| --- | --- | --- | --- |
+| `headless-msg-id` | Idempotency key; part of the inbox key | Non-blank, at most 200 characters, no control characters | Derived from the broker, above |
+| `headless-msg-name` | Logical message name | The contract's name, including `MessagingOptions.MessageNamePrefix` | The arrival address's contract |
+| `headless-contract-version` | Contract schema version | At most 100 characters, no whitespace or control characters | The contract's version |
+| `headless-tenant-id` | Tenant | At most 200 characters; a longer value is dropped with a log entry | None |
+| `headless-corr-id` | Root correlation | Non-blank | The message id |
+| `headless-causation-id` | Immediate cause | Non-blank | None |
+| `headless-sent-time` | Send time | ISO 8601 with an offset, such as `2026-10-09T12:00:00.0000000+00:00` | The broker's storage time, else the receive time |
+| `traceparent`, `tracestate`, `baggage` | W3C trace context and baggage | W3C | A new trace |
+
+- Every other `headless-*` header is informational and may change. `headless-intent` keeps its stable `0`/`1` values and may be omitted. `headless-transport-address` and `headless-msg-consumer-identity` are overwritten on receipt.
+- A foreign `headless-tenant-id` is honored on a raw lane exactly as on any other lane. The trust boundary is the broker's publish permission on the address, as it is for Headless producers. On NATS, a tenant taken from a subject token is the stronger choice when producers' headers cannot be trusted.
+
+### Where a foreign producer publishes
+
+On a raw lane the address Headless derives from the message name is part of the contract, so these formats are stable. Choose message names you are willing to expose to other teams. Every name includes `MessagingOptions.MessageNamePrefix` when one is set.
+
+| Provider | Address | Headers carried in |
+| --- | --- | --- |
+| NATS | Subject `headless.{bus\|queue}.{name}`, or a subject of your own through [external subjects](#external-subjects) | Message headers |
+| Kafka (Queue only) | Topic `{name}` | Record headers, UTF-8 values |
+| RabbitMQ | Exchange `{ExchangeName}.{bus\|queue}`, routing key `{bus\|queue}.{name}`; set the AMQP `message-id` property | AMQP headers, string or UTF-8 byte values |
+| Azure Service Bus | Bus: topic `TopicPath` with the native `Subject` set to `{name}`; Queue: queue `{name}` | Application properties, string values |
+| AWS | Bus: SNS topic `bus-{name}`; Queue: SQS queue `queue-{name}`. `.` becomes `-` and `:` becomes `_` | One String attribute `headless-aws-headers-v1` holding a JSON object of strings. On a raw lane it is optional, and other attributes are ignored |
+| Pulsar | Topic `headless-{bus\|queue}-{name}` (a `tenant/namespace/` prefix in the name is kept in front) | Message properties |
+| Redis | Stream `headless:messaging:{bus\|queue}:{name}`; the `body` field holds the body bytes | A `headers` field holding a JSON object of strings; optional on a raw lane. An entry without `body` is malformed |
+
+On AWS, SNS raw message delivery does not tell the SQS queue which topic a message came from. A raw Bus contract therefore needs its consumer identity's queue to itself: startup fails when that queue also carries another message.
+
+### Translating other conventions
+
+Every broker provider has a `CustomHeadersBuilder` option that derives extra headers from the native message. It runs before raw completion and overwrites wire headers, so use it to map a producer's own naming, such as CloudEvents binary-mode attributes, onto the contract above:
+
+```csharp
+using System.Text;
+
+services.AddHeadlessMessaging(setup =>
+{
+    setup.UseKafka(kafka =>
+    {
+        kafka.Servers = "localhost:9092";
+        kafka.CustomHeadersBuilder = (record, _) =>
+            record.Message.Headers.TryGetLastBytes("ce_id", out var id)
+                ? [new KeyValuePair<string, string>("headless-msg-id", Encoding.UTF8.GetString(id))]
+                : [];
+    });
+});
+```
+
+A builder exception is settled like a malformed envelope on Azure Service Bus, AWS, Pulsar, and Redis, negatively acknowledged on NATS, seeks back on Kafka, and requeues on RabbitMQ.
 
 ## Writing a Transport Provider
 
@@ -1111,7 +1205,7 @@ Every supported provider removes its reply objects when the caller stops or dies
 - `services.AddHeadlessMessaging(setup => ...)`, called once by the host. `MessagingSetupBuilder` configures transport, storage, `Options`, `Instrumentation`, conventions, and host controls: `AddModule<TModule>()`, `Tune(identity, ...)`, `ConsumeOnly(...)`, `DefaultFailurePolicy<TPolicy>()` or `DefaultFailurePolicy(p => ...)` (the failure policy of every competing consumer and runtime subscription that has none of its own), and `WithMessageNameMapping<T>(name)`. It returns the `MessagingBuilder` that registers middleware.
 - `services.ConfigureMessaging(m => ...)`: a module's contribution through `MessagingContributionBuilder`, before or after `AddHeadlessMessaging`: `AddModule<TModule>()`, `Message<T>(name, version)`, and `Tune(identity, ...)`. The callback runs once, synchronously; contracts are recorded when it returns, so a contract builder used after that throws.
 - `IMessagingModule`: the generated `<AssemblyName>.MessagingModule` of an assembly that declares `[BusConsumer]` or `[QueueConsumer]` classes. See [Headless.Messaging.SourceGenerator](#headlessmessagingsourcegenerator).
-- Message contracts: `Message<T>(name, version = "1")` returns `IMessageContractBuilder<T>` with `CorrelateBy(selector)`, `OnBus(Action<IBusContractBuilder<T>>)`, and `OnQueue(Action<IQueueContractBuilder<T>>)`. Both lane builders expose `RequireRoutingAffinity()` and `WithDeliveryMode(mode)`; provider packages add their message hatches to them. The name and version are stamped on every outgoing envelope and checked before durable dispatch.
+- Message contracts: `Message<T>(name, version = "1")` returns `IMessageContractBuilder<T>` with `CorrelateBy(selector)`, `OnBus(Action<IBusContractBuilder<T>>)`, and `OnQueue(Action<IQueueContractBuilder<T>>)`. Both lane builders expose `RequireRoutingAffinity()`, `WithDeliveryMode(mode)`, and `RawPayload()` (see [Foreign producers and raw payloads](#foreign-producers-and-raw-payloads)); provider packages add their message hatches to them. The name and version are stamped on every outgoing envelope and checked before durable dispatch.
 - Consumer tuning: `Tune(identity, Action<ConsumerTuningBuilder>)` with `Concurrency(byte)` (greater than zero), `InboxRetention(TimeSpan)` (positive whole seconds), `CircuitBreaker(Action<ConsumerCircuitBreakerOptions>)`, `FailurePolicy<TPolicy>()` or `FailurePolicy(Action<FailurePolicyBuilder>)`, `UseMiddleware<TMiddleware>()`, and the provider consumer hatches. Tuning cannot declare a consumer or change its identity, lane, or messages.
 - Consumer identity: validated at build time by the generator (HM001) and again at registration against `ConsumerMetadata.ConsumerIdentityMaxLength` (200), matching relational inbox admission. Bus and Queue identities are collision-scoped independently.
 - `IRuntimeSubscriber.SubscribeAsync<T>(handler, options)` attaches a delegate to the Bus lane after startup. `RuntimeSubscriptionOptions` carries `Identity` (the consumer identity and Bus subscription name, derived from `HandlerId` when omitted), `HandlerId` (defaults to `{DeclaringType}|{Method}|{Message}`, required for anonymous delegates), `MessageName`, `Concurrency`, `EveryInstance`, and `DuplicateBehavior` (`Reject` by default). The returned `RuntimeSubscriptionHandle` exposes `Identity`, `HandlerId`, `MessageName`, and `SubscriptionId`.
@@ -2366,6 +2460,7 @@ Registers the Kafka transport, the shared producer, the consumer factory, and pr
 - `NatsMessagingOptions.UseConnection(sp => ...)` publishes, answers requests, and provisions streams over a NATS connection the app owns.
 - `ConsumeContext.TransportAddress` is the subject the message arrived on, including any shard token.
 - Message hatch on either lane builder: `.OnBus(b => b.UseNats(nats => nats.SubjectShard(message => ...)))` or `.OnQueue(q => q.UseNats(...))`.
+- `ExternalSubject(filter, s => s.PublishTo(...).TenantFromSubjectToken(i))` on the same hatch binds a lane to subjects Headless does not own, on a stream declared in `Streams`. See [External subjects](#external-subjects).
 - Consumer hatch: `Tune(identity, c => c.UseNats(nats => ...))` takes `Sharded()`, needed only when the producer shards a message this host declares without `SubjectShard(...)`, and the consumer's JetStream limits `AckWait(...)`, `MaxAckPending(...)`, `MaxDeliver(...)`, and the opt-in `InactiveThreshold(...)`. A later `UseNats(...)` for the same consumer replaces the earlier one's NATS settings, so set them in one call.
 - Consumer startup honors host cancellation while connecting and provisioning JetStream topology, while preserving configured topology timeouts.
 - Request/reply over a core NATS subscription on `headless.reply.{32 hex}`, outside JetStream; the address survives reconnects. Keep JetStream streams off `headless.reply.>`. See [Request/reply](#requestreply).
@@ -2457,6 +2552,47 @@ services.AddSingleton<NATS.Client.Core.INatsConnection>(_ => new NATS.Client.Cor
 
 setup.UseNats(options => options.UseConnection(sp => sp.GetRequiredService<NATS.Client.Core.INatsConnection>()));
 ```
+
+#### External subjects
+
+A producer that owns its own subjects, such as a Python worker publishing results on `acme.{tenant}.runs.{run}.result`, is consumed by binding the contract's lane to a subject filter with `ExternalSubject(...)`. The stream that captures the subjects is declared in `NatsMessagingOptions.Streams`, as `Own` when Headless should create it or `Bind` when it is managed elsewhere:
+
+```csharp
+using NATS.Client.JetStream.Models;
+
+services.AddHeadlessMessaging(setup =>
+{
+    setup.UseNats(options =>
+    {
+        options.Servers = "nats://localhost:4222";
+        options.Streams.Own(
+            "ACME_RUNS",
+            stream => stream.Subjects("acme.*.runs.*.result").Retention(StreamConfigRetention.Workqueue)
+        );
+    });
+});
+
+services.ConfigureMessaging(m =>
+    m.Message<RunResult>("runs.result")
+        .OnQueue(queue =>
+            queue
+                .RawPayload()
+                .UseNats(nats =>
+                    nats.ExternalSubject(
+                        "acme.*.runs.*.result",
+                        subject => subject.PublishTo(run => $"acme.{run.TenantId}.runs.{run.RunId}.result").TenantFromSubjectToken(1)
+                    )
+                )
+        )
+);
+
+public sealed record RunResult(string TenantId, string RunId);
+```
+
+- **Consume.** The lane gets one durable on the covering stream with the filter as its `FilterSubject`, named from the contract's name as usual; an every-instance Bus consumer opens a core subscription on the filter. The subject is the routing authority: a `headless-msg-name` header naming another contract makes the delivery malformed. `ExternalSubject` does not imply `RawPayload()`, so a binding whose producer sends the Headless headers can stay strict.
+- **Publish.** `PublishTo` computes each message's subject when the publish request is created and stores it with the outbox row, so a retry publishes to the same subject; the header that carries it is never sent. A computed subject that is not literal or does not match the filter throws `InvalidOperationException` before anything is stored. Without `PublishTo`, a literal filter is the publish subject and a wildcard filter makes the lane consume-only.
+- **Tenant.** `TenantFromSubjectToken(i)` reads the zero-based token `i` of the arrival subject into `ConsumeContext.TenantId` and the inbox key. A missing token, one longer than 200 characters, or a `headless-tenant-id` header that differs from it makes the delivery malformed. The subject is the stronger source when producers' headers cannot be trusted, because NATS permissions can restrict which subjects a user publishes to but not which header values it writes.
+- **Startup checks**, all before any broker call, each naming the contract, lane, and filter: the filter is a valid subject pattern; it does not overlap `headless.>`, `_INBOX.>`, `$JS.>`, or `$SYS.>`; exactly one declared stream covers the whole filter (Headless never derives a stream for a foreign subject); the lane does not also use `SubjectShard`; two contracts on one lane do not have overlapping filters; the tenant token lies inside a filter that does not end in `>`; and a Bus binding is not covered by an `Own` stream with WorkQueue retention. A `Bind` stream is checked against the server instead, and Headless never changes it.
 
 NATS declares independent Bus and Queue topology, so the same contract and logical name can carry Bus and Queue consumers without cross-delivery. Malformed transport envelopes are terminated (`AckTerminate`) and logged without payload or headers.
 

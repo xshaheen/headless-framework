@@ -9,7 +9,8 @@ namespace Headless.Messaging.Aws;
 
 internal sealed class AmazonSqsConsumerClientFactory(
     IOptions<AmazonSqsMessagingOptions> amazonSqsOptions,
-    ILogger<AmazonSqsConsumerClient> logger
+    ILogger<AmazonSqsConsumerClient> logger,
+    IServiceProvider? serviceProvider = null
 ) : IConsumerClientFactory
 {
     public Task<IConsumerClient> CreateAsync(
@@ -39,7 +40,14 @@ internal sealed class AmazonSqsConsumerClientFactory(
 
         try
         {
-            var client = new AmazonSqsConsumerClient(subscriptionName, concurrency, amazonSqsOptions, logger, lane);
+            var client = new AmazonSqsConsumerClient(
+                subscriptionName,
+                concurrency,
+                amazonSqsOptions,
+                logger,
+                lane,
+                serviceProvider: serviceProvider
+            );
             return Task.FromResult<IConsumerClient>(client);
         }
         catch (Exception e)

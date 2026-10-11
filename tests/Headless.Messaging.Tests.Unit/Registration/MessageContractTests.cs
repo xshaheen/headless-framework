@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Helpers;
@@ -255,6 +256,49 @@ public sealed class MessageContractTests : TestBase
         _DeliveryModes(provider)
             .Should()
             .BeEquivalentTo([(MessageLane.Bus, DeliveryMode.Direct), (MessageLane.Queue, (DeliveryMode?)null)]);
+    }
+
+    [Fact]
+    public void should_mark_only_the_lane_that_declares_raw_payload_as_raw()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.ConfigureMessaging(messaging =>
+            messaging.Message<OrderPlaced>(_OrderPlacedName, "2").OnQueue(queue => queue.RawPayload())
+        );
+        _AddMessagingHost(services);
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var routes = provider.GetRequiredService<IMessageMetadataRegistry>().GetAll();
+        var gate = provider.GetRequiredService<TransportEnvelopeGate>();
+
+        // then
+        routes
+            .Select(route => (route.Route.Lane, route.RawPayload))
+            .Should()
+            .BeEquivalentTo([(MessageLane.Bus, false), (MessageLane.Queue, true)]);
+        gate.IsRaw(MessageLane.Queue, _OrderPlacedName).Should().BeTrue();
+        gate.IsRaw(MessageLane.Bus, _OrderPlacedName).Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_fail_when_one_declaration_accepts_raw_payloads_and_another_does_not()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.ConfigureMessaging(messaging =>
+            messaging.Message<OrderPlaced>(_OrderPlacedName, "1").OnBus(bus => bus.RawPayload())
+        );
+        services.ConfigureMessaging(messaging => messaging.Message<OrderPlaced>(_OrderPlacedName, "1"));
+        _AddMessagingHost(services);
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var build = () => provider.GetRequiredService<ConsumerRegistry>();
+
+        // then
+        build.Should().Throw<InvalidOperationException>().WithMessage("*conflicting*raw payload*");
     }
 
     [Fact]

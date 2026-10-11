@@ -24,7 +24,9 @@ internal sealed record MessageRegistration(
     DeliveryMode? DeliveryMode = null,
     // False for consumer registrations. They carry no message-level settings, so they join the contract that declares
     // the message.
-    bool DeclaresMessage = true
+    bool DeclaresMessage = true,
+    // Only a contract accepts deliveries without the envelope headers; a consumer registration never opts a route in.
+    bool RawPayload = false
 )
 {
     /// <summary>

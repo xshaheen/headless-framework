@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Frozen;
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
 using Headless.Checks;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Kafka;
@@ -46,6 +48,12 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private readonly KafkaOffsetCommitTracker? _offsetCommitTracker;
     private readonly HashSet<TopicPartition> _ownedPartitions = [];
     private readonly KafkaConsumerLagTracker _lagTracker;
+    private readonly TransportEnvelopeGate _envelopeGate;
+
+    // The concrete topics this client subscribed. A topic is its message name verbatim, so a record on one of them
+    // belongs to that message even when a foreign producer sent no Headless headers. Replaced, never mutated, so the
+    // handler threads read it without the lock.
+    private volatile FrozenSet<string> _arrivalNames = [];
 
     // Every dispatched delivery, keyed by its handler task, so shutdown and a revoke can wait for the ones they affect.
     private readonly InFlightHandlerTracker _inFlightHandlers = new();
@@ -75,6 +83,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         }
 
         _serviceProvider = serviceProvider;
+        _envelopeGate = serviceProvider.GetService<TransportEnvelopeGate>() ?? TransportEnvelopeGate.Strict;
         _consumerConfig = consumerConfig;
         _consumerFactory = consumerFactory ?? _BuildConsumer;
         _adminClientFactory = adminClientFactory ?? _BuildAdminClient;
@@ -176,10 +185,15 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         Argument.IsNotNull(topics);
         cancellationToken.ThrowIfCancellationRequested();
 
+        var topicList = topics as IReadOnlyCollection<string> ?? [.. topics];
+
         Connect();
 
         // ReSharper disable once InconsistentlySynchronizedField -- volatile read after Connect guarantees the instance is published.
-        _consumerClient!.Subscribe(topics);
+        _consumerClient!.Subscribe(topicList);
+
+        // librdkafka reads a subscription that starts with '^' as a pattern, so only the others name one message.
+        _arrivalNames = topicList.Where(static topic => !topic.StartsWith('^')).ToFrozenSet(StringComparer.Ordinal);
 
         return ValueTask.CompletedTask;
     }
@@ -722,7 +736,12 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         TransportMessage message;
         try
         {
-            _ValidateRequiredHeaders(headers);
+            _envelopeGate.Admit(
+                headers,
+                new EnvelopeArrival("Kafka", MessageLane.Queue, ArrivalName(consumerResult.Topic)),
+                consumerResult,
+                static record => NativeFacts(record)
+            );
             message = new TransportMessage(headers, consumerResult.Message.Value);
         }
         catch (Exception ex)
@@ -748,17 +767,33 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         await CommitAsync(delivery).ConfigureAwait(false);
     }
 
-    private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers)
+    /// <summary>
+    /// Returns the message a record on <paramref name="topic"/> belongs to: the topic itself when this client subscribed
+    /// it by name, or <see langword="null"/> when only a wildcard pattern matched it.
+    /// </summary>
+    internal string? ArrivalName(string topic) => _arrivalNames.Contains(topic) ? topic : null;
+
+    /// <summary>
+    /// Reads the broker metadata that identifies a record which carries no message id. Kafka has no producer
+    /// idempotency key, so the identity is the record's position: the offset is fixed for the life of the record, and
+    /// the timestamp keeps a recreated topic, which restarts its offsets, from reusing an earlier record's identity.
+    /// </summary>
+    internal static NativeEnvelopeFacts NativeFacts(ConsumeResult<string, byte[]> record)
     {
-        if (
-            !headers.TryGetValue(Headers.MessageId, out var messageId)
-            || string.IsNullOrWhiteSpace(messageId)
-            || !headers.TryGetValue(Headers.MessageName, out var messageName)
-            || string.IsNullOrWhiteSpace(messageName)
-        )
-        {
-            throw new InvalidDataException("The Kafka transport envelope is missing a required Messaging header.");
-        }
+        var timestamp = record.Message.Timestamp;
+
+        var position = NativeEnvelopeFacts.Position(
+            "kafka",
+            record.Topic,
+            record.Partition.Value.ToString(CultureInfo.InvariantCulture),
+            record.Offset.Value.ToString(CultureInfo.InvariantCulture),
+            timestamp.UnixTimestampMs.ToString(CultureInfo.InvariantCulture)
+        );
+
+        DateTimeOffset? storedAt =
+            timestamp.Type == TimestampType.NotAvailable ? null : new DateTimeOffset(timestamp.UtcDateTime);
+
+        return new NativeEnvelopeFacts(ProducerMessageId: null, position, storedAt);
     }
 
     private IConsumer<string, byte[]> _BuildConsumer(ConsumerConfig config)

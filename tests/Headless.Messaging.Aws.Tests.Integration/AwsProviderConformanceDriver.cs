@@ -154,9 +154,14 @@ internal sealed class AwsProviderConformanceDriver(LocalStackTestFixture fixture
                 await client.DeleteQueueAsync(queueUrl, CancellationToken.None);
             }
 
-            foreach (var topic in topics)
+            // The topology step hands back message names, not topic ARNs; CreateTopic is idempotent and returns the ARN.
+            foreach (var name in topics)
             {
-                await sns.DeleteTopicAsync(topic, CancellationToken.None);
+                var topic = await sns.CreateTopicAsync(
+                    AwsPhysicalAddress.BusTopic(name).ToSnsCreateTopicRequest(),
+                    CancellationToken.None
+                );
+                await sns.DeleteTopicAsync(topic.TopicArn, CancellationToken.None);
             }
         }
     }

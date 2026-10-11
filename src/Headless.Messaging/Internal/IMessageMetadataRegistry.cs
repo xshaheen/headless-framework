@@ -17,7 +17,8 @@ internal sealed record MessageMetadata(
     string ContractVersion,
     Func<object, string?>? CorrelationSelector,
     IReadOnlyDictionary<Type, object> ProviderConfigs,
-    bool RequiresRoutingAffinity = false
+    bool RequiresRoutingAffinity = false,
+    bool RawPayload = false
 );
 
 internal sealed class MessageMetadataRegistry(
@@ -73,7 +74,8 @@ internal sealed class MessageMetadataRegistry(
                 contractVersion,
                 correlationSelector,
                 providerConfigs,
-                group.Any(static registration => registration.RequiresRoutingAffinity)
+                group.Any(static registration => registration.RequiresRoutingAffinity),
+                group.Any(static registration => registration.RawPayload)
             );
         }
 

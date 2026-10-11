@@ -63,7 +63,11 @@ internal sealed class NatsEveryInstanceListener
     // the stream, which FetchMessageNamesAsync keeps provisioning.
     public async Task ListenAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken)
     {
-        var subjects = BuildEveryInstanceSubjects(messageNames, _owner.ResolveShardedMessageNames);
+        var subjects = BuildEveryInstanceSubjects(
+            messageNames,
+            _owner.ResolveShardedMessageNames,
+            name => _owner.ExternalBinding(name)?.Filter
+        );
         var subscriptions = new List<INatsSub<ReadOnlyMemory<byte>>>(subjects.Count);
 
         using var listeningCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -213,25 +217,45 @@ internal sealed class NatsEveryInstanceListener
     /// <summary>
     /// The Bus subjects an every-instance client subscribes to: the same subjects a competing client's JetStream
     /// consumers filter on, so both kinds receive the same messages. A subject a '.&gt;' wildcard in the list already
-    /// covers is dropped, because two core subscriptions matching one publish deliver it twice to this process.
+    /// covers is dropped, because two core subscriptions matching one publish deliver it twice to this process. A message
+    /// bound to an external subject subscribes to its filter instead.
     /// </summary>
     internal static IReadOnlyList<string> BuildEveryInstanceSubjects(
         IEnumerable<string> messageNames,
-        Func<IEnumerable<string>, ISet<string>> resolveShardedMessageNames
+        Func<IEnumerable<string>, ISet<string>> resolveShardedMessageNames,
+        Func<string, string?>? externalFilter = null
     )
     {
         Argument.IsNotNull(messageNames);
         Argument.IsNotNull(resolveShardedMessageNames);
 
         var names = messageNames.AsIReadOnlyList();
+        var externalFilters = new List<string>();
+        var derived = new List<string>(names.Count);
+
+        foreach (var name in names)
+        {
+            if (externalFilter?.Invoke(name) is { } filter)
+            {
+                if (!externalFilters.Contains(filter, StringComparer.Ordinal))
+                {
+                    externalFilters.Add(filter);
+                }
+            }
+            else
+            {
+                derived.Add(name);
+            }
+        }
 
         return
         [
             .. NatsConsumerClient
                 .PruneOverlappingSubjects(
-                    NatsConsumerClient.BuildConsumerSubjects(names, resolveShardedMessageNames(names))
+                    NatsConsumerClient.BuildConsumerSubjects(derived, resolveShardedMessageNames(derived))
                 )
                 .Select(subject => NatsPhysicalAddress.Subject(MessageLane.Bus, subject)),
+            .. externalFilters,
         ];
     }
 

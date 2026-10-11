@@ -86,7 +86,7 @@ public sealed class AwsAutoProvisionTests : TestBase
         await using var client = _CreateConsumer(MessageLane.Bus, autoProvision: true);
 
         // when
-        await client.SubscribeAsync(["arn:aws:sns:::bus-orders-placed"], AbortToken);
+        await client.SubscribeAsync(["orders.placed"], AbortToken);
 
         // then: asked for at creation, and set again because SNS returns an existing subscription unchanged
         await _sns.Received(1)
@@ -119,7 +119,7 @@ public sealed class AwsAutoProvisionTests : TestBase
         await using var client = _CreateConsumer(MessageLane.Bus, autoProvision: true);
 
         // when
-        await client.SubscribeAsync(["arn:aws:sns:::bus-orders-placed"], AbortToken);
+        await client.SubscribeAsync(["orders.placed"], AbortToken);
 
         // then
         await _sns.Received(1)
@@ -133,6 +133,8 @@ public sealed class AwsAutoProvisionTests : TestBase
 
     private void _GivenBusQueue()
     {
+        _sns.CreateTopicAsync(Arg.Any<CreateTopicRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:::bus-orders-placed" });
         _sqs.GetAttributesAsync("https://sqs.local/bus-orders")
             .Returns(
                 new Dictionary<string, string>(StringComparer.Ordinal) { ["QueueArn"] = "arn:aws:sqs:::bus-orders" }

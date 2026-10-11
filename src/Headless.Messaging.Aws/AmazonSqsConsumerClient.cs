@@ -10,6 +10,7 @@ using Amazon.SQS;
 using Amazon.SQS.Model;
 using Headless.Checks;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -21,9 +22,12 @@ internal sealed class AmazonSqsConsumerClient(
     IOptions<AmazonSqsMessagingOptions> options,
     ILogger<AmazonSqsConsumerClient> logger,
     MessageLane lane = MessageLane.Bus,
-    TimeProvider? timeProvider = null
+    TimeProvider? timeProvider = null,
+    IServiceProvider? serviceProvider = null
 ) : IConsumerClient
 {
+    private const string _TransportName = "Amazon SQS";
+
     // Bounds DisposeAsync, which carries no shutdown budget of its own; the core passes its remaining budget to
     // ShutdownAsync instead.
     private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
@@ -40,7 +44,16 @@ internal sealed class AmazonSqsConsumerClient(
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+
+    private readonly TransportEnvelopeGate _envelopeGate =
+        serviceProvider?.GetService<TransportEnvelopeGate>() ?? TransportEnvelopeGate.Strict;
+
     private ImmutableArray<string> _queueUrls = [];
+
+    // The message name each polled queue belongs to, built when the client subscribes: on the Queue lane a queue URL
+    // maps to its message, and on the Bus lane the identity queue maps to its message only when it carries one.
+    private FrozenDictionary<string, string> _arrivalNames = FrozenDictionary<string, string>.Empty;
+    private string? _busArrivalName;
 
     // Every received message the core has not settled yet, keyed by receipt handle: the heartbeat extends their
     // visibility and shutdown releases what is left.
@@ -100,30 +113,21 @@ internal sealed class AmazonSqsConsumerClient(
                 return queueUrls;
             }
 
+            // The Bus lane hands the message names on, so the client that subscribes knows which messages its queue
+            // carries; it resolves their topics again, which CreateTopic answers idempotently.
+            List<string> names = [.. messageNames];
+            _ = _ResolveBusArrivalName(names);
+
             // Externally managed topology already subscribes the queue to its topics, so there is nothing to resolve.
             if (!_amazonSqsOptions.AutoProvision)
             {
-                return [.. messageNames];
+                return names;
             }
 
-            await _ConnectAsync(initSns: true, initSqs: false, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-
-            var topicArns = new List<string>();
-            foreach (var topic in messageNames)
-            {
-                var createTopicRequest = AwsPhysicalAddress.BusTopic(topic).ToSnsCreateTopicRequest();
-
-                var createTopicResponse = await _snsClient!
-                    .CreateTopicAsync(createTopicRequest, cancellationToken)
-                    .ConfigureAwait(false);
-
-                topicArns.Add(createTopicResponse.TopicArn);
-            }
-
+            var topicArns = await _CreateTopicsAsync(names, cancellationToken).ConfigureAwait(false);
             await _GenerateSqsAccessPolicyAsync(topicArns, cancellationToken).ConfigureAwait(false);
 
-            return topicArns;
+            return names;
         }
         catch (AmazonServiceException exception)
         {
@@ -141,10 +145,15 @@ internal sealed class AmazonSqsConsumerClient(
             {
                 await _ConnectAsync(initSns: false, initSqs: true, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
-                _SetQueueUrls([.. topics]);
+                ImmutableArray<string> queueUrls = [.. topics];
+                Volatile.Write(ref _arrivalNames, _BuildQueueArrivalNames(queueUrls));
+                _SetQueueUrls(queueUrls);
                 _ready.TrySetResult();
                 return;
             }
+
+            List<string> names = [.. topics];
+            Volatile.Write(ref _busArrivalName, _ResolveBusArrivalName(names));
 
             if (!_amazonSqsOptions.AutoProvision)
             {
@@ -155,7 +164,8 @@ internal sealed class AmazonSqsConsumerClient(
             }
 
             await _ConnectAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-            await _SubscribeToTopics(topics, cancellationToken).ConfigureAwait(false);
+            var topicArns = await _CreateTopicsAsync(names, cancellationToken).ConfigureAwait(false);
+            await _SubscribeToTopics(topicArns, cancellationToken).ConfigureAwait(false);
             _ready.TrySetResult();
         }
         catch (AmazonServiceException exception)
@@ -335,24 +345,23 @@ internal sealed class AmazonSqsConsumerClient(
     {
         try
         {
-            var (header, body) = await _ReadMessageAsync(sqsMessage, inflight).ConfigureAwait(false);
-
-            if (header is null)
+            TransportMessage message;
+            try
             {
-                return;
+                message = _CreateTransportMessage(sqsMessage, inflight.QueueUrl);
             }
-
-            // Overwrites any wire value so a producer cannot choose the address.
-            header[Headers.TransportAddress] = inflight.QueueUrl;
-
-            if (!_HasRequiredHeaders(header))
+            catch (JsonException exception)
             {
-                _logger.SqsMessageMissingRequiredHeaders();
+                _logger.SqsMessageDeserializationFailed(exception);
                 await CommitAsync(inflight, CancellationToken.None).ConfigureAwait(false);
                 return;
             }
-
-            var message = new TransportMessage(header, body != null ? Encoding.UTF8.GetBytes(body) : null);
+            catch (InvalidDataException exception)
+            {
+                _logger.SqsMalformedEnvelope(exception, exception.Message);
+                await CommitAsync(inflight, CancellationToken.None).ConfigureAwait(false);
+                return;
+            }
 
             await OnMessageCallback!(message, inflight).ConfigureAwait(false);
         }
@@ -375,6 +384,8 @@ internal sealed class AmazonSqsConsumerClient(
             VisibilityTimeout = (int)_amazonSqsOptions.VisibilityTimeout.TotalSeconds,
             MaxNumberOfMessages = SqsDeleteBatcher.MaxBatchSize,
             MessageAttributeNames = ["All"],
+            // Completes the send time of a raw message, which carries no Headless headers.
+            MessageSystemAttributeNames = ["SentTimestamp"],
         };
         var response = await _sqsClient!.ReceiveMessageAsync(request, cancellationToken).ConfigureAwait(false);
         return (queueUrl, response);
@@ -769,30 +780,155 @@ internal sealed class AmazonSqsConsumerClient(
     }
 
     // Both lanes read one envelope: the Queue lane sends the header bag itself, and the Bus lane's SNS subscriptions use
-    // raw message delivery, which hands the published body and its one bag attribute to SQS unchanged.
-    private async Task<(Dictionary<string, string?>? Headers, string? Body)> _ReadMessageAsync(
-        Amazon.SQS.Model.Message sqsMessage,
-        InflightSqsMessage inflight
-    )
+    // raw message delivery, which hands the published body and its one bag attribute to SQS unchanged. A JsonException
+    // means the bag is unreadable and an InvalidDataException that the envelope is malformed; both settle terminally.
+    private TransportMessage _CreateTransportMessage(Amazon.SQS.Model.Message sqsMessage, string queueUrl)
     {
+        var arrivalName =
+            lane == MessageLane.Queue
+                ? Volatile.Read(ref _arrivalNames).GetValueOrDefault(queueUrl)
+                : Volatile.Read(ref _busArrivalName);
+
+        // A foreign producer on a raw route sends no bag; its message is completed from the queue it arrived on.
+        var headers = SqsHeaderCodec.Decode(
+            sqsMessage.MessageAttributes,
+            allowMissingBag: _envelopeGate.IsRaw(lane, arrivalName)
+        );
+
+        _ApplyCustomHeaders(sqsMessage, headers);
+
+        // Stamped after the custom headers builder so neither the wire nor the builder can choose the address.
+        headers[Headers.TransportAddress] = queueUrl;
+
+        _envelopeGate.Admit(
+            headers,
+            new EnvelopeArrival(_TransportName, lane, arrivalName),
+            sqsMessage,
+            static message => ReadNativeFacts(message)
+        );
+
+        var body = sqsMessage.Body;
+        return new TransportMessage(headers, body is not null ? Encoding.UTF8.GetBytes(body) : null);
+    }
+
+    private void _ApplyCustomHeaders(Amazon.SQS.Model.Message sqsMessage, Dictionary<string, string?> headers)
+    {
+        if (_amazonSqsOptions.CustomHeadersBuilder is not { } builder)
+        {
+            return;
+        }
+
+        List<KeyValuePair<string, string>> customHeaders;
         try
         {
-            return (SqsHeaderCodec.Decode(sqsMessage.MessageAttributes), sqsMessage.Body);
+            var services =
+                serviceProvider
+                ?? throw new InvalidOperationException(
+                    "The custom headers builder needs a service provider; create the consumer through its factory."
+                );
+            customHeaders = builder(sqsMessage, services);
         }
-        catch (JsonException exception)
+        catch (Exception exception)
         {
-            _logger.SqsMessageDeserializationFailed(exception);
-            await CommitAsync(inflight, CancellationToken.None).ConfigureAwait(false);
-            return (null, null);
+            // A builder is user code that may throw anything; every failure settles the message as malformed instead of
+            // escaping the handler.
+            throw new InvalidDataException(
+                $"The SQS custom headers builder failed: {exception.GetType().Name}.",
+                exception
+            );
+        }
+
+        foreach (var customHeader in customHeaders)
+        {
+            headers[customHeader.Key] = customHeader.Value;
         }
     }
 
-    private static bool _HasRequiredHeaders(Dictionary<string, string?> headers)
+    /// <summary>
+    /// Reads the identity of a message that has no Headless message id. SQS assigns <c>MessageId</c> at send and keeps
+    /// it on every receive, so a redelivery derives the same id; <c>SentTimestamp</c> is when SQS accepted the message.
+    /// </summary>
+    internal static NativeEnvelopeFacts ReadNativeFacts(Amazon.SQS.Model.Message message)
     {
-        return headers.TryGetValue(Headers.MessageId, out var messageId)
-            && !string.IsNullOrWhiteSpace(messageId)
-            && headers.TryGetValue(Headers.MessageName, out var messageName)
-            && !string.IsNullOrWhiteSpace(messageName);
+        var position = string.IsNullOrWhiteSpace(message.MessageId)
+            ? null
+            : NativeEnvelopeFacts.Position("sqs", message.MessageId);
+
+        DateTimeOffset? sentAt =
+            message.Attributes?.TryGetValue("SentTimestamp", out var sentTimestamp) == true
+            && long.TryParse(sentTimestamp, NumberStyles.None, CultureInfo.InvariantCulture, out var milliseconds)
+                ? DateTimeOffset.FromUnixTimeMilliseconds(milliseconds)
+                : null;
+
+        return new NativeEnvelopeFacts(ProducerMessageId: null, position, sentAt);
+    }
+
+    // Maps each polled queue to the message it is the queue of, by deriving that queue's name with the function the
+    // queue was resolved with. On the Queue lane the subscription name is the message name.
+    private FrozenDictionary<string, string> _BuildQueueArrivalNames(ImmutableArray<string> queueUrls)
+    {
+        var expectedQueueName = AwsPhysicalAddress.QueueDestination(subscriptionName).NormalizeForSqsQueueName();
+        var arrivalNames = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var queueUrl in queueUrls)
+        {
+            if (
+                Uri.TryCreate(queueUrl, UriKind.Absolute, out var uri)
+                && string.Equals(uri.Segments[^1].TrimEnd('/'), expectedQueueName, StringComparison.Ordinal)
+            )
+            {
+                arrivalNames[queueUrl] = subscriptionName;
+            }
+        }
+
+        return arrivalNames.ToFrozenDictionary(StringComparer.Ordinal);
+    }
+
+    // With raw message delivery an SQS message does not say which SNS topic it came from, so a message without Headless
+    // headers can be attributed only when the identity's queue carries one message. A raw contract sharing the queue
+    // with another message would leave such a message unattributable, so it is refused before anything is consumed.
+    private string? _ResolveBusArrivalName(List<string> messageNames)
+    {
+        var distinct = messageNames.Distinct(StringComparer.Ordinal).ToList();
+
+        if (distinct.Count == 1)
+        {
+            return distinct[0];
+        }
+
+        var raw = distinct.Where(name => _envelopeGate.IsRaw(MessageLane.Bus, name)).ToList();
+        if (raw.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Bus consumer '{subscriptionName}' consumes raw message {_Quote(raw)} on one SQS queue together with "
+                    + $"{_Quote(distinct.Except(raw, StringComparer.Ordinal))}. SNS raw message delivery does not say "
+                    + "which topic a message came from, so a message without Headless headers on that queue could not "
+                    + "be attributed to its contract. Give each raw message a consumer identity of its own."
+            );
+        }
+
+        return null;
+
+        static string _Quote(IEnumerable<string> names) => string.Join(", ", names.Select(name => $"'{name}'"));
+    }
+
+    private async Task<List<string>> _CreateTopicsAsync(List<string> messageNames, CancellationToken cancellationToken)
+    {
+        await _ConnectAsync(initSns: true, initSqs: false, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        var topicArns = new List<string>(messageNames.Count);
+        foreach (var messageName in messageNames)
+        {
+            var createTopicRequest = AwsPhysicalAddress.BusTopic(messageName).ToSnsCreateTopicRequest();
+
+            var createTopicResponse = await _snsClient!
+                .CreateTopicAsync(createTopicRequest, cancellationToken)
+                .ConfigureAwait(false);
+
+            topicArns.Add(createTopicResponse.TopicArn);
+        }
+
+        return topicArns;
     }
 
     private InflightSqsMessage _GetInflightMessage(object? sender)
@@ -914,9 +1050,9 @@ internal static partial class AmazonSqsConsumerClientLog
     [LoggerMessage(
         EventId = 4202,
         Level = LogLevel.Error,
-        Message = "Invalid SQS transport envelope: required Messaging headers are missing. The malformed transport envelope was terminally deleted."
+        Message = "Invalid SQS transport envelope: {Reason} The malformed transport envelope was terminally deleted."
     )]
-    public static partial void SqsMessageMissingRequiredHeaders(this ILogger logger);
+    public static partial void SqsMalformedEnvelope(this ILogger logger, Exception exception, string reason);
 
     [LoggerMessage(
         EventId = 4203,

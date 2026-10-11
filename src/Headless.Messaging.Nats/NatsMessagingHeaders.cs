@@ -13,4 +13,8 @@ public static class NatsMessagingHeaders
     /// all shard variants; omitting this declaration results in silent message loss.
     /// </summary>
     public const string SubjectShard = "headless-nats-subject-shard";
+
+    // Stored with the message so an outbox retry publishes to the subject computed when the message was created; the
+    // transport publishes to it and keeps it off the wire, where it would only repeat the subject.
+    internal const string ExternalSubject = "headless-nats-external-subject";
 }

@@ -29,8 +29,18 @@ internal sealed class NatsConsumerClient(
 {
     private readonly Lock _receiveLock = new();
     private readonly NatsMessagingOptions _natsOptions = Argument.IsNotNull(options.Value);
-    private readonly NatsStreamProvisioner _streamProvisioner = new(options);
+    private readonly NatsExternalSubjects _externalSubjects = _ResolveExternalSubjects(serviceProvider);
+
+    private readonly NatsStreamProvisioner _streamProvisioner = new(
+        options,
+        externalSubjects: _ResolveExternalSubjects(serviceProvider)
+    );
+
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+
+    // Tests build the client without a container, and a client without raw routes keeps the strict header check.
+    private readonly TransportEnvelopeGate _envelopeGate =
+        serviceProvider.GetService<TransportEnvelopeGate>() ?? TransportEnvelopeGate.Strict;
 
     private readonly SemaphoreSlim? _semaphore = groupConcurrent > 0 ? new SemaphoreSlim(groupConcurrent) : null;
 
@@ -43,6 +53,12 @@ internal sealed class NatsConsumerClient(
     private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
 
     private static readonly TimeSpan _DefaultAckWait = TimeSpan.FromSeconds(30);
+
+    /// <summary>The transport name malformed-envelope reasons carry.</summary>
+    internal const string TransportDisplayName = "NATS";
+
+    /// <summary>The header JetStream deduplicates publishes on; Headless sets it to the message ID.</summary>
+    internal const string NatsMsgIdHeader = "Nats-Msg-Id";
 
     // The first server release that parses "+TERM <reason>"; earlier ones match the exact "+TERM" bytes only.
     private static readonly Version _TerminateReasonServerVersion = new(2, 10, 4);
@@ -62,6 +78,7 @@ internal sealed class NatsConsumerClient(
     private NatsJSContext? _jsContext;
     private ReceiveTokenState _receiveTokenState = new();
     private IEnumerable<string>? _subscribedMessageNames;
+    private volatile NatsArrivalNames _arrivalNames = NatsArrivalNames.Empty;
     private int _disposed;
 
     // Set by ConnectAsync for an every-instance client, which listens on core subscriptions instead of JetStream.
@@ -225,9 +242,33 @@ internal sealed class NatsConsumerClient(
         Argument.IsNotNull(messageNames);
         cancellationToken.ThrowIfCancellationRequested();
 
-        _subscribedMessageNames = messageNames.ToList();
+        var names = messageNames.ToList();
+        _subscribedMessageNames = names;
+        _arrivalNames = NatsArrivalNames.Create(
+            lane,
+            names,
+            ResolveShardedMessageNames(names),
+            _LaneMessageNames(),
+            names.Select(ExternalBinding).OfType<NatsExternalBinding>()
+        );
 
         return ValueTask.CompletedTask;
+    }
+
+    /// <summary>Returns the external subject binding of a message on this client's lane, if it has one.</summary>
+    internal NatsExternalBinding? ExternalBinding(string messageName) => _externalSubjects.Find(lane, messageName);
+
+    // Tests build the client without a container; such a client binds no external subject.
+    private static NatsExternalSubjects _ResolveExternalSubjects(IServiceProvider serviceProvider) =>
+        serviceProvider.GetService<NatsExternalSubjects>() ?? NatsExternalSubjects.Empty;
+
+    private IEnumerable<string> _LaneMessageNames()
+    {
+        var metadata = serviceProvider.GetService<IMessageMetadataRegistry>();
+
+        return metadata is null
+            ? []
+            : metadata.GetAll().Where(route => route.Route.Lane == lane).Select(route => route.Route.MessageName);
     }
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
@@ -257,12 +298,9 @@ internal sealed class NatsConsumerClient(
         {
             var streamName = streamGroup.Key;
             var subscriptionName = name;
-            var shardedMessageNames = ResolveShardedMessageNames(streamGroup);
-
-            foreach (var logicalSubject in BuildConsumerSubjects(streamGroup, shardedMessageNames))
+            foreach (var (durableKey, subject) in ConsumerFilters(streamGroup))
             {
-                var durableName = BuildDurableName(subscriptionName, logicalSubject, lane);
-                var subject = NatsPhysicalAddress.Subject(lane, logicalSubject);
+                var durableName = BuildDurableName(subscriptionName, durableKey, lane);
                 var deliverPolicy =
                     lane == MessageLane.Queue ? ConsumerConfigDeliverPolicy.All : ConsumerConfigDeliverPolicy.New;
 
@@ -342,6 +380,34 @@ internal sealed class NatsConsumerClient(
         await Task.WhenAll(tasks).ConfigureAwait(false);
     }
 
+    // Each durable's name key and filter subject. A derived message filters on its own subject (and its shard wildcard),
+    // named after that logical subject; an external binding filters on its foreign filter, named after the contract
+    // because a filter's '*' and '>' are not allowed in a durable name.
+    internal List<(string DurableKey, string Subject)> ConsumerFilters(IEnumerable<string> messageNames)
+    {
+        var filters = new List<(string DurableKey, string Subject)>();
+        var derived = new List<string>();
+
+        foreach (var messageName in messageNames)
+        {
+            if (ExternalBinding(messageName) is { } external)
+            {
+                filters.Add((messageName, external.Filter));
+            }
+            else
+            {
+                derived.Add(messageName);
+            }
+        }
+
+        foreach (var logicalSubject in BuildConsumerSubjects(derived, ResolveShardedMessageNames(derived)))
+        {
+            filters.Add((logicalSubject, NatsPhysicalAddress.Subject(lane, logicalSubject)));
+        }
+
+        return filters;
+    }
+
     private NatsConsumerConfig? _ResolveTunedConsumerConfig()
     {
         return serviceProvider.GetService<IConsumerRegistry>()?.ResolveConsumerConfig<NatsConsumerConfig>(name, lane);
@@ -349,7 +415,8 @@ internal sealed class NatsConsumerClient(
 
     internal HashSet<string> ResolveShardedMessageNames(IEnumerable<string> messageNames)
     {
-        var names = messageNames.ToHashSet(StringComparer.Ordinal);
+        // An external binding filters on its own subject, which a shard token never extends.
+        var names = messageNames.Where(name => ExternalBinding(name) is null).ToHashSet(StringComparer.Ordinal);
 
         var config = _ResolveTunedConsumerConfig();
         if (config?.IsSharded == true)
@@ -832,7 +899,12 @@ internal sealed class NatsConsumerClient(
         TransportMessage message;
         try
         {
-            _ValidateRequiredHeaders(headers);
+            _envelopeGate.Admit(
+                headers,
+                _arrivalNames.Arrival(TransportDisplayName, lane, subject),
+                (Headers: headers, JetStream: jsMsg),
+                static state => NativeFacts(state.Headers, state.JetStream)
+            );
             message = new TransportMessage(headers, data);
         }
         catch (Exception ex)
@@ -927,17 +999,59 @@ internal sealed class NatsConsumerClient(
         return Version.TryParse(core, out var version) && version >= _TerminateReasonServerVersion ? reason : null;
     }
 
-    private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers)
+    /// <summary>
+    /// The broker facts that complete a raw delivery's envelope. The producer's <c>Nats-Msg-Id</c>, JetStream's own
+    /// publish idempotency key, comes first. A JetStream delivery's position is its stream sequence plus the time the
+    /// stream stored it, so every redelivery of one stored message gets one identifier, and a sequence a recreated stream
+    /// reuses gets another. A core delivery has no position and no inbox to deduplicate against, so it gets a fresh
+    /// identifier.
+    /// </summary>
+    internal static NativeEnvelopeFacts NativeFacts(
+        IDictionary<string, string?> headers,
+        INatsJSMsg<ReadOnlyMemory<byte>>? jetStream
+    )
     {
-        if (
-            !headers.TryGetValue(Headers.MessageId, out var messageId)
-            || string.IsNullOrWhiteSpace(messageId)
-            || !headers.TryGetValue(Headers.MessageName, out var messageName)
-            || string.IsNullOrWhiteSpace(messageName)
-        )
+        var producerMessageId = headers.TryGetValue(NatsMsgIdHeader, out var msgId) ? msgId : null;
+
+        if (jetStream is null)
         {
-            throw new InvalidDataException("The NATS transport envelope is missing a required Messaging header.");
+            return new NativeEnvelopeFacts(producerMessageId, Guid.CreateVersion7().ToString("D"), StoredAt: null);
         }
+
+        if (jetStream.Metadata is not { } metadata)
+        {
+            return new NativeEnvelopeFacts(producerMessageId, PositionId: null, StoredAt: null);
+        }
+
+        var position = NativeEnvelopeFacts.Position(
+            "nats",
+            metadata.Stream,
+            metadata.Sequence.Stream.ToString(CultureInfo.InvariantCulture),
+            StoredUnixNanos(jetStream.ReplyTo, metadata).ToString(CultureInfo.InvariantCulture)
+        );
+
+        return new NativeEnvelopeFacts(producerMessageId, position, metadata.Timestamp);
+    }
+
+    /// <summary>
+    /// The nanosecond time the stream stored a message, from the acknowledgement subject the metadata was parsed from.
+    /// NATS.Net truncates <see cref="NatsJSMsgMetadata.Timestamp"/> to milliseconds; the full value keeps a message a
+    /// recreated stream stores at a reused sequence apart from the old one even within one millisecond.
+    /// </summary>
+    internal static long StoredUnixNanos(string? replyTo, NatsJSMsgMetadata metadata)
+    {
+        // "$JS.ACK.<stream>.<consumer>.<delivered>.<sseq>.<cseq>.<tm>.<pending>", or the form with domain and account
+        // hash after "ACK" (and an optional random token at the end) that moves the time two tokens later.
+        var tokens = replyTo?.Split('.');
+        var timeToken =
+            tokens is null ? null
+            : tokens.Length == 9 ? tokens[7]
+            : tokens.Length >= 11 ? tokens[9]
+            : null;
+
+        return long.TryParse(timeToken, NumberStyles.None, CultureInfo.InvariantCulture, out var nanos)
+            ? nanos
+            : (metadata.Timestamp - DateTimeOffset.UnixEpoch).Ticks * 100;
     }
 
     public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)

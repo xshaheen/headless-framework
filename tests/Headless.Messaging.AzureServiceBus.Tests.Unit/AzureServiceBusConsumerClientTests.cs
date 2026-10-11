@@ -143,7 +143,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_propagate_without_completion_when_custom_headers_builder_throws()
+    public async Task should_dead_letter_as_malformed_without_a_callback_when_custom_headers_builder_throws()
     {
         // given
         var options = Options.Create(
@@ -162,7 +162,12 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
             _serviceProvider,
             _clientPool
         );
-        client.OnMessageCallback = (_, _) => Task.CompletedTask;
+        var callbackInvoked = false;
+        client.OnMessageCallback = (_, _) =>
+        {
+            callbackInvoked = true;
+            return Task.CompletedTask;
+        };
 
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: new BinaryData("test"u8.ToArray()),
@@ -184,11 +189,18 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
         )!;
 
         // when
-        var processTask = (Task)processMethod.Invoke(client, [args])!;
-        var act = async () => await processTask;
+        await (Task)processMethod.Invoke(client, [args])!;
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("bad header builder");
+        callbackInvoked.Should().BeFalse();
+        await receiver
+            .Received(1)
+            .DeadLetterMessageAsync(
+                message,
+                "MalformedEnvelope",
+                nameof(InvalidOperationException),
+                Arg.Any<CancellationToken>()
+            );
         await receiver
             .DidNotReceive()
             .CompleteMessageAsync(Arg.Any<ServiceBusReceivedMessage>(), Arg.Any<CancellationToken>());
