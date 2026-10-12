@@ -255,6 +255,35 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
     }
 
     [Fact]
+    public async Task should_map_oversized_body_bad_http_request_exception_to_normalized_413()
+    {
+        // given - the exception Kestrel throws when a body read runs past MaxRequestBodySize
+        const string sentinel = "LEAKED-BODY-LIMIT";
+        await using var app = await _CreateAppAsync(
+            handlerSetup: _ => { },
+            endpoint: () => throw new BadHttpRequestException(sentinel, StatusCodes.Status413PayloadTooLarge)
+        );
+        using var client = _CreateClient(app);
+
+        // when
+        using var response = await client.GetAsync("/throw", AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
+        json.Should().NotContain(sentinel);
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        root.GetProperty("status").GetInt32().Should().Be(413);
+        root.GetProperty("title").GetString().Should().Be(HeadlessProblemDetailsConstants.Titles.PayloadTooLarge);
+        root.GetProperty("type").GetString().Should().Be(HeadlessProblemDetailsConstants.Types.PayloadTooLarge);
+        root.GetProperty("detail").GetString().Should().Be(Messages.problem_payload_too_large);
+    }
+
+    [Fact]
     public async Task should_map_missing_tenant_context_exception_thrown_from_mvc_controller_to_normalized_403()
     {
         // given - same global handler reaches MVC controllers as well as Minimal-API endpoints

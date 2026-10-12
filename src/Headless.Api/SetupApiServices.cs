@@ -82,6 +82,7 @@ public static class SetupApiServices
         /// <item><description><c>Microsoft.EntityFrameworkCore.DbUpdateException</c> (matched by name) caused by a PostgreSQL, SQL Server, or SQLite unique-constraint violation → 409 with <c>g:unique_violation</c></description></item>
         /// <item><description><see cref="TimeoutException"/> → 408</description></item>
         /// <item><description><see cref="NotImplementedException"/> → 501</description></item>
+        /// <item><description><see cref="Microsoft.AspNetCore.Http.BadHttpRequestException"/> → its <c>StatusCode</c> (400 for an unbindable body, 413 for an oversized one)</description></item>
         /// <item><description>Client-cancelled (<see cref="OperationCanceledException"/> with <c>RequestAborted</c>) → 499</description></item>
         /// </list>
         /// All other exceptions return <see langword="false"/> and are left to subsequent handlers.
@@ -108,7 +109,7 @@ public static class SetupApiServices
             });
 
             // Single IExceptionHandler covers framework-known exceptions (tenancy, conflict, validation,
-            // not-found, EF concurrency, timeout, not-implemented, cancellation) for MVC actions,
+            // not-found, EF concurrency, timeout, not-implemented, unreadable request, cancellation) for MVC actions,
             // Minimal-API endpoints, middleware, hosted services, and hubs. ASP.NET Core's
             // AddExceptionHandler<T>() uses plain AddSingleton which is not idempotent; using
             // TryAddEnumerable directly collapses duplicate registrations to a single descriptor.

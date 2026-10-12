@@ -67,7 +67,7 @@ public static class SetupMiddlewares
 
     /// <summary>
     /// Adds the status-codes rewriter middleware to the ASP.NET Core request pipeline.
-    /// It intercepts bare 401, 403, and 404 responses (without an existing body) and rewrites them
+    /// It intercepts bare 400, 401, 403, and 404 responses (without an existing body) and rewrites them
     /// as structured <c>application/problem+json</c> responses via <see cref="IProblemDetailsCreator"/>.
     /// A request carrying an <see cref="IStatusCodeRejectionFeature"/> is offered to that feature first,
     /// so the handler that failed the request (for example the tenant requirement's

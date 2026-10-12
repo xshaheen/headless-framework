@@ -26,6 +26,17 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
         var creator = Substitute.For<IProblemDetailsCreator>();
 
         creator
+            .BadRequest()
+            .Returns(
+                new ProblemDetails
+                {
+                    Status = StatusCodes.Status400BadRequest,
+                    Title = HeadlessProblemDetailsConstants.Titles.BadRequest,
+                    Detail = Messages.problem_bad_request,
+                }
+            );
+
+        creator
             .Unauthorized()
             .Returns(
                 new ProblemDetails
@@ -191,6 +202,36 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
 
         // then
         problemCreator.DidNotReceive().Unauthorized();
+    }
+
+    [Fact]
+    public async Task should_return_problem_details_for_400()
+    {
+        // given - a Minimal API body that could not be bound, with ThrowOnBadRequest off
+        var problemCreator = _CreateProblemDetailsCreator();
+        var middleware = _CreateMiddleware(problemCreator);
+        var context = _CreateContext();
+        Task next(HttpContext ctx)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return Task.CompletedTask;
+        }
+
+        // when
+        await middleware.InvokeAsync(context, next);
+
+        // then
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        context.Response.ContentType.Should().StartWith("application/problem+json");
+
+        context.Response.Body.Position = 0;
+        using var reader = new StreamReader(context.Response.Body, leaveOpen: true);
+        var body = await reader.ReadToEndAsync(AbortToken);
+
+        using var doc = JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        root.GetProperty("status").GetInt32().Should().Be(StatusCodes.Status400BadRequest);
+        root.GetProperty("title").GetString().Should().Be(HeadlessProblemDetailsConstants.Titles.BadRequest);
     }
 
     [Fact]
@@ -406,7 +447,6 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
     }
 
     [Theory]
-    [InlineData(StatusCodes.Status400BadRequest)]
     [InlineData(StatusCodes.Status405MethodNotAllowed)]
     [InlineData(StatusCodes.Status409Conflict)]
     [InlineData(StatusCodes.Status422UnprocessableEntity)]
@@ -429,6 +469,7 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
 
         // then
         context.Response.StatusCode.Should().Be(statusCode);
+        problemCreator.DidNotReceive().BadRequest();
         problemCreator.DidNotReceive().Unauthorized();
         problemCreator.DidNotReceive().Forbidden();
         problemCreator.DidNotReceive().EndpointNotFound();

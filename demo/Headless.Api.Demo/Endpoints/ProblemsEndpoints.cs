@@ -46,5 +46,12 @@ public static class ProblemsEndpoints
                 throw new ValidationException([new("Property", "Error message") { ErrorCode = "error-code" }]);
             }
         );
+
+        api.MapPost("bound-body", (BoundBodyRequest request) => Results.Ok(request));
     }
+}
+
+public sealed class BoundBodyRequest
+{
+    public required string Name { get; init; }
 }

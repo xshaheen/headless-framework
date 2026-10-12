@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Http;
 namespace Headless.Api;
 
 /// <summary>
-/// Middleware that intercepts bare 401, 403, and 404 responses without a body and rewrites them
+/// Middleware that intercepts bare 400, 401, 403, and 404 responses without a body and rewrites them
 /// as structured <c>application/problem+json</c> ProblemDetails responses.
 /// </summary>
 /// <remarks>
@@ -61,6 +61,9 @@ internal sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator probl
 
         var problemDetails = context.Response.StatusCode switch
         {
+            // Minimal APIs answer a body they cannot bind with a bare 400 unless ThrowOnBadRequest is set, which
+            // status-code pages would otherwise turn into ASP.NET Core's "Bad Request" title.
+            StatusCodes.Status400BadRequest => problemDetailsCreator.BadRequest(),
             StatusCodes.Status401Unauthorized => problemDetailsCreator.Unauthorized(),
             StatusCodes.Status403Forbidden => problemDetailsCreator.Forbidden(),
             StatusCodes.Status404NotFound => problemDetailsCreator.EndpointNotFound(),

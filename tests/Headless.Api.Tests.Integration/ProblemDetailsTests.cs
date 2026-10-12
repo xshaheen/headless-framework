@@ -2,6 +2,7 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using AwesomeAssertions.Extensions;
 using Headless;
 using Headless.Api;
@@ -11,6 +12,7 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -130,6 +132,29 @@ public sealed class ProblemDetailsTests : TestBase
         doc.RootElement.GetProperty("x-custom").GetString().Should().Be("problem-marker");
         doc.RootElement.GetProperty("x-customize-count").GetInt32().Should().Be(1);
         customizeCount.Should().Be(1);
+    }
+
+    // Minimal APIs answer a body they cannot bind with a bare 400 when ThrowOnBadRequest is off (the default outside
+    // Development), and throw BadHttpRequestException when it is on. Both must reach the same problem response.
+    [Theory]
+    [InlineData(false, "{")]
+    [InlineData(false, "{}")]
+    [InlineData(true, "{")]
+    [InlineData(true, "{}")]
+    public async Task minimal_api_unbindable_body(bool throwOnBadRequest, string body)
+    {
+        await using var factory = new CustomWebApplicationFactory(
+            LoggerProvider,
+            configureServices: (_, services) =>
+                services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = throwOnBadRequest)
+        );
+        using var client = factory.CreateClient();
+        using var content = new StringContent(body, Encoding.UTF8, ContentTypes.Applications.Json);
+
+        using var response = await client.PostAsync("/minimal/bound-body", content, AbortToken);
+
+        response.Content.Headers.ContentType!.MediaType.Should().Be(ContentTypes.Applications.ProblemJson);
+        await _VerifyMalformedSyntax(response);
     }
 
     private static async Task _VerifyMalformedSyntax(HttpResponseMessage response)

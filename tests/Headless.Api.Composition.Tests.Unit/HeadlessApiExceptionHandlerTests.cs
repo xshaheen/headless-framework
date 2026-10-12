@@ -483,6 +483,54 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         httpContext.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
     }
 
+    [Theory]
+    [InlineData(StatusCodes.Status400BadRequest, HeadlessProblemDetailsConstants.Titles.BadRequest)]
+    [InlineData(StatusCodes.Status413PayloadTooLarge, HeadlessProblemDetailsConstants.Titles.PayloadTooLarge)]
+    public async Task should_map_bad_http_request_exception_to_its_status_without_the_exception_message(
+        int statusCode,
+        string expectedTitle
+    )
+    {
+        // given
+        const string sentinel = "LEAKED-BINDING-DETAIL";
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(true);
+        var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), logger);
+        var httpContext = new DefaultHttpContext();
+
+        // when
+        var result = await handler.TryHandleAsync(
+            httpContext,
+            new BadHttpRequestException(sentinel, statusCode),
+            AbortToken
+        );
+
+        // then
+        result.Should().BeTrue();
+        httpContext.Response.StatusCode.Should().Be(statusCode);
+        await problemDetailsService
+            .Received(1)
+            .TryWriteAsync(
+                Arg.Is<ProblemDetailsContext>(c =>
+                    c.ProblemDetails.Status == statusCode
+                    && c.ProblemDetails.Title == expectedTitle
+                    && c.ProblemDetails.Detail != null
+                    && !c.ProblemDetails.Detail.Contains(sentinel, StringComparison.Ordinal)
+                )
+            );
+
+        // the reason the body leaves out reaches the log instead
+        logger
+            .Entries.Should()
+            .Contain(e =>
+                e.EventId.Id == 5015
+                && e.Level == LogLevel.Information
+                && e.Exception is BadHttpRequestException
+                && e.Exception.Message == sentinel
+            );
+    }
+
     [Fact]
     public async Task should_map_operation_canceled_exception_to_499_with_no_body_when_request_aborted()
     {

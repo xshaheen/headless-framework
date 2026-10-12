@@ -115,7 +115,7 @@ internal static class TenantCatalogRejectionWriter
     /// <c>CustomizeProblemDetails</c> hooks running; the <see cref="Results.Problem(ProblemDetails)"/>
     /// fallback covers minimal hosts where the service is unregistered or declines to write
     /// (<c>TryWriteAsync</c> returned <see langword="false"/>). Also used by
-    /// <c>StatusCodesRewriterMiddleware</c>'s bare 401/403/404 rewrites, which pass the status code the
+    /// <c>StatusCodesRewriterMiddleware</c>'s bare 400/401/403/404 rewrites, which pass the status code the
     /// response already carries.
     /// </remarks>
     public static async Task WriteAsync(HttpContext context, int statusCode, ProblemDetails problemDetails)
