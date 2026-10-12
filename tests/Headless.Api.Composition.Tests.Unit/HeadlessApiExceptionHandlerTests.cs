@@ -495,7 +495,8 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         const string sentinel = "LEAKED-BINDING-DETAIL";
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
         problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(true);
-        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
+        var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), logger);
         var httpContext = new DefaultHttpContext();
 
         // when
@@ -517,6 +518,16 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
                     && c.ProblemDetails.Detail != null
                     && !c.ProblemDetails.Detail.Contains(sentinel, StringComparison.Ordinal)
                 )
+            );
+
+        // the reason the body leaves out reaches the log instead
+        logger
+            .Entries.Should()
+            .Contain(e =>
+                e.EventId.Id == 5015
+                && e.Level == LogLevel.Information
+                && e.Exception is BadHttpRequestException
+                && e.Exception.Message == sentinel
             );
     }
 

@@ -501,7 +501,7 @@ Exception mapping from `AddHeadlessProblemDetails()`:
 | `LockAcquisitionTimeoutException` from `Headless.DistributedLocks` (matched by type name) | 503 with `error.code: g:resource_busy` and no `Retry-After`: the lock wait says nothing about when the holder finishes. The resource name stays in the logs (event 5014) |
 | `TimeoutException` | 408 |
 | `NotImplementedException` | 501 |
-| `BadHttpRequestException` (a Minimal API body that cannot be bound with `ThrowOnBadRequest` on, the Development default; an unsupported content type; an oversized body) | Its `StatusCode`: 400 `bad-request`, or 413 `payload-too-large`; the exception message stays out of the body |
+| `BadHttpRequestException` (a Minimal API body that cannot be bound with `ThrowOnBadRequest` on, the Development default; an unsupported content type; an oversized body) | Its `StatusCode`: 400 `bad-request`, or 413 `payload-too-large`. The exception message, which names the failed parameter or the JSON parse position, stays out of the body and is logged at Information with the exception (event 5015) |
 | `OperationCanceledException` (or inner OCE at any depth) when `HttpContext.RequestAborted` is the source | 499 (no body) |
 
 All other exceptions return `false`; the host default or a downstream handler renders them.

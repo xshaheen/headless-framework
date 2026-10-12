@@ -231,6 +231,10 @@ internal sealed partial class HeadlessApiExceptionHandler(
                 // ThrowOnBadRequest is set, the default in Development; without this case it surfaced as a 500.
                 // The exception carries the status (413, 415, and so on), and Normalize fills that status's shape.
                 case BadHttpRequestException badRequest:
+                    // The reason (the parameter that failed to bind, the JSON parser's position) goes only to the log:
+                    // the body keeps exception text out. ASP.NET Core records nothing for an exception an
+                    // IExceptionHandler handled, so without this the reason is lost.
+                    _LogBadHttpRequest(logger, badRequest, badRequest.StatusCode);
                     statusCode = badRequest.StatusCode;
                     problemDetails =
                         statusCode == StatusCodes.Status400BadRequest
@@ -483,6 +487,15 @@ internal sealed partial class HeadlessApiExceptionHandler(
         SkipEnabledCheck = true
     )]
     private static partial void _LogLockAcquisitionTimeout(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 5015,
+        EventName = "BadHttpRequest",
+        Level = LogLevel.Information,
+        Message = "The request could not be read and was answered with {StatusCode}",
+        SkipEnabledCheck = true
+    )]
+    private static partial void _LogBadHttpRequest(ILogger logger, Exception exception, int statusCode);
 
     [LoggerMessage(
         EventId = 5013,
