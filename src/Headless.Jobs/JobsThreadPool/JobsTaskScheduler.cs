@@ -51,7 +51,15 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     private volatile bool _isFrozen;
     private volatile int _nextQueueIndex;
 
+    // Cancelled on shutdown and disposal, never disposed: a test host (WebApplicationFactory) runs the application's
+    // real entry point, and disposing the factory races its RunAsync continuation's own host stop-then-dispose
+    // against the factory's dispose sequence. The loser can still be inside JobsSchedulerBackgroundService.StopAsync
+    // — draining in-flight jobs — when the winner's provider disposal reaches this scheduler. A disposed source
+    // throws ObjectDisposedException from CancelExecutionsAsync and ExecutionCancellationToken, cancelling faulted the
+    // host stop; a cancelled one answers every late reader with "already shut down", which is the truth.
+#pragma warning disable CA2213 // Disposing _shutdownCts races the shutdown drain and post-dispose readers; cancellation alone ends every waiter.
     private readonly CancellationTokenSource _shutdownCts = new();
+#pragma warning restore CA2213
     private readonly SoftSchedulerNotifyDebounce _notifyDebounce;
 
     internal CancellationToken ExecutionCancellationToken => _shutdownCts.Token;
@@ -752,7 +760,9 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
         _notifyDebounce.Dispose();
         _TryDisposeLongRunningSlots();
-        _shutdownCts.Dispose();
+        // _shutdownCts stays live-but-cancelled by design: StopAsync and ExecutionCancellationToken readers can
+        // still be running after DisposeAsync returns (a raced host dispose loses exactly that way). No CancelAfter
+        // timer is ever armed on it, so the cancelled source holds no unmanaged resource and the GC reclaims it.
     }
 
     private void _TryDisposeLongRunningSlots()
