@@ -8,6 +8,16 @@
     -->
     <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
   </PropertyGroup>
+  <!--
+    Verify 33+ fails the build (SC021) unless the consumer declares its licence status. The framework is open source
+    and generates no revenue, which the maintenance-fee terms exempt for at most 12 months at a time: extend the month
+    when the build starts failing again.
+    https://github.com/VerifyTests/Verify/blob/main/docs/maintenance-fee.md
+  -->
+  <PropertyGroup Label="Verify licence">
+    <Verify_SponsorshipExemption>OpenSource</Verify_SponsorshipExemption>
+    <Verify_SponsorshipExemptionUntil>2027-10</Verify_SponsorshipExemptionUntil>
+  </PropertyGroup>
   <ItemGroup Label="Global Usings">
     <Using Include="NSubstitute" />
     <Using Include="Bogus" />
