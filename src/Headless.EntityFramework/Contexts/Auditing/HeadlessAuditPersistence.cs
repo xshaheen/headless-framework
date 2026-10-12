@@ -279,7 +279,9 @@ internal sealed class HeadlessAuditPersistence(
 
                 foreach (var property in entry.Properties)
                 {
-                    properties.Add(new(property.Metadata.Name, property.OriginalValue, property.IsModified));
+                    properties.Add(
+                        new(property.Metadata.Name, property.OriginalValue, property.CurrentValue, property.IsModified)
+                    );
                 }
 
                 (snapshots ??= []).Add(new(entry.Entity, entry.State, properties));
@@ -296,6 +298,17 @@ internal sealed class HeadlessAuditPersistence(
             foreach (var property in Properties)
             {
                 var propertyEntry = entry.Property(property.Name);
+
+                // The Modified→Unchanged transition above rejected the pending changes, so EF reset
+                // each current value to its original — including store-generated values the business
+                // save read back (RETURNING). Put the saved current values back first, then the
+                // original and the modified flag, so change detection ends consistent. The equality
+                // guard leaves key and untouched properties out of EF's key-modification checks.
+                if (!Equals(propertyEntry.CurrentValue, property.CurrentValue))
+                {
+                    propertyEntry.CurrentValue = property.CurrentValue;
+                }
+
                 propertyEntry.OriginalValue = property.OriginalValue;
                 propertyEntry.IsModified = property.IsModified;
             }
@@ -307,7 +320,7 @@ internal sealed class HeadlessAuditPersistence(
         }
     }
 
-    private sealed record PropertySnapshot(string Name, object? OriginalValue, bool IsModified);
+    private sealed record PropertySnapshot(string Name, object? OriginalValue, object? CurrentValue, bool IsModified);
 }
 
 internal static partial class HeadlessAuditPersistenceLog
