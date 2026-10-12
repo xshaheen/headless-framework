@@ -226,6 +226,18 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     statusCode = StatusCodes.Status501NotImplemented;
                     break;
 
+                // A request the server could not read: a body that does not bind (malformed JSON, a missing required
+                // member), an unsupported content type, or a body over the size limit. Minimal APIs throw it when
+                // ThrowOnBadRequest is set, the default in Development; without this case it surfaced as a 500.
+                // The exception carries the status (413, 415, and so on), and Normalize fills that status's shape.
+                case BadHttpRequestException badRequest:
+                    statusCode = badRequest.StatusCode;
+                    problemDetails =
+                        statusCode == StatusCodes.Status400BadRequest
+                            ? problemDetailsCreator.BadRequest()
+                            : _CreateNormalized(statusCode);
+                    break;
+
                 default:
                     return false;
             }
@@ -323,6 +335,14 @@ internal sealed partial class HeadlessApiExceptionHandler(
             _LogFallbackWriteFailed(logger, fallbackError, fallbackError.GetType().Name);
             return false;
         }
+    }
+
+    private ProblemDetails _CreateNormalized(int statusCode)
+    {
+        var problemDetails = new ProblemDetails { Status = statusCode };
+        problemDetailsCreator.Normalize(problemDetails);
+
+        return problemDetails;
     }
 
     private static bool _IsLockAcquisitionTimeout(Exception ex)
