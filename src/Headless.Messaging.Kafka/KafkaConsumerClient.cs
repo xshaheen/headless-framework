@@ -186,6 +186,27 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
+        // The poll loop is drained with the handlers, so shutdown closes the consumer only after the loop stopped
+        // dispatching: a record the loop already took past its shutdown check still gets its handler tracked and
+        // waited for. Untagged, so a revoke's drain, which runs on this loop's thread inside Consume, never waits for it.
+        var listening = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_inFlightHandlers.TryTrack(listening.Task))
+        {
+            return;
+        }
+
+        try
+        {
+            await _PollAsync(timeout, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            listening.TrySetResult();
+        }
+    }
+
+    private async Task _PollAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
         Connect();
         var readyReported = false;
 
