@@ -30,6 +30,10 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly Func<RabbitMqConsumerLifecycleCheckpoint, ValueTask>? _lifecycleCheckpointAsync;
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly ConsumerSubscriptionKind _kind;
+    private readonly TransportEnvelopeGate _envelopeGate;
+
+    // Written only while subscribing, before the consumer starts, and read by every delivery afterwards.
+    private readonly Dictionary<string, string> _arrivalNames = new(StringComparer.Ordinal);
 
     // Completes with the broker's reason when an every-instance client's channel shuts down while it is in use.
     private readonly TaskCompletionSource<string> _channelLost = new(
@@ -64,6 +68,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         _connectionChannelPool = connectionChannelPool;
         _serviceProvider = serviceProvider;
         _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
+        _envelopeGate = serviceProvider.GetService<TransportEnvelopeGate>() ?? TransportEnvelopeGate.Strict;
         _exchangeName = RabbitMqPhysicalAddress.Exchange(connectionChannelPool.Exchange, lane);
         _rabbitMqOptions = options.Value;
         _consumerConfig = consumerConfig;
@@ -95,6 +100,9 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     /// <summary>The queues this client consumes; an every-instance client's one queue has a broker-generated name.</summary>
     internal IReadOnlyList<string> QueueNames => _queueNames;
 
+    /// <summary>The message name each routing key this client bound belongs to.</summary>
+    internal IReadOnlyDictionary<string, string> ArrivalNames => _arrivalNames;
+
     public BrokerAddress BrokerAddress =>
         new(
             "rabbitmq",
@@ -119,6 +127,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             {
                 RabbitMqValidation.ValidateMessageName(messageName);
                 return (
+                    MessageName: messageName,
                     QueueName: _GetQueueName(messageName),
                     RoutingKey: RabbitMqPhysicalAddress.RoutingKey(_lane, messageName)
                 );
@@ -127,8 +136,10 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
         await ConnectAsync(cancellationToken).ConfigureAwait(false);
 
-        foreach (var (queueName, routingKey) in subscriptions)
+        foreach (var (messageName, queueName, routingKey) in subscriptions)
         {
+            _arrivalNames[routingKey] = messageName;
+
             if (!_queueNames.Contains(queueName, StringComparer.Ordinal))
             {
                 await _DeclareQueueAsync(queueName, cancellationToken).ConfigureAwait(false);
@@ -184,7 +195,10 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             OnLogCallback!,
             _rabbitMqOptions.CustomHeadersBuilder,
             _serviceProvider,
-            _kind is ConsumerSubscriptionKind.EveryInstance ? _OnEveryInstanceConsumerCancelledByBroker : null
+            _kind is ConsumerSubscriptionKind.EveryInstance ? _OnEveryInstanceConsumerCancelledByBroker : null,
+            _envelopeGate,
+            _lane,
+            _arrivalNames
         );
 
         try
@@ -584,11 +598,14 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         CancellationToken cancellationToken
     )
     {
-        var routingKeys = messageNames
+        var subscriptions = messageNames
             .Select(messageName =>
             {
                 RabbitMqValidation.ValidateMessageName(messageName);
-                return RabbitMqPhysicalAddress.RoutingKey(MessageLane.Bus, messageName);
+                return (
+                    MessageName: messageName,
+                    RoutingKey: RabbitMqPhysicalAddress.RoutingKey(MessageLane.Bus, messageName)
+                );
             })
             .ToArray();
 
@@ -610,8 +627,9 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             _queueNames.Add(declared.QueueName);
         }
 
-        foreach (var routingKey in routingKeys)
+        foreach (var (messageName, routingKey) in subscriptions)
         {
+            _arrivalNames[routingKey] = messageName;
             await _channel!
                 .QueueBindAsync(_queueNames[0], _exchangeName, routingKey, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);

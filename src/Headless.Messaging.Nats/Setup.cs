@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Hosting;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
@@ -134,22 +135,34 @@ public static class SetupMessagingNats
 
             configureOptions(services);
 
+            // Validated when first resolved. The stream warm-up, a processing server, depends on it, so the bootstrapper
+            // resolves it before any processor starts and an invalid external subject fails startup before broker I/O.
+            services.AddSingleton(sp =>
+                NatsExternalSubjects.Create(
+                    sp.GetService<IMessageMetadataRegistry>()?.GetAll() ?? [],
+                    sp.GetRequiredService<IOptions<NatsMessagingOptions>>().Value.Streams
+                )
+            );
+
             // Built explicitly so the back-off measures real time rather than a registered TimeProvider.
             services.AddSingleton(sp => new NatsStreamProvisioner(
-                sp.GetRequiredService<IOptions<NatsMessagingOptions>>()
+                sp.GetRequiredService<IOptions<NatsMessagingOptions>>(),
+                externalSubjects: sp.GetRequiredService<NatsExternalSubjects>()
             ));
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IProcessingServer, NatsStreamWarmup>());
             services.AddSingleton<IBusTransport>(sp => new NatsTransport(
                 sp.GetRequiredService<ILogger<NatsTransport>>(),
                 sp.GetRequiredService<INatsConnectionPool>(),
                 sp.GetRequiredService<NatsStreamProvisioner>(),
-                MessageLane.Bus
+                MessageLane.Bus,
+                sp.GetRequiredService<NatsExternalSubjects>()
             ));
             services.AddSingleton<IQueueTransport>(sp => new NatsTransport(
                 sp.GetRequiredService<ILogger<NatsTransport>>(),
                 sp.GetRequiredService<INatsConnectionPool>(),
                 sp.GetRequiredService<NatsStreamProvisioner>(),
-                MessageLane.Queue
+                MessageLane.Queue,
+                sp.GetRequiredService<NatsExternalSubjects>()
             ));
             services.AddSingleton<IReplyTransport, NatsReplyTransport>();
             services.AddSingleton<IConsumerClientFactory, NatsConsumerClientFactory>();

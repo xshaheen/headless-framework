@@ -217,4 +217,78 @@ public sealed class RedisMessageTests : TestBase
         // then
         message.Body.IsEmpty.Should().BeTrue();
     }
+
+    [Fact]
+    public void should_read_no_headers_when_optional_headers_are_absent()
+    {
+        // given
+        var streamEntry = new StreamEntry("1234567-0", [new NameValueEntry("body", "{}")]);
+
+        // when
+        var message = RedisMessage.Create(streamEntry, headersOptional: true);
+
+        // then
+        message.Headers.Should().BeEmpty();
+        message.Body.ToArray().Should().Equal("{}"u8.ToArray());
+    }
+
+    [Fact]
+    public void should_throw_when_optional_headers_are_present_and_invalid_json()
+    {
+        // given
+        var values = new NameValueEntry[] { new("headers", "not-valid-json"), new("body", "{}") };
+        var streamEntry = new StreamEntry("1234567-0", values);
+
+        // when & then
+        var action = () => RedisMessage.Create(streamEntry, headersOptional: true);
+        action.Should().ThrowExactly<RedisConsumeInvalidHeadersException>();
+    }
+
+    [Fact]
+    public void should_throw_when_headers_are_json_null()
+    {
+        // given
+        var values = new NameValueEntry[] { new("headers", "null"), new("body", "{}") };
+        var streamEntry = new StreamEntry("1234567-0", values);
+
+        // when & then
+        var action = () => RedisMessage.Create(streamEntry, headersOptional: true);
+        action.Should().ThrowExactly<RedisConsumeInvalidHeadersException>();
+    }
+
+    [Fact]
+    public void should_throw_when_optional_headers_are_absent_and_body_is_missing()
+    {
+        // given
+        var streamEntry = new StreamEntry("1234567-0", [new NameValueEntry("payload", "{}")]);
+
+        // when & then
+        var action = () => RedisMessage.Create(streamEntry, headersOptional: true);
+        action.Should().ThrowExactly<RedisConsumeMissingBodyException>();
+    }
+
+    [Theory]
+    [InlineData("1791547200000-3", 1_791_547_200_000L)]
+    [InlineData("0-1", 0L)]
+    public void should_read_the_stored_time_from_the_entry_id(string entryId, long unixMilliseconds)
+    {
+        // when
+        var storedAt = RedisMessage.StoredAt(entryId);
+
+        // then
+        storedAt.Should().Be(DateTimeOffset.FromUnixTimeMilliseconds(unixMilliseconds));
+    }
+
+    [Theory]
+    [InlineData("18446744073709551615-0")]
+    [InlineData("abc-0")]
+    [InlineData("")]
+    public void should_read_no_stored_time_when_the_entry_id_carries_none(string entryId)
+    {
+        // when
+        var storedAt = RedisMessage.StoredAt(entryId);
+
+        // then
+        storedAt.Should().BeNull();
+    }
 }

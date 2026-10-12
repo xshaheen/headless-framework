@@ -1,7 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Frozen;
 using Headless.Checks;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -17,9 +20,18 @@ internal sealed class RedisConsumerClient(
     MessageLane lane = MessageLane.Queue,
     TimeProvider? timeProvider = null,
     ConsumerSubscriptionKind kind = ConsumerSubscriptionKind.Competing,
-    RedisConsumerNameLease? consumerName = null
+    RedisConsumerNameLease? consumerName = null,
+    IServiceProvider? serviceProvider = null
 ) : IConsumerClient
 {
+    private const string _TransportName = "Redis";
+
+    // The longest envelope rejection reason an error context carries; it reaches logs.
+    private const int _MaxLoggedReasonLength = 512;
+
+    // A client built without a container still hands a custom headers builder a provider, one with no services.
+    private static readonly IServiceProvider _NoServices = new NoServices();
+
     // Bounds the drain when the client is disposed without a shutdown budget. A handler still running past it keeps
     // its entry pending, so another consumer claims it after PendingClaimMinIdleTime (at-least-once).
     private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
@@ -29,6 +41,15 @@ internal sealed class RedisConsumerClient(
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly IServiceProvider _serviceProvider = serviceProvider ?? _NoServices;
+
+    private readonly TransportEnvelopeGate _envelopeGate =
+        serviceProvider?.GetService<TransportEnvelopeGate>() ?? TransportEnvelopeGate.Strict;
+
+    // Maps each subscribed stream key to the message name it was derived from, so an entry a foreign producer wrote
+    // without headers is routed by the stream it arrived on. Keys are escaped names, so a name is never parsed back
+    // out of one.
+    private FrozenDictionary<string, string> _arrivalNames = FrozenDictionary<string, string>.Empty;
 
     // Tracks the read loops and the handler tasks of the concurrent path so shutdown can drain them before disposing
     // the semaphore.
@@ -65,7 +86,15 @@ internal sealed class RedisConsumerClient(
     {
         Argument.IsNotNull(messageNames);
 
-        var arr = messageNames.Select(messageName => RedisPhysicalAddress.ForLane(lane, messageName)).ToArray();
+        var names = messageNames.ToArray();
+        var arr = names.Select(messageName => RedisPhysicalAddress.ForLane(lane, messageName)).ToArray();
+        var arrivalNames = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var i = 0; i < names.Length; i++)
+        {
+            arrivalNames.TryAdd(arr[i], names[i]);
+        }
+
+        _arrivalNames = arrivalNames.ToFrozenDictionary(StringComparer.Ordinal);
 
         if (kind is ConsumerSubscriptionKind.EveryInstance)
         {
@@ -317,10 +346,7 @@ internal sealed class RedisConsumerClient(
                 TransportMessage message;
                 try
                 {
-                    message = RedisMessage.Create(entry);
-
-                    // Overwrites any wire value so a producer cannot choose the address.
-                    message.Headers[Headers.TransportAddress] = stream.Key.ToString();
+                    message = _CreateMessage(stream.Key.ToString(), entry);
                 }
                 catch (Exception ex)
                 {
@@ -377,6 +403,58 @@ internal sealed class RedisConsumerClient(
         }
     }
 
+    /// <summary>The message name whose stream is <paramref name="streamKey"/>, when this client subscribed it.</summary>
+    internal string? ArrivalName(string streamKey) => _arrivalNames.GetValueOrDefault(streamKey);
+
+    /// <summary>
+    /// Identifies an entry by its stream and id. Redis has no producer message id field, and an entry id is fixed for
+    /// the entry's life, so a redelivery from the pending list carries the same identity.
+    /// </summary>
+    internal static NativeEnvelopeFacts NativeFacts(string streamKey, string entryId) =>
+        new(
+            ProducerMessageId: null,
+            PositionId: NativeEnvelopeFacts.Position("redis", streamKey, entryId),
+            StoredAt: RedisMessage.StoredAt(entryId)
+        );
+
+    /// <summary>
+    /// Builds the transport message of <paramref name="entry"/>: reads its fields, applies the custom headers builder,
+    /// stamps the address, then completes and checks the envelope. Every failure means the entry is malformed.
+    /// </summary>
+    private TransportMessage _CreateMessage(string streamKey, StreamEntry entry)
+    {
+        var arrivalName = ArrivalName(streamKey);
+        var message = RedisMessage.Create(entry, headersOptional: _envelopeGate.IsRaw(lane, arrivalName));
+
+        if (options.Value.CustomHeadersBuilder is { } customHeadersBuilder)
+        {
+            foreach (var customHeader in customHeadersBuilder(entry, _serviceProvider))
+            {
+                message.Headers[customHeader.Key] = customHeader.Value;
+            }
+        }
+
+        // Stamped after the custom headers builder so neither the wire nor the builder can choose the address.
+        message.Headers[Headers.TransportAddress] = streamKey;
+
+        var entryId = entry.Id.ToString();
+        try
+        {
+            _envelopeGate.Admit(
+                message.Headers,
+                new EnvelopeArrival(_TransportName, lane, arrivalName),
+                (StreamKey: streamKey, EntryId: entryId),
+                static position => NativeFacts(position.StreamKey, position.EntryId)
+            );
+        }
+        catch (InvalidDataException ex)
+        {
+            throw new RedisConsumeInvalidHeadersException(entryId, ex);
+        }
+
+        return message;
+    }
+
     private static RedisMessagingOptions.ConsumeErrorContext _CreateMalformedEntryErrorContext(
         Exception exception,
         StreamEntry entry
@@ -387,6 +465,15 @@ internal sealed class RedisConsumerClient(
         {
             RedisConsumeMissingHeadersException => new RedisConsumeMissingHeadersException(entryId),
             RedisConsumeMissingBodyException => new RedisConsumeMissingBodyException(entryId),
+            // Only the envelope gate wraps an InvalidDataException. Its reason tells a missing id from a conflicting
+            // name or an over-long id, and quotes no header value except a sanitized, bounded message name, so it is
+            // kept; it is sanitized again here because it reaches logs. A JSON parse failure keeps the generic text
+            // because the serializer's message can quote the raw headers field.
+            RedisConsumeInvalidHeadersException { InnerException: InvalidDataException rejection } =>
+                new RedisConsumeInvalidHeadersException(
+                    entryId,
+                    new InvalidDataException(LogSanitizer.Sanitize(rejection.Message, _MaxLoggedReasonLength))
+                ),
             RedisConsumeInvalidHeadersException => new RedisConsumeInvalidHeadersException(
                 entryId,
                 new InvalidDataException("The Redis message headers could not be parsed.")
@@ -431,6 +518,12 @@ internal sealed class RedisConsumerClient(
                 return false;
         }
     }
+}
+
+/// <summary>A service provider with no services, for a client built without a container.</summary>
+file sealed class NoServices : IServiceProvider
+{
+    public object? GetService(Type serviceType) => null;
 }
 
 internal readonly record struct RedisConsumerDelivery(string Stream, string Group, string Id);

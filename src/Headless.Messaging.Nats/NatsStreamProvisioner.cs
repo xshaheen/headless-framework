@@ -21,7 +21,12 @@ namespace Headless.Messaging.Nats;
 /// Measures publish-side back-off. A back-off waits real time, so this is never the application's registered clock;
 /// tests pass a fake one.
 /// </param>
-internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> options, TimeProvider? backoffClock = null)
+/// <param name="externalSubjects">The contract lanes bound to a foreign subject, which live on a declared stream only.</param>
+internal sealed class NatsStreamProvisioner(
+    IOptions<NatsMessagingOptions> options,
+    TimeProvider? backoffClock = null,
+    NatsExternalSubjects? externalSubjects = null
+)
 {
     // A failed publish-side ensure is remembered for a back-off before a publish tries again, doubling to a ceiling:
     // every stream info, create, or update request goes through the cluster's meta leader, so a failing stream must not
@@ -33,6 +38,7 @@ internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> optio
 
     private readonly NatsMessagingOptions _options = Argument.IsNotNull(options.Value);
     private readonly TimeProvider _backoffClock = backoffClock ?? TimeProvider.System;
+    private readonly NatsExternalSubjects _externalSubjects = externalSubjects ?? NatsExternalSubjects.Empty;
 
     // One ensure per stream and required subject set per process. A Lazy keeps concurrent first publishes on one broker
     // round trip; a failure stays cached until its back-off ends, then the next publish tries again.
@@ -104,8 +110,8 @@ internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> optio
     }
 
     /// <summary>
-    /// Returns the stream <paramref name="messageName"/> lives on: the declared stream whose subjects cover its subject,
-    /// or the stream derived from its name, carrying the subjects this message needs.
+    /// Returns the stream <paramref name="messageName"/> lives on: the declared stream whose subjects cover its subject
+    /// or its external subject filter, or the stream derived from its name, carrying the subjects this message needs.
     /// </summary>
     public NatsStreamSpec Resolve(MessageLane lane, string messageName, bool isSharded = false)
     {
@@ -202,6 +208,18 @@ internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> optio
 
     private NatsStreamSpec? _FindDeclared(MessageLane lane, string messageName)
     {
+        if (_externalSubjects.Find(lane, messageName) is { } external)
+        {
+            // Startup already refused a filter no declared stream covers; a foreign subject never gets a derived stream.
+            return _options.Streams.Streams.FirstOrDefault(stream =>
+                    stream.Subjects.Any(pattern => NatsStreamReconciliation.Covers(pattern, external.Filter))
+                )
+                ?? throw new InvalidOperationException(
+                    $"No stream declared in NatsMessagingOptions.Streams covers NATS external subject '{external.Filter}' "
+                        + $"of message '{messageName}' on the {lane} lane."
+                );
+        }
+
         var subject = NatsPhysicalAddress.Subject(lane, messageName);
 
         // Declared subjects never overlap one another (the catalog refuses it), so at most one stream matches.

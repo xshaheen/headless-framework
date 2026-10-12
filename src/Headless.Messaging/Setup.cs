@@ -120,6 +120,9 @@ public static class SetupMessaging
                 sp.GetRequiredService<IOptions<MessagingOptions>>()
             );
         });
+        services.TryAddSingleton(static sp => new TransportEnvelopeGate(
+            sp.GetRequiredService<IMessageMetadataRegistry>()
+        ));
         services.TryAddSingleton<IConsumeContextAccessor, AsyncLocalConsumeContextAccessor>();
         services.TryAddSingleton<IMessagePublishRequestFactory, MessagePublishRequestFactory>();
         services.TryAddSingleton(sp =>

@@ -30,6 +30,13 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
         TransportConformanceTestBinding[] bindings =
         [
             new(
+                TransportConformanceScenario.RawPayloadConsumption,
+                typeof(KafkaRawPayloadTests),
+                nameof(
+                    KafkaRawPayloadTests.should_consume_a_native_record_once_across_a_redelivery_when_its_contract_is_raw
+                )
+            ),
+            new(
                 TransportConformanceScenario.RoutingAffinityMappingOrRejection,
                 typeof(ProviderConformanceEvidenceTests),
                 nameof(should_prove_routing_affinity_mapping_or_rejection)

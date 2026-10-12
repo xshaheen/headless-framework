@@ -5,6 +5,7 @@ using Azure.Messaging.ServiceBus.Administration;
 using Headless.Checks;
 using Headless.Messaging.AzureServiceBus.Helpers;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -28,6 +29,8 @@ internal sealed class AzureServiceBusConsumerClient(
     // place it can still be inspected.
     private const string _MalformedEnvelopeReason = "MalformedEnvelope";
 
+    private const string _TransportName = "Azure Service Bus";
+
     /// <summary>
     /// How long Azure keeps an every-instance subscription nobody receives from: the shortest idle period Azure allows,
     /// and so the longest a crashed process leaves its subscription behind.
@@ -37,7 +40,14 @@ internal sealed class AzureServiceBusConsumerClient(
     private readonly bool _everyInstance = kind is ConsumerSubscriptionKind.EveryInstance;
     private int _recoveringSubscription;
     private IReadOnlyList<string> _subscribedMessageNames = [];
+
+    // The message names this client subscribed, which are also its addresses: the Bus lane's Subject (its correlation
+    // rule filters on the name) and the Queue lane's queue. Replaced, never mutated, so a handler reads it lock-free.
+    private IReadOnlySet<string> _arrivalNames = new HashSet<string>(StringComparer.Ordinal);
     private Func<CancellationToken, Task>? _onReestablished;
+
+    private readonly TransportEnvelopeGate _envelopeGate =
+        serviceProvider.GetService<TransportEnvelopeGate>() ?? TransportEnvelopeGate.Strict;
 
     private readonly AzureServiceBusMessagingOptions _asbOptions = Argument.IsNotNull(options.Value);
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
@@ -82,9 +92,17 @@ internal sealed class AzureServiceBusConsumerClient(
 
         await ConnectAsync(cancellationToken).ConfigureAwait(false);
 
+        var names = messageNames.ToList();
+
         if (lane == MessageLane.Queue)
         {
-            foreach (var messageName in messageNames)
+            // Each call adds queue processors, so the queues it names join the ones already open.
+            Volatile.Write(
+                ref _arrivalNames,
+                new HashSet<string>(Volatile.Read(ref _arrivalNames).Concat(names), StringComparer.Ordinal)
+            );
+
+            foreach (var messageName in names)
             {
                 CheckValidQueueName(messageName);
                 await _EnsureQueueProcessorAsync(messageName, cancellationToken).ConfigureAwait(false);
@@ -93,12 +111,16 @@ internal sealed class AzureServiceBusConsumerClient(
             return;
         }
 
+        // Each call replaces the subscription's rules, so the names it gives replace the ones before. A SQL filter's
+        // rule name is not a message name, so it never names an arrival.
+        Volatile.Write(ref _arrivalNames, new HashSet<string>(names, StringComparer.Ordinal));
+
         if (!_asbOptions.AutoProvision)
         {
             return;
         }
 
-        var ruleNames = messageNames
+        var ruleNames = names
             .Concat(_asbOptions.SqlFilters.Select(o => o.Key))
             .Distinct(StringComparer.Ordinal)
             .ToList();
@@ -456,30 +478,10 @@ internal sealed class AzureServiceBusConsumerClient(
 
     private async Task _ServiceBusProcessor_ProcessMessageAsync(ProcessMessageEventArgs arg)
     {
-        Dictionary<string, string?> headers;
-        try
-        {
-            headers = _ConvertHeaders(arg.Message);
-        }
-        catch (Exception exception)
-        {
-            _LogMalformedEnvelope(exception);
-            await arg.DeadLetterMessageAsync(
-                    arg.Message,
-                    _MalformedEnvelopeReason,
-                    exception.GetType().Name,
-                    CancellationToken.None
-                )
-                .ConfigureAwait(false);
-            return;
-        }
-
-        _ApplyCustomHeaders(arg.Message, headers);
-
         TransportMessage context;
         try
         {
-            context = _CreateTransportMessage(arg.Message, arg.EntityPath, headers);
+            context = _CreateTransportMessage(arg.Message, arg.EntityPath);
         }
         catch (Exception exception)
         {
@@ -525,30 +527,10 @@ internal sealed class AzureServiceBusConsumerClient(
 
     private async Task _ServiceBusProcessor_ProcessSessionMessageAsync(ProcessSessionMessageEventArgs arg)
     {
-        Dictionary<string, string?> headers;
-        try
-        {
-            headers = _ConvertHeaders(arg.Message);
-        }
-        catch (Exception exception)
-        {
-            _LogMalformedEnvelope(exception);
-            await arg.DeadLetterMessageAsync(
-                    arg.Message,
-                    _MalformedEnvelopeReason,
-                    exception.GetType().Name,
-                    CancellationToken.None
-                )
-                .ConfigureAwait(false);
-            return;
-        }
-
-        _ApplyCustomHeaders(arg.Message, headers);
-
         TransportMessage context;
         try
         {
-            context = _CreateTransportMessage(arg.Message, arg.EntityPath, headers);
+            context = _CreateTransportMessage(arg.Message, arg.EntityPath);
         }
         catch (Exception exception)
         {
@@ -761,48 +743,66 @@ internal sealed class AzureServiceBusConsumerClient(
         return headers;
     }
 
+    // A custom headers builder overwrites what the wire carries, so it can correct or translate a foreign producer's
+    // headers before the gate fills only what is still missing.
     private void _ApplyCustomHeaders(ServiceBusReceivedMessage message, Dictionary<string, string?> headers)
     {
-        if (_asbOptions.CustomHeadersBuilder != null)
+        if (_asbOptions.CustomHeadersBuilder is null)
         {
-            var customHeaders = _asbOptions.CustomHeadersBuilder(message, serviceProvider);
-            foreach (var customHeader in customHeaders)
-            {
-                var added = headers.TryAdd(customHeader.Key, customHeader.Value);
+            return;
+        }
 
-                if (!added)
-                {
-                    logger.CustomHeaderSkipped(customHeader.Key);
-                }
-            }
+        foreach (var customHeader in _asbOptions.CustomHeadersBuilder(message, serviceProvider))
+        {
+            headers[customHeader.Key] = customHeader.Value;
         }
     }
 
-    private static TransportMessage _CreateTransportMessage(
-        ServiceBusReceivedMessage message,
-        string entityPath,
-        Dictionary<string, string?> headers
-    )
+    // Every failure here, a custom headers builder's included, settles the delivery as a malformed envelope.
+    private TransportMessage _CreateTransportMessage(ServiceBusReceivedMessage message, string entityPath)
     {
+        var headers = _ConvertHeaders(message);
+        _ApplyCustomHeaders(message, headers);
+
         // Stamped after the custom headers builder so neither the wire nor the builder can choose the address.
         headers[Headers.TransportAddress] = entityPath;
-        _ValidateRequiredHeaders(headers);
+
+        _envelopeGate.Admit(
+            headers,
+            new EnvelopeArrival(_TransportName, lane, _ResolveArrivalName(message, entityPath)),
+            (Message: message, EntityPath: entityPath),
+            static state => ReadNativeFacts(state.Message, state.EntityPath)
+        );
+
         return new TransportMessage(headers, message.Body);
     }
 
-    private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers)
+    private string? _ResolveArrivalName(ServiceBusReceivedMessage message, string entityPath)
     {
-        if (
-            !headers.TryGetValue(Headers.MessageId, out var messageId)
-            || string.IsNullOrWhiteSpace(messageId)
-            || !headers.TryGetValue(Headers.MessageName, out var messageName)
-            || string.IsNullOrWhiteSpace(messageName)
-        )
-        {
-            throw new InvalidDataException(
-                "The Azure Service Bus transport envelope is missing a required Messaging header."
-            );
-        }
+        var address = lane == MessageLane.Queue ? entityPath : message.Subject;
+
+        return address is not null && Volatile.Read(ref _arrivalNames).Contains(address) ? address : null;
+    }
+
+    /// <summary>
+    /// Reads the identity of a delivery that has no Headless message id: the producer's <c>MessageId</c>, else the
+    /// entity's sequence number, which every redelivery keeps, paired with the enqueue time, which differs once the
+    /// entity is recreated and its sequence numbers restart.
+    /// </summary>
+    internal static NativeEnvelopeFacts ReadNativeFacts(ServiceBusReceivedMessage message, string entityPath)
+    {
+        var enqueuedTime = message.EnqueuedTime;
+
+        return new NativeEnvelopeFacts(
+            string.IsNullOrWhiteSpace(message.MessageId) ? null : message.MessageId,
+            NativeEnvelopeFacts.Position(
+                "asb",
+                entityPath,
+                message.SequenceNumber.ToString(CultureInfo.InvariantCulture),
+                enqueuedTime.UtcTicks.ToString(CultureInfo.InvariantCulture)
+            ),
+            enqueuedTime == default ? null : enqueuedTime
+        );
     }
 
     internal static void CheckValidSubscriptionName(string subscriptionName)
@@ -919,11 +919,4 @@ internal static partial class AzureServiceBusConsumerClientLog
         Message = "Azure Service Bus topic {TopicPath} created subscription: {SubscriptionName}"
     )]
     public static partial void SubscriptionCreated(this ILogger logger, string topicPath, string subscriptionName);
-
-    [LoggerMessage(
-        EventId = 3012,
-        Level = LogLevel.Warning,
-        Message = "Not possible to add the custom header {Header}. A value with the same key already exists in the Message headers."
-    )]
-    public static partial void CustomHeaderSkipped(this ILogger logger, string header);
 }

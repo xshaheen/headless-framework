@@ -18,7 +18,8 @@ internal static class MessageContractRegistration
             Consumers: [],
             ContractVersion: contract.Version,
             RequiresRoutingAffinity: settings.RequiresRoutingAffinity,
-            DeliveryMode: settings.DeliveryMode
+            DeliveryMode: settings.DeliveryMode,
+            RawPayload: settings.RawPayload
         );
     }
 }

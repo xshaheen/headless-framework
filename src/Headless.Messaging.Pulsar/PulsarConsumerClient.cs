@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Frozen;
 using System.Reflection;
 using Headless.Checks;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Pulsar.Client.Api;
 using Pulsar.Client.Common;
@@ -15,9 +17,13 @@ internal sealed class PulsarConsumerClient(
     ConsumerClientRequest request,
     PulsarConsumerConfig? config = null,
     TimeProvider? timeProvider = null,
-    Func<IReadOnlyDictionary<string, string?>, byte[], TransportMessage>? transportMessageFactory = null
+    Func<IReadOnlyDictionary<string, string?>, byte[], TransportMessage>? transportMessageFactory = null,
+    IServiceProvider? serviceProvider = null
 ) : IConsumerClient
 {
+    private const string _TransportDisplayName = "Pulsar";
+    private const string _PartitionSuffix = "-partition-";
+
     // Bounded drain budget on shutdown, matching the other transports. A handler still running past it never
     // acknowledges, so the broker redelivers its message once this consumer disconnects (at-least-once).
     private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
@@ -38,7 +44,16 @@ internal sealed class PulsarConsumerClient(
     private readonly InFlightHandlerTracker _inFlightHandlers = new();
     private int _disposed;
     private CancellationTokenSource? _receiveCts = new();
-    private readonly PulsarMessagingOptions _pulsarOptions = options.Value;
+    private readonly PulsarMessagingOptions _pulsarOptions = _RequireServiceProviderForHeadersBuilder(
+        options.Value,
+        serviceProvider
+    );
+
+    private readonly TransportEnvelopeGate _envelopeGate =
+        serviceProvider?.GetService<TransportEnvelopeGate>() ?? TransportEnvelopeGate.Strict;
+
+    // Keyed by the subscribed topic's complete, partition-free name, the form a delivery's topic normalizes to.
+    private volatile FrozenDictionary<string, string> _arrivalNames = FrozenDictionary<string, string>.Empty;
     private IConsumer<byte[]>? _consumerClient;
     private Func<CancellationToken, Task>? _onReestablished;
 
@@ -65,6 +80,9 @@ internal sealed class PulsarConsumerClient(
 
         var serviceName = Assembly.GetEntryAssembly()?.GetName().Name!.ToLowerInvariant();
 
+        var names = topics.ToList();
+        IndexArrivalNames(names);
+
         // Pulsar.Client's SubscribeAsync lacks CancellationToken — use WaitAsync as a
         // timeout guard. Plan to migrate to DotPulsar (apache/pulsar-dotnet) when producer
         // batching ships: https://github.com/apache/pulsar-dotpulsar/issues/7
@@ -72,7 +90,7 @@ internal sealed class PulsarConsumerClient(
         var builder = ConfigureSubscription(
             client
                 .NewConsumer()
-                .Topics(topics.Select(topic => PulsarPhysicalAddress.Topic(_request.Lane, topic)))
+                .Topics(names.Select(topic => PulsarPhysicalAddress.Topic(_request.Lane, topic)))
                 .SubscriptionName(PulsarPhysicalAddress.Subscription(_request))
                 .ConsumerName(serviceName)
                 .NegativeAckRedeliveryDelay(_pulsarOptions.NegativeAckRedeliveryDelay),
@@ -287,13 +305,32 @@ internal sealed class PulsarConsumerClient(
                             headers.Add(header.Key, header.Value);
                         }
 
-                        // Overwrites any wire value so a producer cannot choose the address.
+                        if (_pulsarOptions.CustomHeadersBuilder is { } customHeadersBuilder)
+                        {
+                            foreach (var customHeader in customHeadersBuilder(currentMessage, serviceProvider!))
+                            {
+                                headers[customHeader.Key] = customHeader.Value;
+                            }
+                        }
+
+                        // Stamped after the custom headers builder so neither the wire nor the builder can choose the
+                        // address.
                         headers[Headers.TransportAddress] = currentMessage.MessageId.TopicName;
 
                         message = transportMessageFactory is null
                             ? new TransportMessage(headers, currentMessage.Data)
                             : transportMessageFactory(headers, currentMessage.Data);
-                        _ValidateRequiredHeaders(message.Headers);
+
+                        _envelopeGate.Admit(
+                            message.Headers,
+                            new EnvelopeArrival(
+                                _TransportDisplayName,
+                                _request.Lane,
+                                ArrivalName(currentMessage.MessageId.TopicName)
+                            ),
+                            currentMessage,
+                            static delivery => NativeFacts(delivery)
+                        );
                     }
                     catch (Exception ex)
                     {
@@ -353,17 +390,98 @@ internal sealed class PulsarConsumerClient(
         await _consumerClient!.AcknowledgeAsync((MessageId)sender!).ConfigureAwait(false);
     }
 
-    private static void _ValidateRequiredHeaders(IDictionary<string, string?> headers)
+    /// <summary>
+    /// Records the topic of each subscribed message name, so <see cref="ArrivalName"/> can map a delivery's topic back
+    /// to its message. It uses the same address function the subscription uses, so it never parses a name out of a
+    /// topic. A lane with no raw route keeps the lookup empty, because header routing alone serves it, so its deliveries
+    /// skip the topic parse. A topic two names resolve to, such as <c>orders</c> and <c>public/default/orders</c>, names no one
+    /// message, so it is left out.
+    /// </summary>
+    internal void IndexArrivalNames(IEnumerable<string> names)
     {
-        if (
-            !headers.TryGetValue(Headers.MessageId, out var messageId)
-            || string.IsNullOrWhiteSpace(messageId)
-            || !headers.TryGetValue(Headers.MessageName, out var messageName)
-            || string.IsNullOrWhiteSpace(messageName)
-        )
+        if (!_envelopeGate.HasRawRoutes(_request.Lane))
         {
-            throw new InvalidDataException("The Pulsar transport envelope is missing a required Messaging header.");
+            _arrivalNames = FrozenDictionary<string, string>.Empty;
+            return;
         }
+
+        _arrivalNames = names
+            .Distinct(StringComparer.Ordinal)
+            .GroupBy(name => NormalizeTopic(PulsarPhysicalAddress.Topic(_request.Lane, name)), StringComparer.Ordinal)
+            .Where(static group => group.Take(2).Count() == 1)
+            .ToFrozenDictionary(static group => group.Key, static group => group.First(), StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Returns the message a delivery on <paramref name="topic"/> belongs to: the subscribed message whose topic it is,
+    /// or <see langword="null"/> when this client did not subscribe it.
+    /// </summary>
+    internal string? ArrivalName(string topic)
+    {
+        var arrivalNames = _arrivalNames;
+
+        return arrivalNames.Count > 0 && arrivalNames.TryGetValue(NormalizeTopic(topic), out var name) ? name : null;
+    }
+
+    /// <summary>
+    /// Returns the complete name of <paramref name="topic"/> without a partition suffix. Pulsar reports a delivery's
+    /// topic fully qualified (<c>persistent://tenant/namespace/topic</c>) and, on a partitioned topic, with a
+    /// <c>-partition-N</c> suffix, while the subscription names the short form.
+    /// </summary>
+    internal static string NormalizeTopic(string topic)
+    {
+        var topicName = new TopicName(topic);
+        var complete = topicName.CompleteTopicName;
+
+        if (topicName.PartitionIndex < 0)
+        {
+            return complete;
+        }
+
+        var suffix = _PartitionSuffix + topicName.PartitionIndex.ToString(CultureInfo.InvariantCulture);
+
+        return complete.EndsWith(suffix, StringComparison.Ordinal) ? complete[..^suffix.Length] : complete;
+    }
+
+    /// <summary>
+    /// Reads the broker metadata that identifies a delivery which carries no message id. Pulsar has no producer
+    /// idempotency key a consumer can read, so the identity is the stored message's position: a ledger id is unique
+    /// across the cluster and never reused, so the position stays the same on every redelivery and differs after the
+    /// topic is recreated.
+    /// </summary>
+    internal static NativeEnvelopeFacts NativeFacts(Message<byte[]> message)
+    {
+        var id = message.MessageId;
+        var batchIndex = id.Type.IsBatch ? id.Type.Item.Item1 : -1;
+
+        var position = NativeEnvelopeFacts.Position(
+            "pulsar",
+            NormalizeTopic(id.TopicName),
+            id.LedgerId.ToString(CultureInfo.InvariantCulture),
+            id.EntryId.ToString(CultureInfo.InvariantCulture),
+            id.Partition.ToString(CultureInfo.InvariantCulture),
+            batchIndex.ToString(CultureInfo.InvariantCulture)
+        );
+
+        DateTimeOffset? storedAt =
+            message.PublishTime > 0 ? DateTimeOffset.FromUnixTimeMilliseconds(message.PublishTime) : null;
+
+        return new NativeEnvelopeFacts(ProducerMessageId: null, position, storedAt);
+    }
+
+    private static PulsarMessagingOptions _RequireServiceProviderForHeadersBuilder(
+        PulsarMessagingOptions options,
+        IServiceProvider? serviceProvider
+    )
+    {
+        if (options.CustomHeadersBuilder is not null && serviceProvider is null)
+        {
+            throw new InvalidOperationException(
+                "A Pulsar consumer client with a CustomHeadersBuilder needs the service provider the builder receives."
+            );
+        }
+
+        return options;
     }
 
     public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)

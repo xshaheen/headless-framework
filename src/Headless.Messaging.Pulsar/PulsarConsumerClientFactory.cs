@@ -14,14 +14,17 @@ internal sealed class PulsarConsumerClientFactory : IConsumerClientFactory
     private readonly IConnectionFactory _connection;
     private readonly IOptions<PulsarMessagingOptions> _pulsarOptions;
     private readonly IConsumerRegistry? _consumerRegistry;
+    private readonly IServiceProvider? _serviceProvider;
 
     public PulsarConsumerClientFactory(
         IConnectionFactory connection,
         ILoggerFactory loggerFactory,
         IOptions<PulsarMessagingOptions> pulsarOptions,
-        IConsumerRegistry? consumerRegistry = null
+        IConsumerRegistry? consumerRegistry = null,
+        IServiceProvider? serviceProvider = null
     )
     {
+        _serviceProvider = serviceProvider;
         _connection = connection;
         _pulsarOptions = pulsarOptions;
         _consumerRegistry = consumerRegistry;
@@ -64,7 +67,7 @@ internal sealed class PulsarConsumerClientFactory : IConsumerClientFactory
             // Creating the client touches no broker object: the subscription, every-instance or competing, is opened by
             // SubscribeAsync, so the topology-only client the core creates and disposes leaves nothing behind.
             var client = await _connection.RentClientAsync(cancellationToken).ConfigureAwait(false);
-            return new PulsarConsumerClient(_pulsarOptions, client, request, config);
+            return new PulsarConsumerClient(_pulsarOptions, client, request, config, serviceProvider: _serviceProvider);
         }
         catch (Exception e)
         {

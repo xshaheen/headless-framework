@@ -157,7 +157,7 @@ internal static class NatsStreamReconciliation
         return
         [
             .. requiredSubjects
-                .Where(required => !live.Any(pattern => _CoversSubject(pattern, required)))
+                .Where(required => !live.Any(pattern => Covers(pattern, required)))
                 .Order(StringComparer.Ordinal),
         ];
     }
@@ -240,7 +240,7 @@ internal static class NatsStreamReconciliation
     /// token, while <c>orders.&gt;</c> requires one or more arbitrary trailing tokens and cannot be covered
     /// by <c>orders.*</c>.
     /// </summary>
-    private static bool _CoversSubject(string pattern, string required)
+    public static bool Covers(string pattern, string required)
     {
         var patternTokens = pattern.Split('.');
         var requiredTokens = required.Split('.');

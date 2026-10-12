@@ -9,6 +9,7 @@ using Amazon.SQS.Model;
 using Headless.Messaging;
 using Headless.Messaging.Aws;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
@@ -86,7 +87,7 @@ public sealed class AwsAutoProvisionTests : TestBase
         await using var client = _CreateConsumer(MessageLane.Bus, autoProvision: true);
 
         // when
-        await client.SubscribeAsync(["arn:aws:sns:::bus-orders-placed"], AbortToken);
+        await client.SubscribeAsync(["orders.placed"], AbortToken);
 
         // then: asked for at creation, and set again because SNS returns an existing subscription unchanged
         await _sns.Received(1)
@@ -119,7 +120,7 @@ public sealed class AwsAutoProvisionTests : TestBase
         await using var client = _CreateConsumer(MessageLane.Bus, autoProvision: true);
 
         // when
-        await client.SubscribeAsync(["arn:aws:sns:::bus-orders-placed"], AbortToken);
+        await client.SubscribeAsync(["orders.placed"], AbortToken);
 
         // then
         await _sns.Received(1)
@@ -131,8 +132,83 @@ public sealed class AwsAutoProvisionTests : TestBase
             );
     }
 
+    [Fact]
+    public async Task should_create_a_topic_once_for_every_client_of_the_process()
+    {
+        // given: two listening clients of one consumer identity share the process's services
+        _GivenBusQueue();
+        _sns.SubscribeAsync(Arg.Any<SubscribeRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new SubscribeResponse { SubscriptionArn = "arn:aws:sns:::bus-orders-placed:sub" });
+        var services = new ServiceCollection().AddSingleton<SnsTopicArnCache>().BuildServiceProvider();
+        await using var first = _CreateConsumer(MessageLane.Bus, autoProvision: true, services);
+        await using var second = _CreateConsumer(MessageLane.Bus, autoProvision: true, services);
+
+        // when: each runs the topology step and subscribes
+        foreach (var client in new[] { first, second })
+        {
+            var names = await client.FetchMessageNamesAsync(["orders.placed.fifo"], AbortToken);
+            await client.SubscribeAsync(names, AbortToken);
+        }
+
+        // then: one create, still carrying the FIFO attributes, and both clients subscribe the resolved topic
+        await _sns.Received(1)
+            .CreateTopicAsync(
+                Arg.Is<CreateTopicRequest>(r =>
+                    r.Name.EndsWith(".fifo", StringComparison.Ordinal)
+                    && r.Attributes["FifoTopic"] == "true"
+                    && r.Attributes["ContentBasedDeduplication"] == "true"
+                ),
+                Arg.Any<CancellationToken>()
+            );
+        _sns.ReceivedCalls()
+            .Count(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(_sns.CreateTopicAsync), StringComparison.Ordinal)
+            )
+            .Should()
+            .Be(1);
+        await _sns.Received(2)
+            .SubscribeAsync(
+                Arg.Is<SubscribeRequest>(r => r.TopicArn == "arn:aws:sns:::bus-orders-placed"),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_create_a_topic_again_after_its_creation_failed()
+    {
+        // given: the first create is throttled, the next one succeeds
+        _GivenBusQueue();
+        _sns.SubscribeAsync(Arg.Any<SubscribeRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new SubscribeResponse { SubscriptionArn = "arn:aws:sns:::bus-orders-placed:sub" });
+        _sns.CreateTopicAsync(Arg.Any<CreateTopicRequest>(), Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromException<CreateTopicResponse>(
+                    new AmazonSimpleNotificationServiceException("Rate exceeded") { ErrorCode = "Throttling" }
+                ),
+                Task.FromResult(new CreateTopicResponse { TopicArn = "arn:aws:sns:::bus-orders-placed" })
+            );
+        var services = new ServiceCollection().AddSingleton<SnsTopicArnCache>().BuildServiceProvider();
+        await using var first = _CreateConsumer(MessageLane.Bus, autoProvision: true, services);
+        await using var second = _CreateConsumer(MessageLane.Bus, autoProvision: true, services);
+
+        // when
+        var failed = async () => await first.SubscribeAsync(["orders.placed"], AbortToken);
+        await failed.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Throttling*");
+        await second.SubscribeAsync(["orders.placed"], AbortToken);
+
+        // then: the failure was not cached, so the second client created the topic and subscribed it
+        await _sns.Received(2).CreateTopicAsync(Arg.Any<CreateTopicRequest>(), Arg.Any<CancellationToken>());
+        await _sns.Received(1)
+            .SubscribeAsync(
+                Arg.Is<SubscribeRequest>(r => r.TopicArn == "arn:aws:sns:::bus-orders-placed"),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     private void _GivenBusQueue()
     {
+        _sns.CreateTopicAsync(Arg.Any<CreateTopicRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:::bus-orders-placed" });
         _sqs.GetAttributesAsync("https://sqs.local/bus-orders")
             .Returns(
                 new Dictionary<string, string>(StringComparer.Ordinal) { ["QueueArn"] = "arn:aws:sqs:::bus-orders" }
@@ -188,14 +264,19 @@ public sealed class AwsAutoProvisionTests : TestBase
         await _sqs.DidNotReceiveWithAnyArgs().CreateQueueAsync(default(CreateQueueRequest)!, AbortToken);
     }
 
-    private AmazonSqsConsumerClient _CreateConsumer(MessageLane lane, bool autoProvision)
+    private AmazonSqsConsumerClient _CreateConsumer(
+        MessageLane lane,
+        bool autoProvision,
+        IServiceProvider? serviceProvider = null
+    )
     {
         var client = new AmazonSqsConsumerClient(
             "orders",
             1,
             _Options(autoProvision),
             Substitute.For<ILogger<AmazonSqsConsumerClient>>(),
-            lane
+            lane,
+            serviceProvider: serviceProvider
         );
         _SetField(client, "_sqsClient", _sqs);
         _SetField(client, "_snsClient", _sns);

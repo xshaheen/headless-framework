@@ -70,6 +70,22 @@ public sealed class AmazonSqsMessagingOptions
     /// Whole seconds from 0 to 20, the SQS limit. A longer wait costs fewer empty receives; 0 polls without waiting.
     /// </remarks>
     public TimeSpan ReceiveWaitTime { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Optional callback that adds headers to an inbound message from the native SQS message, such as its system
+    /// attributes or a foreign producer's own message attributes, to interoperate with producers that do not send the
+    /// Headless envelope.
+    /// </summary>
+    /// <remarks>
+    /// Runs after the header bag is read, and each returned header overwrites the wire value of the same name. The
+    /// transport address is stamped afterwards, so the callback cannot choose it. A callback that throws settles the
+    /// message as a malformed envelope: it is logged and deleted without a handler.
+    /// </remarks>
+    public Func<
+        Amazon.SQS.Model.Message,
+        IServiceProvider,
+        List<KeyValuePair<string, string>>
+    >? CustomHeadersBuilder { get; set; }
 }
 
 internal sealed class AmazonSqsMessagingOptionsValidator : AbstractValidator<AmazonSqsMessagingOptions>

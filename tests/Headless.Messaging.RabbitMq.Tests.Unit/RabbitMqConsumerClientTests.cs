@@ -340,6 +340,55 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_map_each_bound_routing_key_to_its_message_name_when_subscribing()
+    {
+        // given
+        await using var client = new RabbitMqConsumerClient(
+            "orders.created",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            lane: MessageLane.Queue
+        );
+
+        // when
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        // then
+        client
+            .ArrivalNames.Should()
+            .BeEquivalentTo(
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [RabbitMqPhysicalAddress.RoutingKey(MessageLane.Queue, "orders.created")] = "orders.created",
+                }
+            );
+    }
+
+    [Fact]
+    public async Task should_map_each_bound_routing_key_to_its_message_name_when_every_instance_subscribes()
+    {
+        // given
+        _UseOwnedConnectionWithServerNamedQueue();
+        await using var client = _CreateEveryInstanceClient();
+
+        // when
+        await client.SubscribeAsync(["orders.created", "orders.cancelled"], AbortToken);
+
+        // then
+        client
+            .ArrivalNames.Should()
+            .BeEquivalentTo(
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["bus.orders.created"] = "orders.created",
+                    ["bus.orders.cancelled"] = "orders.cancelled",
+                }
+            );
+    }
+
     private void _UseOwnedConnectionWithServerNamedQueue()
     {
         var ownedConnection = Substitute.For<IConnection>();

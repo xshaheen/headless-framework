@@ -65,11 +65,12 @@ jobs:
         run: make build-project-no-restore PROJECT=tests/Headless.Messaging.AzureServiceBus.Tests.Integration/Headless.Messaging.AzureServiceBus.Tests.Integration.csproj
 
       # The preflight makes a skip-only result impossible: the fixture skips only when this credential is absent.
+      # The raw-payload leaf is the manifest's evidence for consuming header-less messages, so it runs here too.
       - name: "Run Azure Service Bus conformance scenarios"
         env:
           HEADLESS_TEST_AZURE_SERVICE_BUS_CONNECTION_STRING: ${{ secrets.HEADLESS_TEST_AZURE_SERVICE_BUS_CONNECTION_STRING }}
         run: >-
           make test-project-fast
           TEST_PROJECT=tests/Headless.Messaging.AzureServiceBus.Tests.Integration/Headless.Messaging.AzureServiceBus.Tests.Integration.csproj
-          TEST_FILTER='--filter-class *ProviderConformanceEvidenceTests'
+          TEST_FILTER='--filter-class *ProviderConformanceEvidenceTests --filter-class *AzureServiceBusRawPayloadTests'
         shell: bash

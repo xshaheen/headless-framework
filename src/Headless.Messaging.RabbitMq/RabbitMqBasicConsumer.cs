@@ -15,9 +15,14 @@ namespace Headless.Messaging.RabbitMq;
 /// When <paramref name="concurrent"/> is greater than zero, each delivery is dispatched on a
 /// <c>Task.Run</c> thread pool task and a semaphore limits the number of in-flight handlers.
 /// When <paramref name="concurrent"/> is zero, deliveries are handled sequentially on the calling
-/// thread. On header or body parsing failure the malformed delivery is terminally rejected. Every dispatched handler is
-/// tracked in both modes, so shutdown can stop dispatching and wait for the running ones before the channel closes.
+/// thread. On header or body parsing failure, or when <paramref name="envelopeGate"/> finds the envelope malformed, the
+/// delivery is terminally rejected. Every dispatched handler is tracked in both modes, so shutdown can stop dispatching
+/// and wait for the running ones before the channel closes.
 /// </remarks>
+/// <param name="arrivalNames">
+/// The message name each subscribed routing key belongs to, built from the same routing keys the client bound, so a
+/// delivery without the envelope headers can be matched to its contract without parsing the key.
+/// </param>
 internal sealed class RabbitMqBasicConsumer(
     IChannel channel,
     byte concurrent,
@@ -25,9 +30,15 @@ internal sealed class RabbitMqBasicConsumer(
     Action<LogMessageEventArgs> logCallback,
     Func<BasicDeliverEventArgs, IServiceProvider, List<KeyValuePair<string, string>>>? customHeadersBuilder,
     IServiceProvider serviceProvider,
-    Action<string>? onBrokerCancelled = null
+    Action<string>? onBrokerCancelled = null,
+    TransportEnvelopeGate? envelopeGate = null,
+    MessageLane lane = MessageLane.Bus,
+    IReadOnlyDictionary<string, string>? arrivalNames = null
 ) : AsyncDefaultBasicConsumer(channel), IDisposable
 {
+    internal const string TransportName = "RabbitMQ";
+
+    private readonly TransportEnvelopeGate _envelopeGate = envelopeGate ?? TransportEnvelopeGate.Strict;
     private readonly SemaphoreSlim _semaphore = new(concurrent);
     private readonly bool _usingTaskRun = concurrent > 0;
 
@@ -199,7 +210,14 @@ internal sealed class RabbitMqBasicConsumer(
         TransportMessage message;
         try
         {
-            _ValidateRequiredHeaders(headers);
+            var arrival = new EnvelopeArrival(
+                TransportName,
+                lane,
+                arrivalNames is not null && arrivalNames.TryGetValue(routingKey, out var arrivalName)
+                    ? arrivalName
+                    : null
+            );
+            _envelopeGate.Admit(headers, arrival, properties, static p => ReadNativeFacts(p));
             message = new TransportMessage(headers, body);
         }
         catch (Exception ex)
@@ -289,17 +307,23 @@ internal sealed class RabbitMqBasicConsumer(
         return headers;
     }
 
-    private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers)
+    /// <summary>
+    /// Reads the AMQP properties that complete a raw envelope: the producer's <c>message-id</c> and its
+    /// <c>timestamp</c>.
+    /// </summary>
+    /// <remarks>
+    /// There is no position fallback. A delivery tag is scoped to its channel, restarts at 1 on every channel, and changes
+    /// when the broker redelivers, so it cannot identify a message; a raw delivery without <c>message-id</c> is therefore
+    /// malformed. The AMQP timestamp is whole Unix seconds, and only the producer sets it.
+    /// </remarks>
+    internal static NativeEnvelopeFacts ReadNativeFacts(IReadOnlyBasicProperties properties)
     {
-        if (
-            !headers.TryGetValue(Headers.MessageId, out var messageId)
-            || string.IsNullOrWhiteSpace(messageId)
-            || !headers.TryGetValue(Headers.MessageName, out var messageName)
-            || string.IsNullOrWhiteSpace(messageName)
-        )
-        {
-            throw new InvalidDataException("The RabbitMQ transport envelope is missing a required Messaging header.");
-        }
+        var producerMessageId = properties.IsMessageIdPresent() ? properties.MessageId : null;
+        DateTimeOffset? storedAt = properties.IsTimestampPresent()
+            ? DateTimeOffset.FromUnixTimeSeconds(properties.Timestamp.UnixTime)
+            : null;
+
+        return new NativeEnvelopeFacts(producerMessageId, PositionId: null, storedAt);
     }
 
     public async Task BasicAck(ulong deliveryTag, CancellationToken cancellationToken = default)

@@ -42,11 +42,23 @@ internal static class SqsHeaderCodec
         return JsonSerializer.Serialize(message.Headers);
     }
 
-    internal static Dictionary<string, string?> Decode(IDictionary<string, MessageAttributeValue>? attributes)
+    /// <summary>Reads the header bag of a received message.</summary>
+    /// <param name="attributes">The message attributes SQS returned.</param>
+    /// <param name="allowMissingBag">
+    /// Whether a message without the bag is a foreign producer's message, as on a raw route: it starts from no headers,
+    /// and attributes it carries instead of the bag are not Headless headers, so they are ignored rather than failing it.
+    /// A message that carries the bag is held to the full envelope rules either way.
+    /// </param>
+    internal static Dictionary<string, string?> Decode(
+        IDictionary<string, MessageAttributeValue>? attributes,
+        bool allowMissingBag = false
+    )
     {
         if (attributes is null || !attributes.TryGetValue(AttributeName, out var bag))
         {
-            throw new JsonException("The SQS envelope is missing its header bag.");
+            return allowMissingBag
+                ? new Dictionary<string, string?>(StringComparer.Ordinal)
+                : throw new JsonException("The SQS envelope is missing its header bag.");
         }
 
         if (

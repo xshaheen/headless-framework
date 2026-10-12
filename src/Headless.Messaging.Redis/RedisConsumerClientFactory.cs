@@ -10,7 +10,8 @@ namespace Headless.Messaging.Redis;
 internal sealed class RedisConsumerClientFactory(
     IOptions<RedisMessagingOptions> redisOptions,
     IRedisStreamManager redis,
-    ILogger<RedisConsumerClient> logger
+    ILogger<RedisConsumerClient> logger,
+    IServiceProvider? serviceProvider = null
 ) : IConsumerClientFactory
 {
     // One per factory, which the container holds as a singleton, so the clients of one process never share a name.
@@ -39,7 +40,8 @@ internal sealed class RedisConsumerClientFactory(
             logger,
             request.Lane,
             kind: request.Kind,
-            consumerName: consumerName
+            consumerName: consumerName,
+            serviceProvider: serviceProvider
         );
         return Task.FromResult<IConsumerClient>(client);
     }

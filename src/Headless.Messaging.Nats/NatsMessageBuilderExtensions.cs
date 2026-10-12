@@ -86,6 +86,7 @@ public sealed class NatsMessageConfigBuilder<TMessage>
     where TMessage : class
 {
     private Func<TMessage, string?>? _subjectShardSelector;
+    private NatsExternalSubjectSpec<TMessage>? _externalSubject;
 
     /// <summary>
     /// Appends a dynamic shard token to the NATS subject, producing <c>{subject}.{shard}</c>.
@@ -108,35 +109,220 @@ public sealed class NatsMessageConfigBuilder<TMessage>
         return this;
     }
 
+    /// <summary>
+    /// Binds this lane of the contract to a subject outside <c>headless.{lane}.{name}</c>, such as
+    /// <c>acme.*.runs.*.result</c> published by a non-.NET service. Consumers of the lane read the filter, and a publish
+    /// goes to the subject <see cref="NatsExternalSubjectBuilder{TMessage}.PublishTo"/> computes.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The filter must be covered by exactly one stream declared in <see cref="NatsMessagingOptions.Streams"/>, with
+    /// <c>Own</c> or <c>Bind</c>: Headless never derives a stream for a foreign subject. Startup fails, naming the
+    /// contract, the lane, and the filter, when no declared stream covers it, when it is not a valid subject filter,
+    /// when it overlaps <c>headless.&gt;</c>, <c>_INBOX.&gt;</c>, <c>$JS.&gt;</c>, or <c>$SYS.&gt;</c>, when the lane
+    /// also declares <see cref="SubjectShard"/>, or when it overlaps another contract's filter on the same lane.
+    /// </para>
+    /// <para>
+    /// The subject a delivery arrives on names its contract: a delivery whose <c>headless-msg-name</c> header names
+    /// another contract is a malformed envelope. An external subject does not imply <c>RawPayload()</c>; without it, a
+    /// delivery still needs the Headless headers.
+    /// </para>
+    /// </remarks>
+    /// <param name="filter">The NATS subject filter the lane consumes; <c>*</c> and a trailing <c>&gt;</c> are allowed.</param>
+    /// <param name="configure">Optionally sets the publish subject selector and the tenant subject token.</param>
+    /// <returns>The same builder for chaining.</returns>
+    /// <exception cref="ArgumentException"><paramref name="filter"/> is <see langword="null"/>, empty, or whitespace.</exception>
+    public NatsMessageConfigBuilder<TMessage> ExternalSubject(
+        string filter,
+        Action<NatsExternalSubjectBuilder<TMessage>>? configure = null
+    )
+    {
+        Argument.IsNotNullOrWhiteSpace(filter);
+
+        var builder = new NatsExternalSubjectBuilder<TMessage>();
+        configure?.Invoke(builder);
+        _externalSubject = new(filter, builder.PublishSelector, builder.TenantTokenIndex);
+        return this;
+    }
+
     internal NatsMessageConfig<TMessage> Build()
     {
-        return new(_subjectShardSelector);
+        return new(_subjectShardSelector, _externalSubject);
     }
 }
 
-internal sealed class NatsMessageConfig<TMessage>(Func<TMessage, string?>? subjectShardSelector)
-    : IProviderHeaderContributions
+/// <summary>
+/// Configures how a message contract lane bound to a subject outside <c>headless.{lane}.{name}</c> publishes and reads
+/// its tenant. Created by <see cref="NatsMessageConfigBuilder{TMessage}.ExternalSubject"/>.
+/// </summary>
+/// <typeparam name="TMessage">The message type being configured.</typeparam>
+[PublicAPI]
+public sealed class NatsExternalSubjectBuilder<TMessage>
+    where TMessage : class
+{
+    internal NatsExternalSubjectBuilder() { }
+
+    internal Func<TMessage, string>? PublishSelector { get; private set; }
+
+    internal int? TenantTokenIndex { get; private set; }
+
+    /// <summary>
+    /// Computes the subject each published message goes to. The subject is computed once, when the publish request is
+    /// created, and stored with the message, so an outbox retry publishes to the same subject.
+    /// </summary>
+    /// <param name="selector">
+    /// A delegate that derives the subject from the message instance. The subject must be literal (no <c>*</c> or
+    /// <c>&gt;</c>, no empty token, no whitespace or control characters) and match the binding's filter; otherwise the
+    /// publish throws an <see cref="InvalidOperationException"/> before anything is stored. Without a selector, a literal
+    /// filter is the publish subject, and a wildcard filter makes the lane consume-only. A publish with a
+    /// <see langword="null"/> payload has nothing to compute from: it goes to a literal filter, and on a wildcard filter
+    /// it throws an <see cref="InvalidOperationException"/> before anything is stored.
+    /// </param>
+    /// <returns>The same builder for chaining.</returns>
+    public NatsExternalSubjectBuilder<TMessage> PublishTo(Func<TMessage, string> selector)
+    {
+        PublishSelector = Argument.IsNotNull(selector);
+        return this;
+    }
+
+    /// <summary>
+    /// Reads each delivery's tenant from one token of the subject it arrived on, for example token <c>1</c> of
+    /// <c>acme.t1.runs.r9.result</c> is <c>t1</c>.
+    /// </summary>
+    /// <remarks>
+    /// The subject is a stronger tenant source than a header: NATS permissions can restrict which subjects a producer
+    /// may publish to, but not the header values it sends. A delivery whose subject lacks the token, whose token is longer
+    /// than <see cref="MessageOptions.TenantIdMaxLength"/> characters, or whose tenant header differs from the token is a
+    /// malformed envelope.
+    /// </remarks>
+    /// <param name="zeroBasedIndex">The zero-based index of the subject token that holds the tenant.</param>
+    /// <returns>The same builder for chaining.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="zeroBasedIndex"/> is negative.</exception>
+    public NatsExternalSubjectBuilder<TMessage> TenantFromSubjectToken(int zeroBasedIndex)
+    {
+        TenantTokenIndex = Argument.IsPositiveOrZero(zeroBasedIndex);
+        return this;
+    }
+}
+
+/// <summary>
+/// An external subject binding of one message type. Record equality compares the filter, the selector delegate, and the
+/// token index, so identical declarations from one shared method merge.
+/// </summary>
+internal sealed record NatsExternalSubjectSpec<TMessage>(
+    string Filter,
+    Func<TMessage, string>? PublishSelector,
+    int? TenantTokenIndex
+)
+    where TMessage : class
+{
+    public NatsExternalSubjectDeclaration Declaration { get; } =
+        new(Filter, TenantTokenIndex, PublishSelector is not null);
+
+    /// <summary>
+    /// The subject a message is published to, computed when its publish request is created so the stored message keeps
+    /// it across outbox retries.
+    /// </summary>
+    public string PublishSubject(TMessage message)
+    {
+        if (PublishSelector is null)
+        {
+            return NatsExternalSubjectRules.IsLiteral(Filter)
+                ? Filter
+                : throw new InvalidOperationException(
+                    $"Message type '{typeof(TMessage).Name}' is bound to the NATS wildcard subject '{Filter}' without "
+                        + "PublishTo, so it is consume-only. Declare PublishTo to publish it."
+                );
+        }
+
+        return NatsExternalSubjectRules.ValidatePublishSubject(
+            PublishSelector(message),
+            Filter,
+            $"message type '{typeof(TMessage).Name}'"
+        );
+    }
+}
+
+internal sealed class NatsMessageConfig<TMessage>(
+    Func<TMessage, string?>? subjectShardSelector,
+    NatsExternalSubjectSpec<TMessage>? externalSubject = null
+) : IProviderHeaderContributions, IProviderMissingPayloadValidation, INatsMessageConfig
     where TMessage : class
 {
     // A message contract merges with an identical redeclaration from another module, so two configs holding the same
-    // selector are equal and two different selectors conflict.
+    // selectors and external subject are equal and two different ones conflict.
     private readonly Func<TMessage, string?>? _selector = subjectShardSelector;
+    private readonly NatsExternalSubjectSpec<TMessage>? _externalSubject = externalSubject;
+
+    public NatsExternalSubjectDeclaration? ExternalSubject => _externalSubject?.Declaration;
+
+    public bool HasSubjectShard => _selector is not null;
 
     public override bool Equals(object? obj) =>
-        obj is NatsMessageConfig<TMessage> other && Equals(_selector, other._selector);
+        obj is NatsMessageConfig<TMessage> other
+        && Equals(_selector, other._selector)
+        && Equals(_externalSubject, other._externalSubject);
 
-    public override int GetHashCode() => _selector?.GetHashCode() ?? 0;
+    public override int GetHashCode() => HashCode.Combine(_selector, _externalSubject);
+
+    // A wildcard filter is not a subject, so a payload-less message has nowhere to go: PublishTo needs the payload, and
+    // without PublishTo the lane is consume-only. Refusing here keeps it out of the outbox, where every send attempt
+    // would fail. A literal filter is a subject, so a payload-less publish still goes there.
+    public void ValidateMissingPayload(string messageName, MessageLane lane)
+    {
+        if (_externalSubject is not { } externalSubject || NatsExternalSubjectRules.IsLiteral(externalSubject.Filter))
+        {
+            return;
+        }
+
+        if (externalSubject.PublishSelector is null)
+        {
+            throw new InvalidOperationException(
+                $"Message '{messageName}' on the {lane} lane is bound to the NATS wildcard subject "
+                    + $"'{externalSubject.Filter}' without PublishTo, so it is consume-only. Declare PublishTo to "
+                    + "publish it."
+            );
+        }
+
+        throw new InvalidOperationException(
+            $"Message '{messageName}' on the {lane} lane is bound to the NATS wildcard subject "
+                + $"'{externalSubject.Filter}' and computes its publish subject with PublishTo, which needs the "
+                + "payload. Publish it with a payload."
+        );
+    }
 
     public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =
-        subjectShardSelector is null
-            ? []
-            :
-            [
+        _BuildContributions(subjectShardSelector, externalSubject);
+
+    private static ProviderHeaderContribution[] _BuildContributions(
+        Func<TMessage, string?>? subjectShardSelector,
+        NatsExternalSubjectSpec<TMessage>? externalSubject
+    )
+    {
+        var contributions = new List<ProviderHeaderContribution>(2);
+
+        if (subjectShardSelector is not null)
+        {
+            contributions.Add(
                 new ProviderHeaderContribution(
                     NatsMessagingHeaders.SubjectShard,
                     message => NatsSubjectShard.Validate(subjectShardSelector((TMessage)message))
-                ),
-            ];
+                )
+            );
+        }
+
+        if (externalSubject is not null)
+        {
+            contributions.Add(
+                new ProviderHeaderContribution(
+                    NatsMessagingHeaders.ExternalSubject,
+                    message => externalSubject.PublishSubject((TMessage)message)
+                )
+            );
+        }
+
+        return [.. contributions];
+    }
 }
 
 /// <summary>Fluent builder for NATS JetStream consumer options applied to a consumer registration.</summary>

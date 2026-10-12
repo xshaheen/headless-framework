@@ -42,4 +42,15 @@ internal interface IProviderHeaderContributions
     IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; }
 }
 
+/// <summary>
+/// A provider config that must refuse a publish without a payload, because a value it needs is computed from the
+/// payload and the message would otherwise be stored with no way to send it.
+/// </summary>
+internal interface IProviderMissingPayloadValidation
+{
+    /// <summary>Called when a message of the config's contract is published with a <see langword="null"/> payload.</summary>
+    /// <exception cref="InvalidOperationException">The contract lane cannot be published without a payload.</exception>
+    void ValidateMissingPayload(string messageName, MessageLane lane);
+}
+
 internal readonly record struct ProviderHeaderContribution(string HeaderName, Func<object, string?> Selector);
