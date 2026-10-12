@@ -110,9 +110,9 @@
       },
       "Twilio": {
         "type": "Direct",
-        "requested": "[7.14.9, )",
-        "resolved": "7.14.9",
-        "contentHash": "dYFgEoNofKasj2cpYddZT7yVkBexkQz4eTlQ4c72BO2H1H8UbTGGl9Aa7NIFBUuTcdNWOYwIZlHjmitlRng28g==",
+        "requested": "[8.0.2, )",
+        "resolved": "8.0.2",
+        "contentHash": "j0ZySonKd8WJvaDiUXy8dLeHvKx+T4YavG6ltNHPM2qmT72MUe9Hhrj9N0bbuV5+GfLB4Vo8BMyvtkSzOUJZkg==",
         "dependencies": {
           "Microsoft.IdentityModel.Tokens": "8.3.1",
           "Newtonsoft.Json": "13.0.1",
@@ -358,7 +358,7 @@
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
-          "FluentValidation": "[12.1.1, )",
+          "FluentValidation": "[12.2.0, )",
           "Headless.Extensions": "[1.0.0, )"
         }
       },
@@ -392,7 +392,7 @@
         "dependencies": {
           "Headless.FluentValidation": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )",
-          "libphonenumber-csharp": "[9.0.40, )"
+          "libphonenumber-csharp": "[9.0.41, )"
         }
       },
       "headless.primitives": {
@@ -421,15 +421,15 @@
       },
       "FluentValidation": {
         "type": "CentralTransitive",
-        "requested": "[12.1.1, )",
-        "resolved": "12.1.1",
-        "contentHash": "EPpkIe1yh1a0OXyC100oOA8WMbZvqUu5plwhvYcb7oSELfyUZzfxV48BLhvs3kKo4NwG7MGLNgy1RJiYtT8Dpw=="
+        "requested": "[12.2.0, )",
+        "resolved": "12.2.0",
+        "contentHash": "DR3lFbdnKucaaj1/8zMNOACMz/64igzox1yVZSFVsLxYB5mxAB+wFP1WZ8fjwrZnbU1KA1DoMzHKYKxUfuZ4wQ=="
       },
       "libphonenumber-csharp": {
         "type": "CentralTransitive",
-        "requested": "[9.0.40, )",
-        "resolved": "9.0.40",
-        "contentHash": "ywU5vgr+Q7bX+MSU2oxXfYDQDsrUCDfpkSae8PEd1t2L6e+nNIQtmsk/FHV9IIoMGEuuoxOZNQetFJTvTPcyOA=="
+        "requested": "[9.0.41, )",
+        "resolved": "9.0.41",
+        "contentHash": "GpBGFg/L1OuHem8qpZ2Ca6Tm5pPqL81iDLiUwNIbfSWVIyiQpui5jqMOr7pgVKg9rD5ppK2iCHDfg9hvtQe1OQ=="
       },
       "Microsoft.Extensions.Configuration.Abstractions": {
         "type": "CentralTransitive",
