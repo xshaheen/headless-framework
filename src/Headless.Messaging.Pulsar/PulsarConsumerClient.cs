@@ -152,6 +152,27 @@ internal sealed class PulsarConsumerClient(
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
+        // The receive loop is drained with the handlers, so shutdown closes the consumer only after the loop stopped
+        // dispatching: a message the loop already received past its shutdown check still gets its handler tracked and
+        // waited for.
+        var listening = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_inFlightHandlers.TryTrack(listening.Task))
+        {
+            return;
+        }
+
+        try
+        {
+            await _ReceiveLoopAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            listening.TrySetResult();
+        }
+    }
+
+    private async Task _ReceiveLoopAsync(CancellationToken cancellationToken)
+    {
         var retryDelay = TimeSpan.FromMilliseconds(200);
         CancellationTokenSource? linkedReceiveCts = null;
         var receiveToken = CancellationToken.None;
