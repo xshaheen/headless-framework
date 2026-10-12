@@ -223,7 +223,7 @@
     <PackageVersion Include="OpenTelemetry.Exporter.InMemory" Version="1.19.1" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.3.0" />
     <PackageVersion Include="Verify.SourceGenerators" Version="2.5.0" />
-    <PackageVersion Include="Verify.XunitV3" Version="32.0.1" />
+    <PackageVersion Include="Verify.XunitV3" Version="33.3.3" />
     <PackageVersion Include="WireMock.Net" Version="2.19.0" />
     <PackageVersion Include="WireMock.Net.AwesomeAssertions" Version="2.19.0" />
     <PackageVersion Include="xunit.v3.assert" Version="4.0.2" />
