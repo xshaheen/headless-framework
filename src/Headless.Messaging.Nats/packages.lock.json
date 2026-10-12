@@ -69,23 +69,23 @@
       },
       "NATS.Client.Core": {
         "type": "Direct",
-        "requested": "[3.2.0, )",
-        "resolved": "3.2.0",
-        "contentHash": "HskgUlBdy2iYt2C0wQPrE/sZbntCQrSOLG4dTR5qqyxVC14J9H8O5IyzUMJTpHrGnkexPzFheimbg0YFsJqFVw==",
+        "requested": "[3.3.0, )",
+        "resolved": "3.3.0",
+        "contentHash": "x5Faw180Giv2KUz+kwoK6NQOttuy70fkk1Q0/Vyj8ATtGLrYevsJ9r7rs97ktJfX0+Ck93BQI1qWIVBy8b+3Hw==",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "6.0.1",
           "Microsoft.Extensions.Primitives": "6.0.0",
-          "NATS.Client.Abstractions": "3.2.0",
+          "NATS.Client.Abstractions": "3.3.0",
           "NATS.NKeys": "1.0.1"
         }
       },
       "NATS.Client.JetStream": {
         "type": "Direct",
-        "requested": "[3.2.0, )",
-        "resolved": "3.2.0",
-        "contentHash": "0fG1BbsmGhqpJajwTbbRz9LXvjnNGhCsklM5+y5RyOqrvAT5MoPzDoMphs9GPMNAf6YuPqmfhOIlQt78t1/7oQ==",
+        "requested": "[3.3.0, )",
+        "resolved": "3.3.0",
+        "contentHash": "lCZ04cBaY9oFbmpMY2HzAn92mp0sT5C9Q0NGOOp0MlI7DYFRFoYf/b/5waZMvVqtli/v0jlBD+ZtrunJTMKNCg==",
         "dependencies": {
-          "NATS.Client.Core": "3.2.0"
+          "NATS.Client.Core": "3.3.0"
         }
       },
       "ReflectionAnalyzers": {
@@ -178,8 +178,8 @@
       },
       "NATS.Client.Abstractions": {
         "type": "Transitive",
-        "resolved": "3.2.0",
-        "contentHash": "Yp45BL3HOmFO7hTyV0ZV5LV3WalvwgGXv7Czr8P38tc3/i6fmd/oWir/4N/8D/5jc3ch0O1Nx3Fik5/djva0Fw==",
+        "resolved": "3.3.0",
+        "contentHash": "NVH32TcVvXiOL77VxtSiLSPpokLTbiFj0uVCdNEp+11Z7IlMNOg1TEUzBBi+lZU8wTyEJFmbpu22Aaw6XPdn0g==",
         "dependencies": {
           "Microsoft.Extensions.Primitives": "6.0.0"
         }
@@ -272,7 +272,7 @@
       "headless.coordination": {
         "type": "Project",
         "dependencies": {
-          "FluentValidation": "[12.1.1, )",
+          "FluentValidation": "[12.2.0, )",
           "Headless.Checks": "[1.0.0, )",
           "Headless.Context": "[1.0.0, )",
           "Headless.Context.Abstractions": "[1.0.0, )",
@@ -311,7 +311,7 @@
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
-          "FluentValidation": "[12.1.1, )",
+          "FluentValidation": "[12.2.0, )",
           "Headless.Extensions": "[1.0.0, )"
         }
       },
@@ -336,7 +336,7 @@
       "headless.messaging": {
         "type": "Project",
         "dependencies": {
-          "FastExpressionCompiler": "[5.4.1, )",
+          "FastExpressionCompiler": "[6.0.0, )",
           "Headless.Coordination": "[1.0.0, )",
           "Headless.Coordination.Abstractions": "[1.0.0, )",
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
@@ -442,15 +442,15 @@
       },
       "FastExpressionCompiler": {
         "type": "CentralTransitive",
-        "requested": "[5.4.1, )",
-        "resolved": "5.4.1",
-        "contentHash": "nqMykMspK5cQd35Y8ulQzAujxCcCwZVUne32pC5xNpXqrbPCuKOPMWkKHJ3LveAZPm6dsVvump0TJ1SZ9RzfTQ=="
+        "requested": "[6.0.0, )",
+        "resolved": "6.0.0",
+        "contentHash": "EvY3eiWFnSYAUd4F4zvt3VTe8z75XxfqEUW3Fp2SsM1El4rfSNzah49/DLk6VlkL5yOLHZXf6XL19HQrcgTDxg=="
       },
       "FluentValidation": {
         "type": "CentralTransitive",
-        "requested": "[12.1.1, )",
-        "resolved": "12.1.1",
-        "contentHash": "EPpkIe1yh1a0OXyC100oOA8WMbZvqUu5plwhvYcb7oSELfyUZzfxV48BLhvs3kKo4NwG7MGLNgy1RJiYtT8Dpw=="
+        "requested": "[12.2.0, )",
+        "resolved": "12.2.0",
+        "contentHash": "DR3lFbdnKucaaj1/8zMNOACMz/64igzox1yVZSFVsLxYB5mxAB+wFP1WZ8fjwrZnbU1KA1DoMzHKYKxUfuZ4wQ=="
       },
       "Microsoft.Extensions.Configuration.Abstractions": {
         "type": "CentralTransitive",
