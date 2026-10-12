@@ -118,16 +118,6 @@
         "resolved": "1.21.0",
         "contentHash": "dv5+81Q1TBQvVMSOOOmRcjJmvWcX3BZPZsIq31+RLc5cNft0IHAyNlkdb7ZarOWG913PyBoFDsDXoCIlKmLclg=="
       },
-      "MessagePack.Annotations": {
-        "type": "Transitive",
-        "resolved": "3.1.10",
-        "contentHash": "3XvSeRdiR9ujCcTuijFwn2DRO8+a2S4fkNvwMaMwnXvdUJRaWAVc37scCiFME0AYLXGtnWF+GHMZT/a+i5Vv7g=="
-      },
-      "MessagePackAnalyzer": {
-        "type": "Transitive",
-        "resolved": "3.1.10",
-        "contentHash": "t0sPByiRt2ipKUg64M1foAt5uDnJOiOGimE0rKXZ5CdiQw0Sf4TfELiWNjowcCHO0M6gRePrI90kXPc7rN2llw=="
-      },
       "Microsoft.Diagnostics.NETCore.Client": {
         "type": "Transitive",
         "resolved": "0.2.510501",
@@ -162,11 +152,6 @@
         "type": "Transitive",
         "resolved": "10.0.12",
         "contentHash": "dYfCLR52UA+3DL7C4I/pvSaRPkNqxrUAQmbFL2u0zvYKKzqgrFCJl08Df+F1aYc8leu9JvpC9bsURUdpExcBXQ=="
-      },
-      "Microsoft.NET.StringTools": {
-        "type": "Transitive",
-        "resolved": "17.11.4",
-        "contentHash": "mudqUHhNpeqIdJoUx2YDWZO/I9uEDYVowan89R6wsomfnUJQk6HteoQTlNjZDixhT2B4IXMkMtgZtoceIjLRmA=="
       },
       "Perfolizer": {
         "type": "Transitive",
@@ -210,24 +195,6 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Serializer.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.serializer.messagepack": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Serializer.Abstractions": "[1.0.0, )",
-          "MessagePack": "[3.1.10, )"
-        }
-      },
-      "MessagePack": {
-        "type": "CentralTransitive",
-        "requested": "[3.1.10, )",
-        "resolved": "3.1.10",
-        "contentHash": "IvYiuLIGLbklU8qZFp0krv1f+0d0kkWbyb+I4Qmk8p5o+JxQsKUp2L5SBHV4vVmBh+DAj3bWDukGAl+87GMwrQ==",
-        "dependencies": {
-          "MessagePack.Annotations": "3.1.10",
-          "MessagePackAnalyzer": "3.1.10",
-          "Microsoft.NET.StringTools": "17.11.4"
         }
       },
       "Microsoft.CodeAnalysis.Analyzers": {

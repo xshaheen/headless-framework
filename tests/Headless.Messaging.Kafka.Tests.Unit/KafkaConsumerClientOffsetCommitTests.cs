@@ -312,6 +312,50 @@ public sealed class KafkaConsumerClientOffsetCommitTests : TestBase
     }
 
     [Fact]
+    public async Task should_wait_for_a_handler_the_poll_loop_starts_after_shutdown_began()
+    {
+        // given
+        var consumer = _CreateConsumerYielding(_CreateConsumeResult(7));
+        await using var client = _CreateClient(consumer, concurrency: 1);
+        client.PartitionsAssigned([_Partition]);
+        using var handlerEntered = new ManualResetEventSlim();
+        using var releaseHandler = new ManualResetEventSlim();
+
+        // The handler blocks before it returns its task, so the poll loop has not tracked it yet when shutdown drains.
+        client.AttachCallbacks(
+            (_, sender) =>
+            {
+                handlerEntered.Set();
+                releaseHandler.Wait(TimeSpan.FromSeconds(10));
+                return client.CommitAsync(sender).AsTask();
+            },
+            _ => { }
+        );
+
+        var listening = Task.Run(
+            () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), AbortToken).AsTask(),
+            AbortToken
+        );
+        handlerEntered.Wait(TimeSpan.FromSeconds(2), AbortToken).Should().BeTrue();
+
+        // when
+        var shutdown = client.ShutdownAsync(TimeSpan.FromSeconds(30), AbortToken).AsTask();
+        var completedBeforeHandler = await Task.WhenAny(shutdown, Task.Delay(200, AbortToken)) == shutdown;
+        releaseHandler.Set();
+        await shutdown.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        completedBeforeHandler.Should().BeFalse("shutdown waits for the poll loop and the handler it started");
+        Received.InOrder(() =>
+        {
+            consumer.StoreOffset(Arg.Is<TopicPartitionOffset>(x => x.Offset == 8));
+            consumer.Close();
+            consumer.Dispose();
+        });
+    }
+
+    [Fact]
     public async Task should_close_after_the_budget_and_drop_the_late_offset_when_handler_outlives_shutdown()
     {
         // given

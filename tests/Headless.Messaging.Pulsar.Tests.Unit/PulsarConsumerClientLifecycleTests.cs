@@ -139,6 +139,64 @@ public sealed class PulsarConsumerClientLifecycleTests : TestBase
     }
 
     [Fact]
+    public async Task should_wait_for_a_handler_the_receive_loop_starts_after_shutdown_began()
+    {
+        // given
+        await using var client = new PulsarConsumerClient(
+            Options.Create(new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" }),
+            client: null!,
+            new ConsumerClientRequest("shutdown-test", concurrency: 1, MessageLane.Bus)
+        );
+        var delivery = _CreateMessage(
+            "persistent://public/default/orders.created",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "msg-1",
+                [Headers.MessageName] = "TestEvent",
+            }
+        );
+        var receiveEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completeReceive = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var consumer = Substitute.For<IConsumer<byte[]>>();
+        var receiveCount = 0;
+        consumer
+            .ReceiveAsync(Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                if (Interlocked.Increment(ref receiveCount) == 1)
+                {
+                    // A receive that completes with a message as shutdown cancels it: the broker had already sent it.
+                    receiveEntered.TrySetResult();
+                    await completeReceive.Task;
+                    return delivery;
+                }
+
+                await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>());
+                return delivery;
+            });
+        _SetField(client, "_consumerClient", consumer);
+        client.AttachCallbacks((_, sender) => client.CommitAsync(sender).AsTask(), _ => { });
+
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), AbortToken).AsTask();
+        await receiveEntered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        var shutdown = client.ShutdownAsync(TimeSpan.FromSeconds(30), AbortToken).AsTask();
+        var completedBeforeReceive = await Task.WhenAny(shutdown, Task.Delay(200, AbortToken)) == shutdown;
+        completeReceive.SetResult();
+        await shutdown.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        completedBeforeReceive.Should().BeFalse("shutdown waits for the receive loop and the handler it starts");
+        Received.InOrder(() =>
+        {
+            _ = consumer.AcknowledgeAsync(Arg.Any<MessageId>());
+            _ = consumer.DisposeAsync();
+        });
+    }
+
+    [Fact]
     public async Task should_close_after_the_budget_when_a_handler_outlives_shutdown()
     {
         // given

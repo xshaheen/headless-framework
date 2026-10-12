@@ -40,13 +40,13 @@
       },
       "Microsoft.Data.SqlClient": {
         "type": "Direct",
-        "requested": "[7.1.0, )",
-        "resolved": "7.1.0",
-        "contentHash": "yKPkjufNvrX5VDv49XHaGbUNPL4kDx9ALCrqDhYu+ThFQxjM8zGMzYxPv9iiwRU0ZL3vhgq0F2KEeoV3PT2utQ==",
+        "requested": "[7.1.1, )",
+        "resolved": "7.1.1",
+        "contentHash": "Moz4+bba/OdEM9I4jXWggduJ4sqoNcgVAQyXG/dNnGGvnS/YDr2fTjP83fg5YX3drgRki6fRAhR94P8dAZgZtQ==",
         "dependencies": {
           "Microsoft.Bcl.Cryptography": "9.0.18",
-          "Microsoft.Data.SqlClient.Extensions.Abstractions": "[7.1.0, 8.0.0)",
-          "Microsoft.Data.SqlClient.Internal.Logging": "[7.1.0, 8.0.0)",
+          "Microsoft.Data.SqlClient.Extensions.Abstractions": "[7.1.1, 8.0.0)",
+          "Microsoft.Data.SqlClient.Internal.Logging": "[7.1.1, 8.0.0)",
           "Microsoft.Data.SqlClient.SNI.runtime": "[7.1.0, 8.0.0)",
           "Microsoft.Extensions.Caching.Memory": "9.0.18",
           "Microsoft.IdentityModel.JsonWebTokens": "8.16.0",
@@ -131,16 +131,16 @@
       },
       "Microsoft.Data.SqlClient.Extensions.Abstractions": {
         "type": "Transitive",
-        "resolved": "7.1.0",
-        "contentHash": "8xqe8rxLEJealAw21Rh/w+Kis4TtgAZQ+e7HrTkG/gOeiy3CbCtcMXJr3P5H9txhUQNNxkoR9qy1FIk5T85FSg==",
+        "resolved": "7.1.1",
+        "contentHash": "qP/zUOCJwfKqWNC9o+TWqltfNbLnZi1APNpJZgj0yeEJhoI+h+eoQLX+331yZHNOlDxdafZLP5arW/yrS1jAAw==",
         "dependencies": {
-          "Microsoft.Data.SqlClient.Internal.Logging": "[7.1.0, 8.0.0)"
+          "Microsoft.Data.SqlClient.Internal.Logging": "[7.1.1, 8.0.0)"
         }
       },
       "Microsoft.Data.SqlClient.Internal.Logging": {
         "type": "Transitive",
-        "resolved": "7.1.0",
-        "contentHash": "z+uzJ+/xqZlYSlv0slMhiHd3TRZr20ijZmjUG2qOaNjKzMMO5cx8itHQ0s/YguqMq/8BMlXZe5n6XSgswe+73g=="
+        "resolved": "7.1.1",
+        "contentHash": "bVqbATLnHQngue7U9K7GRnzvfdDa7IyiBU2vijfU2vBMBSZrAnQp/wXqNSfaVonckSaMXUk07wfujTqy9IVMdw=="
       },
       "Microsoft.Data.SqlClient.SNI.runtime": {
         "type": "Transitive",
@@ -318,7 +318,7 @@
       "headless.auditlog": {
         "type": "Project",
         "dependencies": {
-          "FluentValidation": "[12.1.1, )",
+          "FluentValidation": "[12.2.0, )",
           "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.Checks": "[1.0.0, )",
           "Headless.Context": "[1.0.0, )",
@@ -370,7 +370,7 @@
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
-          "FluentValidation": "[12.1.1, )",
+          "FluentValidation": "[12.2.0, )",
           "Headless.Extensions": "[1.0.0, )"
         }
       },
@@ -440,7 +440,7 @@
           "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
-          "Microsoft.Data.SqlClient": "[7.1.0, )",
+          "Microsoft.Data.SqlClient": "[7.1.1, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
         }
@@ -464,9 +464,9 @@
       },
       "FluentValidation": {
         "type": "CentralTransitive",
-        "requested": "[12.1.1, )",
-        "resolved": "12.1.1",
-        "contentHash": "EPpkIe1yh1a0OXyC100oOA8WMbZvqUu5plwhvYcb7oSELfyUZzfxV48BLhvs3kKo4NwG7MGLNgy1RJiYtT8Dpw=="
+        "requested": "[12.2.0, )",
+        "resolved": "12.2.0",
+        "contentHash": "DR3lFbdnKucaaj1/8zMNOACMz/64igzox1yVZSFVsLxYB5mxAB+wFP1WZ8fjwrZnbU1KA1DoMzHKYKxUfuZ4wQ=="
       },
       "Microsoft.Extensions.Caching.Abstractions": {
         "type": "CentralTransitive",

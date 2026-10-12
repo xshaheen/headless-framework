@@ -51,8 +51,12 @@ internal sealed class RedisConsumerClient(
     // out of one.
     private FrozenDictionary<string, string> _arrivalNames = FrozenDictionary<string, string>.Empty;
 
-    // Tracks the handler tasks of the concurrent path so shutdown can drain them before disposing the semaphore.
+    // Tracks the read loops and the handler tasks of the concurrent path so shutdown can drain them before disposing
+    // the semaphore.
     private readonly InFlightHandlerTracker _inFlightHandlers = new();
+
+    // Cancelled by shutdown, so the read loops stop on their own when the caller never cancels listening.
+    private readonly CancellationTokenSource _stopReading = new();
 
     private readonly RedisConsumerNameLease _consumerName =
         consumerName ?? new RedisConsumerNames().Acquire(RedisPhysicalAddress.ConsumerGroup(lane, subscriptionName));
@@ -121,25 +125,46 @@ internal sealed class RedisConsumerClient(
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        // An every-instance client resumes from the last id it read after a lost connection, so it misses nothing
-        // the stream still holds and has no gap to report through the re-established callback.
-        _ObserveBackgroundHandler(
-            kind is ConsumerSubscriptionKind.EveryInstance
-                ? _ConsumeMessages(
-                    redis.PollStreamsFromAsync(_everyInstanceStart, timeout, cancellationToken),
-                    StreamPosition.NewMessages,
-                    cancellationToken
-                )
-                : _ListeningForMessagesAsync(timeout, cancellationToken)
-        );
+        // The read loops are drained with the handlers, so shutdown disposes the semaphore only after they stopped
+        // dispatching: a loop that already passed its shutdown check never waits on a disposed semaphore, and a handler
+        // it starts is still waited for.
+        var listening = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_inFlightHandlers.TryTrack(listening.Task))
+        {
+            return;
+        }
 
         try
         {
-            await _timeProvider.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            using var readCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _stopReading.Token);
+
+            // An every-instance client resumes from the last id it read after a lost connection, so it misses nothing
+            // the stream still holds and has no gap to report through the re-established callback.
+            var reads =
+                kind is ConsumerSubscriptionKind.EveryInstance
+                    ? _ConsumeMessages(
+                        redis.PollStreamsFromAsync(_everyInstanceStart, timeout, readCts.Token),
+                        StreamPosition.NewMessages,
+                        readCts.Token
+                    )
+                    : _ListeningForMessagesAsync(timeout, readCts.Token);
+            _ObserveBackgroundHandler(reads);
+
+            try
+            {
+                await _timeProvider.Delay(Timeout.InfiniteTimeSpan, readCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Shutdown requested — exit cleanly.
+            }
+
+            // A read fault is already logged by _ObserveBackgroundHandler.
+            await reads.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
-        catch (OperationCanceledException)
+        finally
         {
-            // Shutdown requested — exit cleanly.
+            listening.TrySetResult();
         }
     }
 
@@ -185,6 +210,7 @@ internal sealed class RedisConsumerClient(
 
         _pauseGate.Release();
         _ready.TrySetCanceled(CancellationToken.None);
+        await _stopReading.CancelAsync().ConfigureAwait(false);
 
         // Drain in-flight concurrent handlers before disposing the semaphore, so a running handler settles its entry
         // and releases its slot. Bounded so a stuck handler cannot block shutdown; an entry it never settles stays
@@ -201,6 +227,7 @@ internal sealed class RedisConsumerClient(
         }
 
         _semaphore.Dispose();
+        _stopReading.Dispose();
 
         // Released last, so a client created while this one drains cannot read under the same name.
         _consumerName.Release();
@@ -246,7 +273,8 @@ internal sealed class RedisConsumerClient(
             timeout,
             cancellationToken
         );
-        _ObserveBackgroundHandler(_ConsumeMessages(stalePendingMsgs, StreamPosition.Beginning, cancellationToken));
+        var stalePendingReads = _ConsumeMessages(stalePendingMsgs, StreamPosition.Beginning, cancellationToken);
+        _ObserveBackgroundHandler(stalePendingReads);
 
         //Once we consumed our history, we can start getting new messages.
         var newMsgs = redis.PollStreamsLatestMessagesAsync(
@@ -257,7 +285,11 @@ internal sealed class RedisConsumerClient(
             cancellationToken
         );
 
-        _ObserveBackgroundHandler(_ConsumeMessages(newMsgs, StreamPosition.NewMessages, cancellationToken));
+        var newReads = _ConsumeMessages(newMsgs, StreamPosition.NewMessages, cancellationToken);
+        _ObserveBackgroundHandler(newReads);
+
+        // Awaited so listening, which the shutdown drain waits for, ends only once neither read can start a handler.
+        await Task.WhenAll(stalePendingReads, newReads).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
     }
 
     private async Task _ConsumeMessages(

@@ -441,6 +441,56 @@ public sealed class RedisConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_stop_the_read_loop_before_disposing_when_shutdown_begins_without_cancellation()
+    {
+        // given
+        var readEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completeRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handled = false;
+        _SetupGroupReads();
+        _mockStreamManager
+            .PollStreamsLatestMessagesAsync(
+                Arg.Any<string[]>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(
+                _DelayedMessages(
+                    readEntered,
+                    completeRead.Task,
+                    new RedisStreamMessages("headless:messaging:queue:orders.created", [_ValidEntry("1-0")])
+                )
+            );
+        var logger = new CapturingLogger<RedisConsumerClient>();
+        await using var client = new RedisConsumerClient("orders", 1, _mockStreamManager, _options, logger);
+        client.AttachCallbacks(
+            (_, _) =>
+            {
+                handled = true;
+                return Task.CompletedTask;
+            },
+            onLog: null
+        );
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), AbortToken).AsTask();
+        await readEntered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        var shutdown = client.ShutdownAsync(TimeSpan.FromSeconds(30), AbortToken).AsTask();
+        var completedBeforeRead = await Task.WhenAny(shutdown, Task.Delay(200, AbortToken)) == shutdown;
+        completeRead.SetResult();
+        await shutdown.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        completedBeforeRead.Should().BeFalse("shutdown waits for the read loop before it disposes the semaphore");
+        handled.Should().BeFalse("an entry read after shutdown began stays pending for the claim");
+        logger.Entries.Should().NotContain(log => log.EventId == 3007, "the loop never touches a disposed semaphore");
+    }
+
+    [Fact]
     public async Task should_bound_shutdown_when_a_handler_never_finishes()
     {
         // given
@@ -653,6 +703,19 @@ public sealed class RedisConsumerClientTests : TestBase
         }
 
         await Task.CompletedTask;
+    }
+
+    // A read that returns its entries as shutdown cancels it: Redis had already answered the XREADGROUP.
+    private static async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> _DelayedMessages(
+        TaskCompletionSource readEntered,
+        Task completeRead,
+        RedisStreamMessages stream
+    )
+    {
+        readEntered.TrySetResult();
+        await completeRead;
+
+        yield return [stream];
     }
 
     private sealed class CapturingLogger<T> : ILogger<T>

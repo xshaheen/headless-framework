@@ -284,8 +284,8 @@
       },
       "RESPite": {
         "type": "Transitive",
-        "resolved": "3.3.1",
-        "contentHash": "1Ky6rOjP9YjA8eXWWSJDTSRgVQiRXwsKnET+X5hDuONJqq8KbYLQrTUjMg8gsdyKzwj74ivEioTuQd4mVhthdQ=="
+        "resolved": "3.4.0",
+        "contentHash": "BEdf42Eugi6oNw84vSQuLvYOzoY9KLv6gKsxFbSbv1zm23DiCULeQ8jobRgGip43T0GoAJstFW0TXvKRx9Ewlg=="
       },
       "System.CodeDom": {
         "type": "Transitive",
@@ -423,7 +423,7 @@
       "headless.coordination": {
         "type": "Project",
         "dependencies": {
-          "FluentValidation": "[12.1.1, )",
+          "FluentValidation": "[12.2.0, )",
           "Headless.Checks": "[1.0.0, )",
           "Headless.Context": "[1.0.0, )",
           "Headless.Context.Abstractions": "[1.0.0, )",
@@ -464,7 +464,7 @@
           "Headless.DistributedLocks": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Redis": "[1.0.0, )",
-          "StackExchange.Redis": "[3.3.1, )"
+          "StackExchange.Redis": "[3.4.0, )"
         }
       },
       "headless.domain": {
@@ -554,7 +554,7 @@
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
-          "FluentValidation": "[12.1.1, )",
+          "FluentValidation": "[12.2.0, )",
           "Headless.Extensions": "[1.0.0, )"
         }
       },
@@ -573,7 +573,7 @@
       "headless.messaging": {
         "type": "Project",
         "dependencies": {
-          "FastExpressionCompiler": "[5.4.1, )",
+          "FastExpressionCompiler": "[6.0.0, )",
           "Headless.Coordination": "[1.0.0, )",
           "Headless.Coordination.Abstractions": "[1.0.0, )",
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
@@ -686,7 +686,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Extensions": "[1.0.0, )",
-          "StackExchange.Redis": "[3.3.1, )"
+          "StackExchange.Redis": "[3.4.0, )"
         }
       },
       "headless.reliability.abstractions": {
@@ -698,7 +698,7 @@
       "headless.security": {
         "type": "Project",
         "dependencies": {
-          "FluentValidation": "[12.1.1, )",
+          "FluentValidation": "[12.2.0, )",
           "Headless.Checks": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Security.Abstractions": "[1.0.0, )"
@@ -805,9 +805,9 @@
       },
       "FastExpressionCompiler": {
         "type": "CentralTransitive",
-        "requested": "[5.4.1, )",
-        "resolved": "5.4.1",
-        "contentHash": "nqMykMspK5cQd35Y8ulQzAujxCcCwZVUne32pC5xNpXqrbPCuKOPMWkKHJ3LveAZPm6dsVvump0TJ1SZ9RzfTQ=="
+        "requested": "[6.0.0, )",
+        "resolved": "6.0.0",
+        "contentHash": "EvY3eiWFnSYAUd4F4zvt3VTe8z75XxfqEUW3Fp2SsM1El4rfSNzah49/DLk6VlkL5yOLHZXf6XL19HQrcgTDxg=="
       },
       "FileSignatures": {
         "type": "CentralTransitive",
@@ -820,9 +820,9 @@
       },
       "FluentValidation": {
         "type": "CentralTransitive",
-        "requested": "[12.1.1, )",
-        "resolved": "12.1.1",
-        "contentHash": "EPpkIe1yh1a0OXyC100oOA8WMbZvqUu5plwhvYcb7oSELfyUZzfxV48BLhvs3kKo4NwG7MGLNgy1RJiYtT8Dpw=="
+        "requested": "[12.2.0, )",
+        "resolved": "12.2.0",
+        "contentHash": "DR3lFbdnKucaaj1/8zMNOACMz/64igzox1yVZSFVsLxYB5mxAB+wFP1WZ8fjwrZnbU1KA1DoMzHKYKxUfuZ4wQ=="
       },
       "Humanizer.Core": {
         "type": "CentralTransitive",
@@ -1070,11 +1070,11 @@
       },
       "StackExchange.Redis": {
         "type": "CentralTransitive",
-        "requested": "[3.3.1, )",
-        "resolved": "3.3.1",
-        "contentHash": "AnA3ZuYnOQl2Hh/PXqV+JagA6QO8hiHovHBOc0PKz+uafVSsI0lYPQy8D0rklCC5Wpmc9MznEw+Lpt8e+LaB9w==",
+        "requested": "[3.4.0, )",
+        "resolved": "3.4.0",
+        "contentHash": "29fvhba1pHQ2Vs+FIiG2201G62xL4EayGMm7yNZrHh/IcOZbzhl4g1CKQQP9xhznzDHybFURyj3XN433QctdPA==",
         "dependencies": {
-          "RESPite": "3.3.1",
+          "RESPite": "3.4.0",
           "System.IO.Hashing": "10.0.12"
         }
       },

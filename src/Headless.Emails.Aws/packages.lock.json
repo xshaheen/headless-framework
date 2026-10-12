@@ -10,11 +10,11 @@
       },
       "AWSSDK.Extensions.NETCore.Setup": {
         "type": "Direct",
-        "requested": "[4.0.101.4, )",
-        "resolved": "4.0.101.4",
-        "contentHash": "aFwe/JfS0jLZrFilKRbgsuE+qWtiKH0dLHc98xFqvvTvD95/IxkYt9A7mGEDBzacmIIO71l/aRJoWT/Z+ZCCJQ==",
+        "requested": "[4.0.102.2, )",
+        "resolved": "4.0.102.2",
+        "contentHash": "Jr56FQ4qd9PvwPr6mnLQ6tMVZRv8TTF/MKyfSS1wDXV2d+lsKLfEi57M8Xug04XvybwQJsaaLByapuN0PoCzDg==",
         "dependencies": {
-          "AWSSDK.Core": "4.0.102.6",
+          "AWSSDK.Core": "4.0.102.9",
           "Microsoft.Extensions.Configuration.Abstractions": "2.0.0",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "8.0.0",
           "Microsoft.Extensions.Logging.Abstractions": "2.0.0"
@@ -22,11 +22,11 @@
       },
       "AWSSDK.SimpleEmailV2": {
         "type": "Direct",
-        "requested": "[4.0.105.1, )",
-        "resolved": "4.0.105.1",
-        "contentHash": "G6WHO+qtz/rSrFCrD99hWgn9SlFeuFUrvGT1FwRyNcIS31rQvcs7oz/UqdoJ5/0gfD5IvKfhGmdZZp58bceAdg==",
+        "requested": "[4.0.106.2, )",
+        "resolved": "4.0.106.2",
+        "contentHash": "G9XH2AqThvGwyELOhEM5fs48bVejJXskXMBlVQAsQKz5D2Nr7MHeFQJzJY3eqMTs20ot7lwuuYkJIf9t0CbrAQ==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.102.6, 5.0.0)"
+          "AWSSDK.Core": "[4.0.102.9, 5.0.0)"
         }
       },
       "ErrorProne.NET.CoreAnalyzers": {
@@ -120,8 +120,8 @@
       },
       "AWSSDK.Core": {
         "type": "Transitive",
-        "resolved": "4.0.102.6",
-        "contentHash": "YwUi9qpz/OHqwEgsf8I5jj1aC/xkkjmF91R8Yx6yD66dhOiORgQJynYQk0fzI4xdhBgUaw8SRGbMkLRrvL+CNA=="
+        "resolved": "4.0.102.9",
+        "contentHash": "VWGkR0QXDTmThusATC6I9IX06YtYeQNF+1/v6vBbfzIC+MaAuNjYn0aSTIyX+abciZvFhuSSi0d6/pC93wROCw=="
       },
       "BouncyCastle.Cryptography": {
         "type": "Transitive",

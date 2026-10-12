@@ -10,11 +10,11 @@
       },
       "AWSSDK.S3": {
         "type": "Direct",
-        "requested": "[4.0.103.4, )",
-        "resolved": "4.0.103.4",
-        "contentHash": "qi8NkWG7s6GkNePTWSxP51O6AaTEWquin4X4L82plMte8bTFL2A1/osRfr6DBmvmSOc8y0orx25jJXg9gcbMIQ==",
+        "requested": "[4.0.104.2, )",
+        "resolved": "4.0.104.2",
+        "contentHash": "ImZ1pO9SWh+RAN8hmN5OnonyTvq+/q4dXLxTxjtsZ60c06dnCCy+MX3sc4F3Q8c9J1bg8WoU+VkrrVIpXLviww==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.102.6, 5.0.0)"
+          "AWSSDK.Core": "[4.0.102.9, 5.0.0)"
         }
       },
       "ErrorProne.NET.CoreAnalyzers": {
@@ -108,8 +108,8 @@
       },
       "AWSSDK.Core": {
         "type": "Transitive",
-        "resolved": "4.0.102.6",
-        "contentHash": "YwUi9qpz/OHqwEgsf8I5jj1aC/xkkjmF91R8Yx6yD66dhOiORgQJynYQk0fzI4xdhBgUaw8SRGbMkLRrvL+CNA=="
+        "resolved": "4.0.102.9",
+        "contentHash": "VWGkR0QXDTmThusATC6I9IX06YtYeQNF+1/v6vBbfzIC+MaAuNjYn0aSTIyX+abciZvFhuSSi0d6/pC93wROCw=="
       },
       "Microsoft.Build.Tasks.Git": {
         "type": "Transitive",
@@ -246,8 +246,8 @@
       "headless.blobs.aws": {
         "type": "Project",
         "dependencies": {
-          "AWSSDK.Extensions.NETCore.Setup": "[4.0.101.4, )",
-          "AWSSDK.S3": "[4.0.103.4, )",
+          "AWSSDK.Extensions.NETCore.Setup": "[4.0.102.2, )",
+          "AWSSDK.S3": "[4.0.104.2, )",
           "Headless.Blobs": "[1.0.0, )",
           "Headless.Blobs.Abstractions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )"
@@ -268,7 +268,7 @@
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
-          "FluentValidation": "[12.1.1, )",
+          "FluentValidation": "[12.2.0, )",
           "Headless.Extensions": "[1.0.0, )"
         }
       },
@@ -309,11 +309,11 @@
       },
       "AWSSDK.Extensions.NETCore.Setup": {
         "type": "CentralTransitive",
-        "requested": "[4.0.101.4, )",
-        "resolved": "4.0.101.4",
-        "contentHash": "aFwe/JfS0jLZrFilKRbgsuE+qWtiKH0dLHc98xFqvvTvD95/IxkYt9A7mGEDBzacmIIO71l/aRJoWT/Z+ZCCJQ==",
+        "requested": "[4.0.102.2, )",
+        "resolved": "4.0.102.2",
+        "contentHash": "Jr56FQ4qd9PvwPr6mnLQ6tMVZRv8TTF/MKyfSS1wDXV2d+lsKLfEi57M8Xug04XvybwQJsaaLByapuN0PoCzDg==",
         "dependencies": {
-          "AWSSDK.Core": "4.0.102.6",
+          "AWSSDK.Core": "4.0.102.9",
           "Microsoft.Extensions.Configuration.Abstractions": "2.0.0",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "8.0.0",
           "Microsoft.Extensions.Logging.Abstractions": "2.0.0"
@@ -321,9 +321,9 @@
       },
       "FluentValidation": {
         "type": "CentralTransitive",
-        "requested": "[12.1.1, )",
-        "resolved": "12.1.1",
-        "contentHash": "EPpkIe1yh1a0OXyC100oOA8WMbZvqUu5plwhvYcb7oSELfyUZzfxV48BLhvs3kKo4NwG7MGLNgy1RJiYtT8Dpw=="
+        "requested": "[12.2.0, )",
+        "resolved": "12.2.0",
+        "contentHash": "DR3lFbdnKucaaj1/8zMNOACMz/64igzox1yVZSFVsLxYB5mxAB+wFP1WZ8fjwrZnbU1KA1DoMzHKYKxUfuZ4wQ=="
       },
       "Microsoft.Extensions.Configuration.Abstractions": {
         "type": "CentralTransitive",

@@ -22,9 +22,9 @@
       },
       "libphonenumber-csharp": {
         "type": "Direct",
-        "requested": "[9.0.40, )",
-        "resolved": "9.0.40",
-        "contentHash": "ywU5vgr+Q7bX+MSU2oxXfYDQDsrUCDfpkSae8PEd1t2L6e+nNIQtmsk/FHV9IIoMGEuuoxOZNQetFJTvTPcyOA=="
+        "requested": "[9.0.41, )",
+        "resolved": "9.0.41",
+        "contentHash": "GpBGFg/L1OuHem8qpZ2Ca6Tm5pPqL81iDLiUwNIbfSWVIyiQpui5jqMOr7pgVKg9rD5ppK2iCHDfg9hvtQe1OQ=="
       },
       "Meziantou.Analyzer": {
         "type": "Direct",
@@ -182,9 +182,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )",
-          "Headless.Urls": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )",
           "Nito.Disposables": "[2.5.0, )"
         }
@@ -192,7 +190,7 @@
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
-          "FluentValidation": "[12.1.1, )",
+          "FluentValidation": "[12.2.0, )",
           "Headless.Extensions": "[1.0.0, )"
         }
       },
@@ -206,17 +204,11 @@
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.urls": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
       "FluentValidation": {
         "type": "CentralTransitive",
-        "requested": "[12.1.1, )",
-        "resolved": "12.1.1",
-        "contentHash": "EPpkIe1yh1a0OXyC100oOA8WMbZvqUu5plwhvYcb7oSELfyUZzfxV48BLhvs3kKo4NwG7MGLNgy1RJiYtT8Dpw=="
+        "requested": "[12.2.0, )",
+        "resolved": "12.2.0",
+        "contentHash": "DR3lFbdnKucaaj1/8zMNOACMz/64igzox1yVZSFVsLxYB5mxAB+wFP1WZ8fjwrZnbU1KA1DoMzHKYKxUfuZ4wQ=="
       },
       "Nito.AsyncEx": {
         "type": "CentralTransitive",

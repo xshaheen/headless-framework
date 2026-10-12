@@ -1,8 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Infobip.Api.Client;
 using Infobip.Api.Client.Api;
+using Infobip.Api.Client.Client;
+using Infobip.Api.Client.Client.Json;
 using Infobip.Api.Client.Model;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -25,7 +26,7 @@ internal sealed class InfobipSmsSender(
     // on every send operation.
     private readonly Configuration _configuration = new()
     {
-        BasePath = optionsMonitor.Get(optionsName).BasePath,
+        BaseUri = new Uri(optionsMonitor.Get(optionsName).BasePath, UriKind.Absolute),
         ApiKey = optionsMonitor.Get(optionsName).ApiKey,
     };
 
@@ -151,11 +152,11 @@ internal sealed class InfobipSmsSender(
         CancellationToken cancellationToken
     )
     {
-        var smsMessage = new SmsMessage(_options.Sender, destinations, new SmsMessageContent(new SmsTextContent(text)));
+        var smsMessage = new SmsMessage(destinations, new SmsMessageContent(new SmsTextContent(text)), _options.Sender);
         var smsRequest = new SmsRequest([smsMessage]);
 
         using var httpClient = httpClientFactory.CreateClient(httpClientName);
-        using var smsApi = new SmsApi(httpClient, _configuration);
+        using var smsApi = new SmsApi(_configuration, httpClient, JsonSerializerType.SystemTextJson);
 
         return await smsApi.SendSmsMessagesAsync(smsRequest, cancellationToken).ConfigureAwait(false);
     }

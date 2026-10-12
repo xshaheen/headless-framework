@@ -2415,7 +2415,7 @@ Registers in-memory storage and monitoring services. State is lost when the proc
 - Consumer startup honors host cancellation while creating topics and subscriptions.
 - One idempotent producer, built on first publish, serves every publish in the process; disposal flushes it for up to `message.timeout.ms`. A fatal producer error discards it, and the next publish builds a new one.
 - Consumers use `cooperative-sticky` partition assignment by default, so a rebalance moves only the partitions that change owner.
-- A handler's settlement stores its offset; the background auto-commit sends stored offsets to the broker. A partition revoke waits up to 30 seconds for in-flight handlers on the revoked partitions, then commits synchronously. Shutdown drains in-flight handlers within the shutdown budget, then closes the consumer, which commits the stored offsets synchronously.
+- A handler's settlement stores its offset; the background auto-commit sends stored offsets to the broker. A partition revoke waits up to 30 seconds for in-flight handlers on the revoked partitions, then commits synchronously. Shutdown waits, within the shutdown budget, for the poll loop to stop and for in-flight handlers to finish, including one the loop started after shutdown began; the loop stops within one `MessagingOptions.ConsumerPollTimeout`. It then closes the consumer, which commits the stored offsets synchronously.
 - Consumer lag per assigned partition is reported as the `headless.messaging.kafka.consumer.lag` gauge on the `Headless.Messaging` meter once `MainConfig["statistics.interval.ms"]` is above zero. See [Consumer lag metric](#consumer-lag-metric).
 
 ### Design constraints
@@ -2662,7 +2662,7 @@ Registers NATS connection pool, transports, consumer factory, stream provisionin
 - Configurable negative-ack redelivery with a one-minute default and a validated 100-millisecond minimum.
 - Producer settings through `PulsarMessagingOptions.Producer`: compression, batching and its publish delay, and send timeout.
 - Consumer hatch: `Tune(identity, c => c.UsePulsar(pulsar => pulsar.KeyShared().DeadLetter(maxRedeliveryCount: 5).AckTimeout(TimeSpan.FromMinutes(1))))`.
-- Shutdown lets in-flight handlers settle within the shutdown budget (30 seconds on a plain dispose) before it closes the consumer.
+- Shutdown stops receiving, then lets the receive loop stop and in-flight handlers settle, including one the loop started after shutdown began, within the shutdown budget (30 seconds on a plain dispose) before it closes the consumer.
 - Consumer startup honors host cancellation while acquiring the client and subscribing, while preserving configured timeouts.
 - Request/reply is not supported yet: a host that sends requests or declares a responder fails startup until the provider's reply channel ships. See [Request/reply](#requestreply).
 
@@ -2849,7 +2849,7 @@ Registers Redis transports, consumers, and Redis connection services.
 - **Consumer names.** A process reads each group as `{group}:{machine name}:{slot}`, where the slot is the lowest one no other live client of that group in the process holds. A process restarted on the same machine, such as a StatefulSet pod, reads under the names it used before, and its startup pass delivers the entries it left pending at once. A process whose machine name changes, such as a Deployment pod, leaves its pending entries to the claim after `PendingClaimMinIdleTime`. Two processes that share a machine name share consumer names: each one's startup pass then also redelivers the other's pending entries, and the inbox discards the duplicates.
 - **Idle-consumer sweep.** Every `PendingClaimMinIdleTime`, each consumer client runs one Lua script per stream that deletes the group's consumers idle longer than `IdleConsumerDeleteAfter` with no pending entries. The check and the delete are atomic, because deleting a consumer discards its pending entries; a live consumer deleted while idle is created again by its next read. The sweep needs `EVAL`; where an ACL denies it, set `IdleConsumerDeleteAfter` to `TimeSpan.Zero`.
 - **Wire format.** A stream entry has two fields: `headers`, the headers as a JSON object, and `body`, the message body as raw bytes.
-- **Shutdown.** Shutdown waits, within the shutdown budget, for in-flight handlers to settle their entries before the client is disposed; an entry a handler never settles stays pending for the claim.
+- **Shutdown.** Shutdown stops the read loops, then waits, within the shutdown budget, for them to stop and for in-flight handlers to settle their entries before the client is disposed. An entry a loop reads after shutdown began is not dispatched, and an entry a handler never settles; both stay pending for the claim.
 
 ## Headless.Messaging.SourceGenerator
 

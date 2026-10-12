@@ -82,8 +82,8 @@
       },
       "AWSSDK.Core": {
         "type": "Transitive",
-        "resolved": "4.0.102.6",
-        "contentHash": "YwUi9qpz/OHqwEgsf8I5jj1aC/xkkjmF91R8Yx6yD66dhOiORgQJynYQk0fzI4xdhBgUaw8SRGbMkLRrvL+CNA=="
+        "resolved": "4.0.102.9",
+        "contentHash": "VWGkR0QXDTmThusATC6I9IX06YtYeQNF+1/v6vBbfzIC+MaAuNjYn0aSTIyX+abciZvFhuSSi0d6/pC93wROCw=="
       },
       "Nito.AsyncEx.Context": {
         "type": "Transitive",
@@ -161,7 +161,7 @@
       "headless.coordination": {
         "type": "Project",
         "dependencies": {
-          "FluentValidation": "[12.1.1, )",
+          "FluentValidation": "[12.2.0, )",
           "Headless.Checks": "[1.0.0, )",
           "Headless.Context": "[1.0.0, )",
           "Headless.Context.Abstractions": "[1.0.0, )",
@@ -204,7 +204,7 @@
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
-          "FluentValidation": "[12.1.1, )",
+          "FluentValidation": "[12.2.0, )",
           "Headless.Extensions": "[1.0.0, )"
         }
       },
@@ -223,7 +223,7 @@
       "headless.messaging": {
         "type": "Project",
         "dependencies": {
-          "FastExpressionCompiler": "[5.4.1, )",
+          "FastExpressionCompiler": "[6.0.0, )",
           "Headless.Coordination": "[1.0.0, )",
           "Headless.Coordination.Abstractions": "[1.0.0, )",
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
@@ -251,8 +251,8 @@
       "headless.messaging.aws": {
         "type": "Project",
         "dependencies": {
-          "AWSSDK.SQS": "[4.0.100.14, )",
-          "AWSSDK.SimpleNotificationService": "[4.0.100.15, )",
+          "AWSSDK.SQS": "[4.0.100.16, )",
+          "AWSSDK.SimpleNotificationService": "[4.0.100.17, )",
           "Headless.Messaging": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )"
@@ -344,20 +344,20 @@
       },
       "AWSSDK.SimpleNotificationService": {
         "type": "CentralTransitive",
-        "requested": "[4.0.100.15, )",
-        "resolved": "4.0.100.15",
-        "contentHash": "PW5pYqLMexVGwgNFf3EWqyksyz/PwS+T/Q3Z6W7BDmVZD/LxWSzqdIj4mEZKUgRvrk6yNKDL670wQgMSAMrZMw==",
+        "requested": "[4.0.100.17, )",
+        "resolved": "4.0.100.17",
+        "contentHash": "djEB33vWeQ2i6XetSY+HgIkXPQPpN5vCisq/Vye+ojKgQ1UvZglpX6aoBwpKvlCep6eoYOJMYs7XIWU3ajwR0g==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.102.6, 5.0.0)"
+          "AWSSDK.Core": "[4.0.102.9, 5.0.0)"
         }
       },
       "AWSSDK.SQS": {
         "type": "CentralTransitive",
-        "requested": "[4.0.100.14, )",
-        "resolved": "4.0.100.14",
-        "contentHash": "bFMwWy14LyVocTM9kVfyVRgjbgJBkBXEJXi8i6KLVJV2PXVnVeTfwlxClMFTMDOPhYWlpmHzO2aHuaBdVlaFzg==",
+        "requested": "[4.0.100.16, )",
+        "resolved": "4.0.100.16",
+        "contentHash": "qBwINJqBfun/nEwmsGwKEzTtWhquDdlWMJvkg1pFX4YHqTYuTpegPvyeBjSDw9vi0xZHDUJ32f2v3nVYeGe10Q==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.102.6, 5.0.0)"
+          "AWSSDK.Core": "[4.0.102.9, 5.0.0)"
         }
       },
       "Consul": {
@@ -371,15 +371,15 @@
       },
       "FastExpressionCompiler": {
         "type": "CentralTransitive",
-        "requested": "[5.4.1, )",
-        "resolved": "5.4.1",
-        "contentHash": "nqMykMspK5cQd35Y8ulQzAujxCcCwZVUne32pC5xNpXqrbPCuKOPMWkKHJ3LveAZPm6dsVvump0TJ1SZ9RzfTQ=="
+        "requested": "[6.0.0, )",
+        "resolved": "6.0.0",
+        "contentHash": "EvY3eiWFnSYAUd4F4zvt3VTe8z75XxfqEUW3Fp2SsM1El4rfSNzah49/DLk6VlkL5yOLHZXf6XL19HQrcgTDxg=="
       },
       "FluentValidation": {
         "type": "CentralTransitive",
-        "requested": "[12.1.1, )",
-        "resolved": "12.1.1",
-        "contentHash": "EPpkIe1yh1a0OXyC100oOA8WMbZvqUu5plwhvYcb7oSELfyUZzfxV48BLhvs3kKo4NwG7MGLNgy1RJiYtT8Dpw=="
+        "requested": "[12.2.0, )",
+        "resolved": "12.2.0",
+        "contentHash": "DR3lFbdnKucaaj1/8zMNOACMz/64igzox1yVZSFVsLxYB5mxAB+wFP1WZ8fjwrZnbU1KA1DoMzHKYKxUfuZ4wQ=="
       },
       "Newtonsoft.Json": {
         "type": "CentralTransitive",

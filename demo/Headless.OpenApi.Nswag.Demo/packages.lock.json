@@ -318,7 +318,7 @@
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
-          "FluentValidation": "[12.1.1, )",
+          "FluentValidation": "[12.2.0, )",
           "Headless.Extensions": "[1.0.0, )"
         }
       },
@@ -362,7 +362,7 @@
       "headless.openapi.scalar": {
         "type": "Project",
         "dependencies": {
-          "Scalar.AspNetCore": "[2.17.11, )"
+          "Scalar.AspNetCore": "[2.17.14, )"
         }
       },
       "headless.primitives": {
@@ -417,9 +417,9 @@
       },
       "FluentValidation": {
         "type": "CentralTransitive",
-        "requested": "[12.1.1, )",
-        "resolved": "12.1.1",
-        "contentHash": "EPpkIe1yh1a0OXyC100oOA8WMbZvqUu5plwhvYcb7oSELfyUZzfxV48BLhvs3kKo4NwG7MGLNgy1RJiYtT8Dpw=="
+        "requested": "[12.2.0, )",
+        "resolved": "12.2.0",
+        "contentHash": "DR3lFbdnKucaaj1/8zMNOACMz/64igzox1yVZSFVsLxYB5mxAB+wFP1WZ8fjwrZnbU1KA1DoMzHKYKxUfuZ4wQ=="
       },
       "Microsoft.AspNetCore.MiddlewareAnalysis": {
         "type": "CentralTransitive",
@@ -537,9 +537,9 @@
       },
       "Scalar.AspNetCore": {
         "type": "CentralTransitive",
-        "requested": "[2.17.11, )",
-        "resolved": "2.17.11",
-        "contentHash": "aSDKZFaJQs/JKEhCwf9pzXz8eJ+mFSne1WWrtdr9bHnLmcfkZOPLtO5vJzMLYD3Z7nCT6R6t09ek5WrIoa6tKw=="
+        "requested": "[2.17.14, )",
+        "resolved": "2.17.14",
+        "contentHash": "wkZQbMQPSgU1w9BciBCe2Gh7l8hI9mSe+B1FRGC6zbPE2cD7YH3BDxwKWGzlJwuXAxgbfzK4UzQTnTDIgP6XFw=="
       },
       "System.IdentityModel.Tokens.Jwt": {
         "type": "CentralTransitive",
