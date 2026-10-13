@@ -7,6 +7,7 @@ using Headless.Jobs.Internal;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
+using Tests.Instrumentation;
 
 namespace Tests.Transactions;
 
@@ -15,6 +16,9 @@ namespace Tests.Transactions;
 /// drop-on-full, and the shutdown drain. The manager-side callback shape is covered by
 /// <see cref="JobsManagerCoordinatedRoutingTests" />.
 /// </summary>
+// The drop counter is read from the process-wide Jobs meter, so a host another test stops in parallel would add its
+// own drops to these measurements.
+[Collection<JobsInstrumentationCollection>]
 public sealed class JobsPostCommitSignalServiceTests : TestBase
 {
     // Every wait on worker progress is bounded so a regression fails the test instead of hanging the run.
