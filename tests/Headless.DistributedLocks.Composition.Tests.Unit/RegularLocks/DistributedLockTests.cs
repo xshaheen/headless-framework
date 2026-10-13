@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Headless;
 using Headless.DistributedLocks;
@@ -29,7 +28,8 @@ public sealed class DistributedLockTests : TestBase
         IDistributedLockStorage? storage = null,
         IBus? bus = null,
         ILogger<DistributedLock>? logger = null,
-        bool useNullBus = false
+        bool useNullBus = false,
+        TimeProvider? timeProvider = null
     )
     {
         options ??= new DistributedLockOptions();
@@ -40,7 +40,7 @@ public sealed class DistributedLockTests : TestBase
             useNullBus ? null : bus ?? _bus,
             options,
             _guidGenerator,
-            _timeProvider,
+            timeProvider ?? _timeProvider,
             logger ?? LoggerFactory.CreateLogger<DistributedLock>()
         );
     }
@@ -446,43 +446,36 @@ public sealed class DistributedLockTests : TestBase
                 );
             });
 
-        var provider = _CreateProvider(storage: storage);
+        var acquireTimeout = TimeSpan.FromSeconds(30);
+        var timeProvider = new TimerRecordingTimeProvider();
+        var provider = _CreateProvider(storage: storage, timeProvider: timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
 
-        // Start acquisition task
         var acquireTask = provider.TryAcquireAsync(
             resource,
-            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+            new DistributedLockAcquireOptions { AcquireTimeout = acquireTimeout },
             AbortToken
         );
 
-        // Drive the provider's retry loop by advancing fake time until it acquires. Each advance is followed by
-        // a wait for observable progress — a bare `await Task.Yield()` does not reliably drain the
-        // CTS-cancellation continuation queued from a prior advance — and the drive keeps going until the
-        // acquisition completes. A fixed budget of advances cannot work here: a starved continuation exhausts it
-        // while the task is still pending, and because this clock is the only thing that fires the provider's
-        // retry delay, the drive stopping is the same as the delay never elapsing. The real-time bound is a
-        // safety net so a provider that stops retrying fails by name instead of waiting forever.
-        var drive = Stopwatch.StartNew();
-        var driveBudget = TimeSpan.FromSeconds(30);
+        // Fire each retry delay only after the provider has armed it. An advance that runs before the delay timer
+        // exists moves fake time without firing it, and since this clock is the only thing that ends the delay, the
+        // provider would wait for an advance that never comes. The acquire-timeout timer is the only longer one.
+        var retryDelays = new List<TimeSpan>();
 
-        while (!acquireTask.IsCompleted && drive.Elapsed < driveBudget)
+        for (var retry = 0; retry < 2; retry++)
         {
-            var observedBefore = callCount;
-            _timeProvider.Advance(TimeSpan.FromMilliseconds(500));
-
-            while (callCount == observedBefore && !acquireTask.IsCompleted && drive.Elapsed < driveBudget)
-            {
-                await Task.Yield();
-            }
+            var retryDelay = await timeProvider.WaitForTimerAsync(dueTime => dueTime < acquireTimeout, AbortToken);
+            retryDelays.Add(retryDelay);
+            timeProvider.Advance(retryDelay);
         }
 
         // when
         var result = await acquireTask.Bounded();
 
-        // then - should have retried and succeeded
+        // then - should have retried and succeeded, waiting longer before the second retry
         result.Should().NotBeNull();
-        callCount.Should().BeGreaterThanOrEqualTo(3);
+        callCount.Should().Be(3);
+        retryDelays[1].Should().BeGreaterThan(retryDelays[0]);
     }
 
     [Fact]

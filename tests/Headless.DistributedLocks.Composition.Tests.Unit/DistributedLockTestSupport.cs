@@ -175,3 +175,37 @@ internal sealed class CadenceTimeProvider(TimeSpan? expectedCadence = null) : Fa
         Advance(advanceBy ?? _expectedCadence);
     }
 }
+
+/// <summary>
+/// A <see cref="FakeTimeProvider"/> that records the due time of every timer created on it, so a test can advance
+/// time only after the code under test has armed the timer that advance is meant to fire.
+/// </summary>
+internal sealed class TimerRecordingTimeProvider : FakeTimeProvider
+{
+    private readonly Channel<TimeSpan> _createdTimers = Channel.CreateUnbounded<TimeSpan>();
+
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+    {
+        var timer = base.CreateTimer(callback, state, dueTime, period);
+        _createdTimers.Writer.TryWrite(dueTime);
+
+        return timer;
+    }
+
+    /// <summary>Waits for the next created timer whose due time matches, skipping the others, and returns it.</summary>
+    public async Task<TimeSpan> WaitForTimerAsync(
+        Func<TimeSpan, bool> match,
+        CancellationToken cancellationToken = default
+    )
+    {
+        while (true)
+        {
+            var dueTime = await _createdTimers.Reader.ReadAsync(cancellationToken).AsTask().Bounded();
+
+            if (match(dueTime))
+            {
+                return dueTime;
+            }
+        }
+    }
+}
