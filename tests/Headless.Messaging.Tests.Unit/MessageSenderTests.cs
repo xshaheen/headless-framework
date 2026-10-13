@@ -95,7 +95,8 @@ public sealed class MessageSenderTests : TestBase
         IMessageSerializer serializer,
         ITransport transport,
         MessagingOptions options,
-        IHostApplicationLifetime? lifetime = null
+        IHostApplicationLifetime? lifetime = null,
+        TransportConnectivity? connectivity = null
     )
     {
         storage
@@ -149,6 +150,11 @@ public sealed class MessageSenderTests : TestBase
         if (lifetime is not null)
         {
             services.AddSingleton(lifetime);
+        }
+
+        if (connectivity is not null)
+        {
+            services.AddSingleton(connectivity);
         }
 
         var provider = services.BuildServiceProvider();
@@ -209,6 +215,134 @@ public sealed class MessageSenderTests : TestBase
 
         var provider = services.BuildServiceProvider();
         return new MessageSender(provider.GetRequiredService<ILogger<MessageSender>>(), provider);
+    }
+
+    [Fact]
+    public async Task should_report_the_broker_unreachable_after_consecutive_send_failures_and_reachable_after_the_next_success()
+    {
+        // given a publish-only host whose transport fails three sends in a row, then accepts the fourth
+        var storage = Substitute.For<IDataStorage>();
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+
+        var connectivity = new TransportConnectivity();
+        var reachableAtEachSend = new List<bool>();
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                reachableAtEachSend.Add(connectivity.IsReachable);
+                return Task.FromResult(
+                    reachableAtEachSend.Count <= 3
+                        ? OperateResult.Failed(new PublisherSentFailedException("connection refused"))
+                        : OperateResult.Success
+                );
+            });
+
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(3), MaxPersistedRetries = 0 },
+            },
+            connectivity: connectivity
+        );
+
+        // when
+        var result = await sender.SendAsync(_CreateMediumMessage());
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        reachableAtEachSend.Should().Equal(true, true, true, false);
+        connectivity.IsReachable.Should().BeTrue("the fourth send reached the broker");
+    }
+
+    [Fact]
+    public async Task should_report_the_broker_unreachable_when_consecutive_sends_time_out()
+    {
+        // given a transport that never answers, so every send runs into the publish timeout
+        var storage = Substitute.For<IDataStorage>();
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+
+        var connectivity = new TransportConnectivity();
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                await Task.Delay(Timeout.Infinite, callInfo.Arg<CancellationToken>());
+                return OperateResult.Success;
+            });
+
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                TransportPublishTimeout = TimeSpan.FromMilliseconds(20),
+                RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(0), MaxPersistedRetries = 0 },
+            },
+            connectivity: connectivity
+        );
+
+        // when three messages each run into the timeout
+        for (var i = 0; i < 3; i++)
+        {
+            var send = () => sender.SendAsync(_CreateMediumMessage());
+            await send.Should().ThrowAsync<OperationCanceledException>();
+        }
+
+        // then
+        connectivity.IsReachable.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_not_count_serialization_failures_as_broker_failures()
+    {
+        // given a message the serializer rejects on every attempt
+        var storage = Substitute.For<IDataStorage>();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns<ValueTask<TransportMessage>>(_ => throw new System.Text.Json.JsonException("not serializable"));
+
+        var connectivity = new TransportConnectivity();
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(0), MaxPersistedRetries = 0 },
+            },
+            connectivity: connectivity
+        );
+
+        // when three messages each fail to serialize
+        for (var i = 0; i < 3; i++)
+        {
+            var send = () => sender.SendAsync(_CreateMediumMessage());
+            await send.Should().ThrowAsync<System.Text.Json.JsonException>();
+        }
+
+        // then
+        connectivity.IsReachable.Should().BeTrue("the broker was never contacted");
     }
 
     [Fact]

@@ -49,6 +49,9 @@ internal sealed partial class ConsumerRegister(
     private readonly IMessagingCapabilityModel _capabilityModel =
         serviceProvider.GetRequiredService<IMessagingCapabilityModel>();
 
+    private readonly TransportConnectivity _connectivity =
+        serviceProvider.GetService<TransportConnectivity>() ?? new TransportConnectivity();
+
 #pragma warning disable CA2213 // False positive: the container owns the shared singleton and disposes it with the host.
     private readonly ConsumerRateLimiters? _rateLimiters = serviceProvider.GetService<ConsumerRateLimiters>();
 #pragma warning restore CA2213
@@ -819,6 +822,7 @@ internal sealed partial class ConsumerRegister(
             catch (BrokerConnectionException e)
             {
                 _isHealthy = false;
+                _connectivity.ReportBrokerFailure();
                 _logger.FailedToConnectToBroker(e);
                 return establishments;
             }
@@ -875,6 +879,7 @@ internal sealed partial class ConsumerRegister(
                         {
                             try
                             {
+                                var failureMark = _connectivity.FailureMark;
                                 var innerClient = await _CreateConsumerClientAsync(
                                         subscriptionKey,
                                         limit,
@@ -908,6 +913,7 @@ internal sealed partial class ConsumerRegister(
                                         innerClient,
                                         startupReady,
                                         onReady,
+                                        failureMark,
                                         groupCts.Token
                                     )
                                     .ConfigureAwait(false);
@@ -920,6 +926,7 @@ internal sealed partial class ConsumerRegister(
                             {
                                 startupReady.TrySetException(e);
                                 _isHealthy = false;
+                                _connectivity.ReportBrokerFailure();
                                 _logger.FailedToConnectToBroker(e);
                             }
                             catch (Exception e)
@@ -986,6 +993,7 @@ internal sealed partial class ConsumerRegister(
         IConsumerClient innerClient,
         TaskCompletionSource startupReady,
         Action? onReady,
+        long failureMark,
         CancellationToken cancellationToken
     )
     {
@@ -994,6 +1002,8 @@ internal sealed partial class ConsumerRegister(
         if (readinessTask.IsCompleted)
         {
             await readinessTask.ConfigureAwait(false);
+            // A ready client is the success that ends an outage on a transport whose clients the register rebuilds.
+            _connectivity.ReportEstablished(failureMark);
             onReady?.Invoke();
             startupReady.TrySetResult();
             await innerClient.ListeningAsync(_options.ConsumerPollTimeout, cancellationToken).ConfigureAwait(false);
@@ -1012,6 +1022,7 @@ internal sealed partial class ConsumerRegister(
         }
 
         await readinessTask.ConfigureAwait(false);
+        _connectivity.ReportEstablished(failureMark);
 
         // The hook is raised once the subscription receives and runs beside the listening client, so no message
         // published after establishment is lost to it. The listening loop never waits for it: a hook that restarts the
@@ -1311,6 +1322,7 @@ internal sealed partial class ConsumerRegister(
                 break;
             case MqLogType.ConsumerRegistered:
                 _isHealthy = true;
+                _connectivity.ReportBrokerSuccess();
                 _logger.RabbitMqConsumerRegistered(reason);
                 break;
             case MqLogType.ConsumerUnregistered:
@@ -1318,6 +1330,7 @@ internal sealed partial class ConsumerRegister(
                 break;
             case MqLogType.ConsumerShutdown:
                 _isHealthy = false;
+                _connectivity.ReportBrokerFailure();
                 _logger.RabbitMqConsumerShutdown(reason);
                 break;
             case MqLogType.ConsumeError:
@@ -1328,6 +1341,7 @@ internal sealed partial class ConsumerRegister(
                 break;
             case MqLogType.ServerConnError:
                 _isHealthy = false;
+                _connectivity.ReportBrokerFailure();
                 _logger.KafkaServerConnectionError(reason);
                 break;
             case MqLogType.ExceptionReceived:
@@ -1338,6 +1352,7 @@ internal sealed partial class ConsumerRegister(
                 break;
             case MqLogType.ConnectError:
                 _isHealthy = false;
+                _connectivity.ReportBrokerFailure();
                 _logger.NatsServerConnectionError(reason);
                 break;
             case MqLogType.InvalidIdFormat:
@@ -1352,6 +1367,16 @@ internal sealed partial class ConsumerRegister(
                 break;
             case MqLogType.TransportConfigurationWarning:
                 _logger.TransportConfigurationWarning(reason);
+                break;
+            // The client recovers on its own, so these leave the restart flag alone: rebuilding a client that is
+            // already retrying would only add churn while the broker is down.
+            case MqLogType.BrokerUnreachable:
+                _connectivity.ReportBrokerFailure();
+                _logger.TransportBrokerUnreachable(reason);
+                break;
+            case MqLogType.BrokerReachable:
+                _connectivity.ReportBrokerSuccess();
+                _logger.TransportBrokerReachable(reason);
                 break;
             default:
                 throw new InvalidOperationException($"Unknown {nameof(MqLogType)}={logMessage.LogType}");

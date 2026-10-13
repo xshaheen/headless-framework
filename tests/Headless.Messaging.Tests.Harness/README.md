@@ -15,6 +15,7 @@ This harness enables consistent integration testing across all messaging provide
 | `TransportConsumerConformanceTestsBase` | Broker-observed round trip and real settlement invariants |
 | `TransportProviderConformanceDriver` | Provider-only broker operations consumed by shared routing, ownership, isolation, startup, poison, and migration assertions |
 | `BrokerFaultTestsBase` | Optional, manifest-driven recovery and fault invariants |
+| `TransportConnectivityTestsBase` | Stops and restarts an isolated broker under a running host and checks the host's broker-reachability state follows |
 | `DataStorageTestsBase` | Tests for `IDataStorage` implementations (message persistence) |
 | `MessagingIntegrationTestsBase` | Full pub-sub cycle tests with DI setup |
 

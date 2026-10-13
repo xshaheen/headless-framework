@@ -53,6 +53,7 @@ internal sealed class AzureServiceBusConsumerClient(
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly BrokerReachabilityReporter _reachability = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private int _disposed;
@@ -425,6 +426,13 @@ internal sealed class AzureServiceBusConsumerClient(
 
         OnLogCallback!(logArgs);
 
+        // The processor retries a lost receive on its own. A failed receive or session accept is the broker; a failed
+        // settlement or handler callback is about one message and says nothing about reaching Service Bus.
+        if (args.ErrorSource is ServiceBusErrorSource.Receive or ServiceBusErrorSource.AcceptSession)
+        {
+            _reachability.ReportFailure(OnLogCallback, args.Exception);
+        }
+
         return
             _everyInstance
             && args.Exception is ServiceBusException { Reason: ServiceBusFailureReason.MessagingEntityNotFound }
@@ -478,6 +486,9 @@ internal sealed class AzureServiceBusConsumerClient(
 
     private async Task _ServiceBusProcessor_ProcessMessageAsync(ProcessMessageEventArgs arg)
     {
+        // A delivered message is the only receive success the processor exposes, so it is what ends an outage.
+        _reachability.ReportSuccess(OnLogCallback);
+
         TransportMessage context;
         try
         {
@@ -527,6 +538,9 @@ internal sealed class AzureServiceBusConsumerClient(
 
     private async Task _ServiceBusProcessor_ProcessSessionMessageAsync(ProcessSessionMessageEventArgs arg)
     {
+        // A delivered message is the only receive success the processor exposes, so it is what ends an outage.
+        _reachability.ReportSuccess(OnLogCallback);
+
         TransportMessage context;
         try
         {

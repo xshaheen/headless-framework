@@ -49,6 +49,7 @@ internal sealed class MessageSender : IMessageSender
     private readonly RetryPolicyOptions _retryPolicy;
     private readonly MessagingPublishRetryPipeline _retryPipeline;
     private readonly CancellationToken _shutdownToken;
+    private readonly TransportConnectivity? _connectivity;
 
     public MessageSender(ILogger<MessageSender> logger, IServiceProvider serviceProvider)
     {
@@ -64,6 +65,7 @@ internal sealed class MessageSender : IMessageSender
         _options = opts;
         _retryPolicy = opts.RetryPolicy;
         _retryPipeline = new MessagingPublishRetryPipeline(_retryPolicy, _timeProvider, logger);
+        _connectivity = serviceProvider.GetService<TransportConnectivity>();
 
         // IHostApplicationLifetime is optional so MessageSender remains usable in test contexts
         // (and non-hosted scenarios). When absent, shutdown cancellation cannot be observed and
@@ -202,6 +204,12 @@ internal sealed class MessageSender : IMessageSender
         }
         catch (OperationCanceledException ex)
         {
+            // A send the publish timeout cut off is a broker that does not answer; one shutdown cut off says nothing.
+            if (!_shutdownToken.IsCancellationRequested)
+            {
+                _connectivity?.ReportBrokerFailure();
+            }
+
             // Timeout or shutdown can race broker acceptance. Preserve cancellation semantics while
             // recording the at-least-once duplicate window explicitly.
             MessagingTelemetry.PublishAmbiguous(
@@ -216,6 +224,8 @@ internal sealed class MessageSender : IMessageSender
         }
         catch (Exception ex)
         {
+            _ReportSendFailure(ex);
+
             // A throwing send must stop the span and record the failed send exactly like the failed-OperateResult
             // path below; the exception then propagates unchanged.
             _TracingError(traceHandle, transportMsg, message.Lane, brokerAddress, OperateResult.Failed(ex));
@@ -224,6 +234,8 @@ internal sealed class MessageSender : IMessageSender
 
         if (result.Succeeded)
         {
+            _connectivity?.ReportBrokerSuccess();
+
             try
             {
                 await _SetSuccessfulState(message, executionState, CancellationToken.None).ConfigureAwait(false);
@@ -248,9 +260,20 @@ internal sealed class MessageSender : IMessageSender
             return MessagingRetryAttempt.Completed(OperateResult.Success);
         }
 
+        _ReportSendFailure(result.Exception);
         _TracingError(traceHandle, transportMsg, message.Lane, brokerAddress, result);
 
         return MessagingRetryAttempt.Retryable(OperateResult.Failed(result.Exception!));
+    }
+
+    // Serialization and storage failures happen outside the transport call, so only what the transport itself failed
+    // reaches here. A transport disposed under a stopping host refuses the send without asking the broker.
+    private void _ReportSendFailure(Exception? exception)
+    {
+        if (exception is not ObjectDisposedException)
+        {
+            _connectivity?.ReportBrokerFailure();
+        }
     }
 
     private async Task<(ITransport? Transport, OperateResult? Result)> _ResolveTransportAsync(

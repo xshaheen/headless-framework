@@ -384,6 +384,7 @@ public sealed class RedisConsumerClientRawPayloadTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_Messages());

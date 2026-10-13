@@ -101,13 +101,18 @@ public sealed class RedisConsumerClientTests : TestBase
             );
         _mockStreamManager
             .Received(1)
-            .PollStreamsFromAsync(tails, TimeSpan.FromMilliseconds(10), Arg.Any<CancellationToken>());
+            .PollStreamsFromAsync(
+                tails,
+                TimeSpan.FromMilliseconds(10),
+                Arg.Any<Action<Exception?>?>(),
+                Arg.Any<CancellationToken>()
+            );
         await _mockStreamManager
             .DidNotReceiveWithAnyArgs()
             .CreateStreamWithConsumerGroupAsync(default!, default!, AbortToken);
         _mockStreamManager
             .DidNotReceiveWithAnyArgs()
-            .PollStreamsLatestMessagesAsync(default!, default!, default!, default, AbortToken);
+            .PollStreamsLatestMessagesAsync(default!, default!, default!, default, default, AbortToken);
         await client.WaitUntilReadyAsync(AbortToken);
     }
 
@@ -121,7 +126,12 @@ public sealed class RedisConsumerClientTests : TestBase
             .GetStreamTailPositionsAsync(Arg.Any<string[]>(), Arg.Any<CancellationToken>())
             .Returns([new StreamPosition(stream, StreamPosition.Beginning)]);
         _mockStreamManager
-            .PollStreamsFromAsync(Arg.Any<StreamPosition[]>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .PollStreamsFromAsync(
+                Arg.Any<StreamPosition[]>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(_Batches(new RedisStreamMessages(stream, [_ValidEntry("1-0")])));
         await using var client = _CreateEveryInstanceClient(logger);
         var delivered = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -169,7 +179,12 @@ public sealed class RedisConsumerClientTests : TestBase
             .GetStreamTailPositionsAsync(Arg.Any<string[]>(), Arg.Any<CancellationToken>())
             .Returns([new StreamPosition(stream, StreamPosition.Beginning)]);
         _mockStreamManager
-            .PollStreamsFromAsync(Arg.Any<StreamPosition[]>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .PollStreamsFromAsync(
+                Arg.Any<StreamPosition[]>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(_Batches(new RedisStreamMessages(stream, [spoofedEntry])));
         await using var client = _CreateEveryInstanceClient(logger);
         var delivered = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -370,6 +385,7 @@ public sealed class RedisConsumerClientTests : TestBase
                 "orders",
                 "orders:host-a:0",
                 Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -454,6 +470,7 @@ public sealed class RedisConsumerClientTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(
@@ -558,6 +575,7 @@ public sealed class RedisConsumerClientTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_Messages());
@@ -598,6 +616,7 @@ public sealed class RedisConsumerClientTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_Messages());
@@ -743,6 +762,68 @@ public sealed class RedisConsumerClientTests : TestBase
         {
             Entries.Add(new LogEntry(eventId.Id, formatter(state, exception), exception));
         }
+    }
+
+    [Fact]
+    public async Task should_report_failed_reads_as_broker_unreachable_and_the_recovery_once_as_reachable()
+    {
+        // given a read loop that cannot reach Redis twice, then reads it on every later poll
+        _SetupGroupReads();
+        _mockStreamManager
+            .PollStreamsLatestMessagesAsync(
+                Arg.Any<string[]>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(callInfo =>
+                _ReadsWithOutcomes(
+                    callInfo.ArgAt<Action<Exception?>?>(4),
+                    new RedisException("No connection is available"),
+                    new RedisException("No connection is available"),
+                    null,
+                    null
+                )
+            );
+        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
+        await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
+        var reports = new System.Collections.Concurrent.ConcurrentQueue<MqLogType>();
+        client.AttachCallbacks((_, _) => Task.CompletedTask, log => reports.Enqueue(log.LogType));
+        await client.SubscribeAsync(["orders"], AbortToken);
+
+        // when
+        using var listening = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listen = client.ListeningAsync(TimeSpan.FromSeconds(1), listening.Token).AsTask();
+        using (var wait = CancellationTokenSource.CreateLinkedTokenSource(AbortToken))
+        {
+            wait.CancelAfter(TimeSpan.FromSeconds(10));
+            while (reports.Count < 3)
+            {
+                await Task.Delay(10, wait.Token);
+            }
+        }
+
+        await listening.CancelAsync();
+        await listen;
+
+        // then the later successful read is not reported again
+        reports.Should().Equal(MqLogType.BrokerUnreachable, MqLogType.BrokerUnreachable, MqLogType.BrokerReachable);
+    }
+
+    private static async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> _ReadsWithOutcomes(
+        Action<Exception?>? onRead,
+        params Exception?[] outcomes
+    )
+    {
+        foreach (var outcome in outcomes)
+        {
+            onRead?.Invoke(outcome);
+            yield return [];
+        }
+
+        await Task.CompletedTask;
     }
 
     private sealed record LogEntry(int EventId, string Message, Exception? Exception);

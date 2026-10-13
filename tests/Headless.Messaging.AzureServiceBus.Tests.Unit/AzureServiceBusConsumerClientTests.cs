@@ -694,4 +694,114 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
             .Should()
             .Be(0);
     }
+
+    [Theory]
+    [InlineData(ServiceBusErrorSource.Receive, true)]
+    [InlineData(ServiceBusErrorSource.AcceptSession, true)]
+    [InlineData(ServiceBusErrorSource.ProcessMessageCallback, false)]
+    [InlineData(ServiceBusErrorSource.Complete, false)]
+    [InlineData(ServiceBusErrorSource.Abandon, false)]
+    public async Task should_report_only_failed_receives_as_broker_unreachable(
+        ServiceBusErrorSource errorSource,
+        bool reported
+    )
+    {
+        // given
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
+        var reports = new List<MqLogType>();
+        client.AttachCallbacks((_, _) => Task.CompletedTask, log => reports.Add(log.LogType));
+
+        // when
+        await _RaiseProcessorErrorAsync(
+            client,
+            new ServiceBusException("The service is unreachable", ServiceBusFailureReason.ServiceCommunicationProblem),
+            errorSource
+        );
+
+        // then
+        reports.Contains(MqLogType.BrokerUnreachable).Should().Be(reported);
+    }
+
+    [Fact]
+    public async Task should_report_the_first_delivery_after_a_failed_receive_as_broker_reachable_once()
+    {
+        // given a client whose receives failed twice
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
+        var reports = new List<MqLogType>();
+        client.AttachCallbacks((_, _) => Task.CompletedTask, log => reports.Add(log.LogType));
+        var outage = new ServiceBusException(
+            "The service is unreachable",
+            ServiceBusFailureReason.ServiceCommunicationProblem
+        );
+        await _RaiseProcessorErrorAsync(client, outage, ServiceBusErrorSource.Receive);
+        await _RaiseProcessorErrorAsync(client, outage, ServiceBusErrorSource.Receive);
+        reports.Clear();
+
+        // when two messages arrive
+        await _DeliverAsync(client);
+        await _DeliverAsync(client);
+
+        // then
+        reports.Should().Equal(MqLogType.BrokerReachable);
+    }
+
+    private static Task _RaiseProcessorErrorAsync(
+        AzureServiceBusConsumerClient client,
+        Exception exception,
+        ServiceBusErrorSource errorSource
+    )
+    {
+        var handler = typeof(AzureServiceBusConsumerClient).GetMethod(
+            "_ServiceBusProcessor_ProcessErrorAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(ProcessErrorEventArgs)],
+            null
+        )!;
+        var args = new ProcessErrorEventArgs(
+            exception,
+            errorSource,
+            "mynamespace.servicebus.windows.net",
+            "test-topic/subscriptions/test-sub",
+            AbortToken
+        );
+
+        return (Task)handler.Invoke(client, [args])!;
+    }
+
+    private static Task _DeliverAsync(AzureServiceBusConsumerClient client)
+    {
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: new BinaryData("test"u8.ToArray()),
+            properties: new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = Guid.NewGuid().ToString("N"),
+                [Headers.MessageName] = "TestEvent",
+            }
+        );
+        var args = new ProcessMessageEventArgs(message, Substitute.For<ServiceBusReceiver>(), AbortToken);
+        var handler = typeof(AzureServiceBusConsumerClient).GetMethod(
+            "_ServiceBusProcessor_ProcessMessageAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(ProcessMessageEventArgs)],
+            null
+        )!;
+
+        return (Task)handler.Invoke(client, [args])!;
+    }
 }

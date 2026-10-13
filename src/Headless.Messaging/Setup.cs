@@ -169,6 +169,10 @@ public static class SetupMessaging
 
         services.TryAddSingleton<IConsumerRegister, ConsumerRegister>();
 
+        // One per host: consumer clients and the outbox sender both report into it, so a publish-only host still
+        // learns that its broker went away.
+        services.TryAddSingleton<TransportConnectivity>();
+
         // Fallback lock provider under the messaging-scoped key. Isolated from any app-level
         // IDistributedLock so UseStorageLock always targets the provider wired via
         // MessagingBuilder.UseDistributedLock(…), not an unrelated app registration.

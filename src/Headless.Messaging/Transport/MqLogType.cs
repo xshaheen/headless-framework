@@ -78,6 +78,19 @@ public enum MqLogType
     /// The transport detected a configuration that is accepted but cannot be fully honored.
     /// </summary>
     TransportConfigurationWarning = 13,
+
+    /// <summary>
+    /// A receive failed because the broker could not be reached, on a transport whose client retries on its own
+    /// instead of failing its listening loop. The host counts consecutive reports toward reporting the broker
+    /// unreachable.
+    /// </summary>
+    BrokerUnreachable = 14,
+
+    /// <summary>
+    /// A receive succeeded after the same client reported <see cref="BrokerUnreachable"/>, so the broker can be reached
+    /// again.
+    /// </summary>
+    BrokerReachable = 15,
 }
 
 /// <summary>

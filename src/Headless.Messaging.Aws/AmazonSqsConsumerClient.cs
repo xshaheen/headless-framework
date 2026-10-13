@@ -42,6 +42,7 @@ internal sealed class AmazonSqsConsumerClient(
     private readonly ILogger _logger = logger;
     private readonly SemaphoreSlim _semaphore = new(concurrency);
     private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly BrokerReachabilityReporter _reachability = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
@@ -268,13 +269,16 @@ internal sealed class AmazonSqsConsumerClient(
                 }
                 catch (Exception ex)
                 {
+                    // The loop retries on its own, so the host hears of the outage only through this report.
                     _logger.SqsReceiveFailed(ex, subscriptionName);
+                    _reachability.ReportFailure(OnLogCallback, ex);
                     retryDelay = _NextBackoff(retryDelay);
                     await _timeProvider.Delay(retryDelay, receiveToken).ConfigureAwait(false);
                     continue;
                 }
 
                 retryDelay = TimeSpan.FromSeconds(1);
+                _reachability.ReportSuccess(OnLogCallback);
 
                 var receivedAny = false;
                 foreach (var (queueUrl, response) in responses)

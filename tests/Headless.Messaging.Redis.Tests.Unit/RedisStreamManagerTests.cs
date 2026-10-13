@@ -297,7 +297,14 @@ public sealed class RedisStreamManagerTests : TestBase
         var sut = _CreateSut(timeProvider);
         var pollDelay = TimeSpan.FromMinutes(1);
 
-        await using var enumerator = sut.PollStreamsLatestMessagesAsync([], "group", "consumer", pollDelay, AbortToken)
+        await using var enumerator = sut.PollStreamsLatestMessagesAsync(
+                [],
+                "group",
+                "consumer",
+                pollDelay,
+                onRead: null,
+                AbortToken
+            )
             .GetAsyncEnumerator(AbortToken);
 
         // when
@@ -311,6 +318,45 @@ public sealed class RedisStreamManagerTests : TestBase
         timeProvider.Advance(pollDelay);
 
         (await secondMoveTask).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_tell_the_read_observer_of_a_failed_latest_read_and_of_the_next_successful_one()
+    {
+        // given a pool whose first connection attempt fails
+        var timeProvider = new FakeTimeProvider();
+        var failure = new RedisException("No connection is available");
+        var connects = 0;
+        _mockConnectionPool
+            .ConnectAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+                Interlocked.Increment(ref connects) == 1
+                    ? Task.FromException<IConnectionMultiplexer>(failure)
+                    : Task.FromResult(_mockMultiplexer)
+            );
+        var sut = _CreateSut(timeProvider);
+        var outcomes = new List<Exception?>();
+
+        await using var enumerator = sut.PollStreamsLatestMessagesAsync(
+                [],
+                "group",
+                "consumer",
+                TimeSpan.FromMinutes(1),
+                outcomes.Add,
+                AbortToken
+            )
+            .GetAsyncEnumerator(AbortToken);
+
+        // when the loop backs off after the failure and reads again
+        (await enumerator.MoveNextAsync())
+            .Should()
+            .BeTrue();
+        var secondRead = enumerator.MoveNextAsync().AsTask();
+        timeProvider.Advance(TimeSpan.FromMinutes(10));
+        (await secondRead).Should().BeTrue();
+
+        // then
+        outcomes.Should().Equal(failure, null);
     }
 
     [Fact]
