@@ -25,7 +25,9 @@ internal static class RedisStreamManagerExtensions
 
                 created = true;
             }
-            catch (Exception ex)
+            // Only an error the server answered with skips the stream: the others still read. A connection failure
+            // propagates, so the read fails as a whole and its caller counts the outage instead of an empty success.
+            catch (RedisServerException ex)
             {
                 if (ex.GetRedisErrorType() == RedisErrorTypes.Unknown)
                 {

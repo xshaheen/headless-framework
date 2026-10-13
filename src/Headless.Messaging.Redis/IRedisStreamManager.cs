@@ -30,13 +30,15 @@ internal interface IRedisStreamManager
         string consumerGroup,
         string consumerName,
         TimeSpan pollDelay,
+        Action<Exception?>? onRead,
         CancellationToken token
     );
 
     /// <summary>
     /// Polls the groups' pending entries with XAUTOCLAIM, claiming for <paramref name="consumerName"/> each entry pending
     /// longer than <paramref name="claimMinIdleTime"/>, and periodically deletes the group's idle consumers that hold no
-    /// pending entry.
+    /// pending entry. <paramref name="onRead"/> hears of each claim pass the token did not end, as
+    /// <see cref="PollStreamsLatestMessagesAsync"/> describes.
     /// </summary>
     IAsyncEnumerable<IEnumerable<RedisStreamMessages>> PollStreamsStalePendingMessagesAsync(
         string[] streams,
@@ -44,6 +46,7 @@ internal interface IRedisStreamManager
         string consumerName,
         TimeSpan claimMinIdleTime,
         TimeSpan pollDelay,
+        Action<Exception?>? onRead,
         CancellationToken token
     );
 

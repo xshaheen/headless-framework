@@ -366,6 +366,7 @@ public sealed class RedisConsumerClientTests : TestBase
                 "orders",
                 "orders:host-a:0",
                 Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
                 Arg.Any<CancellationToken>()
             );
         _mockStreamManager
@@ -376,6 +377,7 @@ public sealed class RedisConsumerClientTests : TestBase
                 "orders:host-a:0",
                 TimeSpan.FromSeconds(42),
                 Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
                 Arg.Any<CancellationToken>()
             );
         _mockStreamManager
@@ -556,6 +558,7 @@ public sealed class RedisConsumerClientTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_Messages(pending));
@@ -566,6 +569,7 @@ public sealed class RedisConsumerClientTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan>(),
                 Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_Messages());
@@ -597,6 +601,7 @@ public sealed class RedisConsumerClientTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_Messages(stream));
@@ -607,6 +612,7 @@ public sealed class RedisConsumerClientTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan>(),
                 Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_Messages());

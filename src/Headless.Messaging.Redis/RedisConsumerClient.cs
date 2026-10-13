@@ -253,8 +253,8 @@ internal sealed class RedisConsumerClient(
         }
     }
 
-    // The stream manager retries a failed read on its own and the multiplexer reconnects underneath it, so the steady
-    // read loop is the only place the host can learn that Redis went away and came back.
+    // The stream manager retries a failed read on its own and the multiplexer reconnects underneath it, so its read
+    // loops are the only place the host can learn that Redis went away and came back.
     private void _ReportRead(Exception? failure)
     {
         if (failure is null)
@@ -275,6 +275,7 @@ internal sealed class RedisConsumerClient(
             _groupName,
             _consumerName.Name,
             timeout,
+            _ReportRead,
             cancellationToken
         );
 
@@ -286,6 +287,7 @@ internal sealed class RedisConsumerClient(
             _consumerName.Name,
             options.Value.PendingClaimMinIdleTime,
             timeout,
+            _ReportRead,
             cancellationToken
         );
         var stalePendingReads = _ConsumeMessages(stalePendingMsgs, StreamPosition.Beginning, cancellationToken);
