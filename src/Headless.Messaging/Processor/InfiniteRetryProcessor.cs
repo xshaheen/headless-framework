@@ -29,9 +29,11 @@ internal sealed class InfiniteRetryProcessor(IProcessor inner, ILoggerFactory lo
                 // Successful iteration — reset backoff so the next failure starts fresh.
                 backoff = _InitialBackoff;
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (context.IsStopping)
             {
-                //ignore
+                // The host is stopping; the loop condition ends the run. A cancellation while the context still runs
+                // (a command or HTTP timeout inside the processor) falls through to the back-off below instead, so a
+                // persistently timing-out dependency is not re-entered in a hot loop.
             }
             catch (Exception ex)
             {
