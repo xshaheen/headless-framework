@@ -71,7 +71,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         _activationBarrier = Argument.IsNotNull(activationBarrier);
         _logger = Argument.IsNotNull(logger);
         _restartThrottle = new RestartThrottleManager(
-            () => _schedulerLoopCancellationTokenSource?.Cancel(),
+            () => Volatile.Read(ref _schedulerLoopCancellationTokenSource)?.Cancel(),
             timeProvider
         );
     }
@@ -136,17 +136,18 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
 
         while (!loopToken.IsCancellationRequested)
         {
-            _schedulerLoopCancellationTokenSource = SafeCancellationTokenSource.CreateLinked(loopToken);
+            // The restart timer reads this field from another thread; publish and retire it atomically.
+#pragma warning disable CA2000 // False positive: ownership moves to the field, which the finally below exchanges out and disposes.
+            var iterationSource = SafeCancellationTokenSource.CreateLinked(loopToken);
+#pragma warning restore CA2000
+            Volatile.Write(ref _schedulerLoopCancellationTokenSource, iterationSource);
 
             try
             {
-                await _RunJobsSchedulerAsync(loopToken, _schedulerLoopCancellationTokenSource.Token)
-                    .ConfigureAwait(false);
+                await _RunJobsSchedulerAsync(loopToken, iterationSource.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
-                when (_schedulerLoopCancellationTokenSource.Token.IsCancellationRequested
-                    && !loopToken.IsCancellationRequested
-                )
+                when (iterationSource.Token.IsCancellationRequested && !loopToken.IsCancellationRequested)
             {
                 // This is a restart request - release this wake's claims and continue loop. Explicit ids only,
                 // and only when the context actually holds claims: the empty form releases every Queued row this
@@ -187,8 +188,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
             finally
             {
                 _executionContext.ClearFunctions();
-                _schedulerLoopCancellationTokenSource?.Dispose();
-                _schedulerLoopCancellationTokenSource = null;
+                Interlocked.Exchange(ref _schedulerLoopCancellationTokenSource, null)?.Dispose();
             }
         }
     }
@@ -425,7 +425,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     public override void Dispose()
     {
         _restartThrottle.Dispose();
-        _schedulerLoopCancellationTokenSource?.Dispose();
+        Interlocked.Exchange(ref _schedulerLoopCancellationTokenSource, null)?.Dispose();
         base.Dispose();
     }
 }

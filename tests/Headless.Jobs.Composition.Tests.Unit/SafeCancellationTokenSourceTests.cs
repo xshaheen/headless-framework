@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 
@@ -34,6 +35,26 @@ public sealed class SafeCancellationTokenSourceTests : TestBase
         // then - the reason this type exists: cancelling a disposed source must not throw
         act.Should().NotThrow();
         source.IsCancellationRequested.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_not_throw_when_cancel_races_a_concurrent_dispose()
+    {
+        // given - the state a Dispose leaves when it lands after Cancel's IsDisposed check: the inner source is
+        // disposed while the flag still reads false
+        using var source = new SafeCancellationTokenSource();
+        var inner = (CancellationTokenSource)
+            typeof(SafeCancellationTokenSource)
+                .GetField("_innerCts", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(source)!;
+        inner.Dispose();
+
+        // when
+        var act = () => source.Cancel();
+
+        // then
+        source.IsDisposed.Should().BeFalse();
+        act.Should().NotThrow();
     }
 
     [Fact]
