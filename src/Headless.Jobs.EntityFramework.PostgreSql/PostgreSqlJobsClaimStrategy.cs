@@ -642,11 +642,12 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 $"""
                 {mapping.Id} = @id
                   AND {mapping.ExecutionTime} = @executionTime
-                  AND ({mapping.Status} = @idle OR {mapping.Status} = @queued)
-                  AND ({mapping.OwnerId} = @owner
-                       OR {mapping.LockedUntil} IS NULL
-                       OR ({mapping.LockedUntil} <= {SqlDialectTokens.Now}
-                           AND {mapping.OnNodeDeath} = @retry))
+                  AND {AcquirePredicateSql.Build(
+                    mapping.Status,
+                    mapping.OwnerId,
+                    mapping.LockedUntil,
+                    mapping.OnNodeDeath
+                )}
                 """,
                 [mapping.Id],
                 $"""
@@ -743,6 +744,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             + AcquirePredicateSql.Build(mapping.Status, mapping.OwnerId, mapping.LockedUntil, mapping.OnNodeDeath);
     }
 
+    // The acquire predicate's @owner is bound by _ClaimRootsAsync, which every root claim runs through.
     private static DbParameter[] _DirectCandidateParameters(TimeJobEntity[] timeJobs)
     {
         return
