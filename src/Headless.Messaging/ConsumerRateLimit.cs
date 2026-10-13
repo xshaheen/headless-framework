@@ -33,6 +33,26 @@ public sealed class ConsumerRateLimit
         _createLimiter = createLimiter;
     }
 
+    // The limiter keeps its options private, so the parameters are kept here for the host description to print.
+
+    /// <summary>The algorithm name the host description prints: <c>fixed-window</c> or <c>token-bucket</c>.</summary>
+    internal string Algorithm { get; private init; } = "";
+
+    /// <summary>The deliveries allowed per window of a fixed-window rate.</summary>
+    internal int PermitLimit { get; private init; }
+
+    /// <summary>The window length of a fixed-window rate.</summary>
+    internal TimeSpan Window { get; private init; }
+
+    /// <summary>The most permits a token-bucket rate holds.</summary>
+    internal int TokenLimit { get; private init; }
+
+    /// <summary>The permits a token-bucket rate adds each period.</summary>
+    internal int TokensPerPeriod { get; private init; }
+
+    /// <summary>How often a token-bucket rate adds permits.</summary>
+    internal TimeSpan ReplenishmentPeriod { get; private init; }
+
     /// <summary>
     /// Allows <paramref name="permitLimit"/> deliveries in each fixed <paramref name="window"/>. A burst of up to
     /// <paramref name="permitLimit"/> deliveries can start at the beginning of each window.
@@ -60,7 +80,12 @@ public sealed class ConsumerRateLimit
                     AutoReplenishment = true,
                 }
             )
-        );
+        )
+        {
+            Algorithm = "fixed-window",
+            PermitLimit = permitLimit,
+            Window = window,
+        };
     }
 
     /// <summary>
@@ -96,7 +121,13 @@ public sealed class ConsumerRateLimit
                     AutoReplenishment = true,
                 }
             )
-        );
+        )
+        {
+            Algorithm = "token-bucket",
+            TokenLimit = tokenLimit,
+            TokensPerPeriod = tokensPerPeriod,
+            ReplenishmentPeriod = replenishmentPeriod,
+        };
     }
 
     /// <summary>Creates the limiter one host shares across every delivery of the consumer.</summary>
