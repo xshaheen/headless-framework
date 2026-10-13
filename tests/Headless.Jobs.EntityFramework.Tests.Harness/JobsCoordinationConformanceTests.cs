@@ -1476,6 +1476,13 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             reread!.Description.Should().Be("after");
             reread.ExecutionTime.Should().Be(executionTime);
             reread.ExecutionTime!.Value.Kind.Should().Be(DateTimeKind.Utc);
+
+            // The lease is stamped by a claim, so claim the row to read back a stored LockedUntil.
+            var claimed = await persistence.QueueTimeJobsAsync([reread], ct).ToArrayAsync(ct);
+            claimed.Should().ContainSingle();
+            var leased = await persistence.GetTimeJobByIdAsync(added.Id, ct);
+            leased!.LockedUntil.Should().NotBeNull();
+            leased.LockedUntil!.Value.Kind.Should().Be(DateTimeKind.Utc);
         }
         finally
         {
