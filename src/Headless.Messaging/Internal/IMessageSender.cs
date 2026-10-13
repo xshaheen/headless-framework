@@ -220,10 +220,7 @@ internal sealed class MessageSender : IMessageSender
                 return MessagingRetryAttempt.Retryable(
                     OperateResult.Failed(
                         new TimeoutException(
-                            string.Create(
-                                CultureInfo.InvariantCulture,
-                                $"The transport did not confirm the publish within {_options.TransportPublishTimeout}."
-                            ),
+                            $"The transport did not confirm the publish within {_options.TransportPublishTimeout}.",
                             ex
                         )
                     )
