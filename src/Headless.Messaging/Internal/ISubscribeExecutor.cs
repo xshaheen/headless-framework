@@ -400,7 +400,22 @@ internal sealed class SubscribeExecutor(
                         cancellationToken
                     )
                     .ConfigureAwait(false);
-                var updated = await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
+
+                bool updated;
+                try
+                {
+                    updated = await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    // The handler's work is done, so this is not a consumer failure: running it again inline,
+                    // exhausting the row, or counting it against the consumer's circuit would each misreport it.
+                    // The row stays as it was, and the retry pickup settles it once its lease is released or
+                    // expires; that may run the handler again, as after a crash at this point (at-least-once).
+                    logger.ConsumerSucceededButStateWriteFailed(ex, message.StorageId);
+                    await _ReportSuccessfulStateAsync(message).ConfigureAwait(false);
+                    return MessagingRetryAttempt.Completed(OperateResult.Failed(ex));
+                }
 
                 // Only the attempt whose success write took effect answers: a row another attempt already finished
                 // was answered, or failed, by that attempt.

@@ -57,7 +57,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     private static SubscribeExecutor _CreateExecutor(
         ISubscribeInvoker invoker,
         IDataStorage storage,
-        MessagingOptions options
+        MessagingOptions options,
+        ICircuitBreakerStateManager? circuitBreaker = null
     )
     {
         storage
@@ -102,7 +103,15 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var provider = services.BuildServiceProvider();
         var logger = provider.GetRequiredService<ILogger<SubscribeExecutor>>();
 
-        return new SubscribeExecutor(provider, storage, invoker, TimeProvider.System, logger, Options.Create(options));
+        return new SubscribeExecutor(
+            provider,
+            storage,
+            invoker,
+            TimeProvider.System,
+            logger,
+            Options.Create(options),
+            circuitBreaker
+        );
     }
 
     [Fact]
@@ -417,6 +426,50 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     // ─── Terminal failures and OnExhausted ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task should_not_rerun_a_succeeded_handler_when_its_success_write_fails()
+    {
+        // given — the handler succeeds, then storage fails the success write once; the policy allows inline retries.
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = _Succeeding(out var invocations);
+        var exhausted = new List<FailedInfo>();
+        var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
+        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add), circuitBreaker);
+        var writes = _CaptureWrites(storage);
+        storage
+            .ChangeReceiveRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Succeeded,
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns<ValueTask<bool>>(_ => throw new TimeoutException("storage blip"));
+        var policy = new FailurePolicyBuilder()
+            .Immediate(2)
+            .Delayed(3, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(10))
+            .Build();
+
+        // when
+        var result = await executor.ExecuteAsync(
+            _CreateMediumMessage(),
+            _EmptyScope,
+            _CreateDescriptor(policy),
+            AbortToken
+        );
+
+        // then — the work is done, so nothing re-runs it, fails the row, or counts it against the consumer;
+        // the row stays leased for the retry pickup to settle.
+        result.Succeeded.Should().BeFalse();
+        invocations().Should().Be(1);
+        writes.Should().BeEmpty("no retry or failure state is written for a handler that succeeded");
+        exhausted.Should().BeEmpty();
+        await circuitBreaker.DidNotReceiveWithAnyArgs().ReportFailureAsync(default!, default!, default);
+    }
 
     [Fact]
     public async Task should_fail_after_one_attempt_and_fire_on_exhausted_once_when_a_fail_rule_matches()
@@ -1303,6 +1356,21 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             Math.Min(baseSeconds * (1 + FailurePolicyDefinition.JitterFraction), cap.TotalSeconds)
         );
         return (lower - TimeSpan.FromMilliseconds(1), upper + TimeSpan.FromMilliseconds(1));
+    }
+
+    private static ISubscribeInvoker _Succeeding(out Func<int> invocations)
+    {
+        var count = 0;
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref count);
+                return Task.FromResult(new ConsumerExecutedResult(null, null, null!, null, null));
+            });
+        invocations = () => Volatile.Read(ref count);
+        return invoker;
     }
 
     private static ISubscribeInvoker _AlwaysThrowing(Exception exception, out Func<int> invocations)
