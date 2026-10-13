@@ -389,6 +389,102 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         recorder.Context.Content.Should().BeNull();
     }
 
+    [Fact]
+    public async Task should_build_declared_contract_context_with_given_lane_token_and_frozen_delivery_when_declared_type_differs()
+    {
+        // given
+        var recorder = new DeclaredContractRecorder();
+        var services = new ServiceCollection();
+        services.AddSingleton(recorder);
+        services.AddScoped<
+            IPublishMiddleware<PublishContext<IDeclaredContract>>,
+            DeclaredContractDelayProbeMiddleware
+        >();
+        var pipeline = _BuildPipeline(services);
+        var payload = new ConcreteDeclaredContract("value");
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+
+        // when
+        await pipeline.ExecuteAsync(
+            payload,
+            typeof(IDeclaredContract),
+            MessageLane.Queue,
+            options: null,
+            _DirectQueueDecision,
+            static (_, _) => Task.CompletedTask,
+            cts.Token
+        );
+
+        // then
+        recorder.Context.Should().NotBeNull();
+        recorder.Context!.Lane.Should().Be(MessageLane.Queue);
+        recorder.Context.CancellationToken.Should().Be(cts.Token);
+        recorder.Context.MessageType.Should().Be<IDeclaredContract>();
+        _ConcreteType(recorder.Context).Should().Be<ConcreteDeclaredContract>();
+        recorder.Context.Content.Should().BeSameAs(payload);
+        recorder.DelayChangeRejected.Should().BeTrue("the resolved delivery is frozen for pipeline-built contexts");
+    }
+
+    [Fact]
+    public async Task should_build_independent_contexts_when_one_declared_type_is_published_twice()
+    {
+        // given
+        var recorder = new DeclaredContractRecorder();
+        var services = new ServiceCollection();
+        services.AddSingleton(recorder);
+        services.AddScoped<IPublishMiddleware<PublishContext<IDeclaredContract>>, DeclaredContractMiddleware>();
+        var pipeline = _BuildPipeline(services);
+        var first = new ConcreteDeclaredContract("first");
+        var second = new OtherDeclaredContract(2);
+
+        // when
+        await _ExecuteWithDeclaredContractAsync(pipeline, first, typeof(IDeclaredContract));
+        await _ExecuteWithDeclaredContractAsync(pipeline, second, typeof(IDeclaredContract));
+
+        // then
+        recorder.Contexts.Should().HaveCount(2);
+        recorder.Contexts[0].Should().NotBeSameAs(recorder.Contexts[1]);
+        recorder.Contexts[0].Content.Should().BeSameAs(first);
+        _ConcreteType(recorder.Contexts[0]).Should().Be<ConcreteDeclaredContract>();
+        recorder.Contexts[1].Content.Should().BeSameAs(second);
+        _ConcreteType(recorder.Contexts[1]).Should().Be<OtherDeclaredContract>();
+    }
+
+    [Fact]
+    public async Task should_run_each_bus_middleware_once_in_priority_order_when_several_share_a_service_type()
+    {
+        // given: three builder-registered middleware share IPublishMiddleware<PublishContext>, registered out of
+        // priority order
+        var recorder = new MiddlewareCallRecorder();
+        var services = _CreateServices(recorder);
+        var builder = new MessagingBuilder(services);
+        builder.AddBusPublishMiddleware<RecordingPublishMiddlewareA>().WithPriority(30);
+        builder.AddBusPublishMiddleware<RecordingPublishMiddlewareB>().WithPriority(10);
+        builder.AddBusPublishMiddleware<RecordingPublishMiddlewareC>().WithPriority(20);
+        var provider = services.BuildServiceProvider();
+        var pipeline = new PublishMiddlewarePipeline(
+            provider,
+            provider.GetRequiredService<IMiddlewareDescriptorRegistry>()
+        );
+
+        // when
+        await pipeline.ExecuteAsync(
+            new MiddlewarePayload("hi"),
+            MessageLane.Bus,
+            options: null,
+            _DirectDecision,
+            innerPublish: (_, _) =>
+            {
+                recorder.Record("inner");
+                return Task.CompletedTask;
+            },
+            cancellationToken: AbortToken
+        );
+
+        // then
+        recorder.Calls.Should().Equal("B.before", "C.before", "A.before", "inner", "A.after", "C.after", "B.after");
+    }
+
     private static ServiceCollection _CreateServices(MiddlewareCallRecorder recorder)
     {
         var services = new ServiceCollection();
@@ -457,9 +553,15 @@ internal interface IDeclaredContract;
 
 internal sealed record ConcreteDeclaredContract(string Value) : IDeclaredContract;
 
+internal sealed record OtherDeclaredContract(int Value) : IDeclaredContract;
+
 internal sealed class DeclaredContractRecorder
 {
     public PublishContext<IDeclaredContract>? Context { get; set; }
+
+    public List<PublishContext<IDeclaredContract>> Contexts { get; } = [];
+
+    public bool DelayChangeRejected { get; set; }
 }
 
 internal sealed class DeclaredContractMiddleware(DeclaredContractRecorder recorder)
@@ -468,6 +570,27 @@ internal sealed class DeclaredContractMiddleware(DeclaredContractRecorder record
     public ValueTask InvokeAsync(PublishContext<IDeclaredContract> context, Func<ValueTask> next)
     {
         recorder.Context = context;
+        recorder.Contexts.Add(context);
+        return next();
+    }
+}
+
+internal sealed class DeclaredContractDelayProbeMiddleware(DeclaredContractRecorder recorder)
+    : IPublishMiddleware<PublishContext<IDeclaredContract>>
+{
+    public ValueTask InvokeAsync(PublishContext<IDeclaredContract> context, Func<ValueTask> next)
+    {
+        recorder.Context = context;
+
+        try
+        {
+            context.WithDelayTime(TimeSpan.FromMinutes(5));
+        }
+        catch (InvalidOperationException)
+        {
+            recorder.DelayChangeRejected = true;
+        }
+
         return next();
     }
 }
@@ -501,6 +624,16 @@ internal sealed class RecordingPublishMiddlewareB(MiddlewareCallRecorder recorde
         recorder.Record("B.before");
         await next();
         recorder.Record("B.after");
+    }
+}
+
+internal sealed class RecordingPublishMiddlewareC(MiddlewareCallRecorder recorder) : IPublishMiddleware<PublishContext>
+{
+    public async ValueTask InvokeAsync(PublishContext context, Func<ValueTask> next)
+    {
+        recorder.Record("C.before");
+        await next();
+        recorder.Record("C.after");
     }
 }
 

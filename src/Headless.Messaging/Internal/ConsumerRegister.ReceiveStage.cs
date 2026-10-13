@@ -200,11 +200,8 @@ internal sealed partial class ConsumerRegister
         await using var scope = serviceScopeFactory.CreateAsyncScope();
 
         IReceiveMiddleware? outermost = null;
-        foreach (var descriptor in descriptors!)
+        foreach (var middleware in MiddlewareDescriptorResolver.Resolve(scope.ServiceProvider, descriptors!))
         {
-            var middleware = scope
-                .ServiceProvider.GetServices(descriptor.ServiceType)
-                .FirstOrDefault(service => service?.GetType() == descriptor.MiddlewareType);
             if (middleware is not IReceiveMiddleware matched)
             {
                 continue;
