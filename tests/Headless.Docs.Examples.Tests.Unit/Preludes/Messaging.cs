@@ -9,6 +9,7 @@ global using Headless.Api;
 global using Headless.DistributedLocks;
 global using Headless.Messaging;
 global using Headless.Messaging.Dashboard;
+global using Headless.Messaging.Dashboard.Consul;
 global using Headless.Messaging.Dashboard.K8s;
 global using Headless.Messaging.Testing;
 global using Headless.MultiTenancy;

@@ -583,7 +583,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         httpContext.Features.Set(new TenantIdentifierResolvedFeature("ten_123"));
 
         var handler = new TenantIdentifierIntegrityHandler(
-            Options.Create(new MultiTenancyOptions()),
+            Options.Create(new HttpTenantResolutionOptions()),
             Options.Create(new TenantCatalogOptions()),
             new HttpContextAccessor { HttpContext = httpContext }
         );
@@ -612,7 +612,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         httpContext.Features.Set(new TenantIdentifierResolvedFeature("ten_123"));
 
         var handler = new TenantIdentifierIntegrityHandler(
-            Options.Create(new MultiTenancyOptions()),
+            Options.Create(new HttpTenantResolutionOptions()),
             Options.Create(new TenantCatalogOptions { DetailedResolutionErrors = detailed }),
             new HttpContextAccessor { HttpContext = httpContext }
         );
@@ -637,7 +637,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         httpContext.Features.Set(Substitute.For<IStatusCodeRejectionFeature>());
 
         var handler = new TenantIdentifierIntegrityHandler(
-            Options.Create(new MultiTenancyOptions()),
+            Options.Create(new HttpTenantResolutionOptions()),
             Options.Create(new TenantCatalogOptions()),
             new HttpContextAccessor { HttpContext = httpContext }
         );
@@ -655,7 +655,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         httpContext.Features.Set(new TenantIdentifierResolvedFeature("ten_123"));
 
         var handler = new TenantIdentifierIntegrityHandler(
-            Options.Create(new MultiTenancyOptions()),
+            Options.Create(new HttpTenantResolutionOptions()),
             Options.Create(new TenantCatalogOptions()),
             new HttpContextAccessor { HttpContext = httpContext }
         );
@@ -682,7 +682,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         httpContext.Features.Set(new TenantIdentifierResolvedFeature("ten_123"));
 
         var handler = new TenantIdentifierIntegrityHandler(
-            Options.Create(new MultiTenancyOptions()),
+            Options.Create(new HttpTenantResolutionOptions()),
             Options.Create(new TenantCatalogOptions()),
             new HttpContextAccessor { HttpContext = httpContext }
         );

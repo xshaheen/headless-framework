@@ -95,7 +95,7 @@ public sealed class TenantResolutionTelemetryTests : TestBase
             _ => Task.CompletedTask,
             [source],
             Options.Create(new TenantCatalogOptions()),
-            Options.Create(new MultiTenancyOptions { ClaimType = UserClaimTypes.TenantId }),
+            Options.Create(new HttpTenantResolutionOptions { ClaimType = UserClaimTypes.TenantId }),
             Options.Create(new TenantTelemetryOptions()),
             NullLogger<TenantCatalogResolutionMiddleware>.Instance
         );
@@ -115,7 +115,7 @@ public sealed class TenantResolutionTelemetryTests : TestBase
     {
         return new TenantResolutionMiddleware(
             _ => Task.CompletedTask,
-            Options.Create(new MultiTenancyOptions { ClaimType = UserClaimTypes.TenantId }),
+            Options.Create(new HttpTenantResolutionOptions { ClaimType = UserClaimTypes.TenantId }),
             Options.Create(telemetry),
             NullLogger<TenantResolutionMiddleware>.Instance
         );

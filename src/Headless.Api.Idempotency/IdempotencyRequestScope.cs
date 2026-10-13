@@ -62,7 +62,7 @@ internal static class IdempotencyRequestScope
     /// header) sets it from caller-controlled input, so keying by it would let an anonymous caller pick which tenant's
     /// namespace its key lands in, and pre-seed or replay that tenant's records.
     /// </remarks>
-    public static string? StoreTenant(ICurrentUser currentUser, MultiTenancyOptions tenancyOptions)
+    public static string? StoreTenant(ICurrentUser currentUser, HttpTenantResolutionOptions tenancyOptions)
     {
         return currentUser is { IsAuthenticated: true, Principal: { } principal }
             ? TenantClaimReader.GetTenantId(principal, tenancyOptions)

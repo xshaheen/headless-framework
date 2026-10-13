@@ -2,7 +2,7 @@
 
 using Headless.Urls;
 
-namespace Tests.Urls;
+namespace Tests;
 
 public sealed class NameValueListTests
 {

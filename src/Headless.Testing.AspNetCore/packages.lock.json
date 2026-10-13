@@ -453,52 +453,11 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.context": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Context.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
-        }
-      },
       "headless.context.abstractions": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )"
-        }
-      },
-      "headless.coordination": {
-        "type": "Project",
-        "dependencies": {
-          "FluentValidation": "[12.2.0, )",
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Context": "[1.0.0, )",
-          "Headless.Context.Abstractions": "[1.0.0, )",
-          "Headless.Coordination.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
-          "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
-          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
-        }
-      },
-      "headless.coordination.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "headless.distributedlocks.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
         }
       },
       "headless.extensions": {
@@ -535,74 +494,6 @@
           "OpenTelemetry.Api": "[1.19.1, )"
         }
       },
-      "headless.messaging": {
-        "type": "Project",
-        "dependencies": {
-          "FastExpressionCompiler": "[6.0.0, )",
-          "Headless.Coordination": "[1.0.0, )",
-          "Headless.Coordination.Abstractions": "[1.0.0, )",
-          "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.Messaging.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Headless.Sql": "[1.0.0, )",
-          "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.UnitOfWork": "[1.0.0, )",
-          "Microsoft.Extensions.Diagnostics": "[10.0.12, )",
-          "Microsoft.Extensions.Options": "[10.0.12, )",
-          "OpenTelemetry.Api": "[1.19.1, )",
-          "Polly.Core": "[8.8.0, )",
-          "System.Threading.RateLimiting": "[10.0.12, )"
-        }
-      },
-      "headless.messaging.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Reliability.Abstractions": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
-        }
-      },
-      "headless.messaging.bus.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.messaging.inmemory": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging": "[1.0.0, )",
-          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Queue.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.messaging.queue.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.messaging.storage.inmemory": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging": "[1.0.0, )"
-        }
-      },
-      "headless.messaging.testing": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging": "[1.0.0, )",
-          "Headless.Messaging.InMemory": "[1.0.0, )",
-          "Headless.Messaging.Storage.InMemory": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection": "[10.0.12, )",
-          "Microsoft.Extensions.Logging": "[10.0.12, )"
-        }
-      },
       "headless.multitenancy.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -619,41 +510,11 @@
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.reliability.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
       "headless.security.abstractions": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )"
         }
-      },
-      "headless.serializer.abstractions": {
-        "type": "Project"
-      },
-      "headless.serializer.json": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Serializer.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.sql": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.UnitOfWork": "[1.0.0, )",
-          "Nito.AsyncEx": "[5.1.2, )",
-          "OpenTelemetry.Api": "[1.19.1, )"
-        }
-      },
-      "headless.sql.abstractions": {
-        "type": "Project"
       },
       "headless.testing": {
         "type": "Project",
@@ -671,23 +532,6 @@
           "xunit.v3.extensibility.core": "[4.0.2, )"
         }
       },
-      "headless.unitofwork": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
-          "Microsoft.Extensions.Options": "[10.0.12, )",
-          "Polly.Core": "[8.8.0, )"
-        }
-      },
-      "headless.unitofwork.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
       "AwesomeAssertions": {
         "type": "CentralTransitive",
         "requested": "[9.6.0, )",
@@ -699,12 +543,6 @@
         "requested": "[35.6.5, )",
         "resolved": "35.6.5",
         "contentHash": "2FGZn+aAVHjmCgClgmGkTDBVZk0zkLvAKGaxEf5JL6b3i9JbHTE4wnuY4vHCuzlCmJdU6VZjgDfHwmYkQF8VAA=="
-      },
-      "FastExpressionCompiler": {
-        "type": "CentralTransitive",
-        "requested": "[6.0.0, )",
-        "resolved": "6.0.0",
-        "contentHash": "EvY3eiWFnSYAUd4F4zvt3VTe8z75XxfqEUW3Fp2SsM1El4rfSNzah49/DLk6VlkL5yOLHZXf6XL19HQrcgTDxg=="
       },
       "FluentValidation": {
         "type": "CentralTransitive",
@@ -887,18 +725,6 @@
         "requested": "[1.19.1, )",
         "resolved": "1.19.1",
         "contentHash": "9JKIH+xrV0HNTFjQC8zrx9gZpDOMEljN5Htg/U0VE2IvO3N+7bKALCCsGy5tp09marX5dd8UkrgQFoLaulIBRw=="
-      },
-      "Polly.Core": {
-        "type": "CentralTransitive",
-        "requested": "[8.8.0, )",
-        "resolved": "8.8.0",
-        "contentHash": "TewV9uNFsoRFggoFbTAGFwsMYPuckA+wTIpQPyhLL9BANRPQRENz2S4bwATrB3HBOakN5oKLFIllPiDnVecmJg=="
-      },
-      "System.Threading.RateLimiting": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.12, )",
-        "resolved": "10.0.12",
-        "contentHash": "Y3f2aLAgynO44Q9xYHR35NC1KuSTcZwo49xjHuq0gQWyOWw8fvipIdoc+1e8FS+9neYZuQ1K4iwl5frNJXekgw=="
       },
       "xunit.v3.extensibility.core": {
         "type": "CentralTransitive",

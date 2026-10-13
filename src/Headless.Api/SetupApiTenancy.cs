@@ -30,12 +30,15 @@ public static class SetupApiTenancy
     /// <returns>The same host application builder.</returns>
     internal static IHostApplicationBuilder AddHeadlessMultiTenancy(
         this IHostApplicationBuilder builder,
-        Action<MultiTenancyOptions>? configure = null
+        Action<HttpTenantResolutionOptions>? configure = null
     )
     {
         Argument.IsNotNull(builder);
 
-        var optionsBuilder = builder.Services.AddOptions<MultiTenancyOptions, MultiTenancyOptionsValidator>();
+        var optionsBuilder = builder.Services.AddOptions<
+            HttpTenantResolutionOptions,
+            HttpTenantResolutionOptionsValidator
+        >();
 
         if (configure is not null)
         {
@@ -238,7 +241,7 @@ public sealed class HeadlessHttpTenancyBuilder
     }
 
     /// <summary>Configures HTTP tenant resolution from authenticated principal claims.</summary>
-    /// <param name="configure">Optional callback to configure <see cref="MultiTenancyOptions"/>.</param>
+    /// <param name="configure">Optional callback to configure <see cref="HttpTenantResolutionOptions"/>.</param>
     /// <returns>The same HTTP tenancy builder.</returns>
     /// <remarks>
     /// Registers <see cref="Headless.MultiTenancy.ICurrentTenant"/>, <c>TenantResolutionMiddleware</c>,
@@ -246,7 +249,7 @@ public sealed class HeadlessHttpTenancyBuilder
     /// manifest so startup validation can detect whether <see cref="SetupApiTenancy.UseHeadlessTenancy"/>
     /// was subsequently called.
     /// </remarks>
-    public HeadlessHttpTenancyBuilder ResolveFromClaims(Action<MultiTenancyOptions>? configure = null)
+    public HeadlessHttpTenancyBuilder ResolveFromClaims(Action<HttpTenantResolutionOptions>? configure = null)
     {
         _builder.ApplicationBuilder.AddHeadlessMultiTenancy(configure);
 
@@ -282,7 +285,7 @@ public sealed class HeadlessHttpTenancyBuilder
     )
     {
         // Catalog-only hosts (no ResolveFromClaims()) still need ICurrentTenant/ICurrentTenantAccessor
-        // for the middleware's ambient Change(), and IOptions<MultiTenancyOptions> for
+        // for the middleware's ambient Change(), and IOptions<HttpTenantResolutionOptions> for
         // TenantIdentifierIntegrityHandler's claim-type read. Idempotent — a host that also calls
         // ResolveFromClaims(...) merely repeats the same TryAdd/AddOptions registrations.
         _builder.ApplicationBuilder.AddHeadlessMultiTenancy();
@@ -844,15 +847,15 @@ internal sealed class HeadlessHttpTenancyValidator : IHeadlessTenancyValidator
 
 /// <summary>Options for HTTP tenant resolution.</summary>
 [PublicAPI]
-public sealed class MultiTenancyOptions
+public sealed class HttpTenantResolutionOptions
 {
     /// <summary>Claim type to read tenant ID from. Defaults to <c>tenant_id</c>.</summary>
     public string ClaimType { get; set; } = UserClaimTypes.TenantId;
 }
 
-internal sealed class MultiTenancyOptionsValidator : AbstractValidator<MultiTenancyOptions>
+internal sealed class HttpTenantResolutionOptionsValidator : AbstractValidator<HttpTenantResolutionOptions>
 {
-    public MultiTenancyOptionsValidator()
+    public HttpTenantResolutionOptionsValidator()
     {
         RuleFor(x => x.ClaimType).NotEmpty();
     }

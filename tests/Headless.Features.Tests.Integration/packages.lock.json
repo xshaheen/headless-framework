@@ -1005,16 +1005,6 @@
           "Headless.Messaging": "[1.0.0, )"
         }
       },
-      "headless.messaging.testing": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging": "[1.0.0, )",
-          "Headless.Messaging.InMemory": "[1.0.0, )",
-          "Headless.Messaging.Storage.InMemory": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection": "[10.0.12, )",
-          "Microsoft.Extensions.Logging": "[10.0.12, )"
-        }
-      },
       "headless.multitenancy.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -1094,7 +1084,6 @@
         "type": "Project",
         "dependencies": {
           "Headless.Hosting": "[1.0.0, )",
-          "Headless.Messaging.Testing": "[1.0.0, )",
           "Headless.Testing": "[1.0.0, )",
           "Microsoft.AspNetCore.Mvc.Testing": "[10.0.12, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )",

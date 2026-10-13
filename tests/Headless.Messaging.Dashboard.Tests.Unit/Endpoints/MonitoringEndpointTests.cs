@@ -279,7 +279,7 @@ public sealed class MonitoringEndpointTests : TestBase
         services.AddSingleton(Substitute.For<IHttpClientFactory>());
         services.AddSingleton<MessagingDashboardCache>();
         services.AddSingleton(Substitute.For<INodeDiscoveryProvider>());
-        services.AddSingleton(new ConsulDiscoveryOptions { NodeName = "test-node" });
+        services.AddSingleton(new CurrentNodeIdentity("test-node"));
         services.AddSingleton<GatewayProxyAgent>();
     }
 }

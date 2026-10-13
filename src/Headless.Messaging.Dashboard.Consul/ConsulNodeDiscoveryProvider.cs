@@ -3,15 +3,16 @@
 using System.Net;
 using Consul;
 using Microsoft.Extensions.Logging;
+using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
-namespace Headless.Messaging.Dashboard;
+namespace Headless.Messaging.Dashboard.Consul;
 
 /// <summary>
 /// Consul-backed implementation of <see cref="INodeDiscoveryProvider"/>.
 /// Queries the Consul catalog for services tagged <c>messaging</c> to discover peer dashboard nodes,
 /// and registers the current node so peers can discover it.
 /// </summary>
-public class ConsulNodeDiscoveryProvider(
+public sealed class ConsulNodeDiscoveryProvider(
     ILoggerFactory logger,
     MessagingDashboardCache cache,
     ConsulDiscoveryOptions options
@@ -195,4 +196,35 @@ public class ConsulNodeDiscoveryProvider(
             _logger.LogConsulGetNodesException(e.Message, e.InnerException?.Message);
         }
     }
+}
+
+internal static partial class ConsulNodeDiscoveryProviderLog
+{
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "ConsulGetNodeException",
+        Level = LogLevel.Error,
+        Message = "Consul get node failed: {Message}"
+    )]
+    public static partial void LogConsulGetNodeException(this ILogger logger, Exception exception, string message);
+
+    [LoggerMessage(
+        EventId = 4,
+        EventName = "ConsulGetNodesException",
+        Level = LogLevel.Error,
+        Message = "Consul get nodes failed: {Message}, inner: {InnerExceptionMessage}"
+    )]
+    public static partial void LogConsulGetNodesException(
+        this ILogger logger,
+        string? message,
+        string? innerExceptionMessage
+    );
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "ConsulNodeRegisterSuccess",
+        Level = LogLevel.Information,
+        Message = "Consul node registered successfully"
+    )]
+    public static partial void LogConsulNodeRegisterSuccess(this ILogger logger);
 }

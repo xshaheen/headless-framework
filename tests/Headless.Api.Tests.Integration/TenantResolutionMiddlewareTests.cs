@@ -213,7 +213,7 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
     }
 
     private async Task<WebApplication> _CreateAppAsync(
-        Action<MultiTenancyOptions>? configure = null,
+        Action<HttpTenantResolutionOptions>? configure = null,
         TenancySetup setup = TenancySetup.RootHttp,
         bool addInfrastructure = true,
         bool registerAuthentication = true,

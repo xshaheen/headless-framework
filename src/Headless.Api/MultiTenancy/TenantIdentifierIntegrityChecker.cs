@@ -22,7 +22,11 @@ internal static class TenantIdentifierIntegrityChecker
     /// <param name="resolvedTenantId">The canonical tenant id produced by identifier-based catalog resolution.</param>
     /// <param name="options">The multi-tenancy options carrying the configured claim type.</param>
     /// <returns><see langword="true"/> when the claim and the resolved identifier disagree.</returns>
-    internal static bool IsMismatch(ClaimsPrincipal? principal, string resolvedTenantId, MultiTenancyOptions options)
+    internal static bool IsMismatch(
+        ClaimsPrincipal? principal,
+        string resolvedTenantId,
+        HttpTenantResolutionOptions options
+    )
     {
         if (principal is null)
         {

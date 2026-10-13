@@ -15,4 +15,4 @@ dotnet add package Headless.DistributedLocks.Database
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Distributed Locks guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/distributed-locks.md#headlessdistributedlockscoredatabase)
+- [Distributed Locks guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/distributed-locks.md#headlessdistributedlocksdatabase)

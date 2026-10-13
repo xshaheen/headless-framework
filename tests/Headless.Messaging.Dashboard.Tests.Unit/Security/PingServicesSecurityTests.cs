@@ -196,7 +196,7 @@ public sealed class PingServicesSecurityTests : TestBase
         builder.Services.AddSingleton(discoveryProvider);
         builder.Services.AddSingleton(httpClientFactory);
         builder.Services.AddSingleton(Substitute.For<IRequestMapper>());
-        builder.Services.AddSingleton(new ConsulDiscoveryOptions { NodeName = "current-node" });
+        builder.Services.AddSingleton(new CurrentNodeIdentity("current-node"));
         builder.Services.AddSingleton<MessagingDashboardCache>();
         builder.Services.AddSingleton<GatewayProxyAgent>();
         builder.Services.AddRouting();

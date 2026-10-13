@@ -26,7 +26,7 @@ internal sealed partial class IdempotencyMiddleware(
     IIdempotentOperations operations,
     ICurrentTenant currentTenant,
     ICurrentUser currentUser,
-    IOptions<MultiTenancyOptions> tenancyOptions,
+    IOptions<HttpTenantResolutionOptions> tenancyOptions,
     IProblemDetailsCreator problemDetailsCreator,
     TimeProvider timeProvider,
     ICancellationTokenProvider cancellationTokenProvider,

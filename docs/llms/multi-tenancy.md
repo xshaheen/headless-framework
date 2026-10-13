@@ -155,7 +155,7 @@ app.UseAuthorization();
 
 - Ensures `ICurrentTenant` resolves to `CurrentTenant`
 - Registers `ICurrentTenantAccessor` if needed
-- Configures `MultiTenancyOptions` for the HTTP middleware
+- Configures `HttpTenantResolutionOptions` for the HTTP middleware
 
 `.Authorization(auth => auth.RequireTenant())` delegates to the API package and:
 
@@ -169,7 +169,7 @@ app.UseAuthorization();
 The middleware applied by `UseHeadlessTenancy()` reads the authenticated principal and:
 
 - Uses `tenant_id` by default
-- Uses `MultiTenancyOptions.ClaimType` when configured
+- Uses `HttpTenantResolutionOptions.ClaimType` when configured
 - Calls `currentTenant.Change(tenantId)` only when the principal is authenticated and the tenant claim is not blank
 - Restores the previous tenant automatically when the request finishes
 

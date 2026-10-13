@@ -145,7 +145,7 @@ public sealed class IdempotencyLookupTests : IdempotencyMiddlewareTestBase
             operations,
             Substitute.For<ICurrentTenant>(),
             currentUser,
-            Options.Create(new MultiTenancyOptions())
+            Options.Create(new HttpTenantResolutionOptions())
         );
     }
 
