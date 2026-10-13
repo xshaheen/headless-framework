@@ -360,6 +360,7 @@
         <Project Path="tests\Headless.Hosting.Tests.Unit\Headless.Hosting.Tests.Unit.csproj" />
         <Project Path="tests\Headless.NetTopologySuite.Tests.Unit\Headless.NetTopologySuite.Tests.Unit.csproj" />
         <Project Path="tests\Headless.PhoneNumbers.Tests.Unit\Headless.PhoneNumbers.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Urls.Tests.Unit\Headless.Urls.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Security.Tests.Unit\Headless.Security.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Security.Argon2.Tests.Unit\Headless.Security.Argon2.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Testing.AspNetCore.Tests.TestHost\Headless.Testing.AspNetCore.Tests.TestHost.csproj" />
