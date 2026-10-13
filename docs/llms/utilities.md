@@ -291,6 +291,7 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 - Startup validators (`IHeadlessStartupValidator`, `AddStartupValidator`) that run before any hosted service starts and report every failure together
 - Dependency health checks: provider packages contribute readiness checks through `AddHeadlessHealthCheck`, tagged with `HeadlessHealthCheckTags`; applications drop any of them with `RemoveHealthChecks`. See [Health checks](#health-checks)
 - Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
+- Host description: `RunHeadlessAsync(args)` prints, for the `describe` verb, the JSON each `IHostDescriptionContributor` writes about what its feature registered, without starting the host. See [Host description](#host-description)
 - Options validation with FluentValidation
 - Configuration binding extensions
 - Environment detection extensions
@@ -413,7 +414,7 @@ services.AddStartupValidator<OrdersModelValidator>();
 
 #### Health Checks
 
-A provider package that talks to an external dependency contributes a readiness health check when it is registered, so `/health` reports the database, Redis, broker, or blob store the host depends on instead of only the process. Nothing is resolved and no connection opens at registration: each check probes its dependency only when a health check runs.
+A provider package that talks to an external dependency contributes a readiness health check when it is registered, so `/health` reports the database, Redis, broker, or blob store the host depends on instead of only the process. Nothing is resolved and no connection opens at registration: each check probes its dependency only when a health check runs. Messaging and Jobs also contribute checks that read their own host state (started, shutting down, paused, broker reachability) without any I/O. A `Degraded` status named in the Probe column is that check's default failure status; `ConfigureHeadlessHealthCheck` overrides it.
 
 | Registered by | Check name | Dependency tag | Probe |
 | --- | --- | --- | --- |
@@ -424,8 +425,15 @@ A provider package that talks to an external dependency contributes a readiness 
 | Distributed locks `UseRedis` | `distributed-locks-redis` | `redis` | The same endpoint probe through the registered `IConnectionMultiplexer` |
 | Messaging `UseNats` | `messaging-nats` | `messaging` | NATS `PING` on a pooled connection |
 | Blobs `UseAzure` | `blobs-azure` (named: `blobs-azure-{name}`) | `blobs` | Reads one page of the account's container list, or the properties of `AzureStorageOptions.HealthCheckContainerName` when set |
+| `AddHeadlessMessaging` | `messaging` | `messaging` | Reads host state: `Unhealthy` before the Messaging host starts, once shutdown begins, and while the broker is unreachable, judged from receive and send outcomes ([Messaging](messaging.md#broker-reachability)) |
+| `AddHeadlessMessaging` | `messaging-consumers` | `messaging` | Reads circuit state: `Degraded` by default while any consumer circuit is `Open`, including an operator pause |
+| `AddHeadlessMessaging` with `AddOutbox()` | `messaging-outboxes` | `messaging` | Reads outbox state: `Degraded` by default while an additional outbox is not initialized |
+| Messaging PostgreSQL / SQL Server storage | `messaging-storage-postgresql-default`, `messaging-storage-sqlserver-default`; per additional outbox `messaging-storage-postgresql-outbox-{n}`, `messaging-storage-sqlserver-outbox-{n}` | `messaging`, `database` | `SELECT 1` on a new connection from that store's options |
+| `AddHeadlessJobs` with background services | `jobs` | `jobs` | Reads host state: `Unhealthy` until Jobs activation completes and once shutdown begins |
+| `AddHeadlessJobs` with background services | `jobs-scheduler` | `jobs` | Reads `IJobsHostScheduler.IsRunning`: `Degraded` by default while the scheduler is stopped by an operator or by manual start mode |
+| Jobs `UseEntityFramework` | `jobs-storage-{DbContext full name}` | `jobs`, `database` | `Database.CanConnectAsync` on a context from the store's pooled factory |
 
-- **Tags.** Every contributed check carries `ready` (`HeadlessHealthCheckTags.Ready`), `headless` (`HeadlessHealthCheckTags.Headless`), and its dependency tag. None carries the liveness tag, so `MapHeadlessEndpoints()` shows them on `/health` and keeps them off `/alive`: a database outage never makes an orchestrator restart a healthy process. Map a readiness endpoint by tag when the platform probes readiness separately:
+- **Tags.** Every contributed check carries `ready` (`HeadlessHealthCheckTags.Ready`), `headless` (`HeadlessHealthCheckTags.Headless`), and its dependency tag: `database`, `redis`, `messaging`, `blobs`, or `jobs` (`HeadlessHealthCheckTags.Jobs`, for the checks that report whether a Jobs host can run jobs). A storage check of Messaging or Jobs carries both its feature tag and `database`. None carries the liveness tag, so `MapHeadlessEndpoints()` shows them on `/health` and keeps them off `/alive`: a database outage never makes an orchestrator restart a healthy process. Map a readiness endpoint by tag when the platform probes readiness separately:
 
   ```csharp
   app.MapHealthChecks("/ready", new HealthCheckOptions
@@ -485,6 +493,78 @@ A provider package that talks to an external dependency contributes a readiness 
   | Azure blobs | [`AzureBlobStorageHealthCheck`](https://github.com/Xabaril/AspNetCore.Diagnostics.HealthChecks/blob/3b6abbd374a5d7bc8d209ff48bc38df947266054/src/HealthChecks.Azure.Storage.Blobs/AzureBlobStorageHealthCheck.cs): one page of containers, or a named container's properties | The provider's client; the same two probes |
 
   Every community check above takes `failureStatus`, `tags`, and `timeout` at registration; `HeadlessHealthCheckOptions` covers the same three. Prefer a community package when the app needs what these checks deliberately leave out: deciding health from a query's result (`HealthCheckResultBuilder`, for example replication lag), a check for a dependency no Headless provider owns, or a check against a connection string the app does not otherwise use. Register it next to the contributed checks under another name, or drop the contributed one with `RemoveHealthChecks`.
+
+#### Host description
+
+A host description is a JSON document that lists what each feature registered in the host: Messaging consumer identities with their effective tuning, Jobs functions with theirs. It is read from the same frozen registries the host runs, so it shows the values configuration applied, and it answers "what does this deployed host consume and run?" without starting it.
+
+Print it from the host's own entry point by replacing `RunAsync` with `RunHeadlessAsync(args)`:
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddHeadlessMessaging(setup => { /* ... */ });
+builder.Services.AddHeadlessJobs(options => { /* ... */ });
+
+var app = builder.Build();
+// ... middleware and endpoints ...
+
+return await app.RunHeadlessAsync(args);
+```
+
+```bash
+dotnet MyApp.dll describe | jq '.sections.jobs.functions[].name'
+```
+
+- **`describe` verb.** When the first argument is `describe`, `RunHeadlessAsync` (namespace `Microsoft.Extensions.Hosting`) builds the description instead of running the host and returns the exit code. Any other first argument runs the host as `RunAsync` does and returns 0. It disposes the host in both modes.
+- **Validates like a start, starts nothing.** It first runs options marked `ValidateOnStart`, then every `IHeadlessStartupValidator`, in the same order a real start does. It never starts a hosted service, so it opens no broker connection and claims no job. Only the entry point sees the host's real configuration sources, which is why the command runs there rather than in a separate tool.
+- **Output.** On success, standard output carries only the JSON document and the exit code is 0. On any failure (a validator, an options validation, or a contributor), standard output stays empty, `Host description failed: {message}` goes to standard error, and the exit code is 1.
+- **Console logging.** For hosts built with `HostApplicationBuilder` or `WebApplicationBuilder`, console log lines written during `describe` go to standard error. A host built with the legacy `Host.CreateDefaultBuilder` can still write Microsoft console logger lines to standard output during `describe`, because its configuration cannot be redirected after the build; filter them out, or turn console logging off for the command.
+
+The document:
+
+```json
+{
+  "schemaVersion": 1,
+  "sections": {
+    "jobs": { "functions": [] },
+    "messaging": { "consumers": [] }
+  }
+}
+```
+
+- `schemaVersion` is `HostDescriptionWriter.SchemaVersion`; it changes only when a change would break a reader of the old shape.
+- `sections` has one property per registered contributor, sorted ordinally by name. A feature that is not registered has no section. The [Messaging](messaging.md#host-description) and [Jobs](jobs.md#host-description) guides document their sections.
+- The description never carries connection strings, broker addresses, credentials, provider-specific transport configuration, or runtime state.
+
+`MapHeadlessHostDescription(pattern, authorizationPolicy)` in `Headless.Api.ServiceDefaults` serves the same document over HTTP, behind authorization by default; see [API & Web](api.md#host-description-endpoint). `HostDescriptionWriter.WriteAsync(services, stream, cancellationToken)` writes it to any stream; both forms use it, so they serve identical documents.
+
+**Adding a section.** A feature implements `IHostDescriptionContributor` (`Headless.Hosting`) and registers it as a singleton with `TryAddEnumerable`:
+
+```csharp
+internal sealed class SearchHostDescriptionContributor(SearchIndexRegistry registry) : IHostDescriptionContributor
+{
+    public string SectionName => "search";
+
+    public void WriteSection(Utf8JsonWriter writer)
+    {
+        writer.WriteStartObject();
+        writer.WriteStartArray("indexes");
+        foreach (var index in registry.Indexes.OrderBy(x => x.Name, StringComparer.Ordinal))
+        {
+            writer.WriteStringValue(index.Name);
+        }
+        writer.WriteEndArray();
+        writer.WriteEndObject();
+    }
+}
+
+services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostDescriptionContributor, SearchHostDescriptionContributor>());
+```
+
+- `WriteSection` writes exactly one complete JSON value, normally an object, after the section's property name.
+- Read only state that exists once the host is built. Never start a hosted service, open a connection, or call a broker.
+- Write entries in a stable order, and omit a setting that does not apply to an entry instead of writing `null`, so two descriptions of the same configuration diff cleanly.
+- Two contributors with the same `SectionName` fail the description. A contributor that throws fails it too, with a message that names the section and carries the contributor's error text, so never show that message to an untrusted caller. The whole document is built in memory first, so a failure writes nothing to the destination stream.
 
 #### Required Services
 

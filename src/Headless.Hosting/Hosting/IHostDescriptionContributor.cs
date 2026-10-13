@@ -13,6 +13,8 @@ namespace Headless.Hosting;
 /// A feature registers its contributor as a singleton <see cref="IHostDescriptionContributor" />, typically with
 /// <c>TryAddEnumerable</c>. The host description is printed by <c>RunHeadlessAsync</c> when the host's first argument
 /// is <c>describe</c>, after the startup validation a real start would run and without starting any hosted service.
+/// <c>MapHeadlessHostDescription</c> in <c>Headless.Api.ServiceDefaults</c> serves the same document over HTTP, behind
+/// authorization, and <see cref="HostDescriptionWriter" /> writes it for both, so the two forms never differ.
 /// </para>
 /// <para>
 /// The document is <c>{"schemaVersion":1,"sections":{...}}</c>, with one property per contributor named by

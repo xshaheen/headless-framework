@@ -13,7 +13,8 @@ Required packages: `Jobs` + `Jobs.EntityFramework` (persistence) + `Jobs.SourceG
 
 Optional add-ons:
 - `Jobs.Dashboard` — monitoring UI with authentication (basic, API key, host auth) plus live-cluster node view
-- OpenTelemetry tracing ships inside `Jobs` (see [OpenTelemetry Instrumentation](#opentelemetry-instrumentation)) — there is no separate instrumentation package
+- OpenTelemetry tracing and metrics ship inside `Jobs` (see [OpenTelemetry Instrumentation](#opentelemetry-instrumentation)); there is no separate instrumentation package
+- Readiness checks and the `jobs` section of the host description register with Jobs itself (see [Readiness and host description](#readiness-and-host-description))
 - `Jobs.Abstractions` — interfaces only; pulled in transitively by `Jobs`; install directly only when building a library on top
 
 Minimum wiring (in-memory storage, no persistence):
@@ -1253,6 +1254,7 @@ builder.Services.AddHeadlessJobs(options =>
 - Registers `JobsTaskScheduler` (shared-thread-pool logical workers bounded by active async `MaxConcurrency`; dedicated threads only for `LongRunning`).
 - Registers a per-host `CronScheduleCache` (scheduler timezone) and the per-host `JobsRequestSerializationOptions` singleton (request JSON options, GZip, decompression cap) consumed by `JobsHelper` — no process-global serializer state.
 - Registers the Jobs tenancy primitives: `TenantPropagationScheduleMiddleware` / `TenantRestoreExecuteMiddleware` (`TryAddSingleton`), an `AsyncLocal`-backed `ICurrentTenantAccessor`, and the `ICurrentTenant` fallback (`NullCurrentTenant`, replaced by a real `CurrentTenant` once an HTTP / EF / consumer seam registers one). Inserts the schedule and execute tenancy middleware into the process-global registry once per process at `JobMiddlewarePriority.Tenancy`; both no-op until the tenancy seam enables `JobsTenancyOptions`.
+- Registers the `jobs` and `jobs-scheduler` readiness checks when background services run, and the `jobs` host description contributor always. See [Readiness and host description](#readiness-and-host-description).
 
 ### Trimming and native AOT
 
@@ -1269,7 +1271,6 @@ builder.Services.AddHeadlessJobs(options =>
 
 - Use a store other than `Headless.Jobs.EntityFramework`. The EF package and its PostgreSQL and SQL Server providers do not declare `IsAotCompatible`: EF Core generates query code at runtime, and the generic time and cron entity types flow into EF model APIs that are not annotated for trimming.
 - Leave `Headless.Jobs.Dashboard` out. Its minimal-API endpoints, request-example generator, and JSON converters rely on reflection, so it does not declare `IsAotCompatible` either.
-- Expect the `enqueued_from` caller information to read `Unknown` when the app removes stack trace data (`<StackTraceSupport>false</StackTraceSupport>`).
 
 ---
 
@@ -1472,66 +1473,184 @@ Emits `JobsModule.g.cs` at compile time. The generated file:
 
 ---
 
+## Readiness and host description
+
+### Health checks
+
+Jobs contributes readiness checks automatically; there is no `AddJobsHealthChecks()` call. Each carries the `ready`, `headless`, and `jobs` (`HeadlessHealthCheckTags.Jobs`) tags, follows the rules in [Health checks](utilities.md#health-checks), and is removed with `RemoveHealthChecks`.
+
+| Check | Registered when | Failure status | Fails when |
+| --- | --- | --- | --- |
+| `jobs` | Background services run (no `DisableBackgroundServices()`) | `Unhealthy` | Jobs activation has not completed (the startup drain is still running), or host shutdown has begun. The host stops claiming work at shutdown, so a load balancer stops routing to it before the drain |
+| `jobs-scheduler` | Background services run | `Degraded` | The scheduler loop is not running: an operator called `IJobsHostScheduler.StopAsync`, or `StartMode = JobsStartMode.Manual` and nothing has started it. The host stays in rotation while the check tells the operator it dispatches nothing |
+| `jobs-storage-{DbContext full name}` | `UseEntityFramework` with a Jobs context; also tagged `database` | `Unhealthy` | `Database.CanConnectAsync` fails on a context from the store's own pooled factory. The probe writes nothing |
+
+A scheduling-only host (`DisableBackgroundServices()`) gets only the storage check, because it has no scheduler loop to report on. The `Degraded` default of `jobs-scheduler` is a default only: `ConfigureHeadlessHealthCheck("jobs-scheduler", o => o.FailureStatus = HealthStatus.Unhealthy)` overrides it, before or after `AddHeadlessJobs`.
+
+### Host description
+
+`AddHeadlessJobs` writes the `jobs` section of the host description that `RunHeadlessAsync(args)` prints for `describe` and that `MapHeadlessHostDescription` serves; [Utilities](utilities.md#host-description) owns the command, the document envelope, and the endpoint. The section is read from the host's frozen job registry, so it shows the tuning that configuration applied and this host's `RunOnly` filter. A host without `AddHeadlessJobs` has no `jobs` section.
+
+```json
+{
+  "functions": [
+    {
+      "name": "billing.close-day",
+      "contractVersion": "1",
+      "kind": "cron",
+      "cronExpression": "0 0 2 * * *",
+      "priority": "normal",
+      "maxConcurrency": 2,
+      "clusterMaxConcurrency": 4,
+      "missedRunPolicy": "coalesce",
+      "missedRunGraceSeconds": 60,
+      "overlapPolicy": "skip",
+      "failurePolicy": {
+        "immediateRetries": 0,
+        "delayedRetries": 3,
+        "delayedInitialDelaySeconds": 10,
+        "delayedMaxDelaySeconds": 300
+      },
+      "runState": "runs-here"
+    }
+  ]
+}
+```
+
+- **One entry per registered job,** ordered by name. `kind` is `cron` for a job with a schedule and `time` for one that runs only when scheduled. `cronExpression`, `missedRunPolicy`, `missedRunGraceSeconds`, and `overlapPolicy` appear only on cron jobs; an undeclared policy shows the scheduler default that seeding would apply.
+- **Effective tuning.** `priority` is `normal`, `high`, `low`, or `long-running`. `maxConcurrency` and `clusterMaxConcurrency` are the values after every `Tune` call and configuration entry, so `Headless:Jobs:Jobs:billing.close-day:Concurrency = 2` shows as `"maxConcurrency": 2`.
+- **`failurePolicy`** always carries `immediateRetries` and `delayedRetries`. The delay fields appear only when `delayedRetries` is above zero, `failOn` (exception type names) only when the policy lists types, and `failWhenRules` (a count) only when it has predicates.
+- **`runState`** is `runs-here` when this host runs background services and its `RunOnly` filter admits the job, and `registered-not-run-here` otherwise. A host with `DisableBackgroundServices()` shows every job as `registered-not-run-here`.
+- **Not described:** the persistence provider, connection strings, and runtime state such as paused definitions or queued rows.
+
+---
+
 ## OpenTelemetry Instrumentation
 
-OpenTelemetry instrumentation for `Headless.Jobs` is built into `Headless.Jobs` — activity tracing for the full job execution lifecycle plus structured logging. (The former `Headless.Jobs.OpenTelemetry` satellite package was folded into `Jobs` per the framework OTel conventions; native emission needs no separate package.) Cross-cutting naming, PII, and registration rules for all Headless instrumentation live in [OpenTelemetry instrumentation conventions](../solutions/conventions/opentelemetry-instrumentation-conventions.md).
+Tracing and metrics for `Headless.Jobs` are built into `Headless.Jobs`; there is no separate instrumentation package. The spans and the meter share one name, `JobsDiagnostics.SourceName` (`"Headless.Jobs"`). Cross-cutting naming, PII, and registration rules for all Headless instrumentation live in [OpenTelemetry instrumentation conventions](../solutions/conventions/opentelemetry-instrumentation-conventions.md).
 
 ### Purpose
 
-Provides distributed tracing (OpenTelemetry activities/spans) and structured log events for every Jobs job execution without modifying job code. The default `IJobsInstrumentation` emits activities natively — subscribing the tracing pipeline is the single opt-in, matching Caching/DistributedLocks/Messaging (no implementation swap step).
+Shows when a job was scheduled, links each run to the request that scheduled it, and measures how long runs take, how they end, how often they retry, how late they start, and how often nodes race for the same row. Job code needs no changes.
 
 ### Setup and use
 
 ```csharp
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
-builder.Services.AddHeadlessJobs(); // instrumentation is built in — no extra call
+builder.Services.AddHeadlessJobs(); // instrumentation is built in; there is no extra call
 
-// Subscribe the tracing pipeline to the Jobs ActivitySource; subscribing IS the opt-in.
+// Subscribing is the only opt-in: nothing is recorded until a listener attaches.
 builder
     .Services.AddOpenTelemetry()
     .WithTracing(tracing =>
     {
         tracing
-            .AddJobsInstrumentation() // typed helper; equivalent to AddSource(JobsDiagnostics.SourceName)
-            .AddOtlpExporter(); // or Jaeger, console, Azure Monitor, etc.
+            .AddJobsInstrumentation() // AddSource(JobsDiagnostics.SourceName)
+            .AddOtlpExporter();
+    })
+    .WithMetrics(metrics =>
+    {
+        metrics
+            .AddJobsInstrumentation() // AddMeter(JobsDiagnostics.SourceName)
+            .AddOtlpExporter();
     });
 ```
 
+`AddJobsInstrumentation()` exists on both `TracerProviderBuilder` (namespace `OpenTelemetry.Trace`) and `MeterProviderBuilder` (namespace `OpenTelemetry.Metrics`). Subscribing by name with `AddSource` or `AddMeter` is equivalent. A host with no listener pays one listener check per event and logs exactly as before. To replace the spans, register your own `IJobsInstrumentation` after `AddHeadlessJobs()`.
+
 ### Configuration
 
-Execution spans include `headless.job.contract_version`, `headless.job.correlation_id`, and `headless.job.causation_id` when present. These fields preserve business lineage independently of trace ancestry and are not metric dimensions. A tenant-scoped job's span also carries the tenant under `TenantTelemetryOptions.AttributeName` (`tenant.id`), unless `TenantTelemetryOptions.EnrichTraces` is off; see [multi-tenancy observability](multi-tenancy.md#observability).
+There are no instrumentation options. A tenant-scoped job's execution span carries the tenant under `TenantTelemetryOptions.AttributeName` (`tenant.id`) unless `TenantTelemetryOptions.EnrichTraces` is off; see [multi-tenancy observability](multi-tenancy.md#observability). The tenant is never a metric tag.
 
-No activation switch exists — the default instrumentation starts activities only when a listener is subscribed (`ActivitySource` short-circuits to null otherwise), so an unobserved host pays effectively nothing and keeps identical log output. The `ActivitySource` name is `JobsDiagnostics.SourceName` (`"Headless.Jobs"`, a `public const` so dashboards and wiring reference the symbol). Subscribe with `AddJobsInstrumentation()` or `AddSource(JobsDiagnostics.SourceName)`. The Jobs `Meter` carries the same name — subscribe with `AddMeter(JobsDiagnostics.SourceName)`; it currently exposes one instrument, `headless.jobs.post_commit_signals.dropped` (counter; dimension `headless.jobs.drop_reason` = `full` | `stopping`), which counts coordinated post-commit signals the hosted worker could not accept. Custom instrumentation remains possible by registering your own `IJobsInstrumentation` after `AddHeadlessJobs()`. (Breaking vs earlier previews: `AddOpenTelemetryInstrumentation()` was removed — delete the call; spans now flow from the subscription alone.)
+### Trace linking
 
-Span names: the per-execution root activity (display name = the job function name), plus `job.enqueue`, `job.complete`, `job.fail`, `job.cancel`, `job.skip`, `job.deserialize.fail`, `seeding.start`, `seeding.complete`.
+Scheduling and running a job are separate traces, joined by a span link:
 
-Activity tag reference (framework-owned tags are namespaced `headless.job.*` / `headless.seeding.*` with `snake_case` segments; exception tags follow the OTel `exception.*` convention):
+1. Every write that schedules a run starts a `job.schedule` span (kind `Producer`) as a child of the caller's current span. The row stores that span's W3C `traceparent` in its `TraceParent` column. When nothing listens to `Headless.Jobs`, the row stores the caller's current span instead, so a host that traces only ASP.NET Core still links its runs. With no current span at all, the row stores nothing.
+2. The run starts its execution span as the root of a new trace, with one link to the stored context. It never inherits the poll loop's span, the dispatching request on an immediate run, or a chain parent's execution span. A stored value that cannot be parsed starts an unlinked root instead of failing the run.
 
-| Tag | Example |
-|-----|---------|
-| `headless.job.id` | `123e4567-…` |
-| `headless.job.type` | `TimeJob`, `CronJob` |
-| `headless.job.function` | `orders.process` |
-| `headless.job.priority` | `Normal`, `High`, `Low`, `LongRunning` |
-| `headless.job.machine` | `web-01` |
-| `headless.job.parent_id` | parent job GUID |
-| `headless.job.run_condition` | child-job run condition (child time jobs only) |
-| `headless.job.enqueued_from` | `OrderController.Create (Program.cs:42)` |
-| `headless.job.retry_count` | `3` |
-| `headless.job.duration_ms` | `1250` |
-| `headless.job.success` | `true` / `false` |
-| `headless.job.cancellation_reason` | cancel reason on `job.cancel` spans |
-| `headless.job.skip_reason` | skip reason on `job.skip` spans |
-| `headless.seeding.type` | seeding data type on `seeding.*` spans |
-| `headless.seeding.environment` | instance identifier on `seeding.*` spans |
-| `exception.type` | `SqlException` |
-| `exception.message` | `Connection timeout` |
-| `exception.stacktrace` | stack trace on `job.fail` spans |
+Which writes stamp `TraceParent`:
+
+| Write | `TraceParent` stored |
+| --- | --- |
+| Scheduling a time job, a batch, or a chain | The `job.schedule` span of that call, on every row of the tree (one span for a batch) |
+| Keyed scheduling, including a supersede | The superseding call's span: the new schedule is the run's cause |
+| Requeue of a time job or cron occurrence | Replaced with the requeue's span: the operator's request is the new cause |
+| Dashboard run-now of a cron job | The run-now request's span, on the on-demand occurrence |
+| Ordinary update of a time job | Kept |
+| Occurrence the scheduler generates from a cron definition | None: no request caused it, so its run starts an unlinked root |
+| Cron definition | Not stored on definitions |
+
+The column holds one version-00 W3C `traceparent` (55 characters), written in W3C form whatever propagator the host configures; `tracestate` is not kept. A custom `IJobPersistenceProvider` must persist `TraceParent` on time jobs and occurrences, replace it on requeue (`RequeueTimeJobAsync` and `RequeueCronJobOccurrenceAsync` take the new value), and copy it into `JobExecutionState.TraceParent` when it projects a row for execution.
+
+### Spans
+
+| Span | Kind | When | Tags |
+| --- | --- | --- | --- |
+| `job.schedule` | Producer | Each scheduling write listed above | `headless.job.type`; `headless.job.function` when one function is scheduled; `headless.job.id` for a single time job, a requeue, or a run-now |
+| `job.execute.timejob`, `job.execute.cronjoboccurrence` | Internal | One per run, a new trace root linked to the stored `TraceParent` | See the execution tags below |
+| `job.complete` | Internal | A run finished, child of the execution span | `headless.job.id`, `headless.job.function`, `headless.job.duration_ms`, `headless.job.success`; status `Ok` or `Error` |
+| `job.fail` | Internal | A run failed | `headless.job.id`, `headless.job.function`, `headless.job.retry_count`, `exception.type`, `exception.message`, `exception.stacktrace`; status `Error` |
+| `job.cancel` | Internal | A run was cancelled | `headless.job.id`, `headless.job.function`, `headless.job.cancellation_reason`; status `Error` |
+| `job.skip` | Internal | A run was skipped | `headless.job.id`, `headless.job.function`, `headless.job.skip_reason` |
+| `job.deserialize.fail` | Internal | The stored request could not be deserialized | `headless.job.id`, `headless.job.function`, `exception.type`, `exception.message` |
+| `seeding.start`, `seeding.complete` | Internal | Cron definition seeding | `headless.seeding.type`, `headless.seeding.environment` (the instance identifier) |
+
+Execution span tags:
+
+| Tag | Value |
+| --- | --- |
+| `headless.job.id` | Row id |
+| `headless.job.type` | `TimeJob` or `CronJobOccurrence` |
+| `headless.job.function` | Job identity, such as `orders.process` |
+| `headless.job.contract_version` | Contract version of the stored request |
+| `headless.job.correlation_id`, `headless.job.causation_id` | Business lineage, when set; independent of trace ancestry |
+| `headless.job.priority` | `Normal`, `High`, `Low`, or `LongRunning` |
+| `headless.job.machine` | Instance identifier of the node that runs it |
+| `headless.job.retry_count` | Maximum retry attempts configured for the row (on `job.fail` the same tag holds the attempts consumed) |
+| `headless.job.parent_id` | Parent row id, for a chain child |
+| `headless.job.run_condition` | Run condition, for a time-job chain child |
+| `headless.job.is_due`, `headless.job.is_child` | Whether the run was due, and whether it runs as a chain child |
+| `headless.job.current_attempt` | The attempt in progress, from 1 |
+| `headless.job.final_status` | The status the run ended with |
+| `headless.job.final_retry.count` | Retry attempts consumed when the run ended |
+| `headless.job.cancellation.reason` | Set when a durable cancellation stopped the run |
+| `headless.job.skip.reason` | Why the run was skipped |
+| `headless.job.contract_version_error` | Set when this node does not register the stored contract version; the row is released for another node |
+| `exception.type` | Short type name of the last exception, on a failed run |
+
+### Metrics
+
+| Instrument | Type | Unit | Tags | Measures |
+| --- | --- | --- | --- | --- |
+| `headless.jobs.execution.duration` | Histogram | `s` | `headless.jobs.function`, `headless.jobs.outcome`, `error.type` | Runs whose handler was invoked, from the first attempt to the outcome |
+| `headless.jobs.execution.outcomes` | Counter | `{run}` | `headless.jobs.function`, `headless.jobs.outcome`, `error.type` | Runs that reached a terminal outcome, including runs whose handler never ran, such as a skipped chain child |
+| `headless.jobs.execution.retries` | Counter | `{attempt}` | `headless.jobs.retry.kind` | Attempts beyond the first |
+| `headless.jobs.queue.lag` | Histogram | `s` | `headless.jobs.trigger` | How late a run started after the instant it was due, clamped at zero |
+| `headless.jobs.claim.conflicts` | Counter | `{row}` | `headless.jobs.claim.strategy` | Rows a claim selected and lost to another node |
+| `headless.jobs.cron.occurrences.skipped` | Counter | `{occurrence}` | `headless.jobs.skip_reason`, `headless.jobs.function` | Due cron occurrences recorded as skipped instead of running |
+| `headless.jobs.post_commit_signals.dropped` | Counter | `{signal}` | `headless.jobs.drop_reason` | Coordinated post-commit signals dropped before the worker ran them; the next poll sweep picks up the row |
+
+Tag values:
+
+| Tag | Values |
+| --- | --- |
+| `headless.jobs.function` | A job identity this host registers, or `_other` for any other name read from a stored row (a row written by a newer build, or for a removed job), so a stray row cannot grow the series without limit |
+| `headless.jobs.outcome` | `succeeded` (including a success the fallback sweep recorded), `failed`, `cancelled`, `skipped`. A run left for recovery records nothing; the run that finishes it records the outcome |
+| `error.type` | Fully qualified type name of the exception behind a `failed` outcome, per the OpenTelemetry convention; absent on other outcomes |
+| `headless.jobs.retry.kind` | `in_process` (the failure policy retried inside the run) or `recovery` (a reclaimed run resumed after the previous attempt was lost) |
+| `headless.jobs.trigger` | `scheduled`, `recovery` (a missed-run recovery, whose lag spans the outage), or `run_now` (dispatched the moment it was written) |
+| `headless.jobs.claim.strategy` | `postgresql`, `sqlserver`, or `cas` (the portable optimistic path) |
+| `headless.jobs.skip_reason` | `overlap` or `missed_run` |
+| `headless.jobs.drop_reason` | `full` (the queue is at capacity) or `stopping` (the host is shutting down) |
+
+Both histograms declare bucket boundaries from 5 ms to 1 hour (`0.005` to `3600` seconds), because a job can finish in milliseconds or run for an hour, and a run can start late by an outage's length. Every tag value except `error.type` comes from a fixed set or from the host's registered jobs, so the series count stays bounded.
 
 ### Runtime behavior
 
-Registers `OpenTelemetryInstrumentation` as the singleton `IJobsInstrumentation`, replacing the default `LoggerInstrumentation`. No other registrations.
+`AddHeadlessJobs()` registers `LoggerInstrumentation` as the `IJobsInstrumentation`; it logs every lifecycle event and starts the spans above when a listener is attached. The meter's instruments are process-wide; the `_other` bound is built per host from that host's registry, so two hosts in one process each tag only their own jobs.
 
 ---
 
@@ -1737,6 +1856,7 @@ builder.Services.AddHeadlessJobs(options =>
 - Persists job rows in EF Core-mapped tables under the configured schema.
 - Never acquires a job with a `ClusterMaxConcurrency` through immediate dispatch; the native claim leases it against the limit. A host that would claim a cluster-limited job through the portable optimistic-CAS path fails at startup (see [Cluster-wide concurrency](#cluster-wide-concurrency)).
 - Consumes the optional default `ICache` for cron-expression caching.
+- Contributes the `jobs-storage-{DbContext full name}` readiness check (tags `ready`, `headless`, `jobs`, `database`), which runs `Database.CanConnectAsync` through the store's pooled context factory. See [Health checks](#health-checks).
 - Fails fast at startup if no coordination provider is registered.
 
 ---
