@@ -151,6 +151,12 @@ public abstract class PostgreSqlConformanceTestsBase<TFixture>(TFixture fixture)
     }
 
     [Fact]
+    public override Task time_job_execution_time_survives_read_then_update_under_a_non_utc_scheduler_zone()
+    {
+        return base.time_job_execution_time_survives_read_then_update_under_a_non_utc_scheduler_zone();
+    }
+
+    [Fact]
     public override Task unified_context_inprogress_stamp_requires_a_queued_row()
     {
         return base.unified_context_inprogress_stamp_requires_a_queued_row();
@@ -289,6 +295,22 @@ public abstract class PostgreSqlClaimConformanceTestsBase<TFixture>(TFixture fix
     public override Task direct_cron_claim_applies_the_full_acquire_predicate_matrix()
     {
         return base.direct_cron_claim_applies_the_full_acquire_predicate_matrix();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task direct_time_job_claim_applies_the_full_acquire_predicate_matrix(bool useNativeClaims)
+    {
+        return base.direct_time_job_claim_applies_the_full_acquire_predicate_matrix(useNativeClaims);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task cas_fallback_does_not_claim_a_root_rescheduled_after_the_peek(bool lowerStamp)
+    {
+        return base.cas_fallback_does_not_claim_a_root_rescheduled_after_the_peek(lowerStamp);
     }
 
     [Fact]

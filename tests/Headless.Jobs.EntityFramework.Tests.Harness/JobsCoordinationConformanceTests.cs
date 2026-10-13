@@ -1430,6 +1430,60 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     }
 
     /// <summary>
+    /// The manager reads an unspecified-kind execution time as wall-clock time in the scheduler zone. A time job read
+    /// back from the store and passed to <c>UpdateAsync</c> must therefore come back as UTC, or every read-update cycle
+    /// shifts the job by the zone's offset. A fixed-offset zone with no daylight saving keeps the expected shift exact.
+    /// </summary>
+    public virtual async Task time_job_execution_time_survives_read_then_update_under_a_non_utc_scheduler_zone()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost(
+            "tz-roundtrip",
+            configureJobs: options =>
+                options.ConfigureScheduler(scheduler =>
+                    scheduler.SchedulerTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Tokyo")
+                )
+        );
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var executionTime = new DateTime(2035, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+            var added = await manager.AddAsync(
+                new TimeJobEntity
+                {
+                    Function = JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
+                    ExecutionTime = executionTime,
+                    Description = "before",
+                },
+                ct
+            );
+
+            var read = await persistence.GetTimeJobByIdAsync(added.Id, ct);
+            read.Should().NotBeNull();
+            read!.ExecutionTime.Should().Be(executionTime);
+            read.ExecutionTime!.Value.Kind.Should().Be(DateTimeKind.Utc);
+
+            read.Description = "after";
+            (await manager.UpdateAsync(read, ct)).IsSucceeded.Should().BeTrue();
+
+            var reread = await persistence.GetTimeJobByIdAsync(added.Id, ct);
+            reread!.Description.Should().Be("after");
+            reread.ExecutionTime.Should().Be(executionTime);
+            reread.ExecutionTime!.Value.Kind.Should().Be(DateTimeKind.Utc);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
     /// #316 (strict Queued→InProgress fence): the unified-context start stamp promotes a Queued row owned by this
     /// node to InProgress exactly once. A duplicate same-owner scheduler wrapper cannot revalidate the now-running row —
     /// the second call matches zero rows because the row is no longer Queued. Pins the EF LINQ translation of the

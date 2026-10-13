@@ -738,7 +738,9 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     // candidate page size no longer approaches the engine's parameter limit.
     private static string _DirectCandidateFilter(TimeJobRelationalMapping mapping)
     {
-        return PostgreSqlDialect.Instance.InTuples([mapping.Id, mapping.UpdatedAt], "requested", _DirectCandidateTypes);
+        return PostgreSqlDialect.Instance.InTuples([mapping.Id, mapping.UpdatedAt], "requested", _DirectCandidateTypes)
+            + " AND "
+            + AcquirePredicateSql.Build(mapping.Status, mapping.OwnerId, mapping.LockedUntil, mapping.OnNodeDeath);
     }
 
     private static DbParameter[] _DirectCandidateParameters(TimeJobEntity[] timeJobs)
@@ -750,6 +752,9 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 _DirectCandidateTypes,
                 [.. timeJobs.Select(static job => (IReadOnlyList<object>)[job.Id, job.UpdatedAt])]
             ),
+            new NpgsqlParameter("idle", nameof(JobStatus.Idle)),
+            new NpgsqlParameter("queued", nameof(JobStatus.Queued)),
+            new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry)),
         ];
     }
 

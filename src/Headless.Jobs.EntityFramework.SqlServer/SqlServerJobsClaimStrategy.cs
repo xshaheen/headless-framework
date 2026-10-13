@@ -748,7 +748,9 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     // candidate page size no longer approaches the engine's parameter limit.
     private static string _DirectCandidateFilter(TimeJobRelationalMapping mapping)
     {
-        return SqlServerDialect.Instance.InTuples([mapping.Id, mapping.UpdatedAt], "requested", _DirectCandidateTypes);
+        return SqlServerDialect.Instance.InTuples([mapping.Id, mapping.UpdatedAt], "requested", _DirectCandidateTypes)
+            + " AND "
+            + AcquirePredicateSql.Build(mapping.Status, mapping.OwnerId, mapping.LockedUntil, mapping.OnNodeDeath);
     }
 
     private static DbParameter[] _DirectCandidateParameters(TimeJobEntity[] timeJobs)
@@ -760,6 +762,9 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 _DirectCandidateTypes,
                 [.. timeJobs.Select(static job => (IReadOnlyList<object>)[job.Id, job.UpdatedAt])]
             ),
+            new SqlParameter("idle", nameof(JobStatus.Idle)),
+            new SqlParameter("queued", nameof(JobStatus.Queued)),
+            new SqlParameter("retry", nameof(NodeDeathPolicy.Retry)),
         ];
     }
 
