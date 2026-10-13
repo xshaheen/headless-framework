@@ -15,7 +15,7 @@ public sealed class SqlServerStorageHealthCheckTests(SqlServerTestFixture fixtur
     private const string _PrimaryCheckName = "messaging-storage-sqlserver-default";
     private const string _OutboxCheckName = "messaging-storage-sqlserver-outbox-1";
 
-    // Covers AE1: each outbox check follows whether its own database accepts connections. The outbox database is taken
+    // Each outbox check follows whether its own database accepts connections. The outbox database is taken
     // offline rather than the server stopped, because the collection's server serves every other test in the project.
     [Fact]
     public async Task should_report_only_the_outbox_whose_database_stopped_accepting_connections_unhealthy()

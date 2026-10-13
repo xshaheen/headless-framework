@@ -33,7 +33,10 @@ public static class HeadlessHostRunExtensions
         /// <para>
         /// <c>describe</c> first runs the startup validation a real start runs: options marked
         /// <c>ValidateOnStart</c>, then every <see cref="IHeadlessStartupValidator" />. It never starts a hosted service.
-        /// Standard output carries only the JSON document; console logging written meanwhile goes to standard error.
+        /// Standard output carries only the JSON document; console logging written meanwhile goes to standard error. That
+        /// redirect needs a host built with <c>HostApplicationBuilder</c> or <c>WebApplicationBuilder</c>: on a host built
+        /// with <c>Host.CreateDefaultBuilder</c>, the Microsoft console logger keeps the standard output it captured at
+        /// build time, so its log lines can still reach standard output.
         /// On any failure, standard output stays empty, the error message goes to standard error, and the exit code is 1.
         /// </para>
         /// <para>Like <c>RunAsync</c>, it disposes the host in both modes.</para>

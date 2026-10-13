@@ -115,7 +115,7 @@ public sealed class MessagingHealthCheckTests : TestBase
     [Fact]
     public async Task should_report_consumers_degraded_while_a_circuit_is_forced_open_and_healthy_once_half_open()
     {
-        // given - covers AE2: an operator pauses the payments consumer on the Bus lane
+        // given - an operator pauses the payments consumer on the Bus lane
         var time = new FakeTimeProvider();
         await using var provider = _BuildProvider(
             setup =>

@@ -23,7 +23,7 @@ public sealed class MessagingHostDescriptionTests : TestBase
     [Fact]
     public void should_print_concurrency_bound_from_configuration_without_tune()
     {
-        // AE3: tuning applied from configuration shows up in the description exactly as the host runs it.
+        // Tuning applied from configuration shows up in the description exactly as the host runs it.
         using var provider = _BuildProvider(
             setup => setup.AddModule<DescribedOrdersModule>(),
             ($"Headless:Messaging:Consumers:{_Orders}:Concurrency", "8")
@@ -37,7 +37,7 @@ public sealed class MessagingHostDescriptionTests : TestBase
     [Fact]
     public void should_print_run_state_from_consume_only_and_always_run_every_instance_consumers()
     {
-        // AE4: an every-instance consumer runs on every host, so ConsumeOnly neither stops it nor is reported for it.
+        // An every-instance consumer runs on every host, so ConsumeOnly neither stops it nor is reported for it.
         using var provider = _BuildProvider(setup =>
             setup
                 .AddModule<DescribedOrdersModule>()

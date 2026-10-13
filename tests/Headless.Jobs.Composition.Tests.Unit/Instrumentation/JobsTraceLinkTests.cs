@@ -29,7 +29,7 @@ public sealed class JobsTraceLinkTests : TestBase
     [Fact]
     public async Task should_link_the_execution_span_to_the_schedule_span_of_the_request_that_scheduled_it()
     {
-        // given: covers AE5, a request span schedules a time job that later runs on its own.
+        // given: a request span schedules a time job that later runs on its own, so the execution must link back to it.
         using var recorder = SpanRecorder.All();
         await using var harness = Harness.Create();
         Guid jobId;

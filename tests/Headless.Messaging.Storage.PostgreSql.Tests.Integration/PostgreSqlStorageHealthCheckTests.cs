@@ -18,7 +18,7 @@ public sealed class PostgreSqlStorageHealthCheckTests : TestBase
 {
     private const string _CheckName = "messaging-storage-postgresql-default";
 
-    // Covers AE1: the outbox check follows whether its database accepts connections.
+    // The outbox check follows whether its database accepts connections.
     [Fact]
     public async Task should_report_the_outbox_store_unhealthy_once_its_database_stops()
     {
