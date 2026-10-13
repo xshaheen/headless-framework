@@ -202,8 +202,7 @@ internal sealed class MessageSender : IMessageSender
         }
         catch (OperationCanceledException ex)
         {
-            // Timeout or shutdown can race broker acceptance. Preserve cancellation semantics while
-            // recording the at-least-once duplicate window explicitly.
+            // Timeout or shutdown can race broker acceptance; record the at-least-once duplicate window either way.
             MessagingTelemetry.PublishAmbiguous(
                 traceHandle.Activity,
                 transportMsg,
@@ -212,6 +211,25 @@ internal sealed class MessageSender : IMessageSender
                 traceHandle.ElapsedMs(_NowMs()),
                 message.Lane
             );
+
+            // A publish timeout while the host keeps running is a slow broker, not a stop: rethrown, the retry engine
+            // would not classify it, so the attempt would record no failure and the row would wait out its lease
+            // (or be re-claimed every poll) with no back-off. As a failed attempt it takes the normal retry path.
+            if (publishCts.IsCancellationRequested && !_shutdownToken.IsCancellationRequested)
+            {
+                return MessagingRetryAttempt.Retryable(
+                    OperateResult.Failed(
+                        new TimeoutException(
+                            string.Create(
+                                CultureInfo.InvariantCulture,
+                                $"The transport did not confirm the publish within {_options.TransportPublishTimeout}."
+                            ),
+                            ex
+                        )
+                    )
+                );
+            }
+
             throw;
         }
         catch (Exception ex)

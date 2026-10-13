@@ -477,6 +477,120 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
+    public async Task should_schedule_a_retry_when_the_transport_publish_times_out()
+    {
+        // given — the broker never answers, so the transport publish timeout cancels the send while the host runs.
+        var storage = Substitute.For<IDataStorage>();
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
+                return OperateResult.Success;
+            });
+
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                TransportPublishTimeout = TimeSpan.FromMilliseconds(50),
+                RetryPolicy =
+                {
+                    RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.FromSeconds(5)),
+                    MaxPersistedRetries = 1,
+                },
+            },
+            new FakeHostApplicationLifetime(AbortToken)
+        );
+
+        // when
+        var result = await sender.SendAsync(_CreateMediumMessage());
+
+        // then — a transient failure: the row is scheduled for a later attempt with back-off, not left on its lease.
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<TimeoutException>();
+        await storage
+            .Received(1)
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
+                Arg.Is<RetryDelay?>(value => value.HasValue),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Is<int>(value => value == 0),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_rethrow_a_transport_cancellation_caused_by_shutdown()
+    {
+        // given — the host is stopping, which cancels the in-flight publish.
+        var storage = Substitute.For<IDataStorage>();
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
+                return OperateResult.Success;
+            });
+
+        using var stopping = new CancellationTokenSource();
+        await stopping.CancelAsync();
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.Zero),
+                    MaxPersistedRetries = 1,
+                },
+            },
+            new FakeHostApplicationLifetime(stopping.Token)
+        );
+
+        // when
+        var act = () => sender.SendAsync(_CreateMediumMessage());
+
+        // then — shutdown is not a failed attempt: nothing is written, and the retry pickup resumes after restart.
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        await storage
+            .DidNotReceive()
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_treat_shutdown_oce_as_cancellation_without_writing_state()
     {
         // given — IHostApplicationLifetime.ApplicationStopping is signalled and the transport
