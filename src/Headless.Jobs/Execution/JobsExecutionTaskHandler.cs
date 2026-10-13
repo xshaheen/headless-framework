@@ -37,6 +37,7 @@ internal sealed class JobsExecutionTaskHandler
     // so DI injection is safe. A null tenant on the job (system scope) or a null accessor here is a no-op.
     private readonly ICurrentTenant? _currentTenant;
     private readonly bool _propagateTenant;
+    private readonly JobsFunctionTagBound _functionTags;
 
 #pragma warning disable IDE0290 // Fix makes the code worse: a primary constructor would capture eleven dependencies and spread the derived lease and retry state across field initializers.
     public JobsExecutionTaskHandler(
@@ -51,7 +52,8 @@ internal sealed class JobsExecutionTaskHandler
         ILogger<JobsExecutionTaskHandler> logger,
         JobsRetryOptions? retryOptions = null,
         ICurrentTenant? currentTenant = null,
-        IOptions<JobsTenancyOptions>? tenancyOptions = null
+        IOptions<JobsTenancyOptions>? tenancyOptions = null,
+        JobsFunctionTagBound? functionTags = null
     )
     {
         _propagateTenant = tenancyOptions?.Value.PropagateTenant ?? false;
@@ -69,6 +71,8 @@ internal sealed class JobsExecutionTaskHandler
         _progressReportInterval = schedulerOptions.ProgressReportInterval;
         _retryOptions = retryOptions ?? new JobsRetryOptions();
         _retryPipeline = new JobsRetryPipeline(functionRegistry, timeProvider, logger);
+        // The container registers one bound per host; a handler built without it bounds by the same registry.
+        _functionTags = functionTags ?? new JobsFunctionTagBound(functionRegistry);
     }
 
     private static TimeSpan _Lateness(DateTime scheduledFor, DateTime startedAt)
@@ -80,19 +84,29 @@ internal sealed class JobsExecutionTaskHandler
 
     public Task ExecuteTaskAsync(JobExecutionState context, bool isDue, CancellationToken cancellationToken = default)
     {
-        return _ExecuteTaskAsync(context, isDue, isChild: false, cancellationToken);
+        return _ExecuteTaskAsync(context, isDue, isChild: false, runNow: false, cancellationToken);
+    }
+
+    /// <summary>
+    /// Runs a row dispatched the moment it was written (an immediate enqueue or a dashboard run-now), so its queue lag
+    /// is reported apart from the lag of a row the scheduler picked up when it fell due.
+    /// </summary>
+    public Task ExecuteImmediateTaskAsync(JobExecutionState context, CancellationToken cancellationToken = default)
+    {
+        return _ExecuteTaskAsync(context, isDue: false, isChild: false, runNow: true, cancellationToken);
     }
 
     private async Task _ExecuteTaskAsync(
         JobExecutionState context,
         bool isDue,
         bool isChild,
+        bool runNow,
         CancellationToken cancellationToken
     )
     {
         if (context.Type == JobType.CronJobOccurrence)
         {
-            await _RunContextFunctionAsync(context, isDue, cancellationToken, isChild).ConfigureAwait(false);
+            await _RunContextFunctionAsync(context, isDue, runNow, cancellationToken, isChild).ConfigureAwait(false);
             return;
         }
 
@@ -100,7 +114,7 @@ internal sealed class JobsExecutionTaskHandler
         {
             // Childless jobs are the common case, so they buffer nothing: no sibling lists, no Task.WhenAll over a
             // single task, and no deferred-children pass — only the timed-child reconcile below still applies.
-            await _RunContextFunctionAsync(context, isDue, cancellationToken, isChild).ConfigureAwait(false);
+            await _RunContextFunctionAsync(context, isDue, runNow, cancellationToken, isChild).ConfigureAwait(false);
         }
         else
         {
@@ -111,14 +125,14 @@ internal sealed class JobsExecutionTaskHandler
             var childrenToRunAfter = new List<JobExecutionState>(context.TimeJobChildren.Count);
 
             // Add parent task
-            tasksToRunNow.Add(_RunContextFunctionAsync(context, isDue, cancellationToken, isChild));
+            tasksToRunNow.Add(_RunContextFunctionAsync(context, isDue, runNow, cancellationToken, isChild));
 
             // Process children - separate InProgress from others
             foreach (var child in context.TimeJobChildren)
             {
                 if (child.RunCondition == RunCondition.InProgress)
                 {
-                    tasksToRunNow.Add(_SafeRecursiveExecution(child, isDue, cancellationToken));
+                    tasksToRunNow.Add(_SafeRecursiveExecution(child, isDue, runNow, cancellationToken));
                 }
                 else
                 {
@@ -143,7 +157,7 @@ internal sealed class JobsExecutionTaskHandler
                 {
                     if (_ShouldRunChild(child, context.Status))
                     {
-                        childrenToRunAfterTask.Add(_SafeRecursiveExecution(child, isDue, cancellationToken));
+                        childrenToRunAfterTask.Add(_SafeRecursiveExecution(child, isDue, runNow, cancellationToken));
                     }
                     else
                     {
@@ -166,6 +180,18 @@ internal sealed class JobsExecutionTaskHandler
                     await _internalJobsManager
                         .UpdateSkipTimeJobsWithUnifiedContextAsync([.. childrenToSkip], cancellationToken)
                         .ConfigureAwait(false);
+
+                    // A skipped child never invoked its handler: it counts as an outcome without a duration sample.
+                    foreach (var skipped in childrenToSkip)
+                    {
+                        JobsMetrics.ExecutionCompleted(
+                            _functionTags,
+                            skipped.FunctionName,
+                            JobStatus.Skipped,
+                            error: null,
+                            duration: null
+                        );
+                    }
                 }
 
                 // Wait for deferred tasks
@@ -210,6 +236,7 @@ internal sealed class JobsExecutionTaskHandler
     private async Task _RunContextFunctionAsync(
         JobExecutionState context,
         bool isDue,
+        bool runNow,
         CancellationToken cancellationToken,
         bool isChild = false
     )
@@ -268,6 +295,14 @@ internal sealed class JobsExecutionTaskHandler
             // first unaccounted-for missed instant, so it spans the unresolved outage rather than the dispatch delay.
             Lateness = _Lateness(context.ExecutionTime, _timeProvider.GetUtcNow().UtcDateTime),
         };
+
+        // A recovery run's lateness spans the outage, so it is kept apart from ordinary scheduling lag.
+        JobsMetrics.QueueLag(
+            jobFunctionContext.Lateness,
+            context.RecoveredFromUtc is not null ? JobsMetrics.TriggerRecovery
+                : runNow ? JobsMetrics.TriggerRunNow
+                : JobsMetrics.TriggerScheduled
+        );
 
         // One reporter per claim, so a report survives every in-process retry; beginCompletionAsync hands its unwritten
         // value to the terminal write, and releaseExecutionAsync stops it on every other exit.
@@ -520,6 +555,13 @@ internal sealed class JobsExecutionTaskHandler
                     exhaustedByRecovery,
                     context.RetryCount
                 );
+                JobsMetrics.ExecutionCompleted(
+                    _functionTags,
+                    context.FunctionName,
+                    JobStatus.Failed,
+                    exhaustedByRecovery,
+                    duration: null
+                );
 
                 var exhaustedAffected = await _internalJobsManager
                     .UpdateTickerAsync(context, CancellationToken.None)
@@ -548,6 +590,14 @@ internal sealed class JobsExecutionTaskHandler
 
             Exception? lastException = null;
             var success = false;
+            var handlerInvoked = false;
+
+            // A persisted attempt count above zero means a reclaim charged the previous, interrupted attempt to the
+            // row: this run is the attempt that replaces it.
+            if (context.RetryCount > 0)
+            {
+                JobsMetrics.RetryStarted(JobsMetrics.RetryKindRecovery);
+            }
 
             try
             {
@@ -558,6 +608,7 @@ internal sealed class JobsExecutionTaskHandler
                         {
                             jobFunctionContext.RetryCount = retryCount;
                             jobActivity?.SetTag("headless.job.current_attempt", retryCount + 1);
+                            handlerInvoked = true;
                             stopWatch.Start();
                             await using var scope = _serviceProvider.CreateAsyncScope();
                             jobFunctionContext.SetServiceScope(scope);
@@ -607,6 +658,8 @@ internal sealed class JobsExecutionTaskHandler
                                 _cancellationRegistry.TrySignalLeaseLoss(cancellationRegistration);
                                 throw new OperationCanceledException(cancellationTokenSource.Token);
                             }
+
+                            JobsMetrics.RetryStarted(JobsMetrics.RetryKindInProcess);
 
                             // #278: observe under the job's tenant so a tenant-aware handler is not system-scoped.
                             using (_EnterTenantScope(context))
@@ -658,6 +711,13 @@ internal sealed class JobsExecutionTaskHandler
                         context.JobId,
                         context.FunctionName,
                         "Durable cancellation requested"
+                    );
+                    JobsMetrics.ExecutionCompleted(
+                        _functionTags,
+                        context.FunctionName,
+                        JobStatus.Cancelled,
+                        error: null,
+                        handlerInvoked ? stopWatch.Elapsed : null
                     );
 
                     if (_serviceProvider.GetService(typeof(IJobExceptionHandler)) is IJobExceptionHandler handler)
@@ -714,6 +774,13 @@ internal sealed class JobsExecutionTaskHandler
 
                 // Log job skipped
                 _jobsInstrumentation.LogJobSkipped(context.JobId, context.FunctionName, ex.Message);
+                JobsMetrics.ExecutionCompleted(
+                    _functionTags,
+                    context.FunctionName,
+                    context.Status,
+                    ex.InnerException ?? ex,
+                    handlerInvoked ? stopWatch.Elapsed : null
+                );
 
                 // Terminal-status write must persist even on graceful host-stop (cancellationToken already cancelled)
                 // or lease-loss; the WhereOwnedBy completion fence already prevents clobbering a sweep's result.
@@ -770,6 +837,13 @@ internal sealed class JobsExecutionTaskHandler
                     stopWatch.ElapsedMilliseconds,
                     success: true
                 );
+                JobsMetrics.ExecutionCompleted(
+                    _functionTags,
+                    context.FunctionName,
+                    context.Status,
+                    error: null,
+                    stopWatch.Elapsed
+                );
 
                 // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
                 var affected = await _internalJobsManager
@@ -813,6 +887,13 @@ internal sealed class JobsExecutionTaskHandler
                     context.FunctionName,
                     stopWatch.ElapsedMilliseconds,
                     success: false
+                );
+                JobsMetrics.ExecutionCompleted(
+                    _functionTags,
+                    context.FunctionName,
+                    JobStatus.Failed,
+                    lastException,
+                    handlerInvoked ? stopWatch.Elapsed : null
                 );
 
                 // #278: observe under the job's tenant so tenant-aware alerting/compensation is not system-scoped;
@@ -1290,6 +1371,7 @@ internal sealed class JobsExecutionTaskHandler
     private async Task _SafeRecursiveExecution(
         JobExecutionState context,
         bool isDue,
+        bool runNow,
         CancellationToken cancellationToken = default
     )
     {
@@ -1297,7 +1379,7 @@ internal sealed class JobsExecutionTaskHandler
         {
             // Descendants are pre-leased with the root claim; transition each child to InProgress before its lease
             // fence and preserve that child identity recursively for grandchildren.
-            await _ExecuteTaskAsync(context, isDue, isChild: true, cancellationToken).ConfigureAwait(false);
+            await _ExecuteTaskAsync(context, isDue, isChild: true, runNow, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception)
         {

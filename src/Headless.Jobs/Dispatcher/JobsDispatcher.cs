@@ -40,9 +40,7 @@ internal sealed class JobsDispatcher(
 
                         try
                         {
-                            await taskHandler
-                                .ExecuteTaskAsync(context, isDue: false, cancellationToken: ct)
-                                .ConfigureAwait(false);
+                            await taskHandler.ExecuteImmediateTaskAsync(context, ct).ConfigureAwait(false);
                         }
                         finally
                         {

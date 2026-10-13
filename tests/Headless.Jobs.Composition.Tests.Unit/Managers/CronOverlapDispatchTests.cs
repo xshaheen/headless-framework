@@ -32,7 +32,7 @@ public sealed class CronOverlapDispatchTests : TestBase
     public async Task should_not_dispatch_an_occurrence_skipped_for_overlap_and_should_report_it()
     {
         var function = $"cron-overlap-{Guid.NewGuid():N}";
-        var (manager, provider, skips) = _Create();
+        var (manager, provider, skips) = _Create(function);
         var definition = _Definition(function, CronOverlapPolicy.Skip);
         await provider.InsertCronJobsAsync([definition], AbortToken);
         await provider.InsertCronJobOccurrencesAsync([_Running(definition.Id)], AbortToken);
@@ -52,7 +52,7 @@ public sealed class CronOverlapDispatchTests : TestBase
     public async Task should_dispatch_alongside_an_unfinished_occurrence_under_allow()
     {
         var function = $"cron-overlap-{Guid.NewGuid():N}";
-        var (manager, provider, skips) = _Create();
+        var (manager, provider, skips) = _Create(function);
         var definition = _Definition(function, CronOverlapPolicy.Allow);
         await provider.InsertCronJobsAsync([definition], AbortToken);
         await provider.InsertCronJobOccurrencesAsync([_Running(definition.Id)], AbortToken);
@@ -69,7 +69,7 @@ public sealed class CronOverlapDispatchTests : TestBase
     public async Task should_report_a_recovery_run_skipped_for_overlap_as_a_recovery_run()
     {
         var function = $"cron-overlap-{Guid.NewGuid():N}";
-        var (manager, provider, skips) = _Create();
+        var (manager, provider, skips) = _Create(function);
         var definition = _Definition(function, CronOverlapPolicy.Skip);
         // Four hours behind with a one-minute grace: the scheduler recovers rather than dispatching a tick.
         definition.ReconciledThroughUtc = _Due.AddHours(-4);
@@ -204,7 +204,7 @@ public sealed class CronOverlapDispatchTests : TestBase
         InternalJobsManager<FakeTimeJob, FakeCronJob> Manager,
         JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> Provider,
         List<OverlapSkip> Skips
-    ) _Create()
+    ) _Create(string function)
     {
         var skips = new List<OverlapSkip>();
         var time = new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero));
@@ -214,6 +214,25 @@ public sealed class CronOverlapDispatchTests : TestBase
         services.AddSingleton(new SchedulerOptionsBuilder { NodeId = "node-a" });
         services.AddSingleton(Substitute.For<IJobsHostScheduler>());
         services.AddSingleton<IJobsInstrumentation>(new CapturingInstrumentation(skips));
+        // The skip counter tags only functions the host registers, so the definition's function is registered here.
+        services.AddSingleton(
+            JobFunctionRegistryBuilder.Build(
+                [
+                    new KeyValuePair<string, JobFunctionRegistration>(
+                        function,
+                        new JobFunctionRegistration
+                        {
+                            CronExpression = "0 0 * * * *",
+                            Priority = JobPriority.Normal,
+                            Delegate = static (_, _, _) => Task.CompletedTask,
+                            MaxConcurrency = 0,
+                        }
+                    ),
+                ],
+                [],
+                []
+            )
+        );
         var sp = services.BuildServiceProvider();
 
         var provider = new JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>(sp);

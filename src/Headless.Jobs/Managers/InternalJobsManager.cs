@@ -47,6 +47,21 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         return _instrumentation ??= serviceProvider.GetService<IJobsInstrumentation>();
     }
 
+    // Resolved lazily for the same reason as the instrumentation above. A container without the registered bound still
+    // bounds by its registry, and one with neither tags every function as unregistered rather than unbounded.
+    private JobsFunctionTagBound? _functionTags;
+
+    private JobsFunctionTagBound _ResolveFunctionTags()
+    {
+        return _functionTags ??=
+            serviceProvider.GetService<JobsFunctionTagBound>()
+            ?? (
+                serviceProvider.GetService<JobFunctionRegistry>() is { } registry
+                    ? new JobsFunctionTagBound(registry)
+                    : JobsFunctionTagBound.Unregistered
+            );
+    }
+
     private readonly TimeSpan _strandedSweepInterval = schedulerOptions.FallbackIntervalChecker;
 
     // Claim the sweep slot at most once per FallbackIntervalChecker. GetNextJobs is the scheduler's hot path
@@ -737,6 +752,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             );
 
         JobsMetrics.CronOccurrencesSkipped(
+            _ResolveFunctionTags(),
             JobsMetrics.SkipReasonMissedRun,
             candidate.FunctionName,
             recovery.SkippedOccurrenceCount
@@ -746,7 +762,12 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         {
             // The coalesced run was established and then recorded as skipped: an earlier occurrence is still
             // unfinished and the definition forbids overlap. Nothing is left to claim.
-            JobsMetrics.CronOccurrencesSkipped(JobsMetrics.SkipReasonOverlap, candidate.FunctionName, 1);
+            JobsMetrics.CronOccurrencesSkipped(
+                _ResolveFunctionTags(),
+                JobsMetrics.SkipReasonOverlap,
+                candidate.FunctionName,
+                1
+            );
             _ResolveInstrumentation()
                 ?.LogCronOccurrenceSkippedForOverlap(
                     candidate.CronJobId,
@@ -869,7 +890,12 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         {
             // The skipped row already accounts for the instant and the position moved past it; the claim path must
             // never see it.
-            JobsMetrics.CronOccurrencesSkipped(JobsMetrics.SkipReasonOverlap, candidate.FunctionName, 1);
+            JobsMetrics.CronOccurrencesSkipped(
+                _ResolveFunctionTags(),
+                JobsMetrics.SkipReasonOverlap,
+                candidate.FunctionName,
+                1
+            );
 
             if (materialized.OccurrenceId is { } skippedId)
             {

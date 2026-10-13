@@ -339,6 +339,14 @@ public abstract class PostgreSqlClaimConformanceTestsBase<TFixture>(TFixture fix
         return base.concurrent_cas_claims_of_one_row_have_exactly_one_winner();
     }
 
+    [Theory]
+    [InlineData(true, "postgresql")]
+    [InlineData(false, "cas")]
+    public override Task racing_claims_of_one_row_record_one_conflict_on_the_loser(
+        bool useNativeClaims,
+        string strategy
+    ) => base.racing_claims_of_one_row_record_one_conflict_on_the_loser(useNativeClaims, strategy);
+
     [Fact]
     public override Task deleting_a_chain_root_removes_the_whole_descendant_tree()
     {

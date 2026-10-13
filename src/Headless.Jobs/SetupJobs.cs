@@ -300,6 +300,9 @@ public static class SetupJobs
                 defaultFailurePolicy
             )
         );
+        services.TryAddSingleton(provider => new JobsFunctionTagBound(
+            provider.GetRequiredService<JobFunctionRegistry>()
+        ));
         services.TryAddSingleton(provider => provider.GetRequiredService<JobFunctionRegistry>().RunFilter);
         services.TryAddSingleton(provider => provider.GetRequiredService<JobFunctionRegistry>().ClusterConcurrency);
         var runsJobs = optionInstance.RegisterBackgroundServices;

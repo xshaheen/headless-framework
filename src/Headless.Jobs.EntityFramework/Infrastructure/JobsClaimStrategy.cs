@@ -16,6 +16,28 @@ internal static class JobsClaimStrategyDefaults
     public const int MaxClaimBatchSize = 100;
 }
 
+/// <summary>Counts the rows a claim selected but lost to another node, for the claim-conflict metric.</summary>
+internal static class JobsClaimConflicts
+{
+    /// <summary>
+    /// The candidates a direct claim was asked for and did not return. A candidate the run filter excludes, or one of a
+    /// cluster-limited function, is not counted: the claim may have refused it for a reason other than a lost race.
+    /// </summary>
+    public static int CountLost<TClaimed>(
+        IEnumerable<TimeJobEntity> candidates,
+        IReadOnlyDictionary<Guid, TClaimed> claimed,
+        JobsRunFilter runFilter,
+        JobsClusterConcurrency clusterConcurrency
+    )
+    {
+        return candidates
+            .DistinctBy(x => x.Id)
+            .Count(x =>
+                !claimed.ContainsKey(x.Id) && runFilter.Allows(x.Function) && !clusterConcurrency.IsLimited(x.Function)
+            );
+    }
+}
+
 internal interface IJobsClaimStrategy<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
@@ -270,6 +292,12 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             if (claimedIds.Count == 0)
             {
+                // A function the run filter excludes is refused by the gate, not lost to another node.
+                if (_runFilter.Allows(timeJob.Function))
+                {
+                    JobsMetrics.ClaimConflicts(JobsMetrics.ClaimStrategyCas, 1);
+                }
+
                 continue;
             }
 
@@ -360,6 +388,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             if (claimedIds.Count == 0)
             {
+                // The sweep selected this row as claimable; it is gone because another node claimed it first.
+                JobsMetrics.ClaimConflicts(JobsMetrics.ClaimStrategyCas, 1);
                 continue;
             }
 
@@ -437,6 +467,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             if (affected <= 0)
             {
+                JobsMetrics.ClaimConflicts(JobsMetrics.ClaimStrategyCas, 1);
                 continue;
             }
 
@@ -472,8 +503,12 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
         // The definition fences, the occurrence inserts, and the reuse pairing commit together, inside the context's
         // execution strategy so a retrying strategy replays the whole wave; the lease stamp below stays autocommit.
-        var (claimResults, claimableOccurrenceIds) = await JobsStoreTransaction
-            .ExecuteAsync<TDbContext, (CronJobOccurrenceEntity<TCronJob>?[] Results, List<Guid> ClaimableIds)>(
+        // Lost rows are counted per attempt and reported once the wave commits, so a replayed attempt is not counted twice.
+        var (claimResults, claimableOccurrenceIds, lostCount) = await JobsStoreTransaction
+            .ExecuteAsync<
+                TDbContext,
+                (CronJobOccurrenceEntity<TCronJob>?[] Results, List<Guid> ClaimableIds, int Lost)
+            >(
                 dbContextFactory,
                 async (attempt, _) =>
                 {
@@ -481,6 +516,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     var context = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
                     var claimResults = new CronJobOccurrenceEntity<TCronJob>?[cronJobOccurrences.Items.Length];
                     var claimableOccurrenceIds = new List<Guid>();
+                    var lost = 0;
 
                     // R3b: ONE occupancy probe per claim wave instead of one round trip per candidate. Every item in
                     // the wave shares the same execution instant (it is the batch key), so the accounting question is a
@@ -539,6 +575,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                             // picked up by the fallback sweep; nothing is disturbed either way.
                             if (accountedDefinitionIds.Contains(item.Id))
                             {
+                                // The dispatch found no occurrence for this instant; another node has written one since.
+                                lost++;
                                 continue;
                             }
 
@@ -568,7 +606,9 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                             }
                             catch (DbUpdateException)
                             {
+                                // The unique index rejected the insert: another node materialized the instant first.
                                 dbContext.Entry(itemToAdd).State = EntityState.Detached;
+                                lost++;
                                 continue;
                             }
 
@@ -595,6 +635,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
                         if (affectedUpdate <= 0)
                         {
+                            lost++;
                             continue;
                         }
 
@@ -608,11 +649,13 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
                     await attempt.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-                    return (claimResults, claimableOccurrenceIds);
+                    return (claimResults, claimableOccurrenceIds, lost);
                 },
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        JobsMetrics.ClaimConflicts(JobsMetrics.ClaimStrategyCas, lostCount);
 
         await using var dbContext = await dbContextFactory
             .CreateDbContextAsync(cancellationToken)

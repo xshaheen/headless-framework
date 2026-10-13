@@ -1264,6 +1264,78 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
+    /// Two nodes race to claim the same row: the node that loses records exactly one claim conflict, tagged with its
+    /// claim strategy, and the winner records none. Repeated because which node wins, and whether the loser waits on
+    /// the winner's lock or finds the row already taken, varies from round to round.
+    /// </summary>
+    public virtual async Task racing_claims_of_one_row_record_one_conflict_on_the_loser(
+        bool useNativeClaims,
+        string strategy
+    )
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var firstHost = fixture.BuildHost("conflict-race-a", useNativeClaims: useNativeClaims);
+        using var secondHost = fixture.BuildHost("conflict-race-b", useNativeClaims: useNativeClaims);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(firstHost, ct);
+        await firstHost.StartAsync(ct);
+        await secondHost.StartAsync(ct);
+        using var conflicts = new ClaimConflictRecorder();
+
+        try
+        {
+            var first = firstHost.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var second = secondHost.Services.GetRequiredService<
+                IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
+            >();
+
+            for (var round = 0; round < 5; round++)
+            {
+                conflicts.Clear();
+                var job = new TimeJobEntity
+                {
+                    Id = Guid.NewGuid(),
+                    Function = "conflict-race",
+                    ExecutionTime = DateTime.UtcNow,
+                };
+                await first.AddTimeJobsAsync([job], ct);
+
+                // Each node claims from its own peek of the row, as two schedulers polling the same store do.
+                var firstPeek = (await first.GetTimeJobByIdAsync(job.Id, ct))!;
+                var secondPeek = (await second.GetTimeJobByIdAsync(job.Id, ct))!;
+                var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                async Task<int> claimAsync(
+                    string node,
+                    IJobPersistenceProvider<TimeJobEntity, CronJobEntity> persistence,
+                    TimeJobEntity peek
+                )
+                {
+                    ClaimConflictRecorder.Claimant.Value = node;
+                    await gate.Task;
+                    return (await persistence.QueueTimeJobsAsync([peek], ct).ToArrayAsync(ct)).Length;
+                }
+
+                var firstClaim = claimAsync("a", first, firstPeek);
+                var secondClaim = claimAsync("b", second, secondPeek);
+                gate.SetResult();
+                var claimed = await Task.WhenAll(firstClaim, secondClaim);
+
+                claimed.Sum().Should().Be(1, "round {0}: exactly one node wins the row", round);
+                var loser = claimed[0] == 0 ? "a" : "b";
+                var recorded = conflicts.Recorded.Should().ContainSingle("round {0}: only the loser lost a row", round);
+                recorded.Subject.Claimant.Should().Be(loser);
+                recorded.Subject.Value.Should().Be(1);
+                recorded.Subject.Strategy.Should().Be(strategy);
+            }
+        }
+        finally
+        {
+            await Task.WhenAll(firstHost.StopAsync(ct), secondHost.StopAsync(ct));
+        }
+    }
+
+    /// <summary>
     /// The migration-replacement contract, and the pair of producers that makes it need a typed column. Both write
     /// <c>Skipped</c> with the identical <c>SkippedReason</c> "Cron definition updated" and owe OPPOSITE answers: the
     /// startup seeding migration retires the row without creating a replacement, so its fire is still owed, while a
@@ -1673,5 +1745,58 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         await gate;
         var context = new JobManagerDispatchContext(cronId) { FunctionName = "create", Expression = "* * * * *" };
         return await persistence.QueueCronJobOccurrencesAsync((executionTime, [context]), ct).ToArrayAsync(ct);
+    }
+
+    /// <summary>
+    /// Records the Jobs claim-conflict counter, attributed to the claimant whose call flow emitted it. The attribution
+    /// rides an async-local so measurements from other tests running in parallel in this process are ignored.
+    /// </summary>
+    private sealed class ClaimConflictRecorder : IDisposable
+    {
+        private readonly System.Diagnostics.Metrics.MeterListener _listener = new();
+        private readonly ConcurrentQueue<(string Claimant, long Value, string? Strategy)> _recorded = new();
+
+        public static AsyncLocal<string?> Claimant { get; } = new();
+
+        public ClaimConflictRecorder()
+        {
+            _listener.InstrumentPublished = static (instrument, listener) =>
+            {
+                if (
+                    string.Equals(instrument.Meter.Name, "Headless.Jobs", StringComparison.Ordinal)
+                    && string.Equals(instrument.Name, "headless.jobs.claim.conflicts", StringComparison.Ordinal)
+                )
+                {
+                    listener.EnableMeasurementEvents(instrument);
+                }
+            };
+            _listener.SetMeasurementEventCallback<long>(
+                (_, value, tags, _) =>
+                {
+                    if (Claimant.Value is not { } claimant)
+                    {
+                        return;
+                    }
+
+                    string? strategy = null;
+                    foreach (var tag in tags)
+                    {
+                        if (string.Equals(tag.Key, "headless.jobs.claim.strategy", StringComparison.Ordinal))
+                        {
+                            strategy = tag.Value as string;
+                        }
+                    }
+
+                    _recorded.Enqueue((claimant, value, strategy));
+                }
+            );
+            _listener.Start();
+        }
+
+        public IReadOnlyCollection<(string Claimant, long Value, string? Strategy)> Recorded => [.. _recorded];
+
+        public void Clear() => _recorded.Clear();
+
+        public void Dispose() => _listener.Dispose();
     }
 }
