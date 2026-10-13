@@ -446,10 +446,11 @@ internal sealed class Dispatcher
         }
         catch (Exception e)
         {
-            // A failure before the attempt started leaves the claim unused; release it so the row is retried now
-            // instead of after DispatchTimeout. Once the attempt started this is a no-op and its completion releases it.
-            await attempt.AbandonClaimedAsync().ConfigureAwait(false);
+            // Logged first so a failing release cannot hide the original error. A failure before the attempt started
+            // leaves the claim unused; release it so the row is retried now instead of after DispatchTimeout. Once the
+            // attempt started this is a no-op and its completion releases it.
             _logger.SubscriberInvocationFailed(e, message.StorageId);
+            await attempt.AbandonClaimedAsync().ConfigureAwait(false);
             return false;
         }
     }

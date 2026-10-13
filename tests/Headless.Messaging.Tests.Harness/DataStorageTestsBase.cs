@@ -3022,6 +3022,16 @@ public abstract partial class DataStorageTestsBase : TestBase
             .ContainSingle(message => message.StorageId == stored.StorageId)
             .Subject;
 
+        // a copy recorded on the other lane names a different row identity, so it must not reset this one
+        var otherLane = _CopyMessage(claimed);
+        otherLane.Lane = MessageLane.Queue;
+        await storage.ChangePublishStateToDelayedAsync([otherLane], AbortToken);
+        NodeMembership.SetIdentity("flush-own-successor");
+        (await storage.LeasePublishAsync(_CopyMessage(stored), TimeSpan.FromMinutes(5), AbortToken))
+            .Should()
+            .BeFalse("a lane mismatch leaves the claim in place");
+        NodeMembership.SetIdentity("flush-own-owner");
+
         // when
         await storage.ChangePublishStateToDelayedAsync([claimed], AbortToken);
 

@@ -166,7 +166,8 @@ public sealed class MessageDelayedProcessorTests : TestBase
         // when
         await _ProcessOnceAsync(storage, dispatcher);
 
-        // then
+        // then — the poll ran and enqueued the row, and nothing came back.
+        committedDispatcher.Received(1).EnqueueCommittedDelayedMessage(message);
         await storage
             .DidNotReceive()
             .ChangePublishStateToDelayedAsync(
@@ -188,6 +189,7 @@ public sealed class MessageDelayedProcessorTests : TestBase
         await _ProcessOnceAsync(storage, dispatcher);
 
         // then — claiming would only lease rows the scheduler must refuse and hand back.
+        _ = ((ICommittedDelayedMessageDispatcher)dispatcher).Received().IsSchedulerFull;
         await claimStorage.DidNotReceive().ClaimDelayedMessagesAsync(Arg.Any<CancellationToken>());
         await storage
             .DidNotReceive()
