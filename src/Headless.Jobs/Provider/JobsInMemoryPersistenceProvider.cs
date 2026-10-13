@@ -1330,10 +1330,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         // Update the job itself
         if (_timeJobs.TryGetValue(job.Id, out var existing))
         {
-            // Ownership and business lineage are captured at scheduling; ordinary edits cannot replace them.
+            // Ownership, business lineage, and the scheduling trace context are captured at scheduling; ordinary edits
+            // cannot replace them.
             job.TenantId = existing.TenantId;
             job.CorrelationId = existing.CorrelationId;
             job.CausationId = existing.CausationId;
+            job.TraceParent = existing.TraceParent;
 
             if (_TryUpdateTimeJob(job.Id, job, existing))
             {
@@ -3617,6 +3619,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             ContractVersion = job.ContractVersion,
             CorrelationId = job.CorrelationId,
             CausationId = job.CausationId,
+            TraceParent = job.TraceParent,
             Status = job.Status,
             Retries = job.Retries,
             RetryCount = job.RetryCount,
@@ -3667,6 +3670,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 ContractVersion = ch.ContractVersion,
                 CorrelationId = ch.CorrelationId,
                 CausationId = ch.CausationId,
+                TraceParent = ch.TraceParent,
                 Retries = ch.Retries,
                 RetryCount = ch.RetryCount,
                 TenantId = ch.TenantId,
@@ -3882,6 +3886,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             IsCurrentGeneration = job.IsCurrentGeneration,
             CorrelationId = job.CorrelationId,
             CausationId = job.CausationId,
+            TraceParent = job.TraceParent,
             Status = job.Status,
             Retries = job.Retries,
             RetryCount = job.RetryCount,
@@ -3922,6 +3927,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             Request = occurrence.Request?.ToArray(),
             CorrelationId = occurrence.CorrelationId,
             CausationId = occurrence.CausationId,
+            TraceParent = occurrence.TraceParent,
             TenantId = occurrence.TenantId,
             CronJob = occurrence.CronJob,
             CronJobId = occurrence.CronJobId,

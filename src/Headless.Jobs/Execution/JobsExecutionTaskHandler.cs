@@ -214,20 +214,17 @@ internal sealed class JobsExecutionTaskHandler
         bool isChild = false
     )
     {
-        // Start OpenTelemetry activity for the entire job execution
+        // Each run is its own trace, linked to the span that scheduled it, so it must not inherit whatever is ambient
+        // here: the poll loop's span, the dispatching request on an immediate run, or a chain parent's execution span.
+        // This method is async, so clearing the ambient span here does not leak into the caller's context.
+        Activity.Current = null;
         using var jobActivity = _jobsInstrumentation.StartJobActivity(_GetActivityName(context.Type), context);
 
         // Add additional tags to the activity
         jobActivity?.SetTag("headless.job.is_due", isDue);
         jobActivity?.SetTag("headless.job.is_child", isChild);
 
-        // Log job enqueued/started (using the available method)
-        _jobsInstrumentation.LogJobEnqueued(
-            _GetJobTypeName(context.Type),
-            context.FunctionName,
-            context.JobId,
-            "ExecutionTaskHandler"
-        );
+        _jobsInstrumentation.LogJobStarted(context.JobId, context.FunctionName, _GetJobTypeName(context.Type));
 
         context.SetProperty(x => x.Status, JobStatus.InProgress);
 

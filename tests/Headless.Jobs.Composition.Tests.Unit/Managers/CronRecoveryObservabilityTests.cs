@@ -160,7 +160,7 @@ public sealed class CronRecoveryObservabilityTests : TestBase
 
         public Activity? StartJobActivity(string name, JobExecutionState state) => null;
 
-        public void LogJobEnqueued(string jobType, string functionName, Guid jobId, string? enqueuedFrom = null) { }
+        public void LogJobStarted(Guid jobId, string functionName, string jobType) { }
 
         public void LogJobCompleted(Guid jobId, string functionName, long executionTimeMs, bool success) { }
 

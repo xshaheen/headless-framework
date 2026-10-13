@@ -292,6 +292,11 @@ partial class InitialJobsOperationalStore
                     .HasColumnType("character varying(200)")
                     .HasColumnName("tenant_id");
 
+                b.Property<string>("TraceParent")
+                    .HasMaxLength(55)
+                    .HasColumnType("character varying(55)")
+                    .HasColumnName("trace_parent");
+
                 b.Property<DateTimeOffset>("UpdatedAt")
                     .HasColumnType("timestamp with time zone")
                     .HasColumnName("updated_at");
@@ -536,6 +541,11 @@ partial class InitialJobsOperationalStore
                     .HasColumnType("character varying(200)")
                     .HasColumnName("tenant_id")
                     .UseCollation("C");
+
+                b.Property<string>("TraceParent")
+                    .HasMaxLength(55)
+                    .HasColumnType("character varying(55)")
+                    .HasColumnName("trace_parent");
 
                 b.Property<DateTimeOffset>("UpdatedAt")
                     .HasColumnType("timestamp with time zone")

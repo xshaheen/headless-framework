@@ -413,12 +413,14 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         );
                     }
 
-                    // Ownership and business lineage are captured at scheduling; ordinary edits cannot replace them.
+                    // Ownership, business lineage, and the scheduling trace context are captured at scheduling;
+                    // ordinary edits cannot replace them.
                     foreach (var entry in context.ChangeTracker.Entries<TTimeJob>())
                     {
                         entry.Property(nameof(BaseJobEntity.TenantId)).IsModified = false;
                         entry.Property(nameof(BaseJobEntity.CorrelationId)).IsModified = false;
                         entry.Property(nameof(BaseJobEntity.CausationId)).IsModified = false;
+                        entry.Property(nameof(TimeJobEntity.TraceParent)).IsModified = false;
                     }
 
                     return (await context.SaveChangesAsync(ct).ConfigureAwait(false), candidates);

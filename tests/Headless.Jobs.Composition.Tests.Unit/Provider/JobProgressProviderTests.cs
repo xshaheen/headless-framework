@@ -218,7 +218,9 @@ public sealed class JobProgressProviderTests : TestBase
             AbortToken
         );
 
-        (await fixture.Provider.RequeueTimeJobAsync(job.Id, AbortToken)).Should().Be(JobRequeueOutcome.Requeued);
+        (await fixture.Provider.RequeueTimeJobAsync(job.Id, traceParent: null, AbortToken))
+            .Should()
+            .Be(JobRequeueOutcome.Requeued);
 
         var stored = (await fixture.Provider.GetTimeJobByIdAsync(job.Id, AbortToken))!;
         stored.ProgressPercent.Should().BeNull();
@@ -240,7 +242,7 @@ public sealed class JobProgressProviderTests : TestBase
             AbortToken
         );
 
-        (await fixture.Provider.RequeueCronJobOccurrenceAsync(occurrence.Id, AbortToken))
+        (await fixture.Provider.RequeueCronJobOccurrenceAsync(occurrence.Id, traceParent: null, AbortToken))
             .Should()
             .Be(JobRequeueOutcome.Requeued);
 

@@ -47,6 +47,13 @@ public class TimeJobEntity<TTicker> : BaseJobEntity
     /// <summary>Current identity remains true after execution ends; historical rows remain retained.</summary>
     public virtual bool? IsCurrentGeneration { get; internal set; }
 
+    /// <summary>
+    /// W3C <c>traceparent</c> of the span that scheduled this row, or <see langword="null"/> when no trace context
+    /// was active. The execution span starts its own trace and links to this context. Captured on insert, kept by
+    /// ordinary updates, and replaced by a requeue or a keyed supersede, because that action is the new cause.
+    /// </summary>
+    public virtual string? TraceParent { get; internal set; }
+
     /// <summary>Current lifecycle state of this job row.</summary>
     public virtual JobStatus Status { get; internal set; }
 

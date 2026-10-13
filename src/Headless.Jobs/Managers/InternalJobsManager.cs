@@ -249,6 +249,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             ContractVersion = timeJob.ContractVersion,
             CorrelationId = timeJob.CorrelationId,
             CausationId = timeJob.CausationId,
+            TraceParent = timeJob.TraceParent,
             JobId = timeJob.Id,
             Type = JobType.TimeJob,
             Retries = timeJob.Retries,
@@ -278,6 +279,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             ContractVersion = child.ContractVersion,
             CorrelationId = child.CorrelationId,
             CausationId = child.CausationId,
+            TraceParent = child.TraceParent,
             JobId = child.Id,
             Type = JobType.TimeJob,
             Retries = child.Retries,
@@ -1184,13 +1186,30 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     public Task<bool?> IsTimeJobCancellationRequestedAsync(Guid jobId, CancellationToken cancellationToken = default) =>
         persistenceProvider.IsTimeJobCancellationRequestedAsync(jobId, cancellationToken);
 
-    public Task<JobRequeueOutcome> RequeueTimeJobAsync(Guid jobId, CancellationToken cancellationToken = default) =>
-        persistenceProvider.RequeueTimeJobAsync(jobId, cancellationToken);
+    // A requeue is an operator decision to run the row again, so it is the new cause: the rerun links to the requeue
+    // request rather than to whatever originally scheduled the row.
+    public async Task<JobRequeueOutcome> RequeueTimeJobAsync(Guid jobId, CancellationToken cancellationToken = default)
+    {
+        using var scheduleActivity = JobsDiagnostics.StartSchedule(JobType.TimeJob, function: null);
+        scheduleActivity?.SetTag("headless.job.id", jobId.ToString());
 
-    public Task<JobRequeueOutcome> RequeueCronJobOccurrenceAsync(
+        return await persistenceProvider
+            .RequeueTimeJobAsync(jobId, JobTraceParent.Capture(scheduleActivity), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<JobRequeueOutcome> RequeueCronJobOccurrenceAsync(
         Guid occurrenceId,
         CancellationToken cancellationToken = default
-    ) => persistenceProvider.RequeueCronJobOccurrenceAsync(occurrenceId, cancellationToken);
+    )
+    {
+        using var scheduleActivity = JobsDiagnostics.StartSchedule(JobType.CronJobOccurrence, function: null);
+        scheduleActivity?.SetTag("headless.job.id", occurrenceId.ToString());
+
+        return await persistenceProvider
+            .RequeueCronJobOccurrenceAsync(occurrenceId, JobTraceParent.Capture(scheduleActivity), cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     public async Task<bool> PauseCronJobAsync(Guid cronJobId, CancellationToken cancellationToken = default)
     {

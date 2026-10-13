@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting;
+using Headless.Jobs.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -50,6 +51,7 @@ public class TimeJobConfigurations<TTimeJob>(string schema, StorageNamingStyle s
 
         builder.Property(x => x.TenantId).IsRequired(false).HasMaxLength(JobsTenancyOptions.TenantIdMaxLength);
         builder.Property(x => x.ProgressMessage).HasMaxLength(JobProgress.MessageMaxLength);
+        builder.Property(x => x.TraceParent).HasMaxLength(JobTraceParent.MaxLength);
 
         builder.Property(x => x.BusinessKey).HasMaxLength(JobKey.MaxLength);
         builder.Property(x => x.IntentFingerprint).HasMaxLength(64);

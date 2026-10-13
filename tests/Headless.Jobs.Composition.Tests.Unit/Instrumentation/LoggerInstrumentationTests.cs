@@ -143,53 +143,48 @@ public sealed class LoggerInstrumentationTests : TestBase
     }
 
     [Fact]
-    public void log_job_enqueued_logs_even_without_a_listener()
+    public void log_job_started_logs_even_without_a_listener()
     {
         // given
         var logger = Substitute.For<ILogger<LoggerInstrumentation>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var instrumentation = new LoggerInstrumentation(logger, new StubOwnerIdentity());
-        var jobId = Guid.NewGuid();
 
         // when
-        instrumentation.LogJobEnqueued("Time", "SendEmail", jobId, "caller-info");
+        instrumentation.LogJobStarted(Guid.NewGuid(), "SendEmail", "TimeJob");
 
-        // then — the log call fires regardless of whether anything is listening to the activity source.
+        // then
         logger
             .ReceivedCalls()
             .Should()
             .Contain(call =>
-                call.GetMethodInfo().Name == "Log" && call.GetArguments().OfType<EventId>().Any(e => e.Id == 1000)
+                call.GetMethodInfo().Name == "Log" && call.GetArguments().OfType<EventId>().Any(e => e.Id == 1001)
             );
     }
 
     [Fact]
-    public void log_job_enqueued_wraps_the_log_in_an_activity_span_when_listener_is_attached()
+    public void start_job_activity_starts_an_unlinked_root_when_the_stored_trace_parent_is_unreadable()
     {
         // given
-        var logger = Substitute.For<ILogger<LoggerInstrumentation>>();
-        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var instrumentation = new LoggerInstrumentation(logger, new StubOwnerIdentity());
-        var activities = new ConcurrentBag<Activity>();
-        using var listener = _StartListener(activities.Add);
-        var jobId = Guid.NewGuid();
+        var instrumentation = new LoggerInstrumentation(
+            Substitute.For<ILogger<LoggerInstrumentation>>(),
+            new StubOwnerIdentity()
+        );
+        using var listener = _StartListener();
+        var context = new JobExecutionState
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "SendEmail",
+            TraceParent = "not-a-traceparent",
+        };
 
         // when
-        instrumentation.LogJobEnqueued("Time", "SendEmail", jobId, "caller-info");
+        using var activity = instrumentation.StartJobActivity("job.execute", context);
 
-        // then — both the span and the underlying log fire.
-        var activity = activities.Should().ContainSingle(a => a.OperationName == "job.enqueue").Subject;
-        activity.GetTagItem("headless.job.id").Should().Be(jobId.ToString());
-        activity.GetTagItem("headless.job.type").Should().Be("Time");
-        activity.GetTagItem("headless.job.function").Should().Be("SendEmail");
-        activity.GetTagItem("headless.job.enqueued_from").Should().Be("caller-info");
-
-        logger
-            .ReceivedCalls()
-            .Should()
-            .Contain(call =>
-                call.GetMethodInfo().Name == "Log" && call.GetArguments().OfType<EventId>().Any(e => e.Id == 1000)
-            );
+        // then
+        activity.Should().NotBeNull();
+        activity!.Links.Should().BeEmpty();
+        activity.ParentSpanId.Should().Be(default(ActivitySpanId));
     }
 
     [Fact]
