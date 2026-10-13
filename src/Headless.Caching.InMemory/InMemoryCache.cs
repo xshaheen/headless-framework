@@ -74,7 +74,15 @@ public sealed class InMemoryCache
     private readonly long _maintenanceIntervalTicks;
     private readonly int _maxEvictionsPerCompaction;
     private readonly int _evictionSampleSize;
+
+    // Last-access stamps are read only to pick a capacity-eviction victim, which happens only when a cap is set.
+    private readonly bool _tracksAccess;
     private long _currentMemorySize;
+
+    // Live item count for the write-path compaction trigger, so a write does not pay ConcurrentDictionary.Count,
+    // which takes every bucket lock. Approximate: a write racing a Clear() can drift it by the in-flight writers,
+    // so compaction and maintenance resync it from the dictionary. Never exposed; GetCountAsync scans exactly.
+    private long _itemCount;
 
     // Soonest known physical/sliding expiry tick across all live entries — a monotone lower bound, not exact.
     // Writers lower it via CAS on the hot path (lock-free, no allocation); the maintenance sweep recomputes the
@@ -129,6 +137,7 @@ public sealed class InMemoryCache
         _maintenanceIntervalTicks = options.MaintenanceInterval.Ticks;
         _maxEvictionsPerCompaction = options.MaxEvictionsPerCompaction;
         _evictionSampleSize = options.EvictionSampleSize;
+        _tracksAccess = _maxItems.HasValue || _maxMemorySize.HasValue;
 
         Argument.IsTrue(
             (!_maxMemorySize.HasValue && !_maxEntrySize.HasValue) || _sizeCalculator is not null,
@@ -343,22 +352,33 @@ public sealed class InMemoryCache
             }
 
             long sizeDelta = 0;
+            var inserted = false;
 
             _memory.AddOrUpdate(
                 prefixedKey,
                 _ =>
                 {
                     sizeDelta = entrySize;
+                    inserted = true;
                     return entry;
                 },
                 (_, existingEntry) =>
                 {
                     sizeDelta = entrySize - existingEntry.Size;
+                    inserted = false;
                     return entry;
                 }
             );
 
             totalSizeDelta += sizeDelta;
+
+            // Counted per item rather than batched like the size delta, so a cancellation mid-batch cannot drop
+            // the count of entries that were already committed.
+            if (inserted)
+            {
+                Interlocked.Increment(ref _itemCount);
+            }
+
             _TrackUpdate(entry.TrackedExpiresAt);
             count++;
             _events.OnSet(k);
@@ -555,7 +575,7 @@ public sealed class InMemoryCache
                     return existingEntry;
                 }
 
-                var currentValue = existingEntry.GetValue<T>();
+                var currentValue = existingEntry.GetValue<T>(_tracksAccess);
 
                 if (!Equals(currentValue, expected))
                 {
@@ -745,6 +765,7 @@ public sealed class InMemoryCache
         var expiresAt = expiration.HasValue ? now.Add(expiration.Value) : (DateTime?)null;
 
         long sizeDelta = 0;
+        var inserted = false;
         TNumeric result = default;
 
         // Starts the counter over from the input value, as if the key were absent. Shared by the add factory and
@@ -768,9 +789,15 @@ public sealed class InMemoryCache
 
         _memory.AddOrUpdate(
             key,
-            _ => _CreateFreshEntry(replacedSize: 0),
+            _ =>
+            {
+                inserted = true;
+                return _CreateFreshEntry(replacedSize: 0);
+            },
             (_, existingEntry) =>
             {
+                inserted = false;
+
                 // A physically-expired entry that has not been reaped yet is a MISS, not a baseline. Eviction here
                 // is lazy (a value read, or a maintenance sweep that only runs off cache activity), so an idle
                 // window past the TTL leaves the old value resident — reading it would revive an expired counter
@@ -785,7 +812,7 @@ public sealed class InMemoryCache
 
                 try
                 {
-                    currentValue = existingEntry.GetValue<TNumeric?>();
+                    currentValue = existingEntry.GetValue<TNumeric?>(_tracksAccess);
                 }
                 catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
                 {
@@ -821,6 +848,11 @@ public sealed class InMemoryCache
         if (sizeDelta != 0)
         {
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
+        }
+
+        if (inserted)
+        {
+            Interlocked.Increment(ref _itemCount);
         }
 
         _TrackUpdate(expiresAt);
@@ -925,6 +957,7 @@ public sealed class InMemoryCache
         // Count only members that were not already present, so the return matches the documented contract ("number
         // of members actually added") and Redis (whose ZADD reply counts only previously-absent members).
         long addedCount = 0;
+        var inserted = false;
 
         var committed = _memory.AddOrUpdate(
             key,
@@ -932,10 +965,13 @@ public sealed class InMemoryCache
             {
                 sizeDelta = entrySize;
                 addedCount = newItems.Count;
+                inserted = true;
                 return entry;
             },
             (existingKey, existingEntry) =>
             {
+                inserted = false;
+
                 // AddOrUpdate may invoke this factory multiple times under contention; reset the captured counter
                 // so a retried invocation does not accumulate counts from a discarded attempt.
                 addedCount = 0;
@@ -994,6 +1030,11 @@ public sealed class InMemoryCache
         if (sizeDelta != 0)
         {
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
+        }
+
+        if (inserted)
+        {
+            Interlocked.Increment(ref _itemCount);
         }
 
         _TrackUpdate(committed.PhysicalExpiresAt);
@@ -1124,7 +1165,7 @@ public sealed class InMemoryCache
 
         try
         {
-            var value = existingEntry.GetValue<T>();
+            var value = existingEntry.GetValue<T>(_tracksAccess);
             _TryRearmSlidingEntry(key, existingEntry, now);
 
             return new CacheValue<T>(value, hasValue: true);
@@ -1407,7 +1448,7 @@ public sealed class InMemoryCache
 
         try
         {
-            var value = existingEntry.GetValue<byte[]>();
+            var value = existingEntry.GetValue<byte[]>(_tracksAccess);
             _TryRearmSlidingEntry(key, existingEntry, now);
 
             // Parity with the byte[] fallback (CacheValue<byte[]>.Value is null -> false): a null-sentinel hit
@@ -1495,7 +1536,7 @@ public sealed class InMemoryCache
             return new ValueTask<bool>(result: false);
         }
 
-        Interlocked.Add(ref _currentMemorySize, -entry.Size);
+        _OnEntryRemoved(entry);
         CachingMetrics.RecordEviction(_cacheName, CachingMetrics.EvictRemoved, CachingMetrics.TierL1);
         CachingMetrics.RecordWrite(_cacheName, CachingMetrics.OperationRemove, CachingMetrics.TierL1);
         _events.OnEviction(callerKey, CacheEvictionReason.Removed);
@@ -1551,7 +1592,7 @@ public sealed class InMemoryCache
         // fail-safe model could later resurrect. Mirror RemoveAsync's size bookkeeping.
         if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, existingEntry)))
         {
-            Interlocked.Add(ref _currentMemorySize, -existingEntry.Size);
+            _OnEntryRemoved(existingEntry);
         }
 
         return new ValueTask<bool>(result: true);
@@ -1583,14 +1624,14 @@ public sealed class InMemoryCache
                 break;
             }
 
-            if (!Equals(existingEntry.GetValue<T>(), expected))
+            if (!Equals(existingEntry.GetValue<T>(_tracksAccess), expected))
             {
                 break;
             }
 
             if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, existingEntry)))
             {
-                Interlocked.Add(ref _currentMemorySize, -existingEntry.Size);
+                _OnEntryRemoved(existingEntry);
                 wasRemoved = true;
                 break;
             }
@@ -1622,7 +1663,7 @@ public sealed class InMemoryCache
 
             if (_memory.TryRemove(prefixedKey, out var entry))
             {
-                Interlocked.Add(ref _currentMemorySize, -entry.Size);
+                _OnEntryRemoved(entry);
                 removed++;
             }
         }
@@ -1649,7 +1690,7 @@ public sealed class InMemoryCache
             {
                 if (_memory.TryRemove(key, out var removedEntry))
                 {
-                    Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
+                    _OnEntryRemoved(removedEntry);
                     removed++;
                 }
             }
@@ -1941,6 +1982,7 @@ public sealed class InMemoryCache
         _tagMarkers.Clear();
         Interlocked.Exchange(ref _clearGenerationTicks, 0);
         Interlocked.Exchange(ref _currentMemorySize, 0);
+        Interlocked.Exchange(ref _itemCount, 0);
         Interlocked.Exchange(ref _nextExpiryTicks, long.MaxValue);
         // No entry survives to be invalidated and no marker remains to bound, so the lifetime bound resets to
         // "nothing observed" and is rebuilt from the next generation of tagged writes.
@@ -1966,6 +2008,7 @@ public sealed class InMemoryCache
         _tagMarkers.Clear();
         Interlocked.Exchange(ref _clearGenerationTicks, 0);
         Interlocked.Exchange(ref _currentMemorySize, 0);
+        Interlocked.Exchange(ref _itemCount, 0);
         Interlocked.Exchange(ref _nextExpiryTicks, long.MaxValue);
         _coordinator.Dispose();
         _disposedCts.Cancel();
@@ -2000,7 +2043,7 @@ public sealed class InMemoryCache
 
         try
         {
-            value = existingEntry.GetValue<T>();
+            value = existingEntry.GetValue<T>(_tracksAccess);
         }
         catch (Exception ex) when (!_shouldThrowOnSerializationError)
         {
@@ -2310,7 +2353,7 @@ public sealed class InMemoryCache
     {
         if (_memory.TryRemove(key, out var removedEntry))
         {
-            Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
+            _OnEntryRemoved(removedEntry);
 
             // Lazy read-path reap: the eviction metric intentionally omits this, but the per-key event is more
             // complete. Gate on the specific event so the strip substring is built only when observed.
@@ -2325,7 +2368,7 @@ public sealed class InMemoryCache
     {
         if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
         {
-            Interlocked.Add(ref _currentMemorySize, -entry.Size);
+            _OnEntryRemoved(entry);
 
             if (_events.HasEvictionSubscribers)
             {
@@ -2390,6 +2433,7 @@ public sealed class InMemoryCache
 
         var wasUpdated = true;
         long sizeDelta = 0;
+        var inserted = false;
 
         if (addOnly)
         {
@@ -2398,11 +2442,13 @@ public sealed class InMemoryCache
                 _ =>
                 {
                     sizeDelta = entry.Size;
+                    inserted = true;
                     return entry;
                 },
                 (_, existingEntry) =>
                 {
                     wasUpdated = false;
+                    inserted = false;
 
                     if (existingEntry.IsExpired)
                     {
@@ -2422,11 +2468,13 @@ public sealed class InMemoryCache
                 _ =>
                 {
                     sizeDelta = entry.Size;
+                    inserted = true;
                     return entry;
                 },
                 (_, existingEntry) =>
                 {
                     sizeDelta = entry.Size - existingEntry.Size;
+                    inserted = false;
                     return entry;
                 }
             );
@@ -2435,6 +2483,11 @@ public sealed class InMemoryCache
         if (sizeDelta != 0)
         {
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
+        }
+
+        if (inserted)
+        {
+            Interlocked.Increment(ref _itemCount);
         }
 
         if (wasUpdated)
@@ -2497,12 +2550,33 @@ public sealed class InMemoryCache
         return true;
     }
 
-    private bool ShouldCompact =>
+    // Write-path trigger: reads the approximate item counter instead of locking every bucket per write.
+    private bool ShouldCompact => _ShouldCompact(exactCount: false);
+
+    private bool _ShouldCompact(bool exactCount) =>
         !_disposedCts.IsCancellationRequested
         && (
-            (_maxItems.HasValue && _memory.Count > _maxItems)
+            (_maxItems.HasValue && (exactCount ? _memory.Count : Volatile.Read(ref _itemCount)) > _maxItems)
             || (_maxMemorySize.HasValue && Interlocked.Read(ref _currentMemorySize) > _maxMemorySize)
         );
+
+    // Overwrites the item counter with the dictionary's exact count, so drift from writes racing a Clear() does not
+    // accumulate. Itself racy against concurrent writers, so it bounds drift rather than removing it; that is enough
+    // for a counter that only decides when to compact. Count takes every bucket lock, so call it only off the hot path.
+    private void _ResyncItemCount()
+    {
+        if (_maxItems.HasValue)
+        {
+            Interlocked.Exchange(ref _itemCount, _memory.Count);
+        }
+    }
+
+    // Single bookkeeping point for a successful removal, so the size and item counters cannot diverge by omission.
+    private void _OnEntryRemoved(CacheEntry entry)
+    {
+        Interlocked.Add(ref _currentMemorySize, -entry.Size);
+        Interlocked.Decrement(ref _itemCount);
+    }
 
     private async Task _StartMaintenanceAsync(bool compactImmediately = false)
     {
@@ -2551,6 +2625,8 @@ public sealed class InMemoryCache
 
     private async Task _CompactAsync()
     {
+        _ResyncItemCount();
+
         if (!ShouldCompact)
         {
             return;
@@ -2562,7 +2638,8 @@ public sealed class InMemoryCache
             {
                 var removalCount = 0;
 
-                while (ShouldCompact && removalCount < _maxEvictionsPerCompaction)
+                // Compaction is rare, so the eviction loop pays for the exact count and stops at the real limit.
+                while (_ShouldCompact(exactCount: true) && removalCount < _maxEvictionsPerCompaction)
                 {
                     var keyToRemove = _FindLeastRecentlyUsedOrLargest();
 
@@ -2573,7 +2650,7 @@ public sealed class InMemoryCache
 
                     if (_memory.TryRemove(keyToRemove, out var removedEntry))
                     {
-                        Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
+                        _OnEntryRemoved(removedEntry);
                         removalCount++;
 
                         if (_events.HasEvictionSubscribers)
@@ -2666,6 +2743,10 @@ public sealed class InMemoryCache
                 _logger.LogMaintenanceTaskFailed(e);
             }
 
+            // A counter that drifted low hides an over-capacity cache from the write-path trigger, so the periodic
+            // sweep resyncs it before deciding whether to compact.
+            _ResyncItemCount();
+
             if (ShouldCompact)
             {
                 await _CompactAsync().ConfigureAwait(false);
@@ -2703,7 +2784,7 @@ public sealed class InMemoryCache
 
                 if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
                 {
-                    Interlocked.Add(ref _currentMemorySize, -entry.Size);
+                    _OnEntryRemoved(entry);
                     removalCount++;
 
                     if (_events.HasEvictionSubscribers)
@@ -2816,7 +2897,7 @@ public sealed class InMemoryCache
     /// </item>
     /// <item>
     /// <b>Single mutation surface.</b> The only field that still mutates is <c>_lastAccessTicks</c>, which
-    /// is advisory LRU data — benign to race and already guarded by <see cref="Interlocked"/>.
+    /// is advisory LRU data — benign to race, written with an atomic store and read with <see cref="Interlocked"/>.
     /// </item>
     /// </list>
     /// <para>Callers update the dictionary via replace-on-write: construct a new <see cref="CacheEntry"/>
@@ -2990,10 +3071,19 @@ public sealed class InMemoryCache
 
         internal long Size { get; }
 
-        /// <summary>Returns the stored value, touching LRU and cloning when required.</summary>
-        internal object? ReadValue()
+        /// <summary>Returns the stored value, touching LRU when <paramref name="trackAccess"/> is set and
+        /// cloning when required.</summary>
+        /// <param name="trackAccess">Whether the owning cache evicts by capacity; the stamp has no other reader,
+        /// so a cache without caps skips the clock read and the shared-cache-line write on every hit.</param>
+        internal object? ReadValue(bool trackAccess)
         {
-            Interlocked.Exchange(ref _lastAccessTicks, _timeProvider.GetUtcNow().Ticks);
+            if (trackAccess)
+            {
+                // A plain atomic store is enough: nothing consumes the previous value, and the stamp is an LRU hint
+                // that tolerates a racing writer winning.
+                Volatile.Write(ref _lastAccessTicks, _timeProvider.GetUtcNow().Ticks);
+            }
+
             return _shouldClone ? _DeepClone(_cacheValue) : _cacheValue;
         }
 
@@ -3026,9 +3116,9 @@ public sealed class InMemoryCache
             return new(this, logicalExpiresAt, PhysicalExpiresAt, SlidingExpiration);
         }
 
-        public T? GetValue<T>()
+        public T? GetValue<T>(bool trackAccess)
         {
-            return _ConvertValue<T>(ReadValue());
+            return _ConvertValue<T>(ReadValue(trackAccess));
         }
 
         private static T? _ConvertValue<T>(object? val)
