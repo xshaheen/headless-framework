@@ -32,8 +32,17 @@ internal sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider, int
                 return false;
             }
 
-            if (_queue.Contains((sendTime, message)))
+            if (_queue.TryGetValue((sendTime, message), out var queued))
             {
+                // The sender's success write is fenced on the lease the queued instance carries, so a row re-claimed
+                // since it was queued must carry the newer lease; otherwise every send is rejected as stale and the
+                // row goes out again each lease cycle. An older or unleased copy arriving late changes nothing.
+                if (_HoldsNewerLease(message, queued.Item2))
+                {
+                    _queue.Remove(queued);
+                    _queue.Add((sendTime, message));
+                }
+
                 return true;
             }
 
@@ -150,6 +159,12 @@ internal sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider, int
                 "ScheduledMediumMessageQueue was not disposed. Call Dispose() to release SemaphoreSlim."
             );
         }
+    }
+
+    private static bool _HoldsNewerLease(MediumMessage incoming, MediumMessage queued)
+    {
+        return incoming.LockedUntil is { } incomingLease
+            && (queued.LockedUntil is not { } queuedLease || incomingLease > queuedLease);
     }
 
     private MediumMessage? _TryDequeueDueMessage(out TimeSpan? delay)
