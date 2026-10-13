@@ -218,12 +218,14 @@ internal sealed class Dispatcher
         }
     }
 
-    void ICommittedDelayedMessageDispatcher.EnqueueCommittedDelayedMessage(MediumMessage message)
+    bool ICommittedDelayedMessageDispatcher.IsSchedulerFull => _schedulerQueue.IsFull;
+
+    bool ICommittedDelayedMessageDispatcher.EnqueueCommittedDelayedMessage(MediumMessage message)
     {
         if (_IsCancellationRequested())
         {
             _logger.MessagePersistButSystemStopped();
-            return;
+            return false;
         }
 
         if (message.ExpiresAt is not { } publishTime)
@@ -231,8 +233,9 @@ internal sealed class Dispatcher
             throw new InvalidOperationException("A committed delayed message must have an expiration time.");
         }
 
-        // A full in-memory queue is safe here: the committed message remains durable as Delayed work.
-        _ = _schedulerQueue.TryEnqueue(message, publishTime.Ticks);
+        // Never waits for capacity: a refusal goes back to the caller, which knows whether the row is an unclaimed
+        // hand-off (still durable as Delayed work) or a claim it must hand back.
+        return _schedulerQueue.TryEnqueue(message, publishTime.Ticks);
     }
 
     void ICommittedMessageDispatcher.EnqueueCommittedMessage(MediumMessage message)

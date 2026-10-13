@@ -64,14 +64,34 @@ internal sealed class MessageDelayedProcessor(
                 && dispatcher is ICommittedDelayedMessageDispatcher committedDispatcher
             )
             {
+                // A full scheduler would refuse every row this poll claims, and each refusal costs a hand-back write.
+                if (committedDispatcher.IsSchedulerFull)
+                {
+                    return;
+                }
+
                 var messages = await claimStorage
                     .ClaimDelayedMessagesAsync(context.CancellationToken)
                     .ConfigureAwait(false);
 
+                List<MediumMessage>? refused = null;
                 foreach (var message in messages)
                 {
                     message.OutboxStorage = outboxStorage;
-                    committedDispatcher.EnqueueCommittedDelayedMessage(message);
+                    if (!committedDispatcher.EnqueueCommittedDelayedMessage(message))
+                    {
+                        (refused ??= []).Add(message);
+                    }
+                }
+
+                if (refused is not null)
+                {
+                    // The claim committed these rows as Queued and leased to this node, so left alone they wait out
+                    // the lease. Handing them back under that exact lease makes them claimable on the next poll. The
+                    // claim already committed, so a stopping token must not drop the hand-back.
+                    await connection
+                        .ChangePublishStateToDelayedAsync(refused, CancellationToken.None)
+                        .ConfigureAwait(false);
                 }
 
                 return;

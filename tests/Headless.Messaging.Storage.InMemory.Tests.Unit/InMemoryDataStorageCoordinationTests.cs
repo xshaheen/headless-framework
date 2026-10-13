@@ -255,10 +255,13 @@ public sealed class InMemoryDataStorageCoordinationTests : TestBase
             CommittedMessages.Add(message);
         }
 
-        public void EnqueueCommittedDelayedMessage(MediumMessage message)
+        public bool IsSchedulerFull => false;
+
+        public bool EnqueueCommittedDelayedMessage(MediumMessage message)
         {
             VisibleAtHandOff.Add(storage.PublishedMessages.ContainsKey(message.StorageId));
             CommittedDelayedMessages.Add(message);
+            return true;
         }
 
         public ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default)

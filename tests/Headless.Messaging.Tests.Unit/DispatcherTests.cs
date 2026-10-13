@@ -1573,6 +1573,41 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
+    public async Task should_report_a_committed_delayed_message_the_scheduler_refuses()
+    {
+        // given — a scheduler queue with room for one message.
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            new TestThreadSafeMessageSender(),
+            Options.Create(new MessagingOptions { EnablePublishParallelSend = false, SchedulerBatchSize = 1 }),
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        var committed = (ICommittedDelayedMessageDispatcher)dispatcher;
+        var first = _CreateTestMessage(_StorageGuid(1));
+        first.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10);
+        var second = _CreateTestMessage(_StorageGuid(2));
+        second.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10);
+
+        // when
+        var firstAccepted = committed.EnqueueCommittedDelayedMessage(first);
+        var full = committed.IsSchedulerFull;
+        var secondAccepted = committed.EnqueueCommittedDelayedMessage(second);
+        await dispatcher.DisposeAsync();
+        var acceptedAfterStop = committed.EnqueueCommittedDelayedMessage(second);
+
+        // then
+        firstAccepted.Should().BeTrue();
+        full.Should().BeTrue();
+        secondAccepted.Should().BeFalse("the scheduler queue is full");
+        acceptedAfterStop.Should().BeFalse("the dispatcher is stopping");
+    }
+
+    [Fact]
     public async Task should_drop_coordinated_delayed_acceleration_after_disposal()
     {
         var dispatcher = _CreateDispatcher(new TestThreadSafeMessageSender());

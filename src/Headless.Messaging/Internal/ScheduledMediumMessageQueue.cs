@@ -60,6 +60,17 @@ internal sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider, int
         return true;
     }
 
+    public bool IsFull
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _queue.Count >= _capacity;
+            }
+        }
+    }
+
     public int Count
     {
         get
