@@ -127,7 +127,6 @@ internal sealed class RedisStreamManager(
 
             var (failure, streamsRead) = await _TryReadConsumerGroupAsync(consumerGroup, consumerName, positions, token)
                 .ConfigureAwait(false);
-            var succeeded = failure is null;
             _ReportRead(onRead, failure, token);
 
             // Materialized once: it is yielded and then inspected for a full batch.
@@ -135,7 +134,7 @@ internal sealed class RedisStreamManager(
 
             yield return result;
 
-            if (succeeded)
+            if (failure is null)
             {
                 errorDelay = pollDelay;
 

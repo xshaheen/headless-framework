@@ -233,6 +233,9 @@ public sealed class CronOverlapDispatchTests : TestBase
                 []
             )
         );
+        services.AddSingleton(static provider => new JobsFunctionTagBound(
+            provider.GetRequiredService<JobFunctionRegistry>()
+        ));
         var sp = services.BuildServiceProvider();
 
         var provider = new JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>(sp);

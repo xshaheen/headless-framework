@@ -199,6 +199,7 @@ public sealed class CronRecoveryObservabilityTests : TestBase
         services.AddSingleton(new SchedulerOptionsBuilder { NodeId = "node-a" });
         services.AddSingleton(Substitute.For<IJobsHostScheduler>());
         services.AddSingleton<IJobsInstrumentation>(new CapturingInstrumentation(outcomes, rebases));
+        services.AddSingleton(new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], [])));
         var sp = services.BuildServiceProvider();
 
         var provider = new JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>(sp);

@@ -50,10 +50,10 @@ internal sealed class JobsExecutionTaskHandler
         JobsExecutionCancellationRegistry cancellationRegistry,
         SchedulerOptionsBuilder schedulerOptions,
         ILogger<JobsExecutionTaskHandler> logger,
+        JobsFunctionTagBound functionTags,
         JobsRetryOptions? retryOptions = null,
         ICurrentTenant? currentTenant = null,
-        IOptions<JobsTenancyOptions>? tenancyOptions = null,
-        JobsFunctionTagBound? functionTags = null
+        IOptions<JobsTenancyOptions>? tenancyOptions = null
     )
     {
         _propagateTenant = tenancyOptions?.Value.PropagateTenant ?? false;
@@ -71,8 +71,7 @@ internal sealed class JobsExecutionTaskHandler
         _progressReportInterval = schedulerOptions.ProgressReportInterval;
         _retryOptions = retryOptions ?? new JobsRetryOptions();
         _retryPipeline = new JobsRetryPipeline(functionRegistry, timeProvider, logger);
-        // The container registers one bound per host; a handler built without it bounds by the same registry.
-        _functionTags = functionTags ?? new JobsFunctionTagBound(functionRegistry);
+        _functionTags = functionTags;
     }
 
     private static TimeSpan _Lateness(DateTime scheduledFor, DateTime startedAt)

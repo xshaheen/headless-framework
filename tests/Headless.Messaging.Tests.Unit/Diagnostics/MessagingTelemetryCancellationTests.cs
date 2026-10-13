@@ -329,6 +329,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
         services.AddSingleton(busTransport);
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(Options.Create(options));
+        services.AddSingleton(new TransportConnectivity());
 
         var provider = services.BuildServiceProvider();
         return new MessageSender(provider.GetRequiredService<ILogger<MessageSender>>(), provider);

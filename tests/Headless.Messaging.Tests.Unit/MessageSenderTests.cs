@@ -59,6 +59,7 @@ public sealed class MessageSenderTests : TestBase
         services.AddSingleton<IMessageSerializer>(new JsonUtf8Serializer(Options.Create(new MessagingOptions())));
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(Options.Create(new MessagingOptions()));
+        services.AddSingleton(new TransportConnectivity());
         services.AddSingleton<IMessageCapabilityGate>(
             MessagingCapabilityModel.Compose([
                 MessagingProviderCapabilities.Transport("Kafka", [MessageLane.Queue], false),
@@ -152,10 +153,7 @@ public sealed class MessageSenderTests : TestBase
             services.AddSingleton(lifetime);
         }
 
-        if (connectivity is not null)
-        {
-            services.AddSingleton(connectivity);
-        }
+        services.AddSingleton(connectivity ?? new TransportConnectivity());
 
         var provider = services.BuildServiceProvider();
         return new MessageSender(provider.GetRequiredService<ILogger<MessageSender>>(), provider);
@@ -202,6 +200,7 @@ public sealed class MessageSenderTests : TestBase
         services.AddSingleton(serializer);
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(Options.Create(options));
+        services.AddSingleton(new TransportConnectivity());
 
         if (busTransport is not null)
         {

@@ -246,6 +246,11 @@ internal static class JobsMetrics
         _QueueLag.Record(lag.TotalSeconds, new TagList { { TagTrigger, trigger } });
     }
 
+    /// <summary>
+    /// Whether anything listens to the claim-conflict counter, so a claim skips counting its lost rows when nothing does.
+    /// </summary>
+    internal static bool ClaimConflictsEnabled => _ClaimConflicts.Enabled;
+
     internal static void ClaimConflicts(string strategy, int count)
     {
         if (count <= 0 || !_ClaimConflicts.Enabled)

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Hosting;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,12 +37,7 @@ internal static class SqlServerMessagingStorageHealthCheck
                 await using (connection.ConfigureAwait(false))
                 {
                     await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-                    var command = connection.CreateCommand();
-                    await using (command.ConfigureAwait(false))
-                    {
-                        command.CommandText = "SELECT 1";
-                        await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-                    }
+                    await connection.PingAsync(cancellationToken).ConfigureAwait(false);
                 }
             },
             HeadlessHealthCheckTags.Messaging,

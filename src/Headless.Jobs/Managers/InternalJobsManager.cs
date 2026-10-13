@@ -47,19 +47,13 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         return _instrumentation ??= serviceProvider.GetService<IJobsInstrumentation>();
     }
 
-    // Resolved lazily for the same reason as the instrumentation above. A container without the registered bound still
-    // bounds by its registry, and one with neither tags every function as unregistered rather than unbounded.
+    // Resolved lazily, like the instrumentation above, so only the recovery and rebase paths that record a metric need
+    // it; AddHeadlessJobs always registers the host's bound.
     private JobsFunctionTagBound? _functionTags;
 
     private JobsFunctionTagBound _ResolveFunctionTags()
     {
-        return _functionTags ??=
-            serviceProvider.GetService<JobsFunctionTagBound>()
-            ?? (
-                serviceProvider.GetService<JobFunctionRegistry>() is { } registry
-                    ? new JobsFunctionTagBound(registry)
-                    : JobsFunctionTagBound.Unregistered
-            );
+        return _functionTags ??= serviceProvider.GetRequiredService<JobsFunctionTagBound>();
     }
 
     private readonly TimeSpan _strandedSweepInterval = schedulerOptions.FallbackIntervalChecker;

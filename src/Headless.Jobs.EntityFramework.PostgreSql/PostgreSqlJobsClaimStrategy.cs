@@ -95,15 +95,18 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
         // Counted once the claim committed, so a transient retry of the claim is not a conflict. Only the candidate page
         // the claim was asked for counts; candidates past it were never attempted.
-        JobsMetrics.ClaimConflicts(
-            JobsMetrics.ClaimStrategyPostgreSql,
-            JobsClaimConflicts.CountLost(
-                timeJobs.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize),
-                claim.Roots,
-                _runFilter,
-                _clusterConcurrency
-            )
-        );
+        if (JobsMetrics.ClaimConflictsEnabled)
+        {
+            JobsMetrics.ClaimConflicts(
+                JobsMetrics.ClaimStrategyPostgreSql,
+                JobsClaimConflicts.CountLost(
+                    timeJobs.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize),
+                    claim.Roots,
+                    _runFilter,
+                    _clusterConcurrency
+                )
+            );
+        }
 
         // The peek-hydrated tree may include non-idle nodes (and their tails) the claim did not lease; prune to
         // the claimed set (root + leased non-timed descendants) so nothing runs unclaimed — parity with the CAS path.

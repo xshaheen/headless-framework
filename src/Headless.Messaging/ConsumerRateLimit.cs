@@ -28,15 +28,23 @@ public sealed class ConsumerRateLimit
 
     private readonly Func<RateLimiter> _createLimiter;
 
-    private ConsumerRateLimit(Func<RateLimiter> createLimiter)
+    private ConsumerRateLimit(LimiterAlgorithm algorithm, Func<RateLimiter> createLimiter)
     {
+        Algorithm = algorithm;
         _createLimiter = createLimiter;
+    }
+
+    /// <summary>The limiter algorithm a rate limit was created with.</summary>
+    internal enum LimiterAlgorithm
+    {
+        FixedWindow = 0,
+        TokenBucket = 1,
     }
 
     // The limiter keeps its options private, so the parameters are kept here for the host description to print.
 
-    /// <summary>The algorithm name the host description prints: <c>fixed-window</c> or <c>token-bucket</c>.</summary>
-    internal string Algorithm { get; private init; } = "";
+    /// <summary>The algorithm this rate was created with; it decides which of the parameters below are set.</summary>
+    internal LimiterAlgorithm Algorithm { get; }
 
     /// <summary>The deliveries allowed per window of a fixed-window rate.</summary>
     internal int PermitLimit { get; private init; }
@@ -69,20 +77,21 @@ public sealed class ConsumerRateLimit
         Argument.IsPositive(permitLimit);
         Argument.IsLeftOpenedBetween(window, TimeSpan.Zero, MaxPeriod);
 
-        return new ConsumerRateLimit(() =>
-            new FixedWindowRateLimiter(
-                new FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = permitLimit,
-                    Window = window,
-                    QueueLimit = _QueueLimit,
-                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                    AutoReplenishment = true,
-                }
-            )
+        return new ConsumerRateLimit(
+            LimiterAlgorithm.FixedWindow,
+            () =>
+                new FixedWindowRateLimiter(
+                    new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = permitLimit,
+                        Window = window,
+                        QueueLimit = _QueueLimit,
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        AutoReplenishment = true,
+                    }
+                )
         )
         {
-            Algorithm = "fixed-window",
             PermitLimit = permitLimit,
             Window = window,
         };
@@ -109,21 +118,22 @@ public sealed class ConsumerRateLimit
         Argument.IsPositive(tokensPerPeriod);
         Argument.IsLeftOpenedBetween(replenishmentPeriod, TimeSpan.Zero, MaxPeriod);
 
-        return new ConsumerRateLimit(() =>
-            new TokenBucketRateLimiter(
-                new TokenBucketRateLimiterOptions
-                {
-                    TokenLimit = tokenLimit,
-                    TokensPerPeriod = tokensPerPeriod,
-                    ReplenishmentPeriod = replenishmentPeriod,
-                    QueueLimit = _QueueLimit,
-                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                    AutoReplenishment = true,
-                }
-            )
+        return new ConsumerRateLimit(
+            LimiterAlgorithm.TokenBucket,
+            () =>
+                new TokenBucketRateLimiter(
+                    new TokenBucketRateLimiterOptions
+                    {
+                        TokenLimit = tokenLimit,
+                        TokensPerPeriod = tokensPerPeriod,
+                        ReplenishmentPeriod = replenishmentPeriod,
+                        QueueLimit = _QueueLimit,
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        AutoReplenishment = true,
+                    }
+                )
         )
         {
-            Algorithm = "token-bucket",
             TokenLimit = tokenLimit,
             TokensPerPeriod = tokensPerPeriod,
             ReplenishmentPeriod = replenishmentPeriod,

@@ -30,7 +30,6 @@ internal sealed class JobsHostDescriptionContributor(
 {
     private readonly JobFunctionRegistry _registry = Argument.IsNotNull(registry);
     private readonly SchedulerOptionsBuilder _schedulerOptions = Argument.IsNotNull(schedulerOptions);
-    private readonly bool _runsJobs = runsJobs;
 
     public string SectionName => "jobs";
 
@@ -92,43 +91,10 @@ internal sealed class JobsHostDescriptionContributor(
         }
 
         writer.WritePropertyName("failurePolicy");
-        _WriteFailurePolicy(writer, _registry.GetFailurePolicy(name));
+        _registry.GetFailurePolicy(name).WriteDescription(writer);
 
-        var runsHere = _runsJobs && _registry.RunFilter.Allows(name);
+        var runsHere = runsJobs && _registry.RunFilter.Allows(name);
         writer.WriteString("runState", runsHere ? "runs-here" : "registered-not-run-here");
-
-        writer.WriteEndObject();
-    }
-
-    private static void _WriteFailurePolicy(Utf8JsonWriter writer, FailurePolicyDefinition policy)
-    {
-        writer.WriteStartObject();
-        writer.WriteNumber("immediateRetries", policy.ImmediateRetries);
-        writer.WriteNumber("delayedRetries", policy.DelayedRetries);
-
-        // Delays only pace delayed retries, so they mean nothing to a policy that has none.
-        if (policy.DelayedRetries > 0)
-        {
-            writer.WriteNumber("delayedInitialDelaySeconds", policy.DelayedInitialDelay.TotalSeconds);
-            writer.WriteNumber("delayedMaxDelaySeconds", policy.DelayedMaxDelay.TotalSeconds);
-        }
-
-        if (policy.FailOnExceptionTypes.Count != 0)
-        {
-            writer.WriteStartArray("failOn");
-
-            foreach (var type in policy.FailOnExceptionTypes)
-            {
-                writer.WriteStringValue(type.FullName ?? type.Name);
-            }
-
-            writer.WriteEndArray();
-        }
-
-        if (policy.FailWhenRuleCount != 0)
-        {
-            writer.WriteNumber("failWhenRules", policy.FailWhenRuleCount);
-        }
 
         writer.WriteEndObject();
     }

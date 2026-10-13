@@ -430,7 +430,8 @@ public sealed class JobsMetricsTests : TestBase
             registry,
             new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
-            NullLogger<JobsExecutionTaskHandler>.Instance
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(registry)
         );
     }
 

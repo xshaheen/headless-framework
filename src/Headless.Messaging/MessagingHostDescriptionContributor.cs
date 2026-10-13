@@ -89,7 +89,7 @@ internal sealed class MessagingHostDescriptionContributor(ConsumerRegistry regis
         if (first.FailurePolicy is { } failurePolicy)
         {
             writer.WritePropertyName("failurePolicy");
-            _WriteFailurePolicy(writer, failurePolicy);
+            failurePolicy.WriteDescription(writer);
         }
 
         // An every-instance subscription stores no inbox rows, so a retention means nothing for it.
@@ -136,17 +136,18 @@ internal sealed class MessagingHostDescriptionContributor(ConsumerRegistry regis
     private static void _WriteRateLimit(Utf8JsonWriter writer, ConsumerRateLimit rateLimit)
     {
         writer.WriteStartObject("rateLimit");
-        writer.WriteString("algorithm", rateLimit.Algorithm);
 
         // Only the parameters of the rate's own algorithm are set; the others are left at zero.
-        if (string.Equals(rateLimit.Algorithm, "token-bucket", StringComparison.Ordinal))
+        if (rateLimit.Algorithm == ConsumerRateLimit.LimiterAlgorithm.TokenBucket)
         {
+            writer.WriteString("algorithm", "token-bucket");
             writer.WriteNumber("tokenLimit", rateLimit.TokenLimit);
             writer.WriteNumber("tokensPerPeriod", rateLimit.TokensPerPeriod);
             writer.WriteNumber("replenishmentPeriodSeconds", rateLimit.ReplenishmentPeriod.TotalSeconds);
         }
         else
         {
+            writer.WriteString("algorithm", "fixed-window");
             writer.WriteNumber("permitLimit", rateLimit.PermitLimit);
             writer.WriteNumber("windowSeconds", rateLimit.Window.TotalSeconds);
         }
@@ -173,39 +174,6 @@ internal sealed class MessagingHostDescriptionContributor(ConsumerRegistry regis
         if (options.IsTransientException is not null)
         {
             writer.WriteBoolean("customTransientPredicate", value: true);
-        }
-
-        writer.WriteEndObject();
-    }
-
-    private static void _WriteFailurePolicy(Utf8JsonWriter writer, FailurePolicyDefinition policy)
-    {
-        writer.WriteStartObject();
-        writer.WriteNumber("immediateRetries", policy.ImmediateRetries);
-        writer.WriteNumber("delayedRetries", policy.DelayedRetries);
-
-        // Delays only pace delayed retries, so they mean nothing to a policy that has none.
-        if (policy.DelayedRetries > 0)
-        {
-            writer.WriteNumber("delayedInitialDelaySeconds", policy.DelayedInitialDelay.TotalSeconds);
-            writer.WriteNumber("delayedMaxDelaySeconds", policy.DelayedMaxDelay.TotalSeconds);
-        }
-
-        if (policy.FailOnExceptionTypes.Count != 0)
-        {
-            writer.WriteStartArray("failOn");
-
-            foreach (var type in policy.FailOnExceptionTypes)
-            {
-                writer.WriteStringValue(type.FullName ?? type.Name);
-            }
-
-            writer.WriteEndArray();
-        }
-
-        if (policy.FailWhenRuleCount != 0)
-        {
-            writer.WriteNumber("failWhenRules", policy.FailWhenRuleCount);
         }
 
         writer.WriteEndObject();

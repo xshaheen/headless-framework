@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Checks;
 
 namespace Headless.Sql;
@@ -45,11 +46,7 @@ public static class HeadlessSqlConnectionFactoryExtensions
             await using var connection = await factory
                 .CreateNewConnectionAsync(cancellationToken)
                 .ConfigureAwait(false);
-            await using var command = connection.CreateCommand();
-#pragma warning disable CA2100 // False positive: the probe runs the application's own configured query, never request input.
-            command.CommandText = commandText;
-#pragma warning restore CA2100
-            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            await connection.PingAsync(commandText, cancellationToken).ConfigureAwait(false);
         }
     }
 }

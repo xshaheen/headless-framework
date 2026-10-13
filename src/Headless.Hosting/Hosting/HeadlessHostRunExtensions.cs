@@ -71,19 +71,16 @@ public static class HeadlessHostRunExtensions
         {
             _RouteConsoleLoggerToStandardError(host.Services);
 
-            byte[] description;
+            string description;
 
             try
             {
                 await _ValidateStartupAsync(host.Services, cancellationToken).ConfigureAwait(false);
-                var buffer = new MemoryStream();
-                await using (buffer.ConfigureAwait(false))
-                {
-                    await HostDescriptionWriter
-                        .WriteAsync(host.Services, buffer, cancellationToken)
-                        .ConfigureAwait(false);
-                    description = buffer.ToArray();
-                }
+#pragma warning disable RCS1261 // Fix makes the code worse: a MemoryStream releases nothing asynchronously, and await using would bring back the ConfigureAwait ceremony.
+                using var buffer = new MemoryStream();
+#pragma warning restore RCS1261
+                await HostDescriptionWriter.WriteAsync(host.Services, buffer, cancellationToken).ConfigureAwait(false);
+                description = Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
             }
 #pragma warning disable CA1031, EPC12 // False positive: the command's process boundary reports any failure as its message and an exit code, by design.
             catch (Exception exception)
@@ -96,7 +93,7 @@ public static class HeadlessHostRunExtensions
             }
 #pragma warning restore CA1031, EPC12
 
-            await stdout.WriteLineAsync(Encoding.UTF8.GetString(description)).ConfigureAwait(false);
+            await stdout.WriteLineAsync(description).ConfigureAwait(false);
             await stdout.FlushAsync(cancellationToken).ConfigureAwait(false);
 
             return 0;

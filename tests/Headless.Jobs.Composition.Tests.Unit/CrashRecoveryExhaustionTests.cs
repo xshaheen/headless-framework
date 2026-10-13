@@ -133,6 +133,7 @@ public sealed class CrashRecoveryExhaustionTests : TestBase
             new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
             NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], [])),
             retryOptions
         );
     }

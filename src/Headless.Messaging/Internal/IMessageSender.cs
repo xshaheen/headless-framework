@@ -49,7 +49,7 @@ internal sealed class MessageSender : IMessageSender
     private readonly RetryPolicyOptions _retryPolicy;
     private readonly MessagingPublishRetryPipeline _retryPipeline;
     private readonly CancellationToken _shutdownToken;
-    private readonly TransportConnectivity? _connectivity;
+    private readonly TransportConnectivity _connectivity;
 
     public MessageSender(ILogger<MessageSender> logger, IServiceProvider serviceProvider)
     {
@@ -65,7 +65,7 @@ internal sealed class MessageSender : IMessageSender
         _options = opts;
         _retryPolicy = opts.RetryPolicy;
         _retryPipeline = new MessagingPublishRetryPipeline(_retryPolicy, _timeProvider, logger);
-        _connectivity = serviceProvider.GetService<TransportConnectivity>();
+        _connectivity = serviceProvider.GetRequiredService<TransportConnectivity>();
 
         // IHostApplicationLifetime is optional so MessageSender remains usable in test contexts
         // (and non-hosted scenarios). When absent, shutdown cancellation cannot be observed and
@@ -207,7 +207,7 @@ internal sealed class MessageSender : IMessageSender
             // A send the publish timeout cut off is a broker that does not answer; one shutdown cut off says nothing.
             if (!_shutdownToken.IsCancellationRequested)
             {
-                _connectivity?.ReportBrokerFailure();
+                _connectivity.ReportBrokerFailure();
             }
 
             // Timeout or shutdown can race broker acceptance. Preserve cancellation semantics while
@@ -234,7 +234,7 @@ internal sealed class MessageSender : IMessageSender
 
         if (result.Succeeded)
         {
-            _connectivity?.ReportBrokerSuccess();
+            _connectivity.ReportBrokerSuccess();
 
             try
             {
@@ -272,7 +272,7 @@ internal sealed class MessageSender : IMessageSender
     {
         if (exception is not ObjectDisposedException)
         {
-            _connectivity?.ReportBrokerFailure();
+            _connectivity.ReportBrokerFailure();
         }
     }
 

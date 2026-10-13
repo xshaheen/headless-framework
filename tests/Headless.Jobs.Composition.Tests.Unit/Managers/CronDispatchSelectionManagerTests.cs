@@ -521,6 +521,7 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
         services.AddHeadlessGuidGenerator();
         services.AddSingleton(new SchedulerOptionsBuilder { NodeId = _NodeA });
         services.AddSingleton(Substitute.For<IJobsHostScheduler>());
+        services.AddSingleton(new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], [])));
         var sp = services.BuildServiceProvider();
 
         var provider = new JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>(sp);
@@ -553,6 +554,7 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
         services.AddHeadlessGuidGenerator();
         services.AddSingleton(new SchedulerOptionsBuilder { NodeId = "node-b" });
         services.AddSingleton(Substitute.For<IJobsHostScheduler>());
+        services.AddSingleton(new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], [])));
         var sp = services.BuildServiceProvider();
 
         return new InternalJobsManager<FakeTimeJob, FakeCronJob>(

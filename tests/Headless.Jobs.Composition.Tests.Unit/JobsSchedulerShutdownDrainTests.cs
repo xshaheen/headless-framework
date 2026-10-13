@@ -251,7 +251,8 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
             JobFunctionRegistryBuilder.Build([], [], []),
             new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
-            NullLogger<JobsExecutionTaskHandler>.Instance
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], []))
         );
 
         var ownerIdentity = Substitute.For<IJobsOwnerIdentity>();

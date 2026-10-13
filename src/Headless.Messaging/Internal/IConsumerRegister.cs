@@ -49,8 +49,7 @@ internal sealed partial class ConsumerRegister(
     private readonly IMessagingCapabilityModel _capabilityModel =
         serviceProvider.GetRequiredService<IMessagingCapabilityModel>();
 
-    private readonly TransportConnectivity _connectivity =
-        serviceProvider.GetService<TransportConnectivity>() ?? new TransportConnectivity();
+    private readonly TransportConnectivity _connectivity = serviceProvider.GetRequiredService<TransportConnectivity>();
 
 #pragma warning disable CA2213 // False positive: the container owns the shared singleton and disposes it with the host.
     private readonly ConsumerRateLimiters? _rateLimiters = serviceProvider.GetService<ConsumerRateLimiters>();
