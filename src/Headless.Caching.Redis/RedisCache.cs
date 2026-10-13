@@ -376,16 +376,19 @@ public sealed class RedisCache(
 
         if (IsCluster)
         {
-            var successCount = 0;
             var slotBuckets = _GroupBySlot(pairs, static pair => pair.Key);
+            var slotWrites = new Task<int>[slotBuckets.Count];
+            var slotIndex = 0;
 
+            // Issue every slot's write before awaiting any, so a batch costs one round-trip wave instead of one
+            // round trip per slot. On a failing slot the others are still written before the exception surfaces.
             foreach (var bucket in slotBuckets.Values)
             {
-                var count = await _SetAllInternalAsync([.. bucket], expiration).ConfigureAwait(false);
-                successCount += count;
+                slotWrites[slotIndex++] = _SetAllInternalAsync([.. bucket], expiration);
             }
 
-            writtenCount = successCount;
+            var slotCounts = await Task.WhenAll(slotWrites).ConfigureAwait(false);
+            writtenCount = slotCounts.Sum();
         }
         else
         {
@@ -1611,22 +1614,31 @@ public sealed class RedisCache(
             // #36: group by hash slot ONCE before chunking to avoid re-allocating a Dictionary per chunk.
             // Previously _GroupBySlot was called inside the Chunk loop: N/250 allocations for N keys.
             var slotBuckets = _GroupBySlot(redisKeys, static key => key);
+            var batchDeletes = new List<Task<long>>(slotBuckets.Count);
 
+            // Issue every slot batch before awaiting any, so the removal costs one round-trip wave instead of one
+            // round trip per batch. Each batch still logs and skips its own failure, as the sequential loop did.
             foreach (var (slot, bucket) in slotBuckets)
             {
                 foreach (var batch in bucket.Chunk(_BatchSize))
                 {
-                    var hashSlotKeys = batch;
+                    batchDeletes.Add(deleteBatchAsync(slot, batch));
+                }
+            }
 
-                    try
-                    {
-                        var count = await _database.KeyDeleteAsync(hashSlotKeys).ConfigureAwait(false);
-                        deleted += count;
-                    }
-                    catch (Exception e)
-                    {
-                        _logger.LogUnableToDeleteHashSlotKeys(e, slot, hashSlotKeys);
-                    }
+            var batchCounts = await Task.WhenAll(batchDeletes).ConfigureAwait(false);
+            deleted = batchCounts.Sum();
+
+            async Task<long> deleteBatchAsync(int slot, RedisKey[] hashSlotKeys)
+            {
+                try
+                {
+                    return await _database.KeyDeleteAsync(hashSlotKeys).ConfigureAwait(false);
+                }
+                catch (Exception e)
+                {
+                    _logger.LogUnableToDeleteHashSlotKeys(e, slot, hashSlotKeys);
+                    return 0;
                 }
             }
         }
@@ -2274,7 +2286,12 @@ public sealed class RedisCache(
 
         var values = new RedisValue[redisKeys.Length];
         var slotBuckets = _GroupBySlot(indexedKeys, static entry => entry.Redis);
+        var buckets = new List<(RedisKey Redis, int Index)>[slotBuckets.Count];
+        var slotReads = new Task<RedisValue[]>[slotBuckets.Count];
+        var slotIndex = 0;
 
+        // Issue every slot's MGET before awaiting any, so a bulk read costs one round-trip wave instead of one
+        // round trip per slot; values are placed by input index once all reads complete.
         foreach (var bucket in slotBuckets.Values)
         {
             var slotKeys = new RedisKey[bucket.Count];
@@ -2284,11 +2301,19 @@ public sealed class RedisCache(
                 slotKeys[i] = bucket[i].Redis;
             }
 
-            var slotValues = await _database.StringGetAsync(slotKeys, cacheOptions.ReadMode).ConfigureAwait(false);
+            buckets[slotIndex] = bucket;
+            slotReads[slotIndex++] = _database.StringGetAsync(slotKeys, cacheOptions.ReadMode);
+        }
+
+        var slotValues = await Task.WhenAll(slotReads).ConfigureAwait(false);
+
+        for (var s = 0; s < buckets.Length; s++)
+        {
+            var bucket = buckets[s];
 
             for (var i = 0; i < bucket.Count; i++)
             {
-                values[bucket[i].Index] = slotValues[i];
+                values[bucket[i].Index] = slotValues[s][i];
             }
         }
 
@@ -3704,24 +3729,25 @@ public sealed class RedisCache(
 
     private async Task<long> _DeleteKeysAsync(RedisKey[] keys, bool isCluster)
     {
-        long deleted = 0;
-
         if (isCluster)
         {
             var slotBuckets = _GroupBySlot(keys, static key => key);
+            var slotDeletes = new Task<long>[slotBuckets.Count];
+            var slotIndex = 0;
 
+            // Issue every slot's DEL before awaiting any, so a scan page costs one round-trip wave instead of one
+            // round trip per slot. On a failing slot the others are still deleted before the exception surfaces.
             foreach (var bucket in slotBuckets.Values)
             {
-                var count = await _database.KeyDeleteAsync([.. bucket]).ConfigureAwait(false);
-                deleted += count;
+                slotDeletes[slotIndex++] = _database.KeyDeleteAsync([.. bucket]);
             }
-        }
-        else
-        {
-            deleted = await _database.KeyDeleteAsync(keys).ConfigureAwait(false);
+
+            var slotCounts = await Task.WhenAll(slotDeletes).ConfigureAwait(false);
+
+            return slotCounts.Sum();
         }
 
-        return deleted;
+        return await _database.KeyDeleteAsync(keys).ConfigureAwait(false);
     }
 
     // Groups items into per-Redis-cluster-hash-slot buckets, preserving input order within each bucket. Used by
