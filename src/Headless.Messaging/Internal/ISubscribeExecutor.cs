@@ -1232,6 +1232,7 @@ internal sealed class SubscribeExecutor(
         return new PendingReply(
             result.Reply,
             result.ReplyType ?? descriptor.ResponseType!,
+            result.CallbackHeader,
             traceHandle.Activity?.Context ?? default
         );
     }
@@ -1245,14 +1246,20 @@ internal sealed class SubscribeExecutor(
 
         var request = message.Origin;
         unitOfWork.OnCompleted(() =>
-            replies.SendResponseAsync(request, reply.Response, reply.ResponseType, reply.ResponderSpan)
+            replies.SendResponseAsync(request, reply.Response, reply.ResponseType, reply.Headers, reply.ResponderSpan)
         );
     }
 
     private ValueTask _SendReplyAsync(MediumMessage message, PendingReply reply)
     {
         return _GetResponderReplies() is { } replies
-            ? replies.SendResponseAsync(message.Origin, reply.Response, reply.ResponseType, reply.ResponderSpan)
+            ? replies.SendResponseAsync(
+                message.Origin,
+                reply.Response,
+                reply.ResponseType,
+                reply.Headers,
+                reply.ResponderSpan
+            )
             : ValueTask.CompletedTask;
     }
 
@@ -1277,5 +1284,11 @@ internal sealed class SubscribeExecutor(
     }
 
     /// <summary>A responder's answer waiting for its attempt's success write.</summary>
-    private readonly record struct PendingReply(object Response, Type ResponseType, ActivityContext ResponderSpan);
+    // Headers are the ones the responder set through ConsumeContext.SetResponseHeader, already checked there.
+    private readonly record struct PendingReply(
+        object Response,
+        Type ResponseType,
+        IDictionary<string, string?>? Headers,
+        ActivityContext ResponderSpan
+    );
 }

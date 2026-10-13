@@ -208,4 +208,22 @@ public static class Headers
     /// Value: "headless-reply-status"
     /// </summary>
     public const string ReplyStatus = "headless-reply-status";
+
+    private const string _FrameworkPrefix = "headless-";
+
+    /// <summary>
+    /// Returns whether <paramref name="name"/> belongs to the framework or to trace propagation on a reply: any
+    /// <c>headless-</c> header, <see cref="TraceParent"/>, <c>tracestate</c>, or <c>baggage</c>.
+    /// </summary>
+    /// <remarks>
+    /// A responder may not set such a header, and a caller never sees one among a reply's headers, so a reply header can
+    /// neither forge the reply protocol nor be mistaken for it.
+    /// </remarks>
+    internal static bool IsReservedOnReply(string name)
+    {
+        return name.StartsWith(_FrameworkPrefix, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, TraceParent, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, "tracestate", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, "baggage", StringComparison.OrdinalIgnoreCase);
+    }
 }

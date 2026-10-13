@@ -112,7 +112,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **The EF adapter packages** (`Headless.Messaging.Storage.PostgreSql.EntityFramework` / `.SqlServer.EntityFramework`) let an enlisted publish join a unit of work open on `TContext`: `setup.UseEntityFramework<TContext>()` registers `Headless.UnitOfWork` (`AddEntityFrameworkUnitOfWork()`), but no interceptor opens that unit of work for the caller. Open it with `factory.RunAsync(db, ...)` (`Headless.UnitOfWork.EntityFramework`) or a manual `BeginAsync`/`CompleteAsync` pair, then publish through that unit's `Outbox`; an `IBus.PublishAsync` inside the same block still stores a standalone durable row that survives a rollback. `setup.UseEntityFramework<TContext>(o => o.EnableTransactionalInbox = false)` (default `true`) is a separate receive-side switch. It disables the EF inbox-transaction runner and the `Transactional` inbox-capability promotion, so the storage declares `DurableDedupeOnly`, consumers run outside any transaction with a null `ConsumeContext.UnitOfWork`, and durable consumers then need `RequiredInboxCapability = DurableDedupeOnly` to pass startup validation. It does not change the publish side: `unit.Outbox` still enlists in a unit you open. The raw storage packages expose only `UsePostgreSql` / `UseSqlServer` and have no EF or `Headless.UnitOfWork` dependency.
 - **Dashboard.K8s requires RBAC** permissions to read Services in the configured Kubernetes namespace.
 - **Callbacks publish a response that nobody awaits**: Set `CallbackName` on `PublishOptions` (Bus) **or** `QueueOptions` (Queue). The response always publishes through the durable Bus path, including for a Queue-originated request; Queue remains origin metadata and exactly one Bus response is produced for a single Queue delivery. `SetResponse<TResponse>` preserves the declared response contract for typed middleware and the concrete payload value/type. A callback is fire-and-forget and at-least-once, so response consumers must be idempotent. A Bus request still fans out and each subscriber may emit its own response. When the caller must wait for the answer, use [Request/reply](#requestreply) instead; [Request/reply versus callbacks](#requestreply-versus-callbacks) compares the two.
-- **Request/reply awaits one answer on the Queue lane**: the calling host calls `setup.AddRequestReply()` and sends with `IRequestClient.RequestAsync<TRequest, TResponse>`; the responder is a `[QueueConsumer]` class that implements `IRespond<TRequest, TResponse>`. The caller's continuation is at most once and a timeout is ambiguous, so make responders idempotent. Return expected business outcomes such as "not found" in `TResponse`; a thrown exception becomes a `handler_failed` fault after inline retries. Only InMemory, RabbitMQ, NATS, and Redis support it; a host on any other transport that sends requests or declares a responder fails startup. See [Request/reply](#requestreply).
+- **Request/reply awaits one answer on the Queue lane**: the calling host calls `setup.AddRequestReply()` and sends with `IRequestClient.RequestAsync<TRequest, TResponse>`, or `GetReplyAsync<TRequest, TResponse>` to also read the headers the responder set; the responder is a `[QueueConsumer]` class that implements `IRespond<TRequest, TResponse>`. The caller's continuation is at most once and a timeout is ambiguous, so make responders idempotent. Return expected business outcomes such as "not found" in `TResponse`; a thrown exception becomes a `handler_failed` fault after inline retries. Only InMemory, RabbitMQ, NATS, and Redis support it; a host on any other transport that sends requests or declares a responder fails startup. See [Request/reply](#requestreply).
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.MultiTenancy.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
 - **A consumer retries by its failure policy**: declare one with `[BusConsumer(id, FailurePolicy = typeof(TPolicy))]` or `[QueueConsumer(id, FailurePolicy = typeof(TPolicy))]`, replace it on a host with `Tune(id, c => c.FailurePolicy<TPolicy>())`, adjust its numbers under `Headless:Messaging:Consumers:{id}:FailurePolicy`, and set the host default with `setup.DefaultFailurePolicy<TPolicy>()`. Without any of these a competing consumer retries 2 times at once, then 5 times from 30 seconds capped at 15 minutes. See [Consumer failure policy](#consumer-failure-policy) and the shared model in [reliability.md](reliability.md).
 - **`MessagingOptions.RetryPolicy.RetryStrategy` and `MaxPersistedRetries` govern publishing only**. Changing them does not change how a consumer retries. `RetryPolicy.OnExhausted` fires once for each terminal consume failure: the policy's budget is spent, a fail rule or the built-in permanent set matches, the payload fails to deserialize, the consumer is no longer registered, or the message is poisoned on arrival.
@@ -876,7 +876,7 @@ None. This package registers no services.
 - `QueueOptions.Delay` or `QueueOptions.ScheduledAt` schedules durable queue delivery. Supply one scheduling form. `Direct` rejects either form; `OutboxOptions` accepts both.
 - `QueueOptionsBuilder` and the `QueueExtensions.EnqueueAsync` callback author canonical options snapshots without a Core dependency.
 - Every queue enqueue carries `MessageLane.Queue` through storage, tracing, dashboard projections, and consume context.
-- `IRequestClient.RequestAsync<TRequest, TResponse>(request, RequestOptions?, CancellationToken)` sends a request on the Queue lane and awaits one response. `RequestOptions` carries `Timeout`, `TenantId`, `CorrelationId`, and `Headers` only. Failures derive from `RequestReplyException` (`RequestTimeoutException`, `RequestFaultedException`, `ResponseContractMismatchException`, `RequestNotSentException`, `RequestAbortedException`), except the caller's own cancellation (`OperationCanceledException`) and an unreadable response body (`MessageDeserializationException`), and `RequestFaultCodes` holds the fault codes. `IRequestClient` is registered only by `setup.AddRequestReply()` in `Headless.Messaging`. See [Request/reply](#requestreply).
+- `IRequestClient.RequestAsync<TRequest, TResponse>(request, RequestOptions?, CancellationToken)` sends a request on the Queue lane and awaits one response. `IRequestClient.GetReplyAsync<TRequest, TResponse>` sends and fails the same way, and returns a `Reply<TResponse>`: `Message`, the responder's `Headers` (a read-only dictionary without any `headless-*` or trace propagation header), `MessageId`, and `CorrelationId`. `RequestOptions` carries `Timeout`, `TenantId`, `CorrelationId`, and `Headers` only. Failures derive from `RequestReplyException` (`RequestTimeoutException`, `RequestFaultedException`, `ResponseContractMismatchException`, `RequestNotSentException`, `RequestAbortedException`), except the caller's own cancellation (`OperationCanceledException`) and an unreadable response body (`MessageDeserializationException`), and `RequestFaultCodes` holds the fault codes. `IRequestClient` is registered only by `setup.AddRequestReply()` in `Headless.Messaging`. See [Request/reply](#requestreply).
 
 ### Install
 
@@ -1035,10 +1035,11 @@ public sealed record Quote(string Sku, decimal UnitPrice, DateTimeOffset ValidUn
 
 ### Responders
 
-- **Declaration.** A responder is a `[QueueConsumer]` class that implements `IRespond<TRequest, TResponse>`. It is the request's one Queue consumer: a second Queue consumer or responder for the same request fails the build (HM004) or startup. `[BusConsumer]` on a responder is HM011, `IConsume<T>` and `IRespond<T, TResponse>` on one class for the same `T` is HM012, and two response types for one request is HM013. A `RequestAsync<TRequest, TResponse>` call whose `TResponse` is not what a responder the project can see answers `TRequest` with is HM014, a warning; a caller that sees no responder, the usual case for another service, is not checked.
+- **Declaration.** A responder is a `[QueueConsumer]` class that implements `IRespond<TRequest, TResponse>`. It is the request's one Queue consumer: a second Queue consumer or responder for the same request fails the build (HM004) or startup. `[BusConsumer]` on a responder is HM011, `IConsume<T>` and `IRespond<T, TResponse>` on one class for the same `T` is HM012, and two response types for one request is HM013. A `RequestAsync<TRequest, TResponse>` or `GetReplyAsync<TRequest, TResponse>` call whose `TResponse` is not what a responder the project can see answers `TRequest` with is HM014, a warning; a caller that sees no responder, the usual case for another service, is not checked.
 - **Cancellation.** The `RespondAsync` token is canceled when the host stops. It is not tied to the request's deadline or to the caller's cancellation, because work the responder accepted continues after the caller stops waiting.
 - **Never return null.** A `null` result ends the request at once, with no retry, and the caller gets a `null_response` fault.
 - **No callbacks.** In a responder, `SetResponse`, `SetResponseCallbackName`, and `SetResponseDestination` throw `InvalidOperationException`; the return value is the only answer. A `CallbackName` that the request carries on the wire is ignored.
+- **Reply headers.** `ConsumeContext.SetResponseHeader` in a responder sets a header on the reply, which the caller reads through `GetReplyAsync`. It throws `ArgumentException` at once for a name the reply protocol or trace propagation owns (any `headless-` name, `traceparent`, `tracestate`, `baggage`, compared case-insensitively) or a name or value with a control character, because the reply is sent after the outcome is durable and cannot fail then. Only an ok reply carries them; a fault reply does not.
 - **A plain enqueue still runs it.** `IQueue.EnqueueAsync` of the request type reaches the responder like any Queue consumer; it runs and its result is discarded.
 - **Only a Queue message is a request.** A Bus message that carries the request headers is consumed as an ordinary Bus message: no deadline check, no `no_responder` skip, and no reply.
 - **A request never reaches a plain consumer.** When a request arrives at a host whose consumer for that message is a plain `IConsume<T>`, the host commits and skips it before inbox admission (receive outcome `no_responder`, no storage row) and answers with a `no_responder` fault, so that code always means no work ran. The `skipped` outcome is reserved for a receive-middleware skip.
@@ -1093,6 +1094,50 @@ public sealed class CustomerNames(IRequestClient requests)
     }
 }
 ```
+
+### Reply headers
+
+A responder can return metadata beside the response, such as where an answer came from, without adding it to the response contract. It sets the header with `SetResponseHeader`, and the caller reads it from `Reply<TResponse>.Headers`:
+
+```csharp
+public sealed record GetPrice(string Sku);
+
+public sealed record Price(decimal Amount);
+
+public interface IPriceBook
+{
+    ValueTask<(Price Price, bool FromCache)> FindAsync(string sku, CancellationToken cancellationToken);
+}
+
+[QueueConsumer("pricing.get-price")]
+public sealed class GetPriceResponder(IPriceBook prices) : IRespond<GetPrice, Price>
+{
+    public async ValueTask<Price> RespondAsync(ConsumeContext<GetPrice> context, CancellationToken cancellationToken)
+    {
+        var (price, fromCache) = await prices.FindAsync(context.Message.Sku, cancellationToken);
+
+        // Metadata about the answer travels beside it instead of widening the response contract.
+        context.SetResponseHeader("x-price-source", fromCache ? "cache" : "live");
+        return price;
+    }
+}
+
+public sealed class PriceReader(IRequestClient requests)
+{
+    public async Task<(Price Price, string? Source)> GetAsync(string sku, CancellationToken cancellationToken)
+    {
+        var reply = await requests.GetReplyAsync<GetPrice, Price>(
+            new GetPrice(sku),
+            cancellationToken: cancellationToken
+        );
+        reply.Headers.TryGetValue("x-price-source", out var source);
+
+        return (reply.Message, source);
+    }
+}
+```
+
+`Reply<TResponse>.Headers` holds only the headers the responder set: the caller removes every `headless-*` and trace propagation header from what arrives, so a reply cannot pass off a header as framework metadata. The values are still input from another service, so validate them before you act on them. `MessageId` is the reply's own identifier, and `CorrelationId` is the request's correlation identifier, or the request's message identifier when it had none.
 
 ### Sending requests
 
@@ -2902,8 +2947,8 @@ Roslyn incremental source generator that registers `[BusConsumer]` and `[QueueCo
 - **Explicit registration**: the generated file (`MessagingModule.g.cs`) declares `<AssemblyName>.MessagingModule`, and nothing is registered until the module adds it with `AddModule<…MessagingModule>()` on `services.ConfigureMessaging(...)` or on the `AddHeadlessMessaging` setup. There is no module initializer and no runtime assembly scanning. Adding one module more than once registers it once. An assembly that declares no consumer gets no module.
 - **One entry per message**: a consumer class registers one entry for every `IConsume<T>` and every `IRespond<TRequest, TResponse>` it implements, all with the attribute's identity, lane, `EveryInstance` flag, and a factory for its `FailurePolicy` type when it declares one. The factory is `static () => new TPolicy()`, so the runtime never creates a policy by reflection; the host builds it once per identity when it builds the consumer registry. A responder entry also carries its response type, which makes it a [request/reply](#requestreply) responder.
 - **Typed dispatch**: each consumer class gets one generated factory and one generated dispatcher. The factory resolves the class from the delivery's scope with `GetService<T>()` and falls back to `ActivatorUtilities.CreateInstance<T>` when the container has no registration for it. The dispatcher builds the class through that factory, runs `IConsumerLifecycle` hooks when the class implements them, calls the `ConsumeAsync` or `RespondAsync` that matches the context's message type (explicit interface implementations included) and records a responder's return value for the reply, and disposes the instance only when the factory constructed it. An every-instance class that implements `IOnSubscriptionEstablished` also gets a generated hook call that builds the class through the same factory in its own scope. Dispatch and the hook use no reflection and no compiled expressions.
-- **Responder metadata**: for each responder, the generated file also declares `[assembly: ResponderMetadataAttribute(typeof(TRequest), typeof(TResponse))]`. The generator in a referencing project reads it to check that project's `RequestAsync<TRequest, TResponse>` calls against the responder (HM013). The attribute is generated metadata; do not apply it by hand.
-- **Incremental**: declarations are reduced to value models when discovered, so an edit that does not change a consumer declaration reuses every generator step and re-emits nothing. Referenced responder metadata is read only while the project calls `RequestAsync`.
+- **Responder metadata**: for each responder, the generated file also declares `[assembly: ResponderMetadataAttribute(typeof(TRequest), typeof(TResponse))]`. The generator in a referencing project reads it to check that project's `RequestAsync<TRequest, TResponse>` and `GetReplyAsync<TRequest, TResponse>` calls against the responder (HM014). The attribute is generated metadata; do not apply it by hand.
+- **Incremental**: declarations are reduced to value models when discovered, so an edit that does not change a consumer declaration reuses every generator step and re-emits nothing. Referenced responder metadata is read only while the project calls `RequestAsync` or `GetReplyAsync`.
 - **Build-time checks**: HM001 to HM014, listed under [Diagnostics](#messaging-source-generator-diagnostics). `EveryInstance` exists only on `[BusConsumer]`, so writing it on `[QueueConsumer]` is a compiler error rather than a generator rule.
 
 ### Startup checks and host controls
@@ -2933,7 +2978,7 @@ Roslyn incremental source generator that registers `[BusConsumer]` and `[QueueCo
 | <a id="hm011"></a>HM011 | A class that implements `IRespond<TRequest, TResponse>` carries `[BusConsumer]`. A reply goes to one caller, and only the Queue lane gives a request exactly one consumer. | Put `[QueueConsumer]` on the responder. |
 | <a id="hm012"></a>HM012 | One class implements both `IConsume<T>` and `IRespond<T, TResponse>` for the same `T`. | Implement only `IRespond<T, TResponse>`; a responder that a plain enqueue reaches runs and discards its result. |
 | <a id="hm013"></a>HM013 | One class implements `IRespond<TRequest, TResponse>` for the same request with two or more response types. | Answer each request with one response type; put alternatives in one response contract. |
-| <a id="hm014"></a>HM014 | A `RequestAsync<TRequest, TResponse>` call expects a `TResponse` that no responder visible to the project answers `TRequest` with. A responder is visible when it is declared in the calling project or in a referenced assembly built with this generator. Without the fix, the call fails with `ResponseContractMismatchException`. | Request the responder's response type. When the call deliberately reads the reply into another type registered under the same message contract name and version, suppress the warning at the call with a reason. |
+| <a id="hm014"></a>HM014 | A `RequestAsync<TRequest, TResponse>` or `GetReplyAsync<TRequest, TResponse>` call expects a `TResponse` that no responder visible to the project answers `TRequest` with. A responder is visible when it is declared in the calling project or in a referenced assembly built with this generator. Without the fix, the call fails with `ResponseContractMismatchException`. | Request the responder's response type. When the call deliberately reads the reply into another type registered under the same message contract name and version, suppress the warning at the call with a reason. |
 
 ### Install
 

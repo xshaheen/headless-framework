@@ -75,7 +75,7 @@ internal sealed class ReplyDispatcher(
         }
     }
 
-    private async ValueTask<object> _ReadResponseAsync(
+    private async ValueTask<ReceivedReply> _ReadResponseAsync(
         PendingRequest request,
         TransportMessage reply,
         CancellationToken cancellationToken
@@ -116,7 +116,10 @@ internal sealed class ReplyDispatcher(
 
         // A responder that returns null sends a null_response fault instead, so an empty ok reply breaks the protocol;
         // it still surfaces as that fault rather than as a null response.
-        return message.Value ?? throw new RequestFaultedException(request.RequestId, RequestFaultCodes.NullResponse);
+        var response =
+            message.Value ?? throw new RequestFaultedException(request.RequestId, RequestFaultCodes.NullResponse);
+
+        return ReceivedReply.From(response, reply.Headers);
     }
 
     private void _DropFinished(PendingRequestEntry entry)

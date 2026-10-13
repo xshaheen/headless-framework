@@ -176,13 +176,22 @@ public record ConsumeContext
     }
 
     /// <summary>
-    /// Adds or overwrites a response header that is forwarded to the callback subscriber.
-    /// Call this inside a consumer handler when a callback is present and the consumer
-    /// needs to pass extra metadata back to the publisher.
+    /// Adds or overwrites a response header. In a consumer, it is forwarded to the callback subscriber. In an
+    /// <see cref="IRespond{TRequest, TResponse}"/> responder, it travels on the reply, where the caller reads it through
+    /// <c>IRequestClient.GetReplyAsync</c>.
     /// </summary>
+    /// <remarks>
+    /// A responder sends its reply after the request's outcome is durable and never fails it afterwards, so a header the
+    /// reply could not carry is refused here instead: a framework header (any <c>headless-</c> name), a trace propagation
+    /// header (<c>traceparent</c>, <c>tracestate</c>, <c>baggage</c>), or a key or value with a control character. A fault
+    /// reply carries none of these headers.
+    /// </remarks>
     /// <param name="key">The response header key.</param>
     /// <param name="value">The response header value.</param>
     /// <exception cref="InvalidOperationException">Thrown when the context is completed.</exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="key"/> is empty, or when a responder sets a header a reply cannot carry.
+    /// </exception>
     public void SetResponseHeader(string key, string? value)
     {
         if (_isCompleted)
@@ -191,6 +200,26 @@ public record ConsumeContext
         }
 
         Argument.IsNotNullOrWhiteSpace(key);
+
+        if (IsResponder)
+        {
+            if (Headless.Messaging.Headers.IsReservedOnReply(key))
+            {
+                throw new ArgumentException(
+                    $"Reply header '{key}' is reserved for the framework or trace propagation.",
+                    nameof(key)
+                );
+            }
+
+            if (_HasControlCharacter(key) || _HasControlCharacter(value))
+            {
+                throw new ArgumentException(
+                    $"Reply header '{key}' cannot contain control characters in its name or value.",
+                    nameof(key)
+                );
+            }
+        }
+
         ResponseHeaders ??= new Dictionary<string, string?>(StringComparer.Ordinal);
         ResponseHeaders[key] = value;
     }
@@ -254,6 +283,25 @@ public record ConsumeContext
     internal void MarkCompleted()
     {
         _isCompleted = true;
+    }
+
+    // The same rule the publish path applies to header names and values.
+    private static bool _HasControlCharacter(string? text)
+    {
+        if (text is null)
+        {
+            return false;
+        }
+
+        foreach (var character in text.AsSpan())
+        {
+            if (char.IsControl(character))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void _EnsureCallbackResponseAllowed()

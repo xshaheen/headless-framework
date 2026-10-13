@@ -89,12 +89,36 @@ public sealed class ResponderRepliesTests : TestBase
 
         // when
         var act = () =>
-            _Replies(host).SendResponseAsync(request, new PriceQuote(1), typeof(PriceQuote), default).AsTask();
+            _Replies(host)
+                .SendResponseAsync(request, new PriceQuote(1), typeof(PriceQuote), responseHeaders: null, default)
+                .AsTask();
 
         // then — the consumed message is not at risk: nothing throws, nothing is sent, the failure is logged
         await act.Should().NotThrowAsync();
         host.Replies.Sent.Should().BeEmpty();
         log.Should().Contain(entry => entry.EventId.Id == 117 && entry.Level == LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task should_send_the_responder_headers_on_an_ok_reply_under_the_framework_headers()
+    {
+        // given — responder headers, one of which collides with a framework header
+        await using var host = ResponderExecutorHost.Create();
+        var request = host.Request(TimeSpan.FromSeconds(30)).Origin;
+        var responseHeaders = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["x-quote-source"] = "cache",
+            [Headers.ReplyStatus] = "forged",
+        };
+
+        // when
+        await _Replies(host)
+            .SendResponseAsync(request, new PriceQuote(1), typeof(PriceQuote), responseHeaders, default);
+
+        // then — the responder's header travels, and the framework's own value wins the collision
+        var (_, reply) = host.Replies.Sent.Should().ContainSingle().Subject;
+        reply.Headers["x-quote-source"].Should().Be("cache");
+        reply.Headers[Headers.ReplyStatus].Should().Be(ReplyProtocol.StatusOk);
     }
 
     private static ResponderReplies _Replies(ResponderExecutorHost host) =>

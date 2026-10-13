@@ -14,6 +14,7 @@ internal static class SourceGeneratorConstants
     public const string RequestClientMetadataName = "Headless.Messaging.IRequestClient";
     public const string ResponderMetadataAttributeName = "Headless.Messaging.ResponderMetadataAttribute";
     public const string RequestMethodName = "RequestAsync";
+    public const string GetReplyMethodName = "GetReplyAsync";
 
     public const string GeneratedFileName = "MessagingModule.g.cs";
 }

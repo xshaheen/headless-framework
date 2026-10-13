@@ -30,6 +30,18 @@ internal sealed class RequestClient(
         where TRequest : class
         where TResponse : class
     {
+        var reply = await GetReplyAsync<TRequest, TResponse>(request, options, cancellationToken).ConfigureAwait(false);
+        return reply.Message;
+    }
+
+    public async Task<Reply<TResponse>> GetReplyAsync<TRequest, TResponse>(
+        TRequest request,
+        RequestOptions? options = null,
+        CancellationToken cancellationToken = default
+    )
+        where TRequest : class
+        where TResponse : class
+    {
         Argument.IsNotNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -52,7 +64,7 @@ internal sealed class RequestClient(
             // passes the deadline of the request its consumer is answering.
             var sentAt = timeProvider.GetUtcNow();
             var timeout = _ResolveTimeout(options, inbound, sentAt);
-            var response = await _RequestAsync<TRequest, TResponse>(
+            var reply = await _RequestAsync<TRequest, TResponse>(
                     request,
                     options,
                     timeout,
@@ -62,7 +74,7 @@ internal sealed class RequestClient(
                 )
                 .ConfigureAwait(false);
             outcome = MessagingMetrics.RequestOutcomeReplied;
-            return response;
+            return reply;
         }
         catch (Exception e)
         {
@@ -107,7 +119,7 @@ internal sealed class RequestClient(
         return remaining.Min(timeout);
     }
 
-    private async Task<TResponse> _RequestAsync<TRequest, TResponse>(
+    private async Task<Reply<TResponse>> _RequestAsync<TRequest, TResponse>(
         TRequest request,
         RequestOptions? options,
         TimeSpan timeout,
@@ -183,7 +195,7 @@ internal sealed class RequestClient(
         {
             // The transport publish timed out, not the caller: the broker may have taken the request, so its reply can
             // still arrive. The call stays armed and ends with that reply or with its own timeout.
-            return (TResponse)await call.Outcome.ConfigureAwait(false);
+            return _ToReply<TResponse>(await call.Outcome.ConfigureAwait(false));
         }
         catch (PublisherSentFailedException e)
         {
@@ -209,7 +221,19 @@ internal sealed class RequestClient(
             );
         }
 
-        return (TResponse)await call.Outcome.ConfigureAwait(false);
+        return _ToReply<TResponse>(await call.Outcome.ConfigureAwait(false));
+    }
+
+    private static Reply<TResponse> _ToReply<TResponse>(ReceivedReply received)
+        where TResponse : class
+    {
+        return new Reply<TResponse>
+        {
+            Message = (TResponse)received.Message,
+            Headers = received.Headers,
+            MessageId = received.MessageId,
+            CorrelationId = received.CorrelationId,
+        };
     }
 
     private async Task<string> _WaitForAddressAsync(TimeSpan timeout, CancellationToken cancellationToken)

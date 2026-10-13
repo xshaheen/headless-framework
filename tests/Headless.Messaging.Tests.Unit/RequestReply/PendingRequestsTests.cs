@@ -166,7 +166,7 @@ public sealed class PendingRequestsTests : TestBase
 
         // when — every path tries to end the same call after a reply already did
         call.TryClaimForReply().Should().BeTrue();
-        call.CompleteClaimed(new PriceQuote(1m));
+        call.CompleteClaimed(_Reply(new PriceQuote(1m)));
         call.TryEnd(new InvalidOperationException("late")).Should().BeFalse();
         cancellation.Cancel();
         time.Advance(_Timeout);
@@ -255,6 +255,11 @@ public sealed class PendingRequestsTests : TestBase
 
     private static readonly TimeSpan _Timeout = TimeSpan.FromSeconds(30);
 
+    private static ReceivedReply _Reply(PriceQuote quote)
+    {
+        return new ReceivedReply(quote, new Dictionary<string, string?>(StringComparer.Ordinal), null, null);
+    }
+
     private static PendingRequest _Call(string requestId, TimeProvider time)
     {
         return new PendingRequest(requestId, typeof(PriceQuote), "pricing.quote", "1", _Timeout, time);
@@ -271,7 +276,7 @@ public sealed class PendingRequestsTests : TestBase
         switch (path)
         {
             case CompletionPath.Reply when call.TryClaimForReply():
-                call.CompleteClaimed(new PriceQuote(1m));
+                call.CompleteClaimed(_Reply(new PriceQuote(1m)));
                 break;
             case CompletionPath.ReplyFailure when call.TryClaimForReply():
                 call.FailClaimed(new InvalidOperationException("contract mismatch"));
