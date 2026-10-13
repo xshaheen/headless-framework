@@ -112,6 +112,10 @@ internal sealed class MessageDelayedProcessor(
                 .ScheduleMessagesOfDelayedAsync(scheduleTask, context.CancellationToken)
                 .ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (context.IsStopping)
+        {
+            // Shutdown, not a failed schedule; the poll-interval wait that follows surfaces the stop.
+        }
         catch (DbException e)
         {
             logger.LogGetDelayedMessagesFailed(e);

@@ -198,6 +198,44 @@ public sealed class MessageDelayedProcessorTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_log_an_error_when_the_claim_is_cancelled_by_shutdown()
+    {
+        // given — the host stops while the claim is running.
+        var storage = Substitute.For<IDataStorage, IDelayedMessageClaimStorage>();
+        var claimStorage = (IDelayedMessageClaimStorage)storage;
+        var dispatcher = Substitute.For<IDispatcher, ICommittedDelayedMessageDispatcher>();
+        using var cancellation = new CancellationTokenSource();
+        claimStorage
+            .ClaimDelayedMessagesAsync(Arg.Any<CancellationToken>())
+            .Returns<ValueTask<IReadOnlyList<MediumMessage>>>(async call =>
+            {
+                await cancellation.CancelAsync();
+                call.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                return [];
+            });
+        var logger = Substitute.For<ILogger<MessageDelayedProcessor>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        await using var context = _CreateContext(storage);
+        await using var stoppingContext = new ProcessingContext(
+            context.Provider,
+            TimeProvider.System,
+            cancellation.Token
+        );
+        var sut = new MessageDelayedProcessor(logger, dispatcher, Options.Create(new MessagingOptions()));
+
+        // when
+        Func<Task> act = () => sut.ProcessAsync(stoppingContext);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        // then — stopping is expected, not a failed schedule.
+        logger
+            .ReceivedCalls()
+            .Where(call => string.Equals(call.GetMethodInfo().Name, "Log", StringComparison.Ordinal))
+            .Should()
+            .NotContain(call => (LogLevel)call.GetArguments()[0]! >= LogLevel.Warning);
+    }
+
+    [Fact]
     public async Task should_preserve_callback_path_when_custom_dispatcher_lacks_committed_enqueue_capability()
     {
         var storage = Substitute.For<IDataStorage, IDelayedMessageClaimStorage>();
