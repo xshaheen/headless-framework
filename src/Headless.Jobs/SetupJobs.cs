@@ -302,6 +302,12 @@ public static class SetupJobs
         );
         services.TryAddSingleton(provider => provider.GetRequiredService<JobFunctionRegistry>().RunFilter);
         services.TryAddSingleton(provider => provider.GetRequiredService<JobFunctionRegistry>().ClusterConcurrency);
+        var runsJobs = optionInstance.RegisterBackgroundServices;
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHostDescriptionContributor, JobsHostDescriptionContributor>(provider =>
+                new(provider.GetRequiredService<JobFunctionRegistry>(), schedulerOptionsBuilder, runsJobs)
+            )
+        );
 
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);
         optionInstance.DashboardServiceAction?.Invoke(services, requestSerializationOptions);
