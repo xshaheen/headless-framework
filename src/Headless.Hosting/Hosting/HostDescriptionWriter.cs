@@ -2,14 +2,53 @@
 
 using System.Buffers;
 using System.Text.Json;
+using Headless.Checks;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Hosting;
 
 /// <summary>Writes the host description document from every registered <see cref="IHostDescriptionContributor" />.</summary>
-internal static class HostDescriptionWriter
+/// <remarks>
+/// The <c>describe</c> command of <c>RunHeadlessAsync</c> and the HTTP describe endpoint both write through this type, so
+/// the two forms always serve the same document.
+/// </remarks>
+[PublicAPI]
+public static class HostDescriptionWriter
 {
     /// <summary>The version of the document's shape; raise it when a change would break a reader of the old shape.</summary>
     public const int SchemaVersion = 1;
+
+    /// <summary>
+    /// Writes the description built from every <see cref="IHostDescriptionContributor" /> registered in
+    /// <paramref name="services" /> to <paramref name="destination" /> as UTF-8 JSON.
+    /// </summary>
+    /// <param name="services">The built host's services, which hold the contributors.</param>
+    /// <param name="destination">The stream that receives the document.</param>
+    /// <param name="cancellationToken">Abandons the copy to <paramref name="destination" />.</param>
+    /// <remarks>
+    /// The whole document is built in memory before the first byte reaches <paramref name="destination" />, so a
+    /// failure leaves the stream untouched and the caller free to send an error instead.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="services" /> or <paramref name="destination" /> is <see langword="null" />.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Two contributors claim the same section, or a contributor failed; the message names the section and may carry
+    /// the contributor's own error text, so do not show it to an untrusted caller.
+    /// </exception>
+    public static async Task WriteAsync(
+        IServiceProvider services,
+        Stream destination,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(services);
+        Argument.IsNotNull(destination);
+
+        var document = _Write(services.GetServices<IHostDescriptionContributor>());
+
+        await destination.WriteAsync(document, cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>Writes the whole document into memory and returns its UTF-8 bytes.</summary>
     /// <remarks>
@@ -18,7 +57,7 @@ internal static class HostDescriptionWriter
     /// <exception cref="InvalidOperationException">
     /// Two contributors claim the same section, or a contributor failed; the message names the section.
     /// </exception>
-    public static byte[] Write(IEnumerable<IHostDescriptionContributor> contributors)
+    private static byte[] _Write(IEnumerable<IHostDescriptionContributor> contributors)
     {
         var ordered = contributors.OrderBy(contributor => contributor.SectionName, StringComparer.Ordinal).ToList();
 

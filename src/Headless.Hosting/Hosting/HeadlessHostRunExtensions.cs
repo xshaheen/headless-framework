@@ -73,7 +73,14 @@ public static class HeadlessHostRunExtensions
             try
             {
                 await _ValidateStartupAsync(host.Services, cancellationToken).ConfigureAwait(false);
-                description = HostDescriptionWriter.Write(host.Services.GetServices<IHostDescriptionContributor>());
+                var buffer = new MemoryStream();
+                await using (buffer.ConfigureAwait(false))
+                {
+                    await HostDescriptionWriter
+                        .WriteAsync(host.Services, buffer, cancellationToken)
+                        .ConfigureAwait(false);
+                    description = buffer.ToArray();
+                }
             }
 #pragma warning disable CA1031, EPC12 // False positive: the command's process boundary reports any failure as its message and an exit code, by design.
             catch (Exception exception)
