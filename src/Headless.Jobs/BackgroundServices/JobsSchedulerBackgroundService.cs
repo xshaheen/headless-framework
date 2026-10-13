@@ -188,7 +188,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
             finally
             {
                 _executionContext.ClearFunctions();
-                Interlocked.Exchange(ref _schedulerLoopCancellationTokenSource, null)?.Dispose();
+                Interlocked.Exchange(ref _schedulerLoopCancellationTokenSource, value: null)?.Dispose();
             }
         }
     }
@@ -425,7 +425,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     public override void Dispose()
     {
         _restartThrottle.Dispose();
-        Interlocked.Exchange(ref _schedulerLoopCancellationTokenSource, null)?.Dispose();
+        Interlocked.Exchange(ref _schedulerLoopCancellationTokenSource, value: null)?.Dispose();
         base.Dispose();
     }
 }

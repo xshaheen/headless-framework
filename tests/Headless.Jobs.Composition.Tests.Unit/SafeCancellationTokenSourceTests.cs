@@ -45,7 +45,7 @@ public sealed class SafeCancellationTokenSourceTests : TestBase
         using var source = new SafeCancellationTokenSource();
         var inner = (CancellationTokenSource)
             typeof(SafeCancellationTokenSource)
-                .GetField("_innerCts", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetField("_innerCts", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
                 .GetValue(source)!;
         inner.Dispose();
 

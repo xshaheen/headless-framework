@@ -222,8 +222,9 @@ public sealed class JobsTaskSchedulerTests : TestBase
         var firstDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         ambient.Value = "request-a";
 
-        using (new Activity("http-request").Start())
+        using (var request = new Activity("http-request"))
         {
+            request.Start();
             await scheduler.QueueAsync(
                 _ =>
                 {
