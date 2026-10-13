@@ -1,13 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Dashboard;
+namespace Headless.Messaging.Dashboard.Consul;
 
 /// <summary>
 /// Configuration for Consul-based node discovery used by the Messaging Dashboard.
 /// Controls how the current node registers itself with Consul and how the dashboard
 /// discovers peer nodes to display in the multi-node federation view.
 /// </summary>
-public class ConsulDiscoveryOptions
+public sealed class ConsulDiscoveryOptions
 {
     /// <summary>Default Consul agent host name (<c>localhost</c>).</summary>
     public const string DefaultDiscoveryServerHost = "localhost";
@@ -39,10 +39,14 @@ public class ConsulDiscoveryOptions
     /// <summary>Port under which this node registers itself in Consul. Default: <c>5000</c>.</summary>
     public int CurrentNodePort { get; set; } = DefaultCurrentNodePort;
 
-    /// <summary>Optional service ID override. When <see langword="null"/> Consul generates an ID.</summary>
+    /// <summary>Optional service ID. When <see langword="null"/> Consul uses <see cref="NodeName"/> as the ID.</summary>
     public string? NodeId { get; set; }
 
-    /// <summary>Optional service name override. When <see langword="null"/> Consul uses the registration name.</summary>
+    /// <summary>
+    /// Service name this node registers under in Consul, and the name the dashboard uses to recognize the current node.
+    /// Set it: Consul rejects a registration without a service name (the failure is logged), and with no name the
+    /// dashboard cannot tell a request for this node from a request for a peer.
+    /// </summary>
     public string? NodeName { get; set; }
 
     /// <summary>Dashboard path segment appended to the health-check URL. Default: <c>/messaging</c>.</summary>

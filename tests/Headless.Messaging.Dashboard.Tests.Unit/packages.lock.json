@@ -536,7 +536,6 @@
       "headless.messaging.dashboard": {
         "type": "Project",
         "dependencies": {
-          "Consul": "[1.8.0, )",
           "Headless.Dashboard.Authentication": "[1.0.0, )",
           "Headless.Messaging": "[1.0.0, )"
         }
@@ -637,15 +636,6 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "Consul": {
-        "type": "CentralTransitive",
-        "requested": "[1.8.0, )",
-        "resolved": "1.8.0",
-        "contentHash": "flKNz6Swyt+pYBJ5dekN1X6PJYUaeNAaNC0dAWhudTd0t2vR34G0QXmr5KyApI7OP1rGMwY3xx133Dc9IvOS6Q==",
-        "dependencies": {
-          "Newtonsoft.Json": "13.0.1"
         }
       },
       "FastExpressionCompiler": {

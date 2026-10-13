@@ -385,6 +385,7 @@
         <Project Path="src/Headless.Messaging.AzureServiceBus/Headless.Messaging.AzureServiceBus.csproj" />
         <Project Path="src/Headless.Messaging.Bus.Abstractions/Headless.Messaging.Bus.Abstractions.csproj" />
         <Project Path="src/Headless.Messaging/Headless.Messaging.csproj" />
+        <Project Path="src/Headless.Messaging.Dashboard.Consul/Headless.Messaging.Dashboard.Consul.csproj" />
         <Project Path="src/Headless.Messaging.Dashboard.K8s/Headless.Messaging.Dashboard.K8s.csproj" />
         <Project Path="src/Headless.Messaging.Dashboard/Headless.Messaging.Dashboard.csproj" />
         <Project Path="src/Headless.Messaging.InMemory/Headless.Messaging.InMemory.csproj" />
@@ -421,6 +422,7 @@
         <Project Path="tests/Headless.Messaging.Aws.Tests.Integration/Headless.Messaging.Aws.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Aws.Tests.Unit/Headless.Messaging.Aws.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.AzureServiceBus.Tests.Integration/Headless.Messaging.AzureServiceBus.Tests.Integration.csproj" />
+        <Project Path="tests/Headless.Messaging.Dashboard.Consul.Tests.Unit/Headless.Messaging.Dashboard.Consul.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Dashboard.K8s.Tests.Unit/Headless.Messaging.Dashboard.K8s.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Dashboard.Tests.Unit/Headless.Messaging.Dashboard.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.InMemory.Tests.Unit/Headless.Messaging.InMemory.Tests.Unit.csproj" />

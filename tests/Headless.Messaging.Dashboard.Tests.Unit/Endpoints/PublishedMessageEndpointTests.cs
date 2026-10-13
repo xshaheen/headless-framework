@@ -539,7 +539,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
         appBuilder.Services.AddSingleton(Substitute.For<IHttpClientFactory>());
         appBuilder.Services.AddSingleton<MessagingDashboardCache>();
         appBuilder.Services.AddSingleton(Substitute.For<INodeDiscoveryProvider>());
-        appBuilder.Services.AddSingleton(new ConsulDiscoveryOptions { NodeName = "test-node" });
+        appBuilder.Services.AddSingleton(new CurrentNodeIdentity("test-node"));
         appBuilder.Services.AddSingleton<GatewayProxyAgent>();
 
         // Legacy requeue's transport-availability check (the fencing tests exercise the happy path).

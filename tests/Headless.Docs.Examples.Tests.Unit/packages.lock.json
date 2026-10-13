@@ -1024,9 +1024,16 @@
       "headless.messaging.dashboard": {
         "type": "Project",
         "dependencies": {
-          "Consul": "[1.8.0, )",
           "Headless.Dashboard.Authentication": "[1.0.0, )",
           "Headless.Messaging": "[1.0.0, )"
+        }
+      },
+      "headless.messaging.dashboard.consul": {
+        "type": "Project",
+        "dependencies": {
+          "Consul": "[1.8.0, )",
+          "Headless.Messaging": "[1.0.0, )",
+          "Headless.Messaging.Dashboard": "[1.0.0, )"
         }
       },
       "headless.messaging.dashboard.k8s": {

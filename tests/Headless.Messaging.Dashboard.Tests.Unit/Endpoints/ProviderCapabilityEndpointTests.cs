@@ -114,7 +114,7 @@ public sealed class ProviderCapabilityEndpointTests : TestBase
         builder.Services.AddSingleton(Substitute.For<IHttpClientFactory>());
         builder.Services.AddSingleton<MessagingDashboardCache>();
         builder.Services.AddSingleton(Substitute.For<INodeDiscoveryProvider>());
-        builder.Services.AddSingleton(new ConsulDiscoveryOptions { NodeName = "test-node" });
+        builder.Services.AddSingleton(new CurrentNodeIdentity("test-node"));
         builder.Services.AddSingleton<GatewayProxyAgent>();
         builder.Services.AddMessagingProviderCapabilities(first);
         if (second is not null)

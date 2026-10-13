@@ -1,6 +1,6 @@
 ---
 domain: Messaging
-packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.Storage.InMemory, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.SourceGenerator, Messaging.Storage.PostgreSql, Messaging.Storage.PostgreSql.EntityFramework, Messaging.Storage.SqlServer, Messaging.Storage.SqlServer.EntityFramework, Messaging.Testing
+packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging, Messaging.Dashboard, Messaging.Dashboard.Consul, Messaging.Dashboard.K8s, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.Storage.InMemory, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.SourceGenerator, Messaging.Storage.PostgreSql, Messaging.Storage.PostgreSql.EntityFramework, Messaging.Storage.SqlServer, Messaging.Storage.SqlServer.EntityFramework, Messaging.Testing
 ---
 
 # Messaging
@@ -2113,9 +2113,59 @@ Configured through `MessagingDashboardOptionsBuilder` inside `UseDashboard(...)`
 
 ### Runtime behavior
 
-Mounts the embedded web UI and monitoring API through an `IStartupFilter` (no explicit middleware call required), and registers dashboard and node-discovery services.
+Mounts the embedded web UI and monitoring API through an `IStartupFilter` (no explicit middleware call required), and registers the dashboard services. The dashboard package ships no discovery backend; node discovery comes from [Headless.Messaging.Dashboard.Consul](#headlessmessagingdashboardconsul) or [Headless.Messaging.Dashboard.K8s](#headlessmessagingdashboardk8s).
 
 Node lookups (30s), node counts (60s, 20s on discovery failure) and the metrics history (10m) are memoized in `MessagingDashboardCache`, a dashboard-owned in-process cache registered by `UseDashboard(...)` and injected into `ConsulNodeDiscoveryProvider` / `K8sNodeDiscoveryProvider`. The dashboard deliberately does not call `AddMemoryCache()`: registering the shared `IMemoryCache` from a framework package would put dashboard entries in the host's cache, where they compete for its size limit and are evictable by its compaction, purely as a side effect of adding a diagnostics UI. It is also not a `Headless.Caching` `ICache` — `AddHeadlessCaching` accepts exactly one call per service collection, so a registration here would throw for every consumer that configures caching themselves, or force the caching package on consumers who only wanted the dashboard. These values are per-node discovery results and metrics snapshots that must never leave the process, so a private in-process cache is the correct scope; this is the one sanctioned exception to the "do not use `IMemoryCache` directly" rule in [index.md](index.md).
+
+## Headless.Messaging.Dashboard.Consul
+
+### API and behavior
+
+- Consul-backed node discovery: each node registers itself in Consul, and the dashboard lists every catalog service tagged `messaging` as a peer node.
+- `UseConsulDiscovery(...)` extension on `MessagingSetupBuilder`, in the `Headless.Messaging.Dashboard.Consul` namespace.
+
+### Design constraints
+
+Consul addresses nodes by service name alone, with no namespace. When a request carries the `messaging.node` cookie, the dashboard resolves the node by name, caches the result for 30 seconds, and never proxies a request whose node name equals this node's `NodeName`. The `/stats` endpoint counts nodes through Consul when no cached count exists.
+
+### Install
+
+```bash
+dotnet add package Headless.Messaging.Dashboard.Consul
+```
+
+### Setup and use
+
+```csharp
+services.AddHeadlessMessaging(setup =>
+{
+    // ... transport + storage + UseDashboard(...) registration ...
+    setup.UseConsulDiscovery(options =>
+    {
+        options.DiscoveryServerHostName = "consul";
+        options.CurrentNodeHostName = "orders-api";
+        options.CurrentNodePort = 8080;
+        options.NodeName = "orders-api";
+    });
+});
+```
+
+### Configuration
+
+Configure `ConsulDiscoveryOptions` through `UseConsulDiscovery(...)`:
+
+- `DiscoveryServerHostName` / `DiscoveryServerPort` — the Consul agent HTTP API. Defaults: `localhost`, `8500`.
+- `CurrentNodeHostName` / `CurrentNodePort` — the address this node registers. Defaults: `localhost`, `5000`.
+- `NodeName` — the service name this node registers under, and the name the gateway uses to recognize the current node. Set it: Consul rejects a registration without a service name, and the failure is only logged.
+- `NodeId` — optional service ID; Consul uses `NodeName` when it is `null`.
+- `MatchPath` — the dashboard base path used in the health-check URL. Default: `/messaging`.
+- `Scheme` — `http` registers an HTTP health check on `{MatchPath}/api/health`; `https` registers a TCP check. Default: `http`.
+- `CustomTags` — extra tags merged with the built-in `Headless`, `Messaging`, `Client`, `Dashboard` tags.
+
+### Runtime behavior
+
+- Registers a Consul-backed node discovery provider and a processing server that registers this node in Consul at startup, with a 10-second health-check interval and deregistration after 30 seconds critical.
+- Discovery failures are logged and return no nodes; caller cancellation propagates.
 
 ## Headless.Messaging.Dashboard.K8s
 
