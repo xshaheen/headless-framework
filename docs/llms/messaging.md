@@ -490,8 +490,47 @@ services.ConfigureMessaging(m => m.Message<OrderPlaced>("orders.placed", "2").On
 
 - **The address names the contract.** On a raw lane, the topic, queue, routing key, subject, or stream a delivery arrived on decides its contract. A `headless-msg-name` header that names a different message makes the delivery malformed, so a foreign header cannot steer a message to a contract its producer did not publish against. Lanes without `RawPayload()` keep header routing, and a header that names a raw contract never completes a delivery that arrived on another message's address. Where an address names no single message, such as a topic reached only through a Kafka pattern subscription, a raw delivery must carry `headless-msg-name`; the rest is completed as below.
 - **Only missing headers are filled**: the message name, a message id derived from the broker (below), the contract's declared version (without it, a raw message on a contract versioned `"2"` would fail the version check, because a missing version reads as `"1"`), `headless-sent-time` from the broker's storage timestamp where the broker has one, and `headless-corr-id` set to the message id, as a Headless publish does when nothing else gives one. A header the producer sent is never replaced.
-- **The body is passed unchanged** to the host's `IMessageSerializer`. A body the serializer cannot read takes the poison path at once and is not redelivered The default serializer matches property names case-sensitively, so a producer writing camelCase JSON needs `[JsonPropertyName]` on the message type or `MessagingOptions.JsonSerializerOptions` configured for it.
+- **The body is passed unchanged** to the host's `IMessageSerializer`. A body the serializer cannot read takes the poison path at once and is not redelivered. The default serializer matches property names case-sensitively, so a producer writing camelCase JSON needs `[JsonPropertyName]` on the message type or `MessagingOptions.JsonSerializerOptions` configured for it. When the producer's JSON fits neither, declare the contract as `RawJson` (below) and parse the body in the consumer.
 - **Trace context continues**: `traceparent`, `tracestate`, and `baggage` headers from the producer are read as for any delivery.
+
+### Consume the body as raw JSON
+
+`RawJson` (in `Headless.Messaging.Abstractions`) is a message type that the serializer neither binds nor rewrites. A consumer of `IConsume<RawJson>` receives the producer's UTF-8 bytes in `context.Message.Utf8Json`, with their escaping and whitespace, on the first delivery and on every retry read back from storage. Use it when a foreign producer's JSON does not fit `MessagingOptions.JsonSerializerOptions`, such as snake_case or a schema that the application's own parser enforces, and changing those host-wide options would change every other contract:
+
+```csharp
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+// A stream covering the filter is declared in NatsMessagingOptions.Streams, as in External subjects below.
+services.ConfigureMessaging(m =>
+    m.Message<RawJson>("runs.result")
+        .OnQueue(queue => queue.RawPayload().UseNats(nats => nats.ExternalSubject("acme.*.runs.*.result")))
+);
+
+public sealed record RunResult(string RunId, string Status);
+
+[QueueConsumer("runs.ingest-result")]
+public sealed class IngestRunResult : IConsume<RawJson>
+{
+    // The producer's wire format, kept apart from the host's MessagingOptions.JsonSerializerOptions.
+    private static readonly JsonSerializerOptions _WorkerJson = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+    };
+
+    public ValueTask ConsumeAsync(ConsumeContext<RawJson> context, CancellationToken cancellationToken)
+    {
+        var result = JsonSerializer.Deserialize<RunResult>(context.Message.Utf8Json.Span, _WorkerJson);
+        // ... ingest result
+        return ValueTask.CompletedTask;
+    }
+}
+```
+
+- **The body must still be one JSON value.** A body that is not JSON fails deserialization and takes the poison path without a retry. A JSON `null` body is an empty message, which fails the same way.
+- **Publishing a `RawJson` sends its bytes unchanged.** `new RawJson(utf8Json)` copies the bytes and throws `ArgumentException` unless they hold exactly one complete JSON value.
+- **The serializer reaches the type through its `[JsonConverter]`.** A replacement `IMessageSerializer` built on `System.Text.Json` keeps the behavior. One built on another library must handle `RawJson` itself.
 
 ### Message identity
 
@@ -713,6 +752,7 @@ Declare the flag only when the provider passes the request/reply conformance sce
 - `MessageOptions.SuppressAmbientBusinessContext` preserves captured business metadata by disabling ambient correlation, causation, and tenant defaults. It defaults to `false`; explicit options, registered contract/selector resolution, and diagnostic trace propagation remain unchanged. Required tenancy still rejects a null explicit tenant when suppression is enabled.
 - `DeliveryMode` has two values and belongs to the autonomous surface only. `Durable` (default) stores the row first and the relay dispatches it; `Direct` bypasses storage and cannot be combined with `Delay` or `ScheduledAt`. Precedence is per call (`PublishOptions.DeliveryMode` / `QueueOptions.DeliveryMode`), then per type (`WithDeliveryMode`), then `MessagingOptions.DefaultDeliveryMode`. `MessageOptions`, the shared base, carries no mode and no enlistment: `OutboxOptions` adds neither, because an enlisted publish is durable by construction. See [Delivery Modes](#delivery-modes).
 - `MessageHeader`, `Headers`, `TransportMessage`, and broker address primitives.
+- `RawJson`, a message type whose `Utf8Json` holds the body exactly as produced, for a consumer that parses a foreign producer's JSON itself. See [Consume the body as raw JSON](#consume-the-body-as-raw-json).
 - The contribution surface: `services.ConfigureMessaging(...)` with `MessagingContributionBuilder` (`Message<T>(name, version)` returning `IMessageContractBuilder<T>` for `CorrelateBy`, `OnBus`, and `OnQueue`, and `AddModule<T>()`), plus the generated-module contract `IMessagingModule` and the hidden `MessagingCatalogBuilder` its `Register` writes to (`MessagingCatalogBuilder.ConsumerIdentityMaxLength` is 200). `Tune(identity, ...)` is added by `Headless.Messaging`.
 - Common transport pause/resume and retry/backoff abstractions.
 
@@ -1431,6 +1471,8 @@ builder.Services.AddHeadlessMessaging(setup =>
 - Received-row pickup has no global retry-count cap: each row is judged against its own consumer's policy after it is claimed. A row whose stored retry count already exceeds the consumer's budget, because the policy shrank since the row was scheduled, ends as a spent budget without running the handler. A dispatch that crashed after reserving its final attempt ends the same way, so a crash loop cannot exceed the budget.
 
 With the framework default, a message that keeps failing runs 3 attempts at once, then 5 more after about 30 s, 60 s, 120 s, 240 s, and 480 s (each ±20% and each later by up to one poll interval), then fails terminally: 8 attempts.
+
+**Before the inbox admits a delivery, the policy does not apply.** It counts attempts of a stored row. A delivery whose inbox row cannot be written, for example while the messaging storage database is down, is rejected back to the broker before any attempt runs. The broker redelivers it under its own limit, such as `MaxDeliver` on NATS (no limit by default), the max delivery count on Azure Service Bus, or a redrive policy's `maxReceiveCount` on SQS, and the policy's retry count does not move. A budget sized to ride out an outage of something the handler calls, such as a blob store or an API, therefore says nothing about an outage of the messaging storage itself.
 
 **Classification.** Fail rules see the handler's own exception, unwrapped from the executor's `SubscriberExecutionFailedException`. A failure ends at once, without its remaining retries, when a fail rule matches or the exception is in the built-in permanent set: `ArgumentException` and its subtypes, `NotSupportedException`, and `SubscriberNotFoundException`. A `FailWhen` predicate that throws counts as a match and is logged (EventId 111, `FailurePolicyRuleThrew`). Every other exception is retried. A cancellation of the consume token, such as host shutdown, is not a failure: once that token is cancelled, any `OperationCanceledException` that ends the attempt writes nothing, whatever token it carries, and the row is picked up again later. An `OperationCanceledException` raised while the consume token is live is an ordinary failure: fail rules see it and the policy retries it. That covers one the handler throws, such as an `HttpClient` timeout or a handler-owned `CancelAfter`, and one the transactional inbox's commit work raises after the handler, such as a consumer `SaveChanges` interceptor's `HttpClient` timeout; the latter reaches fail rules and `OnExhausted` unwrapped. To end such a cancellation at once, declare `FailOn<OperationCanceledException>()`, which also matches `TaskCanceledException`.
 
