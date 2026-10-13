@@ -123,12 +123,15 @@ internal sealed partial class InMemoryDataStorage(
         }
     }
 
-    public ValueTask ChangePublishStateToDelayedAsync(Guid[] storageIds, CancellationToken cancellationToken = default)
+    public ValueTask ChangePublishStateToDelayedAsync(
+        IReadOnlyCollection<MediumMessage> messages,
+        CancellationToken cancellationToken = default
+    )
     {
-        foreach (var storageId in storageIds)
+        foreach (var expected in messages)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!PublishedMessages.TryGetValue(storageId, out var message))
+            if (!PublishedMessages.TryGetValue(expected.StorageId, out var message))
             {
                 continue;
             }
@@ -137,9 +140,14 @@ internal sealed partial class InMemoryDataStorage(
             {
                 if (
                     !_IsSupportedLane(message.Lane)
+                    || message.Lane != expected.Lane
                     || (
                         (message.StatusName is StatusName.Succeeded or StatusName.Failed) && message.NextRetryAt is null
                     )
+                    // Only the lease the caller recorded may be handed back, mirroring the relational providers: an
+                    // unleased hand-off copy must not reset a row another node has claimed and is sending since.
+                    || !string.Equals(message.Owner, expected.Owner, StringComparison.Ordinal)
+                    || message.LockedUntil != expected.LockedUntil
                 )
                 {
                     continue;
@@ -147,8 +155,7 @@ internal sealed partial class InMemoryDataStorage(
 
                 message.StatusName = StatusName.Delayed;
 
-                // Release the ownership lease so the flushed-back row is immediately re-claimable on restart,
-                // mirroring the relational providers. The graceful-shutdown flush owns these rows via its own claim.
+                // Release the lease so the handed-back row is re-claimable at once instead of after it expires.
                 message.LockedUntil = null;
                 message.Owner = null;
             }

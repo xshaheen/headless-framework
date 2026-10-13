@@ -28,6 +28,7 @@ public abstract partial class DataStorageTestsBase
         options.SchedulerBatchSize = 2;
         var due = clock.GetUtcNow().AddMinutes(10).AddTicks(7);
         var handles = new List<Guid>();
+        var storedMessages = new List<MediumMessage>();
         for (var index = 0; index < 6; index++)
         {
             var stored = await storage.StoreScheduledMessageAsync(
@@ -43,6 +44,7 @@ public abstract partial class DataStorageTestsBase
                 cancellationToken: AbortToken
             );
             handles.Add(stored.StorageId);
+            storedMessages.Add(stored);
         }
 
         var version = options.Version;
@@ -91,7 +93,7 @@ public abstract partial class DataStorageTestsBase
         }
 
         claimed.Should().BeEquivalentTo(handles.Skip(1));
-        await storage.ChangePublishStateToDelayedAsync([handles[0]], AbortToken);
+        await storage.ChangePublishStateToDelayedAsync([storedMessages[0]], AbortToken);
         (await storage.GetMonitoringApi().GetPublishedMessageAsync(handles[0], AbortToken)).Should().BeNull();
     }
 

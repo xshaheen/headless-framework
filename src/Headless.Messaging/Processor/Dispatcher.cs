@@ -568,17 +568,18 @@ internal sealed class Dispatcher
             }
 
             // Each row goes back to Delayed in its own outbox; one unreachable database must not keep the others'
-            // rows queued, so every group is attempted.
+            // rows queued, so every group is attempted. The queue also holds hand-off copies this node never
+            // claimed, so each message carries the lease it recorded and the store resets only rows still under it.
             var groups = _schedulerQueue
                 .UnorderedItems.GroupBy(x => x.OutboxStorage ?? _storage)
-                .Select(group => (Storage: group.Key, Ids: group.Select(x => x.StorageId).ToArray()))
+                .Select(group => (Storage: group.Key, Messages: group.ToArray()))
                 .ToArray();
 
-            foreach (var (storage, ids) in groups)
+            foreach (var (storage, messages) in groups)
             {
                 try
                 {
-                    await storage.ChangePublishStateToDelayedAsync(ids).ConfigureAwait(false);
+                    await storage.ChangePublishStateToDelayedAsync(messages).ConfigureAwait(false);
                     _logger.DelayedStorageUpdateSuccess();
                 }
                 catch (Exception e)

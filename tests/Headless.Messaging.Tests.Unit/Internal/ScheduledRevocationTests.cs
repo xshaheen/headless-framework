@@ -64,7 +64,7 @@ public sealed class ScheduledRevocationTests : TestBase
         await sender.SendAsync(candidate);
 
         await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, AbortToken);
-        await storage.ChangePublishStateToDelayedAsync([candidate.StorageId], AbortToken);
+        await storage.ChangePublishStateToDelayedAsync([candidate], AbortToken);
         (await storage.GetMonitoringApi().GetPublishedMessageAsync(candidate.StorageId, AbortToken)).Should().BeNull();
     }
 

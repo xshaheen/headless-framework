@@ -263,6 +263,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
     {
         // given
         var ids = new List<Guid>();
+        var storedMessages = new List<MediumMessage>();
         for (var i = 0; i < 5; i++)
         {
             var msgId = Guid.NewGuid().ToString("D");
@@ -270,10 +271,11 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
             var message = new Message(header, new { Data = $"test{i}" });
             var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
             ids.Add(stored.StorageId);
+            storedMessages.Add(stored);
         }
 
         // when
-        await _storage.ChangePublishStateToDelayedAsync([.. ids], AbortToken);
+        await _storage.ChangePublishStateToDelayedAsync(storedMessages, AbortToken);
 
         // then
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);

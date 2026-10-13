@@ -1255,7 +1255,9 @@ public sealed class DispatcherTests : TestBase
         await _storage
             .Received(1)
             .ChangePublishStateToDelayedAsync(
-                Arg.Is<Guid[]>(ids => ids.Length == 1 && ids[0] == _StorageGuid(1)),
+                Arg.Is<IReadOnlyCollection<MediumMessage>>(messages =>
+                    messages.Count == 1 && messages.Single().StorageId == _StorageGuid(1)
+                ),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -1541,7 +1543,10 @@ public sealed class DispatcherTests : TestBase
             )
             .Returns(true);
         _storage
-            .ChangePublishStateToDelayedAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .ChangePublishStateToDelayedAsync(
+                Arg.Any<IReadOnlyCollection<MediumMessage>>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(_ =>
             {
                 flushStarted.TrySetResult();
@@ -1746,7 +1751,10 @@ public sealed class DispatcherTests : TestBase
         await _storage
             .Received(1)
             .ChangePublishStateToDelayedAsync(
-                Arg.Is<Guid[]>(ids => ids.Length == 1 && ids[0] == message.StorageId),
+                // The queued instance itself, so the store fences on the lease it recorded.
+                Arg.Is<IReadOnlyCollection<MediumMessage>>(messages =>
+                    messages.Count == 1 && ReferenceEquals(messages.Single(), message)
+                ),
                 Arg.Any<CancellationToken>()
             );
         sender.Count.Should().Be(0);
@@ -1771,7 +1779,10 @@ public sealed class DispatcherTests : TestBase
             )
             .Returns(new ValueTask<bool>(true));
         _storage
-            .ChangePublishStateToDelayedAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .ChangePublishStateToDelayedAsync(
+                Arg.Any<IReadOnlyCollection<MediumMessage>>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(_ => throw new InvalidOperationException("storage down"));
 
         await using var dispatcher = new Dispatcher(
@@ -1817,7 +1828,10 @@ public sealed class DispatcherTests : TestBase
             )
             .Returns(new ValueTask<bool>(true));
         _storage
-            .ChangePublishStateToDelayedAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .ChangePublishStateToDelayedAsync(
+                Arg.Any<IReadOnlyCollection<MediumMessage>>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(_ =>
             {
                 flushStarted.TrySetResult();
