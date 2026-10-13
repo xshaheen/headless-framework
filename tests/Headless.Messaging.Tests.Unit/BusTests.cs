@@ -408,10 +408,14 @@ public sealed class BusTests : TestBase
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*reserved*");
     }
 
-    [Fact]
-    public async Task should_reject_custom_header_names_with_control_characters()
+    [Theory]
+    [InlineData("bad\r\nheader")]
+    [InlineData("bad header")]
+    [InlineData("bad:header")]
+    [InlineData("bad-\u00e4")]
+    public async Task should_reject_custom_header_names_a_transport_cannot_carry(string headerName)
     {
-        // given
+        // given — NATS rejects a header key with a control character, a space, ':', or a non-ASCII character
         await using var testTransport = new TestTransport();
         var options = new MessagingOptions();
 
@@ -419,14 +423,14 @@ public sealed class BusTests : TestBase
         var publishOptions = new PublishOptions
         {
             DeliveryMode = DeliveryMode.Direct,
-            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["bad\r\nheader"] = "value" },
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [headerName] = "value" },
         };
 
         // when
         var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*cannot contain control characters*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*printable ASCII*");
     }
 
     [Fact]

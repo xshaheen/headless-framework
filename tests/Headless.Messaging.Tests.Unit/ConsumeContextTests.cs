@@ -116,17 +116,66 @@ public sealed class ConsumeContextTests
     }
 
     [Fact]
-    public void should_keep_a_null_reply_header_value_from_a_responder()
+    public void should_refuse_a_null_reply_header_value_from_a_responder()
+    {
+        // given — some transports drop a null header value and others deliver it, so a reply never carries one
+        var context = _CreateContext();
+        context.IsResponder = true;
+
+        // when
+        var act = () => context.SetResponseHeader("x-quote-source", value: null);
+
+        // then
+        act.Should().Throw<ArgumentNullException>();
+        context.ResponseHeaders.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_keep_a_null_callback_header_value_from_a_consumer()
     {
         // given
         var context = _CreateContext();
-        context.IsResponder = true;
 
         // when
         context.SetResponseHeader("x-quote-source", value: null);
 
         // then
         context.ResponseHeaders.Should().ContainKey("x-quote-source").WhoseValue.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("x price")]
+    [InlineData("x:price")]
+    [InlineData("x-preis-\u00e4")]
+    [InlineData("x-bad\nname")]
+    public void should_refuse_a_reply_header_name_a_transport_cannot_carry_from_a_responder(string key)
+    {
+        // given — NATS rejects a header key with a space, ':', a non-ASCII or a control character
+        var context = _CreateContext();
+        context.IsResponder = true;
+
+        // when
+        var act = () => context.SetResponseHeader(key, "value");
+
+        // then
+        act.Should().Throw<ArgumentException>().WithMessage("*printable ASCII*");
+        context.ResponseHeaders.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_refuse_a_reply_header_name_longer_than_the_limit_from_a_responder()
+    {
+        // given — AMQP limits a header name to 255 bytes
+        var context = _CreateContext();
+        context.IsResponder = true;
+
+        // when
+        var accepted = () => context.SetResponseHeader(new string('x', 255), "value");
+        var refused = () => context.SetResponseHeader(new string('x', 256), "value");
+
+        // then
+        accepted.Should().NotThrow();
+        refused.Should().Throw<ArgumentException>().WithMessage("*printable ASCII*");
     }
 
     [Theory]
@@ -150,17 +199,15 @@ public sealed class ConsumeContextTests
         context.ResponseHeaders.Should().BeNull();
     }
 
-    [Theory]
-    [InlineData("x-bad\nname", "value")]
-    [InlineData("x-name", "bad\r\nvalue")]
-    public void should_refuse_a_reply_header_with_control_characters_from_a_responder(string key, string value)
+    [Fact]
+    public void should_refuse_a_reply_header_value_with_control_characters_from_a_responder()
     {
         // given
         var context = _CreateContext();
         context.IsResponder = true;
 
         // when
-        var act = () => context.SetResponseHeader(key, value);
+        var act = () => context.SetResponseHeader("x-name", "bad\r\nvalue");
 
         // then
         act.Should().Throw<ArgumentException>().WithMessage("*control characters*");

@@ -1283,8 +1283,10 @@ internal sealed class SubscribeExecutor(
         return false;
     }
 
-    /// <summary>A responder's answer waiting for its attempt's success write.</summary>
-    // Headers are the ones the responder set through ConsumeContext.SetResponseHeader, already checked there.
+    /// <summary>
+    /// A responder's answer waiting for its attempt's success write, with the headers the responder set through
+    /// <c>ConsumeContext.SetResponseHeader</c>, which already refused any a reply cannot carry.
+    /// </summary>
     private readonly record struct PendingReply(
         object Response,
         Type ResponseType,

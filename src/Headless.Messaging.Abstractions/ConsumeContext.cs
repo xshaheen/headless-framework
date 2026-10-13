@@ -181,14 +181,16 @@ public record ConsumeContext
     /// <c>IRequestClient.GetReplyAsync</c>.
     /// </summary>
     /// <remarks>
-    /// A responder sends its reply after the request's outcome is durable and never fails it afterwards, so a header the
-    /// reply could not carry is refused here instead: a framework header (any <c>headless-</c> name), a trace propagation
-    /// header (<c>traceparent</c>, <c>tracestate</c>, <c>baggage</c>), or a key or value with a control character. A fault
-    /// reply carries none of these headers.
+    /// A responder sends its reply after the request's outcome is durable and never fails it afterwards, so a header
+    /// the reply could not carry is refused here instead: a framework header (any <c>headless-</c> name), a trace
+    /// propagation header (<c>traceparent</c>, <c>tracestate</c>, <c>baggage</c>), a name that is not 1 to 255
+    /// printable ASCII characters without <c>':'</c>, a <see langword="null"/> value, or a value with a control
+    /// character. A fault reply carries none of these headers.
     /// </remarks>
     /// <param name="key">The response header key.</param>
-    /// <param name="value">The response header value.</param>
+    /// <param name="value">The response header value. A responder must pass a non-null value.</param>
     /// <exception cref="InvalidOperationException">Thrown when the context is completed.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when a responder passes a <see langword="null"/> value.</exception>
     /// <exception cref="ArgumentException">
     /// Thrown when <paramref name="key"/> is empty, or when a responder sets a header a reply cannot carry.
     /// </exception>
@@ -211,11 +213,23 @@ public record ConsumeContext
                 );
             }
 
-            if (_HasControlCharacter(key) || _HasControlCharacter(value))
+            if (!Headless.Messaging.Headers.IsValidHeaderName(key))
             {
                 throw new ArgumentException(
-                    $"Reply header '{key}' cannot contain control characters in its name or value.",
+                    $"Reply header name '{key}' must be 1 to {Headless.Messaging.Headers.MaxHeaderNameLength} printable "
+                        + "ASCII characters and must not contain ':' or whitespace.",
                     nameof(key)
+                );
+            }
+
+            // A null value is dropped by some transports and kept by others, so a reply never carries one.
+            Argument.IsNotNull(value);
+
+            if (Headless.Messaging.Headers.HasControlCharacter(value))
+            {
+                throw new ArgumentException(
+                    $"Reply header '{key}' cannot contain control characters in its value.",
+                    nameof(value)
                 );
             }
         }
@@ -283,25 +297,6 @@ public record ConsumeContext
     internal void MarkCompleted()
     {
         _isCompleted = true;
-    }
-
-    // The same rule the publish path applies to header names and values.
-    private static bool _HasControlCharacter(string? text)
-    {
-        if (text is null)
-        {
-            return false;
-        }
-
-        foreach (var character in text.AsSpan())
-        {
-            if (char.IsControl(character))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private void _EnsureCallbackResponseAllowed()

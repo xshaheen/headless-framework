@@ -275,7 +275,8 @@ public sealed class ReplyDispatcherTests : TestBase
     [Fact]
     public async Task should_hand_the_caller_only_the_headers_the_responder_set()
     {
-        // given — a reply carrying a responder header beside framework, trace, and forged framework-looking headers
+        // given — a reply carrying a responder header beside framework, trace, forged framework-looking, and
+        // null-valued headers
         var call = _Register("request-1", tenantId: null);
         var reply = _Ok("request-1", """{"Price":1}""");
         reply.Headers[Headers.CorrelationId] = "corr-1";
@@ -284,6 +285,7 @@ public sealed class ReplyDispatcherTests : TestBase
         reply.Headers["tracestate"] = "vendor=1";
         reply.Headers["baggage"] = "user=1";
         reply.Headers["Headless-Forged"] = "x";
+        reply.Headers["x-empty"] = null;
 
         // when
         await _dispatcher.DispatchAsync(reply, AbortToken);

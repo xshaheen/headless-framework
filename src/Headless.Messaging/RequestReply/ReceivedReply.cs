@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Frozen;
+using System.Collections.ObjectModel;
 
 namespace Headless.Messaging.RequestReply;
 
@@ -14,7 +14,8 @@ internal sealed record ReceivedReply(
 {
     /// <summary>
     /// Builds the reply from the wire headers, keeping only those the responder set: the framework's own and trace
-    /// propagation headers are not the responder's to send, so a forged one never reaches the caller.
+    /// propagation headers are not the responder's to send, so a forged one never reaches the caller, and a header
+    /// without a value is dropped so every transport gives the caller the same set.
     /// </summary>
     public static ReceivedReply From(object message, IDictionary<string, string?> wireHeaders)
     {
@@ -24,7 +25,9 @@ internal sealed record ReceivedReply(
         Dictionary<string, string?>? responderHeaders = null;
         foreach (var (name, value) in wireHeaders)
         {
-            if (!Messaging.Headers.IsReservedOnReply(name))
+            // A null value is skipped too: some transports drop it on the wire and others deliver it, so a caller never
+            // sees one on any of them.
+            if (value is not null && !Messaging.Headers.IsReservedOnReply(name))
             {
                 (responderHeaders ??= new(StringComparer.Ordinal))[name] = value;
             }
@@ -32,7 +35,10 @@ internal sealed record ReceivedReply(
 
         return new ReceivedReply(
             message,
-            responderHeaders?.ToFrozenDictionary(StringComparer.Ordinal) ?? FrozenDictionary<string, string?>.Empty,
+            // A read-only view rather than a frozen copy: the map is small, built once per reply, and read rarely.
+            responderHeaders is null
+                ? ReadOnlyDictionary<string, string?>.Empty
+                : new ReadOnlyDictionary<string, string?>(responderHeaders),
             messageId,
             correlationId
         );

@@ -57,7 +57,7 @@ public sealed class ProviderHeaderContributionTests
     }
 
     [Fact]
-    public void should_reject_contribution_header_names_with_control_characters()
+    public void should_reject_contribution_header_names_a_transport_cannot_carry()
     {
         // given
         var factory = _CreateFactory(new FakeProviderConfig("x-provider\r\nkey", static message => message.Key));
@@ -66,7 +66,7 @@ public sealed class ProviderHeaderContributionTests
         var act = () => factory.Create(new TestMessage("tenant-1"));
 
         // then
-        act.Should().Throw<InvalidOperationException>().WithMessage("*cannot contain control characters*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*printable ASCII*");
     }
 
     [Fact]

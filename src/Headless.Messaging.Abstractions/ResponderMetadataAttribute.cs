@@ -12,8 +12,9 @@ namespace Headless.Messaging;
 /// <remarks>
 /// The Messaging source generator emits one per <see cref="IRespond{TRequest, TResponse}"/> it registers. The generator
 /// in a referencing project reads them to check each <c>IRequestClient.RequestAsync&lt;TRequest, TResponse&gt;</c> and
-/// <c>GetReplyAsync&lt;TRequest, TResponse&gt;</c> call against the responders it can see, which the responder classes alone do not allow: the compiler does not read a
-/// referenced assembly's classes cheaply enough to scan them on every edit. Do not apply it by hand.
+/// <c>GetReplyAsync&lt;TRequest, TResponse&gt;</c> call against the responders it can see, which the responder classes
+/// alone do not allow: the compiler does not read a referenced assembly's classes cheaply enough to scan them on every
+/// edit. Do not apply it by hand.
 /// </remarks>
 [PublicAPI]
 [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]

@@ -463,7 +463,7 @@ internal sealed class MessagePublishRequestFactory(
 
     private static void _ValidateProviderHeaderValue(string headerName, string value, object providerConfig)
     {
-        if (_ContainsControlCharacter(value))
+        if (Headers.HasControlCharacter(value))
         {
             throw new InvalidOperationException(
                 $"Provider config '{providerConfig.GetType().FullName ?? providerConfig.GetType().Name}' returned an invalid "
@@ -476,18 +476,19 @@ internal sealed class MessagePublishRequestFactory(
     {
         Argument.IsNotNullOrWhiteSpace(headerName);
 
-        if (_ContainsControlCharacter(headerName))
+        if (!Headers.IsValidHeaderName(headerName))
         {
             var safeHeaderName = LogSanitizer.Sanitize(headerName, 200);
             throw new InvalidOperationException(
-                $"Header '{safeHeaderName}' is invalid. Header names cannot contain control characters."
+                $"Header '{safeHeaderName}' is invalid. Header names must be 1 to {Headers.MaxHeaderNameLength} "
+                    + "printable ASCII characters and must not contain ':' or whitespace."
             );
         }
     }
 
     private static void _ValidateHeaderValue(string headerName, string value)
     {
-        if (_ContainsControlCharacter(value))
+        if (Headers.HasControlCharacter(value))
         {
             throw new InvalidOperationException(
                 $"Header '{headerName}' contains an invalid value. Header values cannot contain control characters."
@@ -506,19 +507,6 @@ internal sealed class MessagePublishRequestFactory(
 
             _ValidateHeaderValue(headerName, value);
         }
-    }
-
-    private static bool _ContainsControlCharacter(string value)
-    {
-        foreach (var character in value.AsSpan())
-        {
-            if (char.IsControl(character))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static string _ValidateMessageId(string messageId)
