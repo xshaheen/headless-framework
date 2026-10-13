@@ -36,6 +36,16 @@ internal sealed partial class ConsumerRegister
         }
     }
 
+    // A method group converted to a delegate allocates on every use; the register is a singleton, so one cached
+    // delegate serves every delivery.
+    private Func<
+        IDictionary<string, string?>,
+        ReadOnlyMemory<byte>,
+        ConsumerExecutorDescriptor,
+        CancellationToken,
+        ValueTask<Message>
+    > RunInnerReceive => field ??= _RunInnerReceiveAsync;
+
     /// <summary>
     /// The inner receive steps the ring's innermost <c>next</c> runs: contract-version validation,
     /// Stage A deserialization (wrapped in <see cref="MessageDeserializationException"/>), and the
