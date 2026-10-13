@@ -159,6 +159,7 @@ internal static class ServiceBuilder
         );
         services.AddHeadlessGuidGenerator();
         services.AddStartupValidator<JobsClusterConcurrencyStartupValidator<TContext, TTimeJob, TCronJob>>();
+        _AddStorageHealthCheck<TContext>(services);
         // Fail loud at DI-build time when the context cannot back coordinated writes, rather than at first
         // coordinated write where the provider's static factory would surface it as a TypeInitializationException.
         CoordinatedWriteContextFactory.RequireOptionsConstructor<TContext>();
@@ -251,6 +252,30 @@ internal static class ServiceBuilder
                 provider.GetService<JobsRunFilter>(),
                 provider.GetService<JobsClusterConcurrency>()
             )
+        );
+    }
+
+    // Probes through the same pooled factory the store reads and writes with, so the check fails exactly when the
+    // store's own connections cannot open. Read-only: CanConnectAsync opens a connection and runs nothing that writes.
+    private static void _AddStorageHealthCheck<TContext>(IServiceCollection services)
+        where TContext : DbContext
+    {
+        services.AddHeadlessHealthCheck(
+            "jobs-storage-" + (typeof(TContext).FullName ?? typeof(TContext).Name),
+            static async (provider, cancellationToken) =>
+            {
+                var factory = provider.GetRequiredService<IDbContextFactory<TContext>>();
+                var context = await factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+                await using (context.ConfigureAwait(false))
+                {
+                    if (!await context.Database.CanConnectAsync(cancellationToken).ConfigureAwait(false))
+                    {
+                        throw new InvalidOperationException("The Jobs store cannot connect to its database.");
+                    }
+                }
+            },
+            HeadlessHealthCheckTags.Jobs,
+            HeadlessHealthCheckTags.Database
         );
     }
 

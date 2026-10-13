@@ -275,6 +275,9 @@ public static class SetupJobs
                     sp.GetRequiredService<ILogger<JobsTaskScheduler>>()
                 );
             });
+
+            // Readiness only describes a host that runs jobs; a scheduling-only host has no loop to report on.
+            JobsHealthChecks.Add(services);
         }
         else
         {
