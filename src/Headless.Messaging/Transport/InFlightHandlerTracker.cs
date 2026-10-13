@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.ExceptionServices;
 using Headless.Checks;
 
 namespace Headless.Messaging.Transport;
@@ -105,7 +106,10 @@ internal sealed class InFlightHandlerTracker
     /// </summary>
     /// <param name="timeout">The remaining shutdown budget; zero or less fails at once when a handler is still running.</param>
     /// <param name="timeProvider">The clock the wait is measured on.</param>
-    /// <remarks>A drained handler's fault propagates, as <c>Task.WhenAll</c> reports it, once every snapshot handler ends.</remarks>
+    /// <remarks>
+    /// A handler's fault does not cut the drain short: the first fault propagates only after every tracked handler, one
+    /// tracked after it included, has finished.
+    /// </remarks>
     /// <exception cref="TimeoutException">A handler was still running when <paramref name="timeout"/> elapsed.</exception>
     public async Task DrainAsync(TimeSpan timeout, TimeProvider timeProvider)
     {
@@ -116,7 +120,10 @@ internal sealed class InFlightHandlerTracker
 
         // Snapshots repeat until none is left: a delivery that already passed its own shutdown check can still start a
         // handler after the first snapshot. Completed handlers can linger until their removal continuation runs, so only
-        // unfinished ones count, which keeps the loop from spinning on them.
+        // unfinished ones count, which keeps the loop from spinning on them. A faulted handler does not end the drain:
+        // the caller disposes the client next, so every later handler must finish first; the first fault is surfaced
+        // once none is left.
+        ExceptionDispatchInfo? firstFault = null;
         Task[] inFlight;
         while ((inFlight = _UnfinishedSnapshot()).Length > 0)
         {
@@ -126,10 +133,21 @@ internal sealed class InFlightHandlerTracker
                 throw new TimeoutException("The shared messaging shutdown deadline has expired.");
             }
 
-            await Task.WhenAll(inFlight)
-                .WaitAsync(remaining, timeProvider, CancellationToken.None)
-                .ConfigureAwait(false);
+            var all = Task.WhenAll(inFlight);
+            try
+            {
+                await all.WaitAsync(remaining, timeProvider, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception) when (all.IsFaulted || all.IsCanceled)
+            {
+                // The handlers' own outcome, not the wait's: a handler that throws TimeoutException is a fault here.
+                firstFault ??= ExceptionDispatchInfo.Capture(
+                    all.Exception?.InnerExceptions[0] ?? new TaskCanceledException(all)
+                );
+            }
         }
+
+        firstFault?.Throw();
     }
 
     private Task[] _UnfinishedSnapshot()
