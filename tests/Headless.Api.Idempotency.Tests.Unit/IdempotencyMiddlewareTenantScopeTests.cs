@@ -48,7 +48,7 @@ public sealed class IdempotencyMiddlewareTenantScopeTests : IdempotencyMiddlewar
         var middleware = _CreateMiddleware(
             operations,
             principal,
-            tenancyOptions: Options.Create(new MultiTenancyOptions { ClaimType = "org" })
+            tenancyOptions: Options.Create(new HttpTenantResolutionOptions { ClaimType = "org" })
         );
 
         await middleware.InvokeAsync(CreateContext(idempotencyKey: "k1"), _ => Task.CompletedTask);
@@ -259,7 +259,7 @@ public sealed class IdempotencyMiddlewareTenantScopeTests : IdempotencyMiddlewar
         IIdempotentOperations operations,
         ICurrentUser user,
         bool requireUserIdentity = true,
-        IOptions<MultiTenancyOptions>? tenancyOptions = null
+        IOptions<HttpTenantResolutionOptions>? tenancyOptions = null
     )
     {
         return CreateMiddleware(

@@ -22,7 +22,7 @@ namespace Headless.Api;
 /// </remarks>
 internal sealed partial class TenantResolutionMiddleware(
     RequestDelegate next,
-    IOptions<MultiTenancyOptions> options,
+    IOptions<HttpTenantResolutionOptions> options,
     IOptions<TenantTelemetryOptions> telemetryOptions,
     ILogger<TenantResolutionMiddleware> logger
 )

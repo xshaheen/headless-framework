@@ -32,7 +32,7 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
         IIdempotentOperations? operations = null,
         ICurrentTenant? currentTenant = null,
         ICurrentUser? currentUser = null,
-        IOptions<MultiTenancyOptions>? tenancyOptions = null,
+        IOptions<HttpTenantResolutionOptions>? tenancyOptions = null,
         IProblemDetailsCreator? problemDetailsCreator = null,
         TimeProvider? timeProvider = null,
         ICancellationTokenProvider? cancellationTokenProvider = null,
@@ -58,7 +58,7 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
             currentUser.UserId.Returns(new UserId("u1"));
         }
 
-        tenancyOptions ??= Options.Create(new MultiTenancyOptions());
+        tenancyOptions ??= Options.Create(new HttpTenantResolutionOptions());
         problemDetailsCreator ??= CreateProblemDetailsCreator();
         timeProvider ??= new FakeTimeProvider(DateTimeOffset.UtcNow);
 

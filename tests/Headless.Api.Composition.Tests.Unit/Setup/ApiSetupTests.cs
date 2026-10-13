@@ -181,7 +181,7 @@ public sealed class SetupApiTests
 
         using var serviceProvider = builder.Services.BuildServiceProvider();
         var currentTenant = serviceProvider.GetRequiredService<ICurrentTenant>();
-        var options = serviceProvider.GetRequiredService<IOptions<MultiTenancyOptions>>().Value;
+        var options = serviceProvider.GetRequiredService<IOptions<HttpTenantResolutionOptions>>().Value;
 
         // then
         currentTenant.Should().BeOfType<CurrentTenant>();
@@ -217,7 +217,7 @@ public sealed class SetupApiTests
         builder.AddHeadlessMultiTenancy(options => options.ClaimType = blankClaimType);
 
         using var provider = builder.Services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<MultiTenancyOptions>>().Value;
+        var options = provider.GetRequiredService<IOptions<HttpTenantResolutionOptions>>().Value;
 
         // then
         options.ClaimType.Should().Be(UserClaimTypes.TenantId);

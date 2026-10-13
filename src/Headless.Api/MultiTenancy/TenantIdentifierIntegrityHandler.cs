@@ -52,7 +52,7 @@ namespace Headless.Api;
 /// </para>
 /// </remarks>
 internal sealed class TenantIdentifierIntegrityHandler(
-    IOptions<MultiTenancyOptions> options,
+    IOptions<HttpTenantResolutionOptions> options,
     IOptions<TenantCatalogOptions> catalogOptions,
     IHttpContextAccessor httpContextAccessor
 ) : IAuthorizationHandler

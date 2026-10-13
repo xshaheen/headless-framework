@@ -14,7 +14,7 @@ internal sealed class IdempotencyLookup(
     IIdempotentOperations operations,
     ICurrentTenant currentTenant,
     ICurrentUser currentUser,
-    IOptions<MultiTenancyOptions> tenancyOptions
+    IOptions<HttpTenantResolutionOptions> tenancyOptions
 ) : IIdempotencyLookup
 {
     public async ValueTask<IdempotencyPeekStatus> GetStatusAsync(

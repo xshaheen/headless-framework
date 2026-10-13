@@ -177,7 +177,7 @@ public sealed class IdempotencyOptions
     /// <remarks>
     /// <para>
     /// The durable store keys every record by the authenticated principal's tenant claim (the claim type
-    /// <c>MultiTenancyOptions.ClaimType</c> configures), or by the host scope for a principal without one and for
+    /// <c>HttpTenantResolutionOptions.ClaimType</c> configures), or by the host scope for a principal without one and for
     /// anonymous requests, so the scope does not need to carry the tenant. The ambient tenant is never used: pre-auth
     /// resolution sets it from the host or a header the caller controls. A custom deriver changes only the scope; the
     /// store tenant follows the same rule. An authenticated principal without a tenant claim shares the host scope
