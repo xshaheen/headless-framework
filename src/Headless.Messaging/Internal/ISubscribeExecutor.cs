@@ -406,7 +406,7 @@ internal sealed class SubscribeExecutor(
                 {
                     updated = await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (!RetryHelper.IsCancellation(ex, cancellationToken))
                 {
                     // The handler's work is done, so this is not a consumer failure: running it again inline,
                     // exhausting the row, or counting it against the consumer's circuit would each misreport it.

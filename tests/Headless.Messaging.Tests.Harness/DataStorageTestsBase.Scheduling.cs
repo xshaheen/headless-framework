@@ -27,7 +27,6 @@ public abstract partial class DataStorageTestsBase
         var (storage, options) = CreateSchedulingTestStorage(clock);
         options.SchedulerBatchSize = 2;
         var due = clock.GetUtcNow().AddMinutes(10).AddTicks(7);
-        var handles = new List<Guid>();
         var storedMessages = new List<MediumMessage>();
         for (var index = 0; index < 6; index++)
         {
@@ -43,9 +42,10 @@ public abstract partial class DataStorageTestsBase
                 due,
                 cancellationToken: AbortToken
             );
-            handles.Add(stored.StorageId);
             storedMessages.Add(stored);
         }
+
+        var handles = storedMessages.ConvertAll(message => message.StorageId);
 
         var version = options.Version;
         options.Version = "other-scheduling-version";
