@@ -308,6 +308,9 @@ public static class SetupMessaging
         services.TryAddSingleton<IBootstrapper>(sp => sp.GetRequiredService<Bootstrapper>());
         services.AddHostedService(sp => sp.GetRequiredService<Bootstrapper>());
 
+        // Readiness for every host, consuming or publish-only; the probes read state only and connect to nothing.
+        MessagingHealthChecks.Add(services, hasAdditionalOutboxes: setup.OutboxBuilders.Count != 0);
+
         return new MessagingBuilder(services);
     }
 
