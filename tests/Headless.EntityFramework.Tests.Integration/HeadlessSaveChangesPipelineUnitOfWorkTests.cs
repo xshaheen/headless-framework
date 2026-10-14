@@ -343,6 +343,37 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         (await _CountProbesAsync(provider)).Should().Be(2);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_save_an_entity_a_handler_adds_without_saving(bool sync)
+    {
+        // given — the handler only tracks a second row; the drain must notice it after the handler ran, because the
+        // snapshot taken before the handler cannot contain it
+        await using var provider = await _BuildProviderAsync();
+        var evidence = provider.GetRequiredService<PipelineEvidence>();
+        evidence.OnHandled = (_, db, _) =>
+        {
+            if (evidence.HandlerCalls == 1)
+            {
+                db.Probes.Add(new PipelineProbe { Name = "from-handler" });
+            }
+
+            return Task.CompletedTask;
+        };
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<PipelineTestDbContext>();
+        db.Probes.Add(_ProbeWithEvents("outer"));
+
+        // when
+        await _SaveAsync(db, sync, AbortToken);
+
+        // then
+        (await _CountProbesAsync(provider))
+            .Should()
+            .Be(2);
+    }
+
     #region Setup
 
     private async Task<ServiceProvider> _BuildProviderAsync(

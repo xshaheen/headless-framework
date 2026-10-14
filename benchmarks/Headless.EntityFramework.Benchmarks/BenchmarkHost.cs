@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace Headless.EntityFramework.Benchmarks;
 
@@ -45,31 +46,50 @@ internal sealed class EfCallCounter
 }
 
 /// <summary>
-/// A DI container over one in-memory SQLite connection. SQLite runs in-process, so absolute times exclude network and
-/// server cost: read the numbers as relative cost of the framework's own work, not as production latency.
+/// A DI container over one database. By default that is in-memory SQLite, which runs in-process, so absolute times
+/// exclude network and server cost: read them as relative cost of the framework's own work, not as production latency.
+/// Set <c>HEADLESS_BENCH_POSTGRES</c> to a server connection string (any database name) to run against PostgreSQL
+/// instead, in a throwaway database per host, where round trips and transactions are real.
 /// </summary>
 internal sealed class BenchmarkHost : IDisposable
 {
+    private static readonly string? _PostgresConnectionString = Environment.GetEnvironmentVariable(
+        "HEADLESS_BENCH_POSTGRES"
+    );
+
     private readonly SqliteConnection _connection = new("Data Source=:memory:");
+    private readonly string? _postgresDatabase;
     private readonly ServiceProvider _provider;
 
     public BenchmarkHost(bool trackNavigationChanges)
     {
-        _connection.Open();
+        string? postgres = null;
+
+        if (_PostgresConnectionString is not null)
+        {
+            _postgresDatabase = $"bench_{Guid.NewGuid():N}";
+            postgres = new NpgsqlConnectionStringBuilder(_PostgresConnectionString)
+            {
+                Database = _postgresDatabase,
+                Pooling = true,
+            }.ConnectionString;
+        }
+        else
+        {
+            _connection.Open();
+        }
 
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessDbContext<BenchmarkDbContext>(
             options =>
-                options
-                    .UseSqlite(_connection)
-                    .LogTo(
-                        (id, _) =>
-                            id == CoreEventId.DetectChangesStarting
-                            || id == CoreEventId.SaveChangesStarting
-                            || id == RelationalEventId.CommandExecuted,
-                        data => Counter.Log(data.EventId)
-                    ),
+                (postgres is null ? options.UseSqlite(_connection) : options.UseNpgsql(postgres)).LogTo(
+                    (id, _) =>
+                        id == CoreEventId.DetectChangesStarting
+                        || id == CoreEventId.SaveChangesStarting
+                        || id == RelationalEventId.CommandExecuted,
+                    data => Counter.Log(data.EventId)
+                ),
             headless => headless.TrackNavigationChanges = trackNavigationChanges
         );
         services.AddHeadlessAuditLog(setup => setup.UseEntityFramework<BenchmarkDbContext>());
@@ -85,6 +105,12 @@ internal sealed class BenchmarkHost : IDisposable
 
     public void Dispose()
     {
+        if (_postgresDatabase is not null)
+        {
+            using var scope = _provider.CreateScope();
+            scope.ServiceProvider.GetRequiredService<BenchmarkDbContext>().Database.EnsureDeleted();
+        }
+
         _provider.Dispose();
         _connection.Dispose();
     }

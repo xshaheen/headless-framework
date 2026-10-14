@@ -59,6 +59,12 @@ public sealed class HeadlessSaveEntryContext(DbContext dbContext, string? tenant
 
     internal int DomainEventCursor { get; set; }
 
+    /// <summary>
+    /// The <see cref="DomainEventCursor"/> value when <see cref="TrackedEntries"/> was last taken. Handlers run only
+    /// between cursor advances, so while the two match nothing could have changed the graph since the snapshot.
+    /// </summary>
+    internal int SnapshotCursor { get; set; }
+
     /// <summary>Clears the event buffers on each captured emitter once they have been dispatched.</summary>
     internal void ClearEmitterMessages()
     {

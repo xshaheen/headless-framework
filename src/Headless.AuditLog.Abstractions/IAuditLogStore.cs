@@ -29,6 +29,13 @@ public interface IAuditLogStore
     IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext);
 
     /// <summary>
+    /// Gets whether <see cref="Save"/> only adds rows to the saving context, without writing them. Only such a store can
+    /// be called before the entity change is saved: the rows then commit in the same batch, and a failed save leaves
+    /// nothing behind. A store that writes during <see cref="Save"/> must run after the entity change succeeds.
+    /// </summary>
+    bool AddsToSavingContext => false;
+
+    /// <summary>
     /// Persists audit entries asynchronously using the specified saving context.
     /// </summary>
     /// <param name="entries">Audit entries to persist.</param>

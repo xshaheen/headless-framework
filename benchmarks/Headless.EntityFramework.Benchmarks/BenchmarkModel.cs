@@ -67,10 +67,13 @@ public sealed class BenchmarkDbContext(DbContextOptions options, IOptions<AuditL
         );
 
         // SQLite has no sequence support for the composite audit key; a single-column key lets ROWID generate it.
-        modelBuilder.Entity<AuditLogEntry>(b =>
+        if (Database.IsSqlite())
         {
-            b.HasKey(e => e.Id);
-            b.Property(e => e.Id).ValueGeneratedOnAdd();
-        });
+            modelBuilder.Entity<AuditLogEntry>(b =>
+            {
+                b.HasKey(e => e.Id);
+                b.Property(e => e.Id).ValueGeneratedOnAdd();
+            });
+        }
     }
 }

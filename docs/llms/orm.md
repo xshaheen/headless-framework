@@ -117,6 +117,10 @@ Bypasses emit a `[SECURITY AUDIT]` trace through `Debug.WriteLine` with the call
 
 Custom processors registered via `options.AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` are inserted **before** the terminal lifecycle and message-collector processors, so app-specific mutations and queued messages are visible to the framework collectors. The same type can be re-registered — the prior entry is replaced, not duplicated. Use `options.RemoveSaveEntryProcessor<TProcessor>()` to opt out of a built-in processor entirely.
 
+An audited save issues one database save when every audit row's entity id is known at capture: inserts with client-assigned keys (such as the Guid keys the value generators produce at `Add`), updates, and deletes. Audit rows for inserts whose key the store generates (identity, sequence, database default) follow in a second save once the key exists. `SaveChanges` returns the count of the caller's rows only; audit rows are never counted. This applies only to a store that adds rows to the saving context (`IAuditLogStore.AddsToSavingContext`, true for the EF store); the raw ADO.NET stores still write after the entity save succeeds.
+
+`HeadlessDbContextOptions.TrackNavigationChanges` (default `false`) turns on a per-context record of entities that changed only through a collection navigation. It costs an identity lookup, a lock, and navigation copies for every tracked `IEntity`, about 13 MB of extra allocation per 10,000-row tracking query, and the save pipeline does not read it. Set it before the first context is created; a context built without the application service provider keeps it off.
+
 The full save-transaction order within a `HeadlessDbContext` pipeline-owned transaction is:
 
 1. Captured Domain occurrences drained via `IDomainEventDispatcher` to quiescence, followed by final audit capture (before business save)

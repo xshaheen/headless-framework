@@ -9,6 +9,7 @@
     <PackageReference Include="BenchmarkDotNet" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.AuditLog.Storage.EntityFramework\Headless.AuditLog.Storage.EntityFramework.csproj" />
