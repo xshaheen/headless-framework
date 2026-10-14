@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
+using Headless.Jobs.Coordination;
 using Headless.Jobs.Internal;
 using Headless.Jobs.JobsThreadPool;
 using Microsoft.Extensions.Hosting;
@@ -19,13 +20,24 @@ internal sealed class JobsFallbackBackgroundService(
     IJobsOwnerIdentity ownerIdentity,
     JobsActivationBarrier activationBarrier,
     ILogger<JobsFallbackBackgroundService> logger,
-    INodeMembership? membership = null
+    INodeMembership? membership = null,
+    JobsDeadOwnerReclaimer? deadOwnerReclaimer = null
 ) : BackgroundService
 {
     private int _started;
     private long _lastOrphanSweepTimestamp;
     private long _lastStallSweepTimestamp;
     private readonly TimeSpan _fallbackJobPeriod = schedulerOptions.FallbackIntervalChecker;
+
+    // One cadence with the dead-owner bridge: the reclaimer resolves and logs it; a host without the reclaimer (the
+    // in-memory path, which never sweeps) falls back to the same resolution without coordination options.
+    private readonly TimeSpan _orphanSweepInterval =
+        deadOwnerReclaimer?.ReconcileInterval
+        ?? JobsDeadOwnerReclaimer.ResolveReconcileInterval(
+            schedulerOptions.DeadNodeReconcileInterval,
+            coordination: null,
+            logger
+        );
 
     public override Task StartAsync(CancellationToken ct)
     {
@@ -181,20 +193,20 @@ internal sealed class JobsFallbackBackgroundService(
         await internalJobsManager.ReclaimStalledResources(cancellationToken).ConfigureAwait(false);
     }
 
-    // Recovers rows stamped by an owner identity that can no longer be OBSERVED at all: a superseded
+    // Recovers rows stamped by an owner identity that is no longer a live member: a Dead identity, a superseded
     // incarnation (its successor's registration instantly filters it from every liveness snapshot, so it never
-    // classifies Dead and the dead-owner bridge never sees it) or a dead identity pruned past its retention
-    // window. Idle/Queued rows with a null ExecutionTime (non-timed chain descendants) are matched by no other
-    // sweep in that state — this reconcile is their only recovery path, per the coordination contract
-    // ("consumers must also periodically reconcile rows whose owner identity is not live").
+    // classifies Dead and the dead-owner bridge never sees it), or a dead identity pruned past its retention window.
+    // Dead owners are included because the bridge reclaims each one once: a reclaim that ran before every row was
+    // stamped, or a missed NodeLeft on Redis (which keeps Dead identities for RedisKnownNodeRetention, 7 days by
+    // default), would otherwise strand rows that long. Idle/Queued rows with a null ExecutionTime (non-timed chain
+    // descendants) are matched by no other sweep in that state — this reconcile is their only recovery path, per the
+    // coordination contract ("consumers must also periodically reconcile rows whose owner identity is not live").
     //
     // The stamped-owner scan is read BEFORE the snapshot: stamping requires established membership, so every
-    // owner in the scan registered no later than the scan, and one that is still live must appear in the later
-    // snapshot — absence can only mean superseded or pruned. The reverse order is unsafe: a node that registers
-    // and stamps between the two reads would be present in the scan but absent from the earlier snapshot, and
-    // this iteration acts on this iteration's diff, so it would be reclaimed while alive. Suspected and
-    // Dead-retained identities are present in the snapshot and deliberately excluded here (Dead belongs to the
-    // dead-owner bridge; Suspected may still be alive and renewing).
+    // owner in the scan registered no later than the scan, and one that is still live must appear Alive or Suspected
+    // in the later snapshot. The reverse order is unsafe: a node that registers and stamps between the two reads would
+    // be present in the scan but absent from the earlier snapshot, and this iteration acts on this iteration's diff,
+    // so it would be reclaimed while alive. Suspected identities are excluded: they may still be alive and renewing.
     private async Task _ReclaimOrphanedOwnersAsync(CancellationToken cancellationToken)
     {
         if (membership is null)
@@ -205,7 +217,7 @@ internal sealed class JobsFallbackBackgroundService(
 
         if (
             _lastOrphanSweepTimestamp != 0
-            && timeProvider.GetElapsedTime(_lastOrphanSweepTimestamp) < schedulerOptions.DeadNodeReconcileInterval
+            && timeProvider.GetElapsedTime(_lastOrphanSweepTimestamp) < _orphanSweepInterval
         )
         {
             return;
@@ -215,17 +227,20 @@ internal sealed class JobsFallbackBackgroundService(
 
         var stamped = await internalJobsManager.GetActiveOwnerIdsAsync(cancellationToken).ConfigureAwait(false);
         var snapshot = await membership.GetLivenessSnapshotAsync(cancellationToken).ConfigureAwait(false);
-        var observable = snapshot.Select(x => x.Identity.ToString()).ToHashSet(StringComparer.Ordinal);
+        var live = snapshot
+            .Where(static x => x.State is NodeLivenessState.Alive or NodeLivenessState.Suspected)
+            .Select(static x => x.Identity.ToString())
+            .ToHashSet(StringComparer.Ordinal);
         List<string> orphanedOwners = [];
 
         foreach (var owner in stamped)
         {
-            if (observable.Contains(owner))
+            if (live.Contains(owner))
             {
                 continue;
             }
 
-            // Protective self-exclusion for registration gaps; a registered self is in the snapshot anyway.
+            // Protective self-exclusion for registration gaps; a live self is in the set anyway.
             if (ownerIdentity.TryGetStampOwner(out var self) && string.Equals(owner, self, StringComparison.Ordinal))
             {
                 continue;
@@ -282,8 +297,8 @@ internal static partial class JobsFallbackBackgroundServiceLog
     [LoggerMessage(
         EventId = 3202,
         Level = LogLevel.Warning,
-        Message = "Reclaiming rows stamped by owner '{Owner}', which is no longer observable in the coordination "
-            + "liveness snapshot (superseded incarnation or pruned dead identity)."
+        Message = "Reclaiming rows stamped by owner '{Owner}', which is neither Alive nor Suspected in the coordination "
+            + "liveness snapshot (dead, superseded, or pruned identity)."
     )]
     public static partial void LogJobsOrphanedOwnerReclaimed(this ILogger logger, string owner);
 

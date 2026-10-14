@@ -276,9 +276,10 @@ Consequences:
 
 The durable operational store (EF provider) uses `Headless.Coordination` for:
 - **Node identity**: the node owner stamped on job rows is `node@incarnation` (a store-allocated incarnation ID), not `Environment.MachineName`. The node id is the host name `Headless.Context` resolves (`HostIdentityOptions.HostName`, then `POD_NAMESPACE/POD_NAME`, then the machine name; see [context.md](context.md)), not a `SchedulerOptionsBuilder` setting.
-- **Dead-node recovery**: triggered by `Coordination` `NodeLeft` events plus a periodic liveness-snapshot reconcile (`DeadNodeReconcileInterval`, default 1 minute). Backend-neutral — works without Redis. Reclaim matches the dead `node@incarnation` exactly; it never touches rows owned by a restarted node's fresh incarnation.
-- **Fail-stop on membership loss**: if the local node loses coordination membership, the durable scheduler stops processing rather than stamping stale owners.
-- **Orphaned-owner sweep**: on the `DeadNodeReconcileInterval` cadence the fallback service also reclaims rows stamped by an owner identity absent from the liveness snapshot entirely — a superseded incarnation (never classified Dead, so the dead-node path cannot see it) or a dead identity pruned past retention. This is the only recovery path for owner-stamped `Idle`/`Queued` rows with no execution time (non-timed chain descendants) after a whole-cluster or single-node ungraceful restart.
+- **Dead-node recovery**: triggered by `Coordination` `NodeLeft` events plus a periodic liveness-snapshot reconcile every `DeadNodeReconcileInterval`. The interval defaults to `null`, which means half the coordination `DeadRetentionWindow` (15 seconds with default coordination options), because relational providers keep a dead identity observable for only that window. An explicit value above that ceiling is clamped to it and logs a warning. Backend-neutral — works without Redis. Reclaim matches the dead `node@incarnation` exactly; it never touches rows owned by a restarted node's fresh incarnation.
+- **Fail-stop on membership loss**: if the local node loses coordination membership, the durable scheduler stops processing rather than stamping stale owners. The owner identity follows the coordination self-fence: once the node passes `DeadThreshold - SelfFenceMargin` without an accepted heartbeat, no new row is stamped with its owner (see [coordination.md](coordination.md)).
+- **Registration at startup**: the startup gate registers the node in `StartingAsync`, and the coordination heartbeat loop beats from that registration onward, so a slow `StartingAsync` in another hosted service does not expire the node before the host finishes starting.
+- **Orphaned-owner sweep**: on the same effective `DeadNodeReconcileInterval` cadence the fallback service also reclaims rows stamped by any owner identity that is neither `Alive` nor `Suspected` in the liveness snapshot — a `Dead` identity, a superseded incarnation (never classified Dead, so the dead-node path cannot see it), or a dead identity pruned past retention. Including `Dead` owners matters on Redis, which keeps a dead identity in the snapshot for `RedisKnownNodeRetention` (7 days by default): rows the dead-node path left behind are not stranded that long. `Suspected` owners are never swept, since they may still be alive. This is the only recovery path for owner-stamped `Idle`/`Queued` rows with no execution time (non-timed chain descendants) after a whole-cluster or single-node ungraceful restart.
 
 ### Enlisted Enqueue (Atomic Enqueue)
 
@@ -1222,7 +1223,7 @@ builder.Services.AddHeadlessJobs(options =>
         scheduler.ProgressReportInterval = TimeSpan.FromSeconds(2); // default: 2s; least time between progress writes
         scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(30); // default: 30s
         scheduler.SchedulerTimeZone = TimeZoneInfo.Utc; // default: UTC; must be an IANA zone, the same on every node
-        scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // durable path; default: 1 min
+        scheduler.DeadNodeReconcileInterval = null; // durable path; null → coordination DeadRetentionWindow / 2 (15s)
         scheduler.StartMode = JobsStartMode.Immediate; // or Manual
         scheduler.MaxChainDepth = 10; // default: 10; range 1..JobChain.MaxStructuralDepth (64)
     });
@@ -1720,8 +1721,9 @@ builder.Services.AddHeadlessJobs(options =>
 {
     options.ConfigureScheduler(scheduler =>
     {
-        // How often the durable path reconciles dead nodes to catch missed NodeLeft signals.
-        scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // default: 1 min
+        // How often the durable path reconciles dead nodes to catch missed NodeLeft signals. Values above
+        // DeadRetentionWindow / 2 are clamped to it with a warning.
+        scheduler.DeadNodeReconcileInterval = TimeSpan.FromSeconds(10); // default: null → DeadRetentionWindow / 2
     });
     // Schema naming is feature-owned: this moves every Jobs table, whichever store is installed.
     options.ConfigureStorage(storage => storage.Schema = "background"); // default: "headless"

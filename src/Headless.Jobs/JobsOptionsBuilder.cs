@@ -689,11 +689,16 @@ public sealed class SchedulerOptionsBuilder
     public TimeZoneInfo SchedulerTimeZone { get; set; } = TimeZoneInfo.Utc;
 
     /// <summary>
-    /// How often the durable path reconciles dead nodes from the membership liveness snapshot to reclaim
-    /// any <c>NodeLeft</c> signal missed while not subscribed. Membership events accelerate recovery; this
-    /// periodic reconcile is the backstop (origin §4b invariant). Defaults to one minute.
+    /// How often the durable path reconciles dead nodes from the membership liveness snapshot to reclaim any
+    /// <c>NodeLeft</c> signal missed while not subscribed, and how often the fallback service sweeps rows whose owner
+    /// is neither Alive nor Suspected. Membership events accelerate recovery; this periodic reconcile is the backstop.
     /// </summary>
-    public TimeSpan DeadNodeReconcileInterval { get; set; } = TimeSpan.FromMinutes(1);
+    /// <remarks>
+    /// Defaults to <see langword="null"/>, which means half the coordination <c>DeadRetentionWindow</c> (15 seconds
+    /// with default coordination options): relational providers keep a dead identity observable for only that window,
+    /// so a slower reconcile could miss it. An explicit value above that ceiling is clamped to it with a warning.
+    /// </remarks>
+    public TimeSpan? DeadNodeReconcileInterval { get; set; }
 
     /// <summary>
     /// Controls how job processing starts. Defaults to <see cref="JobsStartMode.Immediate"/>.

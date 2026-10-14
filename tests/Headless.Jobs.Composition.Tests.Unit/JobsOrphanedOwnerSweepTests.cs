@@ -12,10 +12,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Tests;
 
 /// <summary>
-/// Pins the orphaned-owner sweep: rows stamped by an owner identity that is absent from the coordination
-/// liveness snapshot — a superseded incarnation (never classified Dead, so the dead-owner bridge never sees
-/// it) or a dead identity pruned past retention — are reclaimed via the per-policy dead-node release. Owners
-/// present in the snapshot (Alive, Suspected, or Dead-retained) are never touched here.
+/// Pins the orphaned-owner sweep: rows stamped by an owner identity that is neither Alive nor Suspected in the
+/// coordination liveness snapshot — a Dead identity, a superseded incarnation (never classified Dead, so the dead-owner
+/// bridge never sees it), or a dead identity pruned past retention — are reclaimed via the per-policy dead-node
+/// release. Alive and Suspected owners are never touched here.
 /// </summary>
 public sealed class JobsOrphanedOwnerSweepTests : TestBase
 {
@@ -85,6 +85,75 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
                 .Received(1)
                 .ReleaseDeadNodeResources(
                     Arg.Is<IReadOnlyCollection<string>>(owners => owners.SequenceEqual(new[] { "ghost@1" })),
+                    CancellationToken.None
+                );
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task reclaims_a_dead_owner_with_stamped_rows_but_not_a_suspected_one()
+    {
+        // The dead-owner bridge reclaims each Dead identity once; rows a dead owner still holds after that (or after a
+        // missed NodeLeft) must not wait for the identity to be pruned — up to RedisKnownNodeRetention (7 days) on
+        // Redis. A Suspected owner may still be alive and renewing, so it is never swept.
+        var manager = _Manager();
+        var deadIdentity = new NodeIdentity(new NodeId("dead"), new NodeIncarnation(5));
+        var suspectedIdentity = new NodeIdentity(new NodeId("slow"), new NodeIncarnation(4));
+        manager
+            .GetActiveOwnerIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string[]>([deadIdentity.ToString(), suspectedIdentity.ToString()]));
+
+        var membership = Substitute.For<INodeMembership>();
+        membership
+            .GetLivenessSnapshotAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                new ValueTask<IReadOnlyList<NodeLivenessSnapshot>>([
+                    new NodeLivenessSnapshot(
+                        deadIdentity,
+                        NodeLivenessState.Dead,
+                        Role: null,
+                        new Dictionary<string, string>(StringComparer.Ordinal)
+                    ),
+                    new NodeLivenessSnapshot(
+                        suspectedIdentity,
+                        NodeLivenessState.Suspected,
+                        Role: null,
+                        new Dictionary<string, string>(StringComparer.Ordinal)
+                    ),
+                ])
+            );
+
+        var ownerIdentity = Substitute.For<IJobsOwnerIdentity>();
+        ownerIdentity.MembershipLostToken.Returns(CancellationToken.None);
+
+        await using var harness = _Service(manager, ownerIdentity, membership);
+        var service = harness.Service;
+        await service.StartAsync(AbortToken);
+
+        try
+        {
+            await _WaitForAsync(() =>
+                manager
+                    .ReceivedCalls()
+                    .Any(c =>
+                        string.Equals(
+                            c.GetMethodInfo().Name,
+                            nameof(manager.ReleaseDeadNodeResources),
+                            StringComparison.Ordinal
+                        )
+                    )
+            );
+
+            await manager
+                .Received(1)
+                .ReleaseDeadNodeResources(
+                    Arg.Is<IReadOnlyCollection<string>>(owners =>
+                        owners.SequenceEqual(new[] { deadIdentity.ToString() })
+                    ),
                     CancellationToken.None
                 );
         }
