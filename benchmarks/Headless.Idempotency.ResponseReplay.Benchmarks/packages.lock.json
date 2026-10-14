@@ -147,8 +147,8 @@
       },
       "Microsoft.Extensions.Compliance.Abstractions": {
         "type": "Transitive",
-        "resolved": "10.10.0",
-        "contentHash": "Sh3ujDRJpCMNY4x+43ljCROt4qBOoWfsL8l816RPYZS1S+Tw277r5002rbB15Sh6hFcCT8mGYBO7NtpfSYrQ0Q=="
+        "resolved": "10.11.0",
+        "contentHash": "2mjAb3Sm5k6uNeI+IyXpggYMpfdDDGgZSwUm9QQsm5QgZboJWbm2eU+6wNMrlfFEao11yq6JS1zXI7SVQQ0NuQ=="
       },
       "Nito.AsyncEx.Context": {
         "type": "Transitive",
@@ -248,9 +248,9 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )",
-          "Microsoft.AspNetCore.MiddlewareAnalysis": "[10.0.12, )",
-          "Microsoft.Extensions.Telemetry.Abstractions": "[10.10.0, )",
-          "TimeZoneConverter": "[7.2.0, )"
+          "Microsoft.AspNetCore.MiddlewareAnalysis": "[10.0.13, )",
+          "Microsoft.Extensions.Telemetry.Abstractions": "[10.11.0, )",
+          "TimeZoneConverter": "[8.0.0, )"
         }
       },
       "headless.api.abstractions": {
@@ -402,9 +402,9 @@
       },
       "Microsoft.AspNetCore.MiddlewareAnalysis": {
         "type": "CentralTransitive",
-        "requested": "[10.0.12, )",
-        "resolved": "10.0.12",
-        "contentHash": "GBS3qpzbgn7AHMhKoRbBGKy9fEnhb6KObEYdYiumj6ucQU9xAGZogiz+7tjjQ6EtO4/OhuVINRYm2cGtjNDa0Q=="
+        "requested": "[10.0.13, )",
+        "resolved": "10.0.13",
+        "contentHash": "CjotqqEQ1Qtg4vZ6qqOuWjc5Aa1J6KbRA+xyCwheDpjeuBcKnOSbfXQBlqnBa+DvlilbqtLsBbOMBFrkDl2bng=="
       },
       "Microsoft.CodeAnalysis.Analyzers": {
         "type": "CentralTransitive",
@@ -433,11 +433,11 @@
       },
       "Microsoft.Extensions.Telemetry.Abstractions": {
         "type": "CentralTransitive",
-        "requested": "[10.10.0, )",
-        "resolved": "10.10.0",
-        "contentHash": "I76SAZ95I5lYh4whVZvLpKhpvHI1o21FfGqiASU85GtIVA4ULv+TVIE5+swKhnC63+xI4XjCcIWa9LbyR3pFNw==",
+        "requested": "[10.11.0, )",
+        "resolved": "10.11.0",
+        "contentHash": "FzcHRan/C2g5X5KD0kPlL4tTROFRpM8sqcXfOIi6FGLsw/d2yoOYMbLJ5hyb8N5QgOVW7e1TdwEN4zVUfcwfdw==",
         "dependencies": {
-          "Microsoft.Extensions.Compliance.Abstractions": "10.10.0"
+          "Microsoft.Extensions.Compliance.Abstractions": "10.11.0"
         }
       },
       "Nito.AsyncEx": {
@@ -468,9 +468,9 @@
       },
       "TimeZoneConverter": {
         "type": "CentralTransitive",
-        "requested": "[7.2.0, )",
-        "resolved": "7.2.0",
-        "contentHash": "4Poqu79dTmacVETqUJ53g3x4U21V/cmWPSlehdsVE4Q00akavvlRq+SRjcg/CmfO9ibOCjRl6TeUV7hkC5RC4w=="
+        "requested": "[8.0.0, )",
+        "resolved": "8.0.0",
+        "contentHash": "vJkfrLROBmMvTDGBj/Fcy6LX3eu7hgzx6bv6/AWlNGZfHRAP3aBqMg4piehijj+bToJlwsj8hAa6Tz6vTMeWPw=="
       }
     }
   }
