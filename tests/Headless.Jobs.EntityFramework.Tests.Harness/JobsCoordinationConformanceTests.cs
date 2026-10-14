@@ -676,7 +676,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
-        using var host = fixture.BuildHost("node-a");
+        using var host = fixture.BuildHost("node-a", steadyMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 

@@ -1436,7 +1436,8 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             await fixture.ResetDatabaseAsync(ct);
             using var host = fixture.BuildHost(
                 $"terminal-dedup-{(useNativeClaims ? "native" : "cas")}",
-                useNativeClaims: useNativeClaims
+                useNativeClaims: useNativeClaims,
+                steadyMembership: true
             );
             await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
             await host.StartAsync(ct);

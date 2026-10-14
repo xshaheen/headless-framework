@@ -232,11 +232,21 @@ public static partial class JobsCoordinationFixtureExtensions
         );
     }
 
-    /// <summary>Builds a host with a custom Jobs DbContext so provider SQL can be verified against renamed mappings.</summary>
+    /// <summary>
+    /// Builds a host with a custom Jobs DbContext so provider SQL can be verified against renamed mappings. Mapping
+    /// scenarios never wait for a node to die, so the host runs on the steady membership profile.
+    /// </summary>
     public static IHost BuildMappedHost<TDbContext>(this IJobsCoordinationFixture fixture, string nodeId, string schema)
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
-        return _BuildHost<TDbContext>(fixture, nodeId, schema, MembershipLostBehavior.StopMembershipOnly, null);
+        return _BuildHost<TDbContext>(
+            fixture,
+            nodeId,
+            schema,
+            MembershipLostBehavior.StopMembershipOnly,
+            null,
+            membershipTimings: _SteadyMembershipTimings
+        );
     }
 
     /// <summary>
