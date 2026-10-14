@@ -31,6 +31,12 @@ public sealed class SqlServerRcsiIdempotencyConformanceTests(SqlServerRcsiIdempo
     }
 
     [Fact]
+    public override Task should_round_trip_arbitrary_binary_result_bytes_exactly()
+    {
+        return base.should_round_trip_arbitrary_binary_result_bytes_exactly();
+    }
+
+    [Fact]
     public override Task should_return_conflict_for_a_different_fingerprint_and_keep_the_stored_result()
     {
         return base.should_return_conflict_for_a_different_fingerprint_and_keep_the_stored_result();
