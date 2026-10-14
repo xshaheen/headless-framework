@@ -24,8 +24,9 @@ public abstract class JobsCronMaterializationConformanceTests(Action<DbContextOp
         var factory = await _SetupAsync(log);
         var definitions = _Definitions();
         await _SeedAsync(factory, definitions);
-        var candidates = Enumerable
-            .Reverse(definitions)
+        var candidates = definitions
+            .AsEnumerable()
+            .Reverse()
             .SelectMany(definition => new[] { _Occurrence(definition.Id), _Occurrence(definition.Id, 1) })
             .ToArray();
         log.Armed = true;

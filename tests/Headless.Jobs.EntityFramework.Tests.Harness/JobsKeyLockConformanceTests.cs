@@ -27,7 +27,7 @@ public abstract class JobsKeyLockConformanceTests(Action<DbContextOptionsBuilder
         var ids = Enumerable.Range(1, 2200).Select(i => new Guid(i, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)).ToArray();
         await using var context = _CreateContext();
         await using var transaction = await context.Database.BeginTransactionAsync(AbortToken);
-        await JobsKeyLock.AcquireRunsAsync(context, Enumerable.Reverse(ids).Concat(ids), AbortToken);
+        await JobsKeyLock.AcquireRunsAsync(context, ids.AsEnumerable().Reverse().Concat(ids), AbortToken);
         context.Database.CurrentTransaction.Should().BeSameAs(transaction);
         (await _ScalarAsync(context, CountLocksSql)).Should().Be(ids.Length);
         foreach (var id in new[] { ids[0], ids[1000], ids[^1] })
@@ -62,7 +62,8 @@ public abstract class JobsKeyLockConformanceTests(Action<DbContextOptionsBuilder
 
         (await _ScalarAsync(waiter, CountLocksSql)).Should().Be(3);
 
-        async Task acquireAsync() => await JobsKeyLock.AcquireRunsAsync(waiter, Enumerable.Reverse(ids), AbortToken);
+        async Task acquireAsync() =>
+            await JobsKeyLock.AcquireRunsAsync(waiter, ids.AsEnumerable().Reverse(), AbortToken);
 
         async Task observeAsync()
         {
@@ -156,7 +157,7 @@ public abstract class JobsKeyLockConformanceTests(Action<DbContextOptionsBuilder
         async Task assertTimeoutAsync()
         {
             var acquire = async () =>
-                await JobsKeyLock.AcquireRunsAsync(waiter, Enumerable.Reverse(ids), budget, AbortToken);
+                await JobsKeyLock.AcquireRunsAsync(waiter, ids.AsEnumerable().Reverse(), budget, AbortToken);
             await acquire.Should().ThrowExactlyAsync<TimeoutException>();
         }
 
