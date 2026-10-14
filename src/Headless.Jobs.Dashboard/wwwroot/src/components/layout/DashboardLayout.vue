@@ -184,6 +184,32 @@ async function handleRestart() {
   }
 }
 
+// Start and stop live in script rather than inline template handlers: since vue-tsc 3.3.12 the template
+// type-check rejects `loader.value` on these reassigned `let` service bindings, while script code checks cleanly.
+function handleStart() {
+  startJobHost?.requestAsync().then(() => {
+    dashboardStore.resetForceState()
+    startJobHost.loader.value = true
+    sleep(1000).then(() => {
+      loadInitialData()
+      startJobHost.loader.value = false
+    })
+  })
+}
+
+function handleConfirmStop() {
+  stopJobHost.requestAsync().then(() => {
+    confirmDialog.close()
+    // Force next occurrence to show 'Not Scheduled'
+    dashboardStore.forceNotScheduled()
+    stopJobHost.loader.value = true
+    sleep(1000).then(() => {
+      loadInitialData()
+      stopJobHost.loader.value = false
+    })
+  })
+}
+
 // Get WebSocket status text with backend health information
 function getWebSocketStatusText() {
   const isConnecting = connectionStore.isConnecting
@@ -414,14 +440,7 @@ function handleAuthLogout() {
               size="small"
               density="compact"
               prepend-icon="mdi-play-circle"
-              @click="startJobHost?.requestAsync().then(() => {
-                dashboardStore.resetForceState();
-                startJobHost.loader.value = true;
-                sleep(1000).then(() => {
-                  loadInitialData();
-                  startJobHost.loader.value = false;
-                })
-              })"
+              @click="handleStart"
               :loading="startJobHost?.loader?.value"
               class="action-btn start-btn"
             >
@@ -494,18 +513,7 @@ function handleAuthLogout() {
       :is-open="confirmDialog.isOpen"
       @close="confirmDialog.close()"
       :dialog-props="confirmDialog.propData"
-      @confirm="
-        stopJobHost.requestAsync().then(() => {
-          confirmDialog.close();
-          // Force next occurrence to show 'Not Scheduled'
-          dashboardStore.forceNotScheduled();
-          stopJobHost.loader.value = true;
-          sleep(1000).then(() => {
-            loadInitialData();
-            stopJobHost.loader.value = false;
-          })
-        })
-      "
+      @confirm="handleConfirmStop"
     />
   </Teleport>
 </template>
