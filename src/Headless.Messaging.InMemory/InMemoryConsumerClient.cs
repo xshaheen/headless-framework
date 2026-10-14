@@ -25,6 +25,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     private readonly Channel<TransportMessage> _messageQueue = Channel.CreateBounded<TransportMessage>(
         new BoundedChannelOptions(_MaxPendingMessages) { FullMode = BoundedChannelFullMode.Wait }
     );
+
     private readonly SemaphoreSlim _semaphore;
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);

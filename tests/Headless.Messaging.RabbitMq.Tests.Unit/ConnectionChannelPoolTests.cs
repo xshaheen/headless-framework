@@ -362,7 +362,7 @@ public sealed class ConnectionChannelPoolTests : TestBase
             .ToList();
 
         // when
-        var results = channels.Select(pool.Return).ToList();
+        var results = channels.ConvertAll(pool.Return);
 
         // then
         results.Should().Equal(true, true, false);
