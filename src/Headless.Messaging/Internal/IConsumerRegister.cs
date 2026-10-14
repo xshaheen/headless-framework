@@ -62,6 +62,8 @@ internal sealed partial class ConsumerRegister(
     private readonly IMiddlewareDescriptorRegistry? _middlewareDescriptorRegistry =
         serviceProvider.GetService<IMiddlewareDescriptorRegistry>();
 
+    private readonly string? _hostName = HostIdentity.GetInstanceHostname();
+
     private ResponderReplies? _responderReplies;
 
     private IConsumerClientFactory _consumerClientFactory = null!;

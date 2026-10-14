@@ -201,7 +201,7 @@ internal sealed partial class RelationalDataStorage
             _receivedTable,
             message,
             StatusName.Succeeded,
-            MessageContentWrite.Refresh,
+            message.HasUnpersistedOriginChanges ? MessageContentWrite.Refresh : MessageContentWrite.Preserve,
             transaction,
             retryDelay: null,
             lockedUntil: null,

@@ -684,6 +684,98 @@ public sealed class DispatcherTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_hold_other_sends_behind_one_slow_send_in_parallel_mode()
+    {
+        // given
+        var slowId = Guid.NewGuid();
+        var slowRelease = new TaskCompletionSource<OperateResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fastSent = 0;
+        var fastDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sender = Substitute.For<IMessageSender>();
+        sender
+            .SendAsync(Arg.Any<MediumMessage>(), Arg.Any<IServiceProvider>())
+            .Returns(call =>
+            {
+                if (call.Arg<MediumMessage>().StorageId == slowId)
+                {
+                    return slowRelease.Task;
+                }
+
+                if (Interlocked.Increment(ref fastSent) == 5)
+                {
+                    fastDone.TrySetResult();
+                }
+
+                return Task.FromResult(OperateResult.Success);
+            });
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            Options.Create(new MessagingOptions { EnablePublishParallelSend = true, PublishBatchSize = 3 }),
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        await dispatcher.StartAsync(AbortToken);
+
+        // when
+        await dispatcher.EnqueueToPublish(_CreateTestMessage(slowId), AbortToken);
+        for (var i = 0; i < 5; i++)
+        {
+            await dispatcher.EnqueueToPublish(_CreateTestMessage(), AbortToken);
+        }
+
+        // then: a batch barrier would stall after the two sends that share the slow send's batch
+        await fastDone.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        slowRelease.SetResult(OperateResult.Success);
+    }
+
+    [Fact]
+    public async Task should_wait_for_in_flight_parallel_sends_on_shutdown()
+    {
+        // given
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<OperateResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sender = Substitute.For<IMessageSender>();
+        sender
+            .SendAsync(Arg.Any<MediumMessage>(), Arg.Any<IServiceProvider>())
+            .Returns(_ =>
+            {
+                entered.TrySetResult();
+                return release.Task;
+            });
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            Options.Create(
+                new MessagingOptions
+                {
+                    EnablePublishParallelSend = true,
+                    PublishBatchSize = 2,
+                    ShutdownTimeout = TimeSpan.FromSeconds(10),
+                }
+            ),
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        await dispatcher.StartAsync(AbortToken);
+        await dispatcher.EnqueueToPublish(_CreateTestMessage(), AbortToken);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        var disposeTask = dispatcher.DisposeAsync(TimeSpan.FromSeconds(10), AbortToken).AsTask();
+        await Task.Delay(300, AbortToken);
+
+        // then
+        disposeTask.IsCompleted.Should().BeFalse("shutdown must wait for the send that is still in flight");
+        release.SetResult(OperateResult.Success);
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+    }
+
+    [Fact]
     public async Task should_be_thread_safe_when_enqueue_to_publish_parallel_send_disabled()
     {
         // given
