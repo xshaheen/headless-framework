@@ -24,7 +24,7 @@ internal static class SavePipelineProbe
                     new AuditedOrder
                     {
                         Id = Guid.NewGuid(),
-                        CustomerName = $"c-{i}",
+                        CustomerName = FormattableString.Invariant($"c-{i}"),
                         Amount = i,
                     }
                 );
@@ -37,7 +37,9 @@ internal static class SavePipelineProbe
             first.Amount++;
             await db.SaveChangesAsync().ConfigureAwait(false);
             Console.WriteLine(
-                $"1000 unchanged + 1 modified: DetectChanges={host.Counter.DetectChanges} SaveChanges={host.Counter.SaveChanges} Commands={host.Counter.Commands}"
+                FormattableString.Invariant(
+                    $"1000 unchanged + 1 modified: DetectChanges={host.Counter.DetectChanges} SaveChanges={host.Counter.SaveChanges} Commands={host.Counter.Commands}"
+                )
             );
         }
 
@@ -62,7 +64,9 @@ internal static class SavePipelineProbe
             host.Counter.Reset();
             await db.SaveChangesAsync().ConfigureAwait(false);
             Console.WriteLine(
-                $"{rows} audited inserts: DetectChanges={host.Counter.DetectChanges} SaveChanges={host.Counter.SaveChanges} Commands={host.Counter.Commands}"
+                FormattableString.Invariant(
+                    $"{rows} audited inserts: DetectChanges={host.Counter.DetectChanges} SaveChanges={host.Counter.SaveChanges} Commands={host.Counter.Commands}"
+                )
             );
         }
     }

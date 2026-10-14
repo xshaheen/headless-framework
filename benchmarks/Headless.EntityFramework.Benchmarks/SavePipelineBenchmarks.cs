@@ -20,8 +20,7 @@ public class SavePipelineBenchmarks
     private BenchmarkDbContext _db = null!;
     private AuditedOrder[] _orders = null!;
 
-    [Params(1_000)]
-    public int UnchangedCount { get; set; }
+    private const int _UnchangedCount = 1_000;
 
     [GlobalSetup]
     public async Task Setup()
@@ -30,13 +29,13 @@ public class SavePipelineBenchmarks
         _scope = _host.CreateScope();
         _db = _scope.ServiceProvider.GetRequiredService<BenchmarkDbContext>();
 
-        for (var i = 0; i <= UnchangedCount; i++)
+        for (var i = 0; i <= _UnchangedCount; i++)
         {
             _db.Orders.Add(
                 new AuditedOrder
                 {
                     Id = Guid.NewGuid(),
-                    CustomerName = $"customer-{i}",
+                    CustomerName = FormattableString.Invariant($"customer-{i}"),
                     Amount = i,
                 }
             );

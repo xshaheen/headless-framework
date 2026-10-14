@@ -31,7 +31,7 @@ public class NavigationTrackingBenchmarks
 
         for (var i = 0; i < _RowCount; i++)
         {
-            db.Parents.Add(new Parent { Id = Guid.NewGuid(), Name = $"parent-{i}" });
+            db.Parents.Add(new Parent { Id = Guid.NewGuid(), Name = FormattableString.Invariant($"parent-{i}") });
         }
 
         db.ChangeTracker.AutoDetectChangesEnabled = false;

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.AuditLog;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -74,7 +75,7 @@ public sealed class AuditLogSingleBatchIntegrationTests : TestBase
         written.Should().Be(1);
         order.Id.Should().BePositive();
         var row = await db.Set<AuditLogEntry>().AsNoTracking().SingleAsync(AbortToken);
-        row.EntityId.Should().Be(order.Id.ToString());
+        row.EntityId.Should().Be(order.Id.ToString(CultureInfo.InvariantCulture));
     }
 
     [Theory]
@@ -104,8 +105,12 @@ public sealed class AuditLogSingleBatchIntegrationTests : TestBase
         db.ChangeTracker.Entries<AuditLogEntry>().Should().BeEmpty();
         var rows = await db.Set<AuditLogEntry>().AsNoTracking().ToListAsync(AbortToken);
         rows.Should().HaveCount(2);
-        rows.Single(r => r.EntityType == typeof(Order).FullName).EntityId.Should().Be(clientKeyed.Id.ToString());
-        rows.Single(r => r.EntityType == typeof(GeneratedOrder).FullName).EntityId.Should().Be(generated.Id.ToString());
+        rows.Single(r => string.Equals(r.EntityType, typeof(Order).FullName, StringComparison.Ordinal))
+            .EntityId.Should()
+            .Be(clientKeyed.Id.ToString());
+        rows.Single(r => string.Equals(r.EntityType, typeof(GeneratedOrder).FullName, StringComparison.Ordinal))
+            .EntityId.Should()
+            .Be(generated.Id.ToString(CultureInfo.InvariantCulture));
     }
 
     [Fact]
