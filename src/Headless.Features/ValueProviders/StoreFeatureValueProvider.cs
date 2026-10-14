@@ -28,6 +28,20 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
     }
 
     /// <inheritdoc/>
+    public virtual async Task<List<FeatureValue>> GetAllAsync(
+        FeatureDefinition[] features,
+        string? providerKey = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var names = features.Select(static x => x.Name).ToHashSet(StringComparer.Ordinal);
+
+        return await Store
+            .GetAllAsync(names, Name, NormalizeProviderKey(providerKey), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
     public virtual async Task SetAsync(
         FeatureDefinition feature,
         string value,

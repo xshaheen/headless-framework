@@ -32,37 +32,53 @@ public sealed class RolePermissionGrantProviderTests : TestBase
         // then
         result.Statuses.Should().ContainKey("Users.Create");
         result["Users.Create"].Status.Should().Be(PermissionGrantStatus.Undefined);
+        await _grantStore
+            .DidNotReceive()
+            .IsGrantedAsync(
+                Arg.Any<IReadOnlyCollection<string>>(),
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyCollection<string>>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
-    public async Task should_check_all_roles_for_permission()
+    public async Task should_read_every_roles_grants_in_one_store_call()
     {
         // given
         var permission = _CreatePermission("Users.Create");
         var currentUser = _CreateCurrentUser(["Admin", "Manager", "User"]);
 
         _grantStore
-            .IsGrantedAsync(Arg.Any<IReadOnlyList<string>>(), PermissionGrantProviderNames.Role, "Admin", AbortToken)
+            .IsGrantedAsync(
+                Arg.Any<IReadOnlyCollection<string>>(),
+                PermissionGrantProviderNames.Role,
+                Arg.Any<IReadOnlyCollection<string>>(),
+                AbortToken
+            )
             .Returns(
-                new Dictionary<string, PermissionGrantStatus>(StringComparer.Ordinal)
+                new Dictionary<string, Dictionary<string, PermissionGrantStatus>>(StringComparer.Ordinal)
                 {
-                    ["Users.Create"] = PermissionGrantStatus.Undefined,
-                }
-            );
-
-        _grantStore
-            .IsGrantedAsync(Arg.Any<IReadOnlyList<string>>(), PermissionGrantProviderNames.Role, "Manager", AbortToken)
-            .Returns(
-                new Dictionary<string, PermissionGrantStatus>(StringComparer.Ordinal)
-                {
-                    ["Users.Create"] = PermissionGrantStatus.Granted,
+                    ["Admin"] = new(StringComparer.Ordinal) { ["Users.Create"] = PermissionGrantStatus.Undefined },
+                    ["Manager"] = new(StringComparer.Ordinal) { ["Users.Create"] = PermissionGrantStatus.Granted },
+                    ["User"] = new(StringComparer.Ordinal) { ["Users.Create"] = PermissionGrantStatus.Undefined },
                 }
             );
 
         // when
         var result = await _sut.CheckAsync([permission], currentUser, AbortToken);
 
-        // then
+        // then — one batched call carries every role, instead of one call per role
+        await _grantStore
+            .Received(1)
+            .IsGrantedAsync(
+                Arg.Is<IReadOnlyCollection<string>>(static names => names.SequenceEqual(new[] { "Users.Create" })),
+                PermissionGrantProviderNames.Role,
+                Arg.Is<IReadOnlyCollection<string>>(static keys =>
+                    keys.Order(StringComparer.Ordinal).SequenceEqual(new[] { "Admin", "Manager", "User" })
+                ),
+                AbortToken
+            );
         result["Users.Create"].Status.Should().Be(PermissionGrantStatus.Granted);
         result["Users.Create"].ProviderKeys.Should().Contain("Manager");
     }
@@ -70,16 +86,22 @@ public sealed class RolePermissionGrantProviderTests : TestBase
     [Fact]
     public async Task should_return_granted_from_first_matching_role()
     {
-        // given
+        // given — two roles grant the permission; the user's role order decides which one is attributed
         var permission = _CreatePermission("Users.Create");
         var currentUser = _CreateCurrentUser(["Admin", "Manager"]);
 
         _grantStore
-            .IsGrantedAsync(Arg.Any<IReadOnlyList<string>>(), PermissionGrantProviderNames.Role, "Admin", AbortToken)
+            .IsGrantedAsync(
+                Arg.Any<IReadOnlyCollection<string>>(),
+                PermissionGrantProviderNames.Role,
+                Arg.Any<IReadOnlyCollection<string>>(),
+                AbortToken
+            )
             .Returns(
-                new Dictionary<string, PermissionGrantStatus>(StringComparer.Ordinal)
+                new Dictionary<string, Dictionary<string, PermissionGrantStatus>>(StringComparer.Ordinal)
                 {
-                    ["Users.Create"] = PermissionGrantStatus.Granted,
+                    ["Admin"] = new(StringComparer.Ordinal) { ["Users.Create"] = PermissionGrantStatus.Granted },
+                    ["Manager"] = new(StringComparer.Ordinal) { ["Users.Create"] = PermissionGrantStatus.Granted },
                 }
             );
 
@@ -88,7 +110,7 @@ public sealed class RolePermissionGrantProviderTests : TestBase
 
         // then
         result["Users.Create"].Status.Should().Be(PermissionGrantStatus.Granted);
-        result["Users.Create"].ProviderKeys.Should().Contain("Admin");
+        result["Users.Create"].ProviderKeys.Should().Equal("Admin");
     }
 
     [Fact]
@@ -99,11 +121,16 @@ public sealed class RolePermissionGrantProviderTests : TestBase
         var currentUser = _CreateCurrentUser(["User"]);
 
         _grantStore
-            .IsGrantedAsync(Arg.Any<IReadOnlyList<string>>(), PermissionGrantProviderNames.Role, "User", AbortToken)
+            .IsGrantedAsync(
+                Arg.Any<IReadOnlyCollection<string>>(),
+                PermissionGrantProviderNames.Role,
+                Arg.Any<IReadOnlyCollection<string>>(),
+                AbortToken
+            )
             .Returns(
-                new Dictionary<string, PermissionGrantStatus>(StringComparer.Ordinal)
+                new Dictionary<string, Dictionary<string, PermissionGrantStatus>>(StringComparer.Ordinal)
                 {
-                    ["Users.Delete"] = PermissionGrantStatus.Prohibited,
+                    ["User"] = new(StringComparer.Ordinal) { ["Users.Delete"] = PermissionGrantStatus.Prohibited },
                 }
             );
 
@@ -116,34 +143,33 @@ public sealed class RolePermissionGrantProviderTests : TestBase
     }
 
     [Fact]
-    public async Task should_stop_checking_roles_when_all_permissions_resolved()
+    public async Task should_keep_an_earlier_roles_decision_over_a_later_one()
     {
-        // given
-        var permission1 = _CreatePermission("Users.Create");
-        var permission2 = _CreatePermission("Users.Read");
-        var currentUser = _CreateCurrentUser(["Admin", "Manager", "User"]);
+        // given — Admin prohibits, Manager grants; the earlier role's decision stands
+        var permission = _CreatePermission("Users.Delete");
+        var currentUser = _CreateCurrentUser(["Admin", "Manager"]);
 
         _grantStore
-            .IsGrantedAsync(Arg.Any<IReadOnlyList<string>>(), PermissionGrantProviderNames.Role, "Admin", AbortToken)
+            .IsGrantedAsync(
+                Arg.Any<IReadOnlyCollection<string>>(),
+                PermissionGrantProviderNames.Role,
+                Arg.Any<IReadOnlyCollection<string>>(),
+                AbortToken
+            )
             .Returns(
-                new Dictionary<string, PermissionGrantStatus>(StringComparer.Ordinal)
+                new Dictionary<string, Dictionary<string, PermissionGrantStatus>>(StringComparer.Ordinal)
                 {
-                    ["Users.Create"] = PermissionGrantStatus.Granted,
-                    ["Users.Read"] = PermissionGrantStatus.Granted,
+                    ["Admin"] = new(StringComparer.Ordinal) { ["Users.Delete"] = PermissionGrantStatus.Prohibited },
+                    ["Manager"] = new(StringComparer.Ordinal) { ["Users.Delete"] = PermissionGrantStatus.Granted },
                 }
             );
 
         // when
-        var result = await _sut.CheckAsync([permission1, permission2], currentUser, AbortToken);
+        var result = await _sut.CheckAsync([permission], currentUser, AbortToken);
 
         // then
-        result["Users.Create"].Status.Should().Be(PermissionGrantStatus.Granted);
-        result["Users.Read"].Status.Should().Be(PermissionGrantStatus.Granted);
-
-        // Should not check Manager or User roles since all permissions are resolved
-        await _grantStore
-            .DidNotReceive()
-            .IsGrantedAsync(Arg.Any<IReadOnlyList<string>>(), PermissionGrantProviderNames.Role, "Manager", AbortToken);
+        result["Users.Delete"].Status.Should().Be(PermissionGrantStatus.Prohibited);
+        result["Users.Delete"].ProviderKeys.Should().Equal("Admin");
     }
 
     [Fact]
@@ -155,21 +181,21 @@ public sealed class RolePermissionGrantProviderTests : TestBase
         var currentUser = _CreateCurrentUser(["Admin", "Manager"]);
 
         _grantStore
-            .IsGrantedAsync(Arg.Any<IReadOnlyList<string>>(), PermissionGrantProviderNames.Role, "Admin", AbortToken)
+            .IsGrantedAsync(
+                Arg.Any<IReadOnlyCollection<string>>(),
+                PermissionGrantProviderNames.Role,
+                Arg.Any<IReadOnlyCollection<string>>(),
+                AbortToken
+            )
             .Returns(
-                new Dictionary<string, PermissionGrantStatus>(StringComparer.Ordinal)
+                new Dictionary<string, Dictionary<string, PermissionGrantStatus>>(StringComparer.Ordinal)
                 {
-                    ["Users.Create"] = PermissionGrantStatus.Granted,
-                    ["Users.Delete"] = PermissionGrantStatus.Undefined,
-                }
-            );
-
-        _grantStore
-            .IsGrantedAsync(Arg.Any<IReadOnlyList<string>>(), PermissionGrantProviderNames.Role, "Manager", AbortToken)
-            .Returns(
-                new Dictionary<string, PermissionGrantStatus>(StringComparer.Ordinal)
-                {
-                    ["Users.Delete"] = PermissionGrantStatus.Granted,
+                    ["Admin"] = new(StringComparer.Ordinal)
+                    {
+                        ["Users.Create"] = PermissionGrantStatus.Granted,
+                        ["Users.Delete"] = PermissionGrantStatus.Undefined,
+                    },
+                    ["Manager"] = new(StringComparer.Ordinal) { ["Users.Delete"] = PermissionGrantStatus.Granted },
                 }
             );
 
@@ -192,52 +218,6 @@ public sealed class RolePermissionGrantProviderTests : TestBase
 
         // then
         await act.Should().ThrowAsync<ArgumentException>();
-    }
-
-    [Fact]
-    public async Task should_query_a_later_role_only_for_permissions_an_earlier_role_left_undefined()
-    {
-        // given
-        var currentUser = _CreateCurrentUser(["Admin", "Manager"]);
-        IReadOnlyList<string>? managerNames = null;
-
-        _grantStore
-            .IsGrantedAsync(Arg.Any<IReadOnlyList<string>>(), PermissionGrantProviderNames.Role, "Admin", AbortToken)
-            .Returns(
-                new Dictionary<string, PermissionGrantStatus>(StringComparer.Ordinal)
-                {
-                    ["Users.Create"] = PermissionGrantStatus.Granted,
-                    ["Users.Delete"] = PermissionGrantStatus.Undefined,
-                }
-            );
-
-        _grantStore
-            .IsGrantedAsync(
-                Arg.Do<IReadOnlyList<string>>(names => managerNames = [.. names]),
-                PermissionGrantProviderNames.Role,
-                "Manager",
-                AbortToken
-            )
-            .Returns(
-                new Dictionary<string, PermissionGrantStatus>(StringComparer.Ordinal)
-                {
-                    ["Users.Delete"] = PermissionGrantStatus.Prohibited,
-                }
-            );
-
-        // when
-        var result = await _sut.CheckAsync(
-            [_CreatePermission("Users.Create"), _CreatePermission("Users.Delete")],
-            currentUser,
-            AbortToken
-        );
-
-        // then
-        managerNames.Should().Equal("Users.Delete");
-        result["Users.Create"].Status.Should().Be(PermissionGrantStatus.Granted);
-        result["Users.Create"].ProviderKeys.Should().Equal("Admin");
-        result["Users.Delete"].Status.Should().Be(PermissionGrantStatus.Prohibited);
-        result["Users.Delete"].ProviderKeys.Should().Equal("Manager");
     }
 
     private static PermissionDefinition _CreatePermission(string name)

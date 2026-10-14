@@ -118,7 +118,123 @@ public sealed class FeatureValueStoreTests : TestBase
             );
     }
 
-    #endregion
+    #endregion GetOrDefaultAsync
+
+    #region GetAllAsync
+
+    [Fact]
+    public async Task should_serve_a_fully_cached_batch_from_one_cache_read()
+    {
+        // given
+        const string providerName = "TestProvider";
+        const string? providerKey = "tenant-1";
+        var names = new HashSet<string>(StringComparer.Ordinal) { "FeatureA", "FeatureB" };
+
+        var cacheResults = names.ToDictionary(
+            static name => FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey),
+            static name => new CacheValue<FeatureValueCacheItem>(new FeatureValueCacheItem($"{name}-value"), true)
+        );
+
+        _cache.GetAllAsync<FeatureValueCacheItem>(Arg.Any<IEnumerable<string>>(), AbortToken).Returns(cacheResults);
+
+        // when
+        var result = await _sut.GetAllAsync(names, providerName, providerKey, AbortToken);
+
+        // then — one batched cache read answered both names; the repository stayed untouched
+        result.Should().HaveCount(2);
+        result.Should().Contain(static v => v.Name == "FeatureA" && v.Value == "FeatureA-value");
+        result.Should().Contain(static v => v.Name == "FeatureB" && v.Value == "FeatureB-value");
+        await _cache.Received(1).GetAllAsync<FeatureValueCacheItem>(Arg.Any<IEnumerable<string>>(), AbortToken);
+        await _repository
+            .DidNotReceive()
+            .GetListAsync(
+                Arg.Any<HashSet<string>>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_load_only_the_missing_names_from_the_repository()
+    {
+        // given — FeatureA is cached, FeatureB is not
+        const string providerName = "TestProvider";
+        const string? providerKey = "tenant-1";
+        var names = new HashSet<string>(StringComparer.Ordinal) { "FeatureA", "FeatureB" };
+        var keyA = FeatureValueCacheItem.CalculateCacheKey("FeatureA", providerName, providerKey);
+
+        _cache
+            .GetAllAsync<FeatureValueCacheItem>(Arg.Any<IEnumerable<string>>(), AbortToken)
+            .Returns(
+                new Dictionary<string, CacheValue<FeatureValueCacheItem>>(StringComparer.Ordinal)
+                {
+                    [keyA] = new(new FeatureValueCacheItem("cached-a"), true),
+                    // a cache miss is an explicit NoValue entry, one result per requested key
+                    [FeatureValueCacheItem.CalculateCacheKey("FeatureB", providerName, providerKey)] =
+                        CacheValue<FeatureValueCacheItem>.NoValue,
+                }
+            );
+
+        IReadOnlyList<FeatureDefinition> definitions = [new("FeatureA"), new("FeatureB")];
+        _definitionManager.GetFeaturesAsync(AbortToken).Returns(definitions);
+        _repository
+            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, AbortToken)
+            .Returns([new FeatureValueRecord(Guid.NewGuid(), "FeatureB", "db-b", providerName, providerKey)]);
+
+        // when
+        var result = await _sut.GetAllAsync(names, providerName, providerKey, AbortToken);
+
+        // then — the repository was asked once for exactly the missing name
+        await _repository
+            .Received(1)
+            .GetListAsync(
+                Arg.Is<HashSet<string>>(static missed => missed.SetEquals(new[] { "FeatureB" })),
+                providerName,
+                providerKey,
+                AbortToken
+            );
+        result.Should().Contain(static v => v.Name == "FeatureA" && v.Value == "cached-a");
+        result.Should().Contain(static v => v.Name == "FeatureB" && v.Value == "db-b");
+
+        // and — the miss was cached together with the load
+        await _cache
+            .Received(1)
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, FeatureValueCacheItem>>(static d =>
+                    d.Count == 1
+                    && d[FeatureValueCacheItem.CalculateCacheKey("FeatureB", providerName, providerKey)].Value == "db-b"
+                ),
+                Arg.Any<TimeSpan?>(),
+                AbortToken
+            );
+    }
+
+    [Fact]
+    public async Task should_route_a_single_name_through_the_single_value_read()
+    {
+        // given
+        const string providerName = "TestProvider";
+        const string? providerKey = null;
+        var names = new HashSet<string>(StringComparer.Ordinal) { "FeatureA" };
+        var cacheKey = FeatureValueCacheItem.CalculateCacheKey("FeatureA", providerName, providerKey);
+
+        _cache
+            .GetAsync<FeatureValueCacheItem>(cacheKey, AbortToken)
+            .Returns(new CacheValue<FeatureValueCacheItem>(new FeatureValueCacheItem("only"), true));
+
+        // when
+        var result = await _sut.GetAllAsync(names, providerName, providerKey, AbortToken);
+
+        // then
+        result.Should().ContainSingle().Which.Value.Should().Be("only");
+        await _cache.Received(1).GetAsync<FeatureValueCacheItem>(cacheKey, AbortToken);
+        await _cache
+            .DidNotReceive()
+            .GetAllAsync<FeatureValueCacheItem>(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    #endregion GetAllAsync
 
     #region SetAsync
 
@@ -138,13 +254,15 @@ public sealed class FeatureValueStoreTests : TestBase
         await _sut.SetAsync(name, newValue, providerName, providerKey, AbortToken);
 
         // then
-        await _repository.Received(1).InsertAsync(Arg.Is<FeatureValueRecord>(r => r.Value == newValue), AbortToken);
+        await _repository
+            .Received(1)
+            .InsertAsync(Arg.Is<FeatureValueRecord>(static r => r.Value == newValue), AbortToken);
         await _repository.DidNotReceive().UpdateAsync(Arg.Any<FeatureValueRecord>(), Arg.Any<CancellationToken>());
         await _cache
             .Received(1)
             .UpsertAsync(
                 cacheKey,
-                Arg.Is<FeatureValueCacheItem>(i => i.Value == newValue),
+                Arg.Is<FeatureValueCacheItem>(static i => i.Value == newValue),
                 Arg.Any<TimeSpan?>(),
                 AbortToken
             );
@@ -173,13 +291,13 @@ public sealed class FeatureValueStoreTests : TestBase
             .Received(1)
             .UpsertAsync(
                 cacheKey,
-                Arg.Is<FeatureValueCacheItem>(i => i.Value == newValue),
+                Arg.Is<FeatureValueCacheItem>(static i => i.Value == newValue),
                 Arg.Any<TimeSpan?>(),
                 AbortToken
             );
     }
 
-    #endregion
+    #endregion SetAsync
 
     #region SetAllAsync
 
@@ -365,7 +483,7 @@ public sealed class FeatureValueStoreTests : TestBase
             );
     }
 
-    #endregion
+    #endregion SetAllAsync
 
     #region DeleteAsync
 
@@ -426,12 +544,14 @@ public sealed class FeatureValueStoreTests : TestBase
         await _cache.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
-    #endregion
+    #endregion DeleteAsync
 
     #region Surrounding white space
 
-    // SQL Server ignores trailing spaces when comparing keys and PostgreSQL does not, so a padded key part would
-    // address another key's row on one provider only; the store must refuse it before any storage call.
+    /// <summary>
+    /// SQL Server ignores trailing spaces when comparing keys and PostgreSQL does not, so a padded key part would
+    /// address another key's row on one provider only; the store must refuse it before any storage call.
+    /// </summary>
     public static readonly TheoryData<string> PaddedKeyCalls =
     [
         "get-name",
@@ -505,5 +625,5 @@ public sealed class FeatureValueStoreTests : TestBase
         _cache.ReceivedCalls().Should().BeEmpty();
     }
 
-    #endregion
+    #endregion Surrounding white space
 }

@@ -5,8 +5,11 @@ namespace Headless.Features;
 /// <summary>Holds the resolved value of a feature along with the provider that supplied it.</summary>
 /// <param name="Name">The feature name.</param>
 /// <param name="Value">The feature's current string value, or <see langword="null"/> if no value is set.</param>
-/// <param name="Provider">The value provider that resolved the value, or <see langword="null"/> if the value came from the feature's default.</param>
-public sealed record FeatureValue(string Name, string? Value, FeatureValueProvider? Provider);
+/// <param name="Provider">
+/// The value provider that resolved the value, or <see langword="null"/> if the value came from the feature's default.
+/// The default of <see langword="null"/> lets internal name/value carriers construct without attribution.
+/// </param>
+public sealed record FeatureValue(string Name, string? Value, FeatureValueProvider? Provider = null);
 
 /// <summary>Identifies the value provider that supplied a feature value.</summary>
 /// <param name="Name">The provider name (e.g., <c>Tenant</c>, <c>Edition</c>, <c>DefaultValue</c>).</param>

@@ -61,6 +61,28 @@ public sealed class FeatureManagerTests : TestBase
         high.GetOrDefaultAsync(fromHigh, null, AbortToken).Returns("h");
         low.GetOrDefaultAsync(fromHigh, null, AbortToken).Returns("shadowed");
         low.GetOrDefaultAsync(fromLow, null, AbortToken).Returns("l");
+        high.GetAllAsync(Arg.Any<FeatureDefinition[]>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(static callInfo =>
+                [
+                    .. callInfo
+                        .ArgAt<FeatureDefinition[]>(0)
+                        .Select(static d => new FeatureValue(
+                            d.Name,
+                            string.Equals(d.Name, "FromHigh", StringComparison.Ordinal) ? "h" : null
+                        )),
+                ]
+            );
+        low.GetAllAsync(Arg.Any<FeatureDefinition[]>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(static callInfo =>
+                [
+                    .. callInfo
+                        .ArgAt<FeatureDefinition[]>(0)
+                        .Select(static d => new FeatureValue(
+                            d.Name,
+                            string.Equals(d.Name, "FromLow", StringComparison.Ordinal) ? "l" : null
+                        )),
+                ]
+            );
 
         // when
         var values = await _sut.GetAllAsync(
@@ -74,6 +96,39 @@ public sealed class FeatureManagerTests : TestBase
         values["FromLow"].Should().Be(new FeatureValue("FromLow", "l", new FeatureValueProvider("Low", null)));
         values["Unset"].Should().Be(new FeatureValue("Unset", null, null));
         await _definitionManager.DidNotReceive().FindAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        // one batch read per provider instead of one read per feature per provider
+        await high.Received(1).GetAllAsync(Arg.Any<FeatureDefinition[]>(), null, AbortToken);
+        await low.Received(1).GetAllAsync(Arg.Any<FeatureDefinition[]>(), null, AbortToken);
+        await high.DidNotReceive()
+            .GetOrDefaultAsync(Arg.Any<FeatureDefinition>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_ask_lower_providers_only_about_still_unresolved_features()
+    {
+        // given — High answers every requested name, so Low is never asked
+        var high = Substitute.For<IFeatureValueProvider>();
+        high.Name.Returns("High");
+        var low = Substitute.For<IFeatureValueProvider>();
+        low.Name.Returns("Low");
+        _valueProviderManager.ValueProviders.Returns([high, low]);
+        var feature1 = new FeatureDefinition("Feature1");
+        var feature2 = new FeatureDefinition("Feature2");
+        _definitionManager.GetFeaturesAsync(AbortToken).Returns([feature1, feature2]);
+        high.GetAllAsync(Arg.Any<FeatureDefinition[]>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns([new FeatureValue("Feature1", "a"), new FeatureValue("Feature2", "b")]);
+
+        // when
+        var values = await _sut.GetAllAsync(
+            new HashSet<string>(StringComparer.Ordinal) { "Feature1", "Feature2" },
+            AbortToken
+        );
+
+        // then
+        values["Feature1"].Value.Should().Be("a");
+        values["Feature2"].Value.Should().Be("b");
+        await low.DidNotReceive()
+            .GetAllAsync(Arg.Any<FeatureDefinition[]>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -101,7 +156,7 @@ public sealed class FeatureManagerTests : TestBase
         // then
         await _bus.Received(1)
             .PublishAsync(
-                Arg.Is<FeatureChangedMessage>(m =>
+                Arg.Is<FeatureChangedMessage>(static m =>
                     m.FeatureNames.Count == 1
                     && m.FeatureNames[0] == featureName
                     && m.ProviderName == "Provider1"
@@ -121,8 +176,9 @@ public sealed class FeatureManagerTests : TestBase
         _definitionManager.GetFeaturesAsync(AbortToken).Returns([feature1, feature2]);
         _definitionManager.FindAsync("Feature1", AbortToken).Returns(feature1);
         _definitionManager.FindAsync("Feature2", AbortToken).Returns(feature2);
-        _provider.GetOrDefaultAsync(feature1, "key1", AbortToken).Returns("a");
-        _provider.GetOrDefaultAsync(feature2, "key1", AbortToken).Returns("b");
+        _provider
+            .GetAllAsync(Arg.Any<FeatureDefinition[]>(), "key1", AbortToken)
+            .Returns([new FeatureValue("Feature1", "a"), new FeatureValue("Feature2", "b")]);
 
         // when
         await _sut.DeleteAsync("Provider1", "key1", AbortToken);
@@ -130,7 +186,7 @@ public sealed class FeatureManagerTests : TestBase
         // then
         await _bus.Received(1)
             .PublishAsync(
-                Arg.Is<FeatureChangedMessage>(m =>
+                Arg.Is<FeatureChangedMessage>(static m =>
                     m.FeatureNames.Count == 2
                     && m.FeatureNames.Contains("Feature1")
                     && m.FeatureNames.Contains("Feature2")
@@ -153,9 +209,31 @@ public sealed class FeatureManagerTests : TestBase
         _definitionManager.GetFeaturesAsync(AbortToken).Returns([feature1, feature2]);
         _definitionManager.FindAsync("Feature1", AbortToken).Returns(feature1);
         _definitionManager.FindAsync("Feature2", AbortToken).Returns(feature2);
-        _provider.GetOrDefaultAsync(feature1, "key1", AbortToken).Returns("a");
-        _provider.GetOrDefaultAsync(feature2, "key1", AbortToken).Returns((string?)null);
-        fallbackProvider.GetOrDefaultAsync(feature2, null, AbortToken).Returns("default-b");
+        // this scope stores only Feature1; the fallback holds Feature2 under its own default scope
+        _provider
+            .GetAllAsync(Arg.Any<FeatureDefinition[]>(), "key1", AbortToken)
+            .Returns(static callInfo =>
+                [
+                    .. callInfo
+                        .ArgAt<FeatureDefinition[]>(0)
+                        .Select(static d => new FeatureValue(
+                            d.Name,
+                            string.Equals(d.Name, "Feature1", StringComparison.Ordinal) ? "a" : null
+                        )),
+                ]
+            );
+        fallbackProvider
+            .GetAllAsync(Arg.Any<FeatureDefinition[]>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(static callInfo =>
+                [
+                    .. callInfo
+                        .ArgAt<FeatureDefinition[]>(0)
+                        .Select(static d => new FeatureValue(
+                            d.Name,
+                            string.Equals(d.Name, "Feature2", StringComparison.Ordinal) ? "default-b" : null
+                        )),
+                ]
+            );
 
         // when
         await _sut.DeleteAsync("Provider1", "key1", AbortToken);
@@ -164,7 +242,7 @@ public sealed class FeatureManagerTests : TestBase
         await _provider.DidNotReceive().ClearAsync(feature2, Arg.Any<string?>(), Arg.Any<CancellationToken>());
         await _bus.Received(1)
             .PublishAsync(
-                Arg.Is<FeatureChangedMessage>(m => m.FeatureNames.Count == 1 && m.FeatureNames[0] == "Feature1"),
+                Arg.Is<FeatureChangedMessage>(static m => m.FeatureNames.Count == 1 && m.FeatureNames[0] == "Feature1"),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -411,7 +489,7 @@ public sealed class FeatureManagerTests : TestBase
         await _provider
             .Received(1)
             .SetAllAsync(
-                Arg.Is<IReadOnlyList<KeyValuePair<FeatureDefinition, string?>>>(writes =>
+                Arg.Is<IReadOnlyList<KeyValuePair<FeatureDefinition, string?>>>(static writes =>
                     writes.Count == 2 && writes[0].Value == null && writes[1].Value == "new"
                 ),
                 "key1",
@@ -507,6 +585,17 @@ public sealed class FeatureManagerTests : TestBase
         )
         {
             return Task.FromResult(Values.GetValueOrDefault(feature.Name));
+        }
+
+        public Task<List<FeatureValue>> GetAllAsync(
+            FeatureDefinition[] features,
+            string? providerKey = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return Task.FromResult(
+                features.Select(f => new FeatureValue(f.Name, Values.GetValueOrDefault(f.Name))).ToList()
+            );
         }
 
         public Task SetAsync(

@@ -2,8 +2,6 @@
 
 using System.Collections.Concurrent;
 using System.Data.Common;
-using System.Globalization;
-using System.Text;
 using Headless.MultiTenancy;
 using Headless.Sql;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,12 +20,16 @@ internal sealed class RelationalPermissionGrantRepository(
     TimeProvider timeProvider
 ) : IPermissionGrantRepository
 {
-    // Keeps statements bounded for predictable parse and lock duration: 100 rows use 700 parameters, well below
-    // SQL Server's 2,100-parameter ceiling.
+    /// <summary>
+    /// Keeps statements bounded for predictable parse and lock duration: 100 rows use 700 parameters, well below
+    /// SQL Server's 2,100-parameter ceiling.
+    /// </summary>
     private const int _MaxRowsPerInsert = 100;
 
-    // Written text is unbounded: a parameter sized to the column would silently truncate an over-long value, where the
-    // column must reject it.
+    /// <summary>
+    /// Written text is unbounded: a parameter sized to the column would silently truncate an over-long value, where the
+    /// column must reject it.
+    /// </summary>
     private static readonly SqlColumnType _Written = SqlColumnType.Text(-1);
 
     private static readonly string[] _InsertColumns =
@@ -111,6 +113,41 @@ internal sealed class RelationalPermissionGrantRepository(
             {
                 _dialect.AddListParameter(command, "Names", nameList, names);
                 _AddScope(command, providerName, providerKey);
+            },
+            cancellationToken
+        );
+    }
+
+    public Task<List<PermissionGrantRecord>> GetListAsync(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        IReadOnlyCollection<string> providerKeys,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (names.Count == 0 || providerKeys.Count == 0)
+        {
+            return Task.FromResult(new List<PermissionGrantRecord>());
+        }
+
+        var nameList = SqlColumnType.LookupText(PermissionGrantRecordConstants.NameMaxLength, names);
+        var keyList = SqlColumnType.LookupText(PermissionGrantRecordConstants.ProviderKeyMaxLength, providerKeys);
+
+        var providerKeyColumn = tables.Column("ProviderKey");
+        var sql =
+            $"{_select} WHERE {_dialect.InList(_name, "Names", nameList)}"
+            + $" AND {tables.Column("ProviderName")} = @ProviderName"
+            + $" AND {_dialect.InList(providerKeyColumn, "ProviderKeys", keyList)}"
+            + $" AND {_byTenant};";
+
+        return _ReadAsync(
+            sql,
+            command =>
+            {
+                _dialect.AddListParameter(command, "Names", nameList, names);
+                _dialect.AddListParameter(command, "ProviderKeys", keyList, providerKeys);
+                _AddFilter(command, "ProviderName", PermissionGrantRecordConstants.ProviderNameMaxLength, providerName);
+                _AddTenant(command);
             },
             cancellationToken
         );
