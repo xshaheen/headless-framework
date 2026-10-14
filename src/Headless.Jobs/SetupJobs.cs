@@ -147,6 +147,17 @@ public static class SetupJobs
             schedulerOptionsBuilder.FingerprintSweepBatchSize > 0,
             "SchedulerOptionsBuilder.FingerprintSweepBatchSize must be greater than zero."
         );
+        // A cron definition with no zone of its own is evaluated and fingerprinted under this zone on every node. Only
+        // an IANA identifier names the same rules on every host's tzdata; a Windows id or a custom zone would let
+        // peers disagree on fire times. The UTC arm covers hosts where TimeZoneInfo.Utc reports no IANA id.
+        var schedulerTimeZone = schedulerOptionsBuilder.SchedulerTimeZone;
+        Ensure.True(
+            schedulerTimeZone is not null
+                && (schedulerTimeZone.HasIanaId || schedulerTimeZone.Equals(TimeZoneInfo.Utc)),
+            "SchedulerOptionsBuilder.SchedulerTimeZone must be an IANA time zone, for example TimeZoneInfo.Utc or "
+                + "TimeZoneInfo.FindSystemTimeZoneById(\"Africa/Cairo\"); Windows ids, custom zones, and a non-IANA "
+                + "TimeZoneInfo.Local are rejected."
+        );
         // The structural bound JobChainBuilder.Build() enforces doubles as the configuration ceiling, so the enqueue
         // guard and the structural guard can never contradict (and SqlServer's recursive-CTE MAXRECURSION stays reachable).
         Ensure.True(

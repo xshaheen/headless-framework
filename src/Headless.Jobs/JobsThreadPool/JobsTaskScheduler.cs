@@ -259,11 +259,29 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             }
 
             activeWorkers = Interlocked.Increment(ref _activeWorkers);
+
+            // A worker outlives the call that spawns it and runs every job it later dequeues. Started from an
+            // enqueue (an HTTP request on the immediate-dispatch path), it would otherwise run all of them under
+            // that caller's Activity, log scopes, culture, and ambient tenant.
             // ReSharper disable once MethodSupportsCancellation
-            _workerTasks[workerId] = Task.Run(() => _WorkerLoopAsync(workerId));
+            _workerTasks[workerId] = _StartWithoutFlow(() => Task.Run(() => _WorkerLoopAsync(workerId)));
         }
 
         _notifyDebounce.NotifySafely(activeWorkers);
+    }
+
+    private static Task _StartWithoutFlow(Func<Task> start)
+    {
+        // SuppressFlow throws when the caller already suppressed flow; the start then captures nothing anyway.
+        if (ExecutionContext.IsFlowSuppressed())
+        {
+            return start();
+        }
+
+        using (ExecutionContext.SuppressFlow())
+        {
+            return start();
+        }
     }
 
     private async Task _WorkerLoopAsync(int workerId)
@@ -541,14 +559,18 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
         try
         {
-            _ = Task
-                .Factory.StartNew(
-                    () => _ExecuteLongRunningWorkAsync(work, executionCancellationToken),
-                    CancellationToken.None,
-                    TaskCreationOptions.LongRunning,
-                    TaskScheduler.Default
-                )
-                .Unwrap();
+            // Start the dedicated thread on a clean context so the job does not inherit the queueing caller's
+            // Activity, log scopes, or ambient tenant; the job's tenant comes from its persisted TenantId.
+            _ = _StartWithoutFlow(() =>
+                Task
+                    .Factory.StartNew(
+                        () => _ExecuteLongRunningWorkAsync(work, executionCancellationToken),
+                        CancellationToken.None,
+                        TaskCreationOptions.LongRunning,
+                        TaskScheduler.Default
+                    )
+                    .Unwrap()
+            );
         }
 #pragma warning disable ERP022 // A detached start has no caller to observe faults; the catch releases the slot and counters instead.
         catch

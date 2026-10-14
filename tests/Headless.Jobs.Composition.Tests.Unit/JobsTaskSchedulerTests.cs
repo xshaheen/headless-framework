@@ -206,6 +206,108 @@ public sealed class JobsTaskSchedulerTests : TestBase
     }
 
     [Fact]
+    public async Task worker_spawned_by_a_caller_does_not_carry_its_ambient_context_into_later_jobs()
+    {
+        var ambient = new AsyncLocal<string?>();
+
+        // Worker 0 starts in the constructor on a clean context and parks at its gate, so every job runs on
+        // worker 1: the worker the ambient caller below spawns.
+        await using var scheduler = new JobsTaskScheduler(
+            maxConcurrency: 2,
+            timeProvider: TimeProvider.System,
+            workerStartGate: (workerId, cancellationToken) =>
+                workerId == 0 ? Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken) : Task.CompletedTask
+        );
+
+        var firstDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        ambient.Value = "request-a";
+
+        using (var request = new Activity("http-request"))
+        {
+            request.Start();
+            await scheduler.QueueAsync(
+                _ =>
+                {
+                    firstDone.TrySetResult();
+                    return Task.CompletedTask;
+                },
+                JobPriority.Normal,
+                AbortToken
+            );
+        }
+
+        await firstDone.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        ambient.Value = null;
+        Activity.Current = null;
+
+        var observed = new TaskCompletionSource<(string? Ambient, Activity? Activity)>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        await scheduler.QueueAsync(
+            _ =>
+            {
+                observed.TrySetResult((ambient.Value, Activity.Current));
+                return Task.CompletedTask;
+            },
+            JobPriority.Normal,
+            AbortToken
+        );
+
+        var (seenAmbient, seenActivity) = await observed.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        seenAmbient.Should().BeNull();
+        seenActivity.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task long_running_work_does_not_observe_the_queueing_callers_ambient_context()
+    {
+        var ambient = new AsyncLocal<string?>();
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 1, timeProvider: TimeProvider.System);
+        var observed = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        ambient.Value = "request-a";
+        await scheduler.QueueAsync(
+            _ =>
+            {
+                observed.TrySetResult(ambient.Value);
+                return Task.CompletedTask;
+            },
+            JobPriority.LongRunning,
+            AbortToken
+        );
+
+        (await observed.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken)).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(JobPriority.Normal)]
+    [InlineData(JobPriority.LongRunning)]
+    public async Task queue_async_accepts_work_from_a_caller_that_already_suppressed_flow(JobPriority priority)
+    {
+        // maxConcurrency 2 makes the enqueue spawn a second worker inside the suppressed scope.
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, timeProvider: TimeProvider.System);
+        var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Task queued;
+        using (ExecutionContext.SuppressFlow())
+        {
+            queued = scheduler.QueueAsync(
+                _ =>
+                {
+                    completed.TrySetResult();
+                    return Task.CompletedTask;
+                },
+                priority,
+                AbortToken
+            );
+        }
+
+        await queued;
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+    }
+
+    [Fact]
     public async Task retired_worker_slots_restart_to_full_concurrency()
     {
         await using var scheduler = new JobsTaskScheduler(

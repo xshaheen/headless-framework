@@ -215,6 +215,7 @@ public sealed class DistributedLock(
         ResetEventWithRefCount? autoResetEvent = null;
         var retryAttempt = 0;
         var isFirstAttempt = true;
+        var insertFaulted = false;
 
         try
         {
@@ -233,9 +234,16 @@ public sealed class DistributedLock(
                 // Try to acquire the lock
                 try
                 {
-                    acquireResult = await _storage
-                        .InsertAsync(resource, leaseId, timeUntilExpires, attemptToken)
+                    (acquireResult, var faulted) = await _TryInsertAsync(
+                            resource,
+                            leaseId,
+                            timeUntilExpires,
+                            timestamp,
+                            attemptToken
+                        )
                         .ConfigureAwait(false);
+
+                    insertFaulted |= faulted;
                 }
                 catch (OperationCanceledException)
                 {
@@ -250,11 +258,6 @@ public sealed class DistributedLock(
                     }
 
                     break;
-                }
-                catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
-                {
-                    // Swallow transient errors (network, timeout) and retry
-                    logger.LogErrorAcquiringLockElapsed(e, resource, leaseId, timeProvider, timestamp);
                 }
 
                 if (acquireResult.Acquired)
@@ -303,6 +306,14 @@ public sealed class DistributedLock(
 
         if (!acquireResult.Acquired)
         {
+            if (insertFaulted)
+            {
+                // The per-attempt cleanup can fail in the same outage that faulted the insert, and every later
+                // attempt then collides with our own committed key. One more compare-and-delete on the way out
+                // keeps that key from outliving this call, which with an infinite TTL would otherwise be forever.
+                await _TryReleaseOrphanLockAsync(resource, leaseId).ConfigureAwait(false);
+            }
+
             DistributedLockMetrics.LockFailed.Add(1, DistributedLockMetrics.ReasonContended);
 
             if (cts.IsCancellationRequested)
@@ -369,8 +380,9 @@ public sealed class DistributedLock(
 
         try
         {
-            acquireResult = await _storage
-                .InsertAsync(resource, leaseId, timeUntilExpires, attemptToken)
+            // A faulted insert already ran its cleanup inside the helper; with a single attempt that cleanup is
+            // also the last one, so no exit cleanup is needed here.
+            (acquireResult, _) = await _TryInsertAsync(resource, leaseId, timeUntilExpires, timestamp, attemptToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -393,11 +405,6 @@ public sealed class DistributedLock(
             // contended try-once) but flag it so the failure surfaces a distinct EventId +
             // `reason=stalled` metric instead of looking like routine contention (#320).
             safetyDeadlineFired = safetyCts.IsCancellationRequested;
-            acquireResult = DistributedLockAcquireResult.Failed;
-        }
-        catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
-        {
-            logger.LogErrorAcquiringLockElapsed(e, resource, leaseId, timeProvider, timestamp);
             acquireResult = DistributedLockAcquireResult.Failed;
         }
 
@@ -541,6 +548,36 @@ public sealed class DistributedLock(
             {
                 _autoResetEvents.TryRemove(resource, out _);
             }
+        }
+    }
+
+    private async ValueTask<(DistributedLockAcquireResult Result, bool Faulted)> _TryInsertAsync(
+        string resource,
+        string leaseId,
+        TimeSpan? timeUntilExpires,
+        long startTimestamp,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            var result = await _storage
+                .InsertAsync(resource, leaseId, timeUntilExpires, cancellationToken)
+                .ConfigureAwait(false);
+
+            return (result, false);
+        }
+        catch (Exception e)
+            when (e is not (OperationCanceledException or ObjectDisposedException or InvalidOperationException))
+        {
+            logger.LogErrorAcquiringLockElapsed(e, resource, leaseId, timeProvider, startTimestamp);
+
+            // A transient backend failure may surface after the SET NX already committed. Every retry reuses this
+            // leaseId and NX rejects even our own key, so without this the key stays until its TTL, or forever with
+            // an infinite TTL. Compare-and-delete on the unique leaseId is idempotent.
+            await _TryReleaseOrphanLockAsync(resource, leaseId).ConfigureAwait(false);
+
+            return (DistributedLockAcquireResult.Failed, true);
         }
     }
 

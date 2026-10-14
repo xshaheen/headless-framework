@@ -642,11 +642,12 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 $"""
                 {mapping.Id} = @id
                   AND {mapping.ExecutionTime} = @executionTime
-                  AND ({mapping.Status} = @idle OR {mapping.Status} = @queued)
-                  AND ({mapping.OwnerId} = @owner
-                       OR {mapping.LockedUntil} IS NULL
-                       OR ({mapping.LockedUntil} <= {SqlDialectTokens.Now}
-                           AND {mapping.OnNodeDeath} = @retry))
+                  AND {AcquirePredicateSql.Build(
+                    mapping.Status,
+                    mapping.OwnerId,
+                    mapping.LockedUntil,
+                    mapping.OnNodeDeath
+                )}
                 """,
                 [mapping.Id],
                 $"""
@@ -738,9 +739,12 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     // candidate page size no longer approaches the engine's parameter limit.
     private static string _DirectCandidateFilter(TimeJobRelationalMapping mapping)
     {
-        return PostgreSqlDialect.Instance.InTuples([mapping.Id, mapping.UpdatedAt], "requested", _DirectCandidateTypes);
+        return PostgreSqlDialect.Instance.InTuples([mapping.Id, mapping.UpdatedAt], "requested", _DirectCandidateTypes)
+            + " AND "
+            + AcquirePredicateSql.Build(mapping.Status, mapping.OwnerId, mapping.LockedUntil, mapping.OnNodeDeath);
     }
 
+    // The acquire predicate's @owner is bound by _ClaimRootsAsync, which every root claim runs through.
     private static DbParameter[] _DirectCandidateParameters(TimeJobEntity[] timeJobs)
     {
         return
@@ -750,6 +754,9 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 _DirectCandidateTypes,
                 [.. timeJobs.Select(static job => (IReadOnlyList<object>)[job.Id, job.UpdatedAt])]
             ),
+            new NpgsqlParameter("idle", nameof(JobStatus.Idle)),
+            new NpgsqlParameter("queued", nameof(JobStatus.Queued)),
+            new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry)),
         ];
     }
 

@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Data.Common;
+using Headless;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Infrastructure;
@@ -726,24 +727,10 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
 
             var cases = new[]
             {
-                new DirectCronClaimCase("idle_unleased", JobStatus.Idle, null, NodeDeathPolicy.Retry, null, true),
-                new DirectCronClaimCase(
-                    "queued_unleased",
-                    JobStatus.Queued,
-                    "old@1",
-                    NodeDeathPolicy.Retry,
-                    null,
-                    true
-                ),
-                new DirectCronClaimCase(
-                    "expired_retry",
-                    JobStatus.Queued,
-                    "old@2",
-                    NodeDeathPolicy.Retry,
-                    expired,
-                    true
-                ),
-                new DirectCronClaimCase(
+                new DirectClaimCase("idle_unleased", JobStatus.Idle, null, NodeDeathPolicy.Retry, null, true),
+                new DirectClaimCase("queued_unleased", JobStatus.Queued, "old@1", NodeDeathPolicy.Retry, null, true),
+                new DirectClaimCase("expired_retry", JobStatus.Queued, "old@2", NodeDeathPolicy.Retry, expired, true),
+                new DirectClaimCase(
                     "same_owner_live",
                     JobStatus.Queued,
                     currentOwner,
@@ -751,15 +738,8 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                     live,
                     true
                 ),
-                new DirectCronClaimCase(
-                    "foreign_live",
-                    JobStatus.Queued,
-                    "foreign@1",
-                    NodeDeathPolicy.Retry,
-                    live,
-                    false
-                ),
-                new DirectCronClaimCase(
+                new DirectClaimCase("foreign_live", JobStatus.Queued, "foreign@1", NodeDeathPolicy.Retry, live, false),
+                new DirectClaimCase(
                     "expired_mark_failed",
                     JobStatus.Queued,
                     "old@3",
@@ -767,15 +747,8 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                     expired,
                     false
                 ),
-                new DirectCronClaimCase(
-                    "expired_skip",
-                    JobStatus.Queued,
-                    "old@4",
-                    NodeDeathPolicy.Skip,
-                    expired,
-                    false
-                ),
-                new DirectCronClaimCase(
+                new DirectClaimCase("expired_skip", JobStatus.Queued, "old@4", NodeDeathPolicy.Skip, expired, false),
+                new DirectClaimCase(
                     "in_progress_unleased",
                     JobStatus.InProgress,
                     null,
@@ -834,6 +807,184 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         {
             await host.StopAsync(ct);
         }
+    }
+
+    /// <summary>
+    /// A matching token does not make a row claimable. Each candidate carries its row's exact stored token, so only
+    /// the acquire predicate separates the rows the claimer may take from the ones running, finished, or leased
+    /// elsewhere. Both strategies must hold the same contract.
+    /// </summary>
+    public virtual async Task direct_time_job_claim_applies_the_full_acquire_predicate_matrix(bool useNativeClaims)
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("direct-tj-matrix", useNativeClaims: useNativeClaims);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var probe = new TimeJobEntity { Id = Guid.NewGuid(), Function = "owner_probe" };
+            await persistence.AddTimeJobsAsync([probe], ct);
+            var probeClaim = await persistence.QueueTimeJobsAsync([probe], ct).ToArrayAsync(ct);
+            var currentOwner = probeClaim.Should().ContainSingle().Which.OwnerId;
+            currentOwner.Should().NotBeNullOrWhiteSpace();
+
+            var now = DateTime.UtcNow;
+            var expired = now.AddMinutes(-1);
+            var live = now.AddMinutes(5);
+            var cases = new[]
+            {
+                new DirectClaimCase("idle_unleased", JobStatus.Idle, null, NodeDeathPolicy.Retry, null, true),
+                new DirectClaimCase("queued_unleased", JobStatus.Queued, "old@1", NodeDeathPolicy.Retry, null, true),
+                new DirectClaimCase("expired_retry", JobStatus.Queued, "old@2", NodeDeathPolicy.Retry, expired, true),
+                new DirectClaimCase(
+                    "same_owner_live",
+                    JobStatus.Queued,
+                    currentOwner,
+                    NodeDeathPolicy.Skip,
+                    live,
+                    true
+                ),
+                new DirectClaimCase(
+                    "in_progress_foreign",
+                    JobStatus.InProgress,
+                    "foreign@1",
+                    NodeDeathPolicy.Retry,
+                    live,
+                    false
+                ),
+                new DirectClaimCase("foreign_live", JobStatus.Queued, "foreign@2", NodeDeathPolicy.Retry, live, false),
+                new DirectClaimCase(
+                    "expired_mark_failed",
+                    JobStatus.Queued,
+                    "old@3",
+                    NodeDeathPolicy.MarkFailed,
+                    expired,
+                    false
+                ),
+                new DirectClaimCase("expired_skip", JobStatus.Queued, "old@4", NodeDeathPolicy.Skip, expired, false),
+                new DirectClaimCase("succeeded", JobStatus.Succeeded, "foreign@3", NodeDeathPolicy.Retry, null, false),
+            };
+
+            var candidates = new List<TimeJobEntity>();
+            var expectedIds = new HashSet<Guid>();
+            var refusedBefore = new Dictionary<Guid, (int Status, string? OwnerId, DateTime? LockedUntil)>();
+            foreach (var testCase in cases)
+            {
+                var id = Guid.NewGuid();
+                await fixture.SeedTimeJobAsync(
+                    id,
+                    testCase.Function,
+                    (int)testCase.Status,
+                    testCase.OwnerId,
+                    ct,
+                    testCase.Policy,
+                    testCase.LockedUntil
+                );
+                var (_, storedToken) = await fixture.ReadTimeJobClaimTimestampsAsync(id, ct);
+                candidates.Add(
+                    new TimeJobEntity
+                    {
+                        Id = id,
+                        Function = testCase.Function,
+                        UpdatedAt = storedToken,
+                    }
+                );
+
+                if (testCase.ShouldClaim)
+                {
+                    expectedIds.Add(id);
+                }
+                else
+                {
+                    var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(id, ct);
+                    refusedBefore[id] = (status, ownerId, lockedUntil);
+                }
+            }
+
+            var claims = await persistence.QueueTimeJobsAsync([.. candidates], ct).ToArrayAsync(ct);
+
+            claims.Select(x => x.Id).Should().BeEquivalentTo(expectedIds);
+            foreach (var claim in claims)
+            {
+                claim.OwnerId.Should().Be(currentOwner);
+                claim.Status.Should().Be(JobStatus.Queued);
+            }
+
+            foreach (var (id, before) in refusedBefore)
+            {
+                var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(id, ct);
+                (status, ownerId, lockedUntil).Should().Be(before);
+            }
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// The CAS fallback peeks due roots, then claims each one in its own statement. A root rescheduled between the
+    /// two must not run early. An editor on a lagging clock can stamp an UpdatedAt below the peeked one, and two
+    /// writes can land on the same stamp, so neither a lower nor an unchanged token may stand in for "still due":
+    /// the claim re-checks the due time on the database clock. An untouched due root in the same sweep is still
+    /// claimed.
+    /// </summary>
+    public virtual async Task cas_fallback_does_not_claim_a_root_rescheduled_after_the_peek(bool lowerStamp)
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("cas-fallback-reschedule", useNativeClaims: false);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+
+        var rescheduledId = Guid.NewGuid();
+        var untouchedId = Guid.NewGuid();
+        foreach (var id in new[] { rescheduledId, untouchedId })
+        {
+            await fixture.SeedTimeJobAsync(id, "fallback-reschedule", (int)JobStatus.Idle, null, ct);
+            await _ExecuteSqlAsync(
+                $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"ExecutionTime\" = {fixture.UtcNowOffsetSqlExpression(-60)} WHERE \"Id\" = @id;",
+                ct,
+                ("@id", id)
+            );
+        }
+
+        var seamCalls = 0;
+        var cas = new EfCoreCasJobsClaimStrategy<JobsDbContext, TimeJobEntity, CronJobEntity>(
+            host.Services.GetRequiredService<IDbContextFactory<JobsDbContext>>(),
+            host.Services.GetRequiredService<TimeProvider>(),
+            host.Services.GetRequiredService<IGuidGenerator>(),
+            new FixedOwnerIdentity("cas-fallback@1"),
+            host.Services.GetRequiredService<SchedulerOptionsBuilder>()
+        )
+        {
+            OnFallbackBeforeClaim = async job =>
+            {
+                Interlocked.Increment(ref seamCalls);
+                if (job.Id != rescheduledId)
+                {
+                    return;
+                }
+
+                await _ExecuteSqlAsync(
+                    $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"ExecutionTime\" = {fixture.UtcNowOffsetSqlExpression(3600)}, \"UpdatedAt\" = @updatedAt WHERE \"Id\" = @id;",
+                    ct,
+                    ("@id", job.Id),
+                    ("@updatedAt", lowerStamp ? job.UpdatedAt.AddSeconds(-1) : job.UpdatedAt)
+                );
+            },
+        };
+
+        var claimed = await cas.ClaimTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
+
+        seamCalls.Should().Be(2, "both due roots were peeked before either was claimed");
+        claimed.Select(x => x.Id).Should().Equal(untouchedId);
+        var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(rescheduledId, ct);
+        status.Should().Be((int)JobStatus.Idle);
+        ownerId.Should().BeNull();
+        lockedUntil.Should().BeNull();
     }
 
     public virtual async Task expired_fallback_cron_claim_requires_retry_policy()
@@ -1563,7 +1714,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
-    private sealed record DirectCronClaimCase(
+    private sealed record DirectClaimCase(
         string Function,
         JobStatus Status,
         string? OwnerId,
@@ -1639,6 +1790,39 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             ExecutionTime = executionTime,
             Children = [child],
         };
+    }
+
+    private async Task _ExecuteSqlAsync(
+        string sql,
+        CancellationToken ct,
+        params (string Name, object Value)[] parameters
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = fixture.Sql(sql);
+        foreach (var (name, value) in parameters)
+        {
+            JobsCoordinationFixtureExtensions.AddParameter(command, name, value);
+        }
+
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    // A stable owner with never-lost membership, so a strategy built outside the host claims without waiting for the
+    // coordination-backed identity.
+    private sealed class FixedOwnerIdentity(string owner) : IJobsOwnerIdentity
+    {
+        public string DisplayOwner => owner;
+
+        public bool TryGetStampOwner([NotNullWhen(true)] out string? stampOwner)
+        {
+            stampOwner = owner;
+            return true;
+        }
+
+        public CancellationToken MembershipLostToken => CancellationToken.None;
     }
 
     private static async Task<TimeJobEntity[]> _ClaimTimeJobsAsync(

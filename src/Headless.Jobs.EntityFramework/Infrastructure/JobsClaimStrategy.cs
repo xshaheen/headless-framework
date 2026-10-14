@@ -225,6 +225,10 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     // deterministically invalidate the root lease and drive the frontier fence. Always null in production.
     internal Func<Task>? OnFrontierBeforeLease { get; set; }
 
+    // Test seam: when set, the timed-out sweep invokes it with each peeked root after the peek and before that root's
+    // claim, so a test can deterministically change the row between the two. Always null in production.
+    internal Func<TimeJobEntity, Task>? OnFallbackBeforeClaim { get; set; }
+
     public async IAsyncEnumerable<TimeJobEntity> ClaimTimeJobsAsync(
         TimeJobEntity[] timeJobs,
         [EnumeratorCancellation] CancellationToken cancellationToken
@@ -340,6 +344,11 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            if (OnFallbackBeforeClaim is not null)
+            {
+                await OnFallbackBeforeClaim(timeJob).ConfigureAwait(false);
+            }
+
             var rootId = timeJob.Id;
             var expectedUpdatedAt = timeJob.UpdatedAt;
             // Re-assert the parent gate inside the atomic claim, INLINE on the updated row (see
@@ -348,7 +357,10 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var claimedIds = await _ClaimTimeJobTreeAsync(
                     context,
                     q =>
-                        q.Where(x => x.UpdatedAt <= expectedUpdatedAt)
+                        // An exact token, plus the peek's due-time test on the database clock: a root rescheduled after
+                        // the peek, even by a writer whose clock stamped an equal or earlier UpdatedAt, must not run early.
+                        q.Where(x => x.UpdatedAt == expectedUpdatedAt)
+                            .Where(x => x.ExecutionTime != null && x.ExecutionTime <= DateTime.UtcNow.AddSeconds(-1))
                             .WhereRunnable(_runFilter)
                             .WhereCanFallbackClaimUsingDatabaseClock()
                             .WhereClaimableUnderParentTerminalGate(context),
