@@ -182,14 +182,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         {
             if (!ownershipTransferred && held is not null)
             {
-                if (cleanupFailed)
-                {
-                    await held.DisposeAsBrokenAsync().ConfigureAwait(false);
-                }
-                else
-                {
-                    await held.DisposeAsync().ConfigureAwait(false);
-                }
+                await held.DisposeAsync(broken: cleanupFailed).ConfigureAwait(false);
             }
         }
     }
@@ -210,7 +203,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
     /// release command never races the active liveness probe on the same <see cref="SqlConnection"/>.
     /// A no-op when no lock is registered for <paramref name="leaseId"/>.
     /// </remarks>
-#pragma warning disable CA2000 // False positive: the finally disposes held on both branches; DisposeAsBrokenAsync is a dispose the analyzer does not recognize.
+#pragma warning disable CA2000 // False positive: the finally always disposes held; the analyzer does not recognize the DisposeAsync(bool) overload as a dispose.
     public async ValueTask ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
         if (!_heldByLeaseId.TryRemove(leaseId, out var held))
@@ -252,14 +245,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
             // ConnectionLostToken; cancelling here would fire every consumer's LostToken registration on the
             // success path of an ordinary `await using`. A failed release may have left the application lock held
             // on this session, so that session is ended instead of returned to the pool, where it would keep it.
-            if (releaseFailed)
-            {
-                await held.DisposeAsBrokenAsync().ConfigureAwait(false);
-            }
-            else
-            {
-                await held.DisposeAsync().ConfigureAwait(false);
-            }
+            await held.DisposeAsync(broken: releaseFailed).ConfigureAwait(false);
         }
     }
 #pragma warning restore CA2000
@@ -684,7 +670,18 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         /// </summary>
         public ValueTask DisposeAsync()
         {
-            return _DisposeAsync(signalLost: false);
+            return DisposeAsync(broken: false);
+        }
+
+        /// <summary>
+        /// The clean teardown of <see cref="DisposeAsync()"/>, or, when <paramref name="broken"/> is set, the teardown of
+        /// a connection whose session may still hold the application lock after a failed release or acquire cleanup.
+        /// A broken connection's pool is cleared first so the driver closes the session instead of reusing it; that also
+        /// drops every idle connection in the pool, an accepted cost on this failure-only path.
+        /// </summary>
+        public ValueTask DisposeAsync(bool broken)
+        {
+            return _DisposeAsync(signalLost: false, clearPool: broken);
         }
 
         /// <summary>
@@ -696,16 +693,6 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         public ValueTask DisposeAsLostAsync()
         {
             return _DisposeAsync(signalLost: true);
-        }
-
-        /// <summary>
-        /// Disposes a connection whose session may still hold the application lock after a failed release or acquire
-        /// cleanup. Clearing the pool first makes the driver close the session instead of reusing it; that also drops
-        /// every idle connection in the pool, an accepted cost on this failure-only path.
-        /// </summary>
-        public ValueTask DisposeAsBrokenAsync()
-        {
-            return _DisposeAsync(signalLost: false, clearPool: true);
         }
 
         private async ValueTask _DisposeAsync(bool signalLost, bool clearPool = false)

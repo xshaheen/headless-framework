@@ -181,8 +181,7 @@ internal sealed partial class PostgresAdvisoryLock(
         return acquired switch
         {
             false => null,
-            true when acquireCommandResult is long token => new FencedLockCookie(new LockFencingToken(token)),
-            true => _Cookie,
+            true => fenced ? new FencedLockCookie(new LockFencingToken((long)acquireCommandResult!)) : _Cookie,
             null => throw new InvalidOperationException(
                 $"Unexpected value '{acquireCommandResult}' from the advisory-lock acquire command."
             ),

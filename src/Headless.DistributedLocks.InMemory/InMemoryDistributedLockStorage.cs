@@ -33,10 +33,10 @@ internal sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) 
 {
     private readonly ConcurrentDictionary<string, ResourceState> _resources = new(StringComparer.Ordinal);
 
+    private long _fencingToken;
+
     /// <summary>The number of per-resource entries currently held in memory, live or not yet pruned.</summary>
     internal int EntryCount => _resources.Count;
-
-    private long _fencingToken;
 
     /// <summary>
     /// Atomically grants an exclusive lock on <paramref name="key"/> to the caller identified by

@@ -32,10 +32,10 @@ internal sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvi
 {
     private readonly ConcurrentDictionary<string, ResourceState> _resources = new(StringComparer.Ordinal);
 
+    private long _fencingToken;
+
     /// <summary>The number of per-resource entries currently held in memory, live or not yet pruned.</summary>
     internal int EntryCount => _resources.Count;
-
-    private long _fencingToken;
 
     /// <summary>
     /// Atomically acquires a semaphore slot on <paramref name="resource"/> for the caller identified
