@@ -300,6 +300,75 @@ public sealed class ConnectionChannelPoolTests : TestBase
     }
 
     [Fact]
+    public async Task should_hand_out_no_more_channels_at_once_than_the_configured_pool_size()
+    {
+        // given - a pool of one with a channel seeded so Rent needs no broker
+        var options = Options.Create(
+            new RabbitMqMessagingOptions
+            {
+                HostName = "localhost",
+                Port = 5672,
+                UserName = "test_user",
+                Password = "test_pass",
+                ExchangeName = "test.exchange",
+                ChannelPoolSize = 1,
+            }
+        );
+        await using var pool = new ConnectionChannelPool(_logger, _capOptions, options);
+        var sut = (IConnectionChannelPool)pool;
+        var channel = Substitute.For<IChannel>();
+        channel.IsOpen.Returns(true);
+        pool.Return(channel);
+
+        var first = await sut.Rent(AbortToken);
+
+        // when
+        var second = sut.Rent(AbortToken);
+        await Task.Delay(100, AbortToken);
+        var waitedWhileFull = !second.IsCompleted;
+        sut.Return(first);
+
+        // then
+        waitedWhileFull.Should().BeTrue();
+        var rented = await second.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        sut.Return(rented);
+    }
+
+    [Fact]
+    public void should_not_pool_more_idle_channels_than_the_configured_pool_size()
+    {
+        // given
+        var options = Options.Create(
+            new RabbitMqMessagingOptions
+            {
+                HostName = "localhost",
+                Port = 5672,
+                UserName = "test_user",
+                Password = "test_pass",
+                ExchangeName = "test.exchange",
+                ChannelPoolSize = 2,
+            }
+        );
+        using var pool = new ConnectionChannelPool(_logger, _capOptions, options);
+        var channels = Enumerable
+            .Range(0, 3)
+            .Select(_ =>
+            {
+                var channel = Substitute.For<IChannel>();
+                channel.IsOpen.Returns(true);
+
+                return channel;
+            })
+            .ToList();
+
+        // when
+        var results = channels.ConvertAll(pool.Return);
+
+        // then
+        results.Should().Equal(true, true, false);
+    }
+
+    [Fact]
     public async Task should_complete_async_disposal()
     {
         // given

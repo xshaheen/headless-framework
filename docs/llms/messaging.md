@@ -2915,6 +2915,7 @@ Configure host, credentials, exchange, queue arguments, QoS defaults, and custom
 | Option | Default | Effect |
 | --- | --- | --- |
 | `PublishConfirms` | `true` | Publish waits for the broker acknowledgement; a negative acknowledgement or an unroutable Queue-lane return fails it |
+| `ChannelPoolSize` | `15` | The most AMQP channels the publish pool holds and hands out at once. A publish rents a channel for its duration, so this caps the publishes in flight on one connection: further publishes wait for a returned channel. Raise it for a high-volume publisher waiting on confirms; must be greater than 0 |
 | `AutoProvision` | `true` | `false` declares every exchange and shared queue passively (a missing one fails with `NOT_FOUND`) and creates no binding, for topology managed outside the application. An every-instance consumer's exclusive queue and the request/reply queue are per-process and are still declared and bound |
 | `QueueArguments.EnableDeadLettering` | `false` | Each shared queue dead-letters to the direct exchange `{lane exchange}.dlx` (for example `myapp.events.queue.dlx`) with the queue name as routing key, into a durable `{queue}.dlq` queue the transport declares and binds. Malformed envelopes, messages Core poisons on arrival, messages whose `MessageTTL` expires, and messages past `DeliveryLimit` land there instead of being dropped. AMQP's reject carries no reason, so a dead-lettered copy's `x-death` header records `rejected`; Core's reason code stays in its poison row. Nothing in the framework consumes a dead-letter queue: inspect, shovel, or purge it with broker tooling |
 | `QueueArguments.DeliveryLimit` | `null` | Sets `x-delivery-limit`: how many times a quorum queue redelivers a returned message before dropping it, or dead-lettering it with `EnableDeadLettering`. Requires `QueueType = "quorum"`; must be greater than 0. RabbitMQ 4.x quorum queues apply a broker default of 20 when it is unset |
@@ -2949,6 +2950,7 @@ Registers RabbitMQ connection/channel pool, bus/queue transport, consumer client
 - Each publish trims, approximately, the entries older than `StreamMaxAge` (7 days by default) from its stream.
 - A message published to an idle stream is read within a round trip, not at the consumer's next poll: each publish announces its entry on the stream's pub/sub wake channel, and consumers subscribed to it read at once (`WakeConsumersOnPublish`, on by default).
 - Streams consumer startup honors host cancellation through connection, provisioning, and subscription.
+- A consumer group is checked once per process and stream, not on every poll; a stream or group deleted while the host runs is re-created when the server answers `NOGROUP`. A connection or timeout failure while checking a group fails the read and counts toward broker reachability instead of skipping the stream; only an error the server answered with skips that stream.
 - Request/reply over pub/sub on the literal channel `headless.reply.{32 hex}`; replies write no key, and every host that exchanges requests must use the same `ChannelPrefix`. See [Request/reply](#requestreply).
 
 ### Install
