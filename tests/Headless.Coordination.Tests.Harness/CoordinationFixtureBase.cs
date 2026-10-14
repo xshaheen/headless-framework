@@ -27,10 +27,6 @@ public static class CoordinationFixtureExtensions
 
     public static TimeSpan DeadRetentionWindow => TimeSpan.FromMilliseconds(300 * TimeScale);
 
-    // The 5s default margin does not fit these sub-second thresholds; any margin leaving two beats would do, since the
-    // harness disables the heartbeat service and so never arms the self-fence.
-    public static TimeSpan SelfFenceMargin => HeartbeatInterval;
-
     // Time at which a dead node's retained state is fully pruned (DeadThreshold + DeadRetentionWindow).
     public static TimeSpan PruneThreshold => DeadThreshold + DeadRetentionWindow;
 
@@ -140,7 +136,6 @@ public static class CoordinationFixtureExtensions
                 options.SuspicionThreshold = SuspicionThreshold;
                 options.DeadThreshold = DeadThreshold;
                 options.DeadRetentionWindow = DeadRetentionWindow;
-                options.SelfFenceMargin = SelfFenceMargin;
                 options.MembershipLostBehavior = lostBehavior;
                 configure?.Invoke(options);
             });

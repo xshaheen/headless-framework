@@ -154,7 +154,7 @@ Applications normally use a provider package and call `AddHeadlessCoordination(s
 
 Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadThreshold` must be at least three heartbeat intervals (a single missed or slow beat must not kill the node), and `DeadRetentionWindow` must be at least two heartbeat intervals.
 
-`SelfFenceMargin` (default 5 seconds) is how long before `DeadThreshold` the node fences itself. It must be zero or greater, and `DeadThreshold - SelfFenceMargin` must be at least twice `HeartbeatInterval`; startup validation fails otherwise. A host with a short `DeadThreshold` (under 5 seconds plus two heartbeat intervals, as in many test fixtures) must set a smaller margin:
+`SelfFenceMargin` is how long before `DeadThreshold` the node fences itself. Leave it `null` (the default) and the node uses the smaller of 5 seconds and one sixth of `DeadThreshold`: 5 seconds with the default 30-second threshold, 200 milliseconds with a 1.2-second one. That derived value always passes validation, so a short-threshold profile needs no margin of its own. An explicit margin must be zero or greater, and `DeadThreshold - SelfFenceMargin` must be at least twice `HeartbeatInterval`; startup validation fails otherwise. Set it only to widen the margin for a store with slow or skewed writes, or to `TimeSpan.Zero` to fence exactly at `DeadThreshold`:
 
 ```csharp
 services.AddHeadlessCoordination(setup =>
@@ -162,10 +162,10 @@ services.AddHeadlessCoordination(setup =>
     setup.UsePostgreSql(connectionString);
     setup.Configure(options =>
     {
-        options.HeartbeatInterval = TimeSpan.FromMilliseconds(200);
-        options.SuspicionThreshold = TimeSpan.FromMilliseconds(600);
-        options.DeadThreshold = TimeSpan.FromMilliseconds(1200);
-        options.SelfFenceMargin = TimeSpan.FromMilliseconds(200);
+        options.HeartbeatInterval = TimeSpan.FromSeconds(2);
+        options.SuspicionThreshold = TimeSpan.FromSeconds(6);
+        options.DeadThreshold = TimeSpan.FromSeconds(12);
+        options.SelfFenceMargin = TimeSpan.FromSeconds(3); // derived default would be 2 seconds
     });
 });
 ```

@@ -69,11 +69,32 @@ public sealed class CoordinationOptionsValidatorTests : TestBase
     }
 
     [Theory]
+    // 1.2s threshold on 200ms beats: a fixed 5s margin would leave a negative window.
+    [InlineData(200, 1200)]
+    // The tightest valid triangle: DeadThreshold exactly three beats.
+    [InlineData(1000, 3000)]
+    public void should_accept_a_short_dead_threshold_when_the_margin_is_left_to_its_derived_default(
+        int heartbeatMilliseconds,
+        int deadMilliseconds
+    )
+    {
+        var options = new CoordinationOptions
+        {
+            HeartbeatInterval = TimeSpan.FromMilliseconds(heartbeatMilliseconds),
+            SuspicionThreshold = TimeSpan.FromMilliseconds(heartbeatMilliseconds * 2),
+            DeadThreshold = TimeSpan.FromMilliseconds(deadMilliseconds),
+            DeadRetentionWindow = TimeSpan.FromMilliseconds(deadMilliseconds),
+        };
+
+        _sut.Validate(options).IsValid.Should().BeTrue();
+    }
+
+    [Theory]
     // Negative margin.
     [InlineData(-1, 1000, 3000)]
     // DeadThreshold 30s minus a 21s margin leaves 9s, under two 5s beats.
     [InlineData(21_000, 5000, 30_000)]
-    // A 1.2s DeadThreshold cannot carry the 5s default margin.
+    // A 1.2s DeadThreshold cannot carry an explicit 5s margin.
     [InlineData(5000, 200, 1200)]
     public void should_reject_a_self_fence_margin_that_leaves_less_than_two_beats(
         int marginMilliseconds,

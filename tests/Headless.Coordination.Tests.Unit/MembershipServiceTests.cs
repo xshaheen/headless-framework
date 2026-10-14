@@ -244,6 +244,47 @@ public sealed class MembershipServiceTests : TestBase
         sut.LocalMembershipLostToken.IsCancellationRequested.Should().BeTrue();
     }
 
+    [Theory]
+    // A sixth of DeadThreshold under 30s: 1.2s fences at 1s, 12s at 10s.
+    [InlineData(200, 1200, 1000)]
+    [InlineData(2000, 12_000, 10_000)]
+    // The default 30s threshold and anything longer cap the margin at 5s.
+    [InlineData(5000, 30_000, 25_000)]
+    [InlineData(10_000, 60_000, 55_000)]
+    public async Task should_derive_the_margin_from_dead_threshold_when_none_is_configured(
+        int heartbeatMilliseconds,
+        int deadMilliseconds,
+        int fenceMilliseconds
+    )
+    {
+        // given: no SelfFenceMargin, so a short threshold no longer needs a hand-picked margin to start
+        var timeProvider = new FakeTimeProvider();
+        var options = new CoordinationOptions
+        {
+            HeartbeatInterval = TimeSpan.FromMilliseconds(heartbeatMilliseconds),
+            SuspicionThreshold = TimeSpan.FromMilliseconds(heartbeatMilliseconds * 2),
+            DeadThreshold = TimeSpan.FromMilliseconds(deadMilliseconds),
+            MembershipLostBehavior = MembershipLostBehavior.StopMembershipOnly,
+        };
+        var store = new FakeMembershipStore();
+        using var sut = _CreateService(store, options, timeProvider: timeProvider);
+        sut.EnableSelfFence();
+        await sut.RegisterAsync(AbortToken);
+
+        // when: one tick short of the derived fence
+        timeProvider.Advance(TimeSpan.FromMilliseconds(fenceMilliseconds) - TimeSpan.FromTicks(1));
+
+        // then
+        sut.Identity.Should().NotBeNull();
+
+        // when: the derived deadline passes
+        timeProvider.Advance(TimeSpan.FromTicks(1));
+
+        // then
+        sut.Identity.Should().BeNull();
+        sut.LocalMembershipLostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
     [Fact]
     public async Task should_fire_the_fence_timer_at_the_margin_when_every_beat_fails_fast()
     {

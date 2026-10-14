@@ -15,6 +15,8 @@ internal sealed class MembershipService(
     ILogger<MembershipService> logger
 ) : INodeMembership, IDisposable
 {
+    private static readonly TimeSpan _MaxDefaultSelfFenceMargin = TimeSpan.FromSeconds(5);
+
     private readonly CancellationTokenSource _localMembershipLost = new();
     private readonly TaskCompletionSource _registered = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Lock _gate = new();
@@ -38,7 +40,24 @@ internal sealed class MembershipService(
     /// write or its last accepted beat started, which is <see cref="CoordinationOptions.SelfFenceMargin"/> before any
     /// peer can classify it dead.
     /// </summary>
-    internal TimeSpan FenceBudget => options.DeadThreshold - options.SelfFenceMargin;
+    internal TimeSpan FenceBudget => options.DeadThreshold - ResolveSelfFenceMargin(options);
+
+    /// <summary>
+    /// The margin the fence applies: the configured value, else the smaller of 5 seconds and a sixth of
+    /// <see cref="CoordinationOptions.DeadThreshold"/>. A sixth leaves five sixths of the threshold, which the
+    /// DeadThreshold &gt;= 3 x HeartbeatInterval rule already makes at least 2.5 beats, so the default never violates
+    /// the two-beat rule a fixed 5 seconds breaks on any threshold under 5 seconds plus two beats.
+    /// </summary>
+    internal static TimeSpan ResolveSelfFenceMargin(CoordinationOptions options)
+    {
+        if (options.SelfFenceMargin is { } configured)
+        {
+            return configured;
+        }
+
+        var fraction = TimeSpan.FromTicks(options.DeadThreshold.Ticks / 6);
+        return fraction < _MaxDefaultSelfFenceMargin ? fraction : _MaxDefaultSelfFenceMargin;
+    }
 
     public ValueTask<NodeIdentity> RegisterAsync(CancellationToken cancellationToken = default)
     {

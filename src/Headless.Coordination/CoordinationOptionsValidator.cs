@@ -31,10 +31,14 @@ internal sealed partial class CoordinationOptionsValidator : AbstractValidator<C
             );
 
         // The self-fence fires SelfFenceMargin before DeadThreshold; the window left must still span two beat intervals,
-        // so a renewing node always gets at least one more beat in before it fences itself.
+        // so a renewing node always gets at least one more beat in before it fences itself. Only an explicit margin can
+        // break this: the derived default always leaves the window.
         RuleFor(x => x.SelfFenceMargin).GreaterThanOrEqualTo(TimeSpan.Zero);
         RuleFor(x => x.SelfFenceMargin)
-            .Must((options, value) => options.DeadThreshold - value >= options.HeartbeatInterval * 2)
+            .Must(
+                (options, value) =>
+                    value is not { } margin || options.DeadThreshold - margin >= options.HeartbeatInterval * 2
+            )
             .WithMessage("DeadThreshold minus SelfFenceMargin must be at least twice HeartbeatInterval.");
 
         RuleFor(x => x.DeadRetentionWindow)

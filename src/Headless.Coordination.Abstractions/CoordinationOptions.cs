@@ -78,11 +78,15 @@ public sealed class CoordinationOptions
     /// stamping work before any peer can classify it <see cref="NodeLivenessState.Dead"/> and reclaim that work. A
     /// timer enforces the deadline even when no heartbeat completes, and <see cref="INodeMembership.Identity"/> reads
     /// <see langword="null"/> from that instant. The fence runs only on a host that runs the membership heartbeat.
-    /// Must be zero or greater, and <see cref="DeadThreshold"/> minus this margin must be at least twice
-    /// <see cref="HeartbeatInterval"/>. Defaults to 5 seconds, so a host with a <see cref="DeadThreshold"/> shorter
-    /// than 5 seconds plus twice <see cref="HeartbeatInterval"/> must set a smaller margin.
     /// </summary>
-    public TimeSpan SelfFenceMargin { get; set; } = TimeSpan.FromSeconds(5);
+    /// <remarks>
+    /// Defaults to <see langword="null"/>, which means the smaller of 5 seconds and one sixth of
+    /// <see cref="DeadThreshold"/> (5 seconds with the default 30-second threshold, 200 milliseconds with a
+    /// 1.2-second one). That default always leaves the two heartbeat intervals the validation below requires, so a
+    /// short <see cref="DeadThreshold"/> needs no explicit margin. An explicit value must be zero or greater, and
+    /// <see cref="DeadThreshold"/> minus it must be at least twice <see cref="HeartbeatInterval"/>.
+    /// </remarks>
+    public TimeSpan? SelfFenceMargin { get; set; }
 
     /// <summary>
     /// Gets or sets the minimum duration dead node records are retained in the backing store before becoming

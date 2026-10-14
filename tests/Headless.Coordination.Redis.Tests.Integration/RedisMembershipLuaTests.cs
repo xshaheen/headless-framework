@@ -413,7 +413,6 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
                 options.SuspicionThreshold = CoordinationFixtureExtensions.SuspicionThreshold;
                 options.DeadThreshold = CoordinationFixtureExtensions.DeadThreshold;
                 options.DeadRetentionWindow = CoordinationFixtureExtensions.DeadRetentionWindow;
-                options.SelfFenceMargin = CoordinationFixtureExtensions.SelfFenceMargin;
                 options.MembershipLostBehavior = MembershipLostBehavior.StopMembershipOnly;
             });
         });

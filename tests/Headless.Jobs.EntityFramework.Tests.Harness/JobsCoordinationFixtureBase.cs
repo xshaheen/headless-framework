@@ -301,9 +301,6 @@ public static partial class JobsCoordinationFixtureExtensions
                 options.SuspicionThreshold = suspicion;
                 options.DeadThreshold = dead;
                 options.DeadRetentionWindow = deadRetention;
-                // One beat of margin: the 5s default does not fit the 1.2s profile, and the fence must still leave
-                // the second-scale profile beats to renew on.
-                options.SelfFenceMargin = heartbeat;
                 options.MembershipLostBehavior = lostBehavior;
             });
         });
@@ -460,7 +457,6 @@ public static partial class JobsCoordinationFixtureExtensions
                 options.SuspicionThreshold = SuspicionThreshold;
                 options.DeadThreshold = DeadThreshold;
                 options.DeadRetentionWindow = DeadRetentionWindow;
-                options.SelfFenceMargin = HeartbeatInterval;
             });
         });
 
