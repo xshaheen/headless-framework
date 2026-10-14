@@ -21,13 +21,18 @@ public class RetryEngineBenchmarks
     );
 
     private readonly MessagingConsumeRetryPipeline _pipeline = new(TimeProvider.System);
+
     private readonly Func<int, Exception, TimeSpan, CancellationToken, Task<bool>> _onRetry = static (_, _, _, _) =>
         Task.FromResult(true);
+
     private readonly Func<int, Exception, CancellationToken, Task> _onNonRetryable = static (_, _, _) =>
         Task.CompletedTask;
+
     private readonly Func<Exception, bool> _isRetryable = static _ => true;
+
     private readonly Func<int, CancellationToken, Task<MessagingRetryAttempt>> _succeedImmediately = static (_, _) =>
         _Succeeded;
+
     private readonly Func<int, CancellationToken, Task<MessagingRetryAttempt>> _failOnceThenSucceed = static (n, _) =>
         n == 0 ? _Failed : _Succeeded;
 

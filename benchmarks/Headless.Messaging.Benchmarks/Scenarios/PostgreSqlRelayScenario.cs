@@ -7,6 +7,8 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
+#pragma warning disable CA1303, MA0076 // Console report of a standalone scenario: not localized, and the invariant-culture numbers are only read by a person.
+
 namespace Headless.Messaging.Benchmarks.Scenarios;
 
 /// <summary>

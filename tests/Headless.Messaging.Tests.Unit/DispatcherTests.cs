@@ -745,7 +745,7 @@ public sealed class DispatcherTests : TestBase
                 entered.TrySetResult();
                 return release.Task;
             });
-        var dispatcher = new Dispatcher(
+        await using var dispatcher = new Dispatcher(
             _logger,
             sender,
             Options.Create(
