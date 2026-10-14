@@ -48,7 +48,7 @@ internal sealed class ValidationRequestPreProcessor<TMessage, TResponse>(
 
         if (validatorList.Count == 1)
         {
-            // Fast path for the dominant single-validator case - avoids Select/Task.WhenAll overhead.
+            // Fast path for the dominant single-validator case - avoids allocating the results array.
             var result = await validatorList[0]
                 .ValidateAsync(new ValidationContext<TMessage>(message), cancellationToken)
                 .ConfigureAwait(false);
@@ -62,12 +62,17 @@ internal sealed class ValidationRequestPreProcessor<TMessage, TResponse>(
         }
         else
         {
-            validationResults = await Task.WhenAll(
-                    validatorList.Select(validator =>
-                        validator.ValidateAsync(new ValidationContext<TMessage>(message), cancellationToken)
-                    )
-                )
-                .WithAggregatedExceptions();
+            // Sequential, one context per validator: validators commonly share scoped services such as a DbContext
+            // that are not safe for concurrent use, and a shared context would hand every validator's failures to
+            // every result.
+            validationResults = new ValidationResult[validatorList.Count];
+
+            for (var i = 0; i < validatorList.Count; i++)
+            {
+                validationResults[i] = await validatorList[i]
+                    .ValidateAsync(new ValidationContext<TMessage>(message), cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             // Early exit if all valid - avoids the failure LINQ chain on the happy path.
             var allValid = true;

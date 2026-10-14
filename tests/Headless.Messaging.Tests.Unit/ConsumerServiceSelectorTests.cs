@@ -201,6 +201,42 @@ public sealed class ConsumerServiceSelectorTests
     }
 
     [Fact]
+    public void should_match_wildcards_per_candidate_list_when_lists_share_a_subscription_and_lane()
+    {
+        // given: callers also group candidates by consumer identity, so two different lists can start with
+        // descriptors of the same subscription and lane
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(messaging => messaging.Options.Version = "v1");
+        using var provider = services.BuildServiceProvider();
+        var selector = provider.GetRequiredService<IConsumerServiceSelector>();
+
+        var orders = _CreateWildcardDescriptor("orders.*", "shared-subscription");
+        var invoices = _CreateWildcardDescriptor("invoices.*", "shared-subscription");
+
+        // when
+        var ordersMatch = selector.SelectBestCandidate("orders.placed", [orders]);
+        var invoicesMatch = selector.SelectBestCandidate("invoices.paid", [invoices]);
+
+        // then
+        ordersMatch.Should().BeSameAs(orders);
+        invoicesMatch.Should().BeSameAs(invoices);
+    }
+
+    private static ConsumerExecutorDescriptor _CreateWildcardDescriptor(string messageName, string subscriptionName)
+    {
+        return new ConsumerExecutorDescriptor
+        {
+            ConsumerType = typeof(SelectorTestConsumer),
+            MethodName = nameof(IConsume<>.ConsumeAsync),
+            MessageType = typeof(SelectorTestMessage),
+            MessageName = messageName,
+            SubscriptionName = subscriptionName,
+            Lane = MessageLane.Bus,
+        };
+    }
+
+    [Fact]
     public void should_handle_multiple_consumers_for_same_topic()
     {
         // given

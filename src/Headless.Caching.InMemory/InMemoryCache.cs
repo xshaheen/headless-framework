@@ -2437,16 +2437,21 @@ public sealed class InMemoryCache
 
         if (addOnly)
         {
+            // AddOrUpdate retries by switching between the add and update factories when another writer wins the
+            // race, so each factory must reset every captured outcome: a stale value from the abandoned attempt
+            // would otherwise leak into the size accounting or the returned flag.
             _memory.AddOrUpdate(
                 key,
                 _ =>
                 {
                     sizeDelta = entry.Size;
                     inserted = true;
+                    wasUpdated = true;
                     return entry;
                 },
                 (_, existingEntry) =>
                 {
+                    sizeDelta = 0;
                     wasUpdated = false;
                     inserted = false;
 
