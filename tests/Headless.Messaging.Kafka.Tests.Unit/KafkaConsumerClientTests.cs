@@ -368,6 +368,55 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_block_in_consume_on_a_dedicated_thread_instead_of_a_thread_pool_thread()
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeOnPoolThread = new ConcurrentQueue<bool>();
+        var polled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                consumeOnPoolThread.Enqueue(Thread.CurrentThread.IsThreadPoolThread);
+                polled.TrySetResult();
+                Thread.Sleep(10);
+
+                return null!;
+            });
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        client.OnLogCallback = _ => { };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        // when
+        var listeningTask = Task.Run(
+            () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
+            AbortToken
+        );
+
+        try
+        {
+            await polled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            await listeningTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        }
+
+        // then
+        consumeOnPoolThread.Should().NotBeEmpty().And.OnlyContain(onPool => !onPool);
+    }
+
+    [Fact]
     public async Task should_not_commit_past_inflight_lower_offsets_when_commit_async_processing_concurrently()
     {
         // given
