@@ -52,6 +52,28 @@ public sealed class RabbitMqMessagingOptionsValidatorTests : TestBase
     }
 
     [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void should_fail_validation_when_channel_pool_size_is_not_positive(int size)
+    {
+        // given
+        var options = new RabbitMqMessagingOptions
+        {
+            HostName = "localhost",
+            UserName = "myapp_user",
+            Password = "secure_password",
+            ChannelPoolSize = size,
+        };
+
+        // when
+        var result = _validator.Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.PropertyName == nameof(RabbitMqMessagingOptions.ChannelPoolSize));
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]

@@ -31,6 +31,9 @@ public sealed class RabbitMqMessagingOptions
     /// <summary>The AMQP exchange type used when declaring the topic exchange (<c>"topic"</c>).</summary>
     public const string ExchangeType = "topic";
 
+    /// <summary>The default value of <see cref="ChannelPoolSize"/>.</summary>
+    public const int DefaultChannelPoolSize = 15;
+
     /// <summary>
     /// The broker hostname to connect to. For cluster connectivity, supply a comma-separated list
     /// of hostnames (for example <c>"192.168.1.111,192.168.1.112"</c>). Defaults to <c>"localhost"</c>.
@@ -81,6 +84,13 @@ public sealed class RabbitMqMessagingOptions
     /// request/reply queue are still declared and bound.
     /// </remarks>
     public bool AutoProvision { get; set; } = true;
+
+    /// <summary>
+    /// The most AMQP channels the publish pool holds and hands out at once. Defaults to <c>15</c>. A publish rents a
+    /// channel for its duration, so this also caps the publishes in flight on one connection: a publisher that waits
+    /// on broker confirms under load raises it, a host that wants fewer channels on the broker lowers it.
+    /// </summary>
+    public int ChannelPoolSize { get; set; } = DefaultChannelPoolSize;
 
     /// <summary>
     /// The TCP port to connect on. Use <c>-1</c> (default) to let the client choose the default
@@ -246,6 +256,7 @@ internal sealed class RabbitMqMessagingOptionsValidator : AbstractValidator<Rabb
             .Must(p => p is -1 or (>= 1 and <= 65535))
             .WithMessage("Port must be -1 (default) or between 1 and 65535");
 
+        RuleFor(x => x.ChannelPoolSize).GreaterThan(0).WithMessage("ChannelPoolSize must be greater than 0");
         RuleFor(x => x.VirtualHost).NotEmpty().WithMessage("VirtualHost is required");
         RuleFor(x => x.ExchangeName).NotEmpty().WithMessage("ExchangeName is required");
 
