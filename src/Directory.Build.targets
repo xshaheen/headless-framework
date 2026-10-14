@@ -6,4 +6,15 @@
       <MinVerTagPrefix />
     </PropertyGroup>
   </Target>
+  <!-- Every package ships from one tag at one version, and providers compile against their family root's internals
+       (InternalsVisibleTo). NuGet packs a ProjectReference as an open ">= x.y.z" range, which lets a consumer resolve
+       a provider against a newer root whose internals moved and fail at run time with MissingMethodException. Pinning
+       each sibling to the exact "[x.y.z]" range makes NuGet reject that mix at restore instead. -->
+  <Target Name="PinSiblingPackageVersions" AfterTargets="_GetProjectReferenceVersions">
+    <ItemGroup>
+      <_ProjectReferencesWithVersions Condition="!$([System.String]::Copy('%(ProjectVersion)').StartsWith('['))">
+        <ProjectVersion>[%(ProjectVersion)]</ProjectVersion>
+      </_ProjectReferencesWithVersions>
+    </ItemGroup>
+  </Target>
 </Project>
