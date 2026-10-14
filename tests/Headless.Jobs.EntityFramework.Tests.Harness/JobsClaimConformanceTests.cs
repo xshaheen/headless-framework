@@ -1603,7 +1603,9 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("page-a");
+        // Seeding and claiming a full page can stall a heartbeat past the fixture's second-scale dead threshold on a
+        // loaded run; the dead-owner reclaim would then hand this live node's own claims back to Idle.
+        using var host = fixture.BuildHost("page-a", steadyMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
