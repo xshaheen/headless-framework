@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using BenchmarkDotNet.Attributes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,7 +32,9 @@ public class NavigationTrackingBenchmarks
 
         for (var i = 0; i < _RowCount; i++)
         {
-            db.Parents.Add(new Parent { Id = Guid.NewGuid(), Name = FormattableString.Invariant($"parent-{i}") });
+            db.Parents.Add(
+                new Parent { Id = Guid.NewGuid(), Name = string.Create(CultureInfo.InvariantCulture, $"parent-{i}") }
+            );
         }
 
         db.ChangeTracker.AutoDetectChangesEnabled = false;

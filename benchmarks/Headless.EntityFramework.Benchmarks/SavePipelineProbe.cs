@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -24,7 +25,7 @@ internal static class SavePipelineProbe
                     new AuditedOrder
                     {
                         Id = Guid.NewGuid(),
-                        CustomerName = FormattableString.Invariant($"c-{i}"),
+                        CustomerName = string.Create(CultureInfo.InvariantCulture, $"c-{i}"),
                         Amount = i,
                     }
                 );

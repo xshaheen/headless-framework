@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using BenchmarkDotNet.Attributes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,7 +36,7 @@ public class SavePipelineBenchmarks
                 new AuditedOrder
                 {
                     Id = Guid.NewGuid(),
-                    CustomerName = FormattableString.Invariant($"customer-{i}"),
+                    CustomerName = string.Create(CultureInfo.InvariantCulture, $"customer-{i}"),
                     Amount = i,
                 }
             );
