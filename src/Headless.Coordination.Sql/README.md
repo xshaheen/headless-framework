@@ -15,4 +15,4 @@ dotnet add package Headless.Coordination.Sql
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Coordination guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/coordination.md#headlesscoordinationcoredatabase)
+- [Coordination guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/coordination.md#headlesscoordinationsql)

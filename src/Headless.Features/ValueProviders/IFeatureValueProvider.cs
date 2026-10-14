@@ -83,4 +83,20 @@ public interface IFeatureValueReadProvider
         string? providerKey,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>Returns the stored values for all <paramref name="features"/>.</summary>
+    /// <remarks>
+    /// Must agree with <see cref="GetOrDefaultAsync"/>: a feature resolvable through the single-value read must
+    /// resolve identically through the batch, and vice versa. <c>FeatureManager</c> routes every multi-name read
+    /// through this member, so a stubbed implementation silently drops those features from bulk results.
+    /// </remarks>
+    /// <param name="features">The feature definitions to look up.</param>
+    /// <param name="providerKey">An optional key that qualifies the scope (e.g. tenant or edition identifier).</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>A list of <see cref="FeatureValue"/> entries; a <see langword="null"/> <c>Value</c> indicates no stored entry.</returns>
+    Task<List<FeatureValue>> GetAllAsync(
+        FeatureDefinition[] features,
+        string? providerKey = null,
+        CancellationToken cancellationToken = default
+    );
 }

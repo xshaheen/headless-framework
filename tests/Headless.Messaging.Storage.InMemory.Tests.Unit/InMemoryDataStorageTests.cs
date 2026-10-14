@@ -451,7 +451,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             published.Owner
         );
 
-        await storage.ChangePublishStateToDelayedAsync([published.StorageId], AbortToken);
+        await storage.ChangePublishStateToDelayedAsync([published], AbortToken);
         (await storage.ClaimDelayedMessagesAsync(AbortToken)).Should().BeEmpty();
         (published.StatusName, published.ExpiresAt, published.NextRetryAt, published.LockedUntil, published.Owner)
             .Should()
@@ -1408,6 +1408,18 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     public override Task should_release_only_exact_published_retry_lease_generation()
     {
         return base.should_release_only_exact_published_retry_lease_generation();
+    }
+
+    [Fact]
+    public override Task should_keep_another_owners_lease_when_flushing_an_unleased_copy_to_delayed()
+    {
+        return base.should_keep_another_owners_lease_when_flushing_an_unleased_copy_to_delayed();
+    }
+
+    [Fact]
+    public override Task should_release_own_lease_when_flushing_a_claimed_row_to_delayed()
+    {
+        return base.should_release_own_lease_when_flushing_a_claimed_row_to_delayed();
     }
 
     [Fact]

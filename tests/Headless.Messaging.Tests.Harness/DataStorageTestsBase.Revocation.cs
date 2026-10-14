@@ -19,7 +19,7 @@ public abstract partial class DataStorageTestsBase
         (await storage.LeasePublishAndReserveAttemptAsync(message, TimeSpan.FromMinutes(1), 0, AbortToken))
             .Should()
             .BeFalse();
-        await storage.ChangePublishStateToDelayedAsync([message.StorageId], AbortToken);
+        await storage.ChangePublishStateToDelayedAsync([message], AbortToken);
         (await storage.GetMonitoringApi().GetPublishedMessageAsync(message.StorageId, AbortToken)).Should().BeNull();
         (await revocation.RevokeAsync(message.StorageId, AbortToken)).Should().Be(MessageRevocationResult.NotFound);
     }

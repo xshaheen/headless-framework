@@ -142,7 +142,9 @@ internal static class RedisMessage
             return RedisValue.Null;
         }
 
-        return JsonSerializer.Serialize(obj, _JsonOptions);
+        // UTF-8 bytes are what the stream field stores, so serializing straight to them skips the UTF-16
+        // string and its transcode back to UTF-8 on write.
+        return JsonSerializer.SerializeToUtf8Bytes(obj, _JsonOptions);
     }
 }
 

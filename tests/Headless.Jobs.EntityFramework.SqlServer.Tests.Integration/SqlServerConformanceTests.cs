@@ -151,6 +151,12 @@ public abstract class SqlServerConformanceTestsBase<TFixture>(TFixture fixture)
     }
 
     [Fact]
+    public override Task time_job_execution_time_survives_read_then_update_under_a_non_utc_scheduler_zone()
+    {
+        return base.time_job_execution_time_survives_read_then_update_under_a_non_utc_scheduler_zone();
+    }
+
+    [Fact]
     public override Task unified_context_inprogress_stamp_requires_a_queued_row()
     {
         return base.unified_context_inprogress_stamp_requires_a_queued_row();
@@ -238,6 +244,10 @@ public abstract class SqlServerClaimConformanceTestsBase<TFixture>(TFixture fixt
         base.direct_claim_of_a_full_candidate_page_claims_every_job_once();
 
     [Fact]
+    public override Task peek_returns_at_most_one_candidate_page_in_store_order() =>
+        base.peek_returns_at_most_one_candidate_page_in_store_order();
+
+    [Fact]
     public override Task direct_claim_does_not_match_a_stamp_from_another_candidate() =>
         base.direct_claim_does_not_match_a_stamp_from_another_candidate();
 
@@ -289,6 +299,22 @@ public abstract class SqlServerClaimConformanceTestsBase<TFixture>(TFixture fixt
     public override Task direct_cron_claim_applies_the_full_acquire_predicate_matrix()
     {
         return base.direct_cron_claim_applies_the_full_acquire_predicate_matrix();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task direct_time_job_claim_applies_the_full_acquire_predicate_matrix(bool useNativeClaims)
+    {
+        return base.direct_time_job_claim_applies_the_full_acquire_predicate_matrix(useNativeClaims);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task cas_fallback_does_not_claim_a_root_rescheduled_after_the_peek(bool lowerStamp)
+    {
+        return base.cas_fallback_does_not_claim_a_root_rescheduled_after_the_peek(lowerStamp);
     }
 
     [Fact]

@@ -1,0 +1,114 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+
+namespace Headless.Idempotency;
+
+/// <summary>
+/// Service-collection extensions that register the Stripe-style HTTP idempotency middleware and
+/// its supporting options/validators. Pair with <c>UseHeadlessHttpIdempotency()</c> on the application
+/// pipeline.
+/// </summary>
+/// <remarks>
+/// The middleware admits requests through the durable <see cref="IIdempotentOperations"/> store, so the host must
+/// also call <c>AddHeadlessIdempotency(...)</c> with a provider (in-memory for a single instance, or relational). The
+/// host fails at startup when the store is missing.
+/// </remarks>
+[PublicAPI]
+public static class SetupHttpIdempotency
+{
+    extension(IServiceCollection services)
+    {
+        /// <summary>
+        /// Registers the idempotency middleware and binds <see cref="HttpIdempotencyOptions"/> from
+        /// the supplied <see cref="IConfiguration"/> section. Options are validated via
+        /// FluentValidation with <c>ValidateOnStart()</c>.
+        /// </summary>
+        /// <param name="configuration">
+        /// The configuration section to bind to <see cref="HttpIdempotencyOptions"/>.
+        /// </param>
+        /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
+        /// <remarks>Call <c>UseHeadlessHttpIdempotency()</c> on the application builder to activate the middleware.</remarks>
+        /// <exception cref="ArgumentNullException">
+        /// <paramref name="configuration"/> is <see langword="null"/>.
+        /// </exception>
+        /// <exception cref="OptionsValidationException">
+        /// Thrown at host startup (during <c>ValidateOnStart()</c>) when
+        /// <see cref="HttpIdempotencyOptions"/> fails FluentValidation rules.
+        /// </exception>
+        public IServiceCollection AddHeadlessHttpIdempotency(IConfiguration configuration)
+        {
+            services.Configure<HttpIdempotencyOptions, HttpIdempotencyOptionsValidator>(configuration);
+            return services._AddIdempotencyCore();
+        }
+
+        /// <summary>
+        /// Registers the idempotency middleware and configures <see cref="HttpIdempotencyOptions"/>
+        /// via the supplied delegate. Options are validated via FluentValidation with
+        /// <c>ValidateOnStart()</c>.
+        /// </summary>
+        /// <param name="setupAction">Delegate that configures <see cref="HttpIdempotencyOptions"/>.</param>
+        /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
+        /// <remarks>Call <c>UseHeadlessHttpIdempotency()</c> on the application builder to activate the middleware.</remarks>
+        /// <exception cref="ArgumentNullException">
+        /// <paramref name="setupAction"/> is <see langword="null"/>.
+        /// </exception>
+        /// <exception cref="OptionsValidationException">
+        /// Thrown at host startup (during <c>ValidateOnStart()</c>) when
+        /// <see cref="HttpIdempotencyOptions"/> fails FluentValidation rules.
+        /// </exception>
+        public IServiceCollection AddHeadlessHttpIdempotency(Action<HttpIdempotencyOptions> setupAction)
+        {
+            services.Configure<HttpIdempotencyOptions, HttpIdempotencyOptionsValidator>(setupAction);
+            return services._AddIdempotencyCore();
+        }
+
+        /// <summary>
+        /// Registers the idempotency middleware and configures <see cref="HttpIdempotencyOptions"/>
+        /// via the supplied delegate, which receives the resolved <see cref="IServiceProvider"/>
+        /// for dependency lookups. Options are validated via FluentValidation with
+        /// <c>ValidateOnStart()</c>.
+        /// </summary>
+        /// <param name="setupAction">
+        /// Delegate that configures <see cref="HttpIdempotencyOptions"/> with access to the
+        /// <see cref="IServiceProvider"/> for resolving additional services.
+        /// </param>
+        /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
+        /// <remarks>Call <c>UseHeadlessHttpIdempotency()</c> on the application builder to activate the middleware.</remarks>
+        /// <exception cref="ArgumentNullException">
+        /// <paramref name="setupAction"/> is <see langword="null"/>.
+        /// </exception>
+        /// <exception cref="OptionsValidationException">
+        /// Thrown at host startup (during <c>ValidateOnStart()</c>) when
+        /// <see cref="HttpIdempotencyOptions"/> fails FluentValidation rules.
+        /// </exception>
+        public IServiceCollection AddHeadlessHttpIdempotency(
+            Action<HttpIdempotencyOptions, IServiceProvider> setupAction
+        )
+        {
+            services.Configure<HttpIdempotencyOptions, HttpIdempotencyOptionsValidator>(setupAction);
+            return services._AddIdempotencyCore();
+        }
+
+        private IServiceCollection _AddIdempotencyCore()
+        {
+            services.TryAddScoped<IdempotencyMiddleware>();
+            services.TryAddScoped<IHttpIdempotencyLookup, HttpIdempotencyLookup>();
+            services.TryAddSingleton(TimeProvider.System);
+
+            // The middleware admits, completes, and releases through the durable store, and this package references
+            // only its abstractions: the implementation ships in a provider package the host installs. Without it
+            // every idempotent request would fail.
+            services.RequireRegisteredService<IIdempotentOperations>(
+                requiredBy: "Headless API idempotency",
+                remedy: "Call AddHeadlessIdempotency(...) with a provider (UseCache / UseInMemory / UsePostgreSql / "
+                    + "UseSqlServer)."
+            );
+
+            return services;
+        }
+    }
+}

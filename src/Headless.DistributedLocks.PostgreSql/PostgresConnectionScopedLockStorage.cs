@@ -31,11 +31,6 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     private readonly PostgresAdvisoryLock _exclusiveLock;
     private readonly PostgresAdvisoryLock _sharedLock;
 
-    // The engine wrapper only varies by resource name (pool + connection string are storage-level
-    // constants), so it is cached per resolved name and reused across acquisitions.
-    private readonly ConcurrentDictionary<string, OptimisticConnectionMultiplexingDbDistributedLock> _enginesByName =
-        new(StringComparer.Ordinal);
-
     // Set at the top of DisposeAsync so an acquire racing teardown does not leave a lock that the
     // teardown loop already missed (it iterates a snapshot of _heldByLockId).
     private volatile bool _disposed;
@@ -99,16 +94,13 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         var name = _options.KeyPrefix + resource;
         var strategy = isShared ? _sharedLock : _exclusiveLock;
 
-        var engine = _enginesByName.GetOrAdd(
+        // Built per acquire: the engine is a thin readonly wrapper whose shared state lives in the pool, and caching it
+        // per resource name grew without bound across a per-entity resource space.
+        var engine = new OptimisticConnectionMultiplexingDbDistributedLock(
             name,
-            static (key, state) =>
-                new OptimisticConnectionMultiplexingDbDistributedLock(
-                    key,
-                    state._connectionString,
-                    state._multiplexedConnectionLockPool,
-                    state._keepaliveCadence
-                ),
-            this
+            _connectionString,
+            _multiplexedConnectionLockPool,
+            _keepaliveCadence
         );
 
         // A zero timeout maps to a single non-blocking try (pg_try_advisory_lock): the provider owns the wait/retry

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.EntityFramework;
 using Headless.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -46,7 +47,11 @@ public class TimeJobConfigurations<TTimeJob>(string schema, StorageNamingStyle s
 
         builder.Property(x => x.OwnerId).IsRequired(false);
 
-        builder.Property(x => x.ExecutionTime).IsRequired(false);
+        // SQL Server materializes datetime2 with DateTimeKind.Unspecified, which the manager reads as scheduler-local
+        // time; a read-then-update would then shift the instant by the scheduler zone's offset.
+        var nullableUtcDateTimeConverter = new NullableNormalizeDateTimeValueConverter();
+        builder.Property(x => x.ExecutionTime).IsRequired(false).HasConversion(nullableUtcDateTimeConverter);
+        builder.Property(x => x.LockedUntil).HasConversion(nullableUtcDateTimeConverter);
 
         builder.Property(x => x.TenantId).IsRequired(false).HasMaxLength(JobsTenancyOptions.TenantIdMaxLength);
         builder.Property(x => x.ProgressMessage).HasMaxLength(JobProgress.MessageMaxLength);

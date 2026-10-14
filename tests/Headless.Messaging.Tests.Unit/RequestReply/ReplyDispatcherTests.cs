@@ -237,6 +237,25 @@ public sealed class ReplyDispatcherTests : TestBase
     }
 
     [Fact]
+    public async Task should_abort_the_call_when_the_listener_stops_while_reading_its_reply()
+    {
+        // given — the listener's token is cancelled while the reply body is being read.
+        using var stopping = new CancellationTokenSource();
+        var dispatcher = new ReplyDispatcher(
+            _pending,
+            new StoppingSerializer(stopping),
+            NullLogger<ReplyDispatcher>.Instance
+        );
+        var call = _Register("request-1", tenantId: null);
+
+        // when
+        await dispatcher.DispatchAsync(_Ok("request-1", """{"Price":1}"""), stopping.Token);
+
+        // then — the reply was fine; the requester stopped, which is how a stopping requester ends a waiting call.
+        await call.Awaiting(x => x.Outcome).Should().ThrowAsync<RequestAbortedException>();
+    }
+
+    [Fact]
     public async Task should_complete_the_caller_continuation_off_the_listener_thread()
     {
         // given: a caller whose continuation blocks until released
@@ -257,6 +276,34 @@ public sealed class ReplyDispatcherTests : TestBase
         continuation.IsCompleted.Should().BeFalse();
         release.Set();
         await continuation;
+    }
+
+    /// <summary>Stops the listener while a reply body is being read, then observes the cancelled token.</summary>
+    private sealed class StoppingSerializer(CancellationTokenSource stopping) : IMessageSerializer
+    {
+        public string Serialize(Message message) => throw new NotSupportedException();
+
+        public ValueTask<TransportMessage> SerializeToTransportMessageAsync(
+            Message message,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public Message Deserialize(string json) => throw new NotSupportedException();
+
+        public async ValueTask<Message> DeserializeAsync(
+            TransportMessage transportMessage,
+            Type? valueType,
+            CancellationToken cancellationToken = default
+        )
+        {
+            await stopping.CancelAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new InvalidOperationException("The listener token was expected to be cancelled.");
+        }
+
+        public object Deserialize(object value, Type valueType) => throw new NotSupportedException();
+
+        public bool IsJsonType(object jsonObject) => false;
     }
 
     private PendingRequest _Register(string requestId, string? tenantId, bool prepared = true)

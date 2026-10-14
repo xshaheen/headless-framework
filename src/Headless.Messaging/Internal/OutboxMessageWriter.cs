@@ -77,7 +77,10 @@ internal sealed class OutboxMessageWriter(
 
             if (decision.PublishAt is not null)
             {
-                (dispatcher as ICommittedDelayedMessageDispatcher)?.EnqueueCommittedDelayedMessage(immediateMessage);
+                // The row is unclaimed Delayed work, so a refusal needs no hand-back: the delayed processor claims it.
+                _ = (dispatcher as ICommittedDelayedMessageDispatcher)?.EnqueueCommittedDelayedMessage(
+                    immediateMessage
+                );
             }
             else
             {

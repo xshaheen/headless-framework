@@ -60,15 +60,45 @@ public sealed class FeatureManager(
         var definitions = await definitionManager.GetFeaturesAsync(cancellationToken).ConfigureAwait(false);
         var providers = valueProviderManager.ValueProviders;
 
-        foreach (var definition in definitions)
+        // Each provider is asked once with the whole pending batch instead of once per definition: every
+        // built-in provider resolves a batch read in one cache round-trip, so the previous per-definition
+        // walk cost one round-trip per feature per provider. Providers are ordered highest priority first,
+        // so the first non-null value wins and lower providers are asked only about the still-unresolved names.
+        var pending = definitions.Where(d => featureNames.Contains(d.Name)).ToList();
+        var processedNames = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var provider in providers)
         {
-            if (!featureNames.Contains(definition.Name) || result.ContainsKey(definition.Name))
+            if (processedNames.Count >= pending.Count)
             {
-                continue;
+                break;
             }
 
-            result[definition.Name] = await _ResolveAsync(definition, providers, cancellationToken)
+            var pendingForProvider = pending.Where(d => !processedNames.Contains(d.Name)).ToArray();
+            var values = await provider
+                .GetAllAsync(pendingForProvider, providerKey: null, cancellationToken)
                 .ConfigureAwait(false);
+
+            foreach (var value in values)
+            {
+                // The first non-null value wins; a later value for an already-resolved name is ignored.
+                if (value.Value is null || !processedNames.Add(value.Name))
+                {
+                    continue;
+                }
+
+                result[value.Name] = new(value.Name, value.Value, new(provider.Name, Key: null));
+            }
+        }
+
+        // Every requested name that no provider resolved still appears, with a null value — the same
+        // shape GetAsync(name) returns for a feature with no value anywhere in the chain.
+        foreach (var definition in pending)
+        {
+            if (!processedNames.Contains(definition.Name))
+            {
+                result[definition.Name] = new(definition.Name, Value: null, Provider: null);
+            }
         }
 
         return result;
@@ -105,23 +135,72 @@ public sealed class FeatureManager(
 
         var featureValues = new Dictionary<string, FeatureValue>(StringComparer.Ordinal);
 
-        foreach (var definition in definitions)
-        {
-            foreach (var provider in providerList)
-            {
-                var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
-                var value = await provider.GetOrDefaultAsync(definition, pk, cancellationToken).ConfigureAwait(false);
+        // One batch read per provider instead of one read per definition per provider; the head of the
+        // chain takes providerKey (SkipWhile guarantees it is the requested provider) and the rest read
+        // the provider's default scope, exactly as the per-definition walk did.
+        var pending = definitions.ToList();
 
-                if (value is not null)
+        foreach (var provider in providerList)
+        {
+            if (pending.Count == 0)
+            {
+                break;
+            }
+
+            var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
+            var values = await provider.GetAllAsync([.. pending], pk, cancellationToken).ConfigureAwait(false);
+            var resolved = _ToResolvedValues(values);
+
+            if (resolved.Count == 0)
+            {
+                continue;
+            }
+
+            var stillPending = new List<FeatureDefinition>(pending.Count);
+
+            foreach (var definition in pending)
+            {
+                if (resolved.TryGetValue(definition.Name, out var value))
                 {
                     featureValues[definition.Name] = new(definition.Name, value, new(provider.Name, pk));
-
-                    break;
                 }
+                else
+                {
+                    stillPending.Add(definition);
+                }
+            }
+
+            pending = stillPending;
+        }
+
+        // Emit in definition order: the previous per-definition loop populated the dictionary that way.
+        var orderedValues = new List<FeatureValue>(featureValues.Count);
+
+        foreach (var definition in definitions)
+        {
+            if (featureValues.TryGetValue(definition.Name, out var featureValue))
+            {
+                orderedValues.Add(featureValue);
             }
         }
 
-        return [.. featureValues.Values];
+        return [.. orderedValues];
+    }
+
+    /// <summary>Indexes the values a provider actually stored; a <see langword="null"/> value means "not set here".</summary>
+    private static Dictionary<string, string> _ToResolvedValues(List<FeatureValue> providerValues)
+    {
+        var resolved = new Dictionary<string, string>(providerValues.Count, StringComparer.Ordinal);
+
+        foreach (var providerValue in providerValues)
+        {
+            if (providerValue.Value is not null)
+            {
+                resolved[providerValue.Name] = providerValue.Value;
+            }
+        }
+
+        return resolved;
     }
 
     /// <inheritdoc/>
@@ -416,27 +495,6 @@ public sealed class FeatureManager(
         }
 
         return new(name, Value: null, Provider: null);
-    }
-
-    private static async Task<FeatureValue> _ResolveAsync(
-        FeatureDefinition definition,
-        IReadOnlyList<IFeatureValueReadProvider> providers,
-        CancellationToken cancellationToken
-    )
-    {
-        foreach (var provider in providers)
-        {
-            var value = await provider
-                .GetOrDefaultAsync(definition, providerKey: null, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (value is not null)
-            {
-                return new(definition.Name, value, new(provider.Name, Key: null));
-            }
-        }
-
-        return new(definition.Name, Value: null, Provider: null);
     }
 }
 

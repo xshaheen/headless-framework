@@ -371,6 +371,25 @@ public sealed class NatsStreamProvisionerTests : TestBase
     }
 
     [Fact]
+    public void should_return_the_same_spec_when_the_same_message_is_resolved_again()
+    {
+        // given
+        var provisioner = _CreateProvisioner(NatsStreamProvisioning.Verify);
+        var first = provisioner.Resolve(MessageLane.Bus, "orders", isSharded: false);
+
+        // when
+        var again = provisioner.Resolve(MessageLane.Bus, "orders", isSharded: false);
+        var sharded = provisioner.Resolve(MessageLane.Bus, "orders", isSharded: true);
+
+        // then - the shard flag is part of the resolution, so the sharded spec carries the shard wildcard
+        again.Should().BeSameAs(first);
+        first.Subjects.Should().Equal("headless.bus.orders");
+        sharded.Should().NotBeSameAs(first);
+        sharded.Subjects.Should().Equal("headless.bus.orders", "headless.bus.orders.>");
+        provisioner.Resolve(MessageLane.Bus, "orders", isSharded: true).Should().BeSameAs(sharded);
+    }
+
+    [Fact]
     public async Task should_create_a_declared_owned_stream_with_its_subjects_limits_retention_and_default_max_age()
     {
         // given

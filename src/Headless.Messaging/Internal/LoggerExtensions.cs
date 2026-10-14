@@ -1041,4 +1041,16 @@ internal static partial class LoggerExtensions
         Message = "Request stored as {StorageId} passed its deadline before an attempt started; it ends without running the consumer or replying."
     )]
     public static partial void RequestExpiredBeforeAttempt(this ILogger logger, Guid storageId);
+
+    [LoggerMessage(
+        EventId = 122,
+        EventName = "ConsumerSucceededButStateWriteFailed",
+        Level = LogLevel.Warning,
+        Message = "Consumer succeeded for message {StorageId} but its Succeeded state could not be written; the handler is not run again here and the row is left for the retry pickup once its lease is released or expires."
+    )]
+    public static partial void ConsumerSucceededButStateWriteFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid storageId
+    );
 }

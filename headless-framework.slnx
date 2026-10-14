@@ -17,14 +17,14 @@
         <Project Path="src\Headless.Api.MinimalApi\Headless.Api.MinimalApi.csproj" />
         <Project Path="src\Headless.Api.Mvc\Headless.Api.Mvc.csproj" />
         <Project Path="src\Headless.Api\Headless.Api.csproj" />
-        <Project Path="src\Headless.Api.Idempotency\Headless.Api.Idempotency.csproj" />
+        <Project Path="src\Headless.Idempotency.ResponseReplay\Headless.Idempotency.ResponseReplay.csproj" />
         <Project Path="src\Headless.Api.Identity\Headless.Api.Identity.csproj" />
         <Project Path="src\Headless.Api.Jwt\Headless.Api.Jwt.csproj" />
         <Project Path="src\Headless.Api.ServiceDefaults\Headless.Api.ServiceDefaults.csproj" />
         <Project Path="src\Headless.Api.UserAgent\Headless.Api.UserAgent.csproj" />
     </Folder>
     <Folder Name="/Api/Tests/">
-        <Project Path="benchmarks/Headless.Api.Idempotency.Benchmarks/Headless.Api.Idempotency.Benchmarks.csproj" />
+        <Project Path="benchmarks/Headless.Idempotency.ResponseReplay.Benchmarks/Headless.Idempotency.ResponseReplay.Benchmarks.csproj" />
         <Project Path="tests/Headless.Api.Abstractions.Tests.Unit/Headless.Api.Abstractions.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Api.MinimalApi.Tests.Unit/Headless.Api.MinimalApi.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Api.Mvc.Tests.Unit/Headless.Api.Mvc.Tests.Unit.csproj" />
@@ -32,8 +32,8 @@
         <Project Path="tests\Headless.DataProtection.Blobs.Tests.Integration\Headless.DataProtection.Blobs.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DataProtection.Blobs.Tests.Unit\Headless.DataProtection.Blobs.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.FluentValidation.Tests.Unit\Headless.Api.FluentValidation.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.Api.Idempotency.Tests.Integration\Headless.Api.Idempotency.Tests.Integration.csproj" />
-        <Project Path="tests\Headless.Api.Idempotency.Tests.Unit\Headless.Api.Idempotency.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Idempotency.ResponseReplay.Tests.Integration\Headless.Idempotency.ResponseReplay.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Idempotency.ResponseReplay.Tests.Unit\Headless.Idempotency.ResponseReplay.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.Logging.Serilog.Tests.Unit\Headless.Api.Logging.Serilog.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.Tests.Integration\Headless.Api.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Api.Tests.Unit\Headless.Api.Tests.Unit.csproj" />
@@ -360,6 +360,7 @@
         <Project Path="tests\Headless.Hosting.Tests.Unit\Headless.Hosting.Tests.Unit.csproj" />
         <Project Path="tests\Headless.NetTopologySuite.Tests.Unit\Headless.NetTopologySuite.Tests.Unit.csproj" />
         <Project Path="tests\Headless.PhoneNumbers.Tests.Unit\Headless.PhoneNumbers.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Urls.Tests.Unit\Headless.Urls.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Security.Tests.Unit\Headless.Security.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Security.Argon2.Tests.Unit\Headless.Security.Argon2.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Testing.AspNetCore.Tests.TestHost\Headless.Testing.AspNetCore.Tests.TestHost.csproj" />
@@ -385,6 +386,7 @@
         <Project Path="src/Headless.Messaging.AzureServiceBus/Headless.Messaging.AzureServiceBus.csproj" />
         <Project Path="src/Headless.Messaging.Bus.Abstractions/Headless.Messaging.Bus.Abstractions.csproj" />
         <Project Path="src/Headless.Messaging/Headless.Messaging.csproj" />
+        <Project Path="src/Headless.Messaging.Dashboard.Consul/Headless.Messaging.Dashboard.Consul.csproj" />
         <Project Path="src/Headless.Messaging.Dashboard.K8s/Headless.Messaging.Dashboard.K8s.csproj" />
         <Project Path="src/Headless.Messaging.Dashboard/Headless.Messaging.Dashboard.csproj" />
         <Project Path="src/Headless.Messaging.InMemory/Headless.Messaging.InMemory.csproj" />
@@ -421,6 +423,7 @@
         <Project Path="tests/Headless.Messaging.Aws.Tests.Integration/Headless.Messaging.Aws.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Aws.Tests.Unit/Headless.Messaging.Aws.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.AzureServiceBus.Tests.Integration/Headless.Messaging.AzureServiceBus.Tests.Integration.csproj" />
+        <Project Path="tests/Headless.Messaging.Dashboard.Consul.Tests.Unit/Headless.Messaging.Dashboard.Consul.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Dashboard.K8s.Tests.Unit/Headless.Messaging.Dashboard.K8s.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Dashboard.Tests.Unit/Headless.Messaging.Dashboard.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.InMemory.Tests.Unit/Headless.Messaging.InMemory.Tests.Unit.csproj" />
@@ -484,9 +487,9 @@
         <Project Path="tests\Headless.EntityFramework.Tests.Unit\Headless.EntityFramework.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Payments/">
+        <Project Path="src\Headless.Payments.Paymob\Headless.Payments.Paymob.csproj" />
         <Project Path="src\Headless.Payments.Paymob.CashIn\Headless.Payments.Paymob.CashIn.csproj" />
         <Project Path="src\Headless.Payments.Paymob.CashOut\Headless.Payments.Paymob.CashOut.csproj" />
-        <Project Path="src\Headless.Payments.Paymob.Services\Headless.Payments.Paymob.Services.csproj" />
     </Folder>
     <Folder Name="/Payments/Tests/">
         <Project Path="tests\Headless.Payments.Paymob.CashIn.Tests.Unit\Headless.Payments.Paymob.CashIn.Tests.Unit.csproj" />

@@ -187,6 +187,11 @@ internal static class ConformanceCaseAllowList
             "RabbitMQ settles by the ulong delivery tag the consumer handed out, so the case's arbitrary object sender cannot be a settlement value; RabbitMqConsumerClientConformanceTests covers broker-observed reject with a real tag."
         ),
         new(
+            "RedisBlobStorageTests",
+            "token_paging_returns_every_key_once_in_ordinal_order_when_uploads_are_unsorted",
+            "Redis lists through an HSCAN cursor whose COUNT is only a hint, so a page is neither bounded by PageSize nor in ordinal order across pages; token_paging_round_trips_across_serialization covers its paging."
+        ),
+        new(
             "RedisDistributedLockConformanceTests",
             "should_fire_handle_lost_token_when_lock_holding_connection_dies",
             "A Redis lock is a TTL lease key, not a session-scoped lock, so no connection holds it and its loss is detected by lease expiry instead."

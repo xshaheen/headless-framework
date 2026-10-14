@@ -30,7 +30,7 @@ internal sealed class DistributedReadWriteLock(
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     ILogger<DistributedReadWriteLock> logger
-) : IDistributedReadWriteLock
+) : IDistributedReadWriteLock, ICanReceiveLockReleased
 {
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _NonBlockingAcquireDeadline = TimeSpan.FromSeconds(10);
@@ -38,6 +38,7 @@ internal sealed class DistributedReadWriteLock(
     private readonly ScopedDistributedReadWriteLockStorage _storage = new(storage, lockOptions.KeyPrefix);
     private readonly IBus? _bus = DistributedLockCoreHelpers.ConfigureBus(bus, logger);
     private readonly LeaseMonitorRegistry _monitorRegistry = new(logger);
+    private readonly ReleaseWaiterRegistry _releaseWaiters = new();
     private readonly int _maxResourceNameLength = lockOptions.MaxResourceNameLength;
     private readonly TimeSpan _writerWaitingMarkerTtl = lockOptions.WriterWaitingMarkerTtl;
     private readonly TimeSpan _disposeTimeout = lockOptions.DisposeTimeout;
@@ -507,6 +508,7 @@ internal sealed class DistributedReadWriteLock(
         // plants a marker; for Write mode the first false return is what triggers the placeholder.
         // Tracking this lets the finally block skip a wasted round-trip when no marker exists.
         var waitingMarkerPlanted = false;
+        ReleaseWaiterRegistry.Entry? releaseWaiter = null;
 
         try
         {
@@ -565,19 +567,23 @@ internal sealed class DistributedReadWriteLock(
                     break;
                 }
 
+                releaseWaiter ??= _releaseWaiters.Enter(resource);
+
+                // Wake on a release signal for this resource, the end of the backoff, the acquire timeout, or caller
+                // cancellation, so a released lock is retried at once instead of after the full backoff.
                 var delayAmount = DistributedLockCoreHelpers.GetBackoffDelay(retryAttempt++);
-                try
-                {
-                    await timeProvider.Delay(delayAmount, cts.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
+                using var delayCts = timeProvider.CreateCancellationTokenSource(delayAmount);
+                using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(delayCts.Token, cts.Token);
+                await releaseWaiter.WaitAsync(waitCts.Token).ConfigureAwait(false);
+
+                // The wait ends silently on cancellation, so a caller cancel must surface here as it did before.
+                cancellationToken.ThrowIfCancellationRequested();
             } while (!cts.IsCancellationRequested);
         }
         finally
         {
+            _releaseWaiters.Exit(resource, releaseWaiter);
+
             if (!gotLock && waitingMarkerPlanted)
             {
                 await _CleanupWaitingMarkerAsync(mode, resource, leaseId).ConfigureAwait(false);
@@ -809,6 +815,15 @@ internal sealed class DistributedReadWriteLock(
     private void _DeregisterMonitor(string resource, string leaseId)
     {
         _ = _monitorRegistry.TryDeregister(resource, leaseId);
+    }
+
+    void ICanReceiveLockReleased.OnLockReleased(DistributedLockReleased message)
+    {
+        logger.LogGotLockReleasedMessage(message.Resource, message.LeaseId);
+
+        // Wakes a blocked acquirer only. Lease monitors are not nudged: every reader release would make each
+        // held lease re-validate against storage, adding round trips the reader-writer lock never made before.
+        _releaseWaiters.Signal(message.Resource);
     }
 
     /// <summary>

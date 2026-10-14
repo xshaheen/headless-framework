@@ -34,9 +34,19 @@ internal sealed class SafeCancellationTokenSource : IDisposable
 
     public void Cancel()
     {
-        if (!IsDisposed)
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        try
         {
             _innerCts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Dispose can land on another thread between the IsDisposed check and Cancel; a disposed source has
+            // nothing left to cancel.
         }
     }
 

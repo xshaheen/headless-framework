@@ -283,10 +283,11 @@ public sealed class JobsOptionsBuilderTests
     [Fact]
     public void default_scheduler_time_zone_is_utc()
     {
-        // Never Local: two fleet nodes with different container timezones would evaluate one cron expression to
-        // two different UTC instants, and the occurrence dedup unique index cannot collapse them — every tick
-        // would run once per distinct timezone. The framework's temporal-authority standard forbids the Local
-        // default; this pins the contract (invisible on UTC-only dev/CI boxes, which is how it regressed before).
+        // Never Local: two fleet nodes with different container timezones would disagree on every zone-less cron
+        // definition. Duplicates are prevented by the cron compare-and-advance and the occurrence unique index, but
+        // each tick would fire at the zone of whichever node advanced it last and fingerprint sweeps would keep
+        // rebasing each other's definitions. The framework's temporal-authority standard forbids the Local default;
+        // this pins the contract (invisible on UTC-only dev/CI boxes, which is how it regressed before).
         var schedulerOptions = new SchedulerOptionsBuilder();
 
         schedulerOptions.SchedulerTimeZone.Should().Be(TimeZoneInfo.Utc);
@@ -427,6 +428,68 @@ public sealed class JobsOptionsBuilderTests
             );
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*FingerprintSweepBatchSize*");
+    }
+
+    [Fact]
+    public void add_headless_jobs_rejects_a_custom_scheduler_time_zone()
+    {
+        var services = new ServiceCollection();
+        var custom = TimeZoneInfo.CreateCustomTimeZone(
+            "Headless.Test.Custom",
+            TimeSpan.FromHours(2),
+            "Custom",
+            "Custom"
+        );
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler => scheduler.SchedulerTimeZone = custom)
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*SchedulerTimeZone*");
+    }
+
+    [Fact]
+    public void add_headless_jobs_rejects_a_windows_scheduler_time_zone_id()
+    {
+        Assert.SkipUnless(
+            TimeZoneInfo.TryFindSystemTimeZoneById("Egypt Standard Time", out var windowsZone),
+            "This host cannot resolve the Windows time zone id."
+        );
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler => scheduler.SchedulerTimeZone = windowsZone)
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*SchedulerTimeZone*");
+    }
+
+    [Theory]
+    [InlineData("Africa/Cairo")]
+    [InlineData("America/New_York")]
+    public void add_headless_jobs_accepts_an_iana_scheduler_time_zone(string timeZoneId)
+    {
+        var services = new ServiceCollection();
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler => scheduler.SchedulerTimeZone = zone)
+            );
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void add_headless_jobs_accepts_the_default_utc_scheduler_time_zone()
+    {
+        var services = new ServiceCollection();
+
+        var act = () => services.AddHeadlessJobs();
+
+        act.Should().NotThrow();
     }
 
     [Fact]

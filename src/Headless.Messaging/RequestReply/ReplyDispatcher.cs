@@ -63,6 +63,12 @@ internal sealed class ReplyDispatcher(
         {
             request.FailClaimed(e);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The listener is stopping, so the reply was never judged; this ends the call the way a stopping
+            // requester ends every waiting call, not as a reply its body could not be read from.
+            request.FailClaimed(new RequestAbortedException(request.RequestId));
+        }
         catch (Exception e)
         {
             // The reply matched the expected contract but its body could not be read as the response type.

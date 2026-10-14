@@ -267,7 +267,6 @@
       "headless.messaging.dashboard": {
         "type": "Project",
         "dependencies": {
-          "Consul": "[1.8.0, )",
           "Headless.Dashboard.Authentication": "[1.0.0, )",
           "Headless.Messaging": "[1.0.0, )"
         }
@@ -360,15 +359,6 @@
           "AWSSDK.Core": "[4.0.102.9, 5.0.0)"
         }
       },
-      "Consul": {
-        "type": "CentralTransitive",
-        "requested": "[1.8.0, )",
-        "resolved": "1.8.0",
-        "contentHash": "flKNz6Swyt+pYBJ5dekN1X6PJYUaeNAaNC0dAWhudTd0t2vR34G0QXmr5KyApI7OP1rGMwY3xx133Dc9IvOS6Q==",
-        "dependencies": {
-          "Newtonsoft.Json": "13.0.1"
-        }
-      },
       "FastExpressionCompiler": {
         "type": "CentralTransitive",
         "requested": "[6.0.0, )",
@@ -380,12 +370,6 @@
         "requested": "[12.2.0, )",
         "resolved": "12.2.0",
         "contentHash": "DR3lFbdnKucaaj1/8zMNOACMz/64igzox1yVZSFVsLxYB5mxAB+wFP1WZ8fjwrZnbU1KA1DoMzHKYKxUfuZ4wQ=="
-      },
-      "Newtonsoft.Json": {
-        "type": "CentralTransitive",
-        "requested": "[13.0.4, )",
-        "resolved": "13.0.4",
-        "contentHash": "pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A=="
       },
       "Nito.AsyncEx": {
         "type": "CentralTransitive",

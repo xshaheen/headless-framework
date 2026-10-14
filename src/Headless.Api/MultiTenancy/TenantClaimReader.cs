@@ -9,7 +9,7 @@ namespace Headless.Api;
 /// <summary>
 /// Shared claim-type resolution used by both the identifier/claim mismatch post-authorization integrity check
 /// (<see cref="TenantIdentifierIntegrityHandler"/>) and the claim-resolution fast path
-/// (<c>TenantResolutionMiddleware</c>): resolves <see cref="MultiTenancyOptions.ClaimType"/> — falling
+/// (<c>TenantResolutionMiddleware</c>): resolves <see cref="HttpTenantResolutionOptions.ClaimType"/> — falling
 /// back to <see cref="UserClaimTypes.TenantId"/> when unset — and reads the tenant id from the matching
 /// claim.
 /// </summary>
@@ -19,7 +19,7 @@ internal static class TenantClaimReader
     /// <param name="principal">The authenticated principal.</param>
     /// <param name="options">The multi-tenancy options carrying the configured claim type.</param>
     /// <returns>The claim value, or <see langword="null"/> when the claim is absent or whitespace-only.</returns>
-    internal static string? GetTenantId(ClaimsPrincipal principal, MultiTenancyOptions options)
+    internal static string? GetTenantId(ClaimsPrincipal principal, HttpTenantResolutionOptions options)
     {
         var claimType = string.IsNullOrWhiteSpace(options.ClaimType) ? UserClaimTypes.TenantId : options.ClaimType;
 

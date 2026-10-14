@@ -1464,6 +1464,192 @@ public sealed class DistributedLockTests : TestBase
             );
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_release_own_write_and_retry_when_insert_faults_after_committing(bool infiniteTtl)
+    {
+        // given - the first insert commits the key, then its reply is lost
+        var timeProvider = new TimerRecordingTimeProvider();
+        var fault = new FaultingLockStorage(new InMemoryDistributedLockStorage(timeProvider));
+        var provider = _CreateProvider(storage: fault.Storage, timeProvider: timeProvider);
+        var resource = Faker.Random.AlphaNumeric(10);
+        var acquireTimeout = TimeSpan.FromSeconds(30);
+
+        var acquireTask = provider.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions
+            {
+                AcquireTimeout = acquireTimeout,
+                TimeUntilExpires = infiniteTtl ? Timeout.InfiniteTimeSpan : null,
+            },
+            AbortToken
+        );
+
+        // Fire the first retry delay once armed. Only one delay is fired: a retry that collides with the caller's
+        // own committed key would wait for a second delay that never comes and fail the bound below.
+        var retryDelay = await timeProvider.WaitForTimerAsync(dueTime => dueTime < TimeSpan.FromSeconds(1), AbortToken);
+        timeProvider.Advance(retryDelay);
+
+        // when
+        var result = await acquireTask.Bounded();
+
+        // then
+        result.Should().NotBeNull();
+        result!.LeaseId.Should().Be(fault.FirstLeaseId);
+        fault.InsertCalls.Should().Be(2);
+        await fault
+            .Storage.Received(1)
+            .RemoveIfEqualAsync(
+                Arg.Is<string>(s => s.EndsWith(resource, StringComparison.Ordinal)),
+                fault.FirstLeaseId!,
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_release_own_write_when_insert_faults_after_committing_and_acquire_timeout_is_zero()
+    {
+        // given - the only insert commits the key with no expiry, then its reply is lost
+        var fault = new FaultingLockStorage(_storage);
+        var provider = _CreateProvider(storage: fault.Storage);
+        var resource = Faker.Random.AlphaNumeric(10);
+        var options = new DistributedLockAcquireOptions
+        {
+            AcquireTimeout = TimeSpan.Zero,
+            TimeUntilExpires = Timeout.InfiniteTimeSpan,
+        };
+
+        // when
+        var first = await provider.TryAcquireAsync(resource, options, AbortToken);
+
+        // then
+        first.Should().BeNull();
+        await fault
+            .Storage.Received(1)
+            .RemoveIfEqualAsync(
+                Arg.Is<string>(s => s.EndsWith(resource, StringComparison.Ordinal)),
+                fault.FirstLeaseId!,
+                Arg.Any<CancellationToken>()
+            );
+
+        var second = await provider.TryAcquireAsync(resource, options, AbortToken);
+        second.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_release_own_write_on_exit_when_cleanup_also_faults_during_outage()
+    {
+        // given - the first insert commits the key with no expiry and its reply is lost, the immediate cleanup fails
+        // in the same outage, and every later insert collides with the caller's own key
+        var timeProvider = new TimerRecordingTimeProvider();
+        var fault = new FaultingLockStorage(new InMemoryDistributedLockStorage(timeProvider), failFirstRemove: true);
+        var provider = _CreateProvider(storage: fault.Storage, timeProvider: timeProvider);
+        var resource = Faker.Random.AlphaNumeric(10);
+        var acquireTimeout = TimeSpan.FromSeconds(2);
+
+        var acquireTask = provider.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions
+            {
+                AcquireTimeout = acquireTimeout,
+                TimeUntilExpires = Timeout.InfiniteTimeSpan,
+            },
+            AbortToken
+        );
+
+        // Once the first retry delay is armed, move past the acquire timeout so the loop ends without the lock.
+        await timeProvider.WaitForTimerAsync(dueTime => dueTime < TimeSpan.FromSeconds(1), AbortToken);
+        timeProvider.Advance(acquireTimeout);
+
+        // when
+        var result = await acquireTask.Bounded();
+
+        // then - the exit cleanup removed the caller's own key, so the resource is free again
+        result.Should().BeNull();
+        await fault
+            .Storage.Received(2)
+            .RemoveIfEqualAsync(
+                Arg.Is<string>(s => s.EndsWith(resource, StringComparison.Ordinal)),
+                fault.FirstLeaseId!,
+                Arg.Any<CancellationToken>()
+            );
+
+        var later = await provider.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
+        );
+        later.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// Writes through to a real storage, then throws on the first insert, reproducing a backend whose reply is lost
+    /// after the write committed.
+    /// </summary>
+    private sealed class FaultingLockStorage
+    {
+        private int _insertCalls;
+        private int _removeCalls;
+
+        public FaultingLockStorage(InMemoryDistributedLockStorage inner, bool failFirstRemove = false)
+        {
+            Storage
+                .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+                .Returns(ci =>
+                    _InsertAsync(
+                        inner,
+                        ci.ArgAt<string>(0),
+                        ci.ArgAt<string>(1),
+                        ci.ArgAt<TimeSpan?>(2),
+                        ci.ArgAt<CancellationToken>(3)
+                    )
+                );
+
+            Storage
+                .RemoveIfEqualAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(ci =>
+                {
+                    if (failFirstRemove && Interlocked.Increment(ref _removeCalls) == 1)
+                    {
+                        return ValueTask.FromException<bool>(new TimeoutException("Storage still unreachable."));
+                    }
+
+                    return inner.RemoveIfEqualAsync(
+                        ci.ArgAt<string>(0),
+                        ci.ArgAt<string>(1),
+                        ci.ArgAt<CancellationToken>(2)
+                    );
+                });
+        }
+
+        public IDistributedLockStorage Storage { get; } = Substitute.For<IDistributedLockStorage>();
+
+        public string? FirstLeaseId { get; private set; }
+
+        public int InsertCalls => Volatile.Read(ref _insertCalls);
+
+        private async ValueTask<DistributedLockAcquireResult> _InsertAsync(
+            InMemoryDistributedLockStorage inner,
+            string key,
+            string leaseId,
+            TimeSpan? ttl,
+            CancellationToken cancellationToken
+        )
+        {
+            var result = await inner.InsertAsync(key, leaseId, ttl, cancellationToken);
+
+            if (Interlocked.Increment(ref _insertCalls) == 1)
+            {
+                FirstLeaseId = leaseId;
+
+                throw new TimeoutException("Reply lost after the write committed.");
+            }
+
+            return result;
+        }
+    }
+
     #endregion
 
     #region IsLockedAsync Tests

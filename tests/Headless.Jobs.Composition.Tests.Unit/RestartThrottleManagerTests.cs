@@ -36,6 +36,30 @@ public sealed class RestartThrottleManagerTests : TestBase
     }
 
     [Fact]
+    public void request_restart_fires_within_the_max_wait_under_a_continuous_request_stream()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var firstRequestAt = timeProvider.GetUtcNow();
+        var fireTimes = new List<DateTimeOffset>();
+        using var manager = new RestartThrottleManager(() => fireTimes.Add(timeProvider.GetUtcNow()), timeProvider);
+
+        // A request every 40 ms never leaves a 50 ms quiet gap, so a pure debounce would never fire.
+        for (var elapsed = 0; elapsed < 1000; elapsed += 40)
+        {
+            manager.RequestRestart();
+
+            // Advance in 10 ms steps so the fire time is observed at that resolution.
+            for (var step = 0; step < 4; step++)
+            {
+                timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+            }
+        }
+
+        fireTimes.Should().NotBeEmpty();
+        (fireTimes[0] - firstRequestAt).Should().BeLessThanOrEqualTo(TimeSpan.FromMilliseconds(250));
+    }
+
+    [Fact]
     public void dispose_before_the_deadline_prevents_the_callback_and_is_idempotent()
     {
         var timeProvider = new FakeTimeProvider();

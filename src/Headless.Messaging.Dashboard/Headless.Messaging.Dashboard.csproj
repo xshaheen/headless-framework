@@ -7,12 +7,11 @@
   <ItemGroup>
     <SupportedPlatform Include="browser" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <InternalsVisibleTo Include="Headless.Messaging.Dashboard.Consul" />
+    <InternalsVisibleTo Include="Headless.Messaging.Dashboard.Consul.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard.K8s" />
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard.K8s.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard.Tests.Unit" />
-  </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="Consul" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Dashboard.Authentication\Headless.Dashboard.Authentication.csproj" />

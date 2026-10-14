@@ -48,6 +48,21 @@ public interface IPermissionGrantRepository
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Returns grant records for the specified permission <paramref name="names"/> scoped to several
+    /// subjects of one provider, in a single query. This is the one-call read for checks that span every
+    /// target of a provider, such as every role a user holds.
+    /// </summary>
+    /// <param name="names">The permission names to look up. Must not be <see langword="null"/>.</param>
+    /// <param name="providerName">The grant provider type name.</param>
+    /// <param name="providerKeys">The provider-specific subject keys. Must not be <see langword="null"/> or empty.</param>
+    Task<List<PermissionGrantRecord>> GetListAsync(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        IReadOnlyCollection<string> providerKeys,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Inserts a single new grant record.</summary>
     Task InsertAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken = default);
 

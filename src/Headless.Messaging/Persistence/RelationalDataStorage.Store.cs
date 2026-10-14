@@ -66,18 +66,13 @@ internal sealed partial class RelationalDataStorage
         );
     }
 
-    private async ValueTask<MediumMessage> _StoreMessageAsync(
-        string name,
-        MediumMessage message,
-        DateTimeOffset? publishAt,
-        DbTransaction? transaction,
-        CancellationToken cancellationToken
-    )
+    /// <summary>Renders the insert of a published message, stamped and scheduled by the database clock.</summary>
+    private string _RenderStorePublished()
     {
         // The database clock stamps Added and decides when the row falls due, the same clock the retry pickup and
         // the delayed claim compare against, so a replica whose clock is skewed cannot make a row due early or late.
         // A publish time within a minute of now goes straight to Queued; a later one waits as Delayed.
-        var sql = _dialect.Render(
+        return _dialect.Render(
             new SqlInsert(
                 _publishedTable,
                 [
@@ -115,7 +110,16 @@ internal sealed partial class RelationalDataStorage
                 [_t.Added, _t.NextRetryAt]
             )
         );
+    }
 
+    private async ValueTask<MediumMessage> _StoreMessageAsync(
+        string name,
+        MediumMessage message,
+        DateTimeOffset? publishAt,
+        DbTransaction? transaction,
+        CancellationToken cancellationToken
+    )
+    {
         var stored = new MediumMessage
         {
             StorageId = _guidGenerator.Create(),
@@ -141,7 +145,7 @@ internal sealed partial class RelationalDataStorage
             .ExecuteReaderAsync(
                 connection,
                 transaction,
-                sql,
+                _storePublishedSql,
                 CommandTimeoutSeconds,
                 command =>
                 {
@@ -354,26 +358,14 @@ internal sealed partial class RelationalDataStorage
         TimeSpan? DueAfter
     );
 
-    /// <summary>Inserts a received message, or rewrites its redelivered non-terminal, unleased row.</summary>
-    /// <returns>The written row's id and database-stamped times, or <see langword="null"/> when a guard refused it.</returns>
-    /// <remarks>
-    /// The row's identity is a partial unique index over non-inbox rows keyed by the consumer it was delivered to, so a
-    /// redelivery to the same consumer finds the same row. The first delivery is one insert. A
-    /// redelivery locks the existing row and rewrites it only while it is neither terminal (a redelivered message must
-    /// not turn a Succeeded row back to Failed and fire OnExhausted again) nor leased (releasing the lease of an
-    /// in-flight attempt would let the retry processor pick the row up mid-attempt). The rewrite never resets the
-    /// durable retry counters.
-    /// </remarks>
-    private async ValueTask<(Guid Id, DateTimeOffset Added, DateTimeOffset? NextRetryAt)?> _StoreReceivedAsync(
-        string operation,
-        ReceivedRow row,
-        CancellationToken cancellationToken
-    )
+    /// <summary>
+    /// Renders the statements that store a received message: the first-delivery insert, the redelivery's locking read,
+    /// and its rewrite, with the expiry and due time read from the database clock only when the delivery carries them.
+    /// </summary>
+    private ReceivedStoreSql _RenderStoreReceived(bool hasExpiry, bool hasDue)
     {
-        var expiresAt = row.ExpiresAfter is null
-            ? "NULL"
-            : _dialect.ShiftByDuration(SqlDialectTokens.Now, "ExpiresAfter");
-        var nextRetryAt = row.DueAfter is null ? "NULL" : _dialect.ShiftByDuration(SqlDialectTokens.Now, "DueAfter");
+        var expiresAt = hasExpiry ? _dialect.ShiftByDuration(SqlDialectTokens.Now, "ExpiresAfter") : "NULL";
+        var nextRetryAt = hasDue ? _dialect.ShiftByDuration(SqlDialectTokens.Now, "DueAfter") : "NULL";
         SqlKeyColumn[] identity =
         [
             new(_t.Version, "Version"),
@@ -429,6 +421,31 @@ internal sealed partial class RelationalDataStorage
                 [_t.Id, _t.Added, _t.NextRetryAt]
             )
         );
+
+        return new ReceivedStoreSql(insertSql, lockSql, rewriteSql);
+    }
+
+    private readonly record struct ReceivedStoreSql(string Insert, string Lock, string Rewrite);
+
+    /// <summary>Inserts a received message, or rewrites its redelivered non-terminal, unleased row.</summary>
+    /// <returns>The written row's id and database-stamped times, or <see langword="null"/> when a guard refused it.</returns>
+    /// <remarks>
+    /// The row's identity is a partial unique index over non-inbox rows keyed by the consumer it was delivered to, so a
+    /// redelivery to the same consumer finds the same row. The first delivery is one insert. A
+    /// redelivery locks the existing row and rewrites it only while it is neither terminal (a redelivered message must
+    /// not turn a Succeeded row back to Failed and fire OnExhausted again) nor leased (releasing the lease of an
+    /// in-flight attempt would let the retry processor pick the row up mid-attempt). The rewrite never resets the
+    /// durable retry counters.
+    /// </remarks>
+    private async ValueTask<(Guid Id, DateTimeOffset Added, DateTimeOffset? NextRetryAt)?> _StoreReceivedAsync(
+        string operation,
+        ReceivedRow row,
+        CancellationToken cancellationToken
+    )
+    {
+        var (insertSql, lockSql, rewriteSql) = _storeReceivedSql[
+            (row.ExpiresAfter is null ? 0 : 2) | (row.DueAfter is null ? 0 : 1)
+        ];
 
         void bindIdentity(DbCommand command)
         {

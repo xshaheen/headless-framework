@@ -53,6 +53,54 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
     }
 
     [Fact]
+    public void should_adopt_the_newest_lease_when_the_same_row_is_enqueued_again()
+    {
+        // given — the row first arrives as an unleased hand-off, then claimed, then re-claimed.
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero));
+        using var queue = new ScheduledMediumMessageQueue(timeProvider);
+        var sendTime = timeProvider.GetUtcNow().AddMinutes(5).Ticks;
+        var handOff = _CreateMediumMessage(1);
+        var firstClaim = _CreateMediumMessage(1);
+        firstClaim.Owner = "node-a";
+        firstClaim.LockedUntil = timeProvider.GetUtcNow().AddMinutes(10);
+        var secondClaim = _CreateMediumMessage(1);
+        secondClaim.Owner = "node-a";
+        secondClaim.LockedUntil = timeProvider.GetUtcNow().AddMinutes(20);
+
+        // when
+        queue.TryEnqueue(handOff, sendTime).Should().BeTrue();
+        queue.TryEnqueue(firstClaim, sendTime).Should().BeTrue();
+        queue.TryEnqueue(secondClaim, sendTime).Should().BeTrue();
+
+        // then — the queued instance carries the lease the store last granted, so its success write is accepted.
+        queue.UnorderedItems.Should().ContainSingle().Which.Should().BeSameAs(secondClaim);
+    }
+
+    [Fact]
+    public void should_keep_the_newer_lease_when_an_older_copy_of_the_row_arrives_late()
+    {
+        // given
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero));
+        using var queue = new ScheduledMediumMessageQueue(timeProvider);
+        var sendTime = timeProvider.GetUtcNow().AddMinutes(5).Ticks;
+        var claimed = _CreateMediumMessage(1);
+        claimed.Owner = "node-a";
+        claimed.LockedUntil = timeProvider.GetUtcNow().AddMinutes(20);
+        var olderClaim = _CreateMediumMessage(1);
+        olderClaim.Owner = "node-a";
+        olderClaim.LockedUntil = timeProvider.GetUtcNow().AddMinutes(10);
+        var handOff = _CreateMediumMessage(1);
+
+        // when
+        queue.TryEnqueue(claimed, sendTime).Should().BeTrue();
+        queue.TryEnqueue(olderClaim, sendTime).Should().BeTrue();
+        queue.TryEnqueue(handOff, sendTime).Should().BeTrue();
+
+        // then
+        queue.UnorderedItems.Should().ContainSingle().Which.Should().BeSameAs(claimed);
+    }
+
+    [Fact]
     public void should_reflect_all_enqueued_messages_without_removing_them_when_unordered_items()
     {
         // given

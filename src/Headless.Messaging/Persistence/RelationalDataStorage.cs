@@ -81,6 +81,13 @@ internal sealed partial class RelationalDataStorage
     private readonly string _terminalGuardWithRetries;
     private readonly string _nextRetryAtAssignment;
 
+    // The hot-path statements depend only on the dialect and table names, so they are rendered once here instead of
+    // on every state change, publish, and receive.
+    private readonly SqlKeyColumn[] _idKey;
+    private readonly string[] _changeStateSql;
+    private readonly string _storePublishedSql;
+    private readonly ReceivedStoreSql[] _storeReceivedSql;
+
     public RelationalDataStorage(
         RelationalMessagingStorage storage,
         IOptions<MessagingOptions> messagingOptions,
@@ -121,6 +128,23 @@ internal sealed partial class RelationalDataStorage
         var delayed = _dialect.ShiftByDuration(SqlDialectTokens.Now, "RetryDelay");
         _nextRetryAtAssignment =
             $"CASE WHEN @HasRetryDelay = {_t.True} THEN CASE WHEN @KeepsLaterDue = {_t.True} AND {_t.NextRetryAt} > {delayed} THEN {_t.NextRetryAt} ELSE {delayed} END END";
+
+        _idKey = [new(_t.Id, "Id")];
+        _changeStateSql =
+        [
+            _RenderChangeState(received: false, refreshContent: false),
+            _RenderChangeState(received: false, refreshContent: true),
+            _RenderChangeState(received: true, refreshContent: false),
+            _RenderChangeState(received: true, refreshContent: true),
+        ];
+        _storePublishedSql = _RenderStorePublished();
+        _storeReceivedSql =
+        [
+            _RenderStoreReceived(hasExpiry: false, hasDue: false),
+            _RenderStoreReceived(hasExpiry: false, hasDue: true),
+            _RenderStoreReceived(hasExpiry: true, hasDue: false),
+            _RenderStoreReceived(hasExpiry: true, hasDue: true),
+        ];
     }
 
     /// <summary>
@@ -324,14 +348,36 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken
     )
     {
+        return _RunTransitionAsync(
+            operation,
+            transaction,
+            _RenderTransition(table, fence, set, returning),
+            bind,
+            read,
+            cancellationToken
+        );
+    }
+
+    /// <summary>Renders the locking read and the fenced transition of one row by its id.</summary>
+    private string _RenderTransition(string table, string fence, string set, IReadOnlyList<string> returning)
+    {
         // The locking read waits out any other writer of the row first, so the transition reads the database clock
         // after that wait: a lease or due time is never decided on a clock read before it.
-        SqlKeyColumn[] key = [new(_t.Id, "Id")];
-        var sql =
-            _dialect.Render(new SqlLockedRead(table, key, [_t.Id]))
+        return _dialect.Render(new SqlLockedRead(table, _idKey, [_t.Id]))
             + "\n"
-            + _dialect.Render(new SqlFencedTransition(table, key, fence, set, returning));
+            + _dialect.Render(new SqlFencedTransition(table, _idKey, fence, set, returning));
+    }
 
+    /// <summary>Runs a transition rendered by <see cref="_RenderTransition"/>.</summary>
+    private Task<T> _RunTransitionAsync<T>(
+        string operation,
+        DbTransaction? transaction,
+        string sql,
+        Action<DbCommand> bind,
+        Func<DbDataReader, CancellationToken, Task<T>> read,
+        CancellationToken cancellationToken
+    )
+    {
         return _RunAsync(
             operation,
             transaction,

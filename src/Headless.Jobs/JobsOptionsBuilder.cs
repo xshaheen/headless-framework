@@ -672,12 +672,18 @@ public sealed class SchedulerOptionsBuilder
     public TimeSpan FallbackIntervalChecker { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// The timezone used when evaluating cron expressions and interpreting <c>Kind=Unspecified</c> execution
-    /// times. Defaults to UTC. Never defaulted to <see cref="TimeZoneInfo.Local"/>: two fleet nodes with
-    /// different container timezones would evaluate one cron expression to two different UTC instants, and the
-    /// occurrence dedup unique index cannot collapse them — every tick would run once per distinct timezone.
-    /// Set an explicit zone only when every node in the fleet is configured identically.
+    /// The timezone used when evaluating cron expressions that name no zone of their own and when interpreting
+    /// <c>Kind=Unspecified</c> execution times. Defaults to UTC. Must be an IANA time zone (or
+    /// <see cref="TimeZoneInfo.Utc"/>): <c>AddHeadlessJobs</c> throws <see cref="InvalidOperationException"/> for a
+    /// Windows id, a custom zone, or a non-IANA <see cref="TimeZoneInfo.Local"/>, because only an IANA id names the
+    /// same rules on every node.
     /// </summary>
+    /// <remarks>
+    /// Configure the same zone on every node. Nodes with different zones do not run a tick twice: the cron
+    /// compare-and-advance and the unique (CronJobId, ExecutionTime) index prevent duplicates. Instead, each tick's
+    /// fire time follows the zone of whichever node advanced the schedule last, misfire classification can be wrong,
+    /// and fingerprint sweeps keep rebasing each other's definitions that name no zone, flapping between nodes.
+    /// </remarks>
     public TimeZoneInfo SchedulerTimeZone { get; set; } = TimeZoneInfo.Utc;
 
     /// <summary>

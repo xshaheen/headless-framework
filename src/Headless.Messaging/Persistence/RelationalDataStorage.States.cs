@@ -9,41 +9,72 @@ namespace Headless.Messaging.Persistence;
 internal sealed partial class RelationalDataStorage
 {
     /// <summary>
-    /// Bulk-transitions the specified published messages to <c>Delayed</c> status.
-    /// No-op when <paramref name="storageIds"/> is empty.
+    /// Hands published messages back to <c>Delayed</c> status, each only while its row still carries the lease the
+    /// message recorded. No-op when <paramref name="messages"/> is empty.
     /// </summary>
     public async ValueTask ChangePublishStateToDelayedAsync(
-        Guid[] storageIds,
+        IReadOnlyCollection<MediumMessage> messages,
         CancellationToken cancellationToken = default
     )
     {
-        if (storageIds.Length == 0)
+        if (messages.Count == 0)
         {
             return;
         }
 
-        // Clear the ownership lease alongside the status flip: the only caller is the graceful-shutdown flush,
-        // which owns these rows via its own claim and is releasing them for immediate re-scheduling. Leaving a
-        // stale LockedUntil/Owner would fence the row from re-claim until the lease expires (delayed message
-        // delivered up to DispatchTimeout late after restart).
-        var sql =
-            $"UPDATE {_publishedTable} SET {_t.StatusName}=@StatusName, {_t.LockedUntil}=NULL, {_t.Owner}=NULL WHERE {_dialect.InList(_t.Id, "Ids", SqlColumnType.Guid)} AND {_terminalGuard};";
+        // The lease is cleared with the status flip so the row is re-claimable at once instead of after the lease
+        // expires. The match on the recorded lease is what makes that safe: the shutdown flush also holds unleased
+        // hand-off copies, and the row behind one may since have been claimed by another node that is sending it.
+        // Resetting that row would let a third node send it again and reject the claimer's success write.
+        // Each row binds four parameters.
+        var batchSize = Math.Min(_LeaseReleaseBatchSize, (_MaxCommandParameters - 1) / 4);
 
         await using var connection = _CreateConnection();
-        await RelationalCommand
-            .ExecuteNonQueryAsync(
-                connection,
-                transaction: null,
-                sql,
-                CommandTimeoutSeconds,
-                command =>
-                {
-                    _dialect.AddListParameter(command, "Ids", SqlColumnType.Guid, storageIds);
-                    _dialect.AddParameter(command, "StatusName", _StatusType, nameof(StatusName.Delayed));
-                },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        foreach (var batch in messages.Chunk(batchSize))
+        {
+            var predicates = new string[batch.Length];
+            for (var index = 0; index < batch.Length; index++)
+            {
+                var suffix = index.ToString(CultureInfo.InvariantCulture);
+                predicates[index] =
+                    $"({_t.Id}=@Id{suffix} AND {_t.IntentType}=@IntentType{suffix} AND {_Same(_t.Owner, "Owner" + suffix)} AND {_Same(_t.LockedUntil, "LockedUntil" + suffix)})";
+            }
+
+            var sql =
+                $"UPDATE {_publishedTable} SET {_t.StatusName}=@StatusName, {_t.LockedUntil}=NULL, {_t.Owner}=NULL WHERE {_terminalGuard} AND ({string.Join(" OR ", predicates)});";
+            await RelationalCommand
+                .ExecuteNonQueryAsync(
+                    connection,
+                    transaction: null,
+                    sql,
+                    CommandTimeoutSeconds,
+                    command =>
+                    {
+                        _dialect.AddParameter(command, "StatusName", _StatusType, nameof(StatusName.Delayed));
+                        for (var index = 0; index < batch.Length; index++)
+                        {
+                            var message = batch[index];
+                            var suffix = index.ToString(CultureInfo.InvariantCulture);
+                            _dialect.AddParameter(command, "Id" + suffix, SqlColumnType.Guid, message.StorageId);
+                            _dialect.AddParameter(
+                                command,
+                                "IntentType" + suffix,
+                                SqlColumnType.Int16,
+                                MessageLaneCompatibility.ToPersistedValue(message.Lane)
+                            );
+                            _dialect.AddParameter(command, "Owner" + suffix, _ownerType, message.Owner);
+                            _dialect.AddParameter(
+                                command,
+                                "LockedUntil" + suffix,
+                                SqlColumnType.Timestamp,
+                                message.LockedUntil
+                            );
+                        }
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -248,25 +279,12 @@ internal sealed partial class RelationalDataStorage
         }
     }
 
-    private async ValueTask<bool> _ChangeStateAsync(
-        string operation,
-        string table,
-        MediumMessage message,
-        StatusName state,
-        MessageContentWrite contentWrite,
-        DbTransaction? transaction,
-        RetryDelay? retryDelay,
-        DateTimeOffset? lockedUntil,
-        int? originalRetries,
-        int? originalInlineAttempts,
-        CancellationToken cancellationToken
-    )
+    /// <summary>
+    /// Renders the state change of a row in the received or published table, with or without rewriting its content.
+    /// </summary>
+    private string _RenderChangeState(bool received, bool refreshContent)
     {
-        var received = _IsReceived(table);
-        var refreshContent = contentWrite is MessageContentWrite.Refresh;
-        var content = refreshContent ? _RefreshContent(message) : null;
-        var isTerminal = state is StatusName.Succeeded or StatusName.Failed && retryDelay is null;
-
+        var table = received ? _receivedTable : _publishedTable;
         var set = new List<string>(capacity: 12);
         if (refreshContent)
         {
@@ -301,13 +319,32 @@ internal sealed partial class RelationalDataStorage
             fence += $" AND {_InboxAttemptGuard(matchStorageId: false)}";
         }
 
-        return await _TransitionAsync(
+        return _RenderTransition(table, fence, string.Join(", ", set), [_t.Id]);
+    }
+
+    private async ValueTask<bool> _ChangeStateAsync(
+        string operation,
+        string table,
+        MediumMessage message,
+        StatusName state,
+        MessageContentWrite contentWrite,
+        DbTransaction? transaction,
+        RetryDelay? retryDelay,
+        DateTimeOffset? lockedUntil,
+        int? originalRetries,
+        int? originalInlineAttempts,
+        CancellationToken cancellationToken
+    )
+    {
+        var received = _IsReceived(table);
+        var refreshContent = contentWrite is MessageContentWrite.Refresh;
+        var content = refreshContent ? _RefreshContent(message) : null;
+        var isTerminal = state is StatusName.Succeeded or StatusName.Failed && retryDelay is null;
+
+        return await _RunTransitionAsync(
                 operation,
                 transaction,
-                table,
-                fence,
-                string.Join(", ", set),
-                [_t.Id],
+                _changeStateSql[(received ? 2 : 0) | (refreshContent ? 1 : 0)],
                 command =>
                 {
                     if (refreshContent)

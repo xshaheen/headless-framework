@@ -153,7 +153,7 @@ public sealed class GatewayProxyAgentTests : TestBase
 
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
 
-        // Configure consul options with current node name matching the cookie
+        // Register the current node identity with a name matching the cookie
         using var agent = _CreateAgent(context, discoveryProvider, nodeName: "current-node");
 
         // when
@@ -433,7 +433,7 @@ public sealed class GatewayProxyAgentTests : TestBase
 
         if (!useK8s)
         {
-            services.AddSingleton(new ConsulDiscoveryOptions { NodeName = nodeName ?? "test-node" });
+            services.AddSingleton(new CurrentNodeIdentity(nodeName ?? "test-node"));
         }
 
         var sp = services.BuildServiceProvider();

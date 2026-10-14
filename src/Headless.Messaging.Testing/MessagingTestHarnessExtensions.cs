@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Testing;
@@ -62,5 +63,31 @@ public static class MessagingTestHarnessExtensions
     {
         MessagingTestHarness.ConfigureServices(services);
         return services;
+    }
+
+    /// <summary>
+    /// Resets the <see cref="MessagingTestHarness"/> registered in <paramref name="services"/>, after its in-flight
+    /// publish and consume work has settled (see <see cref="MessagingTestHarness.ResetAsync"/>). Does nothing when
+    /// no harness is registered, so a shared test-state reset can call it for hosts with and without messaging.
+    /// </summary>
+    /// <remarks>
+    /// Call it from a fixture's per-test reset against the host's root provider, for example
+    /// <c>await server.Services.ResetMessagingHarnessAsync(cancellationToken)</c>.
+    /// </remarks>
+    /// <param name="services">The host's service provider.</param>
+    /// <param name="cancellationToken">Cancels the wait for in-flight work.</param>
+    /// <returns>A task that completes when the harness is reset, or immediately when none is registered.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
+    /// <exception cref="TimeoutException">In-flight work did not settle within <see cref="MessagingTestHarness.DefaultTimeout"/>.</exception>
+    public static Task ResetMessagingHarnessAsync(
+        this IServiceProvider services,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(services);
+
+        var harness = services.GetService<MessagingTestHarness>();
+
+        return harness?.ResetAsync(cancellationToken: cancellationToken) ?? Task.CompletedTask;
     }
 }

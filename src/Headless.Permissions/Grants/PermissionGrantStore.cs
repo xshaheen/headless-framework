@@ -59,10 +59,7 @@ public sealed class PermissionGrantStore(
 
         logger.LogPermissionNotFoundInCache(cacheKey);
 
-        var valueCacheItem = await _CacheAllAndGetAsync(providerName, providerKey, name, cancellationToken)
-            .ConfigureAwait(false);
-
-        return valueCacheItem;
+        return await _CacheAllAndGetAsync(providerName, providerKey, name, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<Dictionary<string, PermissionGrantStatus>> IsGrantedAsync(
@@ -87,6 +84,147 @@ public sealed class PermissionGrantStore(
         }
 
         return await _GetCachedItemsAsync(names, providerName, providerKey, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<Dictionary<string, Dictionary<string, PermissionGrantStatus>>> IsGrantedAsync(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        IReadOnlyCollection<string> providerKeys,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(names);
+        Argument.IsNotNullOrEmpty(providerKeys);
+        _EnsureKey(providerName, providerKey: null);
+        _EnsureNames(names);
+        _EnsureNames(providerKeys);
+
+        // One cache read across every (name, key) pair, then one repository read for the misses: the shape
+        // this replaces, one IsGrantedAsync call per key, cost one cache round-trip per target, and one
+        // repository load per target with any miss.
+        var distinctNames = names.ToHashSet(StringComparer.Ordinal);
+        var distinctKeys = providerKeys.ToHashSet(StringComparer.Ordinal);
+
+        var cacheKeys = new List<string>(distinctNames.Count * distinctKeys.Count);
+
+        foreach (var providerKey in distinctKeys)
+        {
+            foreach (var name in distinctNames)
+            {
+                cacheKeys.Add(PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey));
+            }
+        }
+
+        var cacheItemsMap = await cache.GetAllAsync(cacheKeys, cancellationToken).ConfigureAwait(false);
+
+        logger.LogGetCachedItems(cacheKeys);
+
+        // Misses grouped per provider key, so the repository load can name the exact names that key lacks.
+        var missedByKey = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+        foreach (var providerKey in distinctKeys)
+        {
+            foreach (var name in distinctNames)
+            {
+                var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey);
+
+                if (cacheItemsMap.TryGetValue(cacheKey, out var item) && item.HasValue)
+                {
+                    continue;
+                }
+
+                if (!missedByKey.TryGetValue(providerKey, out var missedNames))
+                {
+                    missedNames = [];
+                    missedByKey[providerKey] = missedNames;
+                }
+
+                _ = missedNames.Add(name);
+            }
+        }
+
+        var newCacheItems =
+            missedByKey.Count == 0
+                ? new Dictionary<string, PermissionGrantCacheItem>(StringComparer.Ordinal)
+                : await _CacheSomeForKeysAsync(missedByKey, providerName, cancellationToken).ConfigureAwait(false);
+
+        var result = new Dictionary<string, Dictionary<string, PermissionGrantStatus>>(
+            distinctKeys.Count,
+            StringComparer.Ordinal
+        );
+
+        foreach (var providerKey in distinctKeys)
+        {
+            var statuses = new Dictionary<string, PermissionGrantStatus>(distinctNames.Count, StringComparer.Ordinal);
+            result[providerKey] = statuses;
+
+            foreach (var name in distinctNames)
+            {
+                var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey);
+                var item =
+                    newCacheItems.GetValueOrDefault(cacheKey)
+                    ?? (cacheItemsMap.TryGetValue(cacheKey, out var cached) && cached.HasValue ? cached.Value : null);
+
+                statuses[name] = PermissionGrantStatus.From(item?.IsGranted);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>Loads the missed (name, provider key) pairs from the repository in one read and caches them.</summary>
+    private async Task<Dictionary<string, PermissionGrantCacheItem>> _CacheSomeForKeysAsync(
+        Dictionary<string, HashSet<string>> missedByKey,
+        string providerName,
+        CancellationToken cancellationToken
+    )
+    {
+        var allMissedNames = missedByKey.Values.SelectMany(x => x).ToHashSet(StringComparer.Ordinal);
+
+        var definitions = await _GetDbPermissionsDefinitionsAsync([.. allMissedNames], cancellationToken)
+            .ConfigureAwait(false);
+
+        var dbPermissionGrants = await repository
+            .GetListAsync([.. allMissedNames], providerName, missedByKey.Keys, cancellationToken)
+            .ConfigureAwait(false);
+
+        // (name, key) to IsGranted for every row the repository returned.
+        var grantsLookup = new Dictionary<(string Name, string Key), bool>();
+
+        foreach (var grant in dbPermissionGrants)
+        {
+            grantsLookup[(grant.Name, grant.ProviderKey)] = grant.IsGranted;
+        }
+
+        // Only defined permissions get a cache entry, same as the single-key path: an undefined name stays
+        // uncached so it resolves fresh if its definition appears later.
+        var definedNames = definitions.Select(d => d.Name).ToHashSet(StringComparer.Ordinal);
+
+        logger.LogSettingCacheItems(definitions.Length);
+
+        var cacheItems = new Dictionary<string, PermissionGrantCacheItem>(StringComparer.Ordinal);
+
+        foreach (var (providerKey, missedNames) in missedByKey)
+        {
+            foreach (var name in missedNames)
+            {
+                if (!definedNames.Contains(name))
+                {
+                    continue;
+                }
+
+                // A row decides granted or prohibited; no row is undefined, and the cache stores that distinction.
+                bool? isGranted = grantsLookup.TryGetValue((name, providerKey), out var granted) ? granted : null;
+                cacheItems[PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey)] = new(
+                    isGranted
+                );
+            }
+        }
+
+        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
+        logger.LogFinishedSettingCacheItems(definitions.Length);
+
+        return cacheItems;
     }
 
     public async Task<List<PermissionGrant>> GetAllGrantsAsync(
@@ -567,7 +705,7 @@ public sealed class PermissionGrantStore(
         return permissionName;
     }
 
-    #endregion
+    #endregion Helpers
 }
 
 /// <summary>
@@ -608,6 +746,27 @@ public interface IPermissionGrantStore
         IReadOnlyList<string> names,
         string providerName,
         string providerKey,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Returns the grant status for each (permission name, provider key) pair the request covers, in one
+    /// batched read per provider key, so a caller checking several targets of one provider (for example
+    /// every role a user holds) pays one call instead of one per target.
+    /// </summary>
+    /// <remarks>
+    /// The result is keyed by provider key, then by permission name. Every requested name appears for every
+    /// requested key: a name with no record anywhere resolves to <see cref="PermissionGrantStatus.Undefined"/>.
+    /// Must agree with <see cref="IsGrantedAsync(string, string, string, CancellationToken)"/>: a (name, key)
+    /// pair resolvable through the single-target read resolves identically here, and vice versa.
+    /// </remarks>
+    /// <param name="names">The permission names to resolve. Must not be empty.</param>
+    /// <param name="providerName">The provider name the keys belong to.</param>
+    /// <param name="providerKeys">The provider targets to resolve the names for. Must not be empty.</param>
+    Task<Dictionary<string, Dictionary<string, PermissionGrantStatus>>> IsGrantedAsync(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        IReadOnlyCollection<string> providerKeys,
         CancellationToken cancellationToken = default
     );
 

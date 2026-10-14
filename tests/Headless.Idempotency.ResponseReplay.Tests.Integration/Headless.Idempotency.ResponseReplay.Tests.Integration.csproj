@@ -1,0 +1,24 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Idempotency.ResponseReplay\Headless.Idempotency.ResponseReplay.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Caching.InMemory\Headless.Caching.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Idempotency.Caching\Headless.Idempotency.Caching.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Idempotency.InMemory\Headless.Idempotency.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Idempotency.PostgreSql\Headless.Idempotency.PostgreSql.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Idempotency.SqlServer\Headless.Idempotency.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
+  </ItemGroup>
+</Project>

@@ -155,6 +155,88 @@ public sealed class ConsumerServiceSelectorTests
     }
 
     [Fact]
+    public void should_match_each_wildcard_pattern_when_more_patterns_than_the_static_regex_cache_holds()
+    {
+        // given
+        const int patternCount = 20;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(messaging => messaging.Options.Version = "v1");
+        services.AddSingleton(sp =>
+        {
+            var registry = new ConsumerRegistry();
+            for (var i = 0; i < patternCount; i++)
+            {
+                registry.Register(
+                    new ConsumerMetadata(
+                        typeof(SelectorTestMessage),
+                        typeof(SelectorTestConsumer),
+                        $"orders{i}.*",
+                        1,
+                        MessageLane.Bus,
+                        $"tests.selector-wildcard-{i}",
+                        "v1"
+                    )
+                );
+            }
+
+            return SetupMessaging.BuildConsumerRegistry(sp, registry);
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var selector = provider.GetRequiredService<IConsumerServiceSelector>();
+        var candidates = selector.SelectCandidates();
+
+        // when / then: every pattern still matches its own key, twice over, and no other pattern claims it
+        for (var round = 0; round < 2; round++)
+        {
+            for (var i = 0; i < patternCount; i++)
+            {
+                var best = selector.SelectBestCandidate($"orders{i}.placed", candidates);
+
+                best.Should().NotBeNull();
+                best.MessageName.Should().Be($"orders{i}.*");
+            }
+        }
+    }
+
+    [Fact]
+    public void should_match_wildcards_per_candidate_list_when_lists_share_a_subscription_and_lane()
+    {
+        // given: callers also group candidates by consumer identity, so two different lists can start with
+        // descriptors of the same subscription and lane
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(messaging => messaging.Options.Version = "v1");
+        using var provider = services.BuildServiceProvider();
+        var selector = provider.GetRequiredService<IConsumerServiceSelector>();
+
+        var orders = _CreateWildcardDescriptor("orders.*", "shared-subscription");
+        var invoices = _CreateWildcardDescriptor("invoices.*", "shared-subscription");
+
+        // when
+        var ordersMatch = selector.SelectBestCandidate("orders.placed", [orders]);
+        var invoicesMatch = selector.SelectBestCandidate("invoices.paid", [invoices]);
+
+        // then
+        ordersMatch.Should().BeSameAs(orders);
+        invoicesMatch.Should().BeSameAs(invoices);
+    }
+
+    private static ConsumerExecutorDescriptor _CreateWildcardDescriptor(string messageName, string subscriptionName)
+    {
+        return new ConsumerExecutorDescriptor
+        {
+            ConsumerType = typeof(SelectorTestConsumer),
+            MethodName = nameof(IConsume<>.ConsumeAsync),
+            MessageType = typeof(SelectorTestMessage),
+            MessageName = messageName,
+            SubscriptionName = subscriptionName,
+            Lane = MessageLane.Bus,
+        };
+    }
+
+    [Fact]
     public void should_handle_multiple_consumers_for_same_topic()
     {
         // given

@@ -334,7 +334,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 // Check if we can update (matching EF's Where condition)
                 if (
-                    existingTicker.UpdatedAt <= job.UpdatedAt
+                    existingTicker.UpdatedAt == job.UpdatedAt
+                    && existingTicker.ExecutionTime <= fallbackThreshold
                     && _CanFallbackClaim(existingTicker.Status, existingTicker.LockedUntil, now)
                     && _runFilter.Allows(existingTicker.Function)
                     && _ParentGateAllowsClaim(existingTicker)

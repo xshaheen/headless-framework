@@ -40,4 +40,19 @@ public sealed class DefaultValueFeatureValueProvider : IFeatureValueReadProvider
 
         return Task.FromResult(feature.DefaultValue);
     }
+
+    /// <inheritdoc/>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
+    public Task<List<FeatureValue>> GetAllAsync(
+        FeatureDefinition[] features,
+        string? providerKey = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var featureValues = features.Select(static x => new FeatureValue(x.Name, x.DefaultValue)).ToList();
+
+        return Task.FromResult(featureValues);
+    }
 }

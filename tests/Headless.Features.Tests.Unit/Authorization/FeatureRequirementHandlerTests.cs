@@ -119,7 +119,7 @@ public sealed class FeatureRequirementHandlerTests : TestBase
     public void should_reject_a_requirement_without_features()
     {
         // when
-        var act = () => new FeatureRequirement([], requiresAll: false);
+        var act = static () => new FeatureRequirement([], requiresAll: false);
 
         // then
         act.Should().Throw<ArgumentException>();
@@ -163,6 +163,22 @@ public sealed class FeatureRequirementHandlerTests : TestBase
                 var value = enabledFeatures.Contains(name, StringComparer.Ordinal) ? "true" : "false";
 
                 return new FeatureValue(name, value, Provider: null);
+            });
+        featureManager
+            .GetAllAsync(Arg.Any<IReadOnlySet<string>>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var names = call.ArgAt<IReadOnlySet<string>>(0);
+
+                return names.ToDictionary(
+                    name => name,
+                    name => new FeatureValue(
+                        name,
+                        enabledFeatures.Contains(name, StringComparer.Ordinal) ? "true" : "false",
+                        Provider: null
+                    ),
+                    StringComparer.Ordinal
+                );
             });
 
         var services = new ServiceCollection();

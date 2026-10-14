@@ -114,6 +114,32 @@ public sealed class InFlightHandlerTrackerTests : TestBase
     }
 
     [Fact]
+    public async Task should_keep_draining_a_later_handler_after_an_earlier_one_faults()
+    {
+        // given — the first snapshot holds only the handler that will fault.
+        var tracker = new InFlightHandlerTracker();
+        var faulting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var late = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        tracker.Track(faulting.Task);
+        var drain = tracker.DrainAsync(TimeSpan.FromSeconds(30), TimeProvider.System);
+
+        // when — a delivery that passed its shutdown check starts a handler late, then the first handler faults.
+        tracker.Track(late.Task);
+        faulting.SetException(new InvalidOperationException("boom"));
+        await Task.Delay(50, AbortToken);
+
+        // then — the client must not be disposed under the late handler, so the drain waits for it first.
+        drain.IsCompleted.Should().BeFalse();
+
+        late.SetResult();
+        await FluentActions
+            .Awaiting(() => drain.WaitAsync(TimeSpan.FromSeconds(5), AbortToken))
+            .Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("boom");
+    }
+
+    [Fact]
     public async Task should_refuse_try_track_once_the_drain_began_but_keep_tracking_with_track()
     {
         // given

@@ -178,16 +178,31 @@ public static partial class JobsCoordinationFixtureExtensions
     public static readonly TimeSpan DeadThreshold = TimeSpan.FromMilliseconds(1200);
     public static readonly TimeSpan DeadRetentionWindow = TimeSpan.FromMilliseconds(1200);
 
-    // An intercepted host captures the SQL of acquires and renewals and never waits for a node to die, so it keeps
-    // membership on production-scale thresholds. On the second-scale ones above, one heartbeat stalled past 1.2 s by
-    // a loaded run fail-stops the node, and every later acquire returns nothing because the node has no owner identity.
-    public static readonly TimeSpan InterceptedHostHeartbeatInterval = TimeSpan.FromMilliseconds(500);
-    private static readonly TimeSpan _InterceptedHostSuspicionThreshold = TimeSpan.FromSeconds(15);
-    private static readonly TimeSpan _InterceptedHostDeadThreshold = TimeSpan.FromSeconds(30);
+    // Production-scale thresholds for a host whose scenario never waits for a node to die. On the second-scale ones
+    // above, one heartbeat stalled past 1.2 s by a loaded run declares the live node Dead: every later acquire returns
+    // nothing because the node has no owner identity, and the dead-owner reclaim hands the node's own Queued rows back
+    // to Idle with no owner, so a scenario that reads its claims back sees them undone.
+    public static readonly TimeSpan SteadyHeartbeatInterval = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan _SteadySuspicionThreshold = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan _SteadyDeadThreshold = TimeSpan.FromSeconds(30);
+
+    private static readonly (
+        TimeSpan Heartbeat,
+        TimeSpan Suspicion,
+        TimeSpan Dead,
+        TimeSpan DeadRetention
+    ) _SteadyMembershipTimings = (
+        SteadyHeartbeatInterval,
+        _SteadySuspicionThreshold,
+        _SteadyDeadThreshold,
+        _SteadyDeadThreshold
+    );
 
     /// <summary>
     /// Builds (but does not start) a host wired the way a production Jobs node is: a Coordination provider
-    /// registered <em>before</em> the durable Jobs store so the require-a-provider check is satisfied.
+    /// registered <em>before</em> the durable Jobs store so the require-a-provider check is satisfied. Pass
+    /// <paramref name="steadyMembership" /> for a scenario that never waits for a node to die but must keep its own
+    /// claims through a loaded run.
     /// </summary>
     public static IHost BuildHost(
         this IJobsCoordinationFixture fixture,
@@ -198,7 +213,8 @@ public static partial class JobsCoordinationFixtureExtensions
         bool useNativeClaims = true,
         IInterceptor? interceptor = null,
         Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? configureJobs = null,
-        bool runBackgroundServices = false
+        bool runBackgroundServices = false,
+        bool steadyMembership = false
     )
     {
         return _BuildHost<JobsDbContext>(
@@ -211,6 +227,7 @@ public static partial class JobsCoordinationFixtureExtensions
             useNativeClaims,
             interceptor,
             configureJobs,
+            membershipTimings: steadyMembership ? _SteadyMembershipTimings : null,
             runBackgroundServices: runBackgroundServices
         );
     }
@@ -246,12 +263,7 @@ public static partial class JobsCoordinationFixtureExtensions
             leaseDuration,
             useNativeClaims: false,
             interceptor,
-            membershipTimings: (
-                InterceptedHostHeartbeatInterval,
-                _InterceptedHostSuspicionThreshold,
-                _InterceptedHostDeadThreshold,
-                _InterceptedHostDeadThreshold
-            )
+            membershipTimings: _SteadyMembershipTimings
         );
     }
 
