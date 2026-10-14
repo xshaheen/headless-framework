@@ -504,6 +504,48 @@ public sealed class KeyedAsyncLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_throw_and_not_leak_entry_when_timeout_lock_is_free_but_token_already_cancelled()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when
+        var act = async () =>
+            await keyedLock.LockAsync(
+                "pre-cancelled-free-key",
+                TimeSpan.FromSeconds(5),
+                TimeProvider.System,
+                cts.Token
+            );
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        _SemaphoreCount(keyedLock).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_acquire_free_key_without_scheduling_timeout_timer()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        var timeProvider = new TimerCountingTimeProvider();
+
+        // when
+        using var releaser = await keyedLock.LockAsync(
+            "free-fast-path-key",
+            TimeSpan.FromSeconds(5),
+            timeProvider,
+            AbortToken
+        );
+
+        // then
+        releaser.Should().NotBeNull();
+        timeProvider.TimersCreated.Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_throw_when_timeout_waiter_is_cancelled()
     {
         // given
@@ -901,5 +943,19 @@ public sealed class KeyedAsyncLockTests : TestBase
         }
 
         return total;
+    }
+
+    private sealed class TimerCountingTimeProvider : TimeProvider
+    {
+        private int _timersCreated;
+
+        public int TimersCreated => _timersCreated;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            Interlocked.Increment(ref _timersCreated);
+
+            return base.CreateTimer(callback, state, dueTime, period);
+        }
     }
 }
