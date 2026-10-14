@@ -351,7 +351,7 @@ internal sealed class SubscribeExecutor(
                 descriptor.ResolvedConsumerIdentity
             );
 
-            var sp = Stopwatch.StartNew();
+            var startedAt = Stopwatch.GetTimestamp();
 
             if (message.InboxKey is not null && _options.MinimumInboxGuarantee is InboxGuarantee.Transactional)
             {
@@ -427,9 +427,9 @@ internal sealed class SubscribeExecutor(
 
             _RecordInboxMetric(message, InboxMetricKind.Terminal, InboxMetricOutcome.Succeeded);
 
-            sp.Stop();
+            var elapsedMilliseconds = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
 
-            MessageEventCounterSource.Log.WriteInvokeTimeMetrics(sp.Elapsed.TotalMilliseconds);
+            MessageEventCounterSource.Log.WriteInvokeTimeMetrics(elapsedMilliseconds);
             if (logger.IsEnabled(LogLevel.Information))
             {
                 var executionInstanceId = message.Origin.GetExecutionInstanceId();
@@ -437,7 +437,7 @@ internal sealed class SubscribeExecutor(
                     descriptor.ConsumerType.Name,
                     descriptor.MethodName,
                     descriptor.ResolvedConsumerIdentity,
-                    sp.Elapsed.TotalMilliseconds,
+                    elapsedMilliseconds,
                     executionInstanceId
                 );
             }

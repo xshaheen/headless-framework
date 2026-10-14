@@ -191,6 +191,15 @@ internal static class DistributedReadWriteLockCoreServiceCollectionExtensions
 
         services.TryAddSingleton<IDistributedReadWriteLock>(sp => sp.GetRequiredService<DistributedReadWriteLock>());
 
+        // Join the lock-released fan-out with the same singleton so a release wakes reader-writer waiters too. The
+        // consumer itself is not registered here: every setup that adds this core also adds the mutex and semaphore
+        // cores, which register it.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<ICanReceiveLockReleased, DistributedReadWriteLock>(static sp =>
+                sp.GetRequiredService<DistributedReadWriteLock>()
+            )
+        );
+
         return services;
     }
 }

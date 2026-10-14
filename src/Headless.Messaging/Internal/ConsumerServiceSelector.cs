@@ -153,7 +153,13 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
             [
                 .. executeDescriptor.Select(x => new RegexExecuteDescriptor<ConsumerExecutorDescriptor>
                 {
-                    Name = TransportNaming.WildcardToRegex(x.MessageName),
+                    // Built once per cached list: the static Regex.IsMatch cache holds only a few patterns, so
+                    // more wildcard subscriptions than that would re-parse their patterns on every delivery.
+                    Pattern = new Regex(
+                        TransportNaming.WildcardToRegex(x.MessageName),
+                        RegexOptions.Singleline,
+                        TimeSpan.FromSeconds(1)
+                    ),
                     Descriptor = x,
                 }),
             ];
@@ -163,7 +169,7 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
 
         foreach (var red in tmpList)
         {
-            if (Regex.IsMatch(key, red.Name, RegexOptions.Singleline, TimeSpan.FromSeconds(1)))
+            if (red.Pattern.IsMatch(key))
             {
                 return red.Descriptor;
             }
@@ -190,7 +196,7 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
 
     private sealed class RegexExecuteDescriptor<T>
     {
-        public required string Name { get; init; }
+        public required Regex Pattern { get; init; }
 
         public required T Descriptor { get; init; }
     }

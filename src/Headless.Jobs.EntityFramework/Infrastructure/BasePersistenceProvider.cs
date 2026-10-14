@@ -298,7 +298,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             DateTimeKind.Utc
         );
 
-        // Fetch all jobs within that complete second (this ensures we get all jobs in the same second)
+        // Read within that complete second, capped at one candidate page: the native claims discard everything past
+        // that page anyway, and the (ExecutionTime, Id) order makes the page the same rows they would keep. Rows past
+        // the cap stay due, so the next peek returns them.
         var maxExecutionTime = minSecond.AddSeconds(1);
 
         // Load the flat roots, then rebuild the non-timed in-tree subtree to MaxChainDepth in memory (a
@@ -309,7 +311,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // SaveChanges, no ExecuteUpdate/Delete, and no transaction of its own.
         var windowedQuery = baseQuery
             .Where(x => x.ExecutionTime >= minSecond && x.ExecutionTime < maxExecutionTime)
-            .OrderBy(x => x.ExecutionTime);
+            .OrderBy(x => x.ExecutionTime)
+            .ThenBy(x => x.Id)
+            .Take(JobsClaimStrategyDefaults.MaxCandidatePageSize);
 
         var jobs = await dbContext
             .Database.CreateExecutionStrategy()

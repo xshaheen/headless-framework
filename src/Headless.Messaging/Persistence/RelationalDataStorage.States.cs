@@ -279,25 +279,12 @@ internal sealed partial class RelationalDataStorage
         }
     }
 
-    private async ValueTask<bool> _ChangeStateAsync(
-        string operation,
-        string table,
-        MediumMessage message,
-        StatusName state,
-        MessageContentWrite contentWrite,
-        DbTransaction? transaction,
-        RetryDelay? retryDelay,
-        DateTimeOffset? lockedUntil,
-        int? originalRetries,
-        int? originalInlineAttempts,
-        CancellationToken cancellationToken
-    )
+    /// <summary>
+    /// Renders the state change of a row in the received or published table, with or without rewriting its content.
+    /// </summary>
+    private string _RenderChangeState(bool received, bool refreshContent)
     {
-        var received = _IsReceived(table);
-        var refreshContent = contentWrite is MessageContentWrite.Refresh;
-        var content = refreshContent ? _RefreshContent(message) : null;
-        var isTerminal = state is StatusName.Succeeded or StatusName.Failed && retryDelay is null;
-
+        var table = received ? _receivedTable : _publishedTable;
         var set = new List<string>(capacity: 12);
         if (refreshContent)
         {
@@ -332,13 +319,32 @@ internal sealed partial class RelationalDataStorage
             fence += $" AND {_InboxAttemptGuard(matchStorageId: false)}";
         }
 
-        return await _TransitionAsync(
+        return _RenderTransition(table, fence, string.Join(", ", set), [_t.Id]);
+    }
+
+    private async ValueTask<bool> _ChangeStateAsync(
+        string operation,
+        string table,
+        MediumMessage message,
+        StatusName state,
+        MessageContentWrite contentWrite,
+        DbTransaction? transaction,
+        RetryDelay? retryDelay,
+        DateTimeOffset? lockedUntil,
+        int? originalRetries,
+        int? originalInlineAttempts,
+        CancellationToken cancellationToken
+    )
+    {
+        var received = _IsReceived(table);
+        var refreshContent = contentWrite is MessageContentWrite.Refresh;
+        var content = refreshContent ? _RefreshContent(message) : null;
+        var isTerminal = state is StatusName.Succeeded or StatusName.Failed && retryDelay is null;
+
+        return await _RunTransitionAsync(
                 operation,
                 transaction,
-                table,
-                fence,
-                string.Join(", ", set),
-                [_t.Id],
+                _changeStateSql[(received ? 2 : 0) | (refreshContent ? 1 : 0)],
                 command =>
                 {
                     if (refreshContent)

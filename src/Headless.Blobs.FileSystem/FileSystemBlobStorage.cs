@@ -509,6 +509,10 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
         var windowLimit = (long)query.PageSize + 1;
         var pageWindow = new List<(string Key, FileInfo Info)>((int)Math.Min(windowLimit, 1024));
 
+        // Index of the largest key in a full window. Most keys past that point are rejected against it, so the window
+        // is rescanned only after a replacement changes its largest key, not once per file.
+        var maxIndex = -1;
+
         // DirectoryInfo enumeration yields FileInfo instances pre-populated from the directory scan, so the
         // page entries below need no second stat per file (Directory.EnumerateFiles + new FileInfo did).
         var containerInfo = new DirectoryInfo(containerDirectory);
@@ -545,12 +549,18 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
                 continue;
             }
 
-            var maxIndex = BlobStorageHelpers.IndexOfMaxKey(pageWindow, static item => item.Key);
-
-            if (string.CompareOrdinal(key, pageWindow[maxIndex].Key) < 0)
+            if (maxIndex < 0)
             {
-                pageWindow[maxIndex] = (key, info);
+                maxIndex = BlobStorageHelpers.IndexOfMaxKey(pageWindow, static item => item.Key);
             }
+
+            if (string.CompareOrdinal(key, pageWindow[maxIndex].Key) >= 0)
+            {
+                continue;
+            }
+
+            pageWindow[maxIndex] = (key, info);
+            maxIndex = BlobStorageHelpers.IndexOfMaxKey(pageWindow, static item => item.Key);
         }
 
         pageWindow.Sort(static (a, b) => string.CompareOrdinal(a.Key, b.Key));

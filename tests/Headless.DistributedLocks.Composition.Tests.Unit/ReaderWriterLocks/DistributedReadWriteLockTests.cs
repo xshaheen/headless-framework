@@ -13,25 +13,140 @@ namespace Tests.ReaderWriterLocks;
 
 public sealed class DistributedReadWriteLockTests : TestBase
 {
+    // The backoff is at most a few seconds while the acquire timeout these tests use is 30s, so any shorter timer
+    // created after the waiter starts is its backoff wait.
+    private static readonly TimeSpan _AcquireTimeout = TimeSpan.FromSeconds(30);
+
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly IGuidGenerator _guidGenerator = Substitute.For<IGuidGenerator>();
 
     private DistributedReadWriteLock _CreateProvider(
         IDistributedReadWriteLockStorage? storage = null,
         IBus? bus = null,
-        DistributedLockOptions? options = null
+        DistributedLockOptions? options = null,
+        FakeTimeProvider? timeProvider = null
     )
     {
         _guidGenerator.Create().Returns(_ => Guid.NewGuid());
+        timeProvider ??= _timeProvider;
 
         return new DistributedReadWriteLock(
-            storage ?? new InMemoryDistributedReadWriteLockStorage(_timeProvider),
+            storage ?? new InMemoryDistributedReadWriteLockStorage(timeProvider),
             bus,
             options ?? new DistributedLockOptions(),
             _guidGenerator,
-            _timeProvider,
+            timeProvider,
             LoggerFactory.CreateLogger<DistributedReadWriteLock>()
         );
+    }
+
+    private static Task<TimeSpan> _WaitForBackoffArmedAsync(TimerRecordingTimeProvider timeProvider)
+    {
+        return timeProvider.WaitForTimerAsync(dueTime => dueTime < TimeSpan.FromSeconds(10), AbortToken);
+    }
+
+    [Fact]
+    public async Task should_wake_write_waiter_without_advancing_time_when_release_signal_arrives()
+    {
+        // given - a held write lock and a write waiter sleeping on its backoff
+        var timeProvider = new TimerRecordingTimeProvider();
+        var provider = _CreateProvider(timeProvider: timeProvider);
+        var resource = Faker.Random.AlphaNumeric(10);
+        var holder = await provider.AcquireWriteLockAsync(resource, cancellationToken: AbortToken);
+
+        var waiterTask = provider.TryAcquireWriteLockAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = _AcquireTimeout },
+            AbortToken
+        );
+        await _WaitForBackoffArmedAsync(timeProvider);
+
+        // when - the holder releases and the release signal arrives; fake time never moves
+        await holder.ReleaseAsync();
+        ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, holder.LeaseId));
+
+        // then
+        await using var lease = await waiterTask.Bounded();
+        lease.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_wake_read_waiter_without_advancing_time_when_writer_release_signal_arrives()
+    {
+        // given - a held write lock and a read waiter sleeping on its backoff
+        var timeProvider = new TimerRecordingTimeProvider();
+        var provider = _CreateProvider(timeProvider: timeProvider);
+        var resource = Faker.Random.AlphaNumeric(10);
+        var writer = await provider.AcquireWriteLockAsync(resource, cancellationToken: AbortToken);
+
+        var readerTask = provider.TryAcquireReadLockAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = _AcquireTimeout },
+            AbortToken
+        );
+        await _WaitForBackoffArmedAsync(timeProvider);
+
+        // when
+        await writer.ReleaseAsync();
+        ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, writer.LeaseId));
+
+        // then
+        await using var lease = await readerTask.Bounded();
+        lease.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_throw_operation_canceled_when_caller_cancels_during_backoff_wait()
+    {
+        // given - a write waiter sleeping on its backoff behind a held write lock
+        var timeProvider = new TimerRecordingTimeProvider();
+        var provider = _CreateProvider(timeProvider: timeProvider);
+        var resource = Faker.Random.AlphaNumeric(10);
+        await using var holder = await provider.AcquireWriteLockAsync(resource, cancellationToken: AbortToken);
+
+        using var callerCts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var waiterTask = provider.TryAcquireWriteLockAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = _AcquireTimeout },
+            callerCts.Token
+        );
+        await _WaitForBackoffArmedAsync(timeProvider);
+
+        // when
+        await callerCts.CancelAsync();
+
+        // then - a caller cancel still surfaces as a cancellation, never as a null "not acquired" result
+        var act = async () => await waiterTask.Bounded();
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_not_enforce_waiter_caps_when_reader_writer_waiters_exceed_them()
+    {
+        // given - caps of one waiter and one waiting resource, and two readers queued behind a writer
+        var timeProvider = new TimerRecordingTimeProvider();
+        var provider = _CreateProvider(
+            options: new DistributedLockOptions { MaxWaitersPerResource = 1, MaxConcurrentWaitingResources = 1 },
+            timeProvider: timeProvider
+        );
+        var resource = Faker.Random.AlphaNumeric(10);
+        var writer = await provider.AcquireWriteLockAsync(resource, cancellationToken: AbortToken);
+        var acquireOptions = new DistributedLockAcquireOptions { AcquireTimeout = _AcquireTimeout };
+
+        var firstReader = provider.TryAcquireReadLockAsync(resource, acquireOptions, AbortToken);
+        var secondReader = provider.TryAcquireReadLockAsync(resource, acquireOptions, AbortToken);
+        await _WaitForBackoffArmedAsync(timeProvider);
+        await _WaitForBackoffArmedAsync(timeProvider);
+
+        // when - the writer releases and both backoffs elapse
+        await writer.ReleaseAsync();
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+
+        // then - both waiters were admitted to the wait and both acquire
+        await using var firstLease = await firstReader.Bounded();
+        await using var secondLease = await secondReader.Bounded();
+        firstLease.Should().NotBeNull();
+        secondLease.Should().NotBeNull();
     }
 
     private DistributedReadWriteLock _CreateProviderWithLogger(

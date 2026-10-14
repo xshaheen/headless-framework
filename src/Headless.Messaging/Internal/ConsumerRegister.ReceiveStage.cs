@@ -36,6 +36,16 @@ internal sealed partial class ConsumerRegister
         }
     }
 
+    // A method group converted to a delegate allocates on every use; the register is a singleton, so one cached
+    // delegate serves every delivery.
+    private Func<
+        IDictionary<string, string?>,
+        ReadOnlyMemory<byte>,
+        ConsumerExecutorDescriptor,
+        CancellationToken,
+        ValueTask<Message>
+    > RunInnerReceive => field ??= _RunInnerReceiveAsync;
+
     /// <summary>
     /// The inner receive steps the ring's innermost <c>next</c> runs: contract-version validation,
     /// Stage A deserialization (wrapped in <see cref="MessageDeserializationException"/>), and the
@@ -200,11 +210,8 @@ internal sealed partial class ConsumerRegister
         await using var scope = serviceScopeFactory.CreateAsyncScope();
 
         IReceiveMiddleware? outermost = null;
-        foreach (var descriptor in descriptors!)
+        foreach (var middleware in MiddlewareDescriptorResolver.Resolve(scope.ServiceProvider, descriptors!))
         {
-            var middleware = scope
-                .ServiceProvider.GetServices(descriptor.ServiceType)
-                .FirstOrDefault(service => service?.GetType() == descriptor.MiddlewareType);
             if (middleware is not IReceiveMiddleware matched)
             {
                 continue;

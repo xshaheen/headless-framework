@@ -1647,6 +1647,66 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
+    /// The peek reads at most one claim candidate page, the same rows the native claim keeps: the first page in the
+    /// store's (ExecutionTime, Id) order.
+    /// The expected order is read back with the store's own ORDER BY because each engine sorts its uuid type
+    /// differently from <see cref="Guid" />.
+    /// </summary>
+    public virtual async Task peek_returns_at_most_one_candidate_page_in_store_order()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("peek-page-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            // Ahead of now, so the rows stay inside the peek's window however long the seeding takes; spread across
+            // one second so the execution time, not only the id, decides the page.
+            var now = DateTime.UtcNow.AddSeconds(30);
+            var second = new DateTime(now.Ticks - (now.Ticks % TimeSpan.TicksPerSecond), DateTimeKind.Utc);
+            var jobs = Enumerable
+                .Range(0, JobsClaimStrategyDefaults.MaxCandidatePageSize + 1)
+                .Select(i => new TimeJobEntity
+                {
+                    Id = Guid.NewGuid(),
+                    Function = "peek-page",
+                    ExecutionTime = second.AddMilliseconds(i % 4 * 100),
+                })
+                .ToArray();
+            await persistence.AddTimeJobsAsync(jobs, ct);
+
+            var storeOrder = new List<Guid>(jobs.Length);
+            await using (var connection = fixture.CreateConnection())
+            {
+                await connection.OpenAsync(ct);
+                await using var command = connection.CreateCommand();
+                command.CommandText = fixture.Sql(
+                    $"SELECT \"Id\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Function\" = 'peek-page' "
+                        + "ORDER BY \"ExecutionTime\", \"Id\";"
+                );
+                await using var reader = await command.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    storeOrder.Add(reader.GetGuid(0));
+                }
+            }
+
+            storeOrder.Should().HaveCount(jobs.Length);
+
+            var page = (await persistence.GetEarliestTimeJobsAsync(ct)).Jobs;
+
+            page.Select(x => x.Id).Should().Equal(storeOrder.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
     /// The direct claim matches each job's id and expected UpdatedAt as one row. Two candidates carrying each other's
     /// stamps must both be refused: every id and every stored stamp appears in the request, which is all two
     /// independent lists (ids, stamps) would check, but never in the same row.

@@ -2305,6 +2305,367 @@ public sealed class InMemoryCacheTests : TestBase
         survivingCount.Should().BeLessThanOrEqualTo(maxItems);
     }
 
+    [Fact]
+    public async Task should_evict_the_older_unread_key_when_a_read_happened_within_the_same_second()
+    {
+        // given — the read lands only 10 ms after the last write, so any sub-second throttle on the access
+        // stamp would leave key1 the oldest and evict it instead of key2
+        using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = 3 });
+        await cache.UpsertAsync("key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.UpsertAsync("key2", "value2", TimeSpan.FromMinutes(5), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.UpsertAsync("key3", "value3", TimeSpan.FromMinutes(5), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.GetAsync<string>("key1", AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+
+        // when
+        await cache.UpsertAsync("key4", "value4", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        (await cache.ExistsAsync("key1", AbortToken))
+            .Should()
+            .BeTrue();
+        (await cache.ExistsAsync("key2", AbortToken)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_evict_the_unread_entry_when_only_max_memory_size_is_set()
+    {
+        // given — no item cap, so only the memory cap makes the cache track access for LRU tie-breaking
+        using var cache = _CreateCache(
+            new InMemoryCacheOptions
+            {
+                MaxItems = null,
+                MaxMemorySize = 300,
+                SizeCalculator = _ => 100,
+            }
+        );
+        await cache.UpsertAsync("key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.UpsertAsync("key2", "value2", TimeSpan.FromMinutes(5), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.UpsertAsync("key3", "value3", TimeSpan.FromMinutes(5), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.GetAsync<string>("key1", AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+
+        // when
+        await cache.UpsertAsync("key4", "value4", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        (await cache.ExistsAsync("key1", AbortToken))
+            .Should()
+            .BeTrue();
+        (await cache.ExistsAsync("key2", AbortToken)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_return_values_without_eviction_when_no_cap_is_configured()
+    {
+        // given
+        using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = null });
+
+        for (var i = 0; i < 20; i++)
+        {
+            await cache.UpsertAsync($"key{i}", i, TimeSpan.FromMinutes(5), AbortToken);
+        }
+
+        // when
+        var read = await cache.GetAsync<int>("key3", AbortToken);
+
+        // then
+        read.Value.Should().Be(3);
+        (await cache.GetCountAsync(cancellationToken: AbortToken)).Should().Be(20);
+    }
+
+    [Fact]
+    public async Task should_not_evict_when_existing_keys_are_rewritten_past_max_items()
+    {
+        // given — three live keys at the cap, one per write path that can either add or update
+        const int maxItems = 3;
+        using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = maxItems });
+        await cache.UpsertAsync("str", "v", TimeSpan.FromMinutes(5), AbortToken);
+        await cache.IncrementAsync("counter", 1L, TimeSpan.FromMinutes(5), AbortToken);
+        await cache.SetAddAsync("set", ["m0"], TimeSpan.FromMinutes(5), AbortToken);
+
+        // when — every path rewrites an existing key well past the cap
+        for (var i = 0; i < maxItems * 3; i++)
+        {
+            await cache.UpsertAsync("str", $"v{i}", TimeSpan.FromMinutes(5), AbortToken);
+            await cache.TryInsertAsync("str", "ignored", TimeSpan.FromMinutes(5), AbortToken);
+            await cache.UpsertAllAsync(
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["str"] = $"all{i}" },
+                TimeSpan.FromMinutes(5),
+                AbortToken
+            );
+            await cache.IncrementAsync("counter", 1L, TimeSpan.FromMinutes(5), AbortToken);
+            await cache.SetAddAsync("set", [$"m{i}"], TimeSpan.FromMinutes(5), AbortToken);
+        }
+
+        // then
+        await _ShouldAllExistAsync(cache, "str", "counter", "set");
+        (await cache.GetCountAsync(cancellationToken: AbortToken)).Should().Be(maxItems);
+    }
+
+    [Theory]
+    [InlineData("upsert")]
+    [InlineData("upsert-all")]
+    [InlineData("try-insert")]
+    [InlineData("increment")]
+    [InlineData("set-add")]
+    public async Task should_evict_down_to_max_items_when_new_keys_from_any_write_path_exceed_it(string writePath)
+    {
+        // given — the cap is filled entirely through one write path
+        const int maxItems = 3;
+        using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = maxItems });
+
+        for (var i = 0; i < maxItems; i++)
+        {
+            var key = $"key{i}";
+            var expiration = TimeSpan.FromMinutes(5);
+
+            switch (writePath)
+            {
+                case "upsert":
+                    await cache.UpsertAsync(key, i, expiration, AbortToken);
+                    break;
+                case "upsert-all":
+                    await cache.UpsertAllAsync(
+                        new Dictionary<string, int>(StringComparer.Ordinal) { [key] = i },
+                        expiration,
+                        AbortToken
+                    );
+                    break;
+                case "try-insert":
+                    await cache.TryInsertAsync(key, i, expiration, AbortToken);
+                    break;
+                case "increment":
+                    await cache.IncrementAsync(key, 1L, expiration, AbortToken);
+                    break;
+                case "set-add":
+                    await cache.SetAddAsync(key, [i], expiration, AbortToken);
+                    break;
+            }
+        }
+
+        // when — one more distinct key
+        await cache.UpsertAsync("overflow", 0, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        (await cache.GetCountAsync(cancellationToken: AbortToken))
+            .Should()
+            .Be(maxItems);
+        (await cache.ExistsAsync("overflow", AbortToken)).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("remove")]
+    [InlineData("remove-all")]
+    [InlineData("remove-by-prefix")]
+    public async Task should_evict_only_past_max_items_when_refilling_after_removals(string removal)
+    {
+        // given — a full cache with two removable keys
+        const int maxItems = 3;
+        using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = maxItems });
+        await cache.UpsertAsync("keep", 0, TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync("gone:1", 1, TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync("gone:2", 2, TimeSpan.FromMinutes(5), AbortToken);
+
+        switch (removal)
+        {
+            case "remove":
+                await cache.RemoveAsync("gone:1", AbortToken);
+                await cache.RemoveAsync("gone:2", AbortToken);
+                break;
+            case "remove-all":
+                await cache.RemoveAllAsync(["gone:1", "gone:2"], AbortToken);
+                break;
+            case "remove-by-prefix":
+                await cache.RemoveByPrefixAsync("gone:", AbortToken);
+                break;
+        }
+
+        // when — refill exactly to the cap
+        await cache.UpsertAsync("new:1", 1, TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync("new:2", 2, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then — nothing evicted at the cap, and one more key still evicts down to it
+        await _ShouldAllExistAsync(cache, "keep", "new:1", "new:2");
+        await cache.UpsertAsync("new:3", 3, TimeSpan.FromMinutes(5), AbortToken);
+        (await cache.GetCountAsync(cancellationToken: AbortToken)).Should().Be(maxItems);
+    }
+
+    [Fact]
+    public async Task should_evict_only_past_max_items_when_refilling_after_flush()
+    {
+        // given
+        const int maxItems = 3;
+        using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = maxItems });
+
+        for (var i = 0; i < maxItems; i++)
+        {
+            await cache.UpsertAsync($"old{i}", i, TimeSpan.FromMinutes(5), AbortToken);
+        }
+
+        await cache.FlushAsync(AbortToken);
+
+        // when
+        for (var i = 0; i < maxItems; i++)
+        {
+            await cache.UpsertAsync($"new{i}", i, TimeSpan.FromMinutes(5), AbortToken);
+        }
+
+        // then
+        await _ShouldAllExistAsync(cache, "new0", "new1", "new2");
+        await cache.UpsertAsync("new3", 3, TimeSpan.FromMinutes(5), AbortToken);
+        (await cache.GetCountAsync(cancellationToken: AbortToken)).Should().Be(maxItems);
+    }
+
+    [Fact]
+    public async Task should_not_capacity_evict_when_refilling_to_max_items_after_flush_races_writers()
+    {
+        // given — flushes interleaved with concurrent inserts, which can leave the item counter off by the
+        // in-flight writers
+        const int maxItems = 1000;
+        using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = maxItems });
+        var capacityEvictions = 0;
+        using var _ = cache.Events.Eviction.AddHandler(e =>
+        {
+            if (e.Reason == CacheEvictionReason.Capacity)
+            {
+                Interlocked.Increment(ref capacityEvictions);
+            }
+        });
+
+        var writers = Enumerable
+            .Range(0, 8)
+            .Select(w =>
+                Task.Run(
+                    async () =>
+                    {
+                        for (var i = 0; i < 50; i++)
+                        {
+                            await cache.UpsertAsync($"race:{w}:{i}", i, TimeSpan.FromMinutes(5), AbortToken);
+                        }
+                    },
+                    AbortToken
+                )
+            )
+            .Append(
+                Task.Run(
+                    async () =>
+                    {
+                        for (var i = 0; i < 5; i++)
+                        {
+                            await cache.FlushAsync(AbortToken);
+                            await Task.Yield();
+                        }
+                    },
+                    AbortToken
+                )
+            )
+            .ToArray();
+
+        await Task.WhenAll(writers);
+
+        // when — refill exactly to the cap
+        var survivors = await cache.GetCountAsync(cancellationToken: AbortToken);
+
+        for (var i = 0; i < maxItems - survivors; i++)
+        {
+            await cache.UpsertAsync($"fill:{i}", i, TimeSpan.FromMinutes(5), AbortToken);
+        }
+
+        await ((CacheEventsHub)cache.Events).DrainAsync(AbortToken);
+
+        // then
+        capacityEvictions.Should().Be(0);
+        (await cache.GetCountAsync(cancellationToken: AbortToken)).Should().Be(maxItems);
+    }
+
+    [Fact]
+    public async Task should_evict_only_past_max_items_when_refilling_after_expired_entries_are_reaped_by_reads()
+    {
+        // given — two of three entries expire and a read reaps each of them
+        const int maxItems = 3;
+        using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = maxItems });
+        await cache.UpsertAsync("short1", 1, TimeSpan.FromSeconds(1), AbortToken);
+        await cache.UpsertAsync("short2", 2, TimeSpan.FromSeconds(1), AbortToken);
+        await cache.UpsertAsync("long", 3, TimeSpan.FromMinutes(5), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        (await cache.GetAsync<int>("short1", AbortToken)).HasValue.Should().BeFalse();
+        (await cache.GetAsync<int>("short2", AbortToken)).HasValue.Should().BeFalse();
+
+        // when — refill to the cap
+        await cache.UpsertAsync("new1", 1, TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync("new2", 2, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        await _ShouldAllExistAsync(cache, "long", "new1", "new2");
+        await cache.UpsertAsync("new3", 3, TimeSpan.FromMinutes(5), AbortToken);
+        (await cache.GetCountAsync(cancellationToken: AbortToken)).Should().Be(maxItems);
+    }
+
+    [Fact]
+    public async Task should_count_a_key_once_when_upserted_concurrently()
+    {
+        // given
+        const int maxItems = 5;
+        using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = maxItems });
+
+        await Task.WhenAll(
+            Enumerable
+                .Range(0, 32)
+                .Select(i =>
+                    Task.Run(
+                        async () => await cache.UpsertAsync("hot", i, TimeSpan.FromMinutes(5), AbortToken),
+                        AbortToken
+                    )
+                )
+        );
+
+        // when — fill the rest of the cap with distinct keys
+        for (var i = 0; i < maxItems - 1; i++)
+        {
+            await cache.UpsertAsync($"key{i}", i, TimeSpan.FromMinutes(5), AbortToken);
+        }
+
+        // then
+        await _ShouldAllExistAsync(cache, "hot", "key0", "key1", "key2", "key3");
+        (await cache.GetCountAsync(cancellationToken: AbortToken)).Should().Be(maxItems);
+    }
+
+    [Fact]
+    public async Task should_leave_the_item_count_unchanged_when_set_add_fails_on_a_non_set_value()
+    {
+        // given
+        const int maxItems = 3;
+        using var cache = _CreateCache(new InMemoryCacheOptions { MaxItems = maxItems });
+        await cache.UpsertAsync("scalar", "not-a-set", TimeSpan.FromMinutes(5), AbortToken);
+
+        var act = async () => await cache.SetAddAsync("scalar", ["member"], TimeSpan.FromMinutes(5), AbortToken);
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        // when — fill to the cap, then one past it
+        await cache.UpsertAsync("key1", 1, TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync("key2", 2, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        await _ShouldAllExistAsync(cache, "scalar", "key1", "key2");
+        await cache.UpsertAsync("key3", 3, TimeSpan.FromMinutes(5), AbortToken);
+        (await cache.GetCountAsync(cancellationToken: AbortToken)).Should().Be(maxItems);
+    }
+
+    private static async Task _ShouldAllExistAsync(InMemoryCache cache, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            (await cache.ExistsAsync(key, AbortToken)).Should().BeTrue($"'{key}' fits within MaxItems");
+        }
+    }
+
     #endregion
 
     #region CloneValues Option

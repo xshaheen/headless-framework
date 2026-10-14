@@ -156,6 +156,38 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    [Fact]
+    public async Task should_run_each_bus_middleware_once_in_priority_order_when_several_share_a_service_type()
+    {
+        // given: three builder-registered middleware share IConsumeMiddleware<ConsumeContext>, registered out of
+        // priority order
+        var recorder = new MiddlewareCallRecorder();
+        var services = _CreateServices(recorder);
+        var builder = new MessagingBuilder(services);
+        builder.AddBusConsumeMiddleware<RecordingConsumeMiddlewareA>().WithPriority(30);
+        builder.AddBusConsumeMiddleware<RecordingConsumeMiddlewareB>().WithPriority(10);
+        builder.AddBusConsumeMiddleware<RecordingConsumeMiddlewareC>().WithPriority(20);
+        var provider = services.BuildServiceProvider();
+        var pipeline = new ConsumeMiddlewarePipeline(
+            provider,
+            Substitute.For<IRuntimeConsumerRegistry>(),
+            provider.GetRequiredService<IMiddlewareDescriptorRegistry>()
+        );
+
+        // when
+        await pipeline.ExecuteAsync(
+            _BuildConsumerContext(),
+            new MiddlewarePayload("hi"),
+            typeof(MiddlewarePayload),
+            AbortToken
+        );
+
+        // then
+        recorder
+            .Calls.Should()
+            .Equal("B.before", "C.before", "A.before", "dispatcher", "A.after", "C.after", "B.after");
+    }
+
     private static ServiceCollection _CreateServices(MiddlewareCallRecorder recorder)
     {
         var services = new ServiceCollection();
@@ -223,6 +255,16 @@ internal sealed class RecordingConsumeMiddlewareB(MiddlewareCallRecorder recorde
         recorder.Record("B.before");
         await next();
         recorder.Record("B.after");
+    }
+}
+
+internal sealed class RecordingConsumeMiddlewareC(MiddlewareCallRecorder recorder) : IConsumeMiddleware<ConsumeContext>
+{
+    public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+    {
+        recorder.Record("C.before");
+        await next();
+        recorder.Record("C.after");
     }
 }
 
