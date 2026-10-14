@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
+using System.IO;
 using System.Net;
 using Amazon.S3;
 using Amazon.S3.Model;
@@ -36,6 +38,9 @@ internal sealed class AwsBlobStorage(
     private const string _MetaDataHeaderPrefix = "x-amz-meta-";
     private const int _MaxDeleteObjectsBatchSize = 1000;
 
+    // The S3 minimum size of every part but the last, so a non-seekable upload's parts are exactly this size.
+    private const int _NonSeekablePartSize = 5 * 1024 * 1024;
+
     private readonly AwsBlobStorageOptions _options = optionsAccessor.Value;
     private readonly ILogger _logger = logger ?? NullLogger<AwsBlobStorage>.Instance;
 
@@ -57,30 +62,32 @@ internal sealed class AwsBlobStorage(
 
         var (bucket, objectKey) = BlobLocationResolver.Resolve(location, normalizer);
 
-        Stream inputStream;
-        var ownsStream = false;
+        if (!content.CanSeek)
+        {
+            // S3 PutObject needs a seekable stream of known length, so non-seekable content streams through a
+            // multipart upload over one pooled part buffer: a single PutObject when the content fits one part, and
+            // S3-assembled parts otherwise, with no whole-content buffer in memory.
+            await _UploadNonSeekableAsync(
+                    bucket,
+                    objectKey,
+                    location,
+                    content,
+                    contentType,
+                    metadata,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            return;
+        }
 
-        if (content.CanSeek)
-        {
-            content.Position = 0;
-            inputStream = content;
-        }
-        else
-        {
-            // S3 needs a known length, so non-seekable content is buffered to memory before upload.
-            var streamCopy = new MemoryStream();
-            await content.CopyToAsync(streamCopy, cancellationToken).ConfigureAwait(false);
-            streamCopy.Position = 0;
-            inputStream = streamCopy;
-            ownsStream = true;
-        }
+        content.Position = 0;
 
         var request = new PutObjectRequest
         {
             BucketName = bucket,
             Key = objectKey,
-            InputStream = inputStream,
-            AutoCloseStream = ownsStream,
+            InputStream = content,
+            AutoCloseStream = false,
             AutoResetStreamPosition = false,
             // S3 serves the object with this Content-Type on every GET and presigned URL, so a caller's explicit
             // type must win over the key-extension guess (an extension-less key would otherwise serve octet-stream).
@@ -103,6 +110,324 @@ internal sealed class AwsBlobStorage(
         var response = await s3.PutObjectAsync(request, cancellationToken).ConfigureAwait(false);
 
         response.HttpStatusCode.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>
+    /// Uploads non-seekable content over a multipart upload: sequential parts are read into two pooled buffers that
+    /// alternate, so the look-ahead read that decides which part is last never overwrites a part still waiting to be
+    /// uploaded, and memory stays at two part buffers regardless of content size. A failure or cancellation at any
+    /// point aborts the upload, so no incomplete object parts are left billed on the bucket.
+    /// </summary>
+    /// <remarks>
+    /// S3 requires every part but the last to be at least 5 MiB, so <see cref="_NonSeekablePartSize" /> is exactly
+    /// that minimum; part lengths are tracked separately because a pooled rental is rounded up to a power of two.
+    /// </remarks>
+    private async ValueTask _UploadNonSeekableAsync(
+        string bucket,
+        string objectKey,
+        BlobLocation location,
+        Stream content,
+        string? contentType,
+        IReadOnlyDictionary<string, string>? metadata,
+        CancellationToken cancellationToken
+    )
+    {
+        var bufferA = ArrayPool<byte>.Shared.Rent(_NonSeekablePartSize);
+        var bufferB = ArrayPool<byte>.Shared.Rent(_NonSeekablePartSize);
+        string? uploadId = null;
+
+        try
+        {
+            var lengthA = await _FillBufferAsync(content, bufferA, cancellationToken).ConfigureAwait(false);
+            var partNumber = 0;
+            var partETags = new List<PartETag>();
+
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Look ahead into the other buffer: buffer A still holds its part untouched.
+                var lengthB = await _FillBufferAsync(content, bufferB, cancellationToken).ConfigureAwait(false);
+
+                if (lengthB == 0)
+                {
+                    // The stream ended: buffer A holds the final part, or — before any upload began — the whole
+                    // content, which a single PutObject carries without multipart's initiate and complete calls. An
+                    // empty content uploads an empty object, like a seekable empty stream would.
+                    if (uploadId is null)
+                    {
+                        await _PutObjectAsync(
+                                bucket,
+                                objectKey,
+                                location,
+                                bufferA.AsMemory(0, lengthA),
+                                contentType,
+                                metadata,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+                        return;
+                    }
+
+                    partETags.Add(
+                        await _UploadPartAsync(
+                                bucket,
+                                objectKey,
+                                uploadId,
+                                ++partNumber,
+                                bufferA.AsMemory(0, lengthA),
+                                isLastPart: true,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false)
+                    );
+
+                    break;
+                }
+
+                uploadId ??= await _InitiateMultipartAsync(
+                        bucket,
+                        objectKey,
+                        location,
+                        contentType,
+                        metadata,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                partETags.Add(
+                    await _UploadPartAsync(
+                            bucket,
+                            objectKey,
+                            uploadId,
+                            ++partNumber,
+                            bufferA.AsMemory(0, lengthA),
+                            isLastPart: false,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false)
+                );
+
+                if (lengthB < _NonSeekablePartSize)
+                {
+                    // A short look-ahead is the final part: the stream ended inside buffer B. Compared against the
+                    // part size, not the rental's length, because a pooled rental is longer than the part.
+                    partETags.Add(
+                        await _UploadPartAsync(
+                                bucket,
+                                objectKey,
+                                uploadId,
+                                ++partNumber,
+                                bufferB.AsMemory(0, lengthB),
+                                isLastPart: true,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false)
+                    );
+
+                    break;
+                }
+
+                // Both buffers are full parts: continue with B as the pending part and A as the look-ahead.
+                (bufferA, bufferB) = (bufferB, bufferA);
+                lengthA = lengthB;
+            }
+
+            await _CompleteMultipartAsync(bucket, objectKey, uploadId!, partETags, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            if (uploadId is not null)
+            {
+                await _AbortMultipartAsync(bucket, objectKey, uploadId).ConfigureAwait(false);
+            }
+
+            throw;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(bufferA);
+            ArrayPool<byte>.Shared.Return(bufferB);
+        }
+    }
+
+    /// <summary>
+    /// Fills <paramref name="buffer" /> from <paramref name="content" /> until the part size is reached or the stream
+    /// ends, returning how many bytes were read. A pooled rental is longer than the part size, so only the part-size
+    /// prefix is ever filled.
+    /// </summary>
+    private static async ValueTask<int> _FillBufferAsync(
+        Stream content,
+        byte[] buffer,
+        CancellationToken cancellationToken
+    )
+    {
+        var total = 0;
+
+        while (total < _NonSeekablePartSize)
+        {
+            var read = await content
+                .ReadAsync(buffer.AsMemory(total, _NonSeekablePartSize - total), cancellationToken)
+                .ConfigureAwait(false);
+
+            if (read == 0)
+            {
+                break;
+            }
+
+            total += read;
+        }
+
+        return total;
+    }
+
+    private async ValueTask _PutObjectAsync(
+        string bucket,
+        string objectKey,
+        BlobLocation location,
+        ReadOnlyMemory<byte> content,
+        string? contentType,
+        IReadOnlyDictionary<string, string>? metadata,
+        CancellationToken cancellationToken
+    )
+    {
+        var request = new PutObjectRequest
+        {
+            BucketName = bucket,
+            Key = objectKey,
+            InputStream = new ReadOnlySequence<byte>(content).ToStream(),
+            AutoCloseStream = false,
+            AutoResetStreamPosition = false,
+            ContentType = contentType ?? mimeTypeProvider.GetMimeType(location.Path),
+            UseChunkEncoding = _options.UseChunkEncoding,
+            CannedACL = _options.CannedAcl,
+            Headers = { CacheControl = _DefaultCacheControl },
+            DisablePayloadSigning = _options.DisablePayloadSigning,
+        };
+
+        _AddMetadata(request.Metadata, metadata, location);
+
+        var response = await s3.PutObjectAsync(request, cancellationToken).ConfigureAwait(false);
+
+        response.HttpStatusCode.EnsureSuccessStatusCode();
+    }
+
+    private async ValueTask<string> _InitiateMultipartAsync(
+        string bucket,
+        string objectKey,
+        BlobLocation location,
+        string? contentType,
+        IReadOnlyDictionary<string, string>? metadata,
+        CancellationToken cancellationToken
+    )
+    {
+        var request = new InitiateMultipartUploadRequest
+        {
+            BucketName = bucket,
+            Key = objectKey,
+            ContentType = contentType ?? mimeTypeProvider.GetMimeType(location.Path),
+            CannedACL = _options.CannedAcl,
+            Headers = { CacheControl = _DefaultCacheControl },
+        };
+
+        _AddMetadata(request.Metadata, metadata, location);
+
+        var response = await s3.InitiateMultipartUploadAsync(request, cancellationToken).ConfigureAwait(false);
+
+        response.HttpStatusCode.EnsureSuccessStatusCode();
+
+        return response.UploadId
+            ?? throw new InvalidOperationException("S3 initiated a multipart upload without returning an upload id.");
+    }
+
+    private async ValueTask<PartETag> _UploadPartAsync(
+        string bucket,
+        string objectKey,
+        string uploadId,
+        int partNumber,
+        ReadOnlyMemory<byte> part,
+        bool isLastPart,
+        CancellationToken cancellationToken
+    )
+    {
+        var request = new UploadPartRequest
+        {
+            BucketName = bucket,
+            Key = objectKey,
+            UploadId = uploadId,
+            PartNumber = partNumber,
+            PartSize = part.Length,
+            IsLastPart = isLastPart,
+            InputStream = new ReadOnlySequence<byte>(part).ToStream(),
+            UseChunkEncoding = _options.UseChunkEncoding,
+            DisablePayloadSigning = _options.DisablePayloadSigning,
+        };
+
+        var response = await s3.UploadPartAsync(request, cancellationToken).ConfigureAwait(false);
+
+        response.HttpStatusCode.EnsureSuccessStatusCode();
+
+        return new PartETag(partNumber, response.ETag!);
+    }
+
+    private async ValueTask _CompleteMultipartAsync(
+        string bucket,
+        string objectKey,
+        string uploadId,
+        List<PartETag> partETags,
+        CancellationToken cancellationToken
+    )
+    {
+        var request = new CompleteMultipartUploadRequest
+        {
+            BucketName = bucket,
+            Key = objectKey,
+            UploadId = uploadId,
+            PartETags = partETags,
+        };
+
+        var response = await s3.CompleteMultipartUploadAsync(request, cancellationToken).ConfigureAwait(false);
+
+        response.HttpStatusCode.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>
+    /// Aborts an abandoned multipart upload. The upload's own failure or cancellation must not skip the abort, so
+    /// this call observes neither the token it follows nor the failure it reports through.
+    /// </summary>
+    private async ValueTask _AbortMultipartAsync(string bucket, string objectKey, string uploadId)
+    {
+        try
+        {
+            var request = new AbortMultipartUploadRequest
+            {
+                BucketName = bucket,
+                Key = objectKey,
+                UploadId = uploadId,
+            };
+            var response = await s3.AbortMultipartUploadAsync(request, CancellationToken.None).ConfigureAwait(false);
+            response.HttpStatusCode.EnsureSuccessStatusCode();
+        }
+        catch (Exception e)
+        {
+            _logger.LogMultipartAbortFailed(e, bucket, objectKey);
+        }
+    }
+
+    private void _AddMetadata(
+        MetadataCollection collection,
+        IReadOnlyDictionary<string, string>? metadata,
+        BlobLocation location
+    )
+    {
+        // Copy the caller's metadata + framework keys into the S3 request (the helper never mutates the caller's
+        // dictionary); S3 needs the entries in its MetadataCollection, which prefixes keys with "x-amz-meta-".
+        foreach (
+            var pair in BlobStorageHelpers.BuildEffectiveMetadata(metadata, timeProvider.GetUtcNow(), location.Path)
+        )
+        {
+            collection[pair.Key] = pair.Value;
+        }
     }
 
     #endregion
@@ -1008,6 +1333,19 @@ internal static partial class AwsBlobStorageLog
         Message = "Could not verify move source {Bucket}/{Key} after its delete faulted; skipping the destination rollback (both copies may remain)"
     )]
     public static partial void LogMoveSourceCheckFailed(
+        this ILogger logger,
+        Exception exception,
+        string bucket,
+        string key
+    );
+
+    [LoggerMessage(
+        EventId = 7,
+        EventName = "MultipartAbortFailed",
+        Level = LogLevel.Warning,
+        Message = "Failed to abort the multipart upload of {Bucket}/{Key}; incomplete parts may remain billed until the bucket's abort rules collect them"
+    )]
+    public static partial void LogMultipartAbortFailed(
         this ILogger logger,
         Exception exception,
         string bucket,
