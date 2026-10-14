@@ -2073,7 +2073,7 @@ Known limitations:
 - **Idle Azure Service Bus consumer-only host.** After the broker recovers, the host reads unreachable until a message arrives or a send succeeds, because the Service Bus processor reports no success while idle.
 - **Direct delivery.** A Direct-mode publish does not feed reachability: its failure reaches the caller as an exception instead.
 
-Transports that retry a lost broker inside their own receive loop (Azure Service Bus, Amazon SQS, Pulsar, Redis Streams) report through `OnLogCallback` with `MqLogType.BrokerUnreachable` (`14`) on each failed receive and `MqLogType.BrokerReachable` (`15`) on the first receive that succeeds after one. These leave the client running instead of rebuilding it, and log `TransportBrokerUnreachable` (event 122, Warning) and `TransportBrokerReachable` (event 123, Information).
+Transports that retry a lost broker inside their own receive loop (Azure Service Bus, Amazon SQS, Pulsar, Redis Streams) report through `OnLogCallback` with `MqLogType.BrokerUnreachable` (`14`) on each failed receive and `MqLogType.BrokerReachable` (`15`) on the first receive that succeeds after one. These leave the client running instead of rebuilding it, and log `TransportBrokerUnreachable` (event 122, Warning) and `TransportBrokerReachable` (event 123, Information). The warning stops once a failure run makes the broker unreachable, so a client that retries every second does not log every retry; the next run after a success logs again.
 
 ### Host description
 

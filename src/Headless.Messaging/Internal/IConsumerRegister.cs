@@ -1370,9 +1370,18 @@ internal sealed partial class ConsumerRegister(
             // The client recovers on its own, so these leave the restart flag alone: rebuilding a client that is
             // already retrying would only add churn while the broker is down.
             case MqLogType.BrokerUnreachable:
+            {
+                // A client that retries on a timer reports every retry. Once the run has made the broker unreachable,
+                // the outage is already logged, so further retries stay quiet until the broker is reachable again.
+                var counted = _connectivity.IsReachable;
                 _connectivity.ReportBrokerFailure();
-                _logger.TransportBrokerUnreachable(reason);
+                if (counted)
+                {
+                    _logger.TransportBrokerUnreachable(reason);
+                }
+
                 break;
+            }
             case MqLogType.BrokerReachable:
                 _connectivity.ReportBrokerSuccess();
                 _logger.TransportBrokerReachable(reason);

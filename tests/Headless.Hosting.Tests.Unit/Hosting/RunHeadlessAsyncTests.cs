@@ -200,7 +200,7 @@ public sealed class RunHeadlessAsyncTests : TestBase
 
         public Task ValidateAsync(CancellationToken cancellationToken)
         {
-#pragma warning disable CA1848, CA2254 // A fixed message keeps the test's log line easy to find; speed is irrelevant here.
+#pragma warning disable CA1848, CA2254 // CA2254 is a false positive (the template is a const); CA1848's LoggerMessage delegate would make this test stub worse.
             logger.LogWarning(Message);
 #pragma warning restore CA1848, CA2254
 

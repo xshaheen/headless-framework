@@ -23,6 +23,11 @@ internal static class JobsClaimConflicts
     /// The candidates a direct claim was asked for and did not return. A candidate the run filter excludes, or one of a
     /// cluster-limited function, is not counted: the claim may have refused it for a reason other than a lost race.
     /// </summary>
+    /// <remarks>
+    /// A claim that filled its <see cref="JobsClaimStrategyDefaults.MaxClaimBatchSize"/> budget never attempted the
+    /// candidates past it, and a row lost to another node was replaced by the next one, so no loss can be told apart
+    /// from a skip and none is counted.
+    /// </remarks>
     public static int CountLost<TClaimed>(
         IEnumerable<TimeJobEntity> candidates,
         IReadOnlyDictionary<Guid, TClaimed> claimed,
@@ -30,6 +35,11 @@ internal static class JobsClaimConflicts
         JobsClusterConcurrency clusterConcurrency
     )
     {
+        if (claimed.Count >= JobsClaimStrategyDefaults.MaxClaimBatchSize)
+        {
+            return 0;
+        }
+
         return candidates
             .DistinctBy(x => x.Id)
             .Count(x =>

@@ -6,6 +6,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Tests.HealthChecks;
 
@@ -135,6 +136,33 @@ public sealed class TransportConnectivityTests : TestBase
     }
 
     [Fact]
+    public async Task should_log_unreachable_only_until_the_run_reaches_the_threshold()
+    {
+        var factory = new ControlledClientFactory();
+        using var logs = new CapturingLoggerProvider();
+        await using var provider = _CreateProvider(factory, logs);
+        var register = provider.GetRequiredService<IConsumerRegister>();
+        await register.StartAsync(AbortToken);
+        var client = factory.LatestListeningClient;
+
+        for (var i = 0; i < 10; i++)
+        {
+            client.Report(MqLogType.BrokerUnreachable);
+        }
+
+        logs.Count("TransportBrokerUnreachable").Should().Be(TransportConnectivity.FailureThreshold);
+
+        client.Report(MqLogType.BrokerReachable);
+        client.Report(MqLogType.BrokerUnreachable);
+
+        logs.Count("TransportBrokerUnreachable")
+            .Should()
+            .Be(TransportConnectivity.FailureThreshold + 1, "a success starts a new run, which is logged again");
+
+        await register.DisposeAsync();
+    }
+
+    [Fact]
     public async Task should_stay_unreachable_across_restarts_while_the_broker_is_down()
     {
         var factory = new ControlledClientFactory();
@@ -205,10 +233,16 @@ public sealed class TransportConnectivityTests : TestBase
         await register.DisposeAsync();
     }
 
-    private ServiceProvider _CreateProvider(ControlledClientFactory factory)
+    private ServiceProvider _CreateProvider(ControlledClientFactory factory, ILoggerProvider? loggerProvider = null)
     {
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddLogging(logging =>
+        {
+            if (loggerProvider is not null)
+            {
+                logging.AddProvider(loggerProvider);
+            }
+        });
         services.ConfigureMessaging(messaging => messaging.Message<ConnectivityProbe>("connectivity-probe"));
         services.AddHeadlessMessaging(setup =>
         {
@@ -222,6 +256,39 @@ public sealed class TransportConnectivityTests : TestBase
         services.AddSingleton<ConnectivityProbeConsumer>();
 
         return services.BuildServiceProvider();
+    }
+
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly ConcurrentQueue<string> _events = new();
+
+        public int Count(string eventName) => _events.Count(x => string.Equals(x, eventName, StringComparison.Ordinal));
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(_events);
+
+        public void Dispose() { }
+
+        private sealed class CapturingLogger(ConcurrentQueue<string> events) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                if (eventId.Name is { } name)
+                {
+                    events.Enqueue(name);
+                }
+            }
+        }
     }
 
     private sealed record ConnectivityProbe;
