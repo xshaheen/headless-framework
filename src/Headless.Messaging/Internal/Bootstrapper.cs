@@ -94,6 +94,10 @@ internal sealed class Bootstrapper(
         try
         {
             _CheckRequirement();
+
+            // Registration ends at host start so the per-message middleware lookups can be cached.
+            serviceProvider.GetService<IMiddlewareDescriptorRegistry>()?.Freeze();
+
             _WarnIfNoOpProvider();
             _WarnIfNullNodeMembership();
             _WarnIfDispatchTimeoutMateriallyExceedsInitialGrace();
