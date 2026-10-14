@@ -2,7 +2,6 @@
 Headless.Api
 Headless.Api.Abstractions
 Headless.Api.FluentValidation
-Headless.Api.Idempotency
 Headless.Api.Identity
 Headless.Api.Jwt
 Headless.Api.Logging.Serilog
@@ -91,6 +90,7 @@ Headless.Idempotency.Abstractions
 Headless.Idempotency.Caching
 Headless.Idempotency.InMemory
 Headless.Idempotency.PostgreSql
+Headless.Idempotency.ResponseReplay
 Headless.Idempotency.SqlServer
 Headless.Idempotency.Sqlite
 Headless.Identity.Storage.EntityFramework

@@ -268,7 +268,6 @@ Production ASP.NET Core APIs: request and response conventions, validation pipel
 | [Headless.Api.Logging.Serilog](src/Headless.Api.Logging.Serilog/README.md) | Serilog logging integration |
 | [Headless.Api.MinimalApi](src/Headless.Api.MinimalApi/README.md) | Minimal API utilities |
 | [Headless.Api.Mvc](src/Headless.Api.Mvc/README.md) | MVC-specific utilities |
-| [Headless.Api.Idempotency](src/Headless.Api.Idempotency/README.md) | Stripe-style HTTP idempotency middleware — cache and replay responses on retries |
 | [Headless.Api.Identity](src/Headless.Api.Identity/README.md) | ASP.NET Core Identity helpers: token providers, localized identity errors, Basic and API-key schemes |
 | [Headless.Api.Jwt](src/Headless.Api.Jwt/README.md) | JWT issuing and parsing, with a matching bearer scheme |
 | [Headless.Api.UserAgent](src/Headless.Api.UserAgent/README.md) | User-Agent parsing backed by DeviceDetector.NET |
@@ -607,6 +606,7 @@ Durable, tenant-scoped idempotent admission: admit a key once across processes a
 | [Headless.Idempotency.Caching](src/Headless.Idempotency.Caching/README.md) | Idempotency records in a shared cache (Redis) for autonomous calls across replicas without SQL |
 | [Headless.Idempotency.InMemory](src/Headless.Idempotency.InMemory/README.md) | In-process idempotency records for tests and single-instance hosts |
 | [Headless.Idempotency.PostgreSql](src/Headless.Idempotency.PostgreSql/README.md) | PostgreSQL idempotency records |
+| [Headless.Idempotency.ResponseReplay](src/Headless.Idempotency.ResponseReplay/README.md) | Stripe-style HTTP idempotency middleware — cache and replay responses on retries |
 | [Headless.Idempotency.SqlServer](src/Headless.Idempotency.SqlServer/README.md) | SQL Server idempotency records |
 | [Headless.Idempotency.Sqlite](src/Headless.Idempotency.Sqlite/README.md) | SQLite idempotency records; admission commits on its own |
 

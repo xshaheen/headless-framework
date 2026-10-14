@@ -17,14 +17,14 @@
         <Project Path="src\Headless.Api.MinimalApi\Headless.Api.MinimalApi.csproj" />
         <Project Path="src\Headless.Api.Mvc\Headless.Api.Mvc.csproj" />
         <Project Path="src\Headless.Api\Headless.Api.csproj" />
-        <Project Path="src\Headless.Api.Idempotency\Headless.Api.Idempotency.csproj" />
+        <Project Path="src\Headless.Idempotency.ResponseReplay\Headless.Idempotency.ResponseReplay.csproj" />
         <Project Path="src\Headless.Api.Identity\Headless.Api.Identity.csproj" />
         <Project Path="src\Headless.Api.Jwt\Headless.Api.Jwt.csproj" />
         <Project Path="src\Headless.Api.ServiceDefaults\Headless.Api.ServiceDefaults.csproj" />
         <Project Path="src\Headless.Api.UserAgent\Headless.Api.UserAgent.csproj" />
     </Folder>
     <Folder Name="/Api/Tests/">
-        <Project Path="benchmarks/Headless.Api.Idempotency.Benchmarks/Headless.Api.Idempotency.Benchmarks.csproj" />
+        <Project Path="benchmarks/Headless.Idempotency.ResponseReplay.Benchmarks/Headless.Idempotency.ResponseReplay.Benchmarks.csproj" />
         <Project Path="tests/Headless.Api.Abstractions.Tests.Unit/Headless.Api.Abstractions.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Api.MinimalApi.Tests.Unit/Headless.Api.MinimalApi.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Api.Mvc.Tests.Unit/Headless.Api.Mvc.Tests.Unit.csproj" />
@@ -32,8 +32,8 @@
         <Project Path="tests\Headless.DataProtection.Blobs.Tests.Integration\Headless.DataProtection.Blobs.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DataProtection.Blobs.Tests.Unit\Headless.DataProtection.Blobs.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.FluentValidation.Tests.Unit\Headless.Api.FluentValidation.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.Api.Idempotency.Tests.Integration\Headless.Api.Idempotency.Tests.Integration.csproj" />
-        <Project Path="tests\Headless.Api.Idempotency.Tests.Unit\Headless.Api.Idempotency.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Idempotency.ResponseReplay.Tests.Integration\Headless.Idempotency.ResponseReplay.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Idempotency.ResponseReplay.Tests.Unit\Headless.Idempotency.ResponseReplay.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.Logging.Serilog.Tests.Unit\Headless.Api.Logging.Serilog.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.Tests.Integration\Headless.Api.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Api.Tests.Unit\Headless.Api.Tests.Unit.csproj" />

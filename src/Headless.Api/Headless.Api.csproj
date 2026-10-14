@@ -9,12 +9,12 @@
     <InternalsVisibleTo Include="Headless.Api.ServiceDefaults" />
     <InternalsVisibleTo Include="Headless.OpenApi.Nswag" />
     <InternalsVisibleTo Include="Headless.Api.Mvc" />
-    <InternalsVisibleTo Include="Headless.Api.Idempotency" />
+    <InternalsVisibleTo Include="Headless.Idempotency.ResponseReplay" />
     <InternalsVisibleTo Include="Headless.Api.MinimalApi" />
     <InternalsVisibleTo Include="Headless.Api.Composition.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Api.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Api.Mvc.Tests.Unit" />
-    <InternalsVisibleTo Include="Headless.Api.Idempotency.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Idempotency.ResponseReplay.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Api.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>

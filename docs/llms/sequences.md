@@ -95,7 +95,7 @@ The stored key is (tenant id, name, partition). The host tenant and "no partitio
 | `FiscalYearStartMonth` | 1 | The month (1 to 12) the fiscal year starts in, for `Reset = FiscalYear` and `{fy}`. With 7, 8 October 2026 is in `FY2026` and 8 March 2027 too. |
 | `TimeZone` | UTC | The zone the issue date and period are decided in, so a daily counter starts again at the business's local midnight. |
 
-The date comes from the registered `TimeProvider`, converted into the policy's zone. In the gap-free mode, a retry whose first attempt rolled back takes the same number again. A retry that replays a stored response through `Headless.Api.Idempotency` returns the number the first attempt committed. Voiding a document is the application's record: the number stays used.
+The date comes from the registered `TimeProvider`, converted into the policy's zone. In the gap-free mode, a retry whose first attempt rolled back takes the same number again. A retry that replays a stored response through `Headless.Idempotency.ResponseReplay` returns the number the first attempt committed. Voiding a document is the application's record: the number stays used.
 
 ### Reported counters
 
