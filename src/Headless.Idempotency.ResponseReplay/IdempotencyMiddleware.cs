@@ -8,6 +8,7 @@ using Headless.Http;
 using Headless.Idempotency.Resources;
 using Headless.MultiTenancy;
 using Headless.Primitives;
+using Headless.Serializer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -438,16 +439,17 @@ internal sealed partial class IdempotencyMiddleware(
             }
         }
 
-        var snapshot = new IdempotencyResponseSnapshot
-        {
-            StatusCode = context.Response.StatusCode,
-            Headers = capturedHeaders,
-            Body = captureStream.CapturedBytes,
-        };
-        var payload = JsonSerializer.SerializeToUtf8Bytes(
-            snapshot,
-            IdempotencyJsonContext.Default.IdempotencyResponseSnapshot
+        // The frame is assembled in a pooled writer and handed over as one exact-size array: CompleteAsync's
+        // signature takes memory the callee may read after the call returns, so the capture path pays one copy
+        // out of the pool instead of renting memory a deferring store would see zeroed.
+        using var frame = new PooledByteBufferWriter(captureStream.CapturedSpan.Length + 256);
+        IdempotencyResponseSnapshot.WriteTo(
+            frame,
+            context.Response.StatusCode,
+            capturedHeaders,
+            captureStream.CapturedSpan
         );
+        var payload = frame.WrittenSpan.ToArray();
 
         try
         {

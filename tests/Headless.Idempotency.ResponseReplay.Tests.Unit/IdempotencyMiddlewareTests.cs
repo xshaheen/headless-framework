@@ -202,9 +202,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         CallCount(operations, nameof(IIdempotentOperations.ReleaseAsync)).Should().Be(0);
 
         var stored = (ReadOnlyMemory<byte>)complete[1]!;
-        var snapshot = new IdempotentResult(stored.Span, IdempotencyResponseSnapshot.Contract).Deserialize(
-            IdempotencyJsonContext.Default.IdempotencyResponseSnapshot
-        )!;
+        var snapshot = IdempotencyResponseSnapshot.Decode(stored);
         snapshot.StatusCode.Should().Be(201);
         snapshot.Headers.Should().ContainKey("Content-Type").And.NotContainKey("Set-Cookie");
         Encoding.UTF8.GetString(snapshot.Body).Should().Be("{\"id\":1}");

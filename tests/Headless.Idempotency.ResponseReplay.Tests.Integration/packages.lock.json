@@ -879,6 +879,7 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Idempotency": "[1.0.0, )",
+          "Headless.Serializer.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )"
         }
       },
@@ -910,7 +911,8 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
-          "Headless.Idempotency.Abstractions": "[1.0.0, )"
+          "Headless.Idempotency.Abstractions": "[1.0.0, )",
+          "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
       },
       "headless.idempotency.sqlserver": {

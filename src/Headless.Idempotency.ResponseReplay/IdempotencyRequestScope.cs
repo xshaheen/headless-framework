@@ -141,9 +141,7 @@ internal static class IdempotencyRequestScope
             );
         }
 
-        var snapshot =
-            result.Deserialize(IdempotencyJsonContext.Default.IdempotencyResponseSnapshot)
-            ?? throw new InvalidOperationException("The stored idempotent response is empty.");
+        var snapshot = IdempotencyResponseSnapshot.Decode(result.Payload);
 
         context.Response.StatusCode = snapshot.StatusCode;
 
