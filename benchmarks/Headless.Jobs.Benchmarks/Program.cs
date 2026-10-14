@@ -9,6 +9,12 @@ if (args.Contains("--scheduler-latency-probe", StringComparer.Ordinal))
     return;
 }
 
+if (args.Contains("--worker-pool-probe", StringComparer.Ordinal))
+{
+    await JobsWorkerPoolProbe.RunAsync().ConfigureAwait(false);
+    return;
+}
+
 BenchmarkSwitcher
     .FromTypes([
         typeof(JobsRequestSerializationBenchmarks),

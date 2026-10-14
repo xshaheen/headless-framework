@@ -62,6 +62,20 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 #pragma warning restore CA2213
     private readonly SoftSchedulerNotifyDebounce _notifyDebounce;
 
+    // Idle workers park on this counting signal instead of polling. Enqueues release it only while a worker is
+    // registered as idle, so the count stays bounded by the number of wake-ups that can matter. Never disposed for the
+    // same reason as _shutdownCts: a worker still awaiting it after a bounded dispose must be cancelled, not faulted.
+#pragma warning disable CA2213 // Disposing the signal would fault a worker that outlives the bounded shutdown wait; cancellation alone ends every waiter.
+    private readonly SemaphoreSlim _workSignal = new(0);
+#pragma warning restore CA2213
+    private int _idleWaiters;
+
+    // Items whose function gate was full when a worker dequeued them. They stay counted in _totalQueuedTasks so drains
+    // and shutdown treat them exactly like queued work, but no worker slot is held while they wait for a permit.
+    private readonly Lock _parkLock = new();
+    private readonly Dictionary<SemaphoreSlim, Queue<WorkItem>> _parked = [];
+    private volatile int _parkedCount;
+
     internal CancellationToken ExecutionCancellationToken => _shutdownCts.Token;
 
     public JobsTaskScheduler(
@@ -120,7 +134,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         Func<CancellationToken, Task> work,
         JobPriority priority,
         CancellationToken capacityCancellationToken,
-        CancellationToken executionCancellationToken
+        CancellationToken executionCancellationToken,
+        SemaphoreSlim? concurrencyGate = null
     )
     {
         Argument.IsNotNull(work);
@@ -137,6 +152,10 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         // Handle long-running tasks specially
         if (priority == JobPriority.LongRunning)
         {
+            // Long-running work never occupies a shared worker slot, so waiting for the gate inside the work item
+            // blocks nothing but its own dedicated slot.
+            work = _WithGate(work, concurrencyGate);
+
             // Bound the detached admission backlog at two parked waiters per slot. Under sustained saturation the
             // fallback sweep re-claims a still-parked job every time its pickup lease lapses and dispatches it
             // again, so an unbounded backlog would grow by one waiter per job per lease cycle. Beyond the cap the
@@ -173,7 +192,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
         // Publish counters before the item. A worker may briefly observe a positive count before the queue item is
         // visible, but it can never dequeue an item and decrement counters that have not been incremented yet.
-        var workItem = new WorkItem(work, executionCancellationToken);
+        var workItem = new WorkItem(work, executionCancellationToken, concurrencyGate, priority);
         _IncrementQueuedPriority(priority);
         var newTotal = Interlocked.Increment(ref _totalQueuedTasks);
         targetQueue.Enqueue(workItem, priority);
@@ -184,6 +203,96 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         {
             _EnsureWorkerAvailable();
         }
+
+        _SignalWork();
+    }
+
+    private static Func<CancellationToken, Task> _WithGate(Func<CancellationToken, Task> work, SemaphoreSlim? gate)
+    {
+        if (gate is null)
+        {
+            return work;
+        }
+
+        return async ct =>
+        {
+            await gate.WaitAsync(ct).ConfigureAwait(false);
+
+            try
+            {
+                await work(ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        };
+    }
+
+    private void _SignalWork()
+    {
+        // The idle worker registers itself before its last look at the queues, and the enqueuer publishes the item
+        // before reading the registration, so at least one side always sees the other.
+        if (Volatile.Read(ref _idleWaiters) > 0)
+        {
+            _workSignal.Release();
+        }
+    }
+
+    // Returns true when the caller now holds the gate's permit. Otherwise the item is parked and the permit is handed
+    // to it by _ReleaseGate. Acquire-or-park and release-or-hand-off share one lock so a release can never slip
+    // between a failed acquire and the park, and parked items keep their arrival order.
+    private bool _TryAcquireGateOrPark(WorkItem workItem)
+    {
+        var gate = workItem.Gate!;
+
+        lock (_parkLock)
+        {
+            if (gate.Wait(0))
+            {
+                return true;
+            }
+
+            if (!_parked.TryGetValue(gate, out var queue))
+            {
+                queue = new Queue<WorkItem>();
+                _parked[gate] = queue;
+            }
+
+            queue.Enqueue(workItem);
+            _parkedCount++;
+        }
+
+        return false;
+    }
+
+    private void _ReleaseGate(SemaphoreSlim gate)
+    {
+        WorkItem next;
+
+        lock (_parkLock)
+        {
+            if (!_parked.TryGetValue(gate, out var queue) || !queue.TryDequeue(out next))
+            {
+                gate.Release();
+                return;
+            }
+
+            if (queue.Count == 0)
+            {
+                _parked.Remove(gate);
+            }
+
+            _parkedCount--;
+        }
+
+        // The permit travels with the item, so the re-queue ignores freeze and the capacity bound: the item was
+        // admitted before either applied and a drain is waiting for it.
+        var handedOff = next.WithPermit();
+        _IncrementQueuedPriority(handedOff.Priority);
+        _workerQueues[_GetNextQueueIndex()].Enqueue(handedOff, handedOff.Priority);
+        _EnsureWorkerAvailable();
+        _SignalWork();
     }
 
     private int _GetNextQueueIndex()
@@ -395,6 +504,13 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             if (foundWork)
             {
                 lastWorkTime = _timeProvider.GetUtcNow().UtcDateTime;
+
+                if (workItem.Gate is not null && !workItem.HoldsPermit && !_TryAcquireGateOrPark(workItem))
+                {
+                    // Parked behind a full gate: the slot stays free for other functions' work.
+                    continue;
+                }
+
                 await _ExecuteWorkAsync(workItem).ConfigureAwait(false);
             }
             else
@@ -423,21 +539,54 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
                     lastWorkTime = _timeProvider.GetUtcNow().UtcDateTime;
                 }
 
-                // Brief sleep to avoid spinning
                 if (consecutiveStealFailures > 3)
                 {
-                    await _timeProvider
-                        .Delay(
-                            TimeSpan.FromMilliseconds(Math.Min(consecutiveStealFailures * 2, 50)),
-                            _shutdownCts.Token
-                        )
-                        .ConfigureAwait(false);
+                    await _WaitForWorkAsync(lastWorkTime).ConfigureAwait(false);
                 }
                 else
                 {
                     await Task.Yield();
                 }
             }
+        }
+    }
+
+    // Parks the idle worker until an enqueue signals it or the idle timeout is due, so an idle host does not wake.
+    // The timeout still matters: it is how a spare worker notices it may retire, and the last worker re-evaluates
+    // on the same cadence.
+    private async Task _WaitForWorkAsync(DateTime lastWorkTime)
+    {
+        Interlocked.Increment(ref _idleWaiters);
+
+        try
+        {
+            if (_queuedHighPriority + _queuedNormalPriority + _queuedLowPriority > 0)
+            {
+                // An item was published after the dequeue attempt but before this worker registered as idle.
+                await Task.Yield();
+                return;
+            }
+
+            var remaining = _idleWorkerTimeout - (_timeProvider.GetUtcNow().UtcDateTime - lastWorkTime);
+            var timeout = remaining + TimeSpan.FromMilliseconds(1);
+            timeout = timeout < TimeSpan.FromMilliseconds(1) ? TimeSpan.FromMilliseconds(1) : timeout;
+            timeout = timeout > TimeSpan.FromDays(1) ? TimeSpan.FromDays(1) : timeout;
+
+            using var timeoutCts = new CancellationTokenSource(timeout, _timeProvider);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, _shutdownCts.Token);
+
+            try
+            {
+                await _workSignal.WaitAsync(linked.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!_shutdownCts.IsCancellationRequested)
+            {
+                // Idle timeout elapsed; the loop decides whether to retire.
+            }
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _idleWaiters);
         }
     }
 
@@ -514,6 +663,11 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         finally
         {
             Interlocked.Decrement(ref _activeTasks);
+
+            if (workItem.Gate is not null)
+            {
+                _ReleaseGate(workItem.Gate);
+            }
         }
     }
 
@@ -646,6 +800,12 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     public int TotalQueuedTasks => _totalQueuedTasks;
 
     /// <summary>
+    /// Gets the number of queued tasks waiting for their function's concurrency permit. They are included in
+    /// <see cref="TotalQueuedTasks"/>.
+    /// </summary>
+    public int ParkedTasks => _parkedCount;
+
+    /// <summary>
     /// Gets the current number of active task executions.
     /// </summary>
     public int ActiveTasks => _activeTasks;
@@ -668,7 +828,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         );
         builder.Append(CultureInfo.InvariantCulture, $"Workers: {_activeWorkers}/{_maxConcurrency}\n");
         builder.Append(CultureInfo.InvariantCulture, $"Active Tasks: {_activeTasks}\n");
-        builder.Append(CultureInfo.InvariantCulture, $"Total Queued (counter): {_totalQueuedTasks}\n\n");
+        builder.Append(CultureInfo.InvariantCulture, $"Total Queued (counter): {_totalQueuedTasks}\n");
+        builder.Append(CultureInfo.InvariantCulture, $"Parked behind function gates: {_parkedCount}\n\n");
         builder.Append("Queue Distribution:\n");
 
         var totalInQueues = 0;
@@ -692,7 +853,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         }
 
         // Discrepancy check
-        if (totalInQueues != _totalQueuedTasks)
+        if (totalInQueues + _parkedCount != _totalQueuedTasks)
         {
             builder.Append(
                 CultureInfo.InvariantCulture,
