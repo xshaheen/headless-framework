@@ -128,6 +128,59 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
         published.Events.Should().ContainSingle(e => e.Name == "message.publish.ambiguous");
     }
 
+    // A publish timeout races broker acceptance just like shutdown, so it keeps the ambiguity diagnosis even though
+    // the sender now reports it as a failed attempt instead of rethrowing.
+    [Fact]
+    public async Task should_diagnose_ambiguous_delivery_when_message_sender_transport_publish_times_out()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .LeasePublishAndReserveAttemptAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+
+        var transportMessage = _CreateTransportMessage("test.messageName");
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+
+        Activity? published = null;
+        var busTransport = Substitute.For<IBusTransport>();
+        busTransport.BrokerAddress.Returns(_Broker);
+        busTransport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                published = Activity.Current;
+                await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
+                return OperateResult.Success;
+            });
+
+        using var stopped = new PublishActivityCollector();
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            busTransport,
+            new MessagingOptions { TransportPublishTimeout = TimeSpan.FromMilliseconds(50) }
+        );
+
+        // when
+        var result = await sender.SendAsync(_CreateMediumMessage());
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        published.Should().NotBeNull();
+        stopped.All.Should().Contain(published);
+        published!.GetTagItem(MessagingTags.DeliveryOutcome).Should().Be("ambiguous");
+        published.Events.Should().ContainSingle(e => e.Name == "message.publish.ambiguous");
+    }
+
     [Fact]
     public async Task should_diagnose_duplicate_risk_when_transport_accepts_before_success_state_write_fails()
     {

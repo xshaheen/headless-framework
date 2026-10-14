@@ -1007,6 +1007,18 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     }
 
     [Fact]
+    public override Task should_keep_another_owners_lease_when_flushing_an_unleased_copy_to_delayed()
+    {
+        return base.should_keep_another_owners_lease_when_flushing_an_unleased_copy_to_delayed();
+    }
+
+    [Fact]
+    public override Task should_release_own_lease_when_flushing_a_claimed_row_to_delayed()
+    {
+        return base.should_release_own_lease_when_flushing_a_claimed_row_to_delayed();
+    }
+
+    [Fact]
     public override Task should_release_only_exact_received_retry_lease_generation()
     {
         return base.should_release_only_exact_received_retry_lease_generation();
