@@ -49,7 +49,7 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
         _ReceiveHangingUntilCancelled(_EmptyUrl);
         _ReceiveOnce(_BusyUrl, "busy-1");
         await using var client = _CreateClient(concurrency: 1, _EmptyUrl, _BusyUrl);
-        client.OnMessageCallback = _CommitAsync(client);
+        client.OnMessageCallback = _CommitAndRecord(client);
         using var cts = new CancellationTokenSource();
 
         // when
@@ -74,7 +74,7 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
             .Returns<Task<ReceiveMessageResponse>>(_ => throw new AmazonSQSException("boom"));
         _ReceiveOnce(_BusyUrl, "busy-1");
         await using var client = _CreateClient(concurrency: 1, _EmptyUrl, _BusyUrl);
-        client.OnMessageCallback = _CommitAsync(client);
+        client.OnMessageCallback = _CommitAndRecord(client);
         using var cts = new CancellationTokenSource();
 
         // when
@@ -95,7 +95,7 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
         _ReceiveHangingUntilCancelled(_EmptyUrl);
         _ReceiveOnce(_BusyUrl, "busy-1");
         await using var client = _CreateClient(concurrency: 1, _EmptyUrl);
-        client.OnMessageCallback = _CommitAsync(client);
+        client.OnMessageCallback = _CommitAndRecord(client);
         using var cts = new CancellationTokenSource();
         var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
         await _WaitForPollAsync(_EmptyUrl);
@@ -191,7 +191,7 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("handler failed");
     }
 
-    private Func<TransportMessage, object?, Task> _CommitAsync(AmazonSqsConsumerClient client)
+    private Func<TransportMessage, object?, Task> _CommitAndRecord(AmazonSqsConsumerClient client)
     {
         return async (message, sender) =>
         {
