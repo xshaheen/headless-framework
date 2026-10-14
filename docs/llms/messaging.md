@@ -2950,6 +2950,7 @@ Registers RabbitMQ connection/channel pool, bus/queue transport, consumer client
 - Each publish trims, approximately, the entries older than `StreamMaxAge` (7 days by default) from its stream.
 - A message published to an idle stream is read within a round trip, not at the consumer's next poll: each publish announces its entry on the stream's pub/sub wake channel, and consumers subscribed to it read at once (`WakeConsumersOnPublish`, on by default).
 - Streams consumer startup honors host cancellation through connection, provisioning, and subscription.
+- A consumer group is checked once per process and stream, not on every poll; a stream or group deleted while the host runs is re-created when the server answers `NOGROUP`. A connection or timeout failure while checking a group fails the read and counts toward broker reachability instead of skipping the stream; only an error the server answered with skips that stream.
 - Request/reply over pub/sub on the literal channel `headless.reply.{32 hex}`; replies write no key, and every host that exchanges requests must use the same `ChannelPrefix`. See [Request/reply](#requestreply).
 
 ### Install

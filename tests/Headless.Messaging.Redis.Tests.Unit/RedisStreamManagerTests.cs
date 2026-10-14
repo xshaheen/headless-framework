@@ -360,6 +360,149 @@ public sealed class RedisStreamManagerTests : TestBase
             );
     }
 
+    [Fact]
+    public async Task should_back_off_as_a_read_failure_when_the_consumer_group_check_loses_the_connection()
+    {
+        // given - a long poll delay, so only a failure's capped backoff (at most 38s) elapses within 40s
+        var timeProvider = new FakeTimeProvider();
+        var sut = _CreateSut(timeProvider, options => options.WakeConsumersOnPublish = false);
+        var pollDelay = TimeSpan.FromHours(1);
+        _mockDatabase
+            .KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns<bool>(_ =>
+                throw new RedisConnectionException(
+                    ConnectionFailureType.SocketFailure,
+                    CommandFlags.None,
+                    "broker down",
+                    innerException: null,
+                    CommandStatus.Unknown
+                )
+            );
+
+        await using var enumerator = sut.PollStreamsLatestMessagesAsync(
+                ["orders-stream"],
+                "group",
+                "consumer",
+                pollDelay,
+                AbortToken
+            )
+            .GetAsyncEnumerator(AbortToken);
+
+        // when
+        await enumerator.MoveNextAsync();
+        var secondPoll = enumerator.MoveNextAsync().AsTask();
+        timeProvider.Advance(TimeSpan.FromSeconds(40));
+
+        // then - a swallowed failure would report success and wait the full poll delay instead
+        await secondPoll.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+    }
+
+    [Fact]
+    public async Task should_skip_the_stream_without_failing_the_read_when_the_server_rejects_the_group_check()
+    {
+        // given
+        var timeProvider = new FakeTimeProvider();
+        var sut = _CreateSut(timeProvider, options => options.WakeConsumersOnPublish = false);
+        var pollDelay = TimeSpan.FromHours(1);
+        _mockDatabase
+            .KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns<bool>(_ => throw _ServerException("ERR unknown"));
+
+        await using var enumerator = sut.PollStreamsLatestMessagesAsync(
+                ["orders-stream"],
+                "group",
+                "consumer",
+                pollDelay,
+                AbortToken
+            )
+            .GetAsyncEnumerator(AbortToken);
+
+        // when
+        await enumerator.MoveNextAsync();
+        var secondPoll = enumerator.MoveNextAsync().AsTask();
+        timeProvider.Advance(TimeSpan.FromSeconds(40));
+
+        // then - the server answered, so the broker is reachable and the loop keeps its normal cadence
+        secondPoll.IsCompleted.Should().BeFalse();
+        timeProvider.Advance(pollDelay);
+        await secondPoll.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+    }
+
+    [Fact]
+    public async Task should_check_the_consumer_group_once_and_not_on_every_poll()
+    {
+        // given
+        var timeProvider = new FakeTimeProvider();
+        var sut = _CreateSut(timeProvider, options => options.WakeConsumersOnPublish = false);
+        var pollDelay = TimeSpan.FromSeconds(1);
+
+        await using var enumerator = sut.PollStreamsLatestMessagesAsync(
+                ["orders-stream"],
+                "group",
+                "consumer",
+                pollDelay,
+                AbortToken
+            )
+            .GetAsyncEnumerator(AbortToken);
+
+        // when
+        await enumerator.MoveNextAsync();
+        var secondPoll = enumerator.MoveNextAsync().AsTask();
+        timeProvider.Advance(pollDelay);
+        await secondPoll.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        await _mockDatabase.Received(1).KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
+    }
+
+    [Fact]
+    public async Task should_recreate_the_consumer_group_and_read_again_when_the_server_reports_no_group()
+    {
+        // given
+        var sut = _CreateSut(new FakeTimeProvider(), options => options.WakeConsumersOnPublish = false);
+        var reads = 0;
+        _mockDatabase
+            .StreamReadGroupAsync(
+                Arg.Any<StreamPosition[]>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<int?>(),
+                Arg.Any<bool>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<int?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CommandFlags>()
+            )
+            .Returns(_ =>
+                Interlocked.Increment(ref reads) == 1
+                    ? throw _ServerException("NOGROUP No such key 'orders-stream' or consumer group 'group'")
+                    : Task.FromResult(Array.Empty<RedisStream>())
+            );
+
+        await using var enumerator = sut.PollStreamsLatestMessagesAsync(
+                ["orders-stream"],
+                "group",
+                "consumer",
+                TimeSpan.FromSeconds(1),
+                AbortToken
+            )
+            .GetAsyncEnumerator(AbortToken);
+
+        // when
+        await enumerator.MoveNextAsync();
+
+        // then
+        reads.Should().Be(2);
+        await _mockDatabase.Received(2).KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
+    }
+
+    private static RedisServerException _ServerException(string message)
+    {
+#pragma warning disable CS0618 // The replacement constructor needs the experimental RedisErrorKind; keep this one until it exits preview.
+        return new RedisServerException(message);
+#pragma warning restore CS0618
+    }
+
     private RedisStreamManager _CreateSut(TimeProvider timeProvider, Action<RedisMessagingOptions>? configure = null)
     {
         var redisOptions = new RedisMessagingOptions
