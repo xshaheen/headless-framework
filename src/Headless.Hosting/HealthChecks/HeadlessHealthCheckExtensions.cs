@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
@@ -21,8 +22,9 @@ public static class HeadlessHealthCheckExtensions
         /// Provider packages call this from their registration; applications rarely need it.
         /// </summary>
         /// <param name="name">
-        /// The registration name, unique in the host. A second contribution with the same name adds nothing, so a
-        /// provider registered twice keeps one check.
+        /// The registration name, unique in the host. A second contribution with the same name adds no second check: its
+        /// tags join the first one's, so a provider registered twice keeps one check, and two packages that probe one
+        /// dependency under one name report it once with both packages' tags.
         /// </param>
         /// <param name="probe">
         /// Probes the dependency with the services of the health check's own scope and the probe's cancellation token.
@@ -55,6 +57,8 @@ public static class HeadlessHealthCheckExtensions
 
             if (!_GetNames(services).Add(name))
             {
+                _MergeTags(services, name, tags);
+
                 return services;
             }
 
@@ -93,7 +97,9 @@ public static class HeadlessHealthCheckExtensions
         /// <see cref="HeadlessHealthCheckTags.Ready" /> and <see cref="HeadlessHealthCheckTags.Headless" /> tags, one
         /// registration per name, and failures reported with the registration's failure status and fixed description text.
         /// </summary>
-        /// <param name="name">The registration name, unique in the host. A second contribution with the same name adds nothing.</param>
+        /// <param name="name">
+        /// The registration name, unique in the host. A second contribution with the same name adds only its tags.
+        /// </param>
         /// <param name="register">
         /// Adds the check to the builder under the name and tags it receives. It runs at most once per name.
         /// </param>
@@ -116,6 +122,8 @@ public static class HeadlessHealthCheckExtensions
             // health check service rejects two registrations with one name.
             if (!_GetNames(services).Add(name))
             {
+                _MergeTags(services, name, tags);
+
                 return services;
             }
 
@@ -130,15 +138,17 @@ public static class HeadlessHealthCheckExtensions
         }
 
         /// <summary>
-        /// Configures the health check a Headless provider package contributes under <paramref name="name" />: its
-        /// failure status, timeout, extra tags, and test command (see <see cref="HeadlessHealthCheckOptions" />).
+        /// Configures the health check a Headless provider package contributes under <paramref name="name" />: whether it
+        /// is registered, its failure status, timeout, extra tags, and test command (see
+        /// <see cref="HeadlessHealthCheckOptions" />).
         /// </summary>
         /// <param name="name">The contributed check's name, such as <c>sql-postgresql</c> or <c>cache-redis</c>.</param>
         /// <param name="configure">Changes the options.</param>
         /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
         /// <remarks>
         /// The options are named options, validated at startup. Calling this before or after the provider's
-        /// registration has the same effect. A name no provider contributes changes nothing.
+        /// registration has the same effect, and it wins over the <c>Headless:HealthChecks:{name}</c> configuration
+        /// section. A name no provider contributes changes nothing.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
         /// <exception cref="ArgumentException"><paramref name="name" /> is <see langword="null" />, empty, or whitespace.</exception>
@@ -196,6 +206,14 @@ public static class HeadlessHealthCheckExtensions
         {
             names = new HeadlessHealthCheckNames();
             services.AddSingleton(names);
+
+            // First in the collection, so every ConfigureHeadlessHealthCheck call runs after it and wins.
+            services.Insert(
+                0,
+                ServiceDescriptor.Singleton<IConfigureOptions<HeadlessHealthCheckOptions>>(
+                    provider => new HeadlessHealthCheckConfiguration(provider.GetService<IConfiguration>())
+                )
+            );
         }
 
         return names;
@@ -213,6 +231,13 @@ public static class HeadlessHealthCheckExtensions
                 (options, monitor) =>
                 {
                     var settings = monitor.Get(name);
+
+                    if (!settings.Enabled)
+                    {
+                        _Remove(options.Registrations, name);
+
+                        return;
+                    }
 
                     foreach (var registration in options.Registrations)
                     {
@@ -240,6 +265,40 @@ public static class HeadlessHealthCheckExtensions
                     }
                 }
             );
+    }
+
+    // Runs after the first contribution's own configuration, which added the registration these tags join.
+    private static void _MergeTags(IServiceCollection services, string name, IEnumerable<string> tags)
+    {
+        string[] extra = [.. tags];
+
+        if (extra.Length == 0)
+        {
+            return;
+        }
+
+        services.Configure<HealthCheckServiceOptions>(options =>
+        {
+            foreach (var registration in options.Registrations)
+            {
+                if (string.Equals(registration.Name, name, StringComparison.Ordinal))
+                {
+                    registration.Tags.UnionWith(extra);
+                }
+            }
+        });
+    }
+
+    private static void _Remove(ICollection<HealthCheckRegistration> registrations, string name)
+    {
+        foreach (
+            var registration in registrations
+                .Where(registration => string.Equals(registration.Name, name, StringComparison.Ordinal))
+                .ToList()
+        )
+        {
+            registrations.Remove(registration);
+        }
     }
 
     private sealed class HeadlessHealthCheckNames : HashSet<string>

@@ -291,7 +291,7 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 - Startup validators (`IHeadlessStartupValidator`, `AddStartupValidator`) that run before any hosted service starts and report every failure together
 - Dependency health checks: provider packages contribute readiness checks through `AddHeadlessHealthCheck`, tagged with `HeadlessHealthCheckTags`; applications drop any of them with `RemoveHealthChecks`. See [Health checks](#health-checks)
 - Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
-- Host description: `RunHeadlessAsync(args)` prints, for the `describe` verb, the JSON each `IHostDescriptionContributor` writes about what its feature registered, without starting the host. See [Host description](#host-description)
+- Host manifest: `RunHeadlessCommandsAsync(args)` prints, for the `describe` verb, the JSON each `IHostManifestSection` writes about what its feature registered, without starting the host. See [Host manifest](#host-manifest)
 - Options validation with FluentValidation
 - Configuration binding extensions
 - Environment detection extensions
@@ -442,7 +442,13 @@ A provider package that talks to an external dependency contributes a readiness 
   });
   ```
 
-- **Opting out.** `RemoveHealthChecks(predicate)` removes matching registrations after every other configuration runs, so its position in `Program.cs` does not matter:
+- **Turning one off.** Set `Headless:HealthChecks:{name}:Enabled` to `false` in configuration, or `options.Enabled = false` in `ConfigureHeadlessHealthCheck(name, ...)`, and the check is not registered on any endpoint. Configuration lets one deployment drop a check without a code change:
+
+  ```json
+  { "Headless": { "HealthChecks": { "cache-redis": { "Enabled": false } } } }
+  ```
+
+- **Opting out in code.** `RemoveHealthChecks(predicate)` removes matching registrations after every other configuration runs, so its position in `Program.cs` does not matter. Use it for a check Headless did not contribute, or to remove a group by tag:
 
   ```csharp
   // Drop one contributed check.
@@ -452,7 +458,7 @@ A provider package that talks to an external dependency contributes a readiness 
   builder.Services.RemoveHealthChecks(registration => registration.Tags.Contains(HeadlessHealthCheckTags.Headless));
   ```
 
-- **Configuring one.** `services.ConfigureHeadlessHealthCheck(name, options => ...)` changes a contributed check through `HeadlessHealthCheckOptions`, named options validated at startup; the call's position relative to the provider registration does not matter:
+- **Configuring one.** `services.ConfigureHeadlessHealthCheck(name, options => ...)` changes a contributed check through `HeadlessHealthCheckOptions`, named options validated at startup; the call's position relative to the provider registration does not matter. The same settings bind from `Headless:HealthChecks:{name}` (`Enabled`, `FailureStatus`, `Timeout` as `hh:mm:ss`, `Tags`, `TestCommand`); code wins over configuration whichever is registered first, and a value that does not parse fails with the key named:
 
   ```csharp
   builder.Services.ConfigureHeadlessHealthCheck("cache-redis", options =>
@@ -467,7 +473,7 @@ A provider package that talks to an external dependency contributes a readiness 
 
   `FailureStatus` (default `Unhealthy`; `Healthy` is rejected) is what a failed or timed-out probe reports. `Timeout` (default none) bounds the probe; the health check service cancels it and reports `FailureStatus` with `A timeout occurred while running check.`. Without one, a probe runs until its driver gives up or the health request is cancelled. `Tags` adds tags. `TestCommand` replaces the query of the SQL and DbContext checks and is ignored by the others; the Azure blob check takes a container through `AzureStorageOptions.HealthCheckContainerName` instead. For anything else, mutate the registration in `services.PostConfigure<HealthCheckServiceOptions>(...)`.
 - **Failure reporting.** A probe that throws reports the registration's failure status (`Unhealthy` by default) with the fixed description `The '{name}' dependency probe failed.` and the exception attached for the health-check log. The driver's message stays out of the description because health endpoints are usually anonymous. A cancelled health request cancels the probe and reports nothing, rather than reporting the dependency as down. The report entry's `Duration` carries the probe latency; checks add no result data, because server versions and endpoint names do not belong on an anonymous endpoint.
-- **One check per name.** A second contribution with the same name adds nothing, so a provider registered twice keeps one check. A named cache or blob store gets its own check.
+- **One check per name.** A second contribution with the same name adds no second check; its tags join the first one's, so a provider registered twice keeps one check and two packages that probe one dependency under one name report it once with both packages' tags. A named cache or blob store gets its own check.
 - **Not covered.** A storage feature configured with its own connection string, instead of the shared `AddPostgreSqlSql` / `AddSqlServerSql` connection or a `HeadlessDbContext`, contributes no check; add one with `AddHeadlessHealthCheck`. Messaging PostgreSQL and SQL Server storage is the exception: it probes each store's own connection whether that connection is shared or its own, so on a shared database its check runs beside the `sql-*` or `dbcontext-*` check. SQLite and in-memory providers contribute none. The data-protection key-ring check stays opt-in through `AddDataProtectionKeyRing()`, because its default probe writes to the store (see [api.md](api.md)).
 - **Wrapping a third-party check.** `services.AddHeadlessHealthCheck(name, (builder, name, tags) => builder.AddXxxCheck(name, failureStatus: null, tags), dependencyTag)` contributes a check that another package's `IHealthChecksBuilder` method registers, under the same conventions: the `ready` and `headless` tags, one registration per name, and failures (thrown or returned) reported with the registration's failure status and the fixed description. The DbContext check uses it to run Microsoft's `AddDbContextCheck<T>`, whose own failures put the driver message in the description.
 - **Writing one.** A provider package contributes its own check with `services.AddHeadlessHealthCheck(name, probe, tags)`. The probe receives the services of the check's scope and a cancellation token; completing means healthy and throwing means unhealthy:
@@ -494,11 +500,11 @@ A provider package that talks to an external dependency contributes a readiness 
 
   Every community check above takes `failureStatus`, `tags`, and `timeout` at registration; `HeadlessHealthCheckOptions` covers the same three. Prefer a community package when the app needs what these checks deliberately leave out: deciding health from a query's result (`HealthCheckResultBuilder`, for example replication lag), a check for a dependency no Headless provider owns, or a check against a connection string the app does not otherwise use. Register it next to the contributed checks under another name, or drop the contributed one with `RemoveHealthChecks`.
 
-#### Host description
+#### Host manifest
 
-A host description is a JSON document that lists what each feature registered in the host: Messaging consumer identities with their effective tuning, Jobs functions with theirs. It is read from the same frozen registries the host runs, so it shows the values configuration applied, and it answers "what does this deployed host consume and run?" without starting it.
+A host manifest is a JSON document that lists what each feature registered in the host: Messaging consumer identities with their effective tuning, Jobs functions with theirs. It is read from the same frozen registries the host runs, so it shows the values configuration applied, and it answers "what does this deployed host consume and run?" without starting it.
 
-Print it from the host's own entry point by replacing `RunAsync` with `RunHeadlessAsync(args)`:
+Print it from the host's own entry point by replacing `RunAsync` with `RunHeadlessCommandsAsync(args)`:
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -508,16 +514,17 @@ builder.Services.AddHeadlessJobs(options => { /* ... */ });
 var app = builder.Build();
 // ... middleware and endpoints ...
 
-return await app.RunHeadlessAsync(args);
+return await app.RunHeadlessCommandsAsync(args);
 ```
 
 ```bash
 dotnet MyApp.dll describe | jq '.sections.jobs.functions[].name'
 ```
 
-- **`describe` verb.** When the first argument is `describe`, `RunHeadlessAsync` (namespace `Microsoft.Extensions.Hosting`) builds the description instead of running the host and returns the exit code. Any other first argument runs the host as `RunAsync` does and returns 0. It disposes the host in both modes.
+- **`describe` verb.** When the first argument is `describe`, `RunHeadlessCommandsAsync` (namespace `Microsoft.Extensions.Hosting`) builds the manifest instead of running the host and returns the exit code. Any other first argument runs the host as `RunAsync` does and returns 0. It disposes the host in both modes.
 - **Validates like a start, starts nothing.** It first runs options marked `ValidateOnStart`, then every `IHeadlessStartupValidator`, in the same order a real start does. It never starts a hosted service, so it opens no broker connection and claims no job. Only the entry point sees the host's real configuration sources, which is why the command runs there rather than in a separate tool.
-- **Output.** On success, standard output carries only the JSON document and the exit code is 0. On any failure (a validator, an options validation, or a contributor), standard output stays empty, `Host description failed: {message}` goes to standard error, and the exit code is 1.
+- **Needs no infrastructure.** Neither validation nor any section opens a connection, so `describe` succeeds when the broker and databases are unreachable or absent, for example in CI or on a laptop. Configuration still has to be valid: a missing RabbitMQ password, or two outboxes on one database, fails the command as it would fail a start.
+- **Output.** On success, standard output carries only the JSON document and the exit code is 0. On any failure (a validator, an options validation, or a section), standard output stays empty, `Host manifest failed: {message}` goes to standard error, and the exit code is 1.
 - **Console logging.** For hosts built with `HostApplicationBuilder` or `WebApplicationBuilder`, console log lines written during `describe` go to standard error. A host built with the legacy `Host.CreateDefaultBuilder` can still write Microsoft console logger lines to standard output during `describe`, because its configuration cannot be redirected after the build; filter them out, or turn console logging off for the command.
 
 The document:
@@ -526,26 +533,38 @@ The document:
 {
   "schemaVersion": 1,
   "sections": {
+    "healthChecks": [
+      { "name": "messaging", "tags": ["headless", "messaging", "ready"], "failureStatus": "unhealthy" }
+    ],
+    "host": {
+      "applicationName": "Orders.Api",
+      "environment": "Production",
+      "applicationVersion": "2.4.0+9f2c1e7",
+      "headlessVersion": "0.9.0+c56441b",
+      "runtime": ".NET 10.0.13"
+    },
     "jobs": { "functions": [] },
-    "messaging": { "consumers": [] }
+    "messaging": { "consumers": [], "messages": [], "outboxes": [], "transports": {} }
   }
 }
 ```
 
-- `schemaVersion` is `HostDescriptionWriter.SchemaVersion`; it changes only when a change would break a reader of the old shape.
-- `sections` has one property per registered contributor, sorted ordinally by name. A feature that is not registered has no section. The [Messaging](messaging.md#host-description) and [Jobs](jobs.md#host-description) guides document their sections.
-- The description never carries connection strings, broker addresses, credentials, provider-specific transport configuration, or runtime state.
+- `schemaVersion` is `HostManifest.SchemaVersion`; it changes only when a change would break a reader of the old shape.
+- **`host`** is always written: the host environment's application and environment names, the entry assembly's and Headless's informational versions (which carry the source revision when the build stamps one), and the .NET runtime. It names no machine and no address.
+- **`healthChecks`** is always written: every registered health check, ordered by name, with its sorted tags, its `failureStatus` (`unhealthy` or `degraded`), and `timeoutSeconds` when it has a timeout. It is read from the configured health check options without running a probe, so a check removed with `RemoveHealthChecks` is absent here as it is from the health endpoints.
+- `sections` has the two built-in sections and one property per registered section, sorted ordinally by name. A feature that is not registered has no section, and a registered section named `host` or `healthChecks` fails the manifest. The [Messaging](messaging.md#host-manifest) and [Jobs](jobs.md#host-manifest) guides document their sections.
+- The manifest never carries connection strings, broker addresses, credentials, provider-specific transport configuration, or runtime state.
 
-`MapHeadlessHostDescription(pattern, authorizationPolicy)` in `Headless.Api.ServiceDefaults` serves the same document over HTTP, behind authorization by default; see [API & Web](api.md#host-description-endpoint). `HostDescriptionWriter.WriteAsync(services, stream, cancellationToken)` writes it to any stream; both forms use it, so they serve identical documents.
+`MapHeadlessHostManifest(pattern, authorizationPolicy)` in `Headless.Api.ServiceDefaults` serves the same document over HTTP, behind authorization by default; see [API & Web](api.md#host-manifest-endpoint). `HostManifest.WriteAsync(services, stream, cancellationToken)` writes it to any stream; both forms use it, so they serve identical documents.
 
-**Adding a section.** A feature implements `IHostDescriptionContributor` (`Headless.Hosting`) and registers it as a singleton with `TryAddEnumerable`:
+**Adding a section.** A feature implements `IHostManifestSection` (`Headless.Hosting`) and registers it as a singleton with `TryAddEnumerable`:
 
 ```csharp
-internal sealed class SearchHostDescriptionContributor(SearchIndexRegistry registry) : IHostDescriptionContributor
+internal sealed class SearchHostManifestSection(SearchIndexRegistry registry) : IHostManifestSection
 {
-    public string SectionName => "search";
+    public string Name => "search";
 
-    public void WriteSection(Utf8JsonWriter writer)
+    public void Write(Utf8JsonWriter writer)
     {
         writer.WriteStartObject();
         writer.WriteStartArray("indexes");
@@ -558,13 +577,13 @@ internal sealed class SearchHostDescriptionContributor(SearchIndexRegistry regis
     }
 }
 
-services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostDescriptionContributor, SearchHostDescriptionContributor>());
+services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostManifestSection, SearchHostManifestSection>());
 ```
 
-- `WriteSection` writes exactly one complete JSON value, normally an object, after the section's property name.
+- `Write` writes exactly one complete JSON value, normally an object, after the section's property name.
 - Read only state that exists once the host is built. Never start a hosted service, open a connection, or call a broker.
-- Write entries in a stable order, and omit a setting that does not apply to an entry instead of writing `null`, so two descriptions of the same configuration diff cleanly.
-- Two contributors with the same `SectionName` fail the description. A contributor that throws fails it too, with a message that names the section and carries the contributor's error text, so never show that message to an untrusted caller. The whole document is built in memory first, so a failure writes nothing to the destination stream.
+- Write entries in a stable order, and omit a setting that does not apply to an entry instead of writing `null`, so two manifests of the same configuration diff cleanly.
+- Two sections with the same `Name` fail the manifest. A section that throws fails it too, with a message that names the section and carries the section's error text, so never show that message to an untrusted caller. The whole document is built in memory first, so a failure writes nothing to the destination stream.
 
 #### Required Services
 
