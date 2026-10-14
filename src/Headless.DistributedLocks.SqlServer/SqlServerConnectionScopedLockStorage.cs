@@ -34,13 +34,23 @@ namespace Headless.DistributedLocks.SqlServer;
 /// resolved <see cref="SqlServerDistributedLockOptions"/> and the supplied <see cref="TimeProvider"/>.
 /// </remarks>
 /// <param name="options">Resolved options; validated on startup.</param>
+/// <param name="storageOptions">Supplies the schema that holds the fence sequence.</param>
 /// <param name="timeProvider">Time provider used for liveness-probe timer scheduling.</param>
 internal sealed class SqlServerConnectionScopedLockStorage(
     IOptions<SqlServerDistributedLockOptions> options,
+    IOptions<DistributedLocksStorageOptions> storageOptions,
     TimeProvider timeProvider
 ) : IConnectionScopedLockStorage, IAsyncDisposable
 {
     private readonly SqlServerDistributedLockOptions _options = options.Value;
+
+    // Exclusive acquires draw their fencing token in the grant batch, on the session that holds the lock.
+    private readonly string? _fenceSequence = options.Value.EnableFencing
+        ? SqlServerDistributedLocksSchemaContribution.QualifiedSequence(
+            storageOptions.Value.Schema,
+            options.Value.KeyPrefix
+        )
+        : null;
     private readonly ConcurrentDictionary<string, HeldLock> _heldByLeaseId = new(StringComparer.Ordinal);
 
     // Deterministic concurrency seam for proving that release serializes behind an active probe. Production
@@ -103,13 +113,14 @@ internal sealed class SqlServerConnectionScopedLockStorage(
 
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-            var acquired = await SqlServerApplicationLock
+            var (acquired, fencingToken) = await SqlServerApplicationLock
                 .TryAcquireSessionAsync(
                     connection,
                     encodedResource,
                     isShared,
                     TimeSpan.Zero,
                     _options.CommandTimeout,
+                    isShared ? null : _fenceSequence,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -145,7 +156,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
                 observeLoss ? held.ConnectionLostToken : CancellationToken.None
             )
             {
-                HeldConnection = held.Connection,
+                FencingToken = fencingToken,
             };
         }
         finally

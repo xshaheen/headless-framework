@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data.Common;
-
 namespace Headless.DistributedLocks;
 
 /// <summary>
@@ -27,12 +25,10 @@ internal sealed class ConnectionScopedLockHandle(
     private int _released;
 
     /// <summary>
-    /// The open connection that holds this lock, when the storage acquires on a dedicated connection it can safely
-    /// lend for an in-band follow-up query (for example issuing a fencing token on the same session). Null when the
-    /// storage has no lendable connection (for example pooled/multiplexed engines), in which case follow-up work
-    /// opens its own connection.
+    /// The fencing token the storage drew in the same statement that granted the lock, on the holding session, or
+    /// <see langword="null"/> when the storage issues none (shared locks, or fencing disabled).
     /// </summary>
-    internal DbConnection? HeldConnection { get; init; }
+    public LockFencingToken? FencingToken { get; init; }
 
     /// <summary>The locked resource name.</summary>
     public string Resource { get; } = resource;

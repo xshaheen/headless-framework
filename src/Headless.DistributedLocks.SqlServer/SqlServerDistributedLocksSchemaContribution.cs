@@ -7,11 +7,18 @@ namespace Headless.DistributedLocks.SqlServer;
 
 /// <summary>
 /// The DistributedLocks feature's schema contribution for SQL Server: the fence sequence that
-/// <see cref="SqlServerFencingTokenSource"/> reads, as one idempotent step the Headless schema runner applies.
+/// exclusive session acquires draw from in their grant batch, as one idempotent step the Headless schema runner
+/// applies.
 /// </summary>
 internal static class SqlServerDistributedLocksSchemaContribution
 {
     public const string StepVersion = "1";
+
+    /// <summary>The quoted, schema-qualified name of the fence sequence for <paramref name="keyPrefix"/>.</summary>
+    public static string QualifiedSequence(string schema, string keyPrefix)
+    {
+        return $"{SqlServerIdentifier.Quote(schema)}.{SqlServerIdentifier.Quote(SqlServerIdentifier.FenceSequenceName(keyPrefix))}";
+    }
 
     public static SchemaContribution Create(
         SqlServerDistributedLockOptions options,
@@ -20,7 +27,7 @@ internal static class SqlServerDistributedLocksSchemaContribution
     {
         var schema = storageOptions.Schema;
         var sequenceName = SqlServerIdentifier.FenceSequenceName(options.KeyPrefix);
-        var qualifiedSequence = $"{SqlServerIdentifier.Quote(schema)}.{SqlServerIdentifier.Quote(sequenceName)}";
+        var qualifiedSequence = QualifiedSequence(schema, options.KeyPrefix);
 
         // Both names are safe inside the N'' literals: the schema passed SQL Server's regular-identifier validation at
         // startup, and the sequence name keeps only [A-Za-z0-9_].

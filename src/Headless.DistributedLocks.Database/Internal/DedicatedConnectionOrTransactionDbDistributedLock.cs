@@ -200,7 +200,7 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock(
         public string LeaseId =>
             LazyInitializer.EnsureInitialized(ref _leaseId, static () => Guid.NewGuid().ToString("N"));
 
-        public LockFencingToken? FencingToken => null;
+        public LockFencingToken? FencingToken { get; } = FencedLockCookie.FencingTokenOf(lockCookie);
 
         public string Resource { get; } = name;
 

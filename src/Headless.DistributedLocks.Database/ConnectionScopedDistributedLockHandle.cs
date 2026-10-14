@@ -16,7 +16,7 @@ namespace Headless.DistributedLocks;
 /// </summary>
 /// <remarks>Initializes a new handle for an acquired connection-scoped lock.</remarks>
 /// <param name="handle">The underlying storage handle returned by <see cref="IConnectionScopedLockStorage"/>.</param>
-/// <param name="fencingToken">Optional monotonic fencing token issued for this exclusive acquisition; <see langword="null"/> for shared locks or when no <see cref="IFencingTokenSource"/> is registered.</param>
+/// <param name="fencingToken">Optional monotonic fencing token issued for this exclusive acquisition; <see langword="null"/> for shared locks or when the storage issues none.</param>
 /// <param name="timeWaitedForLock">How long the acquire loop waited before succeeding.</param>
 /// <param name="releaseOnDispose">When <see langword="true"/>, <see cref="DisposeAsync"/> calls <see cref="ReleaseAsync"/> automatically.</param>
 /// <param name="timeProvider">Clock used to stamp <see cref="AcquiredAt"/>.</param>

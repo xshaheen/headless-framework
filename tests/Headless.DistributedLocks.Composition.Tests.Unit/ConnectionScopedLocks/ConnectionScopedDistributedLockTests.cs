@@ -39,16 +39,20 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_release_acquired_storage_handle_when_fencing_token_source_fails()
+    public async Task should_carry_the_token_the_storage_drew_with_the_grant_when_exclusive()
     {
-        var provider = _CreateProvider(fencingTokenSource: new ThrowingFencingTokenSource());
-        var resource = Faker.Random.AlphaNumeric(12);
+        // given
+        _storage.GrantFencingToken = new LockFencingToken(42);
+        var provider = _CreateProvider();
 
-        var act = async () => await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+        // when
+        await using var handle = await provider.AcquireAsync(
+            Faker.Random.AlphaNumeric(12),
+            cancellationToken: AbortToken
+        );
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
-        _storage.ReleaseCount.Should().Be(1);
-        _releaseSignal.PublishCount.Should().Be(1);
+        // then
+        handle.FencingToken.Should().Be(new LockFencingToken(42));
     }
 
     [Fact]
@@ -365,9 +369,9 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
     [Fact]
     public async Task should_fence_write_handles_but_not_read_handles()
     {
-        var rwProvider = new ConnectionScopedReadWriteLock(
-            _CreateProvider(fencingTokenSource: new SequenceFencingTokenSource())
-        );
+        // given (the storage hands back a token for every grant; readers must still carry none)
+        _storage.GrantFencingToken = new LockFencingToken(7);
+        var rwProvider = new ConnectionScopedReadWriteLock(_CreateProvider());
 
         await using var reader = await rwProvider.AcquireReadLockAsync(
             Faker.Random.AlphaNumeric(12),
@@ -379,7 +383,7 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         );
 
         reader.FencingToken.Should().BeNull();
-        writer.FencingToken.Should().NotBeNull();
+        writer.FencingToken.Should().Be(new LockFencingToken(7));
     }
 
     [Theory]
@@ -530,7 +534,6 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
     }
 
     private ConnectionScopedDistributedLock _CreateProvider(
-        IFencingTokenSource? fencingTokenSource = null,
         TimeSpan? pollingFallback = null,
         DistributedLockOptions? options = null,
         IConnectionScopedLockStorage? storage = null,
@@ -546,7 +549,6 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             _guidGenerator,
             _timeProvider,
             LoggerFactory.CreateLogger<ConnectionScopedDistributedLock>(),
-            fencingTokenSource,
             pollingFallback
         );
     }
@@ -557,6 +559,9 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         public CancellationToken ConnectionLostToken { get; set; } = CancellationToken.None;
 
         public TaskCompletionSource? BlockAcquire { get; set; }
+
+        /// <summary>The token every grant reports as drawn in its grant statement.</summary>
+        public LockFencingToken? GrantFencingToken { get; set; }
 
         public int AcquireCount { get; private set; }
 
@@ -596,7 +601,10 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
                 leaseId,
                 ReleaseAsync,
                 observeLoss ? ConnectionLostToken : CancellationToken.None
-            );
+            )
+            {
+                FencingToken = GrantFencingToken,
+            };
         }
 
         public ValueTask ReleaseAsync(ConnectionScopedLockHandle handle, CancellationToken cancellationToken = default)
@@ -787,36 +795,6 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             PublishCount++;
 
             return ValueTask.CompletedTask;
-        }
-    }
-
-    private sealed class ThrowingFencingTokenSource : IFencingTokenSource
-    {
-        public ValueTask<LockFencingToken?> NextAsync(
-            string resource,
-            System.Data.Common.DbConnection? connection = null,
-            CancellationToken cancellationToken = default
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            throw new InvalidOperationException("fencing failed");
-        }
-    }
-
-    private sealed class SequenceFencingTokenSource : IFencingTokenSource
-    {
-        private long _next;
-
-        public ValueTask<LockFencingToken?> NextAsync(
-            string resource,
-            System.Data.Common.DbConnection? connection = null,
-            CancellationToken cancellationToken = default
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            return ValueTask.FromResult<LockFencingToken?>(new LockFencingToken(Interlocked.Increment(ref _next)));
         }
     }
 
