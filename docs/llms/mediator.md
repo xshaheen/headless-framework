@@ -32,7 +32,7 @@ There is exactly one package in this domain. No provider choice is required.
 
 Mediator dispatches messages through an ordered pipeline of `IPipelineBehavior<TMessage, TResponse>` instances before reaching the handler. Behaviors wrap the handler call; pre-processors (`MessagePreProcessor<,>`) are a convenience that run unconditionally before the next step without needing to call `next.Invoke(...)` explicitly.
 
-`ValidationRequestPreProcessor<TMessage, TResponse>` is a pre-processor: it runs all `IValidator<TMessage>` implementations concurrently via `Task.WhenAll`, collects any `ValidationFailure`s, and throws `FluentValidation.ValidationException` before the handler is invoked. The HTTP boundary maps that exception to a 422 response when `Headless.Api`'s exception handler is configured.
+`ValidationRequestPreProcessor<TMessage, TResponse>` is a pre-processor: it runs all `IValidator<TMessage>` implementations one at a time in registration order (validators commonly share a scoped `DbContext`, which is not safe for concurrent use), collects any `ValidationFailure`s, and throws `FluentValidation.ValidationException` before the handler is invoked. The HTTP boundary maps that exception to a 422 response when `Headless.Api`'s exception handler is configured.
 
 The three logging behaviors are registered by `AddMediatorLoggingBehaviors()`:
 
@@ -84,7 +84,7 @@ The four concerns commonly proposed as pipeline behaviors that this framework re
 
 ### API and behavior
 
-- `ValidationRequestPreProcessor<TMessage, TResponse>` — runs all registered `IValidator<TMessage>` concurrently before the handler; throws `ValidationException` on any failure.
+- `ValidationRequestPreProcessor<TMessage, TResponse>` — runs all registered `IValidator<TMessage>` one at a time, in registration order, before the handler; throws `ValidationException` on any failure.
 - `RequestLoggingBehavior<TMessage, TResponse>` — logs the message name and payload at Debug level before handler execution.
 - `ResponseLoggingBehavior<TMessage, TResponse>` — logs the message name, payload, and response at Debug level after handler execution.
 - `CriticalRequestLoggingBehavior<TMessage, TResponse>` — logs elapsed time and type names at Warning level when a handler takes ≥ 1 second; the full request/response payloads go to a separate Debug-level entry so sensitive data stays out of production logs.
