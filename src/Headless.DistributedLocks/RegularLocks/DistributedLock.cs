@@ -960,7 +960,7 @@ public sealed class DistributedLock(
 
     /// <summary>
     /// Messaging consumer that fans a <see cref="DistributedLockReleased"/> event out to every
-    /// registered <see cref="ICanReceiveLockReleased"/> provider (mutex and semaphore), allowing
+    /// registered <see cref="ICanReceiveLockReleased"/> provider (mutex, semaphore, and reader-writer), allowing
     /// blocked acquirers to be woken immediately after a release rather than waiting for the next
     /// backoff poll interval.
     /// </summary>
@@ -1000,8 +1000,8 @@ public sealed class DistributedLock(
             logger.LogProcessingLockReleased(context.MessageId, context.Message.Resource);
 
             // Fan the released signal out to every provider that can wake waiters (mutex,
-            // semaphore, reader-writer). Both DistributedLock and
-            // DistributedSemaphoreProvider are registered under ICanReceiveLockReleased via
+            // semaphore, reader-writer). DistributedLock, DistributedSemaphoreProvider, and
+            // DistributedReadWriteLock are registered under ICanReceiveLockReleased via
             // TryAddEnumerable so this seam stays decoupled from the concrete provider types.
             foreach (var receiver in receivers)
             {

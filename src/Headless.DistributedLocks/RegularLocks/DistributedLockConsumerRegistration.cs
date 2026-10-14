@@ -12,7 +12,7 @@ internal static class DistributedLockConsumerRegistration
 {
     /// <summary>
     /// Contributes this assembly's generated <c>MessagingModule</c>, which declares the lock-released consumer shared by
-    /// the mutex, semaphore, and reader-writer providers (all fan out from it via <see cref="ICanReceiveLockReleased"/>),
+    /// the mutex, semaphore, and reader-writer providers (it fans out to each through <see cref="ICanReceiveLockReleased"/>),
     /// and declares the release signal's message contract. Repeated calls are harmless: messaging registers the module
     /// once and merges the identical contract declarations.
     /// </summary>

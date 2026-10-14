@@ -4,9 +4,9 @@ namespace Headless.DistributedLocks;
 
 /// <summary>
 /// Wake-up signal contract for distributed-lock waiters. Implemented by
-/// <see cref="DistributedLock"/> and consumed by <c>LockReleasedConsumer</c> so a
-/// decorator on <see cref="IDistributedLock"/> cannot accidentally break the
-/// release-signal path.
+/// <see cref="DistributedLock"/>, <see cref="DistributedSemaphoreProvider"/>, and
+/// <see cref="DistributedReadWriteLock"/>, and consumed by <c>LockReleasedConsumer</c> so a
+/// decorator on a provider interface cannot accidentally break the release-signal path.
 /// </summary>
 internal interface ICanReceiveLockReleased
 {
