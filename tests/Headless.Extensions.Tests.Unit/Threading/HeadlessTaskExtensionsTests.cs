@@ -183,4 +183,111 @@ public sealed class HeadlessTaskExtensionsTests : TestBase
         await Task.Yield();
         tcs.Task.IsFaulted.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task should_never_exceed_max_concurrency_and_keep_input_order_when_when_all_bounded()
+    {
+        // given
+        const int maxConcurrency = 3;
+        var inFlight = 0;
+        var peak = 0;
+        var gates = Enumerable
+            .Range(0, 10)
+            .Select(_ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously))
+            .ToArray();
+        var started = new List<int>();
+
+        var operations = Enumerable
+            .Range(0, gates.Length)
+            .Select(
+                Func<Task<int>> (index) =>
+                    async () =>
+                    {
+                        lock (started)
+                        {
+                            started.Add(index);
+                        }
+
+                        lock (started)
+                        {
+                            inFlight++;
+                            peak = Math.Max(peak, inFlight);
+                        }
+
+                        await gates[index].Task;
+
+                        lock (started)
+                        {
+                            inFlight--;
+                        }
+
+                        return index * 10;
+                    }
+            )
+            .ToList();
+
+        // when
+        var run = Task.WhenAllBoundedAsync(operations, maxConcurrency);
+
+        // then — only the first window starts until a slot frees
+        await Task.Delay(50, AbortToken);
+        lock (started)
+        {
+            started.Should().Equal(0, 1, 2);
+        }
+
+        // when — finish the operations in reverse so completion order differs from input order
+        for (var i = gates.Length - 1; i >= 0; i--)
+        {
+            gates[i].TrySetResult();
+        }
+
+        var results = await run;
+
+        // then
+        results.Should().Equal(Enumerable.Range(0, gates.Length).Select(i => i * 10).ToArray());
+        peak.Should().BeLessThanOrEqualTo(maxConcurrency);
+    }
+
+    [Fact]
+    public async Task should_run_every_operation_before_surfacing_first_failure_when_when_all_bounded()
+    {
+        // given
+        var completed = 0;
+        var operations = Enumerable
+            .Range(0, 6)
+            .Select(
+                Func<Task<int>> (index) =>
+                    async () =>
+                    {
+                        await Task.Yield();
+                        Interlocked.Increment(ref completed);
+
+                        if (index == 1)
+                        {
+                            throw new InvalidOperationException("slot failed");
+                        }
+
+                        return index;
+                    }
+            )
+            .ToList();
+
+        // when
+        var act = async () => await Task.WhenAllBoundedAsync(operations, maxConcurrency: 2);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("slot failed");
+        completed.Should().Be(6);
+    }
+
+    [Fact]
+    public async Task should_return_empty_when_when_all_bounded_has_no_operations()
+    {
+        // when
+        var results = await Task.WhenAllBoundedAsync(Array.Empty<Func<Task<int>>>(), maxConcurrency: 4);
+
+        // then
+        results.Should().BeEmpty();
+    }
 }
