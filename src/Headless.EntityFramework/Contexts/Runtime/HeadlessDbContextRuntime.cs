@@ -51,7 +51,6 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     private static readonly Type _NullableDateTimeType = typeof(DateTime?);
 
     private readonly DbContext _db = db;
-    private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker = new();
 
     // Fixed for the instance's life: the options, and so the application provider, never change across leases.
     private IServiceProvider? _applicationServices;
@@ -76,12 +75,31 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     {
         // Attached in the constructor so EF's pool snapshot captures them and SetLease restores them on every lease;
         // handlers attached later would be dropped by the next lease. The tenant stamp is always attached and checks
-        // the write-guard option when it fires, because the option is not known until a provider is bound.
-        _db.ChangeTracker.Tracked += _navigationModifiedTracker.ChangeTrackerTracked;
-        _db.ChangeTracker.StateChanged += _navigationModifiedTracker.ChangeTrackerStateChanged;
+        // the write-guard option when it fires, because the option is not known until a provider is bound. The
+        // navigation tracker is attached only when enabled: the application provider is fixed for the instance's life,
+        // so deciding here is as final as deciding per lease would be.
+        if (_IsNavigationTrackingEnabled())
+        {
+            var tracker = new HeadlessEntityFrameworkNavigationModifiedTracker();
+            NavigationModifiedTracker = tracker;
+            _db.ChangeTracker.Tracked += tracker.ChangeTrackerTracked;
+            _db.ChangeTracker.StateChanged += tracker.ChangeTrackerStateChanged;
+        }
+
         _db.ChangeTracker.Tracking += _OnTracking;
         _db.ChangeTracker.StateChanging += _OnStateChanging;
     }
+
+    /// <summary>The navigation-change tracker, or <see langword="null"/> when navigation tracking is off.</summary>
+    internal HeadlessEntityFrameworkNavigationModifiedTracker? NavigationModifiedTracker { get; private set; }
+
+    // Best effort: a context built without an application provider cannot read the option and keeps tracking off,
+    // whereas the lazy provider lookup used for scoped collaborators throws.
+    private bool _IsNavigationTrackingEnabled() =>
+        _db.GetService<IDbContextOptions>()
+            .FindExtension<CoreOptionsExtension>()
+            ?.ApplicationServiceProvider?.GetService<HeadlessDbContextOptions>()
+            ?.TrackNavigationChanges == true;
 
     /// <summary>The ambient tenant, read on every access so a tenant change inside one lease is observed.</summary>
     public string? TenantId => (_currentTenant ??= _SingletonServices().GetRequiredService<ICurrentTenant>()).Id;
@@ -184,7 +202,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
         _pipeline = null;
         _currentTenant = null;
         _guardOptions = null;
-        _navigationModifiedTracker.Clear();
+        NavigationModifiedTracker?.Clear();
 
         return ownedScope;
     }
@@ -285,7 +303,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
         {
             // Run cleanup on both success and failure paths so a thrown CrossTenantWriteException
             // (or any other pipeline failure) does not leak stale modified-entry tracking state.
-            _navigationModifiedTracker.RemoveModifiedEntityEntries();
+            NavigationModifiedTracker?.RemoveModifiedEntityEntries();
         }
     }
 
@@ -297,7 +315,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
         }
         finally
         {
-            _navigationModifiedTracker.RemoveModifiedEntityEntries();
+            NavigationModifiedTracker?.RemoveModifiedEntityEntries();
         }
     }
 

@@ -30,6 +30,18 @@ public sealed class HeadlessDbContextOptions
     private readonly List<SaveEntryProcessorRegistration> _saveEntryProcessors = [];
 
     /// <summary>
+    /// Gets or sets whether each context records which entities changed only through their navigations (a collection
+    /// item added or removed), which EF Core's own change tracker does not report. Defaults to
+    /// <see langword="false"/>: the recording costs an identity lookup, a lock, and navigation copies per tracked
+    /// entity, and the framework's save pipeline does not read it.
+    /// </summary>
+    /// <remarks>
+    /// The setting is read once when a context instance is constructed, so it must be set before the first context is
+    /// created. A context built without the application service provider cannot see it and keeps the recording off.
+    /// </remarks>
+    public bool TrackNavigationChanges { get; set; }
+
+    /// <summary>
     /// Initializes the options with the framework's default save-entry processor chain (entity, audit,
     /// local-event, and message-collector processors) in their canonical order.
     /// </summary>
