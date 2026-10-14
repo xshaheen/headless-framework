@@ -226,6 +226,12 @@ internal sealed class JobsFallbackBackgroundService(
         _lastOrphanSweepTimestamp = timeProvider.GetTimestamp();
 
         var stamped = await internalJobsManager.GetActiveOwnerIdsAsync(cancellationToken).ConfigureAwait(false);
+
+        if (stamped.Length == 0)
+        {
+            return;
+        }
+
         var snapshot = await membership.GetLivenessSnapshotAsync(cancellationToken).ConfigureAwait(false);
         var live = snapshot
             .Where(static x => x.State is NodeLivenessState.Alive or NodeLivenessState.Suspected)

@@ -89,6 +89,8 @@ internal sealed partial class RedisMembershipStore(
             )
             .ConfigureAwait(false);
 
+        // 0 (superseded incarnation) and -1 (generation key missing) both refuse. A missing key here means the store
+        // lost the generation between allocate and register; the caller fails startup either way, so no reset log.
         if ((int)result <= 0)
         {
             return false;

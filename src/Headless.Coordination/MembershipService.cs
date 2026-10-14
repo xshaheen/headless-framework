@@ -23,6 +23,7 @@ internal sealed class MembershipService(
     private readonly Lock _timerGate = new();
     private Task<NodeIdentity>? _registration;
     private ITimer? _fenceTimer;
+    private bool _disposed;
     private volatile bool _fenceEnabled;
     private int _membershipLost;
 
@@ -40,7 +41,7 @@ internal sealed class MembershipService(
     /// write or its last accepted beat started, which is <see cref="CoordinationOptions.SelfFenceMargin"/> before any
     /// peer can classify it dead.
     /// </summary>
-    internal TimeSpan FenceBudget => options.DeadThreshold - ResolveSelfFenceMargin(options);
+    internal TimeSpan FenceBudget => options.DeadThreshold - _ResolveSelfFenceMargin(options);
 
     /// <summary>
     /// The margin the fence applies: the configured value, else the smaller of 5 seconds and a sixth of
@@ -48,7 +49,7 @@ internal sealed class MembershipService(
     /// DeadThreshold &gt;= 3 x HeartbeatInterval rule already makes at least 2.5 beats, so the default never violates
     /// the two-beat rule a fixed 5 seconds breaks on any threshold under 5 seconds plus two beats.
     /// </summary>
-    internal static TimeSpan ResolveSelfFenceMargin(CoordinationOptions options)
+    private static TimeSpan _ResolveSelfFenceMargin(CoordinationOptions options)
     {
         if (options.SelfFenceMargin is { } configured)
         {
@@ -56,7 +57,7 @@ internal sealed class MembershipService(
         }
 
         var fraction = TimeSpan.FromTicks(options.DeadThreshold.Ticks / 6);
-        return fraction < _MaxDefaultSelfFenceMargin ? fraction : _MaxDefaultSelfFenceMargin;
+        return fraction.Min(_MaxDefaultSelfFenceMargin);
     }
 
     public ValueTask<NodeIdentity> RegisterAsync(CancellationToken cancellationToken = default)
@@ -136,7 +137,7 @@ internal sealed class MembershipService(
 
         if (_IsPastFence(lease))
         {
-            await FailStopAsync(lease.Identity).ConfigureAwait(false);
+            await _FailStopLeaseAsync(lease).ConfigureAwait(false);
 
             return false;
         }
@@ -161,7 +162,7 @@ internal sealed class MembershipService(
         // stamp sites, and a node that flapped back would be stamping again after it told callers it stopped.
         if (_IsPastFence(lease))
         {
-            await FailStopAsync(lease.Identity).ConfigureAwait(false);
+            await _FailStopLeaseAsync(lease).ConfigureAwait(false);
 
             return false;
         }
@@ -242,12 +243,24 @@ internal sealed class MembershipService(
 
     internal async ValueTask FailStopAsync(NodeIdentity identity)
     {
-        if (_lease is not { } lease || lease.Identity != identity || !_TryReplaceLease(lease, replacement: null))
+        if (_lease is not { } lease || lease.Identity != identity)
         {
             return;
         }
 
-        await _SignalLocalMembershipLostAsync(identity).ConfigureAwait(false);
+        await _FailStopLeaseAsync(lease).ConfigureAwait(false);
+    }
+
+    // Fails the exact lease the caller judged expired. A renewal keeps the same identity under a new anchor, so
+    // matching by identity alone would let a deadline seen on the old lease fence the renewed one.
+    private async ValueTask _FailStopLeaseAsync(MembershipLease lease)
+    {
+        if (!_TryReplaceLease(lease, replacement: null))
+        {
+            return;
+        }
+
+        await _SignalLocalMembershipLostAsync(lease.Identity).ConfigureAwait(false);
     }
 
     public async ValueTask<bool> IsAliveAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
@@ -309,15 +322,17 @@ internal sealed class MembershipService(
             return;
         }
 
-        var due = _FenceRemaining(lease);
-
-        if (due < TimeSpan.Zero)
-        {
-            due = TimeSpan.Zero;
-        }
+        var due = _FenceRemaining(lease).Max(TimeSpan.Zero);
 
         lock (_timerGate)
         {
+            // A beat or registration still in flight when the host disposes this service must not bring back a
+            // timer that would fail-stop, publish, and stop the application after shutdown.
+            if (_disposed)
+            {
+                return;
+            }
+
             _fenceTimer ??= timeProvider.CreateTimer(
                 static state => ((MembershipService)state!)._OnFenceTimer(),
                 this,
@@ -345,19 +360,19 @@ internal sealed class MembershipService(
             return;
         }
 
-        _ = _FailStopFromTimerAsync(lease.Identity);
+        _ = _FailStopFromTimerAsync(lease);
     }
 
-    private async Task _FailStopFromTimerAsync(NodeIdentity identity)
+    private async Task _FailStopFromTimerAsync(MembershipLease lease)
     {
         try
         {
-            await FailStopAsync(identity).ConfigureAwait(false);
+            await _FailStopLeaseAsync(lease).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             // A timer callback has no caller to propagate to; the loss itself already happened before any throw.
-            logger.SelfFenceFailed(ex, identity);
+            logger.SelfFenceFailed(ex, lease.Identity);
         }
     }
 
@@ -400,6 +415,7 @@ internal sealed class MembershipService(
     {
         lock (_timerGate)
         {
+            _disposed = true;
             _fenceTimer?.Dispose();
             _fenceTimer = null;
         }

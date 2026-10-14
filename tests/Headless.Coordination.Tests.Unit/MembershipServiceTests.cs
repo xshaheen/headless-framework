@@ -401,6 +401,70 @@ public sealed class MembershipServiceTests : TestBase
     }
 
     [Fact]
+    public async Task should_register_afresh_after_a_refused_registration()
+    {
+        // given: the first attempt is refused, so its cached task is faulted
+        var store = new FakeMembershipStore { UpsertAccepted = false };
+        using var sut = _CreateService(store);
+        var refused = async () => await sut.RegisterAsync(AbortToken);
+        await refused.Should().ThrowAsync<MembershipRegistrationRejectedException>();
+        store.UpsertAccepted = true;
+        store.NextIncarnation = new NodeIncarnation(2);
+
+        // when
+        var identity = await sut.RegisterAsync(AbortToken);
+
+        // then: a new allocation, not a replay of the faulted attempt
+        store.AllocateIncarnationCalls.Should().Be(2);
+        identity.Incarnation.Should().Be(new NodeIncarnation(2));
+        sut.Identity.Should().Be(identity);
+    }
+
+    [Fact]
+    public async Task should_register_afresh_after_leaving()
+    {
+        // given
+        var store = new FakeMembershipStore();
+        using var sut = _CreateService(store);
+        var first = await sut.RegisterAsync(AbortToken);
+        await sut.LeaveAsync(AbortToken);
+        store.NextIncarnation = new NodeIncarnation(2);
+
+        // when
+        var second = await sut.RegisterAsync(AbortToken);
+
+        // then: the completed registration is not reused once its lease is gone
+        store.AllocateIncarnationCalls.Should().Be(2);
+        second.Should().NotBe(first);
+        sut.Identity.Should().Be(second);
+    }
+
+    [Fact]
+    public async Task should_not_rearm_the_fence_after_dispose()
+    {
+        // given: a beat still in flight when the host disposes the service
+        var timeProvider = new FakeTimeProvider();
+        var options = _FenceOptions();
+        options.MembershipLostBehavior = MembershipLostBehavior.StopApplication;
+        var store = new FakeMembershipStore();
+        var lifetime = new FakeHostApplicationLifetime();
+        var sut = _CreateService(store, options, lifetime, timeProvider: timeProvider);
+        sut.EnableSelfFence();
+        await sut.RegisterAsync(AbortToken);
+        store.BlockOnHeartbeat = true;
+        var beat = sut.HeartbeatAsync(AbortToken).AsTask();
+        sut.Dispose();
+
+        // when: the beat lands after dispose and the old deadline passes
+        store.HeartbeatRelease.TrySetResult();
+        await beat.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(10));
+
+        // then: no timer came back to stop the application after shutdown
+        lifetime.StopApplicationCalled.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_allocate_one_incarnation_for_concurrent_registrations()
     {
         // given

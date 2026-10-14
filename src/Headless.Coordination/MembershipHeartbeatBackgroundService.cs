@@ -175,7 +175,7 @@ internal sealed class MembershipHeartbeatBackgroundService(
             return options.HeartbeatInterval;
         }
 
-        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+        return remaining.Max(TimeSpan.Zero);
     }
 
     private async Task<bool> _TryRegisterWithRetryAsync(CancellationToken cancellationToken)

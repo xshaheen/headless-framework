@@ -39,8 +39,6 @@ internal static class Program
                 options.SuspicionThreshold = TimeSpan.FromMilliseconds(600);
                 options.DeadThreshold = TimeSpan.FromMilliseconds(1200);
                 options.DeadRetentionWindow = TimeSpan.FromMilliseconds(1200);
-                // The 5s default margin does not fit a 1.2s DeadThreshold; one beat leaves the fence room to renew.
-                options.SelfFenceMargin = TimeSpan.FromMilliseconds(200);
             });
         });
         builder.Services.AddHeadlessJobs(options =>
