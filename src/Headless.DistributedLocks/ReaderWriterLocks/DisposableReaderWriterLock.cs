@@ -6,7 +6,7 @@ namespace Headless.DistributedLocks;
 
 /// <summary>
 /// Concrete lease handle returned by <see cref="DistributedReadWriteLock"/> for both read and
-/// write acquisitions. Delegates <see cref="RenewAsync"/>, validate, and release operations back
+/// write acquisitions. Delegates <see cref="DistributedLockHandleBase.RenewAsync"/>, validate, and release operations back
 /// to the owning provider. Reader-writer leases never carry a fencing token — the value is always
 /// <see langword="null"/> in the base class.
 /// </summary>
@@ -21,6 +21,7 @@ internal sealed class DisposableReaderWriterLock : DistributedLockHandleBase
         string leaseId,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
+        long acquireTimestamp,
         DistributedReadWriteLock provider,
         bool releaseOnDispose,
         bool autoExtend,
@@ -36,6 +37,7 @@ internal sealed class DisposableReaderWriterLock : DistributedLockHandleBase
             fencingToken: null,
             leaseDuration,
             timeWaitedForLock,
+            acquireTimestamp,
             releaseOnDispose,
             autoExtend,
             options,
@@ -49,32 +51,27 @@ internal sealed class DisposableReaderWriterLock : DistributedLockHandleBase
     }
 
     /// <summary>
-    /// Manually renews this lease by extending its TTL in storage.
-    /// Delegates to <see cref="DistributedReadWriteLock.RenewAsync"/> with the appropriate
-    /// <see cref="ReaderWriterLockMode"/> and increments the renewal counter on success.
-    /// Returns <see langword="true"/> when the renewal succeeded;
-    /// <see langword="false"/> when the lease has been lost.
+    /// Manually renews this lease by extending its TTL in storage. Delegates to
+    /// <see cref="DistributedReadWriteLock.RenewAsync"/> with the appropriate <see cref="ReaderWriterLockMode"/>.
+    /// <see langword="null"/> uses the provider's <see cref="DistributedReadWriteLock.DefaultTimeUntilExpires"/>.
     /// </summary>
-    /// <param name="timeUntilExpires">
-    /// New TTL to apply. <see langword="null"/> uses the provider's
-    /// <see cref="DistributedReadWriteLock.DefaultTimeUntilExpires"/>.
-    /// </param>
-    /// <param name="cancellationToken">Token to cancel the storage round-trip.</param>
-    public override async Task<bool> RenewAsync(
-        TimeSpan? timeUntilExpires = null,
-        CancellationToken cancellationToken = default
-    )
+    protected override Task<bool> RenewCoreAsync(TimeSpan? timeUntilExpires, CancellationToken cancellationToken)
     {
-        var result = await _provider
-            .RenewAsync(_mode, Resource, LeaseId, timeUntilExpires, cancellationToken)
-            .ConfigureAwait(false);
+        return _provider.RenewAsync(_mode, Resource, LeaseId, timeUntilExpires, cancellationToken);
+    }
 
-        if (result)
+    // The provider applies its default for null; a read lease also clamps infinite to the default, while a write
+    // lease keeps infinite as "never expires".
+    protected override TimeSpan GetAppliedRenewTtl(TimeSpan? timeUntilExpires)
+    {
+        if (timeUntilExpires is not { } ttl)
         {
-            IncrementRenewalCount();
+            return _provider.DefaultTimeUntilExpires;
         }
 
-        return result;
+        return _mode == ReaderWriterLockMode.Read && ttl == Timeout.InfiniteTimeSpan
+            ? _provider.DefaultTimeUntilExpires
+            : ttl;
     }
 
     protected override Task<bool> RenewLeaseAsync(CancellationToken cancellationToken)

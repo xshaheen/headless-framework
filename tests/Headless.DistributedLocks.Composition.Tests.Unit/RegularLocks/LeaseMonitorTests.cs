@@ -16,7 +16,7 @@ public sealed class LeaseMonitorTests : TestBase
     public async Task should_cancel_handle_lost_token_when_handle_returns_lost()
     {
         // given
-        var handle = new FakeLeaseHandle();
+        var handle = new FakeLeaseHandle(_timeProvider);
         handle.Enqueue(LeaseMonitor.LeaseState.Lost);
         await using var sut = _CreateMonitor(handle);
 
@@ -33,15 +33,17 @@ public sealed class LeaseMonitorTests : TestBase
     public async Task should_not_cancel_when_unknown_is_followed_by_renewed_before_lease_duration()
     {
         // given
-        var handle = new FakeLeaseHandle();
+        var handle = new FakeLeaseHandle(_timeProvider);
         handle.Enqueue(new TimeoutException("transient"));
         handle.Enqueue(LeaseMonitor.LeaseState.Renewed);
         await using var sut = _CreateMonitor(handle);
 
-        // when - Unknown then Renewed within budget — must NOT cancel.
+        // when - Unknown then Renewed within budget — must NOT cancel. A real handle reports the renew it sent at 3s,
+        // which moves the deadline from 9s to 3s + 10s - 1s = 12s.
         sut.TriggerImmediateValidation();
         await DistributedLockTestSupport.DrainUntilAsync(() => handle.InvocationCount == 1, AbortToken);
         _timeProvider.Advance(TimeSpan.FromSeconds(3));
+        sut.OnLeaseRenewed(_timeProvider.GetTimestamp(), handle.LeaseDuration);
         sut.TriggerImmediateValidation();
         await DistributedLockTestSupport.DrainUntilAsync(() => handle.InvocationCount == 2, AbortToken);
         _timeProvider.Advance(TimeSpan.FromSeconds(6));
@@ -63,7 +65,7 @@ public sealed class LeaseMonitorTests : TestBase
     public async Task should_self_mark_lost_when_unknown_lifetime_reaches_lease_duration()
     {
         // given
-        var handle = new FakeLeaseHandle();
+        var handle = new FakeLeaseHandle(_timeProvider);
         handle.Enqueue(new TimeoutException("transient"));
         await using var sut = _CreateMonitor(handle);
         var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -88,7 +90,7 @@ public sealed class LeaseMonitorTests : TestBase
     public async Task should_validate_constructor_cadence_is_not_longer_than_lease()
     {
         // given
-        var handle = new FakeLeaseHandle
+        var handle = new FakeLeaseHandle(_timeProvider)
         {
             LeaseDuration = TimeSpan.FromSeconds(5),
             MonitoringCadence = TimeSpan.FromSeconds(6),
@@ -111,7 +113,7 @@ public sealed class LeaseMonitorTests : TestBase
         bool nullLogger
     )
     {
-        var handle = nullHandle ? null : new FakeLeaseHandle();
+        var handle = nullHandle ? null : new FakeLeaseHandle(_timeProvider);
         var timeProvider = nullTimeProvider ? null : _timeProvider;
         var logger = nullLogger ? null : LoggerFactory.CreateLogger(nameof(LeaseMonitor));
         var act = () => new LeaseMonitor(handle!, timeProvider!, logger!);
@@ -119,38 +121,32 @@ public sealed class LeaseMonitorTests : TestBase
     }
 
     [Fact]
-    public async Task should_not_self_mark_lost_when_polling_returns_held_past_lease_window()
+    public async Task should_mark_lost_at_deadline_when_polling_keeps_returning_held()
     {
-        // given - polling mode (no auto-extend) where every iteration returns Held.
-        // The safety net "leaseLifetime >= _leaseDuration => Lost" must only fire from Unknown,
-        // not from Held returned by storage confirming continued ownership.
-        var handle = new FakeLeaseHandle();
-        for (var i = 0; i < 7; i++)
-        {
-            handle.Enqueue(LeaseMonitor.LeaseState.Held);
-        }
-
+        // given - polling mode where storage confirms ownership on every probe. Held proves the key still exists
+        // but does not extend it, so the store still expires the 10s lease at 10s. The deadline is
+        // 10s - min(10% of 10s, 5s) = 9s.
+        var handle = new FakeLeaseHandle(_timeProvider);
         await using var sut = _CreateMonitor(handle);
 
-        // when - drive multiple cadence iterations past 2x lease duration (10s) with Held returns.
-        for (var i = 0; i < 6; i++)
-        {
-            sut.TriggerImmediateValidation();
-            await DistributedLockTestSupport.DrainUntilAsync(() => handle.InvocationCount >= i + 1, AbortToken);
-            _timeProvider.Advance(TimeSpan.FromSeconds(5));
-        }
+        // when - Held probes at 0s, 3s, 6s and just short of 9s
+        await _RunIterationAndWait(sut, handle, expectedCount: 1);
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));
+        await _RunIterationAndWait(sut, handle, expectedCount: 2);
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));
+        await _RunIterationAndWait(sut, handle, expectedCount: 3);
+        _timeProvider.Advance(TimeSpan.FromSeconds(3) - TimeSpan.FromMilliseconds(1));
+        await _RunIterationAndWait(sut, handle, expectedCount: 4);
 
-        sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.DrainUntilAsync(() => handle.InvocationCount >= 7, AbortToken);
-
-        // then - storage repeatedly confirmed ownership; monitor must not declare Lost.
+        // then
         sut.LostToken.IsCancellationRequested.Should().BeFalse();
 
-        // and - positive observation: when storage subsequently confirms loss, the monitor DOES react.
-        handle.Enqueue(LeaseMonitor.LeaseState.Lost);
-        sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.DrainUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
-        sut.LostToken.IsCancellationRequested.Should().BeTrue();
+        // when - the deadline, with the last probe still Held
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+        await _WaitForLossAsync(sut);
+
+        // then - the deadline declared loss, not a probe
+        handle.InvocationCount.Should().Be(4);
     }
 
     [Fact]
@@ -160,7 +156,7 @@ public sealed class LeaseMonitorTests : TestBase
         // LogLeaseMonitorStateChanged; the throw escapes _SetState → _RunIterationAsync →
         // _MonitoringLoopAsync, faulting MonitoringTask. The OnlyOnFaulted continuation MUST
         // cancel LostToken as a fail-safe.
-        var handle = new FakeLeaseHandle();
+        var handle = new FakeLeaseHandle(_timeProvider);
         handle.Enqueue(LeaseMonitor.LeaseState.Renewed);
         var logger = Substitute.For<ILogger>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
@@ -189,7 +185,7 @@ public sealed class LeaseMonitorTests : TestBase
     public async Task should_dispose_idempotently()
     {
         // given
-        await using var sut = _CreateMonitor(new FakeLeaseHandle());
+        await using var sut = _CreateMonitor(new FakeLeaseHandle(_timeProvider));
 
         // when
         await sut.DisposeAsync();
@@ -206,9 +202,11 @@ public sealed class LeaseMonitorTests : TestBase
         // loop must observe a dead WeakReference<LeaseMonitor> on its next cadence iteration
         // and exit. The OnlyOnFaulted continuation MUST NOT capture `this` (otherwise it would
         // strong-root the monitor for the lifetime of MonitoringTask, defeating this invariant).
-        var handle = new FakeLeaseHandle
+        // The lease is long enough that the loss deadline cannot end the loop inside the test's advances, so only
+        // the dead weak reference can.
+        var handle = new FakeLeaseHandle(_timeProvider)
         {
-            LeaseDuration = TimeSpan.FromMinutes(1),
+            LeaseDuration = TimeSpan.FromHours(1),
             MonitoringCadence = TimeSpan.FromSeconds(1),
         };
         var monitoringTask = _CreateMonitorAndDropReference(handle);
@@ -259,7 +257,7 @@ public sealed class LeaseMonitorTests : TestBase
         // DisposeAsync; the loop's cancellation token must propagate so the blocking call
         // unblocks promptly.
         using var blockSignal = new CancellationTokenSource();
-        var handle = new BlockingLeaseHandle(blockSignal.Token);
+        var handle = new BlockingLeaseHandle(_timeProvider.GetTimestamp(), blockSignal.Token);
         await using var sut = _CreateMonitor(handle);
 
         // Trigger an iteration that will block inside RenewOrValidateLeaseAsync.
@@ -277,21 +275,12 @@ public sealed class LeaseMonitorTests : TestBase
     }
 
     [Fact]
-    public async Task should_not_self_mark_lost_when_held_streak_followed_by_single_unknown()
+    public async Task should_not_mark_lost_before_deadline_when_held_streak_is_followed_by_single_unknown()
     {
-        // Regression for the "Held resets leaseTimestamp too" fix (issue #6). Without it, a
-        // long Held streak in polling mode would let the safety-net elapsed window grow even
-        // though storage repeatedly confirmed ownership. After enough Held probes, a single
-        // transient Unknown would then trip the safety net on the FOLLOWING iteration — a
-        // false-positive Lost when ownership was never actually in question.
-        //
-        // With the fix, Held resets leaseTimestamp on every probe, so the elapsed window
-        // starts fresh after each confirmed-ownership signal. A single subsequent Unknown
-        // cannot accumulate enough elapsed time to trip the safety net.
-        //
-        // Use a long cadence so the cadence timer never fires inside the test window — we
-        // drive iterations only via TriggerImmediateValidation to keep the sequence deterministic.
-        var handle = new FakeLeaseHandle
+        // given - a Held streak followed by one transient Unknown. Neither moves the deadline, and an Unknown alone
+        // never declares loss, so the lease stays live until the 9s deadline and is lost exactly there.
+        // A long cadence keeps the cadence timer out of the window; iterations run only when triggered.
+        var handle = new FakeLeaseHandle(_timeProvider)
         {
             LeaseDuration = TimeSpan.FromSeconds(10),
             MonitoringCadence = TimeSpan.FromSeconds(10),
@@ -305,22 +294,81 @@ public sealed class LeaseMonitorTests : TestBase
 
         await using var sut = _CreateMonitor(handle);
 
-        // Drive three Held probes, advancing the clock so each carries a leaseLifetime that
-        // would individually exceed the lease window if the prior Held had not reset it. The
-        // advance happens AFTER the iteration was triggered and observed, but BEFORE we
-        // probe the safety-net check on the next iteration.
         await _RunIterationAndWait(sut, handle, expectedCount: 1);
-        _timeProvider.Advance(TimeSpan.FromSeconds(9));
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));
         await _RunIterationAndWait(sut, handle, expectedCount: 2);
-        _timeProvider.Advance(TimeSpan.FromSeconds(9));
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));
         await _RunIterationAndWait(sut, handle, expectedCount: 3);
 
-        // Modest advance, then the Unknown probe. Total elapsed since the LAST Held reset is
-        // small, so the safety net should NOT fire.
-        _timeProvider.Advance(TimeSpan.FromSeconds(3));
+        // when - the Unknown probe at 8s
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
         await _RunIterationAndWait(sut, handle, expectedCount: 4);
 
+        // then
         sut.LostToken.IsCancellationRequested.Should().BeFalse();
+
+        // when
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+
+        // then
+        await _WaitForLossAsync(sut);
+    }
+
+    [Fact]
+    public async Task should_keep_newer_deadline_when_older_renew_is_reported_after_newer_one()
+    {
+        // given - two renews: one sent at 2s with a 5s TTL, one sent at 4s with a 10s TTL. The store applied the
+        // later send last, so the deadline is 4s + 10s - 1s = 13s. The older renew's 2s + 5s - 0.5s = 6.5s must not
+        // replace it even when its success is reported last.
+        var handle = new FakeLeaseHandle(_timeProvider) { MonitoringCadence = TimeSpan.FromSeconds(10) };
+        await using var sut = _CreateMonitor(handle);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        var olderSend = _timeProvider.GetTimestamp();
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        var newerSend = _timeProvider.GetTimestamp();
+
+        // when
+        sut.OnLeaseRenewed(newerSend, TimeSpan.FromSeconds(10));
+        sut.OnLeaseRenewed(olderSend, TimeSpan.FromSeconds(5));
+        _timeProvider.Advance(TimeSpan.FromSeconds(9) - TimeSpan.FromMilliseconds(1));
+        await DistributedLockTestSupport.DrainUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
+
+        // then
+        sut.LostToken.IsCancellationRequested.Should().BeFalse();
+
+        // when
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+
+        // then
+        await _WaitForLossAsync(sut);
+    }
+
+    [Fact]
+    public async Task should_not_mark_lost_when_renew_made_lease_non_expiring()
+    {
+        // given - a write lease renewed with an infinite TTL no longer expires in the store
+        var handle = new FakeLeaseHandle(_timeProvider) { MonitoringCadence = TimeSpan.FromSeconds(10) };
+        await using var sut = _CreateMonitor(handle);
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+
+        // when
+        sut.OnLeaseRenewed(_timeProvider.GetTimestamp(), Timeout.InfiniteTimeSpan);
+        _timeProvider.Advance(TimeSpan.FromHours(1));
+        await DistributedLockTestSupport.DrainUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
+
+        // then
+        sut.LostToken.IsCancellationRequested.Should().BeFalse();
+    }
+
+    private static async Task _WaitForLossAsync(LeaseMonitor sut)
+    {
+        var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var registration = sut.LostToken.Register(
+            static state => ((TaskCompletionSource)state!).TrySetResult(),
+            lostSignal
+        );
+        await lostSignal.Task.Bounded();
+        sut.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
     private static async Task _RunIterationAndWait(LeaseMonitor sut, FakeLeaseHandle handle, int expectedCount)
@@ -339,12 +387,15 @@ public sealed class LeaseMonitorTests : TestBase
         return new LeaseMonitor(handle, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
     }
 
-    private sealed class BlockingLeaseHandle(CancellationToken externalAbort) : LeaseMonitor.ILeaseHandle
+    private sealed class BlockingLeaseHandle(long acquireTimestamp, CancellationToken externalAbort)
+        : LeaseMonitor.ILeaseHandle
     {
         public string Resource => "blocking-resource";
         public string LeaseId => "blocking-lock";
         public TimeSpan LeaseDuration => TimeSpan.FromSeconds(10);
         public TimeSpan MonitoringCadence => TimeSpan.FromSeconds(5);
+        public long AcquireTimestamp => acquireTimestamp;
+        public TimeSpan StorageDeadline => TimeSpan.FromSeconds(5);
         public bool IsBlocking { get; private set; }
         public bool ExitedBeforeRelease { get; private set; }
 
@@ -372,7 +423,7 @@ public sealed class LeaseMonitorTests : TestBase
     public async Task should_not_deadlock_when_callback_disposes_monitor()
     {
         // given
-        var handle = new FakeLeaseHandle();
+        var handle = new FakeLeaseHandle(_timeProvider);
         handle.Enqueue(LeaseMonitor.LeaseState.Lost);
         await using var sut = _CreateMonitor(handle);
 

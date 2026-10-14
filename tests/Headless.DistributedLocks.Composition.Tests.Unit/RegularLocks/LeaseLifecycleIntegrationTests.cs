@@ -476,6 +476,312 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         handle!.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task should_cancel_lost_token_before_store_expiry_when_monitor_probes_keep_returning_held()
+    {
+        // given - storage confirms ownership on every probe, but nothing renews the 10s lease, so the store drops
+        // the key at 10s. The handle must report loss one margin earlier: 10s - min(10% of 10s, 5s) = 9s.
+        var storage = new ScriptedLeaseStorage();
+        var provider = _CreateProvider(storage);
+        await using var handle = await _AcquireAsync(provider, TimeSpan.FromSeconds(10), LockMonitoringMode.Monitor);
+
+        // when - just short of the deadline
+        _timeProvider.Advance(TimeSpan.FromSeconds(9) - TimeSpan.FromMilliseconds(1));
+        await DistributedLockTestSupport.DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
+
+        // then
+        handle.LostToken.IsCancellationRequested.Should().BeFalse();
+
+        // when - the deadline itself, while every probe still answered Held
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+
+        // then
+        await _WaitForLossAsync(handle);
+        storage.Owned.Should().BeTrue("storage still holds the key, so only the deadline can have fired");
+    }
+
+    [Fact]
+    public async Task should_anchor_lost_deadline_on_renew_send_time_when_renew_response_is_slow()
+    {
+        // given - auto-extend with a 10s lease and a 5s cadence. The first renew is sent at 5s and its reply arrives
+        // 3s later; every later renew fails while storage still reports ownership (Unknown). The store applied the
+        // renew no earlier than its send, so the key can expire at 5s + 10s = 15s; the deadline is 15s - 1s = 14s.
+        var storage = new ScriptedLeaseStorage();
+        var firstRenew = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        storage.OnRenew = call => call == 1 ? new ValueTask<bool>(firstRenew.Task) : ValueTask.FromResult(false);
+        // The cadence-aware clock advances only once the monitor loop has armed its 5s wait, so the first renew
+        // really is sent at 5s rather than whenever the loop happens to start.
+        var timeProvider = new CadenceTimeProvider(TimeSpan.FromSeconds(5));
+        var provider = _CreateProvider(
+            storage,
+            new DistributedLockOptions { AutoExtensionCadenceFraction = 0.5 },
+            timeProvider
+        );
+        await using var handle = await _AcquireAsync(provider, TimeSpan.FromSeconds(10), LockMonitoringMode.AutoExtend);
+
+        await timeProvider.AdvanceCadenceAsync(cancellationToken: AbortToken);
+        await DistributedLockTestSupport.DrainUntilAsync(() => storage.RenewCalls == 1, AbortToken);
+        storage.RenewCalls.Should().Be(1, "pre-condition: the first renew is in flight");
+        timeProvider.Advance(TimeSpan.FromSeconds(3));
+        firstRenew.SetResult(true);
+        await DistributedLockTestSupport.DrainUntilAsync(() => handle.RenewalCount == 1, AbortToken);
+        handle.RenewalCount.Should().Be(1, "pre-condition: the slow renew succeeded");
+
+        // when - just short of send + lease - margin
+        timeProvider.Advance(TimeSpan.FromSeconds(6) - TimeSpan.FromMilliseconds(1));
+        await DistributedLockTestSupport.DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
+
+        // then
+        handle.LostToken.IsCancellationRequested.Should().BeFalse();
+
+        // when - send + lease - margin; a reply-anchored deadline would wait until 17s, after the store expired
+        timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+
+        // then
+        await _WaitForLossAsync(handle);
+    }
+
+    [Fact]
+    public async Task should_cancel_lost_token_before_store_expiry_when_unknown_streak_follows_last_renew()
+    {
+        // given - auto-extend, 10s lease, 5s cadence. The renew sent at 5s succeeds; every later renew fails while
+        // storage still reports ownership, so each later iteration is Unknown. The key expires at 15s.
+        var storage = new ScriptedLeaseStorage { OnRenew = call => ValueTask.FromResult(call == 1) };
+        // The cadence-aware clock advances only once the monitor loop has armed its 5s wait, so the first renew
+        // really is sent at 5s rather than whenever the loop happens to start.
+        var timeProvider = new CadenceTimeProvider(TimeSpan.FromSeconds(5));
+        var provider = _CreateProvider(
+            storage,
+            new DistributedLockOptions { AutoExtensionCadenceFraction = 0.5 },
+            timeProvider
+        );
+        await using var handle = await _AcquireAsync(provider, TimeSpan.FromSeconds(10), LockMonitoringMode.AutoExtend);
+
+        await timeProvider.AdvanceCadenceAsync(cancellationToken: AbortToken);
+        await DistributedLockTestSupport.DrainUntilAsync(() => handle.RenewalCount == 1, AbortToken);
+        handle.RenewalCount.Should().Be(1, "pre-condition: the renew sent at 5s succeeded");
+
+        // when - just short of last renew send + lease - margin = 14s
+        timeProvider.Advance(TimeSpan.FromSeconds(9) - TimeSpan.FromMilliseconds(1));
+        await DistributedLockTestSupport.DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
+
+        // then
+        handle.LostToken.IsCancellationRequested.Should().BeFalse();
+
+        // when
+        timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+
+        // then
+        await _WaitForLossAsync(handle);
+    }
+
+    [Fact]
+    public async Task should_move_lost_deadline_when_monitor_mode_handle_is_renewed_manually()
+    {
+        // given - monitor mode, 10s lease, probes always Held. At 5s the caller renews for 20s, so the store now
+        // expires the key at 25s and the deadline moves to 5s + 20s - min(10% of 20s, 5s) = 23s.
+        var storage = new ScriptedLeaseStorage { OnRenew = _ => ValueTask.FromResult(true) };
+        var provider = _CreateProvider(storage);
+        await using var handle = await _AcquireAsync(provider, TimeSpan.FromSeconds(10), LockMonitoringMode.Monitor);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(5));
+        (await handle.RenewAsync(TimeSpan.FromSeconds(20), AbortToken)).Should().BeTrue();
+
+        // when - past the acquire deadline (9s) and up to just short of the renewed deadline
+        _timeProvider.Advance(TimeSpan.FromSeconds(4));
+        await DistributedLockTestSupport.DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
+        handle.LostToken.IsCancellationRequested.Should().BeFalse("the manual renew moved the deadline past 9s");
+        _timeProvider.Advance(TimeSpan.FromSeconds(14) - TimeSpan.FromMilliseconds(1));
+        await DistributedLockTestSupport.DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
+
+        // then
+        handle.LostToken.IsCancellationRequested.Should().BeFalse();
+
+        // when
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+
+        // then
+        await _WaitForLossAsync(handle);
+    }
+
+    [Fact]
+    public async Task should_not_cancel_lost_token_after_deadline_when_handle_was_disposed_before_it()
+    {
+        // given
+        var storage = new ScriptedLeaseStorage();
+        var provider = _CreateProvider(storage);
+        var handle = await _AcquireAsync(provider, TimeSpan.FromSeconds(10), LockMonitoringMode.Monitor);
+        var lostToken = handle.LostToken;
+        var lostFired = false;
+        await using var registration = lostToken.Register(() => lostFired = true);
+
+        // when
+        _timeProvider.Advance(TimeSpan.FromSeconds(5));
+        await handle.DisposeAsync();
+        _timeProvider.Advance(TimeSpan.FromSeconds(20));
+        await DistributedLockTestSupport.DrainUntilAsync(() => lostFired, AbortToken);
+
+        // then
+        lostFired.Should().BeFalse();
+    }
+
+    private async Task<IDistributedLease> _AcquireAsync(
+        DistributedLock provider,
+        TimeSpan lease,
+        LockMonitoringMode monitoring
+    )
+    {
+        var handle = await provider.TryAcquireAsync(
+            Faker.Random.AlphaNumeric(10),
+            new DistributedLockAcquireOptions { TimeUntilExpires = lease, Monitoring = monitoring },
+            AbortToken
+        );
+        handle.Should().NotBeNull("pre-condition: the lock is free");
+
+        return handle!;
+    }
+
+    private static async Task _WaitForLossAsync(IDistributedLease handle)
+    {
+        var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var registration = handle.LostToken.Register(
+            static state => ((TaskCompletionSource)state!).TrySetResult(),
+            lostSignal
+        );
+        await lostSignal.Task.Bounded();
+        handle.LostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
+    private DistributedLock _CreateProvider(
+        ScriptedLeaseStorage storage,
+        DistributedLockOptions? options = null,
+        FakeTimeProvider? timeProvider = null
+    )
+    {
+        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
+
+        return new DistributedLock(
+            storage,
+            bus: null,
+            options ?? new DistributedLockOptions(),
+            _guidGenerator,
+            timeProvider ?? _timeProvider,
+            LoggerFactory.CreateLogger<DistributedLock>()
+        );
+    }
+
+    /// <summary>
+    /// Storage that grants the first insert, reports the inserted lease as the owner until it is removed, and
+    /// answers renews from <see cref="OnRenew"/>, so a test controls whether and when each renew succeeds.
+    /// </summary>
+    private sealed class ScriptedLeaseStorage : IDistributedLockStorage
+    {
+        private readonly Lock _gate = new();
+        private string? _leaseId;
+        private int _renewCalls;
+
+        public Func<int, ValueTask<bool>> OnRenew { get; set; } = _ => ValueTask.FromResult(true);
+
+        public int RenewCalls => Volatile.Read(ref _renewCalls);
+
+        public bool Owned => _CurrentLeaseId() is not null;
+
+        public ValueTask<DistributedLockAcquireResult> InsertAsync(
+            string key,
+            string leaseId,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            bool granted;
+
+            lock (_gate)
+            {
+                granted = _leaseId is null;
+                _leaseId ??= leaseId;
+            }
+
+            return ValueTask.FromResult(
+                granted ? new DistributedLockAcquireResult(true, null) : DistributedLockAcquireResult.Failed
+            );
+        }
+
+        public ValueTask<bool> ReplaceIfEqualAsync(
+            string key,
+            string expectedId,
+            string newId,
+            TimeSpan? newTtl = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return OnRenew(Interlocked.Increment(ref _renewCalls));
+        }
+
+        public ValueTask<bool> RemoveIfEqualAsync(
+            string key,
+            string expectedId,
+            CancellationToken cancellationToken = default
+        )
+        {
+            lock (_gate)
+            {
+                if (!string.Equals(_leaseId, expectedId, StringComparison.Ordinal))
+                {
+                    return ValueTask.FromResult(false);
+                }
+
+                _leaseId = null;
+
+                return ValueTask.FromResult(true);
+            }
+        }
+
+        public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult<TimeSpan?>(null);
+        }
+
+        public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(Owned);
+        }
+
+        public ValueTask<string?> GetAsync(string key, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(_CurrentLeaseId());
+        }
+
+        public ValueTask<IReadOnlyDictionary<string, string>> GetAllByPrefixAsync(
+            string prefix,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return ValueTask.FromResult<IReadOnlyDictionary<string, string>>(new Dictionary<string, string>());
+        }
+
+        public ValueTask<
+            IReadOnlyDictionary<string, (string LeaseId, TimeSpan? Ttl)>
+        > GetAllWithExpirationByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult<IReadOnlyDictionary<string, (string LeaseId, TimeSpan? Ttl)>>(
+                new Dictionary<string, (string LeaseId, TimeSpan? Ttl)>()
+            );
+        }
+
+        public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(Owned ? 1L : 0L);
+        }
+
+        private string? _CurrentLeaseId()
+        {
+            lock (_gate)
+            {
+                return _leaseId;
+            }
+        }
+    }
+
     private DistributedLock _CreateProvider(
         DistributedLockOptions? options = null,
         FakeTimeProvider? timeProvider = null

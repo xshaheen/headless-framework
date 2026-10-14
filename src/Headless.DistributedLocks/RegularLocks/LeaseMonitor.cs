@@ -17,11 +17,13 @@ namespace Headless.DistributedLocks;
 /// owning handle, which delegates to the provider's storage backend.
 /// </para>
 /// <para>
-/// <b>Safety-net self-promotion:</b> if successive iterations all return <see cref="LeaseState.Unknown"/>
-/// (transient storage errors) for a cumulative window equal to the full lease TTL, the monitor
-/// treats the lease as lost and cancels <see cref="LostToken"/> even without a definitive storage
-/// confirmation. This prevents a stuck storage backend from leaving the caller believing it still
-/// holds a lease whose TTL has expired.
+/// <b>Loss deadline:</b> the store starts a lease's TTL no earlier than the moment the request that set it was
+/// sent, so the lease can expire as early as <c>send + ttl</c>. The monitor owns a timer that cancels
+/// <see cref="LostToken"/> at <c>send + ttl - margin</c>, where <c>margin = min(ttl / 10, storage deadline)</c>, whatever
+/// the probes report. It starts from the acquire send time and moves only when the handle reports a successful
+/// renew through <see cref="OnLeaseRenewed"/>. A <see cref="LeaseState.Held"/> or <see cref="LeaseState.Unknown"/>
+/// probe never moves it: neither extends the lease in the store, and anchoring on a probe's reply would report loss
+/// after the store already expired the lease.
 /// </para>
 /// <para>
 /// <b>GC-abandonment:</b> the monitoring loop holds only a <see cref="WeakReference{T}"/> to this
@@ -41,9 +43,16 @@ internal sealed class LeaseMonitor : IAsyncDisposable
     private readonly ILogger _logger;
     private readonly TimeSpan _leaseDuration;
     private readonly Lock _syncLock = new();
+    private readonly TimeProvider _timeProvider;
+    private readonly TimeSpan _storageDeadline;
+    private readonly ITimer _deadlineTimer;
     private int _disposed;
     private Task? _handleLostCancellationTask;
     private LeaseState _state = LeaseState.Held;
+
+    // The send time and TTL of the latest storage write that set the lease's expiry. Guarded by _syncLock.
+    private long _anchorTimestamp;
+    private TimeSpan _anchorTtl;
 
     private LeaseState State
     {
@@ -68,7 +77,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
     public LeaseMonitor(ILeaseHandle leaseHandle, TimeProvider timeProvider, ILogger logger)
     {
         _leaseHandle = Argument.IsNotNull(leaseHandle);
-        timeProvider = Argument.IsNotNull(timeProvider);
+        _timeProvider = Argument.IsNotNull(timeProvider);
         _logger = Argument.IsNotNull(logger);
         _leaseDuration = Argument.IsGreaterThanOrEqualTo(
             leaseHandle.LeaseDuration,
@@ -77,6 +86,9 @@ internal sealed class LeaseMonitor : IAsyncDisposable
         );
 
         _nudgeSignal = new AsyncAutoResetEvent();
+        _storageDeadline = leaseHandle.StorageDeadline;
+        _anchorTimestamp = leaseHandle.AcquireTimestamp;
+        _anchorTtl = _leaseDuration;
 
         var loopState = new MonitoringLoopState(
             new WeakReference<LeaseMonitor>(this),
@@ -99,6 +111,15 @@ internal sealed class LeaseMonitor : IAsyncDisposable
             _logger,
             leaseHandle.Resource,
             leaseHandle.LeaseId
+        );
+
+        // The timer state holds only a weak reference, for the same GC-abandonment reason as the loop state: a
+        // pending timer is rooted by the timer queue and must not keep an abandoned monitor alive.
+        _deadlineTimer = timeProvider.CreateTimer(
+            static state => ((DeadlineTimerState)state!).OnDeadlineReached(),
+            new DeadlineTimerState(new WeakReference<LeaseMonitor>(this)),
+            _GetTimeUntilDeadline(_anchorTimestamp, _anchorTtl),
+            Timeout.InfiniteTimeSpan
         );
 
         MonitoringTask = Task.Run(() => _MonitoringLoopAsync(loopState));
@@ -172,8 +193,8 @@ internal sealed class LeaseMonitor : IAsyncDisposable
     internal Task MonitoringTask { get; }
 
     /// <summary>
-    /// Cancelled when lease loss is detected (storage confirms ownership is gone, the safety-net
-    /// threshold is reached, or the monitoring loop faults). Consumers should register callbacks on
+    /// Cancelled when lease loss is detected (storage confirms ownership is gone, the loss deadline
+    /// is reached, or the monitoring loop faults). Consumers should register callbacks on
     /// this token to initiate graceful shutdown of work protected by the lease.
     /// </summary>
     public CancellationToken LostToken => _handleLostSource.Token;
@@ -186,6 +207,28 @@ internal sealed class LeaseMonitor : IAsyncDisposable
     public void TriggerImmediateValidation()
     {
         _nudgeSignal.Set();
+    }
+
+    /// <summary>
+    /// Moves the loss deadline after the handle renewed the lease in storage. The deadline becomes
+    /// <c>sendTimestamp + ttl - margin</c>. A renew sent before the current anchor is ignored, because the store
+    /// applied the newer write last.
+    /// </summary>
+    /// <param name="sendTimestamp"><see cref="TimeProvider.GetTimestamp"/> taken immediately before the renew was sent.</param>
+    /// <param name="ttl">The TTL the store applied, or <see cref="Timeout.InfiniteTimeSpan"/> for a lease that no longer expires.</param>
+    public void OnLeaseRenewed(long sendTimestamp, TimeSpan ttl)
+    {
+        lock (_syncLock)
+        {
+            if (_state == LeaseState.Lost || Volatile.Read(ref _disposed) != 0 || sendTimestamp < _anchorTimestamp)
+            {
+                return;
+            }
+
+            _anchorTimestamp = sendTimestamp;
+            _anchorTtl = ttl;
+            _deadlineTimer.Change(_GetTimeUntilDeadline(sendTimestamp, ttl), Timeout.InfiniteTimeSpan);
+        }
     }
 
     /// <summary>
@@ -206,6 +249,12 @@ internal sealed class LeaseMonitor : IAsyncDisposable
 
         try
         {
+            // Under the lock so a concurrent OnLeaseRenewed never reschedules a disposed timer.
+            lock (_syncLock)
+            {
+                _deadlineTimer.Dispose();
+            }
+
             await _disposalSource.CancelAsync().ConfigureAwait(false);
             _nudgeSignal.Set();
             try
@@ -252,22 +301,12 @@ internal sealed class LeaseMonitor : IAsyncDisposable
         }
     }
 
-    private async Task<LeaseState> _RunIterationAsync(TimeSpan leaseLifetime)
+    private async Task<LeaseState> _RunIterationAsync()
     {
-        if (_disposalSource.IsCancellationRequested)
+        // The deadline timer may already have declared the lease lost; probing again cannot revive it.
+        if (_disposalSource.IsCancellationRequested || State == LeaseState.Lost)
         {
             return State;
-        }
-
-        // Safety-net self-promotion: only when prior probes were transient (Unknown).
-        // A confirmed Held/Renewed from storage MUST NOT trip the safety net — both reset
-        // leaseTimestamp in the monitoring loop, so a long Held streak in polling mode never
-        // crosses the safety-net threshold. Only Unknown (transient) leaves leaseTimestamp
-        // unchanged, allowing the elapsed window to accumulate.
-        if (leaseLifetime >= _leaseDuration && State == LeaseState.Unknown)
-        {
-            _SetState(LeaseState.Lost);
-            return LeaseState.Lost;
         }
 
         LeaseState nextState;
@@ -293,7 +332,51 @@ internal sealed class LeaseMonitor : IAsyncDisposable
 
         _SetState(nextState);
 
-        return nextState;
+        // The deadline timer can mark the lease lost while the probe is in flight; report the settled state.
+        return State;
+    }
+
+    private void _OnDeadlineReached()
+    {
+        lock (_syncLock)
+        {
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                return;
+            }
+
+            // A renew can move the deadline after this callback was already queued, and a timer can fire a little
+            // early; in both cases wait for the real deadline instead of declaring a held lease lost.
+            var remaining = _GetTimeUntilDeadline(_anchorTimestamp, _anchorTtl);
+
+            if (remaining > TimeSpan.Zero)
+            {
+                _deadlineTimer.Change(remaining, Timeout.InfiniteTimeSpan);
+
+                return;
+            }
+        }
+
+        _SetState(LeaseState.Lost);
+
+        // Wake the loop so it observes Lost and exits instead of probing until its next cadence tick.
+        _nudgeSignal.Set();
+    }
+
+    private TimeSpan _GetTimeUntilDeadline(long anchorTimestamp, TimeSpan ttl)
+    {
+        if (ttl == Timeout.InfiniteTimeSpan)
+        {
+            return Timeout.InfiniteTimeSpan;
+        }
+
+        // The margin absorbs the time a renew can spend in flight (bounded by the storage deadline) and clock drift
+        // between this process and the store, while staying a small slice of short leases.
+        var tenthOfTtl = TimeSpan.FromTicks(ttl.Ticks / 10);
+        var margin = tenthOfTtl < _storageDeadline ? tenthOfTtl : _storageDeadline;
+        var remaining = ttl - margin - _timeProvider.GetElapsedTime(anchorTimestamp);
+
+        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
     }
 
     private void _SetState(LeaseState nextState)
@@ -364,8 +447,6 @@ internal sealed class LeaseMonitor : IAsyncDisposable
 
     private static async Task _MonitoringLoopAsync(MonitoringLoopState state)
     {
-        var leaseTimestamp = state.TimeProvider.GetTimestamp();
-
         while (!state.DisposalToken.IsCancellationRequested)
         {
             using var cadenceSource = state.TimeProvider.CreateCancellationTokenSource(state.Cadence);
@@ -381,16 +462,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
                 return;
             }
 
-            var leaseLifetime = state.TimeProvider.GetElapsedTime(leaseTimestamp);
-            var nextState = await monitor._RunIterationAsync(leaseLifetime).ConfigureAwait(false);
-
-            // Both Renewed (auto-extend success) and Held (polling-mode positive ownership confirmation)
-            // are positive ownership signals from storage and reset the safety-net window. Unknown
-            // (transient) does NOT reset — that's the signal the safety net is designed to catch.
-            if (nextState is LeaseState.Renewed or LeaseState.Held)
-            {
-                leaseTimestamp = state.TimeProvider.GetTimestamp();
-            }
+            var nextState = await monitor._RunIterationAsync().ConfigureAwait(false);
 
             if (nextState == LeaseState.Lost)
             {
@@ -412,9 +484,8 @@ internal sealed class LeaseMonitor : IAsyncDisposable
         Lost,
 
         /// <summary>
-        /// Transient outcome: storage was unreachable or returned an ambiguous result.
-        /// The monitoring loop accumulates these; when the total unknown window reaches the full
-        /// lease TTL, the safety net self-promotes to <see cref="Lost"/>.
+        /// Transient outcome: storage was unreachable or returned an ambiguous result. It neither
+        /// declares loss nor moves the loss deadline, which fires if no renew succeeds in time.
         /// </summary>
         Unknown,
     }
@@ -439,6 +510,15 @@ internal sealed class LeaseMonitor : IAsyncDisposable
         TimeSpan MonitoringCadence { get; }
 
         /// <summary>
+        /// <see cref="TimeProvider.GetTimestamp"/> taken immediately before the storage call that granted the lease.
+        /// The store started the lease's TTL no earlier, so the loss deadline is anchored here.
+        /// </summary>
+        long AcquireTimestamp { get; }
+
+        /// <summary>The bound on a single storage round-trip; it caps the loss deadline's safety margin.</summary>
+        TimeSpan StorageDeadline { get; }
+
+        /// <summary>
         /// Performs one monitoring iteration: attempts a renewal (auto-extend mode) or an ownership
         /// validation (polling mode) against the storage backend, and returns the resulting
         /// <see cref="LeaseState"/>.
@@ -447,6 +527,17 @@ internal sealed class LeaseMonitor : IAsyncDisposable
         /// <returns>The classification of the iteration outcome.</returns>
         /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
         Task<LeaseState> RenewOrValidateLeaseAsync(CancellationToken cancellationToken);
+    }
+
+    private sealed class DeadlineTimerState(WeakReference<LeaseMonitor> monitor)
+    {
+        public void OnDeadlineReached()
+        {
+            if (monitor.TryGetTarget(out var target))
+            {
+                target._OnDeadlineReached();
+            }
+        }
     }
 
     private sealed record MonitoringLoopState(

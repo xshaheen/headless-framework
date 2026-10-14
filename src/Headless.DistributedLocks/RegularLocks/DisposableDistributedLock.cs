@@ -22,6 +22,7 @@ internal sealed class DisposableDistributedLock : DistributedLockHandleBase
     /// <param name="fencingToken">The fencing token issued by the backend, or <see langword="null"/> if unsupported.</param>
     /// <param name="leaseDuration">The finite TTL of the lease (used for monitoring cadence calculation).</param>
     /// <param name="timeWaitedForLock">The wall-clock time spent waiting before the lock was granted.</param>
+    /// <param name="acquireTimestamp">Timestamp taken immediately before the storage call that granted the lock.</param>
     /// <param name="lockProvider">The provider used for renew, validate, and release operations.</param>
     /// <param name="releaseOnDispose">When <see langword="true"/>, <see cref="DistributedLockHandleBase.DisposeAsync"/> calls <see cref="DistributedLockHandleBase.ReleaseAsync"/>.</param>
     /// <param name="autoExtend">When <see langword="true"/>, the attached monitor extends the TTL at each cadence tick instead of only validating.</param>
@@ -35,6 +36,7 @@ internal sealed class DisposableDistributedLock : DistributedLockHandleBase
         LockFencingToken? fencingToken,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
+        long acquireTimestamp,
         IDistributedLock lockProvider,
         bool releaseOnDispose,
         bool autoExtend,
@@ -49,6 +51,7 @@ internal sealed class DisposableDistributedLock : DistributedLockHandleBase
             fencingToken,
             leaseDuration,
             timeWaitedForLock,
+            acquireTimestamp,
             releaseOnDispose,
             autoExtend,
             options,
@@ -61,23 +64,10 @@ internal sealed class DisposableDistributedLock : DistributedLockHandleBase
     }
 
     /// <summary>
-    /// Extends the lease TTL in storage via the owning <see cref="IDistributedLock"/> provider,
-    /// incrementing the renewal counter on success.
+    /// Extends the lease TTL in storage via the owning <see cref="IDistributedLock"/> provider.
+    /// <see langword="null"/> applies the provider's <see cref="IDistributedLockEnvironment.DefaultTimeUntilExpires"/>.
     /// </summary>
-    /// <param name="timeUntilExpires">
-    /// The new TTL from now. <see langword="null"/> applies the provider's
-    /// <see cref="IDistributedLockEnvironment.DefaultTimeUntilExpires"/>.
-    /// </param>
-    /// <param name="cancellationToken">Token to cancel the renewal storage call.</param>
-    /// <returns>
-    /// <see langword="true"/> when the lease was found in storage and the TTL was extended;
-    /// <see langword="false"/> when the lease is no longer held (expired or released by another path).
-    /// </returns>
-    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
-    public override async Task<bool> RenewAsync(
-        TimeSpan? timeUntilExpires = null,
-        CancellationToken cancellationToken = default
-    )
+    protected override async Task<bool> RenewCoreAsync(TimeSpan? timeUntilExpires, CancellationToken cancellationToken)
     {
         if (Logger.IsEnabled(LogLevel.Trace))
         {
@@ -95,14 +85,18 @@ internal sealed class DisposableDistributedLock : DistributedLockHandleBase
             return false;
         }
 
-        IncrementRenewalCount();
-
         if (Logger.IsEnabled(LogLevel.Debug))
         {
             Logger.LogDisposableLockRenewed(Resource, LeaseId);
         }
 
         return true;
+    }
+
+    // The mutex provider applies its default for null and keeps an infinite TTL as "never expires".
+    protected override TimeSpan GetAppliedRenewTtl(TimeSpan? timeUntilExpires)
+    {
+        return timeUntilExpires ?? _lockProvider.DefaultTimeUntilExpires;
     }
 
     protected override Task<bool> RenewLeaseAsync(CancellationToken cancellationToken)
