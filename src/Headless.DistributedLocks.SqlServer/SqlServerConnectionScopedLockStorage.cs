@@ -51,6 +51,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
             options.Value.KeyPrefix
         )
         : null;
+
     private readonly ConcurrentDictionary<string, HeldLock> _heldByLeaseId = new(StringComparer.Ordinal);
 
     // Deterministic concurrency seam for proving that release serializes behind an active probe. Production
