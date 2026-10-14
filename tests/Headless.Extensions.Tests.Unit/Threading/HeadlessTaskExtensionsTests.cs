@@ -245,7 +245,7 @@ public sealed class HeadlessTaskExtensionsTests : TestBase
         var results = await run;
 
         // then
-        results.Should().Equal(Enumerable.Range(0, gates.Length).Select(i => i * 10).ToArray());
+        results.Should().Equal([.. Enumerable.Range(0, gates.Length).Select(i => i * 10)]);
         peak.Should().BeLessThanOrEqualTo(maxConcurrency);
     }
 
