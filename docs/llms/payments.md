@@ -1,6 +1,6 @@
 ---
 domain: Payments
-packages: Payments.Paymob.CashIn, Payments.Paymob.CashOut, Payments.Paymob.Services
+packages: Payments.Paymob.CashIn, Payments.Paymob.CashOut, Payments.Paymob
 ---
 
 # Payments
@@ -15,23 +15,23 @@ Three packages cover different functions — they are not alternatives:
 |---|---|
 | `Headless.Payments.Paymob.CashIn` | Collect payments from customers (cards, wallets, kiosk, cash). |
 | `Headless.Payments.Paymob.CashOut` | Disburse funds to bank accounts, wallets, and Aman kiosk. |
-| `Headless.Payments.Paymob.Services` | Higher-level service layer on top of CashIn and CashOut with typed per-channel request/response models, fees calculation, and error mapping. |
+| `Headless.Payments.Paymob` | Higher-level service layer on top of CashIn and CashOut with typed per-channel request/response models, fees calculation, and error mapping. |
 
-Install only the packages that match your job. `Services` depends on both `CashIn` and `CashOut` and can replace direct broker usage for most application code.
+Install only the packages that match your job. `Headless.Payments.Paymob` depends on both `CashIn` and `CashOut` and can replace direct broker usage for most application code.
 
 Register via:
 - `services.AddPaymobCashIn(options => ...)` — for payment collection.
 - `services.AddPaymobCashOut(configuration.GetSection("Paymob:CashOut"))` — for disbursements.
-- `services.AddPaymobServices()` — registers `IPaymobCashInService`, `ICashOutService`, and `IPaymobCashInFeesCalculator` from the Services package (call it after the two broker registrations above).
+- `services.AddPaymobServices()` — registers `IPaymobCashInService`, `ICashOutService`, and `IPaymobCashInFeesCalculator` from `Headless.Payments.Paymob` (call it after the two broker registrations above).
 
 ## Agent Rules
 
-- Use `IPaymobCashInService` (from `Headless.Payments.Paymob.Services`) for most card/wallet/kiosk cash-in flows. Only drop to `IPaymobCashInBroker` directly when you need raw Paymob API access (order management, legacy payment-key flow).
-- Use `ICashOutService` (from `Headless.Payments.Paymob.Services`) for typed disbursement flows. It translates each channel's request into the correct `CashOutDisburseRequest` factory call and maps status/error codes.
+- Use `IPaymobCashInService` (from `Headless.Payments.Paymob`) for most card/wallet/kiosk cash-in flows. Only drop to `IPaymobCashInBroker` directly when you need raw Paymob API access (order management, legacy payment-key flow).
+- Use `ICashOutService` (from `Headless.Payments.Paymob`) for typed disbursement flows. It translates each channel's request into the correct `CashOutDisburseRequest` factory call and maps status/error codes.
 - CashIn and CashOut have **separate** API credentials. `PaymobCashInOptions` requires `ApiKey`, `Hmac`, and `SecretKey`. `PaymobCashOutOptions` requires `ApiBaseUrl`, `UserName`, `Password`, `ClientId`, and `ClientSecret`.
 - Never store credentials in appsettings directly — always bind from secrets or environment variables.
 - Always validate HMAC on CashIn callbacks. The broker exposes four `Validate(...)` overloads: for `CashInCallbackTransaction`, `CashInCallbackToken`, `CashInCallbackQueryParameters`, or a raw concatenated string. Choose by what Paymob sends to your endpoint.
-- Money amounts denominated in cents are typed as `long` throughout CashIn (`CashInCreateIntentionRequest.Amount`, `CreateOrderRequest.AmountCents`, `PaymentKeyRequest.AmountCents`, and the response DTOs). For the legacy payment-key flow (`CreateOrderAsync` / `RequestPaymentKeyAsync`), multiply your decimal EGP amount by 100 yourself; the Services layer does this conversion internally. `CashOutDisburseRequest.Amount` and `CashOutTransaction.Amount` are `decimal` EGP (whole-currency, not cents).
+- Money amounts denominated in cents are typed as `long` throughout CashIn (`CashInCreateIntentionRequest.Amount`, `CreateOrderRequest.AmountCents`, `PaymentKeyRequest.AmountCents`, and the response DTOs). For the legacy payment-key flow (`CreateOrderAsync` / `RequestPaymentKeyAsync`), multiply your decimal EGP amount by 100 yourself; the `Headless.Payments.Paymob` service layer does this conversion internally. `CashOutDisburseRequest.Amount` and `CashOutTransaction.Amount` are `decimal` EGP (whole-currency, not cents).
 - Paymob-assigned resource identifiers are typed as `long` (`long?` when nullable) across every request/response DTO — transaction, order, integration, profile, owner, merchant, and gateway-integration IDs, plus kiosk/Aman bill references (`payment_methods` is `IReadOnlyList<long>`). They grow unboundedly and can exceed `int` range, so treat them as 64-bit everywhere. Genuinely bounded domain numbers stay `int` (quantities, package counts, shipping dimensions, status codes, `exp`/`expiration` seconds).
 - CashOut `DisburseAsync(...)` (with the standard async suffix) is the broker method. Use `CashOutDisburseRequest` static factory methods — `BankCard`, `Vodafone`, `Etisalat`, `Orange`, `BankWallet`, `Accept` — rather than constructing the record directly.
 - Both brokers (`IPaymobCashInBroker`, `IPaymobCashOutBroker`) are registered as **scoped** with an injected `HttpClient`. Do not treat them as singletons.
@@ -348,7 +348,7 @@ var result = await broker.DisburseAsync(request, cancellationToken);
 
 ---
 
-## Headless.Payments.Paymob.Services
+## Headless.Payments.Paymob
 
 Higher-level service layer for Paymob CashIn and CashOut with typed per-channel request/response models, automatic error mapping, and fees calculation.
 
@@ -377,7 +377,7 @@ Higher-level service layer for Paymob CashIn and CashOut with typed per-channel 
 ### Install
 
 ```bash
-dotnet add package Headless.Payments.Paymob.Services
+dotnet add package Headless.Payments.Paymob
 ```
 
 ### Setup and use
@@ -441,7 +441,7 @@ public sealed class CheckoutService(IPaymobCashInService cashIn)
 }
 ```
 
-Disburse to a bank account via Services:
+Disburse to a bank account through `ICashOutService`:
 
 ```csharp
 public sealed class PayoutService(ICashOutService cashOut)

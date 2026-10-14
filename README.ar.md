@@ -543,9 +543,9 @@ Message bus موزّع بـ transactional outbox، وretries، وdelayed deliver
 
 | Package | الوصف |
 |---------|-------|
+| [Headless.Payments.Paymob](src/Headless.Payments.Paymob/README.md) | طبقة خدمات Paymob فوق الـ cash-in والـ cash-out |
 | [Headless.Payments.Paymob.CashIn](src/Headless.Payments.Paymob.CashIn/README.md) | تحصيل المدفوعات عن طريق Paymob |
 | [Headless.Payments.Paymob.CashOut](src/Headless.Payments.Paymob.CashOut/README.md) | صرف المدفوعات عن طريق Paymob |
-| [Headless.Payments.Paymob.Services](src/Headless.Payments.Paymob.Services/README.md) | خدمات Paymob المشتركة |
 
 ### Permissions
 

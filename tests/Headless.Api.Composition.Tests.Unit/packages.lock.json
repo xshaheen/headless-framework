@@ -1677,7 +1677,6 @@
           "Headless.Testing": "[1.0.0, )",
           "Microsoft.Extensions.Http.Resilience": "[10.10.0, )",
           "NSubstitute": "[6.2.0, )",
-          "Polly.Core": "[8.8.0, )",
           "WireMock.Net": "[2.19.0, )"
         }
       },
