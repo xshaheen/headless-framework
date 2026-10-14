@@ -33,6 +33,14 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
     // and never try to re-open a broken connection.
     private bool _connectionOpened;
 
+    // Set when an unlock or an acquire cleanup failed on a usable connection: the session may still hold that lock. A
+    // poisoned connection takes no new acquire (advisory locks are re-entrant per session, so a re-acquire would
+    // "succeed" against the stuck lock) and is destroyed, never pooled, once its live locks are released.
+    private bool _isPoisoned;
+
+    // Set once a poisoned connection has been destroyed; the instance is then only waiting for the pool to drop it.
+    private bool _isDestroyed;
+
     private bool IsConnectionBrokenNoLock => _connectionOpened && !_connection.CanExecuteQueries;
 
     /// <summary>
@@ -76,6 +84,13 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
 
         try
         {
+            if (_isPoisoned)
+            {
+                // Only ever reached opportunistically: a fresh lock is never poisoned. Retry elsewhere; once destroyed
+                // the pool may drop this instance.
+                return new Result(MultiplexedConnectionLockRetry.Retry, canSafelyDispose: _isDestroyed);
+            }
+
             // Redundant with the catch below, but avoids issuing a query on a connection we already know is broken.
             if (opportunistic && IsConnectionBrokenNoLock)
             {
@@ -98,9 +113,21 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
                 _connectionOpened = true;
             }
 
-            var lockCookie = await strategy
-                .TryAcquireAsync(_connection, name, opportunistic ? TimeSpan.Zero : timeout, cancellationToken)
-                .ConfigureAwait(false);
+            TLockCookie? lockCookie;
+
+            try
+            {
+                lockCookie = await strategy
+                    .TryAcquireAsync(_connection, name, opportunistic ? TimeSpan.Zero : timeout, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (LockCleanupFailedException) when (_connection.CanExecuteQueries)
+            {
+                // The server may have granted the lock and releasing it failed; a dead connection already dropped it.
+                _isPoisoned = true;
+
+                throw;
+            }
 
             if (lockCookie is not null)
             {
@@ -150,7 +177,10 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
 
         try
         {
-            await _connection.DisposeAsync().ConfigureAwait(false);
+            if (!_isDestroyed)
+            {
+                await _connection.DisposeAsync().ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -249,12 +279,26 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
             // tears down their connection-lost-token registrations *without firing them* (a stop means "clean teardown",
             // not "connection lost"). The sibling holders would then keep running their critical sections believing they
             // still hold a lock another process can now take — a silent mutual-exclusion violation. Letting the failure
-            // propagate instead leaves the failed lock held server-side only until this connection closes normally (when
-            // its co-tenants finish and the held-set empties): bounded extra latency on that one resource, never a safety
-            // violation. This mirrors the reference engine, which only ever closes a connection once it holds nothing.
+            // propagate instead leaves the failed lock held server-side only until its co-tenants finish and the
+            // held-set empties; the connection is then destroyed rather than closed back to the driver's pool, which
+            // would keep the session (and the failed lock) alive. Bounded extra latency on that one resource, never a
+            // safety violation. This mirrors the reference engine, which only ever closes a connection once it holds
+            // nothing.
             if (_connection.CanExecuteQueries)
             {
-                await strategy.ReleaseAsync(_connection, name, lockCookie).ConfigureAwait(false);
+                try
+                {
+                    await strategy.ReleaseAsync(_connection, name, lockCookie).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // The lock may still be held on this session. Remove it from the live set below so siblings can
+                    // still drain the connection, but poison it so nothing re-enters it here and it is destroyed
+                    // rather than pooled.
+                    _isPoisoned = true;
+
+                    throw;
+                }
             }
         }
         finally
@@ -280,8 +324,17 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
         // would strand the siblings' connection-lost tokens and break mutual exclusion.
         if (_connectionOpened && _heldLockIdentitiesToKeepaliveCadences.Count == 0)
         {
-            await _connection.CloseAsync().ConfigureAwait(false);
             _connectionOpened = false;
+
+            if (_isPoisoned)
+            {
+                _isDestroyed = true;
+                await _connection.DestroyAsync().ConfigureAwait(false);
+
+                return;
+            }
+
+            await _connection.CloseAsync().ConfigureAwait(false);
         }
     }
 

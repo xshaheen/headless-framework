@@ -70,7 +70,8 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock(
         where TLockCookie : class
     {
         IDistributedLease? result = null;
-        IAsyncDisposable? connectionResource = null;
+        DatabaseConnection? connectionResource = null;
+        var destroyConnection = false;
 
         try
         {
@@ -105,9 +106,21 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock(
                 }
             }
 
-            var lockCookie = await strategy
-                .TryAcquireAsync(connection, _name, timeout, cancellationToken)
-                .ConfigureAwait(false);
+            TLockCookie? lockCookie;
+
+            try
+            {
+                lockCookie = await strategy
+                    .TryAcquireAsync(connection, _name, timeout, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (LockCleanupFailedException) when (connection.CanExecuteQueries)
+            {
+                // The server may have granted the lock and releasing it failed; the session must not be pooled.
+                destroyConnection = true;
+
+                throw;
+            }
 
             if (lockCookie is not null)
             {
@@ -131,11 +144,17 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock(
             // If we failed to acquire (or threw), clean up the connection we opened.
             if (result is null && connectionResource is not null)
             {
-                await connectionResource.DisposeAsync().ConfigureAwait(false);
+                await _DisposeConnectionAsync(connectionResource, destroyConnection).ConfigureAwait(false);
             }
         }
 
         return result;
+    }
+
+    private static ValueTask _DisposeConnectionAsync(DatabaseConnection connection, bool destroy)
+    {
+        // A caller-owned connection is never ours to end; its owner decides what happens to the session.
+        return destroy && !connection.IsExternallyOwned ? connection.DestroyAsync() : connection.DisposeAsync();
     }
 
     private static DatabaseConnection _GetContextHandleConnection<TLockCookie>(IDistributedLease contextHandle)
@@ -153,7 +172,7 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock(
         string name,
         TLockCookie lockCookie,
         bool transactionScoped,
-        IAsyncDisposable? connectionResource
+        DatabaseConnection? connectionResource
     ) : IDistributedLease
         where TLockCookie : class
     {
@@ -222,7 +241,7 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock(
             string name,
             TLockCookie lockCookie,
             bool transactionScoped,
-            IAsyncDisposable? connectionResource
+            DatabaseConnection? connectionResource
         ) : IAsyncDisposable
         {
             private static readonly object _DisposedSentinel = new();
@@ -279,6 +298,8 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock(
                     handle.Dispose();
                 }
 
+                var releaseFailed = false;
+
                 try
                 {
                     // For transaction-scoped locks we can skip the explicit release when either (a) we own the
@@ -294,11 +315,18 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock(
                         await strategy.ReleaseAsync(Connection, name, lockCookie).ConfigureAwait(false);
                     }
                 }
+                catch
+                {
+                    // The session may still hold the lock; ending it is the only way to release it.
+                    releaseFailed = true;
+
+                    throw;
+                }
                 finally
                 {
                     if (connectionResource is not null)
                     {
-                        await connectionResource.DisposeAsync().ConfigureAwait(false);
+                        await _DisposeConnectionAsync(connectionResource, releaseFailed).ConfigureAwait(false);
                     }
                 }
             }
