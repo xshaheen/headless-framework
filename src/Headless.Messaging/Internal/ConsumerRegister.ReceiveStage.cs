@@ -90,6 +90,10 @@ internal sealed partial class ConsumerRegister
 
         deserialized.RemoveException();
 
+        // Stored with the row, so the success write finds the envelope already naming this host and does not
+        // have to rewrite it.
+        deserialized.Headers[Headers.ExecutionInstanceId] = _hostName;
+
         return deserialized;
     }
 

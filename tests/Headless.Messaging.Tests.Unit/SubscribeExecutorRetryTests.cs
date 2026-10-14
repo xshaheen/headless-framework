@@ -115,6 +115,112 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     [Fact]
+    public async Task success_of_an_envelope_already_naming_this_host_leaves_the_stored_content_alone()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, "id", null, null)));
+        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        var message = _CreateMediumMessage();
+        message.Origin.Headers[Headers.ExecutionInstanceId] = HostIdentity.GetInstanceHostname();
+
+        // when
+        var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), AbortToken);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await storage
+            .Received(1)
+            .ChangeReceiveRetryStateAsync(
+                message,
+                StatusName.Succeeded,
+                MessageContentWrite.Preserve,
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task success_after_another_host_stamped_the_envelope_persists_this_host()
+    {
+        // given — a retry picked up by a different host than the one that stored the row
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, "id", null, null)));
+        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        var message = _CreateMediumMessage();
+        message.Origin.Headers[Headers.ExecutionInstanceId] = "previous-host";
+
+        // when
+        await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), AbortToken);
+
+        // then
+        message.Origin.GetExecutionInstanceId().Should().Be(HostIdentity.GetInstanceHostname());
+        await storage
+            .Received(1)
+            .ChangeReceiveRetryStateAsync(
+                message,
+                StatusName.Succeeded,
+                MessageContentWrite.Refresh,
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task success_after_a_failed_attempt_rewrites_the_content_that_recorded_the_failure()
+    {
+        // given — the first attempt fails inline, the second succeeds
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        var calls = 0;
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+                ++calls == 1
+                    ? Task.FromException<ConsumerExecutedResult>(new InvalidOperationException("boom"))
+                    : Task.FromResult(new ConsumerExecutedResult(null, null, "id", null, null))
+            );
+        var options = new MessagingOptions
+        {
+            RetryPolicy = { RetryStrategy = TestRetryStrategies.FixedDelay(1, TimeSpan.Zero) },
+        };
+        var executor = _CreateExecutor(invoker, storage, options);
+        var message = _CreateMediumMessage();
+        message.Origin.Headers[Headers.ExecutionInstanceId] = HostIdentity.GetInstanceHostname();
+
+        // when
+        var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), AbortToken);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        message.Origin.Headers.Should().ContainKey(Headers.Exception);
+        await storage
+            .Received(1)
+            .ChangeReceiveRetryStateAsync(
+                message,
+                StatusName.Succeeded,
+                MessageContentWrite.Refresh,
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task persisted_inbox_retry_should_resolve_by_inbox_key_not_by_the_identity_header()
     {
         var storage = Substitute.For<IDataStorage>();
