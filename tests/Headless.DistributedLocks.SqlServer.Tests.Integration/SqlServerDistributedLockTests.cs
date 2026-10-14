@@ -62,6 +62,35 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
     }
 
     [Fact]
+    public async Task should_refuse_a_contended_fenced_acquire_without_consuming_a_token()
+    {
+        // given (the fenced grant batch takes its not-granted branch when another session holds the lock)
+        var keyPrefix = $"sqlserver:{Faker.Random.AlphaNumeric(6)}:";
+        var resource = Faker.Random.AlphaNumeric(12);
+        await using var firstProvider = _CreateProvider(options => options.KeyPrefix = keyPrefix);
+        await using var secondProvider = _CreateProvider(options => options.KeyPrefix = keyPrefix);
+        await firstProvider.GetRequiredService<SchemaRunner>().ApplyAsync(AbortToken);
+        var secondLocks = secondProvider.GetRequiredService<IDistributedLock>();
+        var first = await firstProvider
+            .GetRequiredService<IDistributedLock>()
+            .AcquireAsync(resource, cancellationToken: AbortToken);
+        var firstToken = first.FencingToken!.Value.Value;
+
+        // when
+        var refused = await secondLocks.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
+        );
+        await first.ReleaseAsync();
+        await using var next = await secondLocks.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        // then (the key prefix has its own sequence, so a refused attempt that drew a value would make this first + 2)
+        refused.Should().BeNull();
+        next.FencingToken!.Value.Value.Should().Be(firstToken + 1);
+    }
+
+    [Fact]
     public async Task should_issue_no_token_when_fencing_is_disabled()
     {
         // given (no schema runner: with fencing off the acquire must not touch a fence sequence at all)

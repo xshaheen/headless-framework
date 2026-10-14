@@ -62,7 +62,7 @@ internal sealed class DisposableReaderWriterLock : DistributedLockHandleBase
 
     // The provider applies its default for null; a read lease also clamps infinite to the default, while a write
     // lease keeps infinite as "never expires".
-    protected override TimeSpan GetAppliedRenewTtl(TimeSpan? timeUntilExpires)
+    protected override TimeSpan? GetAppliedRenewTtl(TimeSpan? timeUntilExpires)
     {
         if (timeUntilExpires is not { } ttl)
         {

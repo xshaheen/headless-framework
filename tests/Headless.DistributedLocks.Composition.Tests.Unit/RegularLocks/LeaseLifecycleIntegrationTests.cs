@@ -605,6 +605,26 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
     }
 
     [Fact]
+    public async Task should_keep_lost_deadline_when_monitor_mode_mutex_is_renewed_with_infinite_ttl()
+    {
+        // given - monitor mode, 10s lease, probes always Held. A mutex renew with an infinite TTL reaches the store as
+        // "keep the current expiry", so the key still expires at 10s and the deadline must stay at 10s - 1s = 9s.
+        var storage = new ScriptedLeaseStorage { OnRenew = _ => ValueTask.FromResult(true) };
+        var provider = _CreateProvider(storage);
+        await using var handle = await _AcquireAsync(provider, TimeSpan.FromSeconds(10), LockMonitoringMode.Monitor);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(5));
+        (await handle.RenewAsync(Timeout.InfiniteTimeSpan, AbortToken)).Should().BeTrue();
+
+        // when
+        _timeProvider.Advance(TimeSpan.FromSeconds(4));
+
+        // then
+        await _WaitForLossAsync(handle);
+        handle.RenewalCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_not_cancel_lost_token_after_deadline_when_handle_was_disposed_before_it()
     {
         // given

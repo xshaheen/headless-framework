@@ -72,7 +72,7 @@ internal sealed class DisposableSemaphoreSlot : DistributedLockHandleBase
     }
 
     // A slot is stored with a finite expiry score, so the provider maps both null and infinite to its default.
-    protected override TimeSpan GetAppliedRenewTtl(TimeSpan? timeUntilExpires)
+    protected override TimeSpan? GetAppliedRenewTtl(TimeSpan? timeUntilExpires)
     {
         return timeUntilExpires is { } ttl && ttl != Timeout.InfiniteTimeSpan ? ttl : _provider.DefaultTimeUntilExpires;
     }

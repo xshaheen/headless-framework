@@ -93,10 +93,13 @@ internal sealed class DisposableDistributedLock : DistributedLockHandleBase
         return true;
     }
 
-    // The mutex provider applies its default for null and keeps an infinite TTL as "never expires".
-    protected override TimeSpan GetAppliedRenewTtl(TimeSpan? timeUntilExpires)
+    // The mutex provider applies its default for null. It sends an infinite TTL to the store as null, which keeps the
+    // key's current expiry, so the lease still expires when it did and the loss deadline stays where it was.
+    protected override TimeSpan? GetAppliedRenewTtl(TimeSpan? timeUntilExpires)
     {
-        return timeUntilExpires ?? _lockProvider.DefaultTimeUntilExpires;
+        return timeUntilExpires == Timeout.InfiniteTimeSpan
+            ? null
+            : timeUntilExpires ?? _lockProvider.DefaultTimeUntilExpires;
     }
 
     protected override Task<bool> RenewLeaseAsync(CancellationToken cancellationToken)

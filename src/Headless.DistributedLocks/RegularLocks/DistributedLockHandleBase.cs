@@ -215,9 +215,10 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
 
     /// <summary>
     /// The TTL the provider's renew applies for <paramref name="timeUntilExpires"/>, after its defaulting and
-    /// clamping; <see cref="Timeout.InfiniteTimeSpan"/> when the lease no longer expires.
+    /// clamping; <see cref="Timeout.InfiniteTimeSpan"/> when the lease no longer expires, or <see langword="null"/>
+    /// when the store keeps the lease's current expiry, so the loss deadline must not move.
     /// </summary>
-    protected abstract TimeSpan GetAppliedRenewTtl(TimeSpan? timeUntilExpires);
+    protected abstract TimeSpan? GetAppliedRenewTtl(TimeSpan? timeUntilExpires);
 
     /// <summary>
     /// Extends the lease TTL in the storage backend and, on success, increments <see cref="RenewalCount"/> and
@@ -241,7 +242,14 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
 
             if (renewed)
             {
-                _OnRenewed(sendTimestamp, GetAppliedRenewTtl(timeUntilExpires));
+                if (GetAppliedRenewTtl(timeUntilExpires) is { } appliedTtl)
+                {
+                    _OnRenewed(sendTimestamp, appliedTtl);
+                }
+                else
+                {
+                    Interlocked.Increment(ref _renewalCount);
+                }
             }
 
             return renewed;
