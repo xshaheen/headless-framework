@@ -125,8 +125,9 @@ public sealed class MessagingOptions
     public bool EnablePublishParallelSend { get; set; }
 
     /// <summary>
-    /// Gets or sets the batch size for parallel message sending when <see cref="EnablePublishParallelSend"/> is enabled.
-    /// When null, the batch size is automatically calculated using a logarithmic formula based on channel capacity.
+    /// Gets or sets the number of sends that may be in flight at once when <see cref="EnablePublishParallelSend"/> is enabled.
+    /// A slot frees as soon as its send completes, so one slow send does not hold the others back.
+    /// When null, the width is automatically calculated using a logarithmic formula based on channel capacity.
     /// The automatic calculation uses: Math.Min(500, Math.Max(10, (int)Math.Log2(channelSize) * 10)).
     /// Use this property to override the automatic calculation for custom tuning.
     /// Valid range: 1-500. Values outside this range will be clamped.
