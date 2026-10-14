@@ -430,6 +430,10 @@ internal sealed partial class SshBlobStorage(
             var windowLimit = (long)query.PageSize + 1;
             var pageWindow = new List<BlobInfo>((int)Math.Min(windowLimit, 1024));
 
+            // Index of the largest key in a full window. Most keys past that point are rejected against it, so the
+            // window is rescanned only after a replacement changes its largest key, not once per file.
+            var maxIndex = -1;
+
             await foreach (
                 var (key, file) in _EnumerateBlobsAsync(client, startDirectory, relativePrefix, cancellationToken)
                     .ConfigureAwait(false)
@@ -450,6 +454,19 @@ internal sealed partial class SshBlobStorage(
                     continue;
                 }
 
+                if (pageWindow.Count >= windowLimit)
+                {
+                    if (maxIndex < 0)
+                    {
+                        maxIndex = BlobStorageHelpers.IndexOfMaxKey(pageWindow, static item => item.BlobKey);
+                    }
+
+                    if (string.CompareOrdinal(key, pageWindow[maxIndex].BlobKey) >= 0)
+                    {
+                        continue;
+                    }
+                }
+
                 // List omits per-object metadata by default (it would cost a sidecar read per file); it is populated
                 // post-trim only when the caller opts in via BlobQuery.IncludeMetadata. GetBlobInfoAsync remains the
                 // authoritative source for Metadata and the sidecar-derived Created timestamp.
@@ -461,12 +478,8 @@ internal sealed partial class SshBlobStorage(
                     continue;
                 }
 
-                var maxIndex = BlobStorageHelpers.IndexOfMaxKey(pageWindow, static item => item.BlobKey);
-
-                if (string.CompareOrdinal(item.BlobKey, pageWindow[maxIndex].BlobKey) < 0)
-                {
-                    pageWindow[maxIndex] = item;
-                }
+                pageWindow[maxIndex] = item;
+                maxIndex = BlobStorageHelpers.IndexOfMaxKey(pageWindow, static item => item.BlobKey);
             }
 
             pageWindow.Sort(static (a, b) => string.CompareOrdinal(a.BlobKey, b.BlobKey));
