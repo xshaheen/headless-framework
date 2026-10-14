@@ -25,12 +25,16 @@ internal sealed class ConformanceQuoteDesk(RequestReplyConformanceProbe probe)
         IRespond<ConformanceFailingRequest, ConformanceQuote>,
         IRespond<ConformanceHeldRequest, ConformanceQuote>
 {
+    /// <summary>The reply header the quote responder sets, which the caller must read back unchanged.</summary>
+    public const string SkuHeader = "x-conformance-sku";
+
     public ValueTask<ConformanceQuote> RespondAsync(
         ConsumeContext<ConformanceQuoteRequest> context,
         CancellationToken cancellationToken
     )
     {
         probe.Record("quote:" + context.Message.Sku, context);
+        context.SetResponseHeader(ConformanceQuoteDesk.SkuHeader, context.Message.Sku);
         return ValueTask.FromResult(new ConformanceQuote(context.Message.Sku, context.TenantId));
     }
 

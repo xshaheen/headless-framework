@@ -115,6 +115,59 @@ public sealed class SubscribeExecutorReplyTests : TestBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task should_send_the_responder_headers_on_the_ok_reply(bool transactional)
+    {
+        // given — the direct send and the send deferred to the unit-of-work commit are separate call sites
+        RecordingReplyTransport? replies = null;
+        await using var host = transactional
+            ? ResponderExecutorHost.Create(
+                options => options.MinimumInboxGuarantee = InboxGuarantee.Transactional,
+                services =>
+                    services.AddScoped<IInboxTransactionRunner>(sp => new FakeInboxTransactionRunner(
+                        sp.GetRequiredService<IUnitOfWorkFactory>(),
+                        InboxCommit.Commit,
+                        replies!
+                    ))
+            )
+            : ResponderExecutorHost.Create();
+        replies = host.Replies;
+        host.OnInvoke(() =>
+        {
+            var result = ResponderExecutorHost.Replied(new PriceQuote(42));
+            result.CallbackHeader = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["x-quote-source"] = "cache",
+            };
+
+            return Task.FromResult(result);
+        });
+        var message = host.Request(TimeSpan.FromSeconds(30));
+
+        if (transactional)
+        {
+            message.InboxKey = new InboxKey(
+                TenantId: null,
+                message.Origin.Id,
+                MessageLane.Queue,
+                ResponderExecutorHost.MessageName,
+                "1",
+                QuoteResponder.Identity,
+                Generation: 0
+            );
+        }
+
+        // when
+        await host.ExecuteAsync(message, AbortToken);
+
+        // then
+        var (_, reply) = host.Replies.Sent.Should().ContainSingle().Subject;
+        reply.Headers[Headers.ReplyStatus].Should().Be(ReplyProtocol.StatusOk);
+        reply.Headers["x-quote-source"].Should().Be("cache");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task should_send_one_handler_failed_fault_when_the_terminal_write_takes_effect(bool includeDetails)
     {
         // given — the default classifier treats NotSupportedException as permanent

@@ -19,6 +19,10 @@ public abstract class TransportRequestReplyConformanceTestsBase : TestBase
         await TransportRequestReplyConformance.AssertRoundTripAsync(await CreateDriverAsync(), AbortToken);
 
     [Fact]
+    public async Task should_carry_the_responder_headers_back_to_the_caller() =>
+        await TransportRequestReplyConformance.AssertReplyHeadersRoundTripAsync(await CreateDriverAsync(), AbortToken);
+
+    [Fact]
     public async Task should_give_each_caller_only_its_own_replies() =>
         await TransportRequestReplyConformance.AssertCallersReceiveOnlyTheirOwnRepliesAsync(
             await CreateDriverAsync(),

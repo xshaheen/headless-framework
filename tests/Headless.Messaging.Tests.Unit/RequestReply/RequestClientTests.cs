@@ -52,6 +52,40 @@ public sealed class RequestClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_the_reply_with_the_responder_headers_when_getting_the_reply()
+    {
+        // given
+        await using var provider = await _StartHostAsync();
+        _responder.OnRequest = request => new ValueTask(
+            Replies.SendOkAsync(
+                provider,
+                request,
+                new PriceQuote(42m),
+                headers =>
+                {
+                    headers["x-quote-source"] = "cache";
+                    headers[Headers.CorrelationId] = "corr-1";
+                }
+            )
+        );
+
+        // when
+        var reply = await _Client(provider)
+            .GetReplyAsync<PriceQuoteRequest, PriceQuote>(
+                new PriceQuoteRequest("sku-1"),
+                cancellationToken: AbortToken
+            );
+
+        // then — the caller reads what the responder set, never the reply protocol's own headers
+        reply.Message.Should().Be(new PriceQuote(42m));
+        reply
+            .Headers.Should()
+            .Equal(new Dictionary<string, string?>(StringComparer.Ordinal) { ["x-quote-source"] = "cache" });
+        reply.MessageId.Should().NotBeNullOrWhiteSpace();
+        reply.CorrelationId.Should().Be("corr-1");
+    }
+
+    [Fact]
     public async Task should_stamp_a_deadline_one_timeout_after_the_call_started()
     {
         // given

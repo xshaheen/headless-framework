@@ -59,4 +59,44 @@ public interface IRequestClient
     )
         where TRequest : class
         where TResponse : class;
+
+    /// <summary>
+    /// Sends <paramref name="request"/> and waits for its reply: the response with the headers its responder set.
+    /// </summary>
+    /// <remarks>
+    /// The call behaves exactly like <see cref="RequestAsync{TRequest, TResponse}"/>, and fails the same ways. Use it when
+    /// the caller reads headers the responder set through <see cref="ConsumeContext.SetResponseHeader"/>.
+    /// </remarks>
+    /// <typeparam name="TRequest">The request message type.</typeparam>
+    /// <typeparam name="TResponse">The response type the responder returns.</typeparam>
+    /// <param name="request">The request payload.</param>
+    /// <param name="options">Optional per-call timeout, tenant, correlation, and custom headers.</param>
+    /// <param name="cancellationToken">A token that ends the wait. It does not recall a request already sent.</param>
+    /// <returns>The reply. Never <see langword="null"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was canceled.</exception>
+    /// <exception cref="RequestTimeoutException">No reply arrived before the timeout.</exception>
+    /// <exception cref="RequestFaultedException">The responder answered with a fault reply.</exception>
+    /// <exception cref="ResponseContractMismatchException">
+    /// The reply carries a response contract other than the one expected for <typeparamref name="TResponse"/>.
+    /// </exception>
+    /// <exception cref="RequestNotSentException">
+    /// The request never left the caller, or the transport reported the send as failed.
+    /// </exception>
+    /// <exception cref="RequestAbortedException">The requesting host stopped before the reply arrived.</exception>
+    /// <exception cref="Exception">
+    /// A <c>MessageDeserializationException</c>: the reply carries the expected response contract, but its body cannot
+    /// be read as <typeparamref name="TResponse"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The call runs inside a transactional inbox unit, or <see cref="RequestOptions.Headers"/> contains a reserved
+    /// messaging header or control characters.
+    /// </exception>
+    Task<Reply<TResponse>> GetReplyAsync<TRequest, TResponse>(
+        TRequest request,
+        RequestOptions? options = null,
+        CancellationToken cancellationToken = default
+    )
+        where TRequest : class
+        where TResponse : class;
 }

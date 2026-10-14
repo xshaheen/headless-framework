@@ -62,6 +62,18 @@ internal sealed class RequestReplyConformanceHost : IAsyncDisposable
             .RequestAsync<TRequest, ConformanceQuote>(request, options, cancellationToken);
     }
 
+    public Task<Reply<ConformanceQuote>> GetReplyAsync<TRequest>(
+        TRequest request,
+        RequestOptions options,
+        CancellationToken cancellationToken
+    )
+        where TRequest : class
+    {
+        return Services
+            .GetRequiredService<IRequestClient>()
+            .GetReplyAsync<TRequest, ConformanceQuote>(request, options, cancellationToken);
+    }
+
     public ValueTask DisposeAsync()
     {
         return _services.DisposeAsync();

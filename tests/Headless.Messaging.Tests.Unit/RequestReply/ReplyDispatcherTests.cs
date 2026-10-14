@@ -45,7 +45,7 @@ public sealed class ReplyDispatcherTests : TestBase
 
         // then
         (await call.Outcome)
-            .Should()
+            .Message.Should()
             .Be(new PriceQuote(12.5m));
         call.State.Should().Be(PendingRequestState.Replied);
     }
@@ -96,7 +96,7 @@ public sealed class ReplyDispatcherTests : TestBase
 
         // then
         measurements.Drops.Should().Equal("duplicate");
-        (await call.Outcome).Should().Be(new PriceQuote(1m));
+        (await call.Outcome).Message.Should().Be(new PriceQuote(1m));
     }
 
     [Fact]
@@ -147,7 +147,7 @@ public sealed class ReplyDispatcherTests : TestBase
 
         // then
         (await call.Outcome)
-            .Should()
+            .Message.Should()
             .Be(new PriceQuote(4m));
     }
 
@@ -317,6 +317,33 @@ public sealed class ReplyDispatcherTests : TestBase
         }
 
         return call;
+    }
+
+    [Fact]
+    public async Task should_hand_the_caller_only_the_headers_the_responder_set()
+    {
+        // given — a reply carrying a responder header beside framework, trace, forged framework-looking, and
+        // null-valued headers
+        var call = _Register("request-1", tenantId: null);
+        var reply = _Ok("request-1", """{"Price":1}""");
+        reply.Headers[Headers.CorrelationId] = "corr-1";
+        reply.Headers["x-quote-source"] = "cache";
+        reply.Headers[Headers.TraceParent] = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+        reply.Headers["tracestate"] = "vendor=1";
+        reply.Headers["baggage"] = "user=1";
+        reply.Headers["Headless-Forged"] = "x";
+        reply.Headers["x-empty"] = null;
+
+        // when
+        await _dispatcher.DispatchAsync(reply, AbortToken);
+
+        // then
+        var received = await call.Outcome;
+        received
+            .Headers.Should()
+            .Equal(new Dictionary<string, string?>(StringComparer.Ordinal) { ["x-quote-source"] = "cache" });
+        received.MessageId.Should().Be(reply.Headers[Headers.MessageId]);
+        received.CorrelationId.Should().Be("corr-1");
     }
 
     private static TransportMessage _Ok(string? requestId, string body, string? tenantId = null)

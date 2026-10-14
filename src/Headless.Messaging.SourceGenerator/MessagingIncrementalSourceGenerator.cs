@@ -104,12 +104,13 @@ public sealed class MessagingIncrementalSourceGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Checks every <c>RequestAsync&lt;TRequest, TResponse&gt;</c> call against the responders the project can see: the
-    /// ones this assembly registers and the ones its references publish as generated metadata.
+    /// Checks every <c>RequestAsync&lt;TRequest, TResponse&gt;</c> and <c>GetReplyAsync&lt;TRequest, TResponse&gt;</c>
+    /// call against the responders the project can see: the ones this assembly registers and the ones its references
+    /// publish as generated metadata.
     /// </summary>
     /// <remarks>
     /// Referenced metadata is read from the compilation, which changes on every edit, so it is read only while the
-    /// project calls <c>RequestAsync</c>; the read is equal between edits, so the check after it stays cached.
+    /// project makes such a call; the read is equal between edits, so the check after it stays cached.
     /// </remarks>
     private static void _RegisterRequestCallChecks(
         IncrementalGeneratorInitializationContext context,

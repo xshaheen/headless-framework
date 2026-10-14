@@ -9,24 +9,23 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace Headless.Messaging.SourceGenerator.Parsing;
 
 /// <summary>
-/// Finds <c>IRequestClient.RequestAsync&lt;TRequest, TResponse&gt;</c> calls, and reads the responders that referenced
-/// assemblies publish through generated <c>ResponderMetadataAttribute</c>s.
+/// Finds <c>IRequestClient.RequestAsync&lt;TRequest, TResponse&gt;</c> and
+/// <c>GetReplyAsync&lt;TRequest, TResponse&gt;</c> calls, and reads the responders that referenced assemblies publish
+/// through generated <c>ResponderMetadataAttribute</c>s.
 /// </summary>
 internal static class RequestCallParser
 {
     /// <summary>
-    /// A syntax-only filter: a call of a generic member named <c>RequestAsync</c> with two type arguments, through
-    /// <c>client.RequestAsync&lt;…&gt;</c> or <c>client?.RequestAsync&lt;…&gt;</c>. Every call spells both type
-    /// arguments, because <c>TResponse</c> appears in no parameter and so cannot be inferred.
+    /// A syntax-only filter: a call of a generic member named <c>RequestAsync</c> or <c>GetReplyAsync</c> with two
+    /// type arguments, through <c>client.RequestAsync&lt;…&gt;</c> or <c>client?.RequestAsync&lt;…&gt;</c>. Every call
+    /// spells both type arguments, because <c>TResponse</c> appears in no parameter and so cannot be inferred.
     /// </summary>
     public static bool IsCandidate(SyntaxNode node, CancellationToken _) =>
         node is InvocationExpressionSyntax invocation
         && _GenericName(invocation) is { } name
-        && string.Equals(
-            name.Identifier.ValueText,
-            SourceGeneratorConstants.RequestMethodName,
-            StringComparison.Ordinal
-        )
+        && name.Identifier.ValueText
+            is SourceGeneratorConstants.RequestMethodName
+                or SourceGeneratorConstants.GetReplyMethodName
         && name.TypeArgumentList.Arguments.Count == 2;
 
     public static RequestCallModel? Parse(GeneratorSyntaxContext context, CancellationToken cancellationToken)

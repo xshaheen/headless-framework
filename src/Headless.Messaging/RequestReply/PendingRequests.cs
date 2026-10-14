@@ -216,7 +216,10 @@ internal sealed class PendingRequestEntry(string requestId, PendingRequest call)
 /// <summary>One call waiting for its reply. Exactly one terminal transition wins; every other one is a no-op.</summary>
 internal sealed class PendingRequest
 {
-    private readonly TaskCompletionSource<object> _outcome = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<ReceivedReply> _outcome = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
+
     private readonly TimeProvider _timeProvider;
     private ITimer? _timeoutTimer;
     private CancellationTokenRegistration _cancellation;
@@ -269,8 +272,8 @@ internal sealed class PendingRequest
     /// <summary>Gets the tenant the request was sent under; a reply must carry exactly this tenant.</summary>
     public string? TenantId => Volatile.Read(ref _tenantId);
 
-    /// <summary>Completes with the response object, or faults with the call's typed exception.</summary>
-    public Task<object> Outcome => _outcome.Task;
+    /// <summary>Completes with the received reply, or faults with the call's typed exception.</summary>
+    public Task<ReceivedReply> Outcome => _outcome.Task;
 
     /// <summary>Records the final envelope's tenant, before the request leaves the process.</summary>
     public void Prepare(string? tenantId)
@@ -316,9 +319,9 @@ internal sealed class PendingRequest
     }
 
     /// <summary>Completes a call this thread claimed with <see cref="TryClaimForReply"/>.</summary>
-    public void CompleteClaimed(object response)
+    public void CompleteClaimed(ReceivedReply reply)
     {
-        _outcome.TrySetResult(response);
+        _outcome.TrySetResult(reply);
     }
 
     /// <summary>Fails a call this thread claimed with <see cref="TryClaimForReply"/>.</summary>
