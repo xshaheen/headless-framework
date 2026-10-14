@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Globalization;
 using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
@@ -407,6 +409,39 @@ public sealed class SubscribeInvokerTests : TestBase
         result.CallbackName.Should().Be("callbacks.messageName");
         result.CallbackHeader.Should().NotBeNull();
         result.CallbackHeader!["response-key"].Should().Be("response-value");
+    }
+
+    [Fact]
+    public async Task should_not_carry_a_failed_attempt_response_headers_into_the_next_attempt()
+    {
+        // given — a consumer that sets a response header and then fails on its first attempt
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.AddConsumer<FailFirstAttemptHeaderConsumer>();
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var invoker = provider.GetRequiredService<ISubscribeInvoker>();
+
+        var mediumMessage = _CreateMediumMessage(
+            new InvokerTestMessage(Guid.NewGuid().ToString()),
+            "test.messageName",
+            callbackName: "callbacks.messageName"
+        );
+        var descriptor = _SelectDescriptor(provider);
+
+        // when — two attempts at the same stored message, each with its own consumer context, as the executor runs them
+        var firstAttempt = async () =>
+            await invoker.InvokeAsync(new ConsumerContext(descriptor, mediumMessage), AbortToken);
+        await firstAttempt.Should().ThrowAsync<Exception>();
+        var result = await invoker.InvokeAsync(new ConsumerContext(descriptor, mediumMessage), AbortToken);
+
+        // then — only the attempt that succeeded speaks for the response
+        result.CallbackHeader.Should().NotBeNull();
+        result.CallbackHeader!.Keys.Should().Equal("x-attempt-2");
     }
 
     [Fact]
@@ -888,6 +923,22 @@ public sealed class ResponseHeaderConsumer : IConsume<InvokerTestMessage>
     {
         context.SetResponseHeader("response-key", "response-value");
         return ValueTask.CompletedTask;
+    }
+}
+
+[BusConsumer("tests.subscribe-invoker.fail-first-attempt-header")]
+public sealed class FailFirstAttemptHeaderConsumer : IConsume<InvokerTestMessage>
+{
+    private static readonly ConcurrentDictionary<string, int> _Attempts = new(StringComparer.Ordinal);
+
+    public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
+    {
+        var attempt = _Attempts.AddOrUpdate(context.Message.Id, 1, static (_, previous) => previous + 1);
+        context.SetResponseHeader("x-attempt-" + attempt.ToString(CultureInfo.InvariantCulture), "set");
+
+        return attempt == 1
+            ? throw new InvalidOperationException("The first attempt fails after setting its header.")
+            : ValueTask.CompletedTask;
     }
 }
 

@@ -1498,6 +1498,28 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
+    public async Task receive_admits_the_envelope_already_naming_this_host_as_the_execution_instance()
+    {
+        // given — the publisher tries to name another host
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-instance",
+            "{}"u8.ToArray(),
+            publisherHeaders: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.ExecutionInstanceId] = "someone-else",
+            }
+        );
+
+        // then — the stored envelope carries this host, so the success write has nothing to rewrite
+        var admission = run.Storage.Admissions.Should().ContainSingle().Subject;
+        admission
+            .Message.Origin.GetExecutionInstanceId()
+            .Should()
+            .Be(Headless.Messaging.Internal.HostIdentity.GetInstanceHostname());
+    }
+
+    [Fact]
     public async Task receive_keys_the_circuit_by_consumer_identity_not_subscription()
     {
         // given

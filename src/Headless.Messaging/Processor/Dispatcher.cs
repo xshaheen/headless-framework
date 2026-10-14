@@ -899,16 +899,16 @@ internal sealed class Dispatcher
     {
         try
         {
+            if (_enableParallelSend)
+            {
+                await _SendWindowedAsync().ConfigureAwait(false);
+
+                return;
+            }
+
             while (await PublishedChannel.Reader.WaitToReadAsync(TasksCts.Token).ConfigureAwait(false))
             {
-                if (_enableParallelSend)
-                {
-                    await _SendBatchParallelAsync().ConfigureAwait(false);
-                }
-                else
-                {
-                    await _SendBatchSequentialAsync().ConfigureAwait(false);
-                }
+                await _SendBatchSequentialAsync().ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -917,19 +917,51 @@ internal sealed class Dispatcher
         }
     }
 
-    private async Task _SendBatchParallelAsync()
+    // A sliding window rather than read-a-batch-then-await-all: one slow send would otherwise hold every other
+    // slot in its batch idle, which caps throughput at roughly width / slow-send-latency for a transport with a tail.
+    private async Task _SendWindowedAsync()
     {
-        var batchSize = _CalculateBatchSize();
-        var tasks = new List<Task>(batchSize);
+        var width = _CalculateBatchSize();
+        using var window = new SemaphoreSlim(width, width);
 
-        for (var i = 0; i < batchSize && PublishedChannel.Reader.TryRead(out var work); i++)
+        try
         {
-            tasks.Add(_SendMessageAsync(work));
+            while (await PublishedChannel.Reader.WaitToReadAsync(TasksCts.Token).ConfigureAwait(false))
+            {
+                await window.WaitAsync(TasksCts.Token).ConfigureAwait(false);
+
+                // The sending loop is the channel's only reader, so a ready channel always yields an item; the
+                // release only covers a reader that completed between the check and the read.
+                if (!PublishedChannel.Reader.TryRead(out var work))
+                {
+                    window.Release();
+                    continue;
+                }
+
+#pragma warning disable AsyncFixer04, CA2025 // False positive: the finally block re-acquires every slot, so no send outlives the semaphore.
+                _ = _SendInWindowAsync(work, window);
+#pragma warning restore AsyncFixer04, CA2025
+            }
         }
-
-        if (tasks.Count > 0)
+        finally
         {
-            await Task.WhenAll(tasks).ConfigureAwait(false);
+            // Shutdown waits for every in-flight send; taking all the slots back proves none is still running.
+            for (var i = 0; i < width; i++)
+            {
+                await window.WaitAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task _SendInWindowAsync(PublishedDispatchWork work, SemaphoreSlim window)
+    {
+        try
+        {
+            await _SendMessageAsync(work).ConfigureAwait(false);
+        }
+        finally
+        {
+            window.Release();
         }
     }
 

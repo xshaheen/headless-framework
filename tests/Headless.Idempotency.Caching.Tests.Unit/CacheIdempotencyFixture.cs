@@ -120,7 +120,7 @@ public sealed class CacheIdempotencyFixture
     private async Task<CacheIdempotencyEntry?> _ReadAsync(IdempotencyRecordKey key, CancellationToken cancellationToken)
     {
         var cacheKey = CacheIdempotencyRecordStore.RecordKey(KeyPrefix, key);
-        var value = await Cache.GetAsync<string>(cacheKey, cancellationToken);
+        var value = await Cache.GetAsync<byte[]>(cacheKey, cancellationToken);
 
         return value is { HasValue: true, Value: { } raw } ? CacheIdempotencyEntry.Deserialize(cacheKey, raw) : null;
     }
@@ -135,6 +135,6 @@ public sealed class CacheIdempotencyFixture
         // instants, not how long the cache keeps it.
         var cacheKey = CacheIdempotencyRecordStore.RecordKey(KeyPrefix, key);
         var lifetime = await Cache.GetExpirationAsync(cacheKey, cancellationToken);
-        await Cache.UpsertAsync(cacheKey, row.Serialize(), lifetime, cancellationToken);
+        await Cache.UpsertAsync(cacheKey, row.Encode(), lifetime, cancellationToken);
     }
 }

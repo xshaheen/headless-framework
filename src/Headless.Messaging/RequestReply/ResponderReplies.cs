@@ -16,7 +16,9 @@ namespace Headless.Messaging.RequestReply;
 /// </summary>
 /// <remarks>
 /// Neither method throws: a reply is sent after the request's outcome is durable, so a failure to build or send it can
-/// only cost the caller a timeout, never the consumed message.
+/// never cost the consumed message. A response the host cannot build, or one the transport refuses, is replaced by a
+/// <see cref="RequestFaultCodes.ResponseNotSent"/> fault, so the caller learns the work ran instead of waiting out its
+/// timeout. A send that times out is not replaced, because the broker may have taken it.
 /// </remarks>
 internal sealed class ResponderReplies(
     IServiceProvider services,
@@ -56,17 +58,23 @@ internal sealed class ResponderReplies(
     /// <param name="request">The request envelope the responder handled.</param>
     /// <param name="response">The value the responder returned.</param>
     /// <param name="responseType">The responder's declared response type, which names the reply's contract.</param>
+    /// <param name="responseHeaders">
+    /// The headers the responder set, which <see cref="ConsumeContext.SetResponseHeader"/> already kept clear of the
+    /// framework's own; the framework headers are written after them all the same.
+    /// </param>
     /// <param name="responderSpan">The responder's span, so the caller's trace continues from the work that answered.</param>
     public async ValueTask SendResponseAsync(
         Message request,
         object response,
         Type responseType,
+        IDictionary<string, string?>? responseHeaders,
         ActivityContext responderSpan
     )
     {
+        Exception? buildFailure = null;
         try
         {
-            var headers = _CreateHeaders(request, ReplyProtocol.StatusOk, responderSpan);
+            var headers = _CreateHeaders(request, ReplyProtocol.StatusOk, responderSpan, responseHeaders);
             var (name, version) = contracts.ResolveContract(responseType, MessageLane.Queue);
             headers[Headers.MessageName] = name;
             headers[Headers.ContractVersion] = version;
@@ -75,12 +83,19 @@ internal sealed class ResponderReplies(
                 .SerializeToTransportMessageAsync(new Message(headers, response))
                 .ConfigureAwait(false);
 
-            await _SendAsync(request, reply).ConfigureAwait(false);
+            if (await _SendAsync(request, reply).ConfigureAwait(false) is not ReplySendOutcome.Failed)
+            {
+                return;
+            }
         }
         catch (Exception e)
         {
             logger.ReplyBuildFailed(e, _RequestId(request));
+            buildFailure = e;
         }
+
+        // A fault is small and carries no responder headers, so it usually gets through where the response did not.
+        await SendFaultAsync(request, RequestFaultCodes.ResponseNotSent, buildFailure).ConfigureAwait(false);
     }
 
     /// <summary>Sends a fault with <paramref name="code"/> to the caller of <paramref name="request"/>.</summary>
@@ -108,7 +123,7 @@ internal sealed class ResponderReplies(
             }
 
             var headers = _CreateHeaders(request, ReplyProtocol.StatusFault, Activity.Current?.Context ?? default);
-            await _SendAsync(request, new TransportMessage(headers, ReplyProtocol.WriteFault(fault)))
+            _ = await _SendAsync(request, new TransportMessage(headers, ReplyProtocol.WriteFault(fault)))
                 .ConfigureAwait(false);
         }
         catch (Exception e)
@@ -117,7 +132,11 @@ internal sealed class ResponderReplies(
         }
     }
 
-    private async ValueTask _SendAsync(Message request, TransportMessage reply)
+    /// <summary>Sends <paramref name="reply"/> to the address <paramref name="request"/> asked for, bounded in time.</summary>
+    /// <returns>
+    /// What the sender reported, or <see langword="null"/> when the host has no reply transport or the send timed out.
+    /// </returns>
+    private async ValueTask<ReplySendOutcome?> _SendAsync(Message request, TransportMessage reply)
     {
         if (_sender.Value is not { } sender)
         {
@@ -126,7 +145,7 @@ internal sealed class ResponderReplies(
                 logger.ReplyDropped(_RequestId(request), "no reply transport");
             }
 
-            return;
+            return null;
         }
 
         request.Headers.TryGetValue(Headers.ReplyTo, out var address);
@@ -136,27 +155,36 @@ internal sealed class ResponderReplies(
         using var sendTimeout = new CancellationTokenSource(options.Value.TransportPublishTimeout, timeProvider);
         try
         {
-            await sender.SendAsync(address, reply, sendTimeout.Token).ConfigureAwait(false);
+            return await sender.SendAsync(address, reply, sendTimeout.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException e) when (sendTimeout.IsCancellationRequested)
         {
             logger.ReplySendFailed(e, _RequestId(request));
+            return null;
         }
     }
 
-    private Dictionary<string, string?> _CreateHeaders(Message request, string status, ActivityContext span)
+    private Dictionary<string, string?> _CreateHeaders(
+        Message request,
+        string status,
+        ActivityContext span,
+        IDictionary<string, string?>? responseHeaders = null
+    )
     {
         request.Headers.TryGetValue(Headers.MessageId, out var requestMessageId);
         request.Headers.TryGetValue(Headers.CorrelationId, out var correlationId);
 
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            [Headers.MessageId] = Guid.CreateVersion7(timeProvider.GetUtcNow()).ToString("D"),
-            [Headers.InReplyTo] = request.Headers.TryGetValue(Headers.RequestId, out var requestId) ? requestId : null,
-            [Headers.ReplyStatus] = status,
-            [Headers.CorrelationId] = string.IsNullOrWhiteSpace(correlationId) ? requestMessageId : correlationId,
-            [Headers.CausationId] = requestMessageId,
-        };
+        var headers = responseHeaders is null
+            ? new Dictionary<string, string?>(StringComparer.Ordinal)
+            : new Dictionary<string, string?>(responseHeaders, StringComparer.Ordinal);
+
+        headers[Headers.MessageId] = Guid.CreateVersion7(timeProvider.GetUtcNow()).ToString("D");
+        headers[Headers.InReplyTo] = request.Headers.TryGetValue(Headers.RequestId, out var requestId)
+            ? requestId
+            : null;
+        headers[Headers.ReplyStatus] = status;
+        headers[Headers.CorrelationId] = string.IsNullOrWhiteSpace(correlationId) ? requestMessageId : correlationId;
+        headers[Headers.CausationId] = requestMessageId;
 
         // The caller accepts only a reply under the tenant it sent the request under, so the reply carries the request's
         // tenant exactly as it arrived, whatever tenant is ambient here.

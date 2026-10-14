@@ -6,4 +6,24 @@
       <MinVerTagPrefix />
     </PropertyGroup>
   </Target>
+  <!-- Every package ships from one tag at one version, and providers compile against their family root's internals
+       (InternalsVisibleTo). NuGet packs a ProjectReference as an open ">= x.y.z" range, which lets a consumer resolve
+       a provider against a newer root whose internals moved and fail at run time with MissingMethodException. Pinning
+       each sibling to the exact "[x.y.z]" range makes NuGet reject that mix at restore instead. -->
+  <Target Name="PinSiblingPackageVersions" AfterTargets="_GetProjectReferenceVersions">
+    <ItemGroup>
+      <_ProjectReferencesWithVersions Condition="!$([System.String]::Copy('%(ProjectVersion)').StartsWith('['))">
+        <ProjectVersion>[%(ProjectVersion)]</ProjectVersion>
+      </_ProjectReferencesWithVersions>
+    </ItemGroup>
+  </Target>
+  <!-- An IsAotCompatible project gets an implicit Microsoft.NET.ILLink.Tasks reference at the version bundled with
+       whichever SDK restores it, and that version lands in the committed lock file. global.json rolls forward to the
+       newest feature band, so CI and a contributor with an older SDK patch disagree and the locked-mode restore fails
+       with NU1004. Pinning the pack makes the lock file independent of the installed SDK; raise it with the SDK. -->
+  <Target Name="PinILLinkPackVersion" BeforeTargets="ProcessFrameworkReferences">
+    <ItemGroup>
+      <KnownILLinkPack Condition="'%(KnownILLinkPack.TargetFramework)' == 'net10.0'" ILLinkPackVersion="10.0.13" />
+    </ItemGroup>
+  </Target>
 </Project>

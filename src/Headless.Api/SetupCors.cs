@@ -131,7 +131,7 @@ public static class SetupCors
             if (!services.IsAdded<HeadlessCorsPolicyProviderMarker>())
             {
                 services.AddSingleton(new HeadlessCorsPolicyProviderMarker());
-                services.TryDecorate<ICorsPolicyProvider, HeadlessCorsPolicyProvider>();
+                services.TryDecorateWith<ICorsPolicyProvider, HeadlessCorsPolicyProvider>();
             }
 
             return services;

@@ -24,8 +24,8 @@ public sealed class PostgreSqlEntityFrameworkStorageHealthCheckRegistrationTests
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
-            setup.UseEntityFramework<OrdersDbContext>();
-            setup.AddOutbox().UseEntityFramework<BillingDbContext>();
+            setup.UsePostgreSqlEntityFramework<OrdersDbContext>();
+            setup.AddOutbox().UsePostgreSqlEntityFramework<BillingDbContext>();
         });
 
         // then

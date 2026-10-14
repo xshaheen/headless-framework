@@ -123,8 +123,8 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     /// <code>
     /// services.AddHeadlessMessaging(setup =>
     /// {
-    ///     setup.UseEntityFramework&lt;OrdersDb&gt;();
-    ///     setup.AddOutbox().UseEntityFramework&lt;BillingDb&gt;();
+    ///     setup.UsePostgreSqlEntityFramework&lt;OrdersDb&gt;();
+    ///     setup.AddOutbox().UsePostgreSqlEntityFramework&lt;BillingDb&gt;();
     /// });
     /// </code>
     /// </remarks>

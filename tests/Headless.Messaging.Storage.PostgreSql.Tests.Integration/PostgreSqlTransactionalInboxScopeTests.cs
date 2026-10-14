@@ -17,7 +17,7 @@ public sealed class PostgreSqlTransactionalInboxScopeTests(PostgreSqlTestFixture
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
         setup.ConfigureStorage(storage => storage.Schema = _Schema);
-        setup.UseEntityFramework<InboxScopeDbContext>();
+        setup.UsePostgreSqlEntityFramework<InboxScopeDbContext>();
     }
 
     protected override string CreateEffectsTableSql =>

@@ -14,7 +14,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.AddModule<Headless.Messaging.Kafka.PostgreSql.Demo.MessagingModule>();
 
-    //setup.UseEntityFramework<AppDbContext>();
+    //setup.UsePostgreSqlEntityFramework<AppDbContext>();
     //docker run --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=mysecretpassword -d postgres
     setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
     setup.UsePostgreSql(AppConstants.DbConnectionString);

@@ -51,6 +51,36 @@ public static class TransportRequestReplyConformance
     }
 
     /// <summary>
+    /// A header the responder sets reaches the caller unchanged, and none of the reply protocol's own headers reach it.
+    /// </summary>
+    public static async Task AssertReplyHeadersRoundTripAsync(
+        TransportProviderConformanceDriver driver,
+        CancellationToken cancellationToken
+    )
+    {
+        _RequireSupport(driver);
+        var contracts = new RequestReplyConformanceContracts();
+        await using var responder = await RequestReplyConformanceHost.StartResponderAsync(
+            driver,
+            contracts,
+            cancellationToken
+        );
+        await using var caller = await RequestReplyConformanceHost.StartCallerAsync(
+            driver,
+            contracts,
+            cancellationToken
+        );
+
+        var reply = await caller.GetReplyAsync(new ConformanceQuoteRequest("sku-1"), _Patient, cancellationToken);
+
+        reply.Message.Should().Be(new ConformanceQuote("sku-1", TenantId: null));
+        reply.Headers.Should().ContainKey(ConformanceQuoteDesk.SkuHeader).WhoseValue.Should().Be("sku-1");
+        reply.Headers.Keys.Should().NotContain(key => key.StartsWith("headless-", StringComparison.OrdinalIgnoreCase));
+        reply.Headers.Keys.Should().NotContain(MessagingHeaders.TraceParent);
+        reply.MessageId.Should().NotBeNullOrWhiteSpace();
+    }
+
+    /// <summary>
     /// Two caller processes calling one responder at once each get exactly their own responses, and neither ever
     /// receives a reply meant for the other.
     /// </summary>

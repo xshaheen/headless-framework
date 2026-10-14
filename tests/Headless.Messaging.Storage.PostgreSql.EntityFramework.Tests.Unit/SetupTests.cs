@@ -21,7 +21,7 @@ public sealed class SetupTests : TestBase
         typeof(SetupMessagingPostgreSqlEntityFramework)
             .GetMethods(BindingFlags.Public | BindingFlags.Static)
             .Should()
-            .Contain(method => method.Name == "UseEntityFramework" && method.IsGenericMethodDefinition);
+            .Contain(method => method.Name == "UsePostgreSqlEntityFramework" && method.IsGenericMethodDefinition);
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public sealed class SetupTests : TestBase
             setup.Options.Version = "v9";
             setup.UseInMemory();
             setup.ConfigureStorage(storage => storage.Schema = "custom_schema");
-            setup.UseEntityFramework<TestMessagingDbContext>();
+            setup.UsePostgreSqlEntityFramework<TestMessagingDbContext>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -64,7 +64,7 @@ public sealed class SetupTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
-            setup.UseEntityFramework<TestMessagingDbContext>();
+            setup.UsePostgreSqlEntityFramework<TestMessagingDbContext>();
         });
 
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
@@ -99,7 +99,7 @@ public sealed class SetupTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
-            setup.UseEntityFramework<TestMessagingDbContext>(o => o.EnableTransactionalInbox = false);
+            setup.UsePostgreSqlEntityFramework<TestMessagingDbContext>(o => o.EnableTransactionalInbox = false);
         });
 
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
@@ -120,7 +120,8 @@ public sealed class SetupTests : TestBase
         var services = new ServiceCollection();
 
         // when
-        var act = () => services.AddHeadlessMessaging(setup => setup.UseEntityFramework<TestMessagingDbContext>(null!));
+        var act = () =>
+            services.AddHeadlessMessaging(setup => setup.UsePostgreSqlEntityFramework<TestMessagingDbContext>(null!));
 
         // then
         act.Should().Throw<ArgumentNullException>();
@@ -143,7 +144,7 @@ public sealed class SetupTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
-            setup.UseEntityFramework<TestMessagingDbContext>();
+            setup.UsePostgreSqlEntityFramework<TestMessagingDbContext>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -169,7 +170,7 @@ public sealed class SetupTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
-            setup.UseEntityFramework<TestMessagingDbContext>();
+            setup.UsePostgreSqlEntityFramework<TestMessagingDbContext>();
         });
 
         await using var provider = services.BuildServiceProvider();

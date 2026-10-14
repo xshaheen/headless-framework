@@ -3,4 +3,4 @@
 using BenchmarkDotNet.Running;
 using Headless.Idempotency.ResponseReplay.Benchmarks;
 
-BenchmarkSwitcher.FromTypes([typeof(RequestBufferingBenchmarks)]).Run(args);
+BenchmarkSwitcher.FromTypes([typeof(RequestBufferingBenchmarks), typeof(ResponseSnapshotBenchmarks)]).Run(args);

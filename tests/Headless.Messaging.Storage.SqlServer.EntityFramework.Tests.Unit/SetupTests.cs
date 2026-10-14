@@ -21,7 +21,7 @@ public sealed class SetupTests : TestBase
         typeof(SetupMessagingSqlServerEntityFramework)
             .GetMethods(BindingFlags.Public | BindingFlags.Static)
             .Should()
-            .Contain(method => method.Name == "UseEntityFramework" && method.IsGenericMethodDefinition);
+            .Contain(method => method.Name == "UseSqlServerEntityFramework" && method.IsGenericMethodDefinition);
     }
 
     [Fact]
@@ -32,7 +32,7 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddHeadlessMessaging(setup => setup.UseEntityFramework<TestMessagingDbContext>());
+        services.AddHeadlessMessaging(setup => setup.UseSqlServerEntityFramework<TestMessagingDbContext>());
 
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
@@ -66,7 +66,7 @@ public sealed class SetupTests : TestBase
         // when — EF path but explicitly opted out via the per-storage flag
         services.AddHeadlessMessaging(setup =>
         {
-            setup.UseEntityFramework<TestMessagingDbContext>(o => o.EnableTransactionalInbox = false);
+            setup.UseSqlServerEntityFramework<TestMessagingDbContext>(o => o.EnableTransactionalInbox = false);
         });
 
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
@@ -88,7 +88,7 @@ public sealed class SetupTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddDbContext<TestMessagingDbContext>(builder => builder.UseSqlServer(connectionString));
-        services.AddHeadlessMessaging(setup => setup.UseEntityFramework<TestMessagingDbContext>());
+        services.AddHeadlessMessaging(setup => setup.UseSqlServerEntityFramework<TestMessagingDbContext>());
 
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
@@ -110,7 +110,7 @@ public sealed class SetupTests : TestBase
         services.AddDbContext<TestMessagingDbContext>(builder =>
             builder.UseSqlServer(new SqlConnection("Server=localhost;Database=entity") { AccessToken = "token" })
         );
-        services.AddHeadlessMessaging(setup => setup.UseEntityFramework<TestMessagingDbContext>());
+        services.AddHeadlessMessaging(setup => setup.UseSqlServerEntityFramework<TestMessagingDbContext>());
 
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 

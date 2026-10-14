@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+
 namespace Headless.Messaging;
 
 internal interface IMiddlewareDescriptorRegistry
@@ -7,6 +9,12 @@ internal interface IMiddlewareDescriptorRegistry
     IReadOnlyList<MiddlewareDescriptor> Descriptors { get; }
 
     MiddlewareDescriptor AddOrGet(MiddlewareDescriptorInput input);
+
+    /// <summary>
+    /// Ends registration. After this, lookups are cached per (message type, lane) and
+    /// <see cref="AddOrGet" /> throws for any descriptor not already registered.
+    /// </summary>
+    void Freeze();
 
     bool TryGetPublishDescriptors(
         Type messageType,
@@ -31,7 +39,21 @@ internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegist
 {
     private readonly Lock _lock = new();
     private readonly List<MiddlewareDescriptor> _descriptors = [];
+    private readonly ConcurrentDictionary<(MiddlewareDirection, Type, MessageLane), LookupResult> _lookupCache = new();
     private long _nextOrder;
+
+    // Written under _lock, read lock-free on the per-message path.
+    private volatile bool _frozen;
+
+    private readonly record struct LookupResult(bool Found, IReadOnlyList<MiddlewareDescriptor> Descriptors);
+
+    public void Freeze()
+    {
+        lock (_lock)
+        {
+            _frozen = true;
+        }
+    }
 
     public IReadOnlyList<MiddlewareDescriptor> Descriptors
     {
@@ -55,6 +77,15 @@ internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegist
                 return existing;
             }
 
+            // The per-message lookups are cached once frozen, so a descriptor added now would never run.
+            if (_frozen)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot register {input.Direction} middleware '{input.MiddlewareType.Name}' after the messaging host has started. "
+                        + "Register all middleware while configuring services."
+                );
+            }
+
             var descriptor = new MiddlewareDescriptor(
                 input.Direction,
                 input.Scope,
@@ -72,6 +103,52 @@ internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegist
     }
 
     public bool TryGetPublishDescriptors(
+        Type messageType,
+        MessageLane lane,
+        out IReadOnlyList<MiddlewareDescriptor> descriptors
+    ) => _Lookup(MiddlewareDirection.Publish, messageType, lane, out descriptors);
+
+    private bool _Lookup(
+        MiddlewareDirection direction,
+        Type messageType,
+        MessageLane lane,
+        out IReadOnlyList<MiddlewareDescriptor> descriptors
+    )
+    {
+        if (!_frozen)
+        {
+            return _Compute(direction, messageType, lane, out descriptors);
+        }
+
+        var result = _lookupCache.GetOrAdd(
+            (direction, messageType, lane),
+            static (key, self) =>
+            {
+                var found = self._Compute(key.Item1, key.Item2, key.Item3, out var computed);
+
+                return new LookupResult(found, computed);
+            },
+            this
+        );
+        descriptors = result.Descriptors;
+
+        return result.Found;
+    }
+
+    private bool _Compute(
+        MiddlewareDirection direction,
+        Type messageType,
+        MessageLane lane,
+        out IReadOnlyList<MiddlewareDescriptor> descriptors
+    ) =>
+        direction switch
+        {
+            MiddlewareDirection.Publish => _ComputePublish(messageType, lane, out descriptors),
+            MiddlewareDirection.Consume => _ComputeConsume(messageType, lane, out descriptors),
+            _ => _ComputeReceive(messageType, lane, out descriptors),
+        };
+
+    private bool _ComputePublish(
         Type messageType,
         MessageLane lane,
         out IReadOnlyList<MiddlewareDescriptor> descriptors
@@ -117,6 +194,12 @@ internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegist
         Type messageType,
         MessageLane lane,
         out IReadOnlyList<MiddlewareDescriptor> descriptors
+    ) => _Lookup(MiddlewareDirection.Consume, messageType, lane, out descriptors);
+
+    private bool _ComputeConsume(
+        Type messageType,
+        MessageLane lane,
+        out IReadOnlyList<MiddlewareDescriptor> descriptors
     )
     {
         lock (_lock)
@@ -156,6 +239,12 @@ internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegist
     }
 
     public bool TryGetReceiveDescriptors(
+        Type messageType,
+        MessageLane lane,
+        out IReadOnlyList<MiddlewareDescriptor> descriptors
+    ) => _Lookup(MiddlewareDirection.Receive, messageType, lane, out descriptors);
+
+    private bool _ComputeReceive(
         Type messageType,
         MessageLane lane,
         out IReadOnlyList<MiddlewareDescriptor> descriptors

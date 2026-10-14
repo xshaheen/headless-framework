@@ -38,7 +38,7 @@ public static class SetupBlobSignedUrl
                 services.TryAddSingleton<BlobSignedUrlSigner>();
 
                 // Cross-cutting extensions run after every provider contribution, so every store is registered by now.
-                services.TryDecorate<IBlobStorage>((inner, provider) => _Wrap(inner, store: null, provider));
+                services.TryDecorateWith<IBlobStorage>((inner, provider) => _Wrap(inner, store: null, provider));
 
                 var storeNames = services
                     .Where(static d => d.IsKeyedService && d.ServiceType == typeof(IBlobStorage))
@@ -49,7 +49,10 @@ public static class SetupBlobSignedUrl
 
                 foreach (var name in storeNames)
                 {
-                    services.TryDecorateKeyed<IBlobStorage>(name, (inner, provider) => _Wrap(inner, name, provider));
+                    services.TryDecorateKeyedWith<IBlobStorage>(
+                        name,
+                        (inner, provider) => _Wrap(inner, name, provider)
+                    );
 
                     // AWS, Azure, and R2 already register this forward; the rest gain it through the wrapper.
                     services.TryAddKeyedSingleton<IPresignedUrlBlobStorage>(

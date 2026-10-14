@@ -208,4 +208,85 @@ public static class Headers
     /// Value: "headless-reply-status"
     /// </summary>
     public const string ReplyStatus = "headless-reply-status";
+
+    private const string _FrameworkPrefix = "headless-";
+
+    // The W3C trace context and baggage headers the propagator writes beside TraceParent.
+    private const string _TraceState = "tracestate";
+    private const string _Baggage = "baggage";
+
+    /// <summary>
+    /// Returns whether <paramref name="name"/> belongs to the framework or to trace propagation on a reply: any
+    /// <c>headless-</c> header, <see cref="TraceParent"/>, <c>tracestate</c>, or <c>baggage</c>.
+    /// </summary>
+    /// <remarks>
+    /// A responder may not set such a header, and a caller never sees one among a reply's headers, so a reply header
+    /// can neither forge the reply protocol nor be mistaken for it.
+    /// </remarks>
+    internal static bool IsReservedOnReply(string name)
+    {
+        return name.StartsWith(_FrameworkPrefix, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, TraceParent, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, _TraceState, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, _Baggage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The longest header name accepted, in characters; every accepted name is ASCII, so also in bytes.</summary>
+    internal const int MaxHeaderNameLength = 255;
+
+    /// <summary>
+    /// The most a responder's reply headers may add up to: the UTF-8 bytes of every name and value it sets.
+    /// </summary>
+    /// <remarks>
+    /// The tightest reply transport is RabbitMQ, which must fit every header into one frame of <c>frame_max</c> bytes
+    /// (128 KiB by default, lower when a broker sets it lower), and NATS counts headers against the same
+    /// <c>max_payload</c> as the body. A sixteenth of that frame leaves the framework's headers and the body their
+    /// room, so a reply within it is never refused for its headers alone.
+    /// </remarks>
+    internal const int MaxReplyHeadersBytes = 16 * 1024;
+
+    /// <summary>
+    /// Returns whether <paramref name="name"/> is a header name every transport can carry: 1 to
+    /// <see cref="MaxHeaderNameLength"/> printable ASCII characters (<c>'!'</c> through <c>'~'</c>) other than
+    /// <c>':'</c>.
+    /// </summary>
+    /// <remarks>
+    /// The rule is the intersection of what the transports accept: NATS rejects a header key with a space, a
+    /// <c>':'</c>, or a non-ASCII character, and AMQP limits a header name to 255 bytes. A name outside it would pass
+    /// the call and fail later inside the transport, where a reply is dropped after its outcome is durable and an
+    /// outbox publish fails on every retry.
+    /// </remarks>
+    internal static bool IsValidHeaderName([NotNullWhen(true)] string? name)
+    {
+        if (name is null || name.Length is 0 or > MaxHeaderNameLength)
+        {
+            return false;
+        }
+
+        foreach (var character in name.AsSpan())
+        {
+            if (character is < '!' or > '~' or ':')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Returns whether <paramref name="text"/> contains a control character, which no header name or value may carry.
+    /// </summary>
+    internal static bool HasControlCharacter(string text)
+    {
+        foreach (var character in text.AsSpan())
+        {
+            if (char.IsControl(character))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

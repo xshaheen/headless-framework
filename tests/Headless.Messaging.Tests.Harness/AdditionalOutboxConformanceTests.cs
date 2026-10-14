@@ -171,7 +171,7 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
         await act.Should()
             .ThrowAsync<MessagingConfigurationException>()
             .WithMessage(
-                $"*'AddOutbox().UseEntityFramework<{nameof(BillingOutboxDbContext)}>()' and 'AddOutbox().Use*' both resolve to database*"
+                $"*'AddOutbox().Use*EntityFramework<{nameof(BillingOutboxDbContext)}>()' and 'AddOutbox().Use*' both resolve to database*"
             );
     }
 

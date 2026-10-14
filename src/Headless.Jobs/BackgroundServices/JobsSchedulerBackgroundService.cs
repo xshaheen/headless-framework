@@ -253,13 +253,13 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                                     _internalJobsManager,
                                     _taskHandler,
                                     _logger,
-                                    semaphore,
                                     function,
                                     isDue: false
                                 ),
                                 function.CachedPriority,
                                 cancellationToken,
-                                stoppingToken
+                                stoppingToken,
+                                semaphore
                             )
                             .ConfigureAwait(false);
                     }

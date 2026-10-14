@@ -23,8 +23,8 @@ public sealed class SqlServerEntityFrameworkStorageHealthCheckRegistrationTests 
         // when
         services.AddHeadlessMessaging(setup =>
         {
-            setup.UseEntityFramework<OrdersDbContext>();
-            setup.AddOutbox().UseEntityFramework<BillingDbContext>();
+            setup.UseSqlServerEntityFramework<OrdersDbContext>();
+            setup.AddOutbox().UseSqlServerEntityFramework<BillingDbContext>();
         });
 
         // then

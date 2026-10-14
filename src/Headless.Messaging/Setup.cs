@@ -88,7 +88,7 @@ public static class SetupMessaging
         if (setup.OutboxBuilders.Exists(static builder => !builder.IsConfigured))
         {
             throw new InvalidOperationException(
-                "AddOutbox() was called without a storage. Chain UseEntityFramework<TContext>(), UsePostgreSql(...), or UseSqlServer(...) on it."
+                "AddOutbox() was called without a storage. Chain UsePostgreSqlEntityFramework<TContext>(), UseSqlServerEntityFramework<TContext>(), UsePostgreSql(...), or UseSqlServer(...) on it."
             );
         }
 

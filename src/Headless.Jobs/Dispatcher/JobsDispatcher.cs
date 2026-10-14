@@ -31,25 +31,11 @@ internal sealed class JobsDispatcher(
 
             await taskScheduler
                 .QueueAsync(
-                    async ct =>
-                    {
-                        if (semaphore != null)
-                        {
-                            await semaphore.WaitAsync(ct).ConfigureAwait(false);
-                        }
-
-                        try
-                        {
-                            await taskHandler.ExecuteImmediateTaskAsync(context, ct).ConfigureAwait(false);
-                        }
-                        finally
-                        {
-                            semaphore?.Release();
-                        }
-                    },
+                    ct => taskHandler.ExecuteImmediateTaskAsync(context, ct),
                     context.CachedPriority,
                     capacityCancellationToken: cancellationToken,
-                    executionCancellationToken: executionToken
+                    executionCancellationToken: executionToken,
+                    concurrencyGate: semaphore
                 )
                 .ConfigureAwait(false);
         }

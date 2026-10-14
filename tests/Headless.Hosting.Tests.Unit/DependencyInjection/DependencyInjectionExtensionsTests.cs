@@ -183,7 +183,7 @@ public sealed class DependencyInjectionExtensionsTests
         services.AddSingleton<IMyService, MyService>();
 
         // when
-        services.Decorate<IMyService, DecoratedService>();
+        services.DecorateWith<IMyService, DecoratedService>();
         using var provider = services.BuildServiceProvider();
         var service = provider.GetRequiredService<IMyService>();
 
@@ -202,7 +202,7 @@ public sealed class DependencyInjectionExtensionsTests
         services.AddSingleton<IMyService, ReplacementService>();
 
         // when
-        services.Decorate<IMyService, DecoratedService>();
+        services.DecorateWith<IMyService, DecoratedService>();
         using var provider = services.BuildServiceProvider();
         var resolved = provider.GetServices<IMyService>().ToList();
 
@@ -219,7 +219,7 @@ public sealed class DependencyInjectionExtensionsTests
         services.AddSingleton<IMyService, MyService>();
 
         // when
-        services.Decorate<IMyService, DecoratedService>();
+        services.DecorateWith<IMyService, DecoratedService>();
         using var provider = services.BuildServiceProvider();
 
         // then
@@ -234,7 +234,7 @@ public sealed class DependencyInjectionExtensionsTests
         services.AddSingleton<IMyService, MyService>();
 
         // when
-        services.Decorate<IMyService>((inner, _) => new FactoryDecoratedService(inner));
+        services.DecorateWith<IMyService>((inner, _) => new FactoryDecoratedService(inner));
         using var provider = services.BuildServiceProvider();
 
         // then
@@ -248,7 +248,7 @@ public sealed class DependencyInjectionExtensionsTests
         var services = new ServiceCollection();
 
         // when
-        var act = () => services.Decorate<IMyService, DecoratedService>();
+        var act = () => services.DecorateWith<IMyService, DecoratedService>();
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("Service 'IMyService' is not registered.");
@@ -261,7 +261,7 @@ public sealed class DependencyInjectionExtensionsTests
         var services = new ServiceCollection();
 
         // when
-        var result = services.TryDecorate<IMyService, DecoratedService>();
+        var result = services.TryDecorateWith<IMyService, DecoratedService>();
 
         // then
         result.Should().BeFalse();
@@ -277,7 +277,7 @@ public sealed class DependencyInjectionExtensionsTests
         services.AddSingleton<IMyService, MyService>();
 
         // when
-        var result = services.TryDecorateKeyed<IMyService>("a", (inner, _) => new FactoryDecoratedService(inner));
+        var result = services.TryDecorateKeyedWith<IMyService>("a", (inner, _) => new FactoryDecoratedService(inner));
         using var provider = services.BuildServiceProvider();
 
         // then
@@ -300,8 +300,8 @@ public sealed class DependencyInjectionExtensionsTests
         services.AddKeyedSingleton<IMyService>("instance", new MyService());
 
         // when
-        services.TryDecorateKeyed<IMyService>("factory", (inner, _) => new FactoryDecoratedService(inner));
-        services.TryDecorateKeyed<IMyService>("instance", (inner, _) => new FactoryDecoratedService(inner));
+        services.TryDecorateKeyedWith<IMyService>("factory", (inner, _) => new FactoryDecoratedService(inner));
+        services.TryDecorateKeyedWith<IMyService>("instance", (inner, _) => new FactoryDecoratedService(inner));
         using var provider = services.BuildServiceProvider();
 
         // then
@@ -317,7 +317,7 @@ public sealed class DependencyInjectionExtensionsTests
         services.AddKeyedSingleton<IMyService, MyService>("a");
 
         // when
-        var result = services.TryDecorateKeyed<IMyService>("b", (inner, _) => new FactoryDecoratedService(inner));
+        var result = services.TryDecorateKeyedWith<IMyService>("b", (inner, _) => new FactoryDecoratedService(inner));
 
         // then
         result.Should().BeFalse();

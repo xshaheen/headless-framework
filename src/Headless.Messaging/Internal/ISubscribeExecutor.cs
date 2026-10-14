@@ -130,6 +130,7 @@ internal sealed class SubscribeExecutor(
         {
             message.Origin.Headers.Remove(Headers.ReplyTo);
             message.Origin.Headers.Remove(Headers.RequestDeadline);
+            message.HasUnpersistedOriginChanges = true;
             logger.ReplayedRequestRunsWithoutCaller(message.StorageId, replayKey.Generation);
         }
 
@@ -188,8 +189,16 @@ internal sealed class SubscribeExecutor(
             }
         }
 
-        //record instance id
-        message.Origin.Headers[Headers.ExecutionInstanceId] = _hostName;
+        // The receive path stored the envelope already naming this host; only a row picked up by another host (a
+        // retry or a lease takeover) changes the stamp, and only then does the stored envelope go stale.
+        if (
+            !message.Origin.Headers.TryGetValue(Headers.ExecutionInstanceId, out var storedInstanceId)
+            || !string.Equals(storedInstanceId, _hostName, StringComparison.Ordinal)
+        )
+        {
+            message.Origin.Headers[Headers.ExecutionInstanceId] = _hostName;
+            message.HasUnpersistedOriginChanges = true;
+        }
 
         var budget = new ConsumeRetryBudget(descriptor!.FailurePolicy);
 
@@ -537,10 +546,12 @@ internal sealed class SubscribeExecutor(
             .ChangeReceiveRetryStateAsync(
                 message,
                 StatusName.Succeeded,
-                // Unlike the publish path, the consume path DOES mutate Origin before invoking the
-                // consumer: ExecuteAsync stamps Headers.ExecutionInstanceId on every attempt, after the
-                // row was stored. Preserving here would drop that stamp from the persisted envelope.
-                MessageContentWrite.Refresh,
+                // The envelope is stored already carrying this host's instance id, so a plain success leaves it
+                // alone. It is rewritten only when this attempt changed it (another host's stamp replaced, an
+                // exception recorded, a replayed request's reply address stripped).
+                message.HasUnpersistedOriginChanges
+                    ? MessageContentWrite.Refresh
+                    : MessageContentWrite.Preserve,
                 retryDelay: null,
                 lockedUntil,
                 originalRetries: message.Retries,
@@ -706,6 +717,7 @@ internal sealed class SubscribeExecutor(
         var originalInlineAttempts = message.InlineAttempts;
 
         message.Origin.AddOrUpdateException(ex);
+        message.HasUnpersistedOriginChanges = true;
         message.ExceptionInfo = ex.ExpandMessage();
         message.ExpiresAt = message.Added.AddSeconds(_options.FailedMessageExpiredAfter);
 
@@ -1247,6 +1259,7 @@ internal sealed class SubscribeExecutor(
         return new PendingReply(
             result.Reply,
             result.ReplyType ?? descriptor.ResponseType!,
+            result.CallbackHeader,
             traceHandle.Activity?.Context ?? default
         );
     }
@@ -1260,14 +1273,20 @@ internal sealed class SubscribeExecutor(
 
         var request = message.Origin;
         unitOfWork.OnCompleted(() =>
-            replies.SendResponseAsync(request, reply.Response, reply.ResponseType, reply.ResponderSpan)
+            replies.SendResponseAsync(request, reply.Response, reply.ResponseType, reply.Headers, reply.ResponderSpan)
         );
     }
 
     private ValueTask _SendReplyAsync(MediumMessage message, PendingReply reply)
     {
         return _GetResponderReplies() is { } replies
-            ? replies.SendResponseAsync(message.Origin, reply.Response, reply.ResponseType, reply.ResponderSpan)
+            ? replies.SendResponseAsync(
+                message.Origin,
+                reply.Response,
+                reply.ResponseType,
+                reply.Headers,
+                reply.ResponderSpan
+            )
             : ValueTask.CompletedTask;
     }
 
@@ -1291,6 +1310,14 @@ internal sealed class SubscribeExecutor(
         return false;
     }
 
-    /// <summary>A responder's answer waiting for its attempt's success write.</summary>
-    private readonly record struct PendingReply(object Response, Type ResponseType, ActivityContext ResponderSpan);
+    /// <summary>
+    /// A responder's answer waiting for its attempt's success write, with the headers the responder set through
+    /// <c>ConsumeContext.SetResponseHeader</c>, which already refused any a reply cannot carry.
+    /// </summary>
+    private readonly record struct PendingReply(
+        object Response,
+        Type ResponseType,
+        IDictionary<string, string?>? Headers,
+        ActivityContext ResponderSpan
+    );
 }

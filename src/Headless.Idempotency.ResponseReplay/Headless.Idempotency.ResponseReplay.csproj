@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Idempotency.ResponseReplay.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Idempotency.ResponseReplay.Benchmarks" />
     <InternalsVisibleTo Include="Headless.Idempotency.ResponseReplay.Tests.Integration" />
     <!-- Lets NSubstitute proxy ILogger<IdempotencyMiddleware>, whose generic argument is internal. -->
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
@@ -21,6 +22,7 @@
     <ProjectReference Include="..\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Idempotency.Abstractions\Headless.Idempotency.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Serializer.Abstractions\Headless.Serializer.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup Label="Resources">
     <EmbeddedResource Update="Resources\Messages.resx" />

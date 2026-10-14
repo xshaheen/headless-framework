@@ -557,8 +557,10 @@ public sealed class SchedulerOptionsBuilder
     public int MaxConcurrency { get; set; } = Environment.ProcessorCount;
 
     /// <summary>
-    /// Maximum number of dedicated threads used by <see cref="JobPriority.LongRunning"/> jobs. When not set,
-    /// defaults to the smaller of <see cref="MaxConcurrency"/> and four.
+    /// Maximum number of <see cref="JobPriority.LongRunning"/> jobs running at once, each started on its own
+    /// dedicated thread. An <see langword="async"/> handler releases that thread at its first <see langword="await"/>,
+    /// so the thread only covers the handler's synchronous prefix. When not set, defaults to the smaller of
+    /// <see cref="MaxConcurrency"/> and four.
     /// </summary>
     public int MaxLongRunningConcurrency
     {

@@ -88,5 +88,11 @@ public class MediumMessage
     /// </summary>
     internal IDataStorage? OutboxStorage { get; set; }
 
+    /// <summary>
+    /// Whether <see cref="Origin"/> was changed after it was last written to storage. A state transition that
+    /// follows must rewrite the stored envelope; one that does not can leave it alone. In-memory state only.
+    /// </summary>
+    internal bool HasUnpersistedOriginChanges { get; set; }
+
     public string? ExceptionInfo { get; set; }
 }

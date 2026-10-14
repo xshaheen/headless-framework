@@ -50,7 +50,7 @@ public static class SetupAuthorizationDenialAudit
             // AddAuthorization registers the default handler with TryAdd, so registering it here first keeps one
             // registration whichever call runs first, and the decorator always has something to wrap.
             services.TryAddSingleton<IAuthorizationMiddlewareResultHandler, AuthorizationMiddlewareResultHandler>();
-            services.TryDecorate<
+            services.TryDecorateWith<
                 IAuthorizationMiddlewareResultHandler,
                 AuditingAuthorizationMiddlewareResultHandler<TContext>
             >();

@@ -22,6 +22,12 @@ internal sealed class RecordingReplyTransport : IReplyTransport
 
     public Exception? FailWith { get; set; }
 
+    /// <summary>
+    /// Limits <see cref="FailWith"/> to replies with this <see cref="Headers.ReplyStatus"/>; every reply when
+    /// <see langword="null"/>.
+    /// </summary>
+    public string? FailOnlyStatus { get; set; }
+
     /// <summary>Makes every send wait until its token is canceled, like a broker in a brownout.</summary>
     public bool StallSends { get; set; }
 
@@ -42,7 +48,16 @@ internal sealed class RecordingReplyTransport : IReplyTransport
         CancellationToken cancellationToken = default
     )
     {
-        if (FailWith is not null)
+        if (
+            FailWith is not null
+            && (
+                FailOnlyStatus is null
+                || (
+                    reply.Headers.TryGetValue(Headers.ReplyStatus, out var status)
+                    && string.Equals(status, FailOnlyStatus, StringComparison.Ordinal)
+                )
+            )
+        )
         {
             throw FailWith;
         }

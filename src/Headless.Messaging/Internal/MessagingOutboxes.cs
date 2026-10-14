@@ -143,7 +143,7 @@ internal sealed class MessagingOutboxes : IDeliveryCoordinationResolver
         {
             throw new MessagingConfigurationException(
                 primary is null
-                    ? "AddOutbox() requires a primary messaging storage. Configure one with UseEntityFramework<TContext>(), UsePostgreSql(...), or UseSqlServer(...)."
+                    ? "AddOutbox() requires a primary messaging storage. Configure one with UsePostgreSqlEntityFramework<TContext>(), UseSqlServerEntityFramework<TContext>(), UsePostgreSql(...), or UseSqlServer(...)."
                     : $"AddOutbox() requires a relational primary messaging storage, but the primary storage is '{primary.GetType().Name}'."
             );
         }

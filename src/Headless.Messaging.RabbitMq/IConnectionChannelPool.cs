@@ -91,7 +91,6 @@ internal interface IConnectionChannelPool
 /// <summary>Default implementation of <see cref="IConnectionChannelPool"/>.</summary>
 internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable, IAsyncDisposable
 {
-    private const int _DefaultPoolSize = 15;
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
 
     private readonly Func<CancellationToken, Task<IConnection>> _connectionActivator;
@@ -125,12 +124,12 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
     )
     {
         _logger = logger;
-        _maxSize = _DefaultPoolSize;
-        _pool = new ConcurrentQueue<IChannel>();
-        _poolSemaphore = new SemaphoreSlim(_DefaultPoolSize, _DefaultPoolSize);
-
         var messagingOptions = messagingAccessorOptionsAccessor.Value;
         var options = optionsAccessor.Value;
+
+        _maxSize = options.ChannelPoolSize;
+        _pool = new ConcurrentQueue<IChannel>();
+        _poolSemaphore = new SemaphoreSlim(options.ChannelPoolSize, options.ChannelPoolSize);
 
         _connectionActivator = connectionActivator ?? _CreateConnection(options, automaticRecovery: true);
         _nonRecoveringConnectionActivator = connectionActivator ?? _CreateConnection(options, automaticRecovery: false);

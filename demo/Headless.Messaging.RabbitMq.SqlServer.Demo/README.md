@@ -4,7 +4,7 @@ ASP.NET Core demo for RabbitMQ transport with SQL Server messaging storage.
 
 ## Shows
 
-- EF Core messaging storage through `UseEntityFramework<AppDbContext>()`.
+- EF Core messaging storage through `UseSqlServerEntityFramework<AppDbContext>()`.
 - RabbitMQ transport through `UseRabbitMq(...)`.
 - Dashboard registration with `WithNoAuth()`.
 - EF-backed transactional outbox behavior.

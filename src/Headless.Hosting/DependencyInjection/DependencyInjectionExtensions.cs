@@ -122,7 +122,7 @@ public static class DependencyInjectionExtensions
 
     #endregion
 
-    #region Decorate
+    #region DecorateWith
 
     /// <summary>
     /// Decorates all existing unkeyed registrations for <typeparamref name="TService"/> with
@@ -136,14 +136,14 @@ public static class DependencyInjectionExtensions
     /// <exception cref="InvalidOperationException">
     /// Thrown when no unkeyed registration exists for <typeparamref name="TService"/>.
     /// </exception>
-    public static IServiceCollection Decorate<
+    public static IServiceCollection DecorateWith<
         TService,
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TDecorator
     >(this IServiceCollection services)
         where TService : class
         where TDecorator : class, TService
     {
-        if (!services.TryDecorate<TService, TDecorator>())
+        if (!services.TryDecorateWith<TService, TDecorator>())
         {
             throw new InvalidOperationException($"Service '{typeof(TService).Name}' is not registered.");
         }
@@ -163,13 +163,13 @@ public static class DependencyInjectionExtensions
     /// <exception cref="InvalidOperationException">
     /// Thrown when no unkeyed registration exists for <typeparamref name="TService"/>.
     /// </exception>
-    public static IServiceCollection Decorate<TService>(
+    public static IServiceCollection DecorateWith<TService>(
         this IServiceCollection services,
         Func<TService, IServiceProvider, TService> decorator
     )
         where TService : class
     {
-        if (!services.TryDecorate(decorator))
+        if (!services.TryDecorateWith(decorator))
         {
             throw new InvalidOperationException($"Service '{typeof(TService).Name}' is not registered.");
         }
@@ -186,7 +186,7 @@ public static class DependencyInjectionExtensions
     /// <param name="services">The service collection.</param>
     /// <returns><see langword="true"/> if at least one registration was decorated; otherwise <see langword="false"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
-    public static bool TryDecorate<
+    public static bool TryDecorateWith<
         TService,
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TDecorator
     >(this IServiceCollection services)
@@ -215,7 +215,7 @@ public static class DependencyInjectionExtensions
     /// <param name="decorator">Factory that receives the original service and returns the decorator.</param>
     /// <returns><see langword="true"/> if at least one registration was decorated; otherwise <see langword="false"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
-    public static bool TryDecorate<TService>(
+    public static bool TryDecorateWith<TService>(
         this IServiceCollection services,
         Func<TService, IServiceProvider, TService> decorator
     )
@@ -253,7 +253,7 @@ public static class DependencyInjectionExtensions
     /// either directly or through a decorator that disposes the instance it wraps.
     /// </para>
     /// </remarks>
-    public static bool TryDecorateKeyed<TService>(
+    public static bool TryDecorateKeyedWith<TService>(
         this IServiceCollection services,
         object serviceKey,
         Func<TService, IServiceProvider, TService> decorator
@@ -597,7 +597,7 @@ public static class DependencyInjectionExtensions
     /// <summary>
     /// Removes all unkeyed registrations for <typeparamref name="TService"/>. Keyed registrations are
     /// left intact, matching the <see cref="ServiceDescriptor.IsKeyedService"/> guard in
-    /// <see cref="TryDecorate{TService,TDecorator}"/> and
+    /// <see cref="TryDecorateWith{TService,TDecorator}"/> and
     /// <see cref="AddOrReplaceFallbackSingleton{TService,TFallback,TImplementation}"/>.
     /// </summary>
     /// <typeparam name="TService">The service type to remove.</typeparam>

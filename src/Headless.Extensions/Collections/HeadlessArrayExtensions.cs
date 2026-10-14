@@ -165,16 +165,6 @@ public static class HeadlessArrayExtensions
         return Array.LastIndexOf(array, value, startIndex, count);
     }
 
-    /// <summary>Reverses the sequence of the elements in the entire one-dimensional <see cref="Array" />.</summary>
-    /// <typeparam name="T">The type of the elements of the array.</typeparam>
-    /// <param name="array">The one-dimensional <see cref="Array" /> to reverse.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="array" /> is null.</exception>
-    /// <exception cref="RankException"><paramref name="array" /> is multidimensional.</exception>
-    public static void Reverse<T>(this T[] array)
-    {
-        Array.Reverse(array);
-    }
-
     /// <summary>Reverses the sequence of the elements in a range of elements in the one-dimensional <see cref="Array" />.</summary>
     /// <typeparam name="T">The type of the elements of the array.</typeparam>
     /// <param name="array">The one-dimensional <see cref="Array" /> to reverse.</param>

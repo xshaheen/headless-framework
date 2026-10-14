@@ -104,6 +104,29 @@ public sealed class InMemoryConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_block_the_calling_thread_while_waiting_for_a_message()
+    {
+        // given
+        await _client.SubscribeAsync(["test-messageName"], AbortToken);
+        using var cts = new CancellationTokenSource();
+
+        // A blocking take would never return on its own, so a deadline keeps a regression a failure, not a hang.
+        cts.CancelAfter(TimeSpan.FromMilliseconds(1500));
+
+        // when - the call runs on this thread until its first real await, so a blocking take would hold it here
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var listening = _client.ListeningAsync(TimeSpan.FromSeconds(5), cts.Token).AsTask();
+        stopwatch.Stop();
+
+        // then
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
+        listening.IsCompleted.Should().BeFalse();
+
+        var act = async () => await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task should_commit_and_release_semaphore()
     {
         // given

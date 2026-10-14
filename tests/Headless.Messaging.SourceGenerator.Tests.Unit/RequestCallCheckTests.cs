@@ -224,6 +224,34 @@ public sealed class RequestCallCheckTests : TestBase
             .Equal("Pricing.GetQuote", "Pricing.Quote");
     }
 
+    [Fact]
+    public void should_warn_when_a_get_reply_call_expects_another_response_than_the_responder_answers_with()
+    {
+        // given — the call reads the reply with its headers instead of the bare response
+        var source = _Usings + _Contracts + _Responder + _ReplyCaller("Pricing.OtherQuote");
+
+        // when
+        var driver = GeneratorTestHelper.Run(source);
+
+        // then
+        _Single(driver)
+            .GetMessage(CultureInfo.InvariantCulture)
+            .Should()
+            .Contain("'Pricing.OtherQuote' for 'Pricing.GetQuote'");
+    }
+
+    private static string _ReplyCaller(string responseType) =>
+        $$"""
+            namespace Checkout
+            {
+                public sealed class CheckoutPricing(IRequestClient requests)
+                {
+                    public Task<Reply<global::{{responseType}}>> QuoteAsync(CancellationToken cancellationToken) =>
+                        requests.GetReplyAsync<global::Pricing.GetQuote, global::{{responseType}}>(new global::Pricing.GetQuote("sku"), cancellationToken: cancellationToken);
+                }
+            }
+            """;
+
     /// <summary>
     /// A caller that requests a <c>Pricing.GetQuote</c> and expects <paramref name="responseType"/>; it names the contract
     /// types fully, so it compiles both beside the contracts and in an assembly that references them.

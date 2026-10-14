@@ -125,7 +125,7 @@ public sealed class MessagingOutboxesTests : TestBase
         var primary = AdditionalOutboxDoubles.CreateRelationalStorage("orders");
         var billing = AdditionalOutboxDoubles.CreateOutbox(
             "billing",
-            name: "AddOutbox().UseEntityFramework<BillingDb>()"
+            name: "AddOutbox().UsePostgreSqlEntityFramework<BillingDb>()"
         );
         var duplicate = AdditionalOutboxDoubles.CreateOutbox("billing", name: "AddOutbox().UsePostgreSql(...)");
 
@@ -136,7 +136,7 @@ public sealed class MessagingOutboxesTests : TestBase
         act.Should()
             .Throw<MessagingConfigurationException>()
             .WithMessage(
-                "*'AddOutbox().UseEntityFramework<BillingDb>()' and 'AddOutbox().UsePostgreSql(...)' both resolve to database 'billing'*"
+                "*'AddOutbox().UsePostgreSqlEntityFramework<BillingDb>()' and 'AddOutbox().UsePostgreSql(...)' both resolve to database 'billing'*"
             );
     }
 

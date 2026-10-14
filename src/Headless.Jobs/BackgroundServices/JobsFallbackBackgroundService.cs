@@ -114,12 +114,13 @@ internal sealed class JobsFallbackBackgroundService(
                                         internalJobsManager,
                                         tickerExecutionTaskHandler,
                                         logger,
-                                        semaphore,
                                         function,
                                         isDue: true
                                     ),
                                     function.CachedPriority,
-                                    loopToken
+                                    loopToken,
+                                    loopToken,
+                                    semaphore
                                 )
                                 .ConfigureAwait(false);
                         }

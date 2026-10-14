@@ -16,7 +16,7 @@ namespace Headless.Idempotency.Caching;
 /// <para>
 /// A cache holds no row lock, so this store is optimistic where the relational stores lock: a verb that "locks" a
 /// record only reads it and remembers what it read, and the write verb that follows swaps the entry only if it still
-/// holds that exact text. When another caller changed it first, the write throws
+/// holds that exact entry. When another caller changed it first, the write throws
 /// <see cref="IdempotencyRecordConflictException" /> and the autonomous call runs again from a fresh read, so concurrent
 /// admissions converge the way locked ones do: one admitted, the others in flight, replayed, or in conflict.
 /// </para>
@@ -391,13 +391,13 @@ internal sealed class CacheIdempotencyRecordStore(
             : throw new InvalidOperationException(EnlistedRefusal);
     }
 
-    private async ValueTask<(string? Raw, CacheIdempotencyEntry? Record)> _ReadAsync(
+    private async ValueTask<(byte[]? Raw, CacheIdempotencyEntry? Record)> _ReadAsync(
         IdempotencyRecordKey key,
         CancellationToken cancellationToken
     )
     {
         var cacheKey = _RecordKey(key);
-        var value = await cache.GetAsync<string>(cacheKey, cancellationToken).ConfigureAwait(false);
+        var value = await cache.GetAsync<byte[]>(cacheKey, cancellationToken).ConfigureAwait(false);
 
         return value is { HasValue: true, Value: { } raw }
             ? (raw, CacheIdempotencyEntry.Deserialize(cacheKey, raw))
@@ -428,13 +428,13 @@ internal sealed class CacheIdempotencyRecordStore(
     private async ValueTask _SwapAsync(
         OwnedUnit unit,
         IdempotencyRecordKey key,
-        string? expected,
+        byte[]? expected,
         CacheIdempotencyEntry record,
         DateTimeOffset now,
         CancellationToken cancellationToken
     )
     {
-        var raw = record.Serialize();
+        var raw = record.Encode();
 
         if (!await _TrySwapAsync(key, expected, raw, record, now, cancellationToken).ConfigureAwait(false))
         {
@@ -447,13 +447,13 @@ internal sealed class CacheIdempotencyRecordStore(
 
     private ValueTask<bool> _TrySwapAsync(
         IdempotencyRecordKey key,
-        string? expected,
+        byte[]? expected,
         CacheIdempotencyEntry record,
         DateTimeOffset now,
         CancellationToken cancellationToken
     )
     {
-        return _TrySwapAsync(key, expected, record.Serialize(), record, now, cancellationToken);
+        return _TrySwapAsync(key, expected, record.Encode(), record, now, cancellationToken);
     }
 
     /// <summary>
@@ -464,8 +464,8 @@ internal sealed class CacheIdempotencyRecordStore(
     /// <exception cref="InvalidOperationException">The cache refused the write for a reason other than a race.</exception>
     private async ValueTask<bool> _TrySwapAsync(
         IdempotencyRecordKey key,
-        string? expected,
-        string raw,
+        byte[]? expected,
+        byte[] raw,
         CacheIdempotencyEntry record,
         DateTimeOffset now,
         CancellationToken cancellationToken
@@ -485,9 +485,9 @@ internal sealed class CacheIdempotencyRecordStore(
             return true;
         }
 
-        var current = await cache.GetAsync<string>(cacheKey, cancellationToken).ConfigureAwait(false);
+        var current = await cache.GetAsync<byte[]>(cacheKey, cancellationToken).ConfigureAwait(false);
         var unchanged = current is { HasValue: true, Value: { } value }
-            ? string.Equals(value, expected, StringComparison.Ordinal)
+            ? expected is not null && value.AsSpan().SequenceEqual(expected)
             : expected is null;
 
         if (unchanged)
@@ -541,7 +541,7 @@ internal sealed class CacheIdempotencyRecordStore(
     }
 
     private CacheIdempotencyEntry _RequireGeneration(
-        string? read,
+        byte[]? read,
         IdempotencyRecordKey key,
         long generation,
         string verb
@@ -575,15 +575,15 @@ internal sealed class CacheIdempotencyRecordStore(
     #endregion
 
     /// <summary>
-    /// What one owned unit read: the exact entry text per record key (<see langword="null" /> when absent), which the
+    /// What one owned unit read: the exact entry bytes per record key (<see langword="null" /> when absent), which the
     /// unit's write compares against.
     /// </summary>
     private sealed class OwnedUnit
     {
         private readonly Lock _gate = new();
-        private readonly Dictionary<IdempotencyRecordKey, string?> _read = [];
+        private readonly Dictionary<IdempotencyRecordKey, byte[]?> _read = [];
 
-        public void Remember(IdempotencyRecordKey key, string? raw)
+        public void Remember(IdempotencyRecordKey key, byte[]? raw)
         {
             lock (_gate)
             {
@@ -591,7 +591,7 @@ internal sealed class CacheIdempotencyRecordStore(
             }
         }
 
-        public string? Read(IdempotencyRecordKey key, string verb)
+        public byte[]? Read(IdempotencyRecordKey key, string verb)
         {
             lock (_gate)
             {

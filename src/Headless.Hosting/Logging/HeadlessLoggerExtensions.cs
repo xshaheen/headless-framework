@@ -38,13 +38,18 @@ public static class HeadlessLoggerExtensions
         /// <summary>
         /// Begins a structured log scope containing a single key/value property.
         /// </summary>
+        /// <remarks>
+        /// Named distinctly from <c>BeginScope</c>: a <c>(string, object?)</c> overload in this namespace would win
+        /// overload resolution over the logging abstractions' <c>BeginScope(string messageFormat, params object?[] args)</c>
+        /// and turn every one-argument message-template scope into a property named after the template.
+        /// </remarks>
         /// <param name="property">The property name to attach to the scope.</param>
         /// <param name="value">The property value. May be <see langword="null" />.</param>
         /// <returns>
         /// An <see cref="IDisposable" /> scope handle, or <see langword="null" /> if the logger does not
         /// support scopes. Dispose the handle to pop the scope.
         /// </returns>
-        public IDisposable? BeginScope(string property, object? value)
+        public IDisposable? BeginPropertyScope(string property, object? value)
         {
             return logger.BeginScope(b => b.Property(property, value));
         }

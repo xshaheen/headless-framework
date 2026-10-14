@@ -745,6 +745,88 @@ public sealed class InMemoryCacheTests : TestBase
         result.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task should_replace_a_byte_array_when_its_content_equals_expected()
+    {
+        // Equality on byte arrays is content equality: a stored payload is a different array instance on every
+        // read, so reference equality would refuse every compare-and-swap of binary records.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync(key, "first"u8.ToArray(), TimeSpan.FromMinutes(5), AbortToken);
+
+        // when: a same-content, different-instance array replaces the stored one
+        var result = await cache.TryReplaceIfEqualAsync(
+            key,
+            "first"u8.ToArray(),
+            "second"u8.ToArray(),
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
+
+        // then
+        result.Should().BeTrue();
+        var cached = await cache.GetAsync<byte[]>(key, AbortToken);
+        cached.Value.Should().Equal("second"u8.ToArray());
+    }
+
+    [Fact]
+    public async Task should_not_replace_a_byte_array_when_its_content_differs_from_expected()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync(key, "first"u8.ToArray(), TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var result = await cache.TryReplaceIfEqualAsync(
+            key,
+            "other"u8.ToArray(),
+            "second"u8.ToArray(),
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
+
+        // then
+        result.Should().BeFalse();
+        var cached = await cache.GetAsync<byte[]>(key, AbortToken);
+        cached.Value.Should().Equal("first"u8.ToArray());
+    }
+
+    [Fact]
+    public async Task should_remove_a_byte_array_when_its_content_equals_expected()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync(key, "payload"u8.ToArray(), TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var result = await cache.RemoveIfEqualAsync(key, "payload"u8.ToArray(), AbortToken);
+
+        // then
+        result.Should().BeTrue();
+        var cached = await cache.GetAsync<byte[]>(key, AbortToken);
+        cached.HasValue.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_not_remove_a_byte_array_when_its_content_differs_from_expected()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync(key, "payload"u8.ToArray(), TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var result = await cache.RemoveIfEqualAsync(key, "different"u8.ToArray(), AbortToken);
+
+        // then
+        result.Should().BeFalse();
+        var cached = await cache.GetAsync<byte[]>(key, AbortToken);
+        cached.Value.Should().Equal("payload"u8.ToArray());
+    }
+
     #endregion
 
     #region IncrementAsync (double)

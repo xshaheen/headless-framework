@@ -13,7 +13,7 @@ namespace Headless.Messaging;
 /// An additional outbox holds only published rows and their relay for one database, so a unit of work begun on that
 /// database can publish atomically through <c>unit.Outbox</c>. The inbox, retry state, and the dashboard stay on the
 /// primary storage, which is why this builder accepts nothing but a storage: the storage packages add
-/// <c>UseEntityFramework&lt;TContext&gt;()</c>, <c>UsePostgreSql(…)</c>, and <c>UseSqlServer(…)</c> members to it.
+/// <c>UsePostgreSqlEntityFramework&lt;TContext&gt;()</c>, <c>UseSqlServerEntityFramework&lt;TContext&gt;()</c>, <c>UsePostgreSql(…)</c>, and <c>UseSqlServer(…)</c> members to it.
 /// </remarks>
 [PublicAPI]
 public sealed class OutboxStorageBuilder

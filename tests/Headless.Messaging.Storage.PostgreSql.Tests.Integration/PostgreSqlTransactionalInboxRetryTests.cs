@@ -17,7 +17,7 @@ public sealed class PostgreSqlTransactionalInboxRetryTests(PostgreSqlTestFixture
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
         setup.ConfigureStorage(storage => storage.Schema = _Schema);
-        setup.UseEntityFramework<InboxRetryDbContext>();
+        setup.UsePostgreSqlEntityFramework<InboxRetryDbContext>();
     }
 
     protected override string CreateEffectsTableSql =>

@@ -29,15 +29,15 @@ public static class SetupMessagingSqlServerEntityFramework
     extension(MessagingSetupBuilder setup)
     {
         /// <summary>Uses the SQL Server connection configured for <typeparamref name="TContext"/>.</summary>
-        public MessagingSetupBuilder UseEntityFramework<TContext>()
+        public MessagingSetupBuilder UseSqlServerEntityFramework<TContext>()
             where TContext : DbContext
         {
-            return setup.UseEntityFramework<TContext>(_ => { });
+            return setup.UseSqlServerEntityFramework<TContext>(_ => { });
         }
 
         /// <summary>Uses the SQL Server connection configured for <typeparamref name="TContext"/>.</summary>
         /// <param name="configure">Configures the EF-backed messaging storage path.</param>
-        public MessagingSetupBuilder UseEntityFramework<TContext>(
+        public MessagingSetupBuilder UseSqlServerEntityFramework<TContext>(
             Action<SqlServerEntityFrameworkMessagingOptions> configure
         )
             where TContext : DbContext
@@ -64,12 +64,12 @@ public static class SetupMessagingSqlServerEntityFramework
         /// <typeparam name="TContext">The context whose database holds the outbox.</typeparam>
         /// <returns>The messaging setup builder, for chaining.</returns>
         /// <exception cref="InvalidOperationException">This outbox already has a storage.</exception>
-        public MessagingSetupBuilder UseEntityFramework<TContext>()
+        public MessagingSetupBuilder UseSqlServerEntityFramework<TContext>()
             where TContext : DbContext
         {
             var setup = SetupMessagingSqlServer.AddSqlServerOutboxCore(
                 outbox,
-                $"AddOutbox().UseEntityFramework<{typeof(TContext).Name}>()",
+                $"AddOutbox().UseSqlServerEntityFramework<{typeof(TContext).Name}>()",
                 options =>
                     options.Configure<IServiceScopeFactory>(
                         (storageOptions, scopeFactory) =>
@@ -313,7 +313,7 @@ public static class SetupMessagingSqlServerEntityFramework
             options.ConnectionString = dbContext.Database.GetDbConnection() is SqlConnection connection
                 ? connection.GetReusableConnectionString(dbContext.Database.GetConnectionString())
                 : throw new InvalidOperationException(
-                    $"Messaging UseEntityFramework<{typeof(TContext).Name}> requires a SQL Server DbContext."
+                    $"Messaging UseSqlServerEntityFramework<{typeof(TContext).Name}> requires a SQL Server DbContext."
                 );
 
             if (string.IsNullOrWhiteSpace(options.ConnectionString))

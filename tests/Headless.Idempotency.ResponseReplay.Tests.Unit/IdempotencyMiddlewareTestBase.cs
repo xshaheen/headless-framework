@@ -215,15 +215,10 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
 
     internal static IdempotentAdmission Replay(string key, IdempotencyResponseSnapshot snapshot)
     {
-        var payload = JsonSerializer.SerializeToUtf8Bytes(
-            snapshot,
-            IdempotencyJsonContext.Default.IdempotencyResponseSnapshot
-        );
-
         return IdempotentAdmission.Replay(
             new IdempotencyKey(TestTenant, key),
             IdempotencyFingerprint.Compute("any"),
-            new IdempotentResult(payload, IdempotencyResponseSnapshot.Contract)
+            new IdempotentResult(snapshot.Encode(), IdempotencyResponseSnapshot.Contract)
         );
     }
 

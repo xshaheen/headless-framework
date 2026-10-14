@@ -17,11 +17,15 @@ internal sealed class ReplySender(IReplyTransport transport, ILogger<ReplySender
     /// <param name="reply">The reply message.</param>
     /// <param name="cancellationToken">Token to cancel the send.</param>
     /// <returns>
-    /// <see langword="true"/> when the transport accepted the reply; <see langword="false"/> when the address was
-    /// refused or the send failed. Either failure is logged, and the reply is never retried: the caller times out.
+    /// Whether the transport accepted the reply, the address was refused, or the send failed. Either failure is logged,
+    /// and this reply is never retried.
     /// </returns>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is canceled.</exception>
-    public async ValueTask<bool> SendAsync(string? address, TransportMessage reply, CancellationToken cancellationToken)
+    public async ValueTask<ReplySendOutcome> SendAsync(
+        string? address,
+        TransportMessage reply,
+        CancellationToken cancellationToken
+    )
     {
         reply.Headers.TryGetValue(Headers.InReplyTo, out var requestId);
 
@@ -33,13 +37,13 @@ internal sealed class ReplySender(IReplyTransport transport, ILogger<ReplySender
                 LogSanitizer.Sanitize(address, ReplyAddresses.MaxLength)
             );
             MessagingMetrics.RecordDroppedReply(MessagingMetrics.DropReasonInvalidReplyAddress);
-            return false;
+            return ReplySendOutcome.AddressRefused;
         }
 
         try
         {
             await transport.SendAsync(address, reply, cancellationToken).ConfigureAwait(false);
-            return true;
+            return ReplySendOutcome.Sent;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -48,7 +52,20 @@ internal sealed class ReplySender(IReplyTransport transport, ILogger<ReplySender
         catch (Exception e)
         {
             logger.ReplySendFailed(e, ReplyProtocol.SanitizeRequestId(requestId));
-            return false;
+            return ReplySendOutcome.Failed;
         }
     }
+}
+
+/// <summary>What became of one reply <see cref="ReplySender"/> was asked to send.</summary>
+internal enum ReplySendOutcome
+{
+    /// <summary>The transport accepted the reply.</summary>
+    Sent,
+
+    /// <summary>The reply address is not one a reply may go to, so nothing reached the transport.</summary>
+    AddressRefused,
+
+    /// <summary>The transport refused or failed the send, for example because the reply was too large.</summary>
+    Failed,
 }
