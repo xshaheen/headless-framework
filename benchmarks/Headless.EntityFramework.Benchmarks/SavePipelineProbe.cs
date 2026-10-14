@@ -38,7 +38,8 @@ internal static class SavePipelineProbe
             first.Amount++;
             await db.SaveChangesAsync().ConfigureAwait(false);
             Console.WriteLine(
-                FormattableString.Invariant(
+                string.Create(
+                    CultureInfo.InvariantCulture,
                     $"1000 unchanged + 1 modified: DetectChanges={host.Counter.DetectChanges} SaveChanges={host.Counter.SaveChanges} Commands={host.Counter.Commands}"
                 )
             );
@@ -65,7 +66,8 @@ internal static class SavePipelineProbe
             host.Counter.Reset();
             await db.SaveChangesAsync().ConfigureAwait(false);
             Console.WriteLine(
-                FormattableString.Invariant(
+                string.Create(
+                    CultureInfo.InvariantCulture,
                     $"{rows} audited inserts: DetectChanges={host.Counter.DetectChanges} SaveChanges={host.Counter.SaveChanges} Commands={host.Counter.Commands}"
                 )
             );
