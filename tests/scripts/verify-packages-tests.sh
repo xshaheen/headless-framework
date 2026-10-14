@@ -33,6 +33,7 @@ create_package() {
     local -r sbom_package_id="$5"
     local -r sbom_package_version="$6"
     local -r include_sbom="${7:-true}"
+    local -r dependency="${8:-}"
 
     python3 - \
         "$destination" \
@@ -42,18 +43,29 @@ create_package() {
         "$sbom_package_id" \
         "$sbom_package_version" \
         "$EXPECTED_URL" \
-        "$include_sbom" <<'PY'
+        "$include_sbom" \
+        "$dependency" <<'PY'
 import json
 import sys
 import zipfile
 
-destination, package_id, version, commit, sbom_id, sbom_version, repository_url, include_sbom = sys.argv[1:]
+destination, package_id, version, commit, sbom_id, sbom_version, repository_url, include_sbom, dependency = sys.argv[1:]
+dependencies = ""
+if dependency:
+    dependency_id, dependency_version = dependency.split("@", 1)
+    dependencies = f'''
+    <dependencies>
+      <group targetFramework="net10.0">
+        <dependency id="{dependency_id}" version="{dependency_version}" exclude="Build,Analyzers" />
+        <dependency id="Polly" version="8.5.0" exclude="Build,Analyzers" />
+      </group>
+    </dependencies>'''
 nuspec = f'''<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
   <metadata>
     <id>{package_id}</id>
     <version>{version}</version>
-    <repository type="git" url="{repository_url}" commit="{commit}" />
+    <repository type="git" url="{repository_url}" commit="{commit}" />{dependencies}
   </metadata>
 </package>
 '''
@@ -113,7 +125,8 @@ mkdir -p "$VALID_DIR"
 create_package "$VALID_DIR/Headless.One.$EXPECTED_VERSION.nupkg" \
     'Headless.One' "$EXPECTED_VERSION" "$EXPECTED_COMMIT" 'Headless.One' "$EXPECTED_VERSION"
 create_package "$VALID_DIR/Headless.Two.$EXPECTED_VERSION.nupkg" \
-    'Headless.Two' "$EXPECTED_VERSION" "$EXPECTED_COMMIT" 'Headless.Two' "$EXPECTED_VERSION"
+    'Headless.Two' "$EXPECTED_VERSION" "$EXPECTED_COMMIT" 'Headless.Two' "$EXPECTED_VERSION" true \
+    "Headless.One@[$EXPECTED_VERSION]"
 run_verifier "$VALID_DIR"
 
 MISSING_DIR="$TEMP_DIR/missing"
@@ -178,5 +191,14 @@ create_package "$WRONG_SBOM_DIR/Headless.One.$EXPECTED_VERSION.nupkg" \
     'Headless.One' "$EXPECTED_VERSION" "$EXPECTED_COMMIT" 'Headless.One' '9.9.9'
 cp "$VALID_DIR/Headless.Two.$EXPECTED_VERSION.nupkg" "$WRONG_SBOM_DIR/"
 expect_failure wrong-sbom run_verifier "$WRONG_SBOM_DIR"
+
+OPEN_RANGE_DIR="$TEMP_DIR/open-range"
+mkdir -p "$OPEN_RANGE_DIR"
+cp "$VALID_DIR/Headless.One.$EXPECTED_VERSION.nupkg" "$OPEN_RANGE_DIR/"
+create_package "$OPEN_RANGE_DIR/Headless.Two.$EXPECTED_VERSION.nupkg" \
+    'Headless.Two' "$EXPECTED_VERSION" "$EXPECTED_COMMIT" 'Headless.Two' "$EXPECTED_VERSION" true \
+    "Headless.One@$EXPECTED_VERSION"
+expect_failure open-range run_verifier "$OPEN_RANGE_DIR"
+grep -q 'must depend on Headless.One at exactly' "$TEMP_DIR/open-range.stderr"
 
 printf 'All package verifier fixtures passed.\n'

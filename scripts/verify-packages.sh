@@ -212,6 +212,12 @@ print(child_text("id"))
 print(child_text("version"))
 print("" if repository is None else repository.attrib.get("url", "").strip())
 print("" if repository is None else repository.attrib.get("commit", "").strip())
+for dependency in metadata.iter():
+    if dependency.tag.rsplit("}", 1)[-1] != "dependency":
+        continue
+    dependency_id = dependency.attrib.get("id", "").strip()
+    if dependency_id.startswith("Headless."):
+        print(f"{dependency_id}\t{dependency.attrib.get('version', '').strip()}")
 PY
 }
 
@@ -255,6 +261,8 @@ verify_package_archives() {
     local package_version
     local repository_url
     local repository_commit
+    local dependency_id
+    local dependency_version
     local -r actual_ids="$TEMP_DIR/actual-package-ids.txt"
     local -r actual_ids_sorted="$TEMP_DIR/actual-package-ids.sorted.txt"
     local -r actual_identities="$TEMP_DIR/actual-package-identities.txt"
@@ -308,6 +316,13 @@ verify_package_archives() {
         [[ "$package_version" == "$EXPECTED_VERSION" ]] || die "Unexpected version for $package_id: $package_version"
         [[ "$repository_url" == "$EXPECTED_REPOSITORY_URL" ]] || die "Unexpected repository URL for $package_id"
         [[ "$repository_commit" == "$EXPECTED_REPOSITORY_COMMIT" ]] || die "Unexpected repository commit for $package_id"
+
+        # Siblings ship together and providers bind their family root's internals, so a Headless dependency must be
+        # the exact version this package was built with; an open range lets a consumer mix versions that fail at run time.
+        while IFS=$'\t' read -r dependency_id dependency_version; do
+            [[ "$dependency_version" == "[$EXPECTED_VERSION]" ]] \
+                || die "$package_id must depend on $dependency_id at exactly [$EXPECTED_VERSION], not $dependency_version"
+        done < <(sed -n '5,$p' "$metadata_file")
 
         verify_sbom "$sbom_file" "$package_id" "$package_version"
 
