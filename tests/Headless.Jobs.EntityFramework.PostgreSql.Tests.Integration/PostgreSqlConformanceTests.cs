@@ -238,6 +238,10 @@ public abstract class PostgreSqlClaimConformanceTestsBase<TFixture>(TFixture fix
         base.direct_claim_of_a_full_candidate_page_claims_every_job_once();
 
     [Fact]
+    public override Task peek_returns_at_most_one_candidate_page_in_store_order() =>
+        base.peek_returns_at_most_one_candidate_page_in_store_order();
+
+    [Fact]
     public override Task direct_claim_does_not_match_a_stamp_from_another_candidate() =>
         base.direct_claim_does_not_match_a_stamp_from_another_candidate();
 

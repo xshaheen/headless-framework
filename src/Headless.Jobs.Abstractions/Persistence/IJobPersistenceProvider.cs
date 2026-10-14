@@ -183,9 +183,11 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </summary>
     /// <param name="cancellationToken">Token that aborts the query.</param>
     /// <returns>
-    /// Every acquirable job whose execution time falls inside the earliest pending second, ordered by execution
-    /// time, with the child hierarchy attached, together with the store instant the read observed;
-    /// <see cref="EarliestTimeJobs.Jobs"/> is empty when nothing is due. No ownership or status is mutated, so
+    /// The acquirable jobs whose execution time falls inside the earliest pending second, ordered by execution time,
+    /// with the child hierarchy attached, together with the store instant the read observed;
+    /// <see cref="EarliestTimeJobs.Jobs"/> is empty when nothing is due. A provider may return only a bounded page of
+    /// that second: the Entity Framework provider returns at most one claim candidate page, ordered by execution time
+    /// and then by id. Jobs past the page stay due and a later peek returns them. No ownership or status is mutated, so
     /// two nodes can observe the same batch — the claim step arbitrates.
     /// </returns>
     /// <remarks>
