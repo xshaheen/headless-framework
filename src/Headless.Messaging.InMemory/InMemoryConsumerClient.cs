@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Headless.Checks;
 using Headless.Messaging.Transport;
 
@@ -20,7 +20,11 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     private readonly string _groupId;
     private readonly MessageLane _lane;
     private readonly byte _groupConcurrent;
-    private readonly BlockingCollection<TransportMessage> _messageQueue = new(_MaxPendingMessages);
+
+    // Bounded with the default Wait mode so TryWrite reports a full queue; DropWrite would discard silently.
+    private readonly Channel<TransportMessage> _messageQueue = Channel.CreateBounded<TransportMessage>(
+        new BoundedChannelOptions(_MaxPendingMessages) { FullMode = BoundedChannelFullMode.Wait }
+    );
     private readonly SemaphoreSlim _semaphore;
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -99,14 +103,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
             return;
         }
 
-        try
-        {
-            while (_messageQueue.TryTake(out _)) { }
-        }
-        catch (ObjectDisposedException) when (Volatile.Read(ref _disposed) != 0)
-        {
-            // Disposed concurrently — nothing left to drain.
-        }
+        while (_messageQueue.Reader.TryRead(out _)) { }
     }
 
     /// <summary>
@@ -116,7 +113,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <param name="message">The transport message to add</param>
     public void AddSubscribeMessage(TransportMessage message)
     {
-        if (!_messageQueue.TryAdd(message))
+        if (!_messageQueue.Writer.TryWrite(message))
         {
             OnLogCallback?.Invoke(
                 new LogMessageEventArgs
@@ -132,32 +129,25 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <summary>
     /// Listens for messages with the specified timeout.
     /// </summary>
-    /// <param name="timeout">The timeout for listening</param>
+    /// <param name="timeout">Unused; the loop awaits the next message and wakes on arrival or cancellation, so it never polls.</param>
     /// <param name="cancellationToken">The cancellation token</param>
     /// <returns>A task representing the listening operation</returns>
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        var waitMilliseconds =
-            timeout == Timeout.InfiniteTimeSpan ? -1
-            : timeout <= TimeSpan.Zero ? 0
-            : (int)Math.Min(timeout.TotalMilliseconds, int.MaxValue);
-
-        while (!cancellationToken.IsCancellationRequested)
+        while (!cancellationToken.IsCancellationRequested && Volatile.Read(ref _disposed) == 0)
         {
             TransportMessage message;
             try
             {
-                if (!_messageQueue.TryTake(out message, waitMilliseconds, cancellationToken))
-                {
-                    continue;
-                }
+                message = await _messageQueue.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 break;
             }
-            catch (ObjectDisposedException) when (Volatile.Read(ref _disposed) != 0)
+            catch (ChannelClosedException)
             {
+                // Disposal completes the channel: nothing more will arrive.
                 break;
             }
 
@@ -301,7 +291,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
         _pauseGate.Release();
         _ready.TrySetCanceled();
         _semaphore.Dispose();
-        _messageQueue.Dispose();
+        _messageQueue.Writer.TryComplete();
         _queue.Unsubscribe(_lane, _groupId, this);
         return ValueTask.CompletedTask;
     }
