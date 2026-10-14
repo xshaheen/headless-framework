@@ -57,7 +57,7 @@ public sealed class CashInOrdersPageRequest
 
     public CashInOrdersPageRequest WithIsLive(bool isLive)
     {
-        Query["transaction_id"] = isLive ? "true" : "false";
+        Query["is_live"] = isLive ? "true" : "false";
         return this;
     }
 

@@ -50,7 +50,7 @@ internal static class AdditionalOutboxDoubles
         initializer.GetPublishedTableName().Returns($"{database}.published");
 
         var outbox = new MessagingOutbox(
-            name ?? $"AddOutbox().UseEntityFramework<{database}>()",
+            name ?? $"AddOutbox().UsePostgreSqlEntityFramework<{database}>()",
             CreateRelationalStorage(database, dataSource),
             initializer
         );

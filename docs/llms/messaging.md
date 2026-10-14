@@ -56,7 +56,7 @@ builder.Services.AddHeadlessMessaging(setup =>
         options.Password = builder.Configuration["RabbitMq:Password"]!;
     });
     // EF-backed storage declares the Transactional inbox guarantee that durable consumers require by default.
-    setup.UseEntityFramework<AppDbContext>();
+    setup.UsePostgreSqlEntityFramework<AppDbContext>();
 
     setup.Tune(OrderProjection.Identity, consumer => consumer
         .Concurrency(4)
@@ -71,7 +71,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 ## Agent Rules
 
 - **App install pattern**: install `Messaging` + exactly one transport + exactly one storage. Bootstrap fails when zero or multiple storage providers are configured. Core brings shared/bus/queue abstractions transitively for applications.
-- **One outbox per database, not one storage per database**: when units of work run on several databases, keep one primary storage and add `setup.AddOutbox().UseEntityFramework<TContext>()` (or `UsePostgreSql(...)` / `UseSqlServer(...)`) for each other database. See [Additional outboxes](#additional-outboxes).
+- **One outbox per database, not one storage per database**: when units of work run on several databases, keep one primary storage and add `setup.AddOutbox().UsePostgreSqlEntityFramework<TContext>()` or `UseSqlServerEntityFramework<TContext>()` (or `UsePostgreSql(...)` / `UseSqlServer(...)`) for each other database. See [Additional outboxes](#additional-outboxes).
 - **Library contract pattern**: install `Messaging.Abstractions`, `Messaging.Bus.Abstractions`, or `Messaging.Queue.Abstractions` directly when a library exposes envelopes or publisher interfaces, declares message contracts, or contributes consumers without bootstrapping Core. `ConfigureMessaging`, `Message<T>`, `AddModule<T>`, and `IMessagingModule` all live in `Messaging.Abstractions`; only `Tune` needs `Messaging`. A library that declares consumers still needs the Messaging source generator at build time (the `Messaging` package carries it; in this repository it is a `ProjectReference` with `OutputItemType="Analyzer"`), and the generated module ships compiled into the library. A library never calls `AddHeadlessMessaging`.
 - **Use `InMemory` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
 - **OpenTelemetry is native to `Messaging`** (no satellite package). Subscribe traces/metrics with `AddMessagingInstrumentation()` on the `TracerProviderBuilder`/`MeterProviderBuilder`, and configure enrichers/suppression via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`.
@@ -109,7 +109,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Consumer lifecycle semantics**: consumers need no DI registration. Each delivery builds the consumer class from the delivery's scope through generated typed dispatch (no reflection, no compiled expressions): `GetService<T>()` first, so an application's own registration of the class, or a decorator around it, is used with its lifetime, then `ActivatorUtilities.CreateInstance<T>` when the class is not registered. The dispatcher disposes only an instance it constructed; a container-resolved instance belongs to its scope or container. `IConsumerLifecycle` runs per delivery on that instance. Do not treat it as application startup or shutdown. A registered singleton consumer is shared by concurrent deliveries, so it must be thread-safe.
 - **Consumer startup is host-cancellable**: consumer factory creation, metadata provisioning, and subscription receive the host-stopping token. Provider implementations preserve `OperationCanceledException`; do not wrap shutdown cancellation as a broker failure.
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
-- **The EF adapter packages** (`Headless.Messaging.Storage.PostgreSql.EntityFramework` / `.SqlServer.EntityFramework`) let an enlisted publish join a unit of work open on `TContext`: `setup.UseEntityFramework<TContext>()` registers `Headless.UnitOfWork` (`AddEntityFrameworkUnitOfWork()`), but no interceptor opens that unit of work for the caller. Open it with `factory.RunAsync(db, ...)` (`Headless.UnitOfWork.EntityFramework`) or a manual `BeginAsync`/`CompleteAsync` pair, then publish through that unit's `Outbox`; an `IBus.PublishAsync` inside the same block still stores a standalone durable row that survives a rollback. `setup.UseEntityFramework<TContext>(o => o.EnableTransactionalInbox = false)` (default `true`) is a separate receive-side switch. It disables the EF inbox-transaction runner and the `Transactional` inbox-capability promotion, so the storage declares `DurableDedupeOnly`, consumers run outside any transaction with a null `ConsumeContext.UnitOfWork`, and durable consumers then need `RequiredInboxCapability = DurableDedupeOnly` to pass startup validation. It does not change the publish side: `unit.Outbox` still enlists in a unit you open. The raw storage packages expose only `UsePostgreSql` / `UseSqlServer` and have no EF or `Headless.UnitOfWork` dependency.
+- **The EF adapter packages** (`Headless.Messaging.Storage.PostgreSql.EntityFramework` / `.SqlServer.EntityFramework`) let an enlisted publish join a unit of work open on `TContext`: `setup.UsePostgreSqlEntityFramework<TContext>()` or `setup.UseSqlServerEntityFramework<TContext>()` registers `Headless.UnitOfWork` (`AddEntityFrameworkUnitOfWork()`), but no interceptor opens that unit of work for the caller. Open it with `factory.RunAsync(db, ...)` (`Headless.UnitOfWork.EntityFramework`) or a manual `BeginAsync`/`CompleteAsync` pair, then publish through that unit's `Outbox`; an `IBus.PublishAsync` inside the same block still stores a standalone durable row that survives a rollback. `setup.UsePostgreSqlEntityFramework<TContext>(o => o.EnableTransactionalInbox = false)` (or the SQL Server twin) (default `true`) is a separate receive-side switch. It disables the EF inbox-transaction runner and the `Transactional` inbox-capability promotion, so the storage declares `DurableDedupeOnly`, consumers run outside any transaction with a null `ConsumeContext.UnitOfWork`, and durable consumers then need `RequiredInboxCapability = DurableDedupeOnly` to pass startup validation. It does not change the publish side: `unit.Outbox` still enlists in a unit you open. The raw storage packages expose only `UsePostgreSql` / `UseSqlServer` and have no EF or `Headless.UnitOfWork` dependency.
 - **Dashboard.K8s requires RBAC** permissions to read Services in the configured Kubernetes namespace.
 - **Callbacks publish a response that nobody awaits**: Set `CallbackName` on `PublishOptions` (Bus) **or** `QueueOptions` (Queue). The response always publishes through the durable Bus path, including for a Queue-originated request; Queue remains origin metadata and exactly one Bus response is produced for a single Queue delivery. `SetResponse<TResponse>` preserves the declared response contract for typed middleware and the concrete payload value/type. A callback is fire-and-forget and at-least-once, so response consumers must be idempotent. A Bus request still fans out and each subscriber may emit its own response. When the caller must wait for the answer, use [Request/reply](#requestreply) instead; [Request/reply versus callbacks](#requestreply-versus-callbacks) compares the two.
 - **Request/reply awaits one answer on the Queue lane**: the calling host calls `setup.AddRequestReply()` and sends with `IRequestClient.RequestAsync<TRequest, TResponse>`, or `GetReplyAsync<TRequest, TResponse>` to also read the headers the responder set; the responder is a `[QueueConsumer]` class that implements `IRespond<TRequest, TResponse>`. The caller's continuation is at most once and a timeout is ambiguous, so make responders idempotent. Return expected business outcomes such as "not found" in `TResponse`; a thrown exception becomes a `handler_failed` fault after inline retries. Only InMemory, RabbitMQ, NATS, and Redis support it; a host on any other transport that sends requests or declares a responder fails startup. See [Request/reply](#requestreply).
@@ -126,7 +126,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 
 ## Core Concepts
 
-- **Transactional outbox (atomic publish) — requires an explicit unit of work and an enlisted publish**: install `Headless.Messaging.Storage.PostgreSql.EntityFramework` or `Headless.Messaging.Storage.SqlServer.EntityFramework`, then select `setup.UseEntityFramework<TContext>()`. Open the unit of work on that context with `factory.RunAsync(db, ...)` or a manual `BeginAsync`/`CompleteAsync` pair, then call `unit.Outbox.PublishAsync(...)`: that writes the outbox row in the SAME DB transaction and discards it on rollback. Nothing else does — `IBus.PublishAsync` inside the same block writes a standalone row that survives the rollback. The adapter auto-registers `Headless.UnitOfWork` (`AddEntityFrameworkUnitOfWork()`, idempotent); unlike the deleted commit-coordination interceptor, nothing opens that unit of work automatically — the developer opens it on the line they choose. A `HeadlessDbContext`'s own save pipeline separately enlists a unit of work around every `SaveChangesAsync()` call for its domain/integration-event dispatch; a plain `DbContext` gets no such automatic wrapping. The raw ADO.NET packages remain EF-free and expose only connection/data-source setup. This is an atomicity guarantee for the write, not exactly-once delivery.
+- **Transactional outbox (atomic publish) — requires an explicit unit of work and an enlisted publish**: install `Headless.Messaging.Storage.PostgreSql.EntityFramework` or `Headless.Messaging.Storage.SqlServer.EntityFramework`, then select `setup.UsePostgreSqlEntityFramework<TContext>()` or `setup.UseSqlServerEntityFramework<TContext>()`. Open the unit of work on that context with `factory.RunAsync(db, ...)` or a manual `BeginAsync`/`CompleteAsync` pair, then call `unit.Outbox.PublishAsync(...)`: that writes the outbox row in the SAME DB transaction and discards it on rollback. Nothing else does — `IBus.PublishAsync` inside the same block writes a standalone row that survives the rollback. The adapter auto-registers `Headless.UnitOfWork` (`AddEntityFrameworkUnitOfWork()`, idempotent); unlike the deleted commit-coordination interceptor, nothing opens that unit of work automatically — the developer opens it on the line they choose. A `HeadlessDbContext`'s own save pipeline separately enlists a unit of work around every `SaveChangesAsync()` call for its domain/integration-event dispatch; a plain `DbContext` gets no such automatic wrapping. The raw ADO.NET packages remain EF-free and expose only connection/data-source setup. This is an atomicity guarantee for the write, not exactly-once delivery.
 - **Delivery semantics — at-least-once, consumer idempotency required**: the framework never promises exactly-once. The commit-edge drain and the relay sweep can both deliver the same message in a narrow window (the `LockedUntil` lease and the Succeeded/Failed terminal-row guard minimize but do not eliminate duplicates), and a crash between broker accept and the success-mark write redelivers. Consumers must be idempotent — dedupe by business key or message id.
 - **Transactional inbox scope**: the transactional tier atomically commits the current fenced inbox outcome, compatible enlisted application state, and the messages the handler publishes through `context.UnitOfWork.Outbox`. Each Messaging attempt owns one DI scope shared by the EF runner, consume middleware, and handler, with the configured scoped `TContext` alive through commit or rollback. The runner saves tracked changes after the handler returns; explicit handler saves roll back if inbox completion rejects the attempt fence. A subsequent Messaging attempt gets a fresh scope. This does not make handler entry, `Direct`, or external/non-enlisted effects exactly once.
 - **Publishing from a consumer**: inside a consumer, publish through the attempt's unit, `context.GetRequiredUnitOfWork().Outbox.PublishAsync(...)` or `.EnqueueAsync(...)`, so the outgoing row commits atomically with the inbox row and rolls back with a failed attempt. `IBus` and `IQueue` never join that unit: they publish immediately, outside the inbox transaction (a `Durable` publish writes its own standalone row, a `Direct` one goes straight to the transport). An `IBus` publish from a handler that then fails is not rolled back, and the retried attempt publishes it again, so downstream consumers see a duplicate. `GetRequiredUnitOfWork()` returns a non-null `IUnitOfWork` on every attempt of a durable consumer under the `Transactional` inbox guarantee (the default `MinimumInboxGuarantee`) and throws `InvalidOperationException` otherwise, naming the setting that removed the unit, so a consumer that depends on atomic publishing fails on its first message instead of silently publishing outside the transaction. On a weaker tier, and for an every-instance consumer, `ConsumeContext.UnitOfWork` is null; a handler that needs an atomic publish there opens its own unit of work.
@@ -404,7 +404,7 @@ The default schema is `headless`, which every Headless feature shares; see [sql.
   Pass the section itself, not the configuration root — its keys map to the option's properties. Provider
   `Use…(IConfiguration)` overloads bind only their own options and never the schema. Both `ConfigureStorage`
   overloads register in call order, so the last one applied wins.
-- **EF-context storage paths** read the same setting: `setup.UseEntityFramework<TContext>()` takes no
+- **EF-context storage paths** read the same setting: `setup.UsePostgreSqlEntityFramework<TContext>()` or `setup.UseSqlServerEntityFramework<TContext>()` takes no
   schema of its own, so pair it with `ConfigureStorage` when the tables do not live in `headless`.
 
 Table names are not configurable; each provider creates its own fixed set inside the configured schema, prefixed with the feature so they coexist with other features in one schema:
@@ -427,14 +427,14 @@ module, register an additional outbox for each of those databases so a unit on i
 ```csharp
 services.AddHeadlessMessaging(setup =>
 {
-    setup.UseEntityFramework<OrdersDb>();              // primary: outbox, inbox, retry state, dashboard
-    setup.AddOutbox().UseEntityFramework<BillingDb>(); // additional: outbox rows and their relay only
+    setup.UsePostgreSqlEntityFramework<OrdersDb>(); // primary: outbox, inbox, retry state, dashboard
+    setup.AddOutbox().UsePostgreSqlEntityFramework<BillingDb>(); // additional: outbox rows and their relay only
     setup.AddOutbox().UsePostgreSql(builder.Configuration.GetConnectionString("Shipping")!);
 });
 ```
 
 - **Registration.** `AddOutbox()` returns an `OutboxStorageBuilder` that accepts only a storage:
-  `UseEntityFramework<TContext>()` from the EF storage packages, and `UsePostgreSql(...)` / `UseSqlServer(...)`
+  `UsePostgreSqlEntityFramework<TContext>()` and `UseSqlServerEntityFramework<TContext>()` from the EF storage packages, and `UsePostgreSql(...)` / `UseSqlServer(...)`
   with the same connection-string, `IConfiguration`, and delegate overloads as the primary storage. Each outbox
   keeps its own named provider options, validated on start. `AddOutbox()` without a storage, or a second storage
   on one `AddOutbox()`, throws during `AddHeadlessMessaging`.
@@ -979,7 +979,7 @@ builder.Services.AddHeadlessMessaging(setup =>
         options.UserName = builder.Configuration["RabbitMq:UserName"]!;
         options.Password = builder.Configuration["RabbitMq:Password"]!;
     });
-    setup.UseEntityFramework<AppDbContext>();
+    setup.UsePostgreSqlEntityFramework<AppDbContext>();
     setup.AddModule<Pricing.MessagingModule>();
 });
 
@@ -1001,7 +1001,7 @@ builder.Services.AddHeadlessMessaging(setup =>
         options.UserName = builder.Configuration["RabbitMq:UserName"]!;
         options.Password = builder.Configuration["RabbitMq:Password"]!;
     });
-    setup.UseEntityFramework<AppDbContext>();
+    setup.UsePostgreSqlEntityFramework<AppDbContext>();
 
     // Registers IRequestClient and opens this host's reply channel when messaging starts.
     setup.AddRequestReply(requests => requests.DefaultTimeout = TimeSpan.FromSeconds(10));
@@ -3088,7 +3088,7 @@ Registers PostgreSQL storage, the monitoring API, table-name resolution, and the
 
 ## Headless.Messaging.Storage.PostgreSql.EntityFramework
 
-Adds `setup.UseEntityFramework<TContext>()` for PostgreSQL, derives the connection from the registered context, and registers `Headless.UnitOfWork` (`AddUnitOfWork()`); there is no startup gate. Depends on the raw PostgreSQL storage package; install it only for EF-backed transactional outbox composition.
+Adds `setup.UsePostgreSqlEntityFramework<TContext>()` for PostgreSQL, derives the connection from the registered context, and registers `Headless.UnitOfWork` (`AddUnitOfWork()`); there is no startup gate. Depends on the raw PostgreSQL storage package; install it only for EF-backed transactional outbox composition.
 
 The storage connects the way the context connects. When the context holds an Npgsql data source (one passed to `UseNpgsql`, one registered in DI, or one EF builds for `ConfigureDataSource` or a plugin such as NetTopologySuite), the storage shares it, with its password provider and other customizations; the context's connection string would omit the password. Otherwise it uses the context's connection string. A context that is not on Npgsql fails at startup.
 
@@ -3147,7 +3147,7 @@ Registers SQL Server storage, the monitoring API, table-name resolution, and the
 
 ## Headless.Messaging.Storage.SqlServer.EntityFramework
 
-Adds `setup.UseEntityFramework<TContext>()` for SQL Server, derives the connection from the registered context, and registers `Headless.UnitOfWork` (`AddUnitOfWork()`); there is no startup gate. Depends on the raw SQL Server storage package; install it only for EF-backed transactional outbox composition.
+Adds `setup.UseSqlServerEntityFramework<TContext>()` for SQL Server, derives the connection from the registered context, and registers `Headless.UnitOfWork` (`AddUnitOfWork()`); there is no startup gate. Depends on the raw SQL Server storage package; install it only for EF-backed transactional outbox composition.
 
 The storage uses the context's connection string, checked against the context's connection by `GetReusableConnectionString` (see [sql.md](sql.md#headlesssqlsqlserver)). A connection that authenticates with credentials no connection string carries (an access token, an access-token callback, a `SqlCredential`, or a password SqlClient removed when an opened connection was handed to `UseSqlServer`) fails at startup with an error naming the cause; give such a host's storage its own connection string through the raw `UseSqlServer(...)`. A token an interceptor attaches while the connection opens is invisible to that check. A context that is not on SqlClient fails at startup.
 
