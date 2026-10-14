@@ -14,6 +14,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
+#pragma warning disable RCS1196 // False positive: on an array, the instance form binds to the in-place MemoryExtensions.Reverse(Span<T>), which returns void.
 namespace Tests;
 
 public abstract class JobsCronMaterializationConformanceTests(Action<DbContextOptionsBuilder> configureStore) : TestBase
