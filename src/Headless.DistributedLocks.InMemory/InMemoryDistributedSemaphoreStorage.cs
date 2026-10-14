@@ -17,16 +17,25 @@ namespace Headless.DistributedLocks.InMemory;
 /// </para>
 /// <para>
 /// Thread-safety is achieved with a per-resource <see langword="lock"/> that serialises holder-count
-/// checks, acquisitions, and TTL mutations. Fencing tokens are tracked in a separate
-/// <see cref="ConcurrentDictionary{TKey,TValue}"/> and incremented atomically on each successful
-/// acquisition.
+/// checks, acquisitions, TTL mutations, and the fencing-token increment.
+/// </para>
+/// <para>
+/// Expiry follows the <see cref="TimeProvider"/>'s monotonic timestamp, so a wall-clock step does not move
+/// it. A resource entry with no live holder is removed under its lock and flagged, and any caller that then
+/// locks the flagged entry re-fetches the current one, so idle resources do not accumulate. Fencing tokens
+/// come from one counter per storage instance rather than per resource, so a token issued after an entry is
+/// removed and recreated is still greater than every earlier one; tokens are therefore gappy per resource.
 /// </para>
 /// </remarks>
 /// <param name="timeProvider">The time source used to compute and evaluate TTL expiry timestamps.</param>
 internal sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvider) : IDistributedSemaphoreStorage
 {
     private readonly ConcurrentDictionary<string, ResourceState> _resources = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, long> _fencingTokens = new(StringComparer.Ordinal);
+
+    /// <summary>The number of per-resource entries currently held in memory, live or not yet pruned.</summary>
+    internal int EntryCount => _resources.Count;
+
+    private long _fencingToken;
 
     /// <summary>
     /// Atomically acquires a semaphore slot on <paramref name="resource"/> for the caller identified
@@ -60,23 +69,33 @@ internal sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvi
         Argument.IsGreaterThan(ttl, TimeSpan.Zero);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var state = _resources.GetOrAdd(resource, static _ => new ResourceState());
-
-        lock (state)
+        while (true)
         {
-            _PruneExpired(state);
+            var state = _resources.GetOrAdd(resource, static _ => new ResourceState());
 
-            if (state.Holders.Count >= maxCount || state.Holders.ContainsKey(leaseId))
+            lock (state)
             {
-                return ValueTask.FromResult(DistributedLockAcquireResult.Failed);
+                if (state.Removed)
+                {
+                    // Another caller dropped this idle entry between GetOrAdd and the lock; a grant here
+                    // would live in a state no one else can see.
+                    continue;
+                }
+
+                _PruneExpired(state);
+
+                if (state.Holders.Count >= maxCount || state.Holders.ContainsKey(leaseId))
+                {
+                    return ValueTask.FromResult(DistributedLockAcquireResult.Failed);
+                }
+
+                state.Holders[leaseId] = new HolderEntry(LeaseDeadline.StartNow(timeProvider, ttl));
+                var fencingToken = Interlocked.Increment(ref _fencingToken);
+
+                return ValueTask.FromResult(
+                    new DistributedLockAcquireResult(Acquired: true, new LockFencingToken(fencingToken))
+                );
             }
-
-            state.Holders[leaseId] = new HolderEntry(timeProvider.GetUtcNow().Add(ttl));
-            var fencingToken = _fencingTokens.AddOrUpdate(resource, static _ => 1, static (_, current) => current + 1);
-
-            return ValueTask.FromResult(
-                new DistributedLockAcquireResult(Acquired: true, new LockFencingToken(fencingToken))
-            );
         }
     }
 
@@ -110,29 +129,36 @@ internal sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvi
         Argument.IsGreaterThan(ttl, TimeSpan.Zero);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!_resources.TryGetValue(resource, out var state))
+        while (_resources.TryGetValue(resource, out var state))
         {
-            return ValueTask.FromResult(false);
+            lock (state)
+            {
+                if (state.Removed)
+                {
+                    continue;
+                }
+
+                _PruneExpired(state);
+
+                if (!state.Holders.TryGetValue(leaseId, out var existing))
+                {
+                    _RemoveIfIdle(resource, state);
+
+                    return ValueTask.FromResult(false);
+                }
+
+                var candidate = LeaseDeadline.StartNow(timeProvider, ttl);
+
+                if (candidate.IsLaterThan(existing.Deadline, timeProvider))
+                {
+                    state.Holders[leaseId] = new HolderEntry(candidate);
+                }
+
+                return ValueTask.FromResult(true);
+            }
         }
 
-        lock (state)
-        {
-            _PruneExpired(state);
-
-            if (!state.Holders.TryGetValue(leaseId, out var existing))
-            {
-                return ValueTask.FromResult(false);
-            }
-
-            var newExpiry = timeProvider.GetUtcNow().Add(ttl);
-
-            if (newExpiry > existing.Expires)
-            {
-                state.Holders[leaseId] = new HolderEntry(newExpiry);
-            }
-
-            return ValueTask.FromResult(true);
-        }
+        return ValueTask.FromResult(false);
     }
 
     /// <summary>
@@ -164,6 +190,7 @@ internal sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvi
         lock (state)
         {
             _PruneExpired(state);
+            _RemoveIfIdle(resource, state);
 
             return ValueTask.FromResult(state.Holders.ContainsKey(leaseId));
         }
@@ -190,17 +217,24 @@ internal sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvi
         Argument.IsNotNullOrEmpty(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!_resources.TryGetValue(resource, out var state))
+        while (_resources.TryGetValue(resource, out var state))
         {
-            return ValueTask.FromResult(false);
+            lock (state)
+            {
+                if (state.Removed)
+                {
+                    continue;
+                }
+
+                _PruneExpired(state);
+                var released = state.Holders.Remove(leaseId);
+                _RemoveIfIdle(resource, state);
+
+                return ValueTask.FromResult(released);
+            }
         }
 
-        lock (state)
-        {
-            _PruneExpired(state);
-
-            return ValueTask.FromResult(state.Holders.Remove(leaseId));
-        }
+        return ValueTask.FromResult(false);
     }
 
     /// <summary>
@@ -226,6 +260,7 @@ internal sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvi
         lock (state)
         {
             _PruneExpired(state);
+            _RemoveIfIdle(resource, state);
 
             return ValueTask.FromResult((long)state.Holders.Count);
         }
@@ -233,13 +268,11 @@ internal sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvi
 
     private void _PruneExpired(ResourceState state)
     {
-        var now = timeProvider.GetUtcNow();
-
         List<string>? expired = null;
 
         foreach (var (leaseId, entry) in state.Holders)
         {
-            if (entry.Expires <= now)
+            if (entry.Deadline.IsExpired(timeProvider))
             {
                 expired ??= [];
                 expired.Add(leaseId);
@@ -255,10 +288,26 @@ internal sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvi
         }
     }
 
+    /// <summary>Drops an entry that holds no slot. The caller must hold the lock on <paramref name="state"/>.</summary>
+    private void _RemoveIfIdle(string resource, ResourceState state)
+    {
+        if (state.Holders.Count > 0 || state.Removed)
+        {
+            return;
+        }
+
+        // Flag first so a caller that already fetched this instance retries against the dictionary instead
+        // of granting into a detached state. Removal is by key and instance, so a newer entry is never hit.
+        state.Removed = true;
+        _resources.TryRemove(new KeyValuePair<string, ResourceState>(resource, state));
+    }
+
     private sealed class ResourceState
     {
         public Dictionary<string, HolderEntry> Holders { get; } = new(StringComparer.Ordinal);
+
+        public bool Removed { get; set; }
     }
 
-    private sealed record HolderEntry(DateTimeOffset Expires);
+    private sealed record HolderEntry(LeaseDeadline Deadline);
 }

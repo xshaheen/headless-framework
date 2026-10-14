@@ -23,10 +23,10 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
         _timeProvider.Advance(TimeSpan.FromSeconds(6));
         var second = await storage.InsertAsync(key, "lock-3", TimeSpan.FromSeconds(5), AbortToken);
 
-        first.FencingToken.Should().Be(new LockFencingToken(1));
+        first.Acquired.Should().BeTrue();
         rejected.Acquired.Should().BeFalse();
         rejected.FencingToken.Should().BeNull();
-        second.FencingToken.Should().Be(new LockFencingToken(2));
+        second.FencingToken!.Value.Should().BeGreaterThan(first.FencingToken!.Value);
         (await storage.GetAsync(key, AbortToken)).Should().Be("lock-3");
     }
 

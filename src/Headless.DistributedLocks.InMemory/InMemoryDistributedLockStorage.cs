@@ -20,11 +20,23 @@ namespace Headless.DistributedLocks.InMemory;
 /// free-check, grant, and fencing-token increment so that the granted fencing token is always monotonic
 /// with respect to grant order.
 /// </para>
+/// <para>
+/// Expiry follows the <see cref="TimeProvider"/>'s monotonic timestamp, so a wall-clock step does not move
+/// it. A resource entry with no live holder is removed under its lock and flagged, and any caller that then
+/// locks the flagged entry re-fetches the current one, so idle keys do not accumulate. Fencing tokens come
+/// from one counter per storage instance rather than per resource, so a token issued after an entry is
+/// removed and recreated is still greater than every earlier one; tokens are therefore gappy per resource.
+/// </para>
 /// </remarks>
 /// <param name="timeProvider">The time source used to compute and evaluate TTL expiry timestamps.</param>
 internal sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : IDistributedLockStorage
 {
     private readonly ConcurrentDictionary<string, ResourceState> _resources = new(StringComparer.Ordinal);
+
+    /// <summary>The number of per-resource entries currently held in memory, live or not yet pruned.</summary>
+    internal int EntryCount => _resources.Count;
+
+    private long _fencingToken;
 
     /// <summary>
     /// Atomically grants an exclusive lock on <paramref name="key"/> to the caller identified by
@@ -56,27 +68,37 @@ internal sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) 
         Argument.IsNotNullOrEmpty(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var state = _resources.GetOrAdd(key, static _ => new ResourceState());
-
-        // Serialize prune + free-check + grant + fence-increment so the granted fencing token always
-        // corresponds to the live holder and is monotonic with respect to grant order. Splitting these
-        // into separate ConcurrentDictionary operations let a stale caller (preempted across a TTL
-        // expiry) hand back a token above the live holder for a key it no longer owned.
-        lock (state)
+        while (true)
         {
-            _PruneExpired(state);
+            var state = _resources.GetOrAdd(key, static _ => new ResourceState());
 
-            if (state.Entry is not null)
+            // Serialize prune + free-check + grant + fence-increment so the granted fencing token always
+            // corresponds to the live holder and is monotonic with respect to grant order. Splitting these
+            // into separate ConcurrentDictionary operations let a stale caller (preempted across a TTL
+            // expiry) hand back a token above the live holder for a key it no longer owned.
+            lock (state)
             {
-                return ValueTask.FromResult(DistributedLockAcquireResult.Failed);
+                if (state.Removed)
+                {
+                    // Another caller dropped this idle entry between GetOrAdd and the lock; a grant here
+                    // would live in a state no one else can see.
+                    continue;
+                }
+
+                _PruneExpired(state);
+
+                if (state.Entry is not null)
+                {
+                    return ValueTask.FromResult(DistributedLockAcquireResult.Failed);
+                }
+
+                state.Entry = new LockEntry(leaseId, LeaseDeadline.StartNow(timeProvider, ttl));
+                var fencingToken = Interlocked.Increment(ref _fencingToken);
+
+                return ValueTask.FromResult(
+                    new DistributedLockAcquireResult(Acquired: true, new LockFencingToken(fencingToken))
+                );
             }
-
-            state.Entry = new LockEntry(leaseId, _GetExpiration(ttl));
-            state.FencingToken++;
-
-            return ValueTask.FromResult(
-                new DistributedLockAcquireResult(Acquired: true, new LockFencingToken(state.FencingToken))
-            );
         }
     }
 
@@ -113,28 +135,35 @@ internal sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) 
         Argument.IsNotNullOrEmpty(newId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!_resources.TryGetValue(key, out var state))
+        while (_resources.TryGetValue(key, out var state))
         {
-            return ValueTask.FromResult(false);
-        }
-
-        lock (state)
-        {
-            _PruneExpired(state);
-
-            if (
-                state.Entry is not { } existing
-                || !string.Equals(existing.LeaseId, expectedId, StringComparison.Ordinal)
-            )
+            lock (state)
             {
-                return ValueTask.FromResult(false);
+                if (state.Removed)
+                {
+                    continue;
+                }
+
+                _PruneExpired(state);
+
+                if (
+                    state.Entry is not { } existing
+                    || !string.Equals(existing.LeaseId, expectedId, StringComparison.Ordinal)
+                )
+                {
+                    _RemoveIfIdle(key, state);
+
+                    return ValueTask.FromResult(false);
+                }
+
+                var deadline = newTtl.HasValue ? LeaseDeadline.StartNow(timeProvider, newTtl) : existing.Deadline;
+                state.Entry = new LockEntry(newId, deadline);
+
+                return ValueTask.FromResult(true);
             }
-
-            var expiration = newTtl.HasValue ? _GetExpiration(newTtl) : existing.Expiration;
-            state.Entry = new LockEntry(newId, expiration);
-
-            return ValueTask.FromResult(true);
         }
+
+        return ValueTask.FromResult(false);
     }
 
     /// <summary>
@@ -163,27 +192,33 @@ internal sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) 
         Argument.IsNotNullOrEmpty(expectedId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!_resources.TryGetValue(key, out var state))
+        while (_resources.TryGetValue(key, out var state))
         {
-            return ValueTask.FromResult(false);
-        }
-
-        lock (state)
-        {
-            _PruneExpired(state);
-
-            if (
-                state.Entry is not { } existing
-                || !string.Equals(existing.LeaseId, expectedId, StringComparison.Ordinal)
-            )
+            lock (state)
             {
-                return ValueTask.FromResult(false);
+                if (state.Removed)
+                {
+                    continue;
+                }
+
+                _PruneExpired(state);
+
+                var matched =
+                    state.Entry is { } existing
+                    && string.Equals(existing.LeaseId, expectedId, StringComparison.Ordinal);
+
+                if (matched)
+                {
+                    state.Entry = null;
+                }
+
+                _RemoveIfIdle(key, state);
+
+                return ValueTask.FromResult(matched);
             }
-
-            state.Entry = null;
-
-            return ValueTask.FromResult(true);
         }
+
+        return ValueTask.FromResult(false);
     }
 
     /// <summary>
@@ -213,15 +248,14 @@ internal sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) 
         lock (state)
         {
             _PruneExpired(state);
+            _RemoveIfIdle(key, state);
 
-            if (state.Entry is not { Expiration: { } expiration })
+            if (state.Entry is not { Deadline: { } deadline })
             {
                 return ValueTask.FromResult<TimeSpan?>(null);
             }
 
-            var remaining = expiration - timeProvider.GetUtcNow();
-
-            return ValueTask.FromResult<TimeSpan?>(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero);
+            return ValueTask.FromResult<TimeSpan?>(deadline.GetRemaining(timeProvider));
         }
     }
 
@@ -250,6 +284,7 @@ internal sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) 
         lock (state)
         {
             _PruneExpired(state);
+            _RemoveIfIdle(key, state);
 
             return ValueTask.FromResult(state.Entry is not null);
         }
@@ -279,6 +314,7 @@ internal sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) 
         lock (state)
         {
             _PruneExpired(state);
+            _RemoveIfIdle(key, state);
 
             return ValueTask.FromResult(state.Entry?.LeaseId);
         }
@@ -318,6 +354,7 @@ internal sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) 
             lock (state)
             {
                 _PruneExpired(state);
+                _RemoveIfIdle(key, state);
 
                 if (state.Entry is { } entry)
                 {
@@ -356,7 +393,6 @@ internal sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) 
         prefix ??= "";
         cancellationToken.ThrowIfCancellationRequested();
 
-        var now = timeProvider.GetUtcNow();
         var result = new Dictionary<string, (string LeaseId, TimeSpan? Ttl)>(StringComparer.Ordinal);
 
         foreach (var (key, state) in _resources)
@@ -369,19 +405,14 @@ internal sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) 
             lock (state)
             {
                 _PruneExpired(state);
+                _RemoveIfIdle(key, state);
 
                 if (state.Entry is not { } entry)
                 {
                     continue;
                 }
 
-                var remaining = entry.Expiration is { } expiration ? expiration - now : (TimeSpan?)null;
-                var ttl =
-                    remaining > TimeSpan.Zero ? remaining
-                    : remaining.HasValue ? TimeSpan.Zero
-                    : null;
-
-                result[key] = (entry.LeaseId, ttl);
+                result[key] = (entry.LeaseId, entry.Deadline?.GetRemaining(timeProvider));
             }
         }
 
@@ -416,6 +447,7 @@ internal sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) 
             lock (state)
             {
                 _PruneExpired(state);
+                _RemoveIfIdle(key, state);
 
                 if (state.Entry is not null)
                 {
@@ -427,30 +459,34 @@ internal sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) 
         return ValueTask.FromResult(count);
     }
 
-    private DateTimeOffset? _GetExpiration(TimeSpan? ttl)
-    {
-        return ttl is { } value ? timeProvider.GetUtcNow().Add(value) : null;
-    }
-
     private void _PruneExpired(ResourceState state)
     {
-        if (state.Entry is { } entry && _IsExpired(entry, timeProvider.GetUtcNow()))
+        if (state.Entry is { Deadline: { } deadline } && deadline.IsExpired(timeProvider))
         {
             state.Entry = null;
         }
     }
 
-    private static bool _IsExpired(LockEntry entry, DateTimeOffset now)
+    /// <summary>Drops an entry that holds no lease. The caller must hold the lock on <paramref name="state"/>.</summary>
+    private void _RemoveIfIdle(string key, ResourceState state)
     {
-        return entry.Expiration is { } expiration && expiration <= now;
+        if (state.Entry is not null || state.Removed)
+        {
+            return;
+        }
+
+        // Flag first so a caller that already fetched this instance retries against the dictionary instead
+        // of granting into a detached state. Removal is by key and instance, so a newer entry is never hit.
+        state.Removed = true;
+        _resources.TryRemove(new KeyValuePair<string, ResourceState>(key, state));
     }
 
     private sealed class ResourceState
     {
         public LockEntry? Entry { get; set; }
 
-        public long FencingToken { get; set; }
+        public bool Removed { get; set; }
     }
 
-    private sealed record LockEntry(string LeaseId, DateTimeOffset? Expiration);
+    private sealed record LockEntry(string LeaseId, LeaseDeadline? Deadline);
 }

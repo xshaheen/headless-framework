@@ -101,4 +101,10 @@ public sealed class InMemoryDistributedSemaphoreTests : DistributedSemaphoreStor
         expiredExtend.Should().BeFalse();
         (await _storage.GetCountAsync(resource, AbortToken)).Should().Be(0);
     }
+
+    [Fact]
+    public override Task should_issue_greater_fencing_token_after_all_slots_released()
+    {
+        return base.should_issue_greater_fencing_token_after_all_slots_released();
+    }
 }
