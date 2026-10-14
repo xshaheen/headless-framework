@@ -217,7 +217,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     private HeadlessSaveEntryContext _ProcessEntries(DbContext context, IReadOnlyList<EntityEntry> entries)
     {
         var tenantId = context is IHeadlessDbContext headlessContext ? headlessContext.TenantId : null;
-        var saveContext = new HeadlessSaveEntryContext(context, tenantId);
+        var saveContext = new HeadlessSaveEntryContext(context, tenantId) { TrackedEntries = entries };
 
         foreach (var entry in entries)
         {
@@ -412,6 +412,9 @@ internal sealed class HeadlessSaveChangesPipeline(
                 await transaction.CommitAsync(state.CancellationToken).ConfigureAwait(false);
                 if (state.AcceptAllChangesOnSuccess)
                 {
+                    // Detach the audit rows first: accepting them would snapshot their JSON columns for a row that
+                    // is about to leave the tracker.
+                    auditPersistence.ReleaseEntries(auditSave);
                     state.Context.ChangeTracker.AcceptAllChanges();
                 }
             }
@@ -431,7 +434,13 @@ internal sealed class HeadlessSaveChangesPipeline(
                 unitOfWork!.PreventRetry();
             }
 
-            _CompleteSuccessfulSave(state.Context, state.SaveContext, auditSave, state.AcceptAllChangesOnSuccess);
+            _CompleteSuccessfulSave(
+                state.Context,
+                state.SaveContext,
+                auditSave,
+                // The commit branch above already accepted; accepting again would walk the tracker twice.
+                state.AcceptAllChangesOnSuccess && !commitTransaction
+            );
 
             return result;
         }
@@ -518,6 +527,9 @@ internal sealed class HeadlessSaveChangesPipeline(
                 transaction.Commit();
                 if (state.AcceptAllChangesOnSuccess)
                 {
+                    // Detach the audit rows first: accepting them would snapshot their JSON columns for a row that
+                    // is about to leave the tracker.
+                    auditPersistence.ReleaseEntries(auditSave);
                     state.Context.ChangeTracker.AcceptAllChanges();
                 }
             }
@@ -534,7 +546,13 @@ internal sealed class HeadlessSaveChangesPipeline(
                 unitOfWork!.PreventRetry();
             }
 
-            _CompleteSuccessfulSave(state.Context, state.SaveContext, auditSave, state.AcceptAllChangesOnSuccess);
+            _CompleteSuccessfulSave(
+                state.Context,
+                state.SaveContext,
+                auditSave,
+                // The commit branch above already accepted; accepting again would walk the tracker twice.
+                state.AcceptAllChangesOnSuccess && !commitTransaction
+            );
 
             return result;
         }
@@ -563,7 +581,9 @@ internal sealed class HeadlessSaveChangesPipeline(
         if (saveContext.DomainEventCursor == saveContext.PendingDomainEvents.Count)
         {
             var collector = _ResolveMessageCollector();
-            foreach (var entry in _SnapshotEntries(context))
+            var snapshot = _SnapshotEntries(context);
+            saveContext.TrackedEntries = snapshot;
+            foreach (var entry in snapshot)
             {
                 if (saveContext.ProcessedEntities.Add(entry.Entity))
                 {

@@ -4,6 +4,7 @@ using System.Runtime.ExceptionServices;
 using Headless.Domain;
 using Headless.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Headless.EntityFramework;
 
@@ -35,6 +36,12 @@ public sealed class HeadlessSaveEntryContext(DbContext dbContext, string? tenant
     internal List<EmitterIntegrationEvents> IntegrationEventEmitters { get; } = [];
 
     internal bool CommitStarted { get; set; }
+
+    /// <summary>
+    /// The tracker snapshot the pipeline is processing right now. Processors that must look up other tracked entries
+    /// read it instead of enumerating the tracker, whose every enumeration runs change detection.
+    /// </summary>
+    internal IReadOnlyList<EntityEntry>? TrackedEntries { get; set; }
 
     internal ExceptionDispatchInfo? NonRetryableFailure { get; set; }
 

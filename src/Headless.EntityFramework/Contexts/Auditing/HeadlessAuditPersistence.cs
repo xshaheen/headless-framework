@@ -166,12 +166,14 @@ internal sealed class HeadlessAuditPersistence(
             return;
         }
 
+        // Detach the audit rows before accepting: AcceptAllChanges would otherwise snapshot every JSON column of
+        // each row just before the row leaves the tracker.
+        ReleaseEntries(auditSave);
+
         if (acceptAllChangesOnSuccess)
         {
             context.ChangeTracker.AcceptAllChanges();
         }
-
-        ReleaseEntries(auditSave);
     }
 
     public void DiscardEntries(HeadlessAuditSaveResult auditSave)

@@ -74,7 +74,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
             return;
         }
 
-        var root = entry.Metadata.IsOwned() ? _ResolveOwner(entry, context.DbContext) : entry;
+        var root = entry.Metadata.IsOwned() ? _ResolveOwner(entry, context) : entry;
         var tenantProperty = root.Property(root.Metadata.GetTenantPropertyName()!);
         var entityTenantId = _ReadTenantId(tenantProperty.CurrentValue);
         var originalTenantId = root.State == EntityState.Added ? null : _ReadTenantId(tenantProperty.OriginalValue);
@@ -114,10 +114,11 @@ public sealed class HeadlessEntitySaveEntryProcessor(
         throw new CrossTenantWriteException(_GetEntityTypeName(entry), entry.State.ToString());
     }
 
-    private static EntityEntry _ResolveOwner(EntityEntry entry, DbContext db)
+    private static EntityEntry _ResolveOwner(EntityEntry entry, HeadlessSaveEntryContext context)
     {
         // Navigation references can be stale or caller-supplied; only tracked ownership keys identify the row owner.
-        var tracked = db.ChangeTracker.Entries().ToArray();
+        // The pipeline's snapshot is reused: enumerating the tracker per owned entry reruns change detection each time.
+        var tracked = context.TrackedEntries ?? context.DbContext.ChangeTracker.Entries().ToArray();
         var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
         var current = entry;
         while (current.Metadata.FindOwnership() is { } ownership)
@@ -148,7 +149,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
     private static EntityEntry? _FindPrincipal(
         EntityEntry dependent,
         IForeignKey ownership,
-        EntityEntry[] tracked,
+        IReadOnlyList<EntityEntry> tracked,
         bool original
     )
     {
