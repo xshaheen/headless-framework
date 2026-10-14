@@ -5,7 +5,7 @@
     <PackageTags>headless;payments;paymob;cash;out;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Headless.Payments.Paymob.Services" />
+    <InternalsVisibleTo Include="Headless.Payments.Paymob" />
     <InternalsVisibleTo Include="Headless.Payments.Paymob.CashOut.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>

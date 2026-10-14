@@ -505,9 +505,9 @@ Payment gateway integrations for the MENA region: cash-in (collection) and cash-
 
 | Package | Description |
 |---------|-------------|
+| [Headless.Payments.Paymob](src/Headless.Payments.Paymob/README.md) | Paymob service layer over cash-in and cash-out |
 | [Headless.Payments.Paymob.CashIn](src/Headless.Payments.Paymob.CashIn/README.md) | Paymob cash-in payments |
 | [Headless.Payments.Paymob.CashOut](src/Headless.Payments.Paymob.CashOut/README.md) | Paymob cash-out payments |
-| [Headless.Payments.Paymob.Services](src/Headless.Payments.Paymob.Services/README.md) | Paymob shared services |
 
 ### Permissions
 
