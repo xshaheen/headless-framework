@@ -2306,6 +2306,44 @@ public sealed class InMemoryCacheTests : TestBase
     }
 
     [Fact]
+    public async Task should_account_each_key_once_and_report_one_winner_when_try_insert_races_on_the_same_key()
+    {
+        // given
+        const long entrySize = 100;
+        const int keyCount = 400;
+        const int racersPerKey = 8;
+        using var cache = _CreateCache(
+            new InMemoryCacheOptions { MaxMemorySize = long.MaxValue / 2, SizeCalculator = _ => entrySize }
+        );
+
+        // when: several writers race to add every key, so add-only retries between the add and update paths
+        var outcomes = await Task.WhenAll(
+            Enumerable
+                .Range(0, keyCount)
+                .SelectMany(k =>
+                    Enumerable
+                        .Range(0, racersPerKey)
+                        .Select(_ =>
+                            Task.Run(
+                                async () =>
+                                    await cache.TryInsertAsync(
+                                        $"race-{k}",
+                                        "value",
+                                        TimeSpan.FromMinutes(5),
+                                        AbortToken
+                                    ),
+                                AbortToken
+                            )
+                        )
+                )
+        );
+
+        // then: a lost race must neither add its size nor swallow the winner's result
+        outcomes.Count(inserted => inserted).Should().Be(keyCount);
+        cache.CurrentMemorySize.Should().Be(keyCount * entrySize);
+    }
+
+    [Fact]
     public async Task should_evict_the_older_unread_key_when_a_read_happened_within_the_same_second()
     {
         // given — the read lands only 10 ms after the last write, so any sub-second throttle on the access
