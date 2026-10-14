@@ -32,7 +32,7 @@ public sealed class RolePermissionGrantProvider(IPermissionGrantStore grantStore
     {
         Argument.IsNotNullOrEmpty(permissions);
 
-        var permissionNames = permissions.Select(x => x.Name).Distinct(StringComparer.Ordinal).ToList();
+        var permissionNames = permissions.Select(static x => x.Name).Distinct(StringComparer.Ordinal).ToList();
         var roles = currentUser.Roles;
 
         if (roles.Count == 0)
@@ -43,52 +43,42 @@ public sealed class RolePermissionGrantProvider(IPermissionGrantStore grantStore
         // Assume all are undefined by default
         var result = new MultiplePermissionGrantStatusResult(permissionNames, roles, PermissionGrantStatus.Undefined);
 
-        // Tracks the still-undefined names across roles; a HashSet makes each resolved removal O(1) instead
-        // of a RemoveAll scan over the whole list per resolved permission.
-        var pendingNames = permissionNames.ToHashSet(StringComparer.Ordinal);
-
-        // A later role is asked only about names an earlier role left undefined: resolved names are ignored anyway,
-        // and a shorter list means fewer cache keys and, on a miss, fewer rows loaded.
-        var queryNames = permissionNames;
+        // One store call carries every role's grants for every pending name; the shape this replaces made
+        // one call per role. Roles are still evaluated in the user's role order below, so the first role
+        // with a decisive status for a name wins, exactly as the per-role loop decided.
+        var grantsByRole = await _grantStore
+            .IsGrantedAsync(
+                names: permissionNames,
+                providerName: Name,
+                providerKeys: roles,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
 
         foreach (var role in roles)
         {
-            var roleGrantStatusResults = await _grantStore
-                .IsGrantedAsync(
-                    names: queryNames,
-                    providerName: Name,
-                    providerKey: role,
-                    cancellationToken: cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            var foundedStatuses = roleGrantStatusResults.Where(newStatus =>
-                newStatus.Value is not PermissionGrantStatus.Undefined
-                && result.Statuses.TryGetValue(newStatus.Key, out var existStatus)
-                && existStatus.Status is PermissionGrantStatus.Undefined
-            );
-
-            foreach (var (permissionName, grantStatus) in foundedStatuses)
+            if (!grantsByRole.TryGetValue(role, out var roleGrantStatusResults))
             {
+                continue;
+            }
+
+            foreach (var (permissionName, grantStatus) in roleGrantStatusResults)
+            {
+                if (
+                    grantStatus is PermissionGrantStatus.Undefined
+                    || !result.Statuses.TryGetValue(permissionName, out var existStatus)
+                    || existStatus.Status is not PermissionGrantStatus.Undefined
+                )
+                {
+                    continue;
+                }
+
                 result[permissionName] = grantStatus switch
                 {
                     PermissionGrantStatus.Granted => PermissionGrantResult.Granted([role]),
                     PermissionGrantStatus.Prohibited => PermissionGrantResult.Prohibited([role]),
                     _ => PermissionGrantResult.Undefined(roles),
                 };
-
-                // Set removal instead of RemoveAll's full-list scan per resolved permission.
-                _ = pendingNames.Remove(permissionName);
-            }
-
-            if (result.AllGranted || result.AllProhibited || pendingNames.Count == 0)
-            {
-                break;
-            }
-
-            if (pendingNames.Count < queryNames.Count)
-            {
-                queryNames = [.. permissionNames.Where(pendingNames.Contains)];
             }
         }
 

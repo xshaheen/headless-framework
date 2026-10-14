@@ -85,7 +85,7 @@ public sealed class PermissionGrantStoreTests : TestBase
         await _cache
             .Received(1)
             .UpsertAllAsync(
-                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(d => d.Count == 1),
+                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(static d => d.Count == 1),
                 Arg.Any<TimeSpan>(),
                 AbortToken
             );
@@ -188,7 +188,7 @@ public sealed class PermissionGrantStoreTests : TestBase
         result.Should().Be(PermissionGrantStatus.Undefined);
     }
 
-    #endregion
+    #endregion IsGrantedAsync - Single
 
     #region IsGrantedAsync - Batch
 
@@ -272,7 +272,159 @@ public sealed class PermissionGrantStoreTests : TestBase
             .UpsertAllAsync(Arg.Any<IDictionary<string, PermissionGrantCacheItem>>(), Arg.Any<TimeSpan>(), AbortToken);
     }
 
-    #endregion
+    #endregion IsGrantedAsync - Batch
+
+    #region IsGrantedAsync - Batch across provider keys
+
+    [Fact]
+    public async Task should_serve_a_warm_multi_key_read_from_one_cache_call()
+    {
+        // given — both roles' entries are cached
+        string[] permissionNames = ["Users.Create", "Users.Update"];
+        string[] roles = ["admin", "manager"];
+
+        var cacheResults = new Dictionary<string, CacheValue<PermissionGrantCacheItem>>(StringComparer.Ordinal);
+
+        foreach (var role in roles)
+        {
+            foreach (var name in permissionNames)
+            {
+                cacheResults[PermissionGrantCacheItem.CalculateCacheKey(name, _ProviderName, role)] = new(
+                    new PermissionGrantCacheItem(string.Equals(role, "admin", StringComparison.Ordinal)),
+                    true
+                );
+            }
+        }
+
+        _cache.GetAllAsync(Arg.Any<IEnumerable<string>>(), AbortToken).Returns(cacheResults);
+
+        // when
+        var result = await _sut.IsGrantedAsync(permissionNames, _ProviderName, roles, AbortToken);
+
+        // then — one cache read answered every (name, role) pair, and the repository stayed untouched
+        await _cache.Received(1).GetAllAsync(Arg.Any<IEnumerable<string>>(), AbortToken);
+        await _repository
+            .DidNotReceive()
+            .GetListAsync(
+                Arg.Any<IReadOnlyCollection<string>>(),
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyCollection<string>>(),
+                Arg.Any<CancellationToken>()
+            );
+        result.Keys.Should().BeEquivalentTo("admin", "manager");
+        result["admin"]["Users.Create"].Should().Be(PermissionGrantStatus.Granted);
+        result["admin"]["Users.Update"].Should().Be(PermissionGrantStatus.Granted);
+        result["manager"]["Users.Create"].Should().Be(PermissionGrantStatus.Prohibited);
+        result["manager"]["Users.Update"].Should().Be(PermissionGrantStatus.Prohibited);
+    }
+
+    [Fact]
+    public async Task should_load_every_roles_misses_in_one_repository_call()
+    {
+        // given — nothing is cached
+        string[] permissionNames = ["Users.Create", "Users.Update"];
+        string[] roles = ["admin", "manager"];
+
+        var permission1 = _CreatePermission("Users.Create");
+        var permission2 = _CreatePermission("Users.Update");
+        _definitionManager.GetPermissionsAsync(AbortToken).Returns([permission1, permission2]);
+
+        _cache
+            .GetAllAsync(Arg.Any<IEnumerable<string>>(), AbortToken)
+            .Returns(new Dictionary<string, CacheValue<PermissionGrantCacheItem>>(StringComparer.Ordinal));
+
+        _repository
+            .GetListAsync(
+                Arg.Any<IReadOnlyCollection<string>>(),
+                _ProviderName,
+                Arg.Any<IReadOnlyCollection<string>>(),
+                AbortToken
+            )
+            .Returns([
+                new PermissionGrantRecord(Guid.NewGuid(), "Users.Create", _ProviderName, "admin", true),
+                new PermissionGrantRecord(Guid.NewGuid(), "Users.Update", _ProviderName, "admin", false),
+                new PermissionGrantRecord(Guid.NewGuid(), "Users.Create", _ProviderName, "manager", true),
+            ]);
+
+        // when
+        var result = await _sut.IsGrantedAsync(permissionNames, _ProviderName, roles, AbortToken);
+
+        // then — one repository read carried both roles' rows
+        await _repository
+            .Received(1)
+            .GetListAsync(
+                Arg.Is<IReadOnlyCollection<string>>(names => names.Order().SequenceEqual(permissionNames.Order())),
+                _ProviderName,
+                Arg.Is<IReadOnlyCollection<string>>(keys => keys.Order().SequenceEqual(roles.Order())),
+                AbortToken
+            );
+        result["admin"]["Users.Create"].Should().Be(PermissionGrantStatus.Granted);
+        result["admin"]["Users.Update"].Should().Be(PermissionGrantStatus.Prohibited);
+        result["manager"]["Users.Create"].Should().Be(PermissionGrantStatus.Granted);
+        result["manager"]["Users.Update"].Should().Be(PermissionGrantStatus.Undefined);
+
+        // and — the misses of both roles were cached together
+        await _cache
+            .Received(1)
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(d =>
+                    d.Count == 4
+                    && d[PermissionGrantCacheItem.CalculateCacheKey("Users.Create", _ProviderName, "admin")].IsGranted
+                        == true
+                    && d[PermissionGrantCacheItem.CalculateCacheKey("Users.Update", _ProviderName, "admin")].IsGranted
+                        == false
+                    && d[PermissionGrantCacheItem.CalculateCacheKey("Users.Create", _ProviderName, "manager")].IsGranted
+                        == true
+                    && d[PermissionGrantCacheItem.CalculateCacheKey("Users.Update", _ProviderName, "manager")].IsGranted
+                        == null
+                ),
+                Arg.Any<TimeSpan>(),
+                AbortToken
+            );
+    }
+
+    [Fact]
+    public async Task should_agree_with_the_single_key_read_per_pair()
+    {
+        // given — the single-key path resolves admin/Users.Create from a warm cache entry
+        const string permissionName = "Users.Create";
+        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permissionName, _ProviderName, "admin");
+
+        _cache
+            .GetAsync(cacheKey, AbortToken)
+            .Returns(new CacheValue<PermissionGrantCacheItem>(new PermissionGrantCacheItem(true), true));
+
+        _cache
+            .GetAllAsync(Arg.Any<IEnumerable<string>>(), AbortToken)
+            .Returns(
+                new Dictionary<string, CacheValue<PermissionGrantCacheItem>>(StringComparer.Ordinal)
+                {
+                    [cacheKey] = new(new PermissionGrantCacheItem(true), true),
+                }
+            );
+
+        // when
+        var single = await _sut.IsGrantedAsync(permissionName, _ProviderName, "admin", AbortToken);
+        var batch = await _sut.IsGrantedAsync([permissionName], _ProviderName, ["admin"], AbortToken);
+
+        // then
+        single.Should().Be(PermissionGrantStatus.Granted);
+        batch["admin"][permissionName].Should().Be(single);
+    }
+
+    [Fact]
+    public async Task should_refuse_padded_names_and_keys_in_a_multi_key_read()
+    {
+        // when
+        var act = () => _sut.IsGrantedAsync(["Users.Create"], _ProviderName, ["admin "], AbortToken);
+
+        // then
+        await act.Should().ThrowExactlyAsync<ArgumentException>().WithMessage("*starts or ends with white space*");
+        _repository.ReceivedCalls().Should().BeEmpty();
+        _cache.ReceivedCalls().Should().BeEmpty();
+    }
+
+    #endregion IsGrantedAsync - Batch across provider keys
 
     #region GrantAsync - Single
 
@@ -332,7 +484,7 @@ public sealed class PermissionGrantStoreTests : TestBase
 
         // then
         await _repository.Received(1).DeleteAsync(deniedRecord, AbortToken);
-        await _repository.Received(1).InsertAsync(Arg.Is<PermissionGrantRecord>(r => r.IsGranted), AbortToken);
+        await _repository.Received(1).InsertAsync(Arg.Is<PermissionGrantRecord>(static r => r.IsGranted), AbortToken);
     }
 
     [Fact]
@@ -378,13 +530,13 @@ public sealed class PermissionGrantStoreTests : TestBase
             .Received(1)
             .UpsertAsync(
                 cacheKey,
-                Arg.Is<PermissionGrantCacheItem>(c => c.IsGranted == true),
+                Arg.Is<PermissionGrantCacheItem>(static c => c.IsGranted == true),
                 Arg.Any<TimeSpan>(),
                 AbortToken
             );
     }
 
-    #endregion
+    #endregion GrantAsync - Single
 
     #region GrantAsync - Batch
 
@@ -407,7 +559,7 @@ public sealed class PermissionGrantStoreTests : TestBase
         await _repository
             .Received(1)
             .InsertManyAsync(
-                Arg.Is<IEnumerable<PermissionGrantRecord>>(records => records.Take(3).Count() == 2),
+                Arg.Is<IEnumerable<PermissionGrantRecord>>(static records => records.Take(3).Count() == 2),
                 AbortToken
             );
     }
@@ -457,24 +609,24 @@ public sealed class PermissionGrantStoreTests : TestBase
         await _repository
             .Received(1)
             .DeleteManyAsync(
-                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(r =>
-                    r.Count == 1 && r.All(x => x.Name == "Users.Update")
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(static r =>
+                    r.Count == 1 && r.All(static x => x.Name == "Users.Update")
                 ),
                 AbortToken
             );
         await _repository
             .Received(1)
             .InsertManyAsync(
-                Arg.Is<IEnumerable<PermissionGrantRecord>>(records =>
-                    records.All(r => r.Name == "Users.Update" && r.IsGranted)
+                Arg.Is<IEnumerable<PermissionGrantRecord>>(static records =>
+                    records.All(static r => r.Name == "Users.Update" && r.IsGranted)
                 ),
                 AbortToken
             );
         await _cache
             .Received(1)
             .UpsertAllAsync(
-                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(d =>
-                    d.Count == 2 && d.Values.All(v => v.IsGranted == true)
+                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(static d =>
+                    d.Count == 2 && d.Values.All(static v => v.IsGranted == true)
                 ),
                 Arg.Any<TimeSpan>(),
                 AbortToken
@@ -504,24 +656,24 @@ public sealed class PermissionGrantStoreTests : TestBase
         await _repository
             .Received(1)
             .InsertManyAsync(
-                Arg.Is<IEnumerable<PermissionGrantRecord>>(records =>
-                    records.All(r => r.Name == "Users.Update" && r.IsGranted)
+                Arg.Is<IEnumerable<PermissionGrantRecord>>(static records =>
+                    records.All(static r => r.Name == "Users.Update" && r.IsGranted)
                 ),
                 AbortToken
             );
         await _repository
             .Received(1)
             .InsertManyAsync(
-                Arg.Is<IEnumerable<PermissionGrantRecord>>(records =>
-                    records.All(r => r.Name == "Users.Create" && r.IsGranted)
+                Arg.Is<IEnumerable<PermissionGrantRecord>>(static records =>
+                    records.All(static r => r.Name == "Users.Create" && r.IsGranted)
                 ),
                 AbortToken
             );
         await _cache
             .Received(1)
             .UpsertAllAsync(
-                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(d =>
-                    d.Count == 3 && d.Values.All(v => v.IsGranted == true)
+                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(static d =>
+                    d.Count == 3 && d.Values.All(static v => v.IsGranted == true)
                 ),
                 Arg.Any<TimeSpan>(),
                 AbortToken
@@ -546,15 +698,15 @@ public sealed class PermissionGrantStoreTests : TestBase
         await _cache
             .Received(1)
             .UpsertAllAsync(
-                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(d =>
-                    d.Count == 2 && d.Values.All(v => v.IsGranted == true)
+                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(static d =>
+                    d.Count == 2 && d.Values.All(static v => v.IsGranted == true)
                 ),
                 Arg.Any<TimeSpan>(),
                 AbortToken
             );
     }
 
-    #endregion
+    #endregion GrantAsync - Batch
 
     #region RevokeAsync - Single
 
@@ -610,7 +762,7 @@ public sealed class PermissionGrantStoreTests : TestBase
 
         // then
         await _repository.Received(1).DeleteAsync(grantedRecord, AbortToken);
-        await _repository.Received(1).InsertAsync(Arg.Is<PermissionGrantRecord>(r => !r.IsGranted), AbortToken);
+        await _repository.Received(1).InsertAsync(Arg.Is<PermissionGrantRecord>(static r => !r.IsGranted), AbortToken);
     }
 
     [Fact]
@@ -661,13 +813,13 @@ public sealed class PermissionGrantStoreTests : TestBase
             .Received(1)
             .UpsertAsync(
                 cacheKey,
-                Arg.Is<PermissionGrantCacheItem>(c => c.IsGranted == false),
+                Arg.Is<PermissionGrantCacheItem>(static c => c.IsGranted == false),
                 Arg.Any<TimeSpan>(),
                 AbortToken
             );
     }
 
-    #endregion
+    #endregion RevokeAsync - Single
 
     #region RevokeAsync - Batch
 
@@ -694,13 +846,15 @@ public sealed class PermissionGrantStoreTests : TestBase
         await _repository
             .Received(1)
             .DeleteManyAsync(
-                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(r => r.Count == 2 && r.All(x => x.IsGranted)),
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(static r =>
+                    r.Count == 2 && r.All(static x => x.IsGranted)
+                ),
                 AbortToken
             );
         await _repository
             .Received(1)
             .InsertManyAsync(
-                Arg.Is<IEnumerable<PermissionGrantRecord>>(records => records.All(r => !r.IsGranted)),
+                Arg.Is<IEnumerable<PermissionGrantRecord>>(static records => records.All(static r => !r.IsGranted)),
                 AbortToken
             );
     }
@@ -724,15 +878,15 @@ public sealed class PermissionGrantStoreTests : TestBase
         await _cache
             .Received(1)
             .UpsertAllAsync(
-                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(d =>
-                    d.Count == 2 && d.Values.All(v => v.IsGranted == false)
+                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(static d =>
+                    d.Count == 2 && d.Values.All(static v => v.IsGranted == false)
                 ),
                 Arg.Any<TimeSpan>(),
                 AbortToken
             );
     }
 
-    #endregion
+    #endregion RevokeAsync - Batch
 
     #region GetAllGrantsAsync
 
@@ -753,11 +907,11 @@ public sealed class PermissionGrantStoreTests : TestBase
 
         // then
         result.Should().HaveCount(2);
-        result.Should().Contain(g => g.Name == "Users.Create" && g.IsGranted);
-        result.Should().Contain(g => g.Name == "Users.Delete" && !g.IsGranted);
+        result.Should().Contain(static g => g.Name == "Users.Create" && g.IsGranted);
+        result.Should().Contain(static g => g.Name == "Users.Delete" && !g.IsGranted);
     }
 
-    #endregion
+    #endregion GetAllGrantsAsync
 
     #region Helpers
 
@@ -773,12 +927,14 @@ public sealed class PermissionGrantStoreTests : TestBase
         return (PermissionDefinition)ctor!.Invoke([name, name, isEnabled]);
     }
 
-    #endregion
+    #endregion Helpers
 
     #region Surrounding white space
 
-    // SQL Server ignores trailing spaces when comparing keys and PostgreSQL does not, so a padded key part would
-    // address another key's row on one provider only; the store must refuse it before any storage call.
+    /// <summary>
+    /// SQL Server ignores trailing spaces when comparing keys and PostgreSQL does not, so a padded key part would
+    /// address another key's row on one provider only; the store must refuse it before any storage call.
+    /// </summary>
     public static readonly TheoryData<string> PaddedKeyCalls =
     [
         "is-granted-name",
@@ -868,5 +1024,5 @@ public sealed class PermissionGrantStoreTests : TestBase
         _cache.ReceivedCalls().Should().BeEmpty();
     }
 
-    #endregion
+    #endregion Surrounding white space
 }

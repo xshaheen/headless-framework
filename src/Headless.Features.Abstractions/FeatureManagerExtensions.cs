@@ -61,28 +61,62 @@ public static class FeatureManagerExtensions
                 return true;
             }
 
-            if (requiresAll)
+            // One batched read resolves every name; the previous per-name loop walked the provider chain once
+            // per feature. A defined name always appears in the batch (a feature with no value carries a null
+            // value), so an absent name is not defined: GetAsync then reproduces the manager's not-defined
+            // error for it, as the per-name loop did, rather than silently treating it as disabled.
+            var values = await featureManager
+                .GetAllAsync(featureNames.ToHashSet(StringComparer.Ordinal), cancellationToken)
+                .ConfigureAwait(false);
+
+            // Names are evaluated and parsed in order with the same short-circuit points as before: a value
+            // after the decision is never parsed, so an invalid boolean there still goes unreported.
+            foreach (var featureName in featureNames)
             {
-                foreach (var featureName in featureNames)
+                var featureValue = values.TryGetValue(featureName, out var value)
+                    ? value
+                    : await featureManager
+                        .GetAsync(featureName, cancellationToken: cancellationToken)
+                        .ConfigureAwait(false);
+
+                var isEnabled = _IsEnabled(featureValue, featureName);
+
+                if (requiresAll)
                 {
-                    if (!await featureManager.IsEnabledAsync(featureName, cancellationToken).ConfigureAwait(false))
+                    if (!isEnabled)
                     {
                         return false;
                     }
                 }
-
-                return true;
-            }
-
-            foreach (var featureName in featureNames)
-            {
-                if (await featureManager.IsEnabledAsync(featureName, cancellationToken).ConfigureAwait(false))
+                else if (isEnabled)
                 {
                     return true;
                 }
             }
 
-            return false;
+            return requiresAll;
+        }
+
+        /// <summary>Parses a stored feature value as a boolean, throwing when it is not one.</summary>
+        /// <exception cref="InvalidOperationException">The stored value for the feature is not a valid boolean string.</exception>
+        private static bool _IsEnabled(FeatureValue? featureValue, string featureName)
+        {
+            if (string.IsNullOrEmpty(featureValue?.Value))
+            {
+                return false;
+            }
+
+            try
+            {
+                return bool.Parse(featureValue.Value);
+            }
+            catch (Exception e)
+            {
+                throw new InvalidOperationException(
+                    $"The value '{featureValue.Value}' for the feature '{featureName}' should be a boolean, but was not!",
+                    e
+                );
+            }
         }
 
         /// <summary>Gets a feature value and deserializes it to <typeparamref name="T"/>.</summary>
@@ -157,11 +191,29 @@ public static class FeatureManagerExtensions
                 return;
             }
 
-            if (requiresAll)
+            // One batched read resolves every name; the previous per-name loop walked the provider chain once
+            // per feature. A defined name always appears in the batch (a feature with no value carries a null
+            // value), so an absent name is not defined: GetAsync then reproduces the manager's not-defined
+            // error for it, as the per-name loop did, rather than silently treating it as disabled.
+            var values = await featureManager
+                .GetAllAsync(featureNames.ToHashSet(StringComparer.Ordinal), cancellationToken)
+                .ConfigureAwait(false);
+
+            // Names are evaluated and parsed in order with the same short-circuit points as before: a value
+            // after the decision is never parsed, so an invalid boolean there still goes unreported.
+            foreach (var featureName in featureNames)
             {
-                foreach (var featureName in featureNames)
+                var featureValue = values.TryGetValue(featureName, out var value)
+                    ? value
+                    : await featureManager
+                        .GetAsync(featureName, cancellationToken: cancellationToken)
+                        .ConfigureAwait(false);
+
+                var isEnabled = _IsEnabled(featureValue, featureName);
+
+                if (requiresAll)
                 {
-                    if (!await featureManager.IsEnabledAsync(featureName, cancellationToken).ConfigureAwait(false))
+                    if (!isEnabled)
                     {
                         var error = MessageDescriber
                             .FeatureCurrentlyUnavailable()
@@ -171,24 +223,23 @@ public static class FeatureManagerExtensions
                         throw new ConflictException(error);
                     }
                 }
-            }
-            else
-            {
-                foreach (var featureName in featureNames)
+                else if (isEnabled)
                 {
-                    if (await featureManager.IsEnabledAsync(featureName, cancellationToken).ConfigureAwait(false))
-                    {
-                        return;
-                    }
+                    return;
                 }
-
-                var error = MessageDescriber
-                    .FeatureCurrentlyUnavailable()
-                    .WithParam("Type", "Or")
-                    .WithParam("FeatureNames", featureNames);
-
-                throw new ConflictException(error);
             }
+
+            if (requiresAll)
+            {
+                return;
+            }
+
+            var orError = MessageDescriber
+                .FeatureCurrentlyUnavailable()
+                .WithParam("Type", "Or")
+                .WithParam("FeatureNames", featureNames);
+
+            throw new ConflictException(orError);
         }
 
         /// <summary>Grants a feature by setting its value to <c>"true"</c> for the given provider and key, forcing the write even when the value matches the fallback.</summary>

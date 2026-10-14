@@ -29,6 +29,14 @@ public sealed class FeatureValueStore(
         Argument.IsPortableKey(name);
     }
 
+    private static void _EnsureNames(IEnumerable<string> names)
+    {
+        foreach (var name in names)
+        {
+            Argument.IsPortableKey(name);
+        }
+    }
+
     /// <inheritdoc/>
     public async Task<string?> GetOrDefaultAsync(
         string name,
@@ -49,15 +57,37 @@ public sealed class FeatureValueStore(
             return existValueCacheItem.Value?.Value;
         }
 
-        var valueCacheItem = await _CacheAllAndGetAsync(
+        return await _CacheAllAndGetAsync(
                 providerName,
                 providerKey,
                 featureNameToFind: name,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
+    }
 
-        return valueCacheItem;
+    /// <inheritdoc/>
+    public async Task<List<FeatureValue>> GetAllAsync(
+        HashSet<string> names,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(names);
+        _EnsureKey(providerName, providerKey);
+        _EnsureNames(names);
+
+        if (names.Count == 1)
+        {
+            var name = names.First();
+            var value = await GetOrDefaultAsync(name, providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false);
+
+            return [new FeatureValue(name, value)];
+        }
+
+        return await _GetCachedItemsAsync(names, providerName, providerKey, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -257,6 +287,99 @@ public sealed class FeatureValueStore(
 
     #region Helpers
 
+    /// <summary>Returns feature values from the cache, fetching and caching any misses from the repository.</summary>
+    private async Task<List<FeatureValue>> _GetCachedItemsAsync(
+        HashSet<string> names,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        var keyToName = new Dictionary<string, string>(names.Count, StringComparer.Ordinal);
+        var cacheKeys = new List<string>(names.Count);
+
+        foreach (var name in names)
+        {
+            var key = FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
+            cacheKeys.Add(key);
+            keyToName[key] = name;
+        }
+
+        var existCacheItemsMap = await cache
+            .GetAllAsync<FeatureValueCacheItem>(cacheKeys, cancellationToken)
+            .ConfigureAwait(false);
+        var existCacheItems = existCacheItemsMap.ToList();
+
+        if (existCacheItems.TrueForAll(x => x.Value.HasValue))
+        {
+            return existCacheItems.ConvertAll(item => new FeatureValue(
+                keyToName.TryGetValue(item.Key, out var n) ? n : _GetFeatureNameFromCacheKey(item.Key),
+                item.Value.Value?.Value
+            ));
+        }
+
+        // Some cache items aren't found in the cache, get them from the database
+        var notCacheNames = existCacheItems
+            .Where(x => !x.Value.HasValue)
+            .Select(x => keyToName.TryGetValue(x.Key, out var n) ? n : _GetFeatureNameFromCacheKey(x.Key))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var newCacheItemsMap = await _CacheSomeAsync(notCacheNames, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        var result = new List<FeatureValue>(cacheKeys.Count);
+
+        foreach (var cacheKey in cacheKeys)
+        {
+            var featureName = keyToName.TryGetValue(cacheKey, out var n) ? n : _GetFeatureNameFromCacheKey(cacheKey);
+
+            if (newCacheItemsMap.TryGetValue(cacheKey, out var newCachedValue))
+            {
+                result.Add(new FeatureValue(featureName, newCachedValue.Value));
+
+                continue;
+            }
+
+            if (existCacheItemsMap.TryGetValue(cacheKey, out var cacheItem))
+            {
+                result.Add(new FeatureValue(featureName, cacheItem.Value?.Value));
+
+                continue;
+            }
+
+            result.Add(new FeatureValue(featureName, Value: null));
+        }
+
+        return result;
+    }
+
+    /// <summary>Fetches the specified feature names from the repository and populates the cache.</summary>
+    private async Task<Dictionary<string, FeatureValueCacheItem>> _CacheSomeAsync(
+        HashSet<string> names,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var definitions = await _GetDbFeatureDefinitionsAsync(names, cancellationToken).ConfigureAwait(false);
+        var dbValuesMap = await _GetProviderValuesMapAsync(names, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        var cacheItems = new Dictionary<string, FeatureValueCacheItem>(StringComparer.Ordinal);
+
+        foreach (var definition in definitions)
+        {
+            var cacheKey = FeatureValueCacheItem.CalculateCacheKey(definition.Name, providerName, providerKey);
+            var featureValue = dbValuesMap.GetOrDefault(definition.Name);
+            cacheItems[cacheKey] = new FeatureValueCacheItem(featureValue);
+        }
+
+        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
+
+        return cacheItems;
+    }
+
+    /// <summary>Loads all feature values for the provider/key into the cache and returns the value for <c>featureNameToFind</c>.</summary>
     private async Task<string?> _CacheAllAndGetAsync(
         string providerName,
         string? providerKey,
@@ -275,8 +398,7 @@ public sealed class FeatureValueStore(
         {
             var cacheKey = FeatureValueCacheItem.CalculateCacheKey(featureDefinition.Name, providerName, providerKey);
             var featureValue = dbValuesMap.GetOrDefault(featureDefinition.Name);
-            var featureValueCacheItem = new FeatureValueCacheItem(featureValue);
-            cacheItems[cacheKey] = featureValueCacheItem;
+            cacheItems[cacheKey] = new FeatureValueCacheItem(featureValue);
 
             if (string.Equals(featureDefinition.Name, featureNameToFind, StringComparison.Ordinal))
             {
@@ -301,7 +423,47 @@ public sealed class FeatureValueStore(
         return dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
     }
 
-    #endregion
+    /// <summary>Returns feature definitions that match the requested <paramref name="names"/>.</summary>
+    private async Task<IEnumerable<FeatureDefinition>> _GetDbFeatureDefinitionsAsync(
+        HashSet<string> names,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (names.Count == 0)
+        {
+            return [];
+        }
+
+        var definitions = await featureDefinitionManager.GetFeaturesAsync(cancellationToken).ConfigureAwait(false);
+
+        return definitions.Where(definition => names.Contains(definition.Name));
+    }
+
+    /// <summary>Fetches stored feature values for the given <paramref name="names"/> under a provider/key pair and returns them as a name-to-value map.</summary>
+    private async Task<Dictionary<string, string>> _GetProviderValuesMapAsync(
+        HashSet<string> names,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        var dbValues = await repository
+            .GetListAsync(names, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+        return dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
+    }
+
+    /// <summary>Extracts the feature name from a cache key, throwing if the key is malformed.</summary>
+    /// <exception cref="InvalidOperationException">The <paramref name="key"/> does not match the expected cache key format.</exception>
+    private static string _GetFeatureNameFromCacheKey(string key)
+    {
+        var featureName = FeatureValueCacheItem.GetFeatureNameFromCacheKey(key);
+        Ensure.True(featureName is not null, $"Invalid feature cache key `{key}` feature name not found");
+
+        return featureName;
+    }
+
+    #endregion Helpers
 }
 
 /// <summary>Persistent store for per-provider feature values.</summary>
@@ -328,6 +490,21 @@ public interface IFeatureValueStore
     /// <returns>The stored string value, or <see langword="null"/> when no value has been persisted.</returns>
     Task<string?> GetOrDefaultAsync(
         string name,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Returns the stored values for the specified feature <paramref name="names"/>.</summary>
+    /// <param name="names">The set of feature names to retrieve.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">An optional key that qualifies the provider scope.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>A list of <see cref="FeatureValue"/> entries; a <see langword="null"/> <c>Value</c> means the feature has no stored entry.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="names"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="names"/> is empty.</exception>
+    Task<List<FeatureValue>> GetAllAsync(
+        HashSet<string> names,
         string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default

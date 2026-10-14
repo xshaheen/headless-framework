@@ -84,6 +84,28 @@ internal sealed class EfPermissionGrantRepository<TContext>(
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Returns grant records whose permission name is in <paramref name="names"/> and whose provider key is
+    /// in <paramref name="providerKeys"/>, untracked. Filters in-database with <c>Contains</c> predicates.
+    /// </summary>
+    public async Task<List<PermissionGrantRecord>> GetListAsync(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        IReadOnlyCollection<string> providerKeys,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+
+        return await db.Set<PermissionGrantRecord>()
+            .AsNoTracking()
+            .Where(s =>
+                names.Contains(s.Name) && s.ProviderName == providerName && providerKeys.Contains(s.ProviderKey)
+            )
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public async Task InsertAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
