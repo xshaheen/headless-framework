@@ -32,12 +32,9 @@ public sealed class SqsRejectBatcherTests : TestBase
 
         // then
         await _sqs.Received(1).ChangeMessageVisibilityAsync(_QueueUrl, "receipt-1", 3, CancellationToken.None);
-        await _sqs.DidNotReceiveWithAnyArgs()
-            .ChangeMessageVisibilityBatchAsync(
-                default!,
-                default(List<ChangeMessageVisibilityBatchRequestEntry>)!,
-                AbortToken
-            );
+        _sqs.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IAmazonSQS.ChangeMessageVisibilityBatchAsync));
         _gate.CurrentCount.Should().Be(1, "the gate is released after the call");
     }
 
