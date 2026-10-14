@@ -307,7 +307,6 @@ APIs جاهزة للـ production على ASP.NET Core: conventions للـ reques
 | [Headless.Api.Logging.Serilog](src/Headless.Api.Logging.Serilog/README.md) | Enrichers لـ Serilog على مستوى كل request |
 | [Headless.Api.MinimalApi](src/Headless.Api.MinimalApi/README.md) | أدوات للـ Minimal API |
 | [Headless.Api.Mvc](src/Headless.Api.Mvc/README.md) | أدوات للـ MVC |
-| [Headless.Api.Idempotency](src/Headless.Api.Idempotency/README.md) | HTTP idempotency middleware بأسلوب Stripe: بيـ cache الـ response ويرجّعه عند الـ retry |
 | [Headless.Api.Identity](src/Headless.Api.Identity/README.md) | ربط ASP.NET Core Identity: token providers، أخطاء identity مترجمة، و Basic و API-key schemes |
 | [Headless.Api.Jwt](src/Headless.Api.Jwt/README.md) | إصدار JWT وقراءته، مع bearer scheme بنفس القواعد |
 | [Headless.Api.UserAgent](src/Headless.Api.UserAgent/README.md) | تحليل الـ User-Agent عن طريق DeviceDetector.NET |
@@ -645,6 +644,7 @@ Idempotent admission دائم ومتقسّم حسب الـ tenant: اقبل ال
 | [Headless.Idempotency.Caching](src/Headless.Idempotency.Caching/README.md) | Records الـ idempotency في cache مشترك (Redis) للـ autonomous calls بين الـ replicas من غير SQL |
 | [Headless.Idempotency.InMemory](src/Headless.Idempotency.InMemory/README.md) | Records جوه الـ process للـ tests وللـ hosts اللي شغالة بـ instance واحدة |
 | [Headless.Idempotency.PostgreSql](src/Headless.Idempotency.PostgreSql/README.md) | Records الـ idempotency في PostgreSQL |
+| [Headless.Idempotency.ResponseReplay](src/Headless.Idempotency.ResponseReplay/README.md) | HTTP idempotency middleware بأسلوب Stripe: بيـ cache الـ response ويرجّعه عند الـ retry |
 | [Headless.Idempotency.SqlServer](src/Headless.Idempotency.SqlServer/README.md) | Records الـ idempotency في SQL Server |
 | [Headless.Idempotency.Sqlite](src/Headless.Idempotency.Sqlite/README.md) | Records الـ idempotency في SQLite، والـ admission بيعمل commit لوحده |
 

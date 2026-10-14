@@ -32,7 +32,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 
 | Task | Read |
 | --- | --- |
-| Bootstrap an ASP.NET Core host; Problem Details; validation; idempotency; Minimal API or MVC; JWT, ASP.NET Core Identity, or User-Agent parsing | [API & Web](api.md) |
+| Bootstrap an ASP.NET Core host; Problem Details; validation; Minimal API or MVC; JWT, ASP.NET Core Identity, or User-Agent parsing | [API & Web](api.md) |
 | Generate OpenAPI or expose Scalar UI | [OpenAPI](openapi.md) |
 | Use ASP.NET Core Identity with the Headless EF pipeline | [Identity](identity.md) |
 | Resolve tenants from claims, host, route, or catalog; enforce tenant reads/writes | [Multi-tenancy](multi-tenancy.md) |
@@ -56,7 +56,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | Record entity changes or explicit audit events | [Audit Log](audit-log.md) |
 | Issue per-tenant consecutive numbers (receipts, invoices, case numbers), gap-free when audited | [Sequences](sequences.md) |
 | Grant a durable, cross-process lease that fences a stale or zombie attempt's writes; hand work to an external executor | [Fencing](fencing.md) |
-| Admit a keyed operation once across retries, processes, or executors, and replay its stored result | [Idempotency](idempotency.md) |
+| Admit a keyed operation once across retries, processes, or executors, and replay its stored result; replay HTTP responses for `Idempotency-Key` retries | [Idempotency](idempotency.md) |
 
 ### Distributed runtime
 
@@ -104,7 +104,7 @@ Choose by the question, not by the words "lock" or "lease". [Fencing § Choosing
 | --- | --- | --- |
 | May this process run now? | Distributed lock (`IDistributedLock`) | [Distributed Locks](distributed-locks.md) |
 | Who owns this work, at which generation, until when? | Fenced lease (`IFencedLeases`, `unit.Leases`) | [Fencing](fencing.md) |
-| Has this operation already happened, and what was its result? | Idempotent admission (`IIdempotentOperations`, `unit.Idempotency`; `Headless.Api.Idempotency` for HTTP) | [Idempotency](idempotency.md) |
+| Has this operation already happened, and what was its result? | Idempotent admission (`IIdempotentOperations`, `unit.Idempotency`; `Headless.Idempotency.ResponseReplay` for HTTP) | [Idempotency](idempotency.md) |
 | Which node incarnations are alive? | Membership (`INodeMembership`) | [Coordination](coordination.md) |
 | Does the work already have a row you own? | A lease in that row's own columns, claimed and renewed by guarded updates, as Jobs and Messaging do | [Fencing § Work that already has a row](fencing.md#work-that-already-has-a-row) |
 
