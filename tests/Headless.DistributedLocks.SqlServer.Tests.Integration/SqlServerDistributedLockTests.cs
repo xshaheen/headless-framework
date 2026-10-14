@@ -506,6 +506,74 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
         handle.ConnectionLostToken.IsCancellationRequested.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task should_free_the_application_lock_when_its_release_throws()
+    {
+        // given (a release that fails before it reaches the server leaves the lock held on its session)
+        await using var storage = new SqlServerConnectionScopedLockStorage(
+            Options.Create(
+                new SqlServerDistributedLockOptions
+                {
+                    ConnectionString = fixture.ConnectionString,
+                    KeyPrefix = DistributedLockOptions.DefaultKeyPrefix,
+                    EnableFencing = false,
+                }
+            ),
+            Options.Create(new DistributedLocksStorageOptions()),
+            TimeProvider.System
+        )
+        {
+            BeforeReleaseAsync = () => throw new InvalidOperationException("Simulated release failure."),
+        };
+        var resource = Faker.Random.AlphaNumeric(12);
+        var handle = await storage.TryAcquireAsync(
+            resource,
+            Guid.NewGuid().ToString("N"),
+            isShared: false,
+            observeLoss: false,
+            AbortToken
+        );
+        handle.Should().NotBeNull();
+
+        // when
+        var release = async () => await handle!.ReleaseAsync(AbortToken);
+
+        // then (the session is ended rather than pooled, so the lock does not outlive the failed release)
+        await release.Should().ThrowAsync<InvalidOperationException>();
+        (await _WaitUntilSessionLockFreeAsync(resource, TimeSpan.FromSeconds(5))).Should().BeTrue();
+    }
+
+    private async Task<bool> _WaitUntilSessionLockFreeAsync(string resource, TimeSpan within)
+    {
+        var started = TimeProvider.System.GetTimestamp();
+
+        while (TimeProvider.System.GetElapsedTime(started) < within)
+        {
+            if (await _CanTakeExclusiveSessionLockAsync(resource))
+            {
+                return true;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
+        }
+
+        return await _CanTakeExclusiveSessionLockAsync(resource);
+    }
+
+    private async Task<bool> _CanTakeExclusiveSessionLockAsync(string resource)
+    {
+        // Unpooled, so the probe can never be handed the pooled session that holds the lock: APPLOCK_TEST on the owning
+        // session reports the lock as available.
+        var builder = new SqlConnectionStringBuilder(fixture.ConnectionString) { Pooling = false };
+        await using var connection = new SqlConnection(builder.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT APPLOCK_TEST(N'public', @resource, N'Exclusive', N'Session');";
+        command.Parameters.AddWithValue("resource", _Encode(resource));
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture) == 1;
+    }
+
     private ServiceProvider _CreateProvider(Action<SqlServerDistributedLockOptions>? configure = null)
     {
         var services = new ServiceCollection();
