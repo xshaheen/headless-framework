@@ -6,8 +6,14 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Coordination;
 
 /// <summary>Registers this node, heartbeats it, publishes membership events, and leaves on shutdown.</summary>
+/// <remarks>
+/// The beat loop starts in <see cref="StartingAsync"/>, before any hosted service's <c>StartAsync</c>, and waits there
+/// for whichever caller registers first (the Jobs startup gate, or this service's own register-if-null in
+/// <c>ExecuteAsync</c>). The self-fence is anchored at that registration, so a slow <c>StartingAsync</c> in a later
+/// service cannot outlast <see cref="CoordinationOptions.DeadThreshold"/> while nothing beats.
+/// </remarks>
 /// <param name="timeProvider">
-/// The registered clock: paces beats and measures the self-fence against <see cref="CoordinationOptions.DeadThreshold"/>.
+/// The registered clock: paces beats and bounds each beat by the fence budget left.
 /// </param>
 /// <param name="realTimeProvider">
 /// The clock for waits that ride out a store failure: the registration back-off and the bounded leave on stop.
@@ -20,22 +26,44 @@ internal sealed class MembershipHeartbeatBackgroundService(
     TimeProvider timeProvider,
     TimeProvider realTimeProvider,
     ILogger<MembershipHeartbeatBackgroundService> logger
-) : BackgroundService
+) : BackgroundService, IHostedLifecycleService
 {
+    private readonly CancellationTokenSource _loopCts = new();
     private Dictionary<NodeIdentity, NodeLivenessState> _previous = [];
-    private long _lastConfirmedHeartbeatTimestamp = timeProvider.GetTimestamp();
-    private NodeIdentity? _trackedIdentity;
+    private Task? _loop;
+    private int _loopStarted;
+    private int _disposed;
+
+    public Task StartingAsync(CancellationToken cancellationToken)
+    {
+        _StartLoop();
+
+        return Task.CompletedTask;
+    }
+
+    public Task StartedAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task StoppingAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task StoppedAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Stop issuing heartbeats once local membership is lost (StopMembershipOnly) as well as on host stop.
-        using var loopCts = CancellationTokenSource.CreateLinkedTokenSource(
-            stoppingToken,
-            membership.LocalMembershipLostToken
-        );
-        var loopToken = loopCts.Token;
+        // A host that never calls the lifecycle hooks (or a test driving StartAsync alone) still gets the loop.
+        _StartLoop();
 
-        if (membership.Identity is null)
+        // Register-if-null for hosts without the Jobs startup gate. A membership already lost in this process is
+        // never re-registered: the INodeMembership contract is that the process restarts with a new incarnation.
+        if (membership.Identity is null && !membership.LocalMembershipLostToken.IsCancellationRequested)
         {
             if (!await _TryRegisterWithRetryAsync(stoppingToken).ConfigureAwait(false))
             {
@@ -43,22 +71,23 @@ internal sealed class MembershipHeartbeatBackgroundService(
             }
         }
 
-        while (!loopToken.IsCancellationRequested)
+        try
         {
-            try
-            {
-                await RunOnceAsync(loopToken).ConfigureAwait(false);
-                await timeProvider.Delay(options.HeartbeatInterval, loopToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
+            await _loop!.WaitAsync(stoppingToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Host stop: StopAsync cancels the loop itself.
         }
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
+        if (Volatile.Read(ref _disposed) == 0)
+        {
+            await _loopCts.CancelAsync().ConfigureAwait(false);
+        }
+
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
 
         // Best-effort graceful leave under a bounded budget so a store outage can't hang host shutdown.
@@ -79,6 +108,76 @@ internal sealed class MembershipHeartbeatBackgroundService(
         }
     }
 
+    public override void Dispose()
+    {
+        // The container disposes this instance twice: once as the singleton and once through the IHostedService
+        // factory that returns the same instance.
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        _loopCts.Cancel();
+        _loopCts.Dispose();
+        base.Dispose();
+    }
+
+    private void _StartLoop()
+    {
+        if (Interlocked.Exchange(ref _loopStarted, 1) != 0)
+        {
+            return;
+        }
+
+        // Only a host that beats may fence itself; this service is that beat source.
+        membership.EnableSelfFence();
+        _loop = _RunLoopAsync(_loopCts.Token);
+    }
+
+    private async Task _RunLoopAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await membership.WaitForRegistrationAsync(stoppingToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        // Stop issuing heartbeats once local membership is lost (StopMembershipOnly) as well as on host stop.
+        using var loopCts = CancellationTokenSource.CreateLinkedTokenSource(
+            stoppingToken,
+            membership.LocalMembershipLostToken
+        );
+        var loopToken = loopCts.Token;
+
+        while (!loopToken.IsCancellationRequested)
+        {
+            try
+            {
+                await RunOnceAsync(loopToken).ConfigureAwait(false);
+                await timeProvider.Delay(_NextBeatDelay(), loopToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+    }
+
+    // A beat interval, but never past the fence deadline: after failed beats the next attempt lands while the
+    // node can still renew, and at the deadline the next tick fail-stops a lease the timer has not reached yet.
+    private TimeSpan _NextBeatDelay()
+    {
+        if (!membership.TryGetFence(out _, out var remaining) || remaining >= options.HeartbeatInterval)
+        {
+            return options.HeartbeatInterval;
+        }
+
+        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+    }
+
     private async Task<bool> _TryRegisterWithRetryAsync(CancellationToken cancellationToken)
     {
         const int maxAttempts = 5;
@@ -94,6 +193,12 @@ internal sealed class MembershipHeartbeatBackgroundService(
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                throw;
+            }
+            catch (MembershipRegistrationRejectedException)
+            {
+                // A duplicate NodeId is a configuration error, not a transient store failure: retrying would only
+                // race the other process for the generation again.
                 throw;
             }
             catch (Exception ex) when (attempt < maxAttempts)
@@ -115,35 +220,21 @@ internal sealed class MembershipHeartbeatBackgroundService(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (membership.Identity is { } identity)
+        if (membership.TryGetFence(out var identity, out var remaining))
         {
-            if (_trackedIdentity != identity)
-            {
-                _trackedIdentity = identity;
-                _lastConfirmedHeartbeatTimestamp = timeProvider.GetTimestamp();
-            }
-
-            var elapsed = timeProvider.GetElapsedTime(_lastConfirmedHeartbeatTimestamp);
-            var remaining = options.DeadThreshold - elapsed;
             if (remaining <= TimeSpan.Zero)
             {
                 await membership.FailStopAsync(identity).ConfigureAwait(false);
                 return;
             }
 
+            // Bound the beat by the fence budget left: a hung store call must not outlive the instant the node stops
+            // being a member.
             using var timeoutCts = new CancellationTokenSource(remaining, timeProvider);
             using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken,
                 timeoutCts.Token
             );
-
-            // Capture BEFORE issuing the beat: the store stamps LastBeat mid-call and peers classify Dead from
-            // LastBeat + DeadThreshold, so measuring the fence from the call's RETURN grants this node overhang
-            // equal to the beat's completion latency — with the deadline-bounded timeout above, a beat that
-            // commits early but returns slowly could keep this node running well past the instant peers reclaim
-            // its work. Anchoring to the pre-call instant keeps the local fence conservative relative to every
-            // peer's view of LastBeat.
-            var beatStartedTimestamp = timeProvider.GetTimestamp();
 
             try
             {
@@ -156,8 +247,6 @@ internal sealed class MembershipHeartbeatBackgroundService(
                 {
                     return;
                 }
-
-                _lastConfirmedHeartbeatTimestamp = beatStartedTimestamp;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -165,16 +254,16 @@ internal sealed class MembershipHeartbeatBackgroundService(
             }
             catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested)
             {
-                logger.HeartbeatFailed(ex, identity, options.DeadThreshold, options.DeadThreshold);
+                logger.HeartbeatFailed(ex, identity, TimeSpan.Zero, membership.FenceBudget);
                 await membership.FailStopAsync(identity).ConfigureAwait(false);
                 return;
             }
             catch (Exception ex)
             {
-                elapsed = timeProvider.GetElapsedTime(_lastConfirmedHeartbeatTimestamp);
-                logger.HeartbeatFailed(ex, identity, elapsed, options.DeadThreshold);
+                membership.TryGetFence(out _, out remaining);
+                logger.HeartbeatFailed(ex, identity, remaining, membership.FenceBudget);
 
-                if (elapsed >= options.DeadThreshold)
+                if (remaining <= TimeSpan.Zero)
                 {
                     await membership.FailStopAsync(identity).ConfigureAwait(false);
                 }

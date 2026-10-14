@@ -43,9 +43,15 @@ public sealed class PostgreSqlMembershipConformanceTests(PostgreSqlMembershipFix
     }
 
     [Fact]
-    public override Task should_allocate_exactly_one_through_n_for_concurrent_allocations()
+    public override Task should_allocate_distinct_incarnations_for_concurrent_allocations()
     {
-        return base.should_allocate_exactly_one_through_n_for_concurrent_allocations();
+        return base.should_allocate_distinct_incarnations_for_concurrent_allocations();
+    }
+
+    [Fact]
+    public override Task should_refuse_upsert_for_a_superseded_incarnation_without_writing_liveness()
+    {
+        return base.should_refuse_upsert_for_a_superseded_incarnation_without_writing_liveness();
     }
 
     [Fact]

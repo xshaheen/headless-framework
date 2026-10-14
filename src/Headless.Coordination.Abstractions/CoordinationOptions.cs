@@ -72,6 +72,19 @@ public sealed class CoordinationOptions
     public TimeSpan DeadThreshold { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Gets or sets how long before <see cref="DeadThreshold"/> the local node fences itself. The node measures its
+    /// fence from the instant just before its registration write and from the start of each accepted heartbeat, and
+    /// stops treating itself as a member at that anchor plus <see cref="DeadThreshold"/> minus this margin, so it stops
+    /// stamping work before any peer can classify it <see cref="NodeLivenessState.Dead"/> and reclaim that work. A
+    /// timer enforces the deadline even when no heartbeat completes, and <see cref="INodeMembership.Identity"/> reads
+    /// <see langword="null"/> from that instant. The fence runs only on a host that runs the membership heartbeat.
+    /// Must be zero or greater, and <see cref="DeadThreshold"/> minus this margin must be at least twice
+    /// <see cref="HeartbeatInterval"/>. Defaults to 5 seconds, so a host with a <see cref="DeadThreshold"/> shorter
+    /// than 5 seconds plus twice <see cref="HeartbeatInterval"/> must set a smaller margin.
+    /// </summary>
+    public TimeSpan SelfFenceMargin { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
     /// Gets or sets the minimum duration dead node records are retained in the backing store before becoming
     /// eligible for removal. Must be at least twice <see cref="HeartbeatInterval"/>, so a reader is guaranteed
     /// to see the dead record at least once before it disappears. This value is a floor, not a ceiling:

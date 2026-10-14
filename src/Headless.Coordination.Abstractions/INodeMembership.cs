@@ -26,8 +26,10 @@ namespace Headless.Coordination;
 public interface INodeMembership : IMembershipEventSource
 {
     /// <summary>
-    /// Gets the local node and incarnation identity acquired by <see cref="RegisterAsync"/>,
-    /// or <see langword="null"/> if the node has not registered or has left.
+    /// Gets the local node and incarnation identity acquired by <see cref="RegisterAsync"/>, or
+    /// <see langword="null"/> if the node has not registered, has left, has lost its membership, or (on a host that runs
+    /// the heartbeat) is past its self-fence deadline of <see cref="CoordinationOptions.DeadThreshold"/> minus
+    /// <see cref="CoordinationOptions.SelfFenceMargin"/> since its registration or last accepted heartbeat.
     /// </summary>
     NodeIdentity? Identity { get; }
 
@@ -44,12 +46,19 @@ public interface INodeMembership : IMembershipEventSource
 
     /// <summary>
     /// Registers this process as a cluster member and returns the allocated node and incarnation identity.
-    /// The backing store atomically allocates a monotonically increasing incarnation counter for the node
-    /// identifier, so a restarted process always obtains a higher incarnation than any previous run.
+    /// The backing store atomically allocates a strictly increasing incarnation for the node identifier, so a
+    /// restarted process always obtains a higher incarnation than any previous run. Concurrent calls share one
+    /// registration and return the same identity.
     /// </summary>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The allocated <see cref="NodeIdentity"/> for this process.</returns>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is already cancelled.</exception>
+    /// <exception cref="MembershipRegistrationRejectedException">
+    /// The store refused the registration because a newer incarnation of the same node id was allocated first.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Local membership was already lost in this process; the process must restart to register again.
+    /// </exception>
     ValueTask<NodeIdentity> RegisterAsync(CancellationToken cancellationToken = default);
 
     /// <summary>

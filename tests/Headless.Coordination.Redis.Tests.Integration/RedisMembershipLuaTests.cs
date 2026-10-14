@@ -1,11 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Globalization;
+using Headless.Context;
 using Headless.Coordination;
 using Headless.Coordination.Redis;
 using Headless.Coordination.Redis.Scripts;
 using Headless.Redis;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace Tests;
@@ -47,9 +52,10 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         var genKey = _GenKey(cluster, firstIdentity.NodeId);
         var generationField = _GenerationField(firstIdentity.NodeId);
 
+        var firstGeneration = firstIdentity.Incarnation.ToString();
         (await db.HashExistsAsync(knownKey, firstIdentity.ToString())).Should().BeTrue();
-        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("1");
-        (await db.StringGetAsync(genKey)).ToString().Should().Be("1");
+        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be(firstGeneration);
+        (await db.StringGetAsync(genKey)).ToString().Should().Be(firstGeneration);
 
         // The fixture's RedisKnownNodeRetention (600ms) is clamped up to at least the harness
         // DeadThreshold + DeadRetentionWindow, so wait past the harness prune threshold for the :known prune.
@@ -57,9 +63,9 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         (await first.Membership.GetLivenessSnapshotAsync(AbortToken)).Should().BeEmpty();
 
         (await db.HashExistsAsync(knownKey, firstIdentity.ToString())).Should().BeFalse();
-        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("1");
+        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be(firstGeneration);
         (await db.SortedSetScoreAsync(liveKey, firstIdentity.ToString())).Should().BeNull();
-        (await db.StringGetAsync(genKey)).ToString().Should().Be("1");
+        (await db.StringGetAsync(genKey)).ToString().Should().Be(firstGeneration);
 
         await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
         var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
@@ -68,11 +74,14 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         var staleAccepted = await store.HeartbeatAsync(firstIdentity, AbortToken);
         var live = await second.Membership.GetLiveNodesAsync(AbortToken);
 
-        secondIdentity.Incarnation.Value.Should().Be(2);
+        secondIdentity.Incarnation.Value.Should().BeGreaterThan(firstIdentity.Incarnation.Value);
         staleAccepted.Should().BeFalse();
         live.Should().Equal([secondIdentity]);
-        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("2");
-        (await db.StringGetAsync(genKey)).ToString().Should().Be("2");
+        (await db.HashGetAsync(knownKey, generationField))
+            .ToString()
+            .Should()
+            .Be(secondIdentity.Incarnation.ToString());
+        (await db.StringGetAsync(genKey)).ToString().Should().Be(secondIdentity.Incarnation.ToString());
     }
 
     [Fact]
@@ -86,9 +95,10 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         var genKey = _GenKey(cluster, identity.NodeId);
         var generationField = _GenerationField(identity.NodeId);
 
+        var generation = identity.Incarnation.ToString();
         (await db.HashExistsAsync(knownKey, identity.ToString())).Should().BeTrue();
-        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("1");
-        (await db.StringGetAsync(genKey)).ToString().Should().Be("1");
+        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be(generation);
+        (await db.StringGetAsync(genKey)).ToString().Should().Be(generation);
 
         // The fixture's RedisKnownNodeRetention (600ms) is clamped up to at least the harness
         // DeadThreshold + DeadRetentionWindow, so wait past the harness prune threshold for the :known prune.
@@ -97,7 +107,7 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
 
         (await db.HashExistsAsync(knownKey, identity.ToString())).Should().BeFalse();
         (await db.HashExistsAsync(knownKey, generationField)).Should().BeFalse();
-        (await db.StringGetAsync(genKey)).ToString().Should().Be("1");
+        (await db.StringGetAsync(genKey)).ToString().Should().Be(generation);
     }
 
     [Fact]
@@ -119,10 +129,13 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         var knownKey = _KnownKey(cluster);
         var generationField = _GenerationField(firstIdentity.NodeId);
 
-        secondIdentity.Incarnation.Value.Should().Be(2);
+        secondIdentity.Incarnation.Value.Should().BeGreaterThan(firstIdentity.Incarnation.Value);
         (await db.HashExistsAsync(knownKey, firstIdentity.ToString())).Should().BeTrue();
         (await db.HashExistsAsync(knownKey, secondIdentity.ToString())).Should().BeTrue();
-        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("2");
+        (await db.HashGetAsync(knownKey, generationField))
+            .ToString()
+            .Should()
+            .Be(secondIdentity.Incarnation.ToString());
 
         // Incarnation 2 is inside its liveness window, so its heartbeat is accepted and it survives the prune.
         (await second.Services.GetRequiredService<IMembershipStore>().HeartbeatAsync(secondIdentity, AbortToken))
@@ -136,7 +149,10 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
             .Should()
             .BeFalse();
         (await db.HashExistsAsync(knownKey, secondIdentity.ToString())).Should().BeTrue();
-        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("2");
+        (await db.HashGetAsync(knownKey, generationField))
+            .ToString()
+            .Should()
+            .Be(secondIdentity.Incarnation.ToString());
     }
 
     [Fact]
@@ -151,7 +167,11 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         var generationField = _GenerationField(identity.NodeId);
 
         _ = await db.StringIncrementAsync(genKey);
-        _ = await db.HashSetAsync(knownKey, generationField, "2");
+        _ = await db.HashSetAsync(
+            knownKey,
+            generationField,
+            (identity.Incarnation.Value + 1).ToString(CultureInfo.InvariantCulture)
+        );
 
         var snapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
         var staleAccepted = await node
@@ -177,7 +197,7 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         var snapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
 
         snapshot.Should().ContainSingle(x => x.Identity == identity && x.State == NodeLivenessState.Alive);
-        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("1");
+        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be(identity.Incarnation.ToString());
     }
 
     [Fact]
@@ -224,7 +244,8 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         await using var node = await fixture.CreateNodeAsync(_Cluster(), "node-a", AbortToken);
         var identity = await node.Membership.RegisterAsync(AbortToken);
 
-        identity.Should().Be(new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1)));
+        identity.NodeId.Should().Be(new NodeId("node-a"));
+        identity.Incarnation.Value.Should().BePositive();
     }
 
     [Fact]
@@ -326,6 +347,126 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         (await db.HashExistsAsync(knownKey, identity.ToString()))
             .Should()
             .BeTrue();
+    }
+
+    [Fact]
+    public async Task should_allocate_a_higher_incarnation_after_the_store_is_flushed()
+    {
+        // An INCR counter restarts at 1 after FLUSHALL, re-issuing node-a@1: rows an earlier process stamped with that
+        // owner would then belong to the new process.
+        var cluster = _Cluster();
+        await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
+        await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
+
+        await fixture.FlushAllAsync(AbortToken);
+
+        await using var third = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var thirdIdentity = await third.Membership.RegisterAsync(AbortToken);
+
+        thirdIdentity.Incarnation.Value.Should().BeGreaterThan(firstIdentity.Incarnation.Value);
+        thirdIdentity.Incarnation.Value.Should().BeGreaterThan(secondIdentity.Incarnation.Value);
+    }
+
+    [Fact]
+    public async Task should_allocate_a_higher_incarnation_after_the_generation_key_rolls_back()
+    {
+        // A lossy failover can promote a replica whose generation key is behind the primary's.
+        var cluster = _Cluster();
+        var db = fixture.ConnectionMultiplexer.GetDatabase();
+        await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
+        await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
+
+        await db.StringSetAsync(_GenKey(cluster, firstIdentity.NodeId), "1");
+
+        await using var third = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var thirdIdentity = await third.Membership.RegisterAsync(AbortToken);
+
+        thirdIdentity.Incarnation.Value.Should().BeGreaterThan(firstIdentity.Incarnation.Value);
+        thirdIdentity.Incarnation.Value.Should().BeGreaterThan(secondIdentity.Incarnation.Value);
+        (await db.HashGetAsync(_KnownKey(cluster), _GenerationField(thirdIdentity.NodeId)))
+            .ToString()
+            .Should()
+            .Be(thirdIdentity.Incarnation.ToString(), "the generation mirror must hold the exact decimal");
+    }
+
+    [Fact]
+    public async Task should_refuse_a_heartbeat_and_log_a_store_reset_when_the_generation_key_is_missing()
+    {
+        var cluster = _Cluster();
+        var db = fixture.ConnectionMultiplexer.GetDatabase();
+        var logs = new ConcurrentQueue<EventId>();
+        var services = new ServiceCollection();
+        services.AddLogging(logging => logging.AddProvider(new EventCapturingLoggerProvider(logs)));
+        services.AddHeadlessHostIdentity(options => options.HostName = "node-a");
+        services.AddHeadlessCoordination(setup =>
+        {
+            fixture.ConfigureProvider(services, setup);
+            setup.DisableMembershipHeartbeat();
+            setup.Configure(options =>
+            {
+                options.ClusterName = cluster;
+                options.HeartbeatInterval = CoordinationFixtureExtensions.HeartbeatInterval;
+                options.SuspicionThreshold = CoordinationFixtureExtensions.SuspicionThreshold;
+                options.DeadThreshold = CoordinationFixtureExtensions.DeadThreshold;
+                options.DeadRetentionWindow = CoordinationFixtureExtensions.DeadRetentionWindow;
+                options.SelfFenceMargin = CoordinationFixtureExtensions.SelfFenceMargin;
+                options.MembershipLostBehavior = MembershipLostBehavior.StopMembershipOnly;
+            });
+        });
+        await using var provider = services.BuildServiceProvider();
+
+        foreach (var initializer in provider.GetServices<IHostedService>().OfType<IHostedLifecycleService>())
+        {
+            await initializer.StartingAsync(AbortToken);
+        }
+
+        var membership = provider.GetRequiredService<INodeMembership>();
+        var identity = await membership.RegisterAsync(AbortToken);
+
+        await db.KeyDeleteAsync(_GenKey(cluster, identity.NodeId));
+        var accepted = await provider.GetRequiredService<IMembershipStore>().HeartbeatAsync(identity, AbortToken);
+
+        accepted.Should().BeFalse();
+        logs.Should().ContainSingle(x => x.Name == "RedisCoordinationStoreReset");
+    }
+
+    private sealed class EventCapturingLoggerProvider(ConcurrentQueue<EventId> events) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName)
+        {
+            return new EventCapturingLogger(events);
+        }
+
+        public void Dispose() { }
+
+        private sealed class EventCapturingLogger(ConcurrentQueue<EventId> events) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull
+            {
+                return null;
+            }
+
+            public bool IsEnabled(LogLevel logLevel)
+            {
+                return true;
+            }
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                events.Enqueue(eventId);
+            }
+        }
     }
 
     private static string _Cluster()

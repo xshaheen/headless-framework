@@ -138,6 +138,7 @@ public static class SetupCoordinationCore
                 sp.GetRequiredService<INodeIdProvider>(),
                 sp.GetRequiredService<CoordinationOptions>(),
                 sp.GetRequiredService<MembershipEventSource>(),
+                sp.GetRequiredService<TimeProvider>(),
                 sp.GetService<IHostApplicationLifetime>(),
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MembershipService>>()
             ));
@@ -155,7 +156,8 @@ public static class SetupCoordinationCore
         {
             // The registration back-off and the bounded leave on stop ride out a store failure, so they wait real
             // time: a test host that registers a FakeTimeProvider and never advances it must still register and stop.
-            // Beat cadence and the self-fence stay on the registered clock, which tests advance to drive liveness.
+            // Beat cadence and the self-fence (owned by MembershipService) stay on the registered clock, which tests
+            // advance to drive liveness.
             services.TryAddSingleton(static sp => new MembershipHeartbeatBackgroundService(
                 sp.GetRequiredService<MembershipService>(),
                 sp.GetRequiredService<MembershipEventSource>(),

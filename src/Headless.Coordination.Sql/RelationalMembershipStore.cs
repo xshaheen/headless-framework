@@ -281,7 +281,7 @@ internal sealed class RelationalMembershipStore : IMembershipStore
         );
     }
 
-    public async ValueTask UpsertDescriptorAsync(
+    public async ValueTask<bool> UpsertDescriptorAsync(
         NodeDescriptor descriptor,
         CancellationToken cancellationToken = default
     )
@@ -292,7 +292,7 @@ internal sealed class RelationalMembershipStore : IMembershipStore
         var endpoints = _Serialize(descriptor.Endpoints);
         var metadata = _Serialize(descriptor.Metadata);
 
-        await _RunAsync(
+        return await _RunAsync(
                 "coordination.upsert_descriptor",
                 async (connection, transaction, ct) =>
                 {

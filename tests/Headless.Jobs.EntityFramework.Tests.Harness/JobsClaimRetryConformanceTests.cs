@@ -181,6 +181,7 @@ public abstract class JobsClaimRetryConformanceTests<TFixture>(TFixture fixture)
                 options.SuspicionThreshold = JobsCoordinationFixtureExtensions.SuspicionThreshold;
                 options.DeadThreshold = JobsCoordinationFixtureExtensions.DeadThreshold;
                 options.DeadRetentionWindow = JobsCoordinationFixtureExtensions.DeadRetentionWindow;
+                options.SelfFenceMargin = JobsCoordinationFixtureExtensions.HeartbeatInterval;
                 options.MembershipLostBehavior = MembershipLostBehavior.StopMembershipOnly;
             });
         });

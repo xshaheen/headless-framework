@@ -5,19 +5,25 @@ using Headless.Coordination.Redis.Scripts;
 using Headless.Redis;
 using Headless.Serializer;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Headless.Coordination.Redis;
 
-internal sealed class RedisMembershipStore(
+internal sealed partial class RedisMembershipStore(
     IConnectionMultiplexer multiplexer,
     [FromKeyedServices(RedisCoordinationServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader,
     IOptions<CoordinationOptions> coordinationOptions,
     IOptions<RedisCoordinationOptions> redisOptions,
-    [FromKeyedServices(CoordinationOptions.JsonSerializerServiceKey)] IJsonSerializer serializer
+    [FromKeyedServices(CoordinationOptions.JsonSerializerServiceKey)] IJsonSerializer serializer,
+    ILogger<RedisMembershipStore> logger
 ) : IMembershipStore
 {
+    // The guarded heartbeat script returns this when the node's generation key is gone: the store was flushed or
+    // failed over without the key, so the incarnation it fences against no longer exists anywhere.
+    private const int _GenerationMissing = -1;
+
     private readonly ConcurrentDictionary<NodeIdentity, NodeDescriptor> _descriptors = new();
 
     // Metadata serialized once at descriptor upsert and reused on the hot heartbeat path.
@@ -58,32 +64,42 @@ internal sealed class RedisMembershipStore(
             )
             .ConfigureAwait(false);
 
-        // The allocate script returns redis.call('incr'), which is always an integer and never nil, so this cast is unconditionally safe.
+        // The allocate script returns the incarnation as an exact decimal string (never nil), which RedisResult parses.
         return new NodeIncarnation((long)value);
     }
 
-    public async ValueTask UpsertDescriptorAsync(
+    public async ValueTask<bool> UpsertDescriptorAsync(
         NodeDescriptor descriptor,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Write-through cache: keep role/metadata local for the hot heartbeat path...
-        _descriptors[descriptor.Identity] = descriptor;
-        _metadataJson[descriptor.Identity] = _SerializeDictionary(descriptor.Metadata);
+        var metadataJson = _SerializeDictionary(descriptor.Metadata);
 
-        // ...and durably establish liveness at register by running the same guarded write the first
-        // heartbeat would have done (HSET role/metadata into :known, ZADD member into :live with server
-        // TIME, gated on the freshly-allocated incarnation). A stale/impossible incarnation is rejected.
-        await scriptsLoader
+        // Durably establish liveness at register by running the same guarded write the first heartbeat would
+        // have done (HSET role/metadata into :known, ZADD member into :live with server TIME, gated on the
+        // freshly-allocated incarnation). A stale/impossible incarnation is rejected.
+        var result = await scriptsLoader
             .EvaluateAsync(
                 Db,
                 RedisMembershipHeartbeatScriptDefinition.Instance,
-                _CreateHeartbeatParams(descriptor.Identity, descriptor, allowCreate: true),
+                _CreateHeartbeatParams(descriptor.Identity, descriptor.Role, metadataJson, allowCreate: true),
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        if ((int)result <= 0)
+        {
+            return false;
+        }
+
+        // Write-through cache for the hot heartbeat path, filled only for an accepted registration so a refused
+        // identity never leaves role/metadata behind.
+        _descriptors[descriptor.Identity] = descriptor;
+        _metadataJson[descriptor.Identity] = metadataJson;
+
+        return true;
     }
 
     public async ValueTask<bool> HeartbeatAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
@@ -97,12 +113,24 @@ internal sealed class RedisMembershipStore(
             .EvaluateAsync(
                 Db,
                 RedisMembershipHeartbeatScriptDefinition.Instance,
-                _CreateHeartbeatParams(identity, descriptor, allowCreate: false),
+                _CreateHeartbeatParams(
+                    identity,
+                    descriptor?.Role,
+                    _MetadataJson(identity, descriptor),
+                    allowCreate: false
+                ),
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        return (int)result > 0;
+        var outcome = (int)result;
+
+        if (outcome == _GenerationMissing)
+        {
+            LogCoordinationStoreReset(logger, identity);
+        }
+
+        return outcome > 0;
     }
 
     public async ValueTask LeaveAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
@@ -356,7 +384,12 @@ internal sealed class RedisMembershipStore(
         return _ToMilliseconds(retention);
     }
 
-    private HeartbeatParams _CreateHeartbeatParams(NodeIdentity identity, NodeDescriptor? descriptor, bool allowCreate)
+    private HeartbeatParams _CreateHeartbeatParams(
+        NodeIdentity identity,
+        string? role,
+        string metadataJson,
+        bool allowCreate
+    )
     {
         return new(
             _LiveKey(),
@@ -367,8 +400,8 @@ internal sealed class RedisMembershipStore(
             identity.Incarnation.Value,
             _ToMilliseconds(Options.DeadThreshold),
             allowCreate ? 1 : 0,
-            descriptor?.Role ?? string.Empty,
-            _MetadataJson(identity, descriptor)
+            role ?? string.Empty,
+            metadataJson
         );
     }
 
@@ -387,4 +420,13 @@ internal sealed class RedisMembershipStore(
         return serializer.Deserialize<Dictionary<string, string>>(value)
             ?? new Dictionary<string, string>(StringComparer.Ordinal);
     }
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "RedisCoordinationStoreReset",
+        Level = LogLevel.Error,
+        Message = "Coordination store reset: the Redis generation key for {Identity} is missing (flushed, or lost in a failover), so its heartbeat was refused and the node fail-stops."
+    )]
+    // ReSharper disable once InconsistentNaming
+    private static partial void LogCoordinationStoreReset(ILogger logger, NodeIdentity identity);
 }

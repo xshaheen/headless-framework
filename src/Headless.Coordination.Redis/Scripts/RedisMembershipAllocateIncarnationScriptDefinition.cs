@@ -6,7 +6,9 @@ using StackExchange.Redis;
 
 namespace Headless.Coordination.Redis.Scripts;
 
-/// <summary>Allocates a node incarnation and mirrors it into the known-node projection.</summary>
+/// <summary>
+/// Allocates a node incarnation that rises across a store reset and mirrors it into the known-node projection.
+/// </summary>
 internal sealed class RedisMembershipAllocateIncarnationScriptDefinition : RedisScriptDefinition
 {
     public static RedisMembershipAllocateIncarnationScriptDefinition Instance { get; } = new();
@@ -14,10 +16,19 @@ internal sealed class RedisMembershipAllocateIncarnationScriptDefinition : Redis
     private RedisMembershipAllocateIncarnationScriptDefinition()
         : base(
             """
-            local incarnation = redis.call('incr', @genKey)
+            -- Seed from the server clock (microsecond resolution, ~1.8e15 today, below 2^53) so an incarnation
+            -- issued after a flush or a lossy failover still exceeds every incarnation issued before it; a plain
+            -- INCR would restart at 1 and hand out identities that earlier rows were stamped with.
+            local current = tonumber(redis.call('get', @genKey) or '0')
+            local now = redis.call('TIME')
+            local seed = ((tonumber(now[1]) * 1000) + math.floor(tonumber(now[2]) / 1000)) * 1000
+            local incarnation = math.max(current + 1, seed)
+            -- Lua 5.1 tostring() renders 16-digit numbers in exponent form, so format the integer explicitly.
+            local text = string.format('%.0f', incarnation)
+            redis.call('set', @genKey, text)
             -- Mirror value is a bare decimal (not JSON); read/cleanup classification depends on it not starting with '{'.
-            redis.call('hset', @knownKey, @generationField, tostring(incarnation))
-            return incarnation
+            redis.call('hset', @knownKey, @generationField, text)
+            return text
             """
         ) { }
 }

@@ -83,6 +83,7 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
             HeartbeatInterval = TimeSpan.FromSeconds(1),
             SuspicionThreshold = TimeSpan.FromSeconds(2),
             DeadThreshold = TimeSpan.FromSeconds(3),
+            SelfFenceMargin = TimeSpan.Zero,
         };
         var store = new FakeMembershipStore { ThrowOnHeartbeat = true };
         var (sut, timeProvider, membership) = _CreateSut(store, options);
@@ -106,6 +107,7 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
             HeartbeatInterval = TimeSpan.FromSeconds(1),
             SuspicionThreshold = TimeSpan.FromSeconds(2),
             DeadThreshold = TimeSpan.FromSeconds(3),
+            SelfFenceMargin = TimeSpan.Zero,
         };
         var store = new FakeMembershipStore { ThrowOnHeartbeat = true };
         var (sut, timeProvider, membership) = _CreateSut(store, options);
@@ -138,6 +140,7 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
             HeartbeatInterval = TimeSpan.FromSeconds(1),
             SuspicionThreshold = TimeSpan.FromSeconds(2),
             DeadThreshold = TimeSpan.FromSeconds(3),
+            SelfFenceMargin = TimeSpan.Zero,
         };
         var store = new FakeMembershipStore { BlockOnHeartbeat = true };
         var (sut, timeProvider, membership) = _CreateSut(store, options);
@@ -167,6 +170,7 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
             HeartbeatInterval = TimeSpan.FromSeconds(1),
             SuspicionThreshold = TimeSpan.FromSeconds(2),
             DeadThreshold = TimeSpan.FromSeconds(3),
+            SelfFenceMargin = TimeSpan.Zero,
         };
         var store = new FakeMembershipStore { BlockOnHeartbeat = true };
         var (sut, timeProvider, membership) = _CreateSut(store, options);
@@ -189,13 +193,18 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
             HeartbeatInterval = TimeSpan.FromSeconds(1),
             SuspicionThreshold = TimeSpan.FromSeconds(2),
             DeadThreshold = TimeSpan.FromSeconds(3),
+            SelfFenceMargin = TimeSpan.Zero,
         };
         var store = new FakeMembershipStore { ThrowOnRead = true };
         var (sut, timeProvider, membership) = _CreateSut(store, options);
         await membership.RegisterAsync(AbortToken);
 
-        timeProvider.Advance(options.DeadThreshold + options.HeartbeatInterval);
-        await sut.RunOnceAsync(AbortToken);
+        // Beat every interval for longer than DeadThreshold while every liveness read fails.
+        for (var i = 0; i < 4; i++)
+        {
+            timeProvider.Advance(options.HeartbeatInterval);
+            await sut.RunOnceAsync(AbortToken);
+        }
 
         membership.Identity.Should().NotBeNull();
         membership.LocalMembershipLostToken.IsCancellationRequested.Should().BeFalse();
@@ -277,6 +286,125 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         store.Leaves.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task should_beat_during_a_slow_host_startup_and_not_fence()
+    {
+        // given: the Jobs startup gate registers in StartingAsync, then another service's StartingAsync runs longer
+        // than DeadThreshold before any StartAsync. The loop must already be beating from that registration.
+        var options = new CoordinationOptions
+        {
+            HeartbeatInterval = TimeSpan.FromSeconds(1),
+            SuspicionThreshold = TimeSpan.FromSeconds(2),
+            DeadThreshold = TimeSpan.FromSeconds(4),
+            SelfFenceMargin = TimeSpan.FromSeconds(1),
+            MembershipLostBehavior = MembershipLostBehavior.StopMembershipOnly,
+        };
+        var store = new FakeMembershipStore();
+        var (sut, timeProvider, membership) = _CreateSut(store, options);
+        using var serviceLifetime = sut;
+
+        // when
+        await sut.StartingAsync(AbortToken);
+        await membership.RegisterAsync(AbortToken);
+
+        await _WaitUntilAsync(() => store.Heartbeats.Count > 0);
+
+        // Step the clock in small increments, yielding after each so the loop schedules its next delay before time
+        // moves past it.
+        for (var step = 0; step < 40; step++)
+        {
+            timeProvider.Advance(TimeSpan.FromMilliseconds(250));
+            await Task.Delay(10, AbortToken);
+        }
+
+        // then: 10s of startup, well past DeadThreshold, and the loop kept the node a member
+        store.Heartbeats.Should().HaveCountGreaterThan(4);
+        membership.Identity.Should().NotBeNull();
+        membership.LocalMembershipLostToken.IsCancellationRequested.Should().BeFalse();
+        await sut.StopAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_not_register_from_the_loop_started_in_starting_async()
+    {
+        // given
+        var store = new FakeMembershipStore();
+        var (sut, timeProvider, membership) = _CreateSut(store);
+        using var serviceLifetime = sut;
+
+        // when
+        await sut.StartingAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        await Task.Delay(50, AbortToken);
+
+        // then: registration belongs to the startup gate or to StartAsync, never to the loop
+        store.AllocateIncarnationCalls.Should().Be(0);
+        membership.Identity.Should().BeNull();
+        await sut.StopAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_fail_startup_without_retrying_when_the_store_refuses_registration()
+    {
+        // given
+        var store = new FakeMembershipStore { UpsertAccepted = false };
+        var (sut, _, membership) = _CreateSut(store);
+        using var serviceLifetime = sut;
+
+        // when
+        await sut.StartAsync(AbortToken);
+
+        // then
+        var act = () => sut.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await act.Should().ThrowAsync<MembershipRegistrationRejectedException>();
+        store.AllocateIncarnationCalls.Should().Be(1);
+        membership.Identity.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_not_register_a_second_incarnation_after_fencing_during_startup()
+    {
+        // given: registered in StartingAsync, then fenced before StartAsync runs
+        var options = new CoordinationOptions
+        {
+            HeartbeatInterval = TimeSpan.FromSeconds(1),
+            SuspicionThreshold = TimeSpan.FromSeconds(2),
+            DeadThreshold = TimeSpan.FromSeconds(3),
+            SelfFenceMargin = TimeSpan.Zero,
+            MembershipLostBehavior = MembershipLostBehavior.StopMembershipOnly,
+        };
+        var store = new FakeMembershipStore { ThrowOnHeartbeat = true };
+        var (sut, timeProvider, membership) = _CreateSut(store, options);
+        using var serviceLifetime = sut;
+        await sut.StartingAsync(AbortToken);
+        await membership.RegisterAsync(AbortToken);
+        timeProvider.Advance(options.DeadThreshold);
+        await _WaitUntilAsync(() => membership.LocalMembershipLostToken.IsCancellationRequested);
+
+        // when
+        await sut.StartAsync(AbortToken);
+        await sut.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        store.AllocateIncarnationCalls.Should().Be(1);
+        membership.Identity.Should().BeNull();
+    }
+
+    private static async Task _WaitUntilAsync(Func<bool> condition)
+    {
+        var started = TimeProvider.System.GetTimestamp();
+
+        while (!condition())
+        {
+            if (TimeProvider.System.GetElapsedTime(started) > TimeSpan.FromSeconds(5))
+            {
+                throw new TimeoutException("The condition was not met within 5 seconds.");
+            }
+
+            await Task.Delay(5, AbortToken);
+        }
+    }
+
     private static (
         MembershipHeartbeatBackgroundService Sut,
         FakeTimeProvider TimeProvider,
@@ -296,9 +424,11 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
             new StaticNodeIdProvider(new NodeId("local")),
             coordinationOptions,
             source,
+            timeProvider,
             new FakeHostApplicationLifetime(),
             NullLogger<MembershipService>.Instance
         );
+        membership.EnableSelfFence();
         var sut = new MembershipHeartbeatBackgroundService(
             membership,
             source,
