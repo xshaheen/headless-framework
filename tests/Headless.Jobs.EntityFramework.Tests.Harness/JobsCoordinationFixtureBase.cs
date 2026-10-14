@@ -301,6 +301,10 @@ public static partial class JobsCoordinationFixtureExtensions
                 options.SuspicionThreshold = suspicion;
                 options.DeadThreshold = dead;
                 options.DeadRetentionWindow = deadRetention;
+                // Fence at DeadThreshold, where these hosts fenced before the margin existed: their 200ms beats against
+                // a loaded database container can stall past the derived 1s fence and stop stamping mid-test, and
+                // these hosts exercise claims and stamping, not the margin.
+                options.SelfFenceMargin = TimeSpan.Zero;
                 options.MembershipLostBehavior = lostBehavior;
             });
         });
@@ -457,6 +461,10 @@ public static partial class JobsCoordinationFixtureExtensions
                 options.SuspicionThreshold = SuspicionThreshold;
                 options.DeadThreshold = DeadThreshold;
                 options.DeadRetentionWindow = DeadRetentionWindow;
+                // Fence at DeadThreshold, where these hosts fenced before the margin existed: their 200ms beats against
+                // a loaded database container can stall past the derived 1s fence and stop stamping mid-test, and
+                // these hosts exercise claims and stamping, not the margin.
+                options.SelfFenceMargin = TimeSpan.Zero;
             });
         });
 
