@@ -43,8 +43,6 @@ public sealed class SetupTests : TestBase
 
         provider.GetService<IHttpClientFactory>().Should().NotBeNull();
         provider.GetService<IRequestMapper>().Should().NotBeNull();
-        // Note: GatewayProxyAgent requires ConsulDiscoveryOptions which is not registered with K8s-only setup
-        // So we just verify the other services are registered
         services.Should().Contain(sd => sd.ServiceType == typeof(GatewayProxyAgent));
     }
 

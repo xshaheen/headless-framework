@@ -2,7 +2,6 @@
 Headless.Api
 Headless.Api.Abstractions
 Headless.Api.FluentValidation
-Headless.Api.Idempotency
 Headless.Api.Identity
 Headless.Api.Jwt
 Headless.Api.Logging.Serilog
@@ -91,6 +90,7 @@ Headless.Idempotency.Abstractions
 Headless.Idempotency.Caching
 Headless.Idempotency.InMemory
 Headless.Idempotency.PostgreSql
+Headless.Idempotency.ResponseReplay
 Headless.Idempotency.SqlServer
 Headless.Idempotency.Sqlite
 Headless.Identity.Storage.EntityFramework
@@ -117,6 +117,7 @@ Headless.Messaging.Aws
 Headless.Messaging.AzureServiceBus
 Headless.Messaging.Bus.Abstractions
 Headless.Messaging.Dashboard
+Headless.Messaging.Dashboard.Consul
 Headless.Messaging.Dashboard.K8s
 Headless.Messaging.InMemory
 Headless.Messaging.Kafka
@@ -139,9 +140,9 @@ Headless.NetTopologySuite
 Headless.OpenApi.Nswag
 Headless.OpenApi.Nswag.OData
 Headless.OpenApi.Scalar
+Headless.Payments.Paymob
 Headless.Payments.Paymob.CashIn
 Headless.Payments.Paymob.CashOut
-Headless.Payments.Paymob.Services
 Headless.Permissions
 Headless.Permissions.Abstractions
 Headless.Permissions.Storage.EntityFramework

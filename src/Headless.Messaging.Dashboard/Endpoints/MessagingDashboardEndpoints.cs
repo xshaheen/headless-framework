@@ -301,7 +301,7 @@ public static partial class MessagingDashboardEndpoints
         }
         else
         {
-            if (sp.GetService<ConsulDiscoveryOptions>() != null)
+            if (sp.GetService<CurrentNodeIdentity>() != null)
             {
                 var discoveryProvider = sp.GetRequiredService<INodeDiscoveryProvider>();
                 var nodes = await discoveryProvider

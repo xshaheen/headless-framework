@@ -31,8 +31,7 @@ internal sealed class GatewayProxyAgent(
     /// <summary>Cookie name that carries the Kubernetes namespace of the target node.</summary>
     public const string CookieNodeNsName = "messaging.node.ns";
 
-    private readonly ConsulDiscoveryOptions? _consulDiscoveryOptions =
-        serviceProvider.GetService<ConsulDiscoveryOptions>();
+    private readonly CurrentNodeIdentity? _currentNode = serviceProvider.GetService<CurrentNodeIdentity>();
 
     private readonly KeyedAsyncLock _keyedLock = keyedLock ?? new KeyedAsyncLock();
     private readonly bool _ownsKeyedLock = keyedLock is null;
@@ -46,7 +45,7 @@ internal sealed class GatewayProxyAgent(
     /// <returns>
     /// <see langword="true"/> if the request was forwarded to a peer node;
     /// <see langword="false"/> if the cookie is absent, the node could not be resolved, or the
-    /// target is the current node itself (Consul path only).
+    /// target is the current node itself (name-addressed discovery such as Consul only).
     /// </returns>
     public async Task<bool> Invoke(HttpContext context)
     {
@@ -65,7 +64,7 @@ internal sealed class GatewayProxyAgent(
         }
 
         Node? node;
-        if (_consulDiscoveryOptions == null) // it's k8s
+        if (_currentNode == null) // namespaced discovery (Kubernetes)
         {
             request.Cookies.TryGetValue(CookieNodeNsName, out var ns);
             var cacheKey = $"messaging.gateway.k8s\0{requestNodeName}\0{ns}";
@@ -88,7 +87,7 @@ internal sealed class GatewayProxyAgent(
         }
         else
         {
-            if (string.Equals(_consulDiscoveryOptions.NodeName, requestNodeName, StringComparison.Ordinal))
+            if (string.Equals(_currentNode.Name, requestNodeName, StringComparison.Ordinal))
             {
                 return false;
             }
@@ -139,7 +138,7 @@ internal sealed class GatewayProxyAgent(
         else
         {
             context.Response.Cookies.Delete(CookieNodeName);
-            if (_consulDiscoveryOptions == null)
+            if (_currentNode == null)
             {
                 context.Response.Cookies.Delete(CookieNodeNsName);
             }

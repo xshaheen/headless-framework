@@ -29,6 +29,7 @@ Use `IDistributedReadWriteLock` when concurrent readers are safe and writers nee
 - Per-call configuration is bundled into `DistributedLockAcquireOptions` (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`). Omit the argument to use defaults; use `with` expressions to derive variants.
 - Always `await using` the returned lock when `ReleaseOnDispose` is `true` (the default); set `ReleaseOnDispose = false` only when ownership is deliberately transferred and the caller will release explicitly.
 - Set `Monitoring = LockMonitoringMode.Monitor` when work should observe lease loss through `IDistributedLease.LostToken`; set `Monitoring = LockMonitoringMode.AutoExtend` only when long work should renew its own lease in the background (it implies `Monitor`).
+- The Tus file-lock adapter (`Headless.Tus.DistributedLocks`) auto-extends its lease but cannot observe `LostToken`: tusdotnet's `ITusFileLock` has no hook for lease loss, so a request whose lease is lost keeps writing until it ends. See [Tus](tus.md#concurrent-patch-safety).
 - Use `GetLeaseIdAsync(resource)` for operational inspection only; it reads the current observable lease id and does not renew the lease. Some backends can prove the resource is locked without exposing the current holder identity, so `GetLeaseIdAsync` may return `null` even while `IsLockedAsync(resource)` or `GetLockInfoAsync(resource)` reports an active lock. If you already hold a monitored lease, observe `LostToken` or call `ThrowIfLost()` instead of polling `GetLeaseIdAsync`.
 - Synchronous `TryUsingAsync(..., Action ...)` overloads force `LockMonitoringMode.None` because synchronous delegates cannot observe a lease-lost cancellation token.
 - Do not use distributed locks (or the semaphore) as rate limiters. A semaphore caps *concurrent holders* (concurrency control); a rate limiter caps *throughput per time window* (rate control). For rate control, use `IAttemptLimiter` ([Rate Limiting](rate-limiting.md)) for exact per-subject quotas across replicas, or `Microsoft.AspNetCore.RateLimiting` for per-replica HTTP load shedding.
@@ -90,13 +91,13 @@ Per-provider token properties:
 
 | Provider | Token source | Guarantee |
 | --- | --- | --- |
-| Redis | Per-resource `INCR` inside the acquire script | Increasing while Redis keeps the fence key; eviction or data loss can reset it, so fencing is best-effort. |
+| Redis | Per-resource `INCR` inside the acquire script | Increasing while Redis keeps the fence key; eviction, data loss, or failover to a replica that missed recent writes can reset it or issue a value again, so fencing is best-effort. |
 | PostgreSQL, SQL Server | One database sequence shared by all resources | Durable and increasing per resource, with gaps. Issued for exclusive acquisitions only: mutex handles and reader-writer write handles. |
 | InMemory | Per-resource counter in process memory | Increasing within the process; resets on restart. |
 
 Shared (read) handles never carry a token. Redis and InMemory reader-writer handles carry none in either mode. A multi-resource composite lease reports `null` (see [Composite Acquisition](#composite-acquisition)).
 
-Redis mutex locks and Redis semaphores issue fencing tokens with an atomic Lua acquire path: the lock/slot grant and `INCR` of the per-resource fence key happen in the same script, and failed acquires do not advance the counter. Redis mutex storage maps logical lock names to internal hash-tagged keys so the lock key and fence counter share a Redis Cluster slot. Redis fencing is best-effort: the fence key intentionally has no TTL and monotonicity holds only while Redis retains the key. Avoid `allkeys-*` eviction policies for Redis deployments that rely on fencing. Postgres and SQL Server mutex locks issue durable sequence-backed fencing tokens.
+Redis mutex locks and Redis semaphores issue fencing tokens with an atomic Lua acquire path: the lock/slot grant and `INCR` of the per-resource fence key happen in the same script, and failed acquires do not advance the counter. Redis mutex storage maps logical lock names to internal hash-tagged keys so the lock key and fence counter share a Redis Cluster slot. Redis fencing is best-effort: the fence key intentionally has no TTL and monotonicity holds only while Redis retains the key. Avoid `allkeys-*` eviction policies for Redis deployments that rely on fencing. Redis replicates asynchronously and the acquire script does not wait for replicas, so a failover to a replica that had not yet received a recent acquire loses that held key and its `INCR`: a second caller can then acquire the same lock while the first still holds it, and receive a fence value already issued to the first. Postgres and SQL Server mutex locks issue durable sequence-backed fencing tokens.
 
 ### Composite Acquisition
 
@@ -165,7 +166,7 @@ TCP keepalive remains complementary, not redundant. Keepalive (`PostgreSqlDistri
 
 ### Messaging Wake-ups
 
-`DistributedLock` can publish `DistributedLockReleased` through `IBus` with `DeliveryMode.Direct` so waiters wake quickly without involving durable storage or an active unit of work. `DistributedLock` is a framework-internal singleton: its DI factory resolves the registered `IBus`, itself an autonomous singleton that never reads a caller's unit of work, so the notification is always autonomous regardless of any caller's transaction. The message is a best-effort hint; polling and lease expiry remain the correctness floor. The same message also nudges active lease monitors for that resource so loss validation can happen before the next polling cadence. Messaging is optional: when no bus is registered, lock acquisition and lease monitoring fall back to polling. This keeps distributed locks usable without forcing `Headless.Messaging`.
+`DistributedLock` can publish `DistributedLockReleased` through `IBus` with `DeliveryMode.Direct` so waiters wake quickly without involving durable storage or an active unit of work. `DistributedLock` is a framework-internal singleton: its DI factory resolves the registered `IBus`, itself an autonomous singleton that never reads a caller's unit of work, so the notification is always autonomous regardless of any caller's transaction. The message is a best-effort hint; polling and lease expiry remain the correctness floor. The same message also nudges active lease monitors for that resource so loss validation can happen before the next polling cadence. Messaging is optional: when no bus is registered, lock acquisition and lease monitoring fall back to polling. This keeps distributed locks usable without forcing `Headless.Messaging`. Reader-writer releases publish the same message, and blocked reader-writer acquirers in the process wake on it the same way, one waiter per release, with backoff as the fallback; it does not nudge reader-writer lease monitors.
 
 The release signal is published as `headless.locks.released` (contract version `1`, `DistributedLockReleased.MessageName`), whatever naming conventions the host configures, and consumed by an [every-instance Bus consumer](messaging.md#every-instance-bus-delivery) with the identity `headless.distributed-locks.release`. A waiter lives in one process, so every process must receive every release: a competing subscription would hand the signal to one replica and leave the waiters in the others on their backoff. Delivery is at most once, and a release published while a process is not subscribed never arrives there; that waiter wakes on its next backoff poll (capped at 3 seconds plus up to 25% jitter), so the consumer needs no reconnect hook. The transport must support every-instance delivery: AWS SNS/SQS does not, and a host that combines distributed locks with it fails at startup naming the consumer and the provider. `ConsumeOnly` never filters every-instance consumers, so a host that limits its consumers still receives release signals.
 
@@ -182,7 +183,7 @@ The package emits OpenTelemetry metrics and traces under a single instrumentatio
 
 The `*.failed` counters carry a namespaced reason dimension (`headless.lock.reason` on the lock counter, `headless.semaphore.reason` on the semaphore counter — framework-owned attributes are always `headless.*`-namespaced) so a lock-store stall is distinguishable from routine contention:
 
-- `…reason=contended` — every expected not-acquired outcome (lock held by another holder, acquire timeout elapsed, swallowed transient storage error).
+- `…reason=contended` — every expected not-acquired outcome (lock held by another holder, acquire timeout elapsed, swallowed transient storage error). A transient storage error during a mutex acquire can arrive after the write committed, so the lock first compare-and-deletes its own lease id, then retries; when the acquire ends without the lock after such an error, it compare-and-deletes once more before returning. If every one of those cleanups also fails, the key stays held until its TTL; with `TimeUntilExpires = Timeout.InfiniteTimeSpan` it stays until removed by hand.
 - `…reason=stalled` — a non-blocking try-once acquire (`AcquireTimeout = TimeSpan.Zero`) whose single storage attempt hit the internal safety deadline (lock-store stall), surfaced even when the caller's token never fires. Alert on `rate(headless.lock.failed{headless.lock.reason="stalled"})` to detect lock-store degradation; the same trip also emits the `TryOnceSafetyDeadlineFired` log event (`EventId = 24`, Warning, fields `Resource`/`LeaseId`/`Duration`) as a per-event breadcrumb. The metric counts toward the same total as before — the tag splits the existing counter, it does not add a new instrument.
 
 The two values are exposed as `public const` on `DistributedLockFailureReasons` (`Contended` / `Stalled`) so alert-rule and dashboard code can reference them at compile time instead of hard-coding the strings.
@@ -611,12 +612,12 @@ In-process storage and setup helpers for distributed-lock abstractions.
 
 - Internal `InMemoryDistributedLockStorage`, `InMemoryDistributedReadWriteLockStorage`, and `InMemoryDistributedSemaphoreStorage` back the three primitives; `UseInMemory()` is the only registration surface.
 - `UseInMemory()` registers in-process mutex, reader-writer lock, and semaphore providers through `AddHeadlessDistributedLocks(...)`.
-- Uses injected `TimeProvider` for deterministic TTL behavior.
+- Uses injected `TimeProvider` for deterministic TTL behavior. The default registration is `TimeProvider.System`, so leases expire on the wall clock, and a system clock step moves every expiry with it.
 - Mutex compare-and-swap preserves the existing absolute expiration when `ReplaceIfEqualAsync(..., newTtl: null)` is used.
 
 ### Design constraints
 
-This package is process-local. It does not coordinate across app instances, machines, containers, or processes. Use it when one process owns all contenders, or when tests need a real provider without Redis. Fencing tokens are monotonic inside the process lifetime only.
+This package is process-local. It does not coordinate across app instances, machines, containers, or processes. Use it when one process owns all contenders, or when tests need a real provider without Redis. Fencing tokens are monotonic inside the process lifetime only. Each distinct resource name keeps its state, fencing counter included, for the life of the process; release clears the holder but never removes the entry, so memory grows without bound when resource names are high-cardinality (for example, one per request or entity id).
 
 Reader-writer lease ids must not contain `:` because that character is reserved for the writer-waiting marker suffix; ids containing it are rejected.
 
@@ -644,7 +645,7 @@ builder.Services.AddHeadlessDistributedLocks(setup =>
 
 No InMemory-specific options. Configure `DistributedLockOptions`.
 
-Reader-writer and semaphore TTL checks use the registered `TimeProvider`, so tests can register a fake clock and advance leases deterministically. The back-off between retries of a transient storage failure, on release and on a query, runs on the system clock instead, so a fake clock the test never advances does not stall a release behind one failed attempt. `LostToken` is `CancellationToken.None` unless monitoring is enabled through `DistributedLockAcquireOptions`.
+Mutex, reader-writer, and semaphore TTL checks use the registered `TimeProvider`, so tests can register a fake clock and advance leases deterministically. The back-off between retries of a transient storage failure, on release and on a query, runs on the system clock instead, so a fake clock the test never advances does not stall a release behind one failed attempt. `LostToken` is `CancellationToken.None` unless monitoring is enabled through `DistributedLockAcquireOptions`.
 
 ### Runtime behavior
 

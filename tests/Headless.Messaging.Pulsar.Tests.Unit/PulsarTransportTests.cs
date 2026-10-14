@@ -220,6 +220,67 @@ public sealed class PulsarTransportTests : TestBase
             .NotContain(call => call.GetMethodInfo().Name == nameof(IConnectionFactory.CreateProducerAsync));
     }
 
+    [Fact]
+    public async Task should_pass_whole_array_body_by_reference_when_publishing()
+    {
+        // given
+        var producer = Substitute.For<Pulsar.Client.Api.IProducer<byte[]>>();
+        _connectionFactory.CreateProducerAsync(Arg.Any<string>()).Returns(producer);
+        await using var transport = new PulsarTransport(_logger, _connectionFactory);
+        var body = "test-body"u8.ToArray();
+        byte[]? sentBody = null;
+        producer.NewMessage(
+            Arg.Do<byte[]>(b => sentBody = b),
+            Arg.Any<string>(),
+            Arg.Any<IReadOnlyDictionary<string, string>>()
+        );
+        var message = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [MessagingHeaders.MessageId] = "msg-123",
+                [MessagingHeaders.MessageName] = "orders",
+            },
+            body
+        );
+
+        // when
+        await transport.SendAsync(message, AbortToken);
+
+        // then
+        sentBody.Should().BeSameAs(body);
+    }
+
+    [Fact]
+    public async Task should_copy_sliced_body_when_publishing()
+    {
+        // given
+        var producer = Substitute.For<Pulsar.Client.Api.IProducer<byte[]>>();
+        _connectionFactory.CreateProducerAsync(Arg.Any<string>()).Returns(producer);
+        await using var transport = new PulsarTransport(_logger, _connectionFactory);
+        var source = "xxbodyyy"u8.ToArray();
+        byte[]? sentBody = null;
+        producer.NewMessage(
+            Arg.Do<byte[]>(b => sentBody = b),
+            Arg.Any<string>(),
+            Arg.Any<IReadOnlyDictionary<string, string>>()
+        );
+        var message = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [MessagingHeaders.MessageId] = "msg-123",
+                [MessagingHeaders.MessageName] = "orders",
+            },
+            new ReadOnlyMemory<byte>(source, 2, 4)
+        );
+
+        // when
+        await transport.SendAsync(message, AbortToken);
+
+        // then
+        sentBody.Should().Equal("body"u8.ToArray());
+        sentBody.Should().NotBeSameAs(source);
+    }
+
     private static TransportMessage _CreateTransportMessage(string messageId, string messageName)
     {
         return new TransportMessage(

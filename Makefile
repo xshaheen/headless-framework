@@ -1079,7 +1079,7 @@ test-package-verifier: ## Run isolated positive and negative package-verifier fi
 	./tests/scripts/verify-packages-tests.sh
 
 # Benchmarks report evidence; nothing gates on them. BENCH_AREA names a project under benchmarks/
-# (Api.Idempotency, Blobs, Caching, Jobs, Messaging, Serializer). The JSON export is what
+# (Blobs, Caching, Idempotency.ResponseReplay, Jobs, Messaging, Serializer). The JSON export is what
 # bench-compare reads; the default `short` job trades precision for a run an agent can wait on.
 # Every run happens in a temporary worktree: BenchmarkDotNet locates its project by searching the
 # repository for <name>.csproj, and the copies under .worktrees/ make that search ambiguous. The

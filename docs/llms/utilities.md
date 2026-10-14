@@ -581,7 +581,7 @@ services.RequireRegisteredService<ICache<SettingValueCacheItem>>(
 - **Probed, never resolved.** It asks `IServiceProviderIsService` rather than resolving the contract, so validation never constructs the service under test (a Redis-backed cache would reach into its connection options and turn a provider misconfiguration into an opaque failure from the guard). MS.DI's probe answers a *constructed* generic from an *open*-generic registration, so `ICache<Foo>` reports present when only `typeof(ICache<>)` was registered — which is exactly how the caching providers register. A container that does not expose the probe falls back to a null-returning resolve.
 - **Aggregated.** Requirements from every feature in the host are collected and reported in one `MissingRequiredServiceException` (`Headless.Hosting`), each line naming its `requiredBy` and `remedy`. A host missing one shared provider sees every affected feature at once instead of one failure per restart. Identical declarations collapse to a single line, and the startup check itself is registered once no matter how many features declare requirements.
 
-`Headless.MultiTenancy`, `Headless.Settings`, `Headless.Permissions`, `Headless.Features`, and `Headless.Api.Idempotency` all use this to require a caching provider.
+`Headless.MultiTenancy`, `Headless.Settings`, `Headless.Permissions`, and `Headless.Features` all use this to require a caching provider; `Headless.Idempotency.ResponseReplay` uses it to require the durable `IIdempotentOperations` store.
 
 `RequireSingletonService<T>(requiredBy, remedy)` (and the `Type` overload) goes one step further for a service that a feature's *singleton* injects but the application registers:
 

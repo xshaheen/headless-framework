@@ -17,6 +17,9 @@
     <!-- The handler matches LockAcquisitionTimeoutException by name; the real type makes a rename fail these tests. -->
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Payments.Paymob.CashOut\Headless.Payments.Paymob.CashOut.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Sms.Connekio\Headless.Sms.Connekio.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\Headless.Sms.Tests.Harness\Headless.Sms.Tests.Harness.csproj" />
   </ItemGroup>
 </Project>

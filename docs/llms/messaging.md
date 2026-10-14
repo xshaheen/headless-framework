@@ -1,6 +1,6 @@
 ---
 domain: Messaging
-packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.Storage.InMemory, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.SourceGenerator, Messaging.Storage.PostgreSql, Messaging.Storage.PostgreSql.EntityFramework, Messaging.Storage.SqlServer, Messaging.Storage.SqlServer.EntityFramework, Messaging.Testing
+packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging, Messaging.Dashboard, Messaging.Dashboard.Consul, Messaging.Dashboard.K8s, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.Storage.InMemory, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.SourceGenerator, Messaging.Storage.PostgreSql, Messaging.Storage.PostgreSql.EntityFramework, Messaging.Storage.SqlServer, Messaging.Storage.SqlServer.EntityFramework, Messaging.Testing
 ---
 
 # Messaging
@@ -490,8 +490,47 @@ services.ConfigureMessaging(m => m.Message<OrderPlaced>("orders.placed", "2").On
 
 - **The address names the contract.** On a raw lane, the topic, queue, routing key, subject, or stream a delivery arrived on decides its contract. A `headless-msg-name` header that names a different message makes the delivery malformed, so a foreign header cannot steer a message to a contract its producer did not publish against. Lanes without `RawPayload()` keep header routing, and a header that names a raw contract never completes a delivery that arrived on another message's address. Where an address names no single message, such as a topic reached only through a Kafka pattern subscription, a raw delivery must carry `headless-msg-name`; the rest is completed as below.
 - **Only missing headers are filled**: the message name, a message id derived from the broker (below), the contract's declared version (without it, a raw message on a contract versioned `"2"` would fail the version check, because a missing version reads as `"1"`), `headless-sent-time` from the broker's storage timestamp where the broker has one, and `headless-corr-id` set to the message id, as a Headless publish does when nothing else gives one. A header the producer sent is never replaced.
-- **The body is passed unchanged** to the host's `IMessageSerializer`. A body the serializer cannot read takes the poison path at once and is not redelivered The default serializer matches property names case-sensitively, so a producer writing camelCase JSON needs `[JsonPropertyName]` on the message type or `MessagingOptions.JsonSerializerOptions` configured for it.
+- **The body is passed unchanged** to the host's `IMessageSerializer`. A body the serializer cannot read takes the poison path at once and is not redelivered. The default serializer matches property names case-sensitively, so a producer writing camelCase JSON needs `[JsonPropertyName]` on the message type or `MessagingOptions.JsonSerializerOptions` configured for it. When the producer's JSON fits neither, declare the contract as `RawJson` (below) and parse the body in the consumer.
 - **Trace context continues**: `traceparent`, `tracestate`, and `baggage` headers from the producer are read as for any delivery.
+
+### Consume the body as raw JSON
+
+`RawJson` (in `Headless.Messaging.Abstractions`) is a message type that the serializer neither binds nor rewrites. A consumer of `IConsume<RawJson>` receives the producer's UTF-8 bytes in `context.Message.Utf8Json`, with their escaping and whitespace, on the first delivery and on every retry read back from storage. Use it when a foreign producer's JSON does not fit `MessagingOptions.JsonSerializerOptions`, such as snake_case or a schema that the application's own parser enforces, and changing those host-wide options would change every other contract:
+
+```csharp
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+// A stream covering the filter is declared in NatsMessagingOptions.Streams, as in External subjects below.
+services.ConfigureMessaging(m =>
+    m.Message<RawJson>("runs.result")
+        .OnQueue(queue => queue.RawPayload().UseNats(nats => nats.ExternalSubject("acme.*.runs.*.result")))
+);
+
+public sealed record RunResult(string RunId, string Status);
+
+[QueueConsumer("runs.ingest-result")]
+public sealed class IngestRunResult : IConsume<RawJson>
+{
+    // The producer's wire format, kept apart from the host's MessagingOptions.JsonSerializerOptions.
+    private static readonly JsonSerializerOptions _WorkerJson = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+    };
+
+    public ValueTask ConsumeAsync(ConsumeContext<RawJson> context, CancellationToken cancellationToken)
+    {
+        var result = JsonSerializer.Deserialize<RunResult>(context.Message.Utf8Json.Span, _WorkerJson);
+        // ... ingest result
+        return ValueTask.CompletedTask;
+    }
+}
+```
+
+- **The body must still be one JSON value.** A body that is not JSON fails deserialization and takes the poison path without a retry. A JSON `null` body is an empty message, which fails the same way.
+- **Publishing a `RawJson` sends its bytes unchanged.** `new RawJson(utf8Json)` copies the bytes and throws `ArgumentException` unless they hold exactly one complete JSON value.
+- **The serializer reaches the type through its `[JsonConverter]`.** A replacement `IMessageSerializer` built on `System.Text.Json` keeps the behavior. One built on another library must handle `RawJson` itself.
 
 ### Message identity
 
@@ -713,6 +752,7 @@ Declare the flag only when the provider passes the request/reply conformance sce
 - `MessageOptions.SuppressAmbientBusinessContext` preserves captured business metadata by disabling ambient correlation, causation, and tenant defaults. It defaults to `false`; explicit options, registered contract/selector resolution, and diagnostic trace propagation remain unchanged. Required tenancy still rejects a null explicit tenant when suppression is enabled.
 - `DeliveryMode` has two values and belongs to the autonomous surface only. `Durable` (default) stores the row first and the relay dispatches it; `Direct` bypasses storage and cannot be combined with `Delay` or `ScheduledAt`. Precedence is per call (`PublishOptions.DeliveryMode` / `QueueOptions.DeliveryMode`), then per type (`WithDeliveryMode`), then `MessagingOptions.DefaultDeliveryMode`. `MessageOptions`, the shared base, carries no mode and no enlistment: `OutboxOptions` adds neither, because an enlisted publish is durable by construction. See [Delivery Modes](#delivery-modes).
 - `MessageHeader`, `Headers`, `TransportMessage`, and broker address primitives.
+- `RawJson`, a message type whose `Utf8Json` holds the body exactly as produced, for a consumer that parses a foreign producer's JSON itself. See [Consume the body as raw JSON](#consume-the-body-as-raw-json).
 - The contribution surface: `services.ConfigureMessaging(...)` with `MessagingContributionBuilder` (`Message<T>(name, version)` returning `IMessageContractBuilder<T>` for `CorrelateBy`, `OnBus`, and `OnQueue`, and `AddModule<T>()`), plus the generated-module contract `IMessagingModule` and the hidden `MessagingCatalogBuilder` its `Register` writes to (`MessagingCatalogBuilder.ConsumerIdentityMaxLength` is 200). `Tune(identity, ...)` is added by `Headless.Messaging`.
 - Common transport pause/resume and retry/backoff abstractions.
 
@@ -1236,6 +1276,8 @@ Storage providers may implement `IDelayedMessageClaimStorage` in addition to `ID
 
 Storage providers may also implement `IGracefulLeaseReleaseStorage`. Core detects it opportunistically; providers without it retain normal `LockedUntil` expiry recovery. Implementations must atomically match the complete store-returned `(StorageId, lane, Owner, LockedUntil)` generation, refuse terminal rows, and clear only `Owner` and `LockedUntil`. The collection methods should batch these exact predicates within backend parameter limits so abandoned retry batches do not become one command per row.
 
+`IDataStorage.ChangePublishStateToDelayedAsync` takes the `MediumMessage` instances the caller holds, not bare ids, because the scheduler queue it flushes on shutdown holds both rows this node claimed and unleased hand-off copies of rows another node may have claimed since. Implementations reset a row to `Delayed` and clear its lease only while the row's `Owner` and `LockedUntil` still equal the message's (both `null` included) and the lane matches, and leave terminal and unknown rows unchanged. The delayed processor uses the same method to hand back claimed rows the scheduler queue refused.
+
 The four `IDataStorage` state-transition methods — `ChangePublishStateAsync`, `ChangePublishRetryStateAsync`, `ChangeReceiveStateAsync`, `ChangeReceiveRetryStateAsync` — take a `MessageContentWrite` declaring whether the transition also rewrites the persisted envelope, and a `RetryDelay?` for when the row falls due again. `RetryDelay.Exactly(delay)` makes it due `delay` after the store's clock; `RetryDelay.AtLeast(delay)` does the same but keeps a later due time already on the row, which the inline-retry crash-recovery schedule uses so it never lowers the initial dispatch grace; `null` clears the due time. A provider whose clock lives in process resolves the instant with `RetryDelay.ResolveDueAt(now, currentDue)`; a relational provider computes it in the update statement. `MessageContentWrite.Preserve`, the default on the two non-retry methods, skips re-serializing `MediumMessage.Origin` and omits the content column from the update, because a status transition does not change the envelope. `MessageContentWrite.Refresh` re-serializes `Origin`, writes it to the row, and refreshes `MediumMessage.Content` so the caller's copy keeps matching the row. A caller that mutated `Origin` before the write — the failure paths, which stamp the exception type onto the headers — must pass `Refresh`, or the mutation never reaches storage. Implementors owe the invariant `persisted Content == Serialize(Origin)` in both directions: `Preserve` must leave the stored envelope byte-identical even when the caller's copy has since drifted, and a provider that keeps the envelope as anything other than serialized bytes must update every representation of it on `Refresh`.
 
 `IConsumerClientFactory.CreateAsync(ConsumerClientRequest, ...)` receives a request whose `SubscriptionName` is the consumer identity on the Bus lane and the message name on the Queue lane, with its `Concurrency`, `Lane`, subscription `Kind` (`Competing` or `EveryInstance`), and the host's `InstanceId`. See [Every-instance Bus delivery](#every-instance-bus-delivery) for what a transport owes an every-instance request. Transports do not stamp the consumer on received envelopes; Core stamps `headless-msg-consumer-identity` once it routes the delivery. The public consumer startup contracts accept trailing optional cancellation tokens: `IConsumerClientFactory.CreateAsync(...)`, `IConsumerClient.FetchMessageNamesAsync(...)`, and `IConsumerClient.SubscribeAsync(...)`. Core passes the host-stopping token to metadata startup and a linked token per consumer client to worker creation and subscription. Implementations must let `OperationCanceledException` escape unchanged.
@@ -1432,7 +1474,11 @@ builder.Services.AddHeadlessMessaging(setup =>
 
 With the framework default, a message that keeps failing runs 3 attempts at once, then 5 more after about 30 s, 60 s, 120 s, 240 s, and 480 s (each ±20% and each later by up to one poll interval), then fails terminally: 8 attempts.
 
+**Before the inbox admits a delivery, the policy does not apply.** It counts attempts of a stored row. A delivery whose inbox row cannot be written, for example while the messaging storage database is down, is rejected back to the broker before any attempt runs. The broker redelivers it under its own limit, such as `MaxDeliver` on NATS (no limit by default), the max delivery count on Azure Service Bus, or a redrive policy's `maxReceiveCount` on SQS, and the policy's retry count does not move. A budget sized to ride out an outage of something the handler calls, such as a blob store or an API, therefore says nothing about an outage of the messaging storage itself.
+
 **Classification.** Fail rules see the handler's own exception, unwrapped from the executor's `SubscriberExecutionFailedException`. A failure ends at once, without its remaining retries, when a fail rule matches or the exception is in the built-in permanent set: `ArgumentException` and its subtypes, `NotSupportedException`, and `SubscriberNotFoundException`. A `FailWhen` predicate that throws counts as a match and is logged (EventId 111, `FailurePolicyRuleThrew`). Every other exception is retried. A cancellation of the consume token, such as host shutdown, is not a failure: once that token is cancelled, any `OperationCanceledException` that ends the attempt writes nothing, whatever token it carries, and the row is picked up again later. An `OperationCanceledException` raised while the consume token is live is an ordinary failure: fail rules see it and the policy retries it. That covers one the handler throws, such as an `HttpClient` timeout or a handler-owned `CancelAfter`, and one the transactional inbox's commit work raises after the handler, such as a consumer `SaveChanges` interceptor's `HttpClient` timeout; the latter reaches fail rules and `OnExhausted` unwrapped. To end such a cancellation at once, declare `FailOn<OperationCanceledException>()`, which also matches `TaskCanceledException`.
+
+**A failed success write is not a consumer failure.** When the handler succeeds but writing its `Succeeded` state throws, for example during a storage outage, the attempt ends without an immediate retry, without `OnExhausted`, and without a circuit-breaker failure, and logs EventId 122 (`ConsumerSucceededButStateWriteFailed`). The row stays as it was, and the retry processor picks it up once its lease is released or expires, which may run the handler again: delivery is at-least-once, as after a crash at that point. Under the `Transactional` inbox guarantee the success write commits with the handler's unit, so its failure rolls back the handler's effects, and running the handler again is the intended recovery.
 
 **Terminal failure.** A message the policy gives up on is stored as `Failed` with no `NextRetryAt`; there is no separate dead-letter status. It stays until its retention expires, and an operator re-executes it from the Messaging dashboard (`POST /api/received/reexecute`); a re-executed request runs as a plain Queue message and answers no caller (see [Deadlines](#deadlines-timeouts-and-clock-skew)). `RetryPolicy.OnExhausted` fires once for each terminal consume failure, and only on the node whose terminal write wins:
 
@@ -1446,7 +1492,7 @@ An every-instance consumer has no failure policy and never calls `OnExhausted`; 
 
 ### Publish retries
 
-`RetryPolicy.RetryStrategy` and `RetryPolicy.MaxPersistedRetries` govern publishing only. `RetryStrategy.MaxRetryAttempts` excludes the original execution and controls inline publish retries through a reusable Polly `ResiliencePipeline`. Once the inline budget is exhausted, Messaging persists `NextRetryAt` and `MessageNeedToRetryProcessor` performs up to `MaxPersistedRetries` pickups, which the published-row claim enforces. `InlineAttempts` is reserved atomically before each invocation, so process recovery cannot reset the current burst. A permanent publish failure ends without retry and without `OnExhausted`; only a spent publish budget invokes it.
+`RetryPolicy.RetryStrategy` and `RetryPolicy.MaxPersistedRetries` govern publishing only. `RetryStrategy.MaxRetryAttempts` excludes the original execution and controls inline publish retries through a reusable Polly `ResiliencePipeline`. Once the inline budget is exhausted, Messaging persists `NextRetryAt` and `MessageNeedToRetryProcessor` performs up to `MaxPersistedRetries` pickups, which the published-row claim enforces. `InlineAttempts` is reserved atomically before each invocation, so process recovery cannot reset the current burst. A permanent publish failure ends without retry and without `OnExhausted`; only a spent publish budget invokes it. A publish the transport does not confirm within `MessagingOptions.TransportPublishTimeout` while the host is running is a failed attempt with a `TimeoutException`, retried and backed off like any other transient failure; the broker may still have taken it, so delivery stays at-least-once. A publish cancelled by host shutdown is not an attempt: it writes no state, and the persisted retry pickup resumes the row after restart.
 
 ```csharp
 using Polly;
@@ -2134,9 +2180,59 @@ Configured through `MessagingDashboardOptionsBuilder` inside `UseDashboard(...)`
 
 ### Runtime behavior
 
-Mounts the embedded web UI and monitoring API through an `IStartupFilter` (no explicit middleware call required), and registers dashboard and node-discovery services.
+Mounts the embedded web UI and monitoring API through an `IStartupFilter` (no explicit middleware call required), and registers the dashboard services. The dashboard package ships no discovery backend; node discovery comes from [Headless.Messaging.Dashboard.Consul](#headlessmessagingdashboardconsul) or [Headless.Messaging.Dashboard.K8s](#headlessmessagingdashboardk8s).
 
 Node lookups (30s), node counts (60s, 20s on discovery failure) and the metrics history (10m) are memoized in `MessagingDashboardCache`, a dashboard-owned in-process cache registered by `UseDashboard(...)` and injected into `ConsulNodeDiscoveryProvider` / `K8sNodeDiscoveryProvider`. The dashboard deliberately does not call `AddMemoryCache()`: registering the shared `IMemoryCache` from a framework package would put dashboard entries in the host's cache, where they compete for its size limit and are evictable by its compaction, purely as a side effect of adding a diagnostics UI. It is also not a `Headless.Caching` `ICache` — `AddHeadlessCaching` accepts exactly one call per service collection, so a registration here would throw for every consumer that configures caching themselves, or force the caching package on consumers who only wanted the dashboard. These values are per-node discovery results and metrics snapshots that must never leave the process, so a private in-process cache is the correct scope; this is the one sanctioned exception to the "do not use `IMemoryCache` directly" rule in [index.md](index.md).
+
+## Headless.Messaging.Dashboard.Consul
+
+### API and behavior
+
+- Consul-backed node discovery: each node registers itself in Consul, and the dashboard lists every catalog service tagged `messaging` as a peer node.
+- `UseConsulDiscovery(...)` extension on `MessagingSetupBuilder`, in the `Headless.Messaging.Dashboard.Consul` namespace.
+
+### Design constraints
+
+Consul addresses nodes by service name alone, with no namespace. When a request carries the `messaging.node` cookie, the dashboard resolves the node by name, caches the result for 30 seconds, and never proxies a request whose node name equals this node's `NodeName`. The `/stats` endpoint counts nodes through Consul when no cached count exists.
+
+### Install
+
+```bash
+dotnet add package Headless.Messaging.Dashboard.Consul
+```
+
+### Setup and use
+
+```csharp
+services.AddHeadlessMessaging(setup =>
+{
+    // ... transport + storage + UseDashboard(...) registration ...
+    setup.UseConsulDiscovery(options =>
+    {
+        options.DiscoveryServerHostName = "consul";
+        options.CurrentNodeHostName = "orders-api";
+        options.CurrentNodePort = 8080;
+        options.NodeName = "orders-api";
+    });
+});
+```
+
+### Configuration
+
+Configure `ConsulDiscoveryOptions` through `UseConsulDiscovery(...)`:
+
+- `DiscoveryServerHostName` / `DiscoveryServerPort` — the Consul agent HTTP API. Defaults: `localhost`, `8500`.
+- `CurrentNodeHostName` / `CurrentNodePort` — the address this node registers. Defaults: `localhost`, `5000`.
+- `NodeName` — the service name this node registers under, and the name the gateway uses to recognize the current node. Set it: Consul rejects a registration without a service name, and the failure is only logged.
+- `NodeId` — optional service ID; Consul uses `NodeName` when it is `null`.
+- `MatchPath` — the dashboard base path used in the health-check URL. Default: `/messaging`.
+- `Scheme` — `http` registers an HTTP health check on `{MatchPath}/api/health`; `https` registers a TCP check. Default: `http`.
+- `CustomTags` — extra tags merged with the built-in `Headless`, `Messaging`, `Client`, `Dashboard` tags.
+
+### Runtime behavior
+
+- Registers a Consul-backed node discovery provider and a processing server that registers this node in Consul at startup, with a 10-second health-check interval and deregistration after 30 seconds critical.
+- Discovery failures are logged and return no nodes; caller cancellation propagates.
 
 ## Headless.Messaging.Dashboard.K8s
 
@@ -3087,6 +3183,7 @@ EF execution-strategy retries are allowed only before handler entry. After entry
 - Store-first by default: the harness keeps the production `DeliveryMode.Durable` default, so a plain publish is stored first and dispatched from storage; `RecordedMessage.RequestedDeliveryMode` / `ResolvedDeliveryMode` report what was asked for and what ran.
 - `RunInUnitOfWorkAsync(...)` creates a service scope, begins a resource-less unit of work on it, and hands the delegate **both** that scope's `IServiceProvider` and the `IUnitOfWork` itself — `Func<IServiceProvider, IUnitOfWork, Task>`, plus a `Task<TResult>` overload. Publish through the unit's `Outbox` inside the delegate to exercise an enlisted publish against a live commit or rollback.
 - `ResetAsync()` drains in-flight publish and consume work before clearing a shared harness.
+- `IServiceProvider.ResetMessagingHarnessAsync()` resolves the registered harness and calls `ResetAsync()`, and does nothing when no harness is registered. A shared test host resets through it, for example `await server.Services.ResetMessagingHarnessAsync(cancellationToken)` on a `HeadlessTestServer`, which carries no messaging dependency of its own.
 - `TestConsumer<T>` captures consume contexts without custom handler logic. It is generic and carries no consumer attribute, so the generator cannot register it; attach it as a runtime subscription, for example `subscriber.SubscribeAsync<OrderPlaced>((context, _, ct) => testConsumer.ConsumeAsync(context, ct), new RuntimeSubscriptionOptions { HandlerId = "tests.order-placed" })`.
 
 ### Design constraints

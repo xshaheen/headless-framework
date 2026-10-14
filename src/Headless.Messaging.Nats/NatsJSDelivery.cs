@@ -11,6 +11,9 @@ namespace Headless.Messaging.Nats;
 /// </summary>
 internal sealed class NatsJSDelivery : IAsyncDisposable
 {
+    // The longest delay Task.Delay accepts; a longer one throws synchronously instead of returning a task.
+    private static readonly TimeSpan _MaxDelay = TimeSpan.FromMilliseconds(uint.MaxValue - 1);
+
     private readonly CancellationTokenSource _progressCts = new();
     private readonly Task _progress;
     private int _stopped;
@@ -64,8 +67,15 @@ internal sealed class NatsJSDelivery : IAsyncDisposable
         CancellationToken cancellationToken
     )
     {
-        // Yield first: the constructor must not run the loop inline on the delivery's receive path.
-        await Task.Yield();
+        // The constructor must not run the loop inline on the delivery's receive path. A delay of a millisecond or
+        // more never completes synchronously, so the first await already leaves the constructor and a yield would only
+        // cost a thread-pool hop per delivery. An interval outside that range (an AckWait set through the raw consumer
+        // callback) can complete at once, or make Task.Delay throw before it awaits, and so loop inline; only those
+        // cases yield first.
+        if (interval < TimeSpan.FromMilliseconds(1) || interval > _MaxDelay)
+        {
+            await Task.Yield();
+        }
 
         while (!cancellationToken.IsCancellationRequested)
         {

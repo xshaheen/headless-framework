@@ -1178,6 +1178,48 @@ public sealed class ConsumerRegisterTests : TestBase
         }
     }
 
+    private sealed class ReceiveMiddlewareRecorder
+    {
+        private readonly ConcurrentQueue<string> _constructions = new();
+        private readonly ConcurrentQueue<string> _invocations = new();
+
+        public IReadOnlyList<string> Constructions => _constructions.ToArray();
+
+        public IReadOnlyList<string> Invocations => _invocations.ToArray();
+
+        public void Constructed(string name) => _constructions.Enqueue(name);
+
+        public void Invoked(string name) => _invocations.Enqueue(name);
+    }
+
+    private abstract class OrderedReceiveMiddleware : IReceiveMiddleware
+    {
+        private readonly ReceiveMiddlewareRecorder _recorder;
+        private readonly string _name;
+
+        protected OrderedReceiveMiddleware(ReceiveMiddlewareRecorder recorder, string name)
+        {
+            _recorder = recorder;
+            _name = name;
+            recorder.Constructed(name);
+        }
+
+        public ValueTask InvokeAsync(ReceiveContext context, Func<ValueTask> next)
+        {
+            _recorder.Invoked(_name);
+            return next();
+        }
+    }
+
+    private sealed class OrderedReceiveMiddlewareA(ReceiveMiddlewareRecorder recorder)
+        : OrderedReceiveMiddleware(recorder, "A");
+
+    private sealed class OrderedReceiveMiddlewareB(ReceiveMiddlewareRecorder recorder)
+        : OrderedReceiveMiddleware(recorder, "B");
+
+    private sealed class OrderedReceiveMiddlewareC(ReceiveMiddlewareRecorder recorder)
+        : OrderedReceiveMiddleware(recorder, "C");
+
     private sealed class RecordingReceiveMiddleware : IReceiveMiddleware
     {
         public Func<ReceiveContext, Func<ValueTask>, ValueTask> Behavior { get; set; } = static (_, next) => next();
@@ -1335,6 +1377,33 @@ public sealed class ConsumerRegisterTests : TestBase
         recorder.DispatchedOrigins.AddRange(dispatchedOrigins);
 
         return new ReceiveRingTestRun(client, dispatcher, recorder, serializer, provider);
+    }
+
+    [Fact]
+    public async Task should_resolve_and_run_one_instance_of_each_receive_middleware_when_several_share_the_service_type()
+    {
+        // given: three receive middleware share IReceiveMiddleware, registered out of priority order
+        var recorder = new ReceiveMiddlewareRecorder();
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            middleware: null,
+            "receive-several",
+            "{}"u8.ToArray(),
+            configureServices: services =>
+            {
+                services.AddSingleton(recorder);
+                var builder = new MessagingBuilder(services);
+                builder.AddReceiveMiddleware<OrderedReceiveMiddlewareA>().WithPriority(30);
+                builder.AddReceiveMiddleware<OrderedReceiveMiddlewareB>().WithPriority(10);
+                builder.AddReceiveMiddleware<OrderedReceiveMiddlewareC>().WithPriority(20);
+            }
+        );
+
+        // then
+        recorder.Constructions.Should().BeEquivalentTo(["A", "B", "C"]);
+        recorder.Invocations.Should().BeEquivalentTo(["A", "B", "C"]);
+        run.Client.CommitCount.Should().Be(1);
     }
 
     [Fact]

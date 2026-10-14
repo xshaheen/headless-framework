@@ -427,6 +427,47 @@ public abstract class BlobStorageTestsBase : TestBase
         seen.Distinct(StringComparer.Ordinal).Should().BeEquivalentTo(expected);
     }
 
+    public virtual async Task token_paging_returns_every_key_once_in_ordinal_order_when_uploads_are_unsorted()
+    {
+        await using var storage = GetStorage();
+
+        await ResetAsync(storage);
+
+        // Uploaded in a shuffled order with far more keys than one page, so the bounded page window keeps replacing
+        // its largest key while it scans and must still hand back the smallest keys of each page, in ordinal order.
+        const int total = 50;
+        const int pageSize = 7;
+
+        var keys = Enumerable
+            .Range(0, total)
+            .Select(i => "window/file-" + i.ToString("00", CultureInfo.InvariantCulture) + ".txt")
+            .ToArray();
+
+        foreach (var index in Enumerable.Range(0, total).Select(i => i * 17 % total))
+        {
+            await storage.UploadContentAsync(new BlobLocation(ContainerName, keys[index]), "x", AbortToken);
+        }
+
+        var seen = new List<string>();
+        string? token = null;
+        var guard = 0;
+
+        do
+        {
+            var query = new BlobQuery(ContainerName, prefix: "window/", pageSize: pageSize, continuationToken: token);
+            var page = await storage.ListAsync(query, AbortToken);
+
+            page.Items.Count.Should().BeLessThanOrEqualTo(pageSize);
+            seen.AddRange(page.Items.Select(b => b.BlobKey));
+            token = page.ContinuationToken;
+
+            guard++;
+            guard.Should().BeLessThanOrEqualTo(total, "token paging must terminate");
+        } while (token is not null);
+
+        seen.Should().Equal(keys.Order(StringComparer.Ordinal));
+    }
+
     public virtual async Task list_rejects_malformed_continuation_token()
     {
         await using var storage = GetStorage();

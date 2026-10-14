@@ -1,6 +1,6 @@
 ---
 domain: API & Web
-packages: Api.Abstractions, Api, Api.ServiceDefaults, DataProtection.Blobs, Api.FluentValidation, Api.Idempotency, Api.Identity, Api.Jwt, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc, Api.UserAgent
+packages: Api.Abstractions, Api, Api.ServiceDefaults, DataProtection.Blobs, Api.FluentValidation, Api.Identity, Api.Jwt, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc, Api.UserAgent
 ---
 
 # API & Web
@@ -29,7 +29,7 @@ Additional packages:
 - `Headless.Api.Identity` — ASP.NET Core Identity helpers: token providers, localized `auth:`/`user:` errors, `HeadlessLookupNormalizer`, and the Identity-backed `AddBasicSchema()` and `AddApiKey()` schemes.
 - `Headless.Api.UserAgent` — the DeviceDetector.NET-backed `IUserAgentParser`. Without it, `IWebClientInfoProvider.DeviceInfo` is `null`.
 - `Headless.Api.Logging.Serilog` — enrich Serilog logs with per-request context (IP, user agent, user ID, tenant ID, correlation ID).
-- `Headless.Api.Idempotency` — Stripe-style idempotency middleware: admits each key through the durable `Headless.Idempotency` store and replays the captured HTTP response byte-equivalent on identical retries. See [idempotency.md](idempotency.md) for the durable admission contract and [mediator.md](mediator.md) for why idempotency is HTTP middleware and not a Mediator behavior.
+- `Headless.Idempotency.ResponseReplay` — Stripe-style idempotency middleware: admits each key through the durable `Headless.Idempotency` store and replays the captured HTTP response byte-equivalent on identical retries. Its options and setup live in [idempotency.md § Headless.Idempotency.ResponseReplay](idempotency.md#headlessidempotencyresponsereplay), beside the durable admission contract; see [mediator.md](mediator.md) for why idempotency is HTTP middleware and not a Mediator behavior.
 
 ## Agent Rules
 
@@ -79,7 +79,7 @@ Additional packages:
 
 ### Problem details and error codes
 
-`AddHeadlessProblemDetails()` registers `IProblemDetailsCreator` (for building structured ProblemDetails responses) and `HeadlessApiExceptionHandler` (a single `IExceptionHandler` covering all framework-known exceptions). The creator adds standard extensions to every ProblemDetails: `traceId`, `buildNumber`, `commitNumber`, `instance`, `timestamp`. Error codes follow the `g:lower_snake_case` shape (`g:tenant_required`, `g:cross_tenant_write`, `g:idempotency_key_reused`). Every framework-emitted code — including FluentValidation validator failures (both the built-in codes mapped by `HeadlessFluentValidationErrorCodeMapper` and the Headless validators surfaced by `FluentValidatorErrorDescriber`) — uses this single `g:` shape, so clients see one consistent code namespace in `errors[].code`. Stable codes are exposed as compile-time `public const string` on `*ErrorCodes` holders (`GeneralErrorCodes`, `IdentityErrorCodes` in `Headless.Api.Resources`; `IdempotencyErrorCodes`) — branch on these constants.
+`AddHeadlessProblemDetails()` registers `IProblemDetailsCreator` (for building structured ProblemDetails responses) and `HeadlessApiExceptionHandler` (a single `IExceptionHandler` covering all framework-known exceptions). The creator adds standard extensions to every ProblemDetails: `traceId`, `buildNumber`, `commitNumber`, `instance`, `timestamp`. Error codes follow the `g:lower_snake_case` shape (`g:tenant_required`, `g:cross_tenant_write`, `g:idempotency_key_reused`). Every framework-emitted code — including FluentValidation validator failures (both the built-in codes mapped by `HeadlessFluentValidationErrorCodeMapper` and the Headless validators surfaced by `FluentValidatorErrorDescriber`) — uses this single `g:` shape, so clients see one consistent code namespace in `errors[].code`. Stable codes are exposed as compile-time `public const string` on `*ErrorCodes` holders (`GeneralErrorCodes`, `IdentityErrorCodes` in `Headless.Api.Resources`; `HttpIdempotencyErrorCodes`) — branch on these constants.
 
 #### What clients branch on, and what is localized
 
@@ -155,7 +155,7 @@ app.MapControllers();
 
 ### Idempotency as HTTP middleware
 
-Idempotency is an HTTP-layer concern, not a Mediator pipeline behavior. The middleware admits the request through `Headless.Idempotency`'s durable store, captures the full HTTP response (status code, allowlisted headers, body bytes), and replays it byte-equivalent on retry. A Mediator behavior has no access to the raw HTTP response after it leaves the handler — it would need to serialize/deserialize the action result, losing headers and body encoding, which breaks the byte-equivalent replay guarantee. See [idempotency.md](idempotency.md) for the admission contract both packages share, and [mediator.md](mediator.md) for the full doctrine.
+Idempotency is an HTTP-layer concern, not a Mediator pipeline behavior. The middleware admits the request through `Headless.Idempotency`'s durable store, captures the full HTTP response (status code, allowlisted headers, body bytes), and replays it byte-equivalent on retry. A Mediator behavior has no access to the raw HTTP response after it leaves the handler — it would need to serialize/deserialize the action result, losing headers and body encoding, which breaks the byte-equivalent replay guarantee. See [idempotency.md § Headless.Idempotency.ResponseReplay](idempotency.md#headlessidempotencyresponsereplay) for the middleware and the admission contract it shares, and [mediator.md](mediator.md) for the full doctrine.
 
 ---
 
@@ -852,157 +852,6 @@ localized descriptor factories live in `Headless.FluentValidation.Resources`.
 ### Runtime behavior
 
 None.
-
----
-
-## Headless.Api.Idempotency
-
-Stripe-style HTTP idempotency middleware for ASP.NET Core. Admits each request through the durable `Headless.Idempotency` store, captures the full HTTP response (status, allowlisted headers, byte body) on first execution, and replays it byte-equivalent on identical retries. See [idempotency.md](idempotency.md) for the store's admission contract, retention, and takeover semantics — this section documents only the HTTP adapter.
-
-### API and behavior
-
-- Byte-equivalent replay of captured responses.
-- Two in-flight strategies: `InFlightStrategy.Reject` (default: 409 `g:idempotency_in_flight`) and `InFlightStrategy.WaitAndReplay` (polls the durable store with a doubling backoff, capped at 1 second per poll, until `InFlightLockTimeout` elapses: 409 `g:idempotency_in_flight_timeout`). Both 409s carry `Retry-After`: the seconds, rounded up, until the holding attempt's lease runs out, which is when a retry can be admitted as a takeover.
-- Required keys per endpoint: `.RequireIdempotencyKey()` (or `KeyRequired = true`) refuses a request the middleware would handle that carries no key with 400 `g:idempotency_key_required`, so a money-moving endpoint never runs without duplicate protection. Off by default.
-- Reconciliation reads through `IIdempotencyLookup` (scoped): `GetStatusAsync(context, target)` → `IdempotencyPeekStatus`, and `TryReplayAsync(context, target)` writes an earlier request's stored response to the current one. `target` is an `IdempotentRequestTarget(Method, Path, Key)` with an optional `Query`.
-- Independent request-body memory threshold and fingerprinting cap, with `OversizeBehavior.Reject` (413) or `OversizeBehavior.PassThrough` behaviors.
-- Header allowlist filters `Set-Cookie`, `traceparent`, and other sensitive or per-request headers from the captured response.
-- Store key: the lowercase SHA-256 hex of a scope string (`idem:{userId}:{METHOD}:{path}{?query}:{key}` by default, query string included so endpoints branching on query params don't cross-replay); the durable store additionally scopes every key by the current tenant, so the scope itself carries no tenant segment.
-- Per-endpoint overrides via `.WithIdempotency(o => ...)` and `.RequireIdempotencyKey()`; every attachment applies, in the order the endpoint declares it. `HeaderName` is excluded (see Design constraints).
-- Custom hooks: `KeyDeriver`, `RequestFingerprint`, `ShouldApply`, `ShouldCacheResponse`.
-- Default cache predicate: 2xx + selected 4xx; never 5xx, 1xx, 3xx, or transient 4xx (408/425/429).
-- A handler reached through the middleware reads its admission with `HttpContext.GetIdempotencyContext()` (`IIdempotencyContext`: `HeaderKey`, `Scope`, `Key`, `Admission`, `Generation`, `IsTakeover`, `RecoveryPoint`), fences its own writes with `unit.Idempotency.FenceAsync(context.Admission)`, and records progress with `unit.Idempotency.SetRecoveryPointAsync(context.Admission, ...)`.
-- `IdempotencyErrorCodes` static class: `KeyReused`, `InFlight`, `InFlightTimeout`, `BodyTooLarge`, `KeyMalformed`, `KeyRequired` as `public const string`.
-
-### Design constraints
-
-The middleware is a thin adapter over `IIdempotentOperations`: it admits, runs the handler behind a lease-renewal loop (every third of `InFlightLease`), and completes with the captured response after the handler's unit commits — or releases the admission when `ShouldCacheResponse` rejects the response or the handler threw. Completion happens after commit, not inside it, so a crash in that window leaves the record `Pending`, and the next request takes the key over with `IsTakeover = true`. Recovery points close that window. The handler records a final "done" point with its response state in the same unit as its writes: `unit.Idempotency.SetRecoveryPointAsync(context.Admission, "done", state, contract)`. The takeover then finds it on `context.RecoveryPoint` and rebuilds the response from that state instead of running the work again. A multi-step handler records one point per step and resumes after the last. A release on a handler exception keeps the point, and completion clears it. See [idempotency.md § Recovery points](idempotency.md#recovery-points). A handler whose side effects are not safe to repeat and that records no points should check `IsTakeover`, fence its own writes with `unit.Idempotency.FenceAsync(context.Admission)`, or both.
-
-`HeaderName` per-endpoint overrides via `.WithIdempotency()` are deliberately ignored — the middleware reads the request header before resolving endpoint metadata. Changing the header for a single endpoint would require a custom middleware that runs before idempotency, which complicates pipeline ordering without a realistic use case. Change `HeaderName` globally via `AddHeadlessHttpIdempotency(o => o.HeaderName = ...)`.
-
-`RequestBodyBufferThreshold` controls when request buffering spills from memory to a temporary file; `MaxBodySizeForHashing` independently controls which bodies are eligible for idempotency. The default remains 1 MiB + 1 byte: corrected non-seekable request-body benchmarks showed that 30/64/128 KiB thresholds reduced managed allocations but missed the latency gate at concurrency 1/32/128. Lower it only after measuring the memory, temporary-file I/O, and latency trade-off under representative concurrency.
-
-### Install
-
-```bash
-dotnet add package Headless.Api.Idempotency
-```
-
-### Setup and use
-
-> Durable admission is a hard prerequisite. This package references only `Headless.Idempotency.Abstractions`, so the `IIdempotentOperations` the middleware admits, completes, and releases through comes from `AddHeadlessIdempotency(...)` with a provider (`UsePostgreSql` / `UseSqlServer`; `UseCache` for several replicas that share a Redis cache and have no SQL database, autonomous calls only; or `UseInMemory` for tests, local development, and single-instance hosts, which needs no database but deduplicates only within one process). `AddHeadlessHttpIdempotency` declares the dependency via `Headless.Hosting`'s `RequireRegisteredService<T>`, so a host without it is refused at startup with a `MissingRequiredServiceException` rather than failing on the first idempotent request. Registration order does not matter — the check runs at host start.
-
-```csharp
-var builder = WebApplication.CreateBuilder(args);
-
-builder.AddHeadless(); // current user, problem details, and clock services the middleware resolves
-builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()));
-builder.Services.AddAuthentication(); // add your scheme, such as JWT bearer
-builder.Services.AddAuthorization();
-builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql(connectionString)); // or setup.UseSqlServer(...)
-// tests, local development, one instance: AddHeadlessIdempotency(setup => setup.UseInMemory())
-// replicas sharing Redis, no SQL: AddHeadlessCaching(c => c.UseRedis(...)) + AddHeadlessIdempotency(setup => setup.UseCache())
-builder.Services.AddHeadlessHttpIdempotency(o =>
-{
-    o.Retention = TimeSpan.FromHours(24);
-    o.InFlightStrategy = InFlightStrategy.Reject;
-});
-
-var app = builder.Build();
-
-app.UseHeadless(); // includes UseResponseCompression, which must stay OUTSIDE (before) UseHeadlessHttpIdempotency
-app.UseAuthentication();
-app.UseHeadlessTenancy(); // tenant must be resolved before idempotency
-app.UseAuthorization();
-app.UseHeadlessHttpIdempotency(); // installs response-capture stream; place AFTER auth and tenancy
-
-app.MapHeadlessEndpoints();
-app.MapPost("/disbursements", CreateDisbursement);
-app.Run();
-```
-
-Per-endpoint overrides:
-
-```csharp
-app.MapPost("/webhooks", HandleWebhook)
-    .WithIdempotency(o =>
-    {
-        o.Retention = TimeSpan.FromDays(7);
-        o.MismatchStatusCode = StatusCodes.Status409Conflict;
-    });
-```
-
-Requiring a key on an endpoint that moves money, and a reconciliation endpoint a client polls after a timeout:
-
-```csharp
-app.MapPost("/transactions", PostTransaction).RequireIdempotencyKey();
-
-app.MapGet("/transactions/{key}", async (string key, HttpContext http, IIdempotencyLookup lookup, CancellationToken ct) =>
-{
-    // Replays the stored response of POST /transactions with this key for the same user and tenant claim.
-    return await lookup.TryReplayAsync(http, new IdempotentRequestTarget("POST", "/transactions", key), ct)
-        ? Results.Empty
-        : Results.NotFound();
-});
-
-app.MapGet("/transactions/{key}/status", async (string key, HttpContext http, IIdempotencyLookup lookup, CancellationToken ct) =>
-    Results.Ok(new { status = await lookup.GetStatusAsync(http, new IdempotentRequestTarget("POST", "/transactions", key), ct) })
-);
-```
-
-The lookup addresses the record the middleware stored: the earlier request's method, path, query, and key, plus the current user and tenant claim, so a lookup by another caller finds nothing. It reads the application-level options; a `KeyDeriver` runs against the lookup request's `HttpContext`, so an application whose deriver depends on the request path reads through `IIdempotentOperations.GetResultAsync` with its own store key instead. Reading never admits an attempt.
-
-A handler fencing its own writes against the admission:
-
-```csharp
-app.MapPost("/disbursements", async (HttpContext http, IUnitOfWorkFactory factory, CancellationToken ct) =>
-{
-    var idem = http.GetIdempotencyContext()!; // set by the middleware once the request is admitted
-
-    return await factory.RunAsync(
-        db,
-        async (unit, innerCt) =>
-        {
-            await unit.Idempotency.FenceAsync(idem.Admission, innerCt); // throws StaleAdmissionException past takeover
-            // ... business writes ...
-            return Results.Ok();
-        },
-        cancellationToken: ct
-    );
-});
-```
-
-### Configuration
-
-| Property | Default | Purpose |
-|----------|---------|---------|
-| `Retention` | 24 hours | How long a completed response replays, and how long a released key's record is kept, in the durable store. |
-| `HeaderName` | `Idempotency-Key` | Request header carrying the key (per IETF `draft-ietf-httpapi-idempotency-key-header`). |
-| `KeyRequired` | `false` | When `true`, a request the middleware would handle (its method is in `Methods` and `ShouldApply` accepts it) that carries no key gets 400 `g:idempotency_key_required` instead of running without idempotency. Set it per endpoint with `.RequireIdempotencyKey()`. |
-| `Methods` | POST, PUT, PATCH, DELETE | HTTP methods that participate in idempotency. GET is never valid. |
-| `InFlightStrategy` | `Reject` | `Reject` returns 409 on concurrent same-key requests. `WaitAndReplay` polls the durable store and replays the winner, or admits as a takeover once the winner's lease is lost. |
-| `InFlightLockTimeout` | 30s | How long `WaitAndReplay` polls before giving up with 409 `g:idempotency_in_flight_timeout`. Validator-capped at 1 minute. |
-| `InFlightLease` | 1 minute | How long the admitted attempt owns its key unless renewed. The middleware renews every third of this duration while the handler runs; only bounds how long a crashed attempt blocks its key before the next request can take it over. Must be between 1 second and 1 hour. |
-| `MaxBodySizeForHashing` | 1 MiB | Maximum body size eligible for fingerprinting. Capped at 64 MiB. |
-| `RequestBodyBufferThreshold` | 1 MiB + 1 byte | Request bytes retained in memory before buffering spills to a temporary file. Capped at 64 MiB + 1 byte. |
-| `OversizeBehavior` | `Reject` | `Reject` returns 413 (`g:idempotency_body_too_large`). `PassThrough` runs the handler without idempotency guarantees. |
-| `OnStoreError` | `Throw` | How the middleware reacts when the durable store throws before the handler runs, or while a `WaitAndReplay` request polls. `Throw` (default) propagates the exception as 5xx: a store that fails open silently drops the guarantee it exists for. `FailOpen` logs a warning and bypasses idempotency for the failing request. A completion or release failure after the response has started is always logged, never thrown, regardless of this setting. |
-| `RequireUserIdentity` | `true` | When `true` and no `KeyDeriver` is set, requests without an authenticated user pass through. Set `false` for webhook receivers / OAuth callbacks: anonymous requests then share one namespace across all tenants, so give them a `KeyDeriver` with a verified per-sender discriminator. |
-| `MismatchStatusCode` | 422 | Status code for fingerprint mismatch. Must be 409 or 422. |
-| `ReplayHeaderAllowlist` | Content-Type, Content-Language, Content-Encoding, Content-Disposition, Location, Link, ETag, Last-Modified, Cache-Control, Vary | Response headers copied into the captured response. `Set-Cookie` and `traceparent` are excluded by design. |
-| `ShouldCacheResponse` | `DefaultCachePredicate.Instance` | Predicate deciding whether a completed response is stored for replay. |
-| `ShouldApply` | `null` | Per-request opt-out hook. |
-| `KeyDeriver` | `null` (uses `idem:{userId}:{METHOD}:{path}{?query}:{key}`) | Custom key-scope derivation, run instead of the `RequireUserIdentity` check; an empty return skips idempotency. The store key is the SHA-256 hex of whatever this returns; the store tenant still comes from the tenant claim. |
-| `RequestFingerprint` | `null` (uses SHA-256 of buffered body) | Custom fingerprint computation. Must return non-empty bytes. |
-
-### Runtime behavior
-
-- Reads the authenticated `ICurrentUser.UserId` for the key scope and the principal's tenant claim for the store tenant (host scope when absent or anonymous); the ambient `ICurrentTenant` is ignored for keying. When `RequireUserIdentity` is set, no user is authenticated, and no `KeyDeriver` is configured, the middleware passes through without applying idempotency.
-- Buffers the request body via `HttpRequest.EnableBuffering`; bytes beyond `RequestBodyBufferThreshold` spill to a temporary file.
-- On replay, writes `Idempotent-Replayed: true` to the response. Pre-existing allowlisted response headers set by upstream middleware are removed before captured headers are written for byte-equivalent replay.
-- On admission, sets `IIdempotencyContext` as an `HttpContext` feature before invoking the handler, then renews the lease every third of `InFlightLease` while it runs; renewal stops before completion so it cannot race the settlement that ends the lease.
-- Completion runs after the handler's unit commits, with `CancellationToken.None` so a client disconnect cannot strand the admission until its lease expires. A `StaleAdmissionException` there (the lease expired or was taken over while the handler ran) is logged, never thrown — only the owning attempt's result is ever stored.
-- When the **response** body exceeds `MaxBodySizeForHashing` (`captureStream.TruncatedCapture`), the completed response is not stored and replay does not apply. `OversizeBehavior` controls **request**-body handling only.
 
 ---
 

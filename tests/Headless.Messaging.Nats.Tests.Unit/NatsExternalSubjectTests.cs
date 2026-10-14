@@ -402,6 +402,28 @@ public sealed class NatsExternalSubjectTests : TestBase
         provisioner.StreamName(MessageLane.Bus, _Name).Should().Be("headless-bus-runs");
     }
 
+    [Fact]
+    public void should_throw_on_every_resolve_when_no_declared_stream_covers_the_external_subject()
+    {
+        // given - the binding was validated against a catalog the provisioner's options no longer carry
+        var covering = new NatsStreamCatalog().Own(_Stream, s => s.Subjects("acme.>"));
+        var subjects = NatsExternalSubjects.Create(
+            [_Route(_Name, MessageLane.Queue, n => n.ExternalSubject(_Filter))],
+            covering
+        );
+        var provisioner = new NatsStreamProvisioner(
+            MsOptions.Options.Create(new NatsMessagingOptions()),
+            externalSubjects: subjects
+        );
+
+        // when
+        var resolve = () => provisioner.Resolve(MessageLane.Queue, _Name);
+
+        // then - a failed resolution is not remembered, so it fails the same way each time
+        resolve.Should().Throw<InvalidOperationException>().WithMessage($"*'{_Filter}'*");
+        resolve.Should().Throw<InvalidOperationException>().WithMessage($"*'{_Filter}'*");
+    }
+
     #endregion
 
     #region Publish

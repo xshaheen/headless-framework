@@ -60,6 +60,38 @@ public sealed class PrincipalCurrentUserTests
     }
 
     [Fact]
+    public void should_return_the_same_identity_values_when_read_repeatedly()
+    {
+        // given
+        UserId userId = "user-123";
+        var principal = new ClaimsPrincipal(
+            new ClaimsIdentity(
+                [
+                    new Claim(UserClaimTypes.UserId, userId),
+                    new Claim(UserClaimTypes.AccountId, "account-9"),
+                    new Claim(UserClaimTypes.Roles, "admin"),
+                ],
+                "TestAuth"
+            )
+        );
+        var sut = new PrincipalCurrentUser(principal);
+
+        // when
+        var firstRoles = sut.Roles;
+        var firstUserId = sut.UserId;
+        var firstAccountId = sut.AccountId;
+
+        // then
+        firstUserId.Should().Be(userId);
+        firstRoles.Should().BeEquivalentTo("admin");
+        sut.Roles.Should().BeSameAs(firstRoles);
+        sut.UserId.Should().BeSameAs(firstUserId);
+        firstAccountId.Should().NotBeNull();
+        firstAccountId!.ToString().Should().Be("account-9");
+        sut.AccountId.Should().BeSameAs(firstAccountId);
+    }
+
+    [Fact]
     public void should_return_all_matching_claims_when_find_claims()
     {
         // given

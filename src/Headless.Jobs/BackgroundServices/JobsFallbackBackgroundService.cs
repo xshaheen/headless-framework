@@ -24,6 +24,7 @@ internal sealed class JobsFallbackBackgroundService(
 {
     private int _started;
     private long _lastOrphanSweepTimestamp;
+    private long _lastStallSweepTimestamp;
     private readonly TimeSpan _fallbackJobPeriod = schedulerOptions.FallbackIntervalChecker;
 
     public override Task StartAsync(CancellationToken ct)
@@ -83,7 +84,7 @@ internal sealed class JobsFallbackBackgroundService(
                 // a Retry row released to Idle here is picked up by RunTimedOutTickers in the same tick. Closes the
                 // gap where a job wedged on a still-live node is reclaimed by neither the claim predicate nor the
                 // dead-node sweep.
-                await internalJobsManager.ReclaimStalledResources(loopToken).ConfigureAwait(false);
+                await _ReclaimStalledResourcesAsync(loopToken).ConfigureAwait(false);
                 await _ReclaimOrphanedOwnersAsync(loopToken).ConfigureAwait(false);
 
                 var functions = await internalJobsManager.RunTimedOutTickers(loopToken).ConfigureAwait(false);
@@ -161,6 +162,22 @@ internal sealed class JobsFallbackBackgroundService(
         {
             logger.LogJobsFallbackStoppedOnMembershipLoss();
         }
+    }
+
+    // While timed-out work drains, the loop spins every 10 ms, and an ungated sweep would pay two stall scans and a
+    // cluster-wide terminal-children reconcile on every spin. A stalled row only becomes reclaimable after its lease
+    // lapses, and an idle loop already sweeps once per period, so sweeping once per period during a drain keeps the
+    // same recovery bound. Stamped before the call so a failing sweep is not retried on the next spin either.
+    private async Task _ReclaimStalledResourcesAsync(CancellationToken cancellationToken)
+    {
+        if (_lastStallSweepTimestamp != 0 && timeProvider.GetElapsedTime(_lastStallSweepTimestamp) < _fallbackJobPeriod)
+        {
+            return;
+        }
+
+        _lastStallSweepTimestamp = timeProvider.GetTimestamp();
+
+        await internalJobsManager.ReclaimStalledResources(cancellationToken).ConfigureAwait(false);
     }
 
     // Recovers rows stamped by an owner identity that can no longer be OBSERVED at all: a superseded

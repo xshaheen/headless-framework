@@ -235,11 +235,6 @@
         "resolved": "10.0.12",
         "contentHash": "jDix4bBMYnpZdSPcnY+KDV6ik3SRMzpMKby/bZl/XUwIiflwRNAFZ0oOl61R/pSaveIJ8t1gs2BUlrGsPs/bcg=="
       },
-      "System.Security.Cryptography.Pkcs": {
-        "type": "Transitive",
-        "resolved": "9.0.18",
-        "contentHash": "NKMKhUdLGNZryY9GXXTF5dXyP6S37EYXhiA2JYvwshJbd4DRq07IOS9it8Opi9atadvv5rlNkD76Mio+5Oo2aQ=="
-      },
       "System.Security.Cryptography.ProtectedData": {
         "type": "Transitive",
         "resolved": "9.0.18",
@@ -363,7 +358,6 @@
       "headless.messaging.dashboard": {
         "type": "Project",
         "dependencies": {
-          "Consul": "[1.8.0, )",
           "Headless.Dashboard.Authentication": "[1.0.0, )",
           "Headless.Messaging": "[1.0.0, )"
         }
@@ -460,15 +454,6 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
-      "Consul": {
-        "type": "CentralTransitive",
-        "requested": "[1.8.0, )",
-        "resolved": "1.8.0",
-        "contentHash": "flKNz6Swyt+pYBJ5dekN1X6PJYUaeNAaNC0dAWhudTd0t2vR34G0QXmr5KyApI7OP1rGMwY3xx133Dc9IvOS6Q==",
-        "dependencies": {
-          "Newtonsoft.Json": "13.0.1"
-        }
-      },
       "FastExpressionCompiler": {
         "type": "CentralTransitive",
         "requested": "[6.0.0, )",
@@ -538,12 +523,6 @@
         "resolved": "2.12.2",
         "contentHash": "ZkT7qiJe0Kj0+DTZOZo+xrDy1kNmdsWFQVPIQLNx9ZJ0T9cB2LG7r+Bi60so8/+yg1nkS7QCPadrzsTG4VPKrA=="
       },
-      "Newtonsoft.Json": {
-        "type": "CentralTransitive",
-        "requested": "[13.0.4, )",
-        "resolved": "13.0.4",
-        "contentHash": "pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A=="
-      },
       "Nito.AsyncEx": {
         "type": "CentralTransitive",
         "requested": "[5.1.2, )",
@@ -595,6 +574,12 @@
           "Microsoft.IdentityModel.JsonWebTokens": "8.23.0",
           "Microsoft.IdentityModel.Tokens": "8.23.0"
         }
+      },
+      "System.Security.Cryptography.Pkcs": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.13, )",
+        "resolved": "10.0.13",
+        "contentHash": "a+EovgC1fBnwdlQ6cn3j4JFBfKqiFaFvoAhjisOoSvazLAcIznaBzPQP0oYnvccmeXfqUH1KebVZOxSeH6rMaw=="
       }
     }
   }

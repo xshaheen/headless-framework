@@ -121,6 +121,20 @@ public sealed class TenantFeatureValueProviderTests : TestBase
             return Task.FromResult(_values.GetValueOrDefault((name, providerName, providerKey)));
         }
 
+        public Task<List<FeatureValue>> GetAllAsync(
+            HashSet<string> names,
+            string providerName,
+            string? providerKey,
+            CancellationToken cancellationToken = default
+        )
+        {
+            var values = names
+                .Select(name => new FeatureValue(name, _values.GetValueOrDefault((name, providerName, providerKey))))
+                .ToList();
+
+            return Task.FromResult(values);
+        }
+
         public Task SetAsync(
             string name,
             string value,

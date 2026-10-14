@@ -221,6 +221,12 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
     #region Token paging
 
     [Fact]
+    public override Task token_paging_returns_every_key_once_in_ordinal_order_when_uploads_are_unsorted()
+    {
+        return base.token_paging_returns_every_key_once_in_ordinal_order_when_uploads_are_unsorted();
+    }
+
+    [Fact]
     public override Task token_paging_round_trips_across_serialization()
     {
         return base.token_paging_round_trips_across_serialization();

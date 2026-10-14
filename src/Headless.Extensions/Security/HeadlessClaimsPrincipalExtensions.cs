@@ -119,12 +119,20 @@ public static class HeadlessClaimsPrincipalExtensions
                 return [];
             }
 
-            return principal
-                .Claims.Where(claim =>
-                    string.Equals(claim.Type, UserClaimTypes.Roles, StringComparison.OrdinalIgnoreCase)
-                )
-                .Select(claim => claim.Value)
-                .ToImmutableHashSet(StringComparer.Ordinal);
+            // A plain loop over the claims, with the builder created only once a role claim appears: role checks run
+            // per request, and most principals carry few or no role claims.
+            ImmutableHashSet<string>.Builder? roles = null;
+
+            foreach (var claim in principal.Claims)
+            {
+                if (string.Equals(claim.Type, UserClaimTypes.Roles, StringComparison.OrdinalIgnoreCase))
+                {
+                    roles ??= ImmutableHashSet.CreateBuilder<string>(StringComparer.Ordinal);
+                    roles.Add(claim.Value);
+                }
+            }
+
+            return roles?.ToImmutable() ?? ImmutableHashSet<string>.Empty.WithComparer(StringComparer.Ordinal);
         }
 
         /// <summary>Reads the tenant id claim from <paramref name="principal"/>.</summary>

@@ -45,6 +45,37 @@ public sealed class ClaimsPrincipalExtensionsTests
     }
 
     [Fact]
+    public void should_return_empty_ordinal_set_when_principal_has_no_role_claims()
+    {
+        // given
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(UserClaimTypes.AccountType, "user")]));
+
+        // when
+        var roles = principal.GetRoles();
+
+        // then
+        roles.Should().BeEmpty();
+        roles.KeyComparer.Should().BeSameAs(StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public void should_collect_roles_across_identities_when_get_roles()
+    {
+        // given
+        var principal = new ClaimsPrincipal([
+            new ClaimsIdentity([new Claim(UserClaimTypes.Roles, "admin")]),
+            new ClaimsIdentity([new Claim(UserClaimTypes.Roles, "auditor"), new Claim(UserClaimTypes.Roles, "admin")]),
+        ]);
+
+        // when
+        var roles = principal.GetRoles();
+
+        // then
+        roles.Should().BeEquivalentTo("admin", "auditor");
+        roles.KeyComparer.Should().BeSameAs(StringComparer.Ordinal);
+    }
+
+    [Fact]
     public void should_return_empty_for_null_principal_when_get_roles()
     {
         // given

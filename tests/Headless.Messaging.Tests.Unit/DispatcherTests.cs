@@ -1255,7 +1255,9 @@ public sealed class DispatcherTests : TestBase
         await _storage
             .Received(1)
             .ChangePublishStateToDelayedAsync(
-                Arg.Is<Guid[]>(ids => ids.Length == 1 && ids[0] == _StorageGuid(1)),
+                Arg.Is<IReadOnlyCollection<MediumMessage>>(messages =>
+                    messages.Count == 1 && messages.Single().StorageId == _StorageGuid(1)
+                ),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -1541,7 +1543,10 @@ public sealed class DispatcherTests : TestBase
             )
             .Returns(true);
         _storage
-            .ChangePublishStateToDelayedAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .ChangePublishStateToDelayedAsync(
+                Arg.Any<IReadOnlyCollection<MediumMessage>>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(_ =>
             {
                 flushStarted.TrySetResult();
@@ -1565,6 +1570,41 @@ public sealed class DispatcherTests : TestBase
         act.Should().NotThrow();
         releaseFlush.TrySetResult();
         await disposeTask;
+    }
+
+    [Fact]
+    public async Task should_report_a_committed_delayed_message_the_scheduler_refuses()
+    {
+        // given — a scheduler queue with room for one message.
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            new TestThreadSafeMessageSender(),
+            Options.Create(new MessagingOptions { EnablePublishParallelSend = false, SchedulerBatchSize = 1 }),
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        var committed = (ICommittedDelayedMessageDispatcher)dispatcher;
+        var first = _CreateTestMessage(_StorageGuid(1));
+        first.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10);
+        var second = _CreateTestMessage(_StorageGuid(2));
+        second.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10);
+
+        // when
+        var firstAccepted = committed.EnqueueCommittedDelayedMessage(first);
+        var full = committed.IsSchedulerFull;
+        var secondAccepted = committed.EnqueueCommittedDelayedMessage(second);
+        await dispatcher.DisposeAsync();
+        var acceptedAfterStop = committed.EnqueueCommittedDelayedMessage(second);
+
+        // then
+        firstAccepted.Should().BeTrue();
+        full.Should().BeTrue();
+        secondAccepted.Should().BeFalse("the scheduler queue is full");
+        acceptedAfterStop.Should().BeFalse("the dispatcher is stopping");
     }
 
     [Fact]
@@ -1746,7 +1786,10 @@ public sealed class DispatcherTests : TestBase
         await _storage
             .Received(1)
             .ChangePublishStateToDelayedAsync(
-                Arg.Is<Guid[]>(ids => ids.Length == 1 && ids[0] == message.StorageId),
+                // The queued instance itself, so the store fences on the lease it recorded.
+                Arg.Is<IReadOnlyCollection<MediumMessage>>(messages =>
+                    messages.Count == 1 && ReferenceEquals(messages.Single(), message)
+                ),
                 Arg.Any<CancellationToken>()
             );
         sender.Count.Should().Be(0);
@@ -1771,7 +1814,10 @@ public sealed class DispatcherTests : TestBase
             )
             .Returns(new ValueTask<bool>(true));
         _storage
-            .ChangePublishStateToDelayedAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .ChangePublishStateToDelayedAsync(
+                Arg.Any<IReadOnlyCollection<MediumMessage>>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(_ => throw new InvalidOperationException("storage down"));
 
         await using var dispatcher = new Dispatcher(
@@ -1817,7 +1863,10 @@ public sealed class DispatcherTests : TestBase
             )
             .Returns(new ValueTask<bool>(true));
         _storage
-            .ChangePublishStateToDelayedAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .ChangePublishStateToDelayedAsync(
+                Arg.Any<IReadOnlyCollection<MediumMessage>>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(_ =>
             {
                 flushStarted.TrySetResult();

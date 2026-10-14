@@ -167,7 +167,7 @@ ASP.NET Core integration-test host wrapper with controllable time, DI-scope help
 - Database reset APIs default to the active xUnit test's cancellation token. The server retries
   database, I/O, socket, and broken-connection failures up to three times, replacing the reset
   connection between attempts.
-- `ResetMessagingHarnessAsync()` waits for the `MessagingTestHarness`'s in-flight publish and consume work, then clears its observation buffers and in-memory storage between tests.
+- The server carries no messaging dependency. To reset a `MessagingTestHarness` registered in the host, call `App.Services.ResetMessagingHarnessAsync()` from `Headless.Messaging.Testing` (see [messaging.md](messaging.md#headlessmessagingtesting)).
 
 ### Design constraints
 
@@ -213,7 +213,7 @@ public sealed class TestFixture : IAsyncLifetime
     public async Task ResetStateAsync()
     {
         await App.ResetDatabaseAsync();
-        await App.ResetMessagingHarnessAsync();
+        await App.Services.ResetMessagingHarnessAsync(); // Headless.Messaging.Testing
     }
 
     public async ValueTask DisposeAsync() => await App.DisposeAsync();
@@ -243,7 +243,7 @@ public abstract class IntegrationTestBase(TestFixture fixture) : TestBase
 #### Test Fixture Composition
 
 - Use an xUnit **collection fixture** (`ICollectionFixture<TFixture>` + `[CollectionDefinition]`) rather than a class fixture. The integration host is expensive to construct, so sharing it across an entire test collection (often the whole assembly) is the right unit of reuse.
-- Expose a `Fixture.ResetStateAsync()` hook from the fixture that resets every piece of state that crosses tests: DB rows via `App.ResetDatabaseAsync()`, messaging observations via `await App.ResetMessagingHarnessAsync()`, ambient `ICurrentTenant`/`ICurrentUser` scopes, time, and any test-owned WireMock servers.
+- Expose a `Fixture.ResetStateAsync()` hook from the fixture that resets every piece of state that crosses tests: DB rows via `App.ResetDatabaseAsync()`, messaging observations via `await App.Services.ResetMessagingHarnessAsync()` (`Headless.Messaging.Testing`), ambient `ICurrentTenant`/`ICurrentUser` scopes, time, and any test-owned WireMock servers.
 - Call `Fixture.ResetStateAsync()` from `IntegrationTestBase.InitializeAsync()` so tests run in any order without ordering coupling. Avoid relying on xUnit test ordering or `[Trait("Order", ...)]` for state setup.
 - Tag every integration class with `[Trait("Category", "Integration")]` so CI can run integration and unit lanes on different runners (only the integration lane needs Docker).
 
@@ -358,7 +358,7 @@ public async Task should_limit_attempts_with_redis_cache()
 
 - **Distributed caches.** Redis / hybrid caches are not touched by Respawner. Prefer registering `Headless.Caching.InMemory` (or the in-memory hybrid L1) for integration tests so the cache lives for the test run and dies with the host. When a test genuinely needs a distributed cache, clear it explicitly in `ResetStateAsync()`.
 - **In-process singletons.** Any state held on singleton services (caches, registries, schedulers) survives DB reset. Either reset them explicitly or design the test to seed them via the public API rather than relying on a pristine state.
-- **`MessagingTestHarness` observation buffers.** Call `await App.ResetMessagingHarnessAsync()` in `ResetStateAsync()` -- otherwise `WaitForPublishedAsync<T>()` may match a message from a prior test, or a store-first publish still in flight from the prior test lands in this one.
+- **`MessagingTestHarness` observation buffers.** Call `await App.Services.ResetMessagingHarnessAsync()` in `ResetStateAsync()` -- otherwise `WaitForPublishedAsync<T>()` may match a message from a prior test, or a store-first publish still in flight from the prior test lands in this one.
 - **Ambient `ICurrentTenant` / `ICurrentUser` scopes.** Disposable scopes opened by one test must not leak into the next; close them inside the test's own `using` block or reset them in `ResetStateAsync()`.
 - **External fakes** (WireMock, Stripe test server, etc.). Reset their recorded requests and reconfigure their stubs as part of `ResetStateAsync()`.
 

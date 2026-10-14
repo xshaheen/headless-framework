@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-204 packages &bull; One setup grammar &bull; Swap any provider in one line
+205 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -44,7 +44,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 Every service, repository, and handler that injects `ICache` is untouched by that edit. The same holds for `IBlobStorage` across S3, Azure, Cloudflare R2, the file system, Redis, and SFTP; for `IEmailSender` across SES, Azure Communication Services, and SMTP; and for messaging across eight transports.
 
-**You install three packages, not 204.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
+**You install three packages, not 205.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
 
 **Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 122 unit-test projects and 63 integration-test projects on that split.
 
@@ -252,7 +252,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 204 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 205 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -268,7 +268,6 @@ Production ASP.NET Core APIs: request and response conventions, validation pipel
 | [Headless.Api.Logging.Serilog](src/Headless.Api.Logging.Serilog/README.md) | Serilog logging integration |
 | [Headless.Api.MinimalApi](src/Headless.Api.MinimalApi/README.md) | Minimal API utilities |
 | [Headless.Api.Mvc](src/Headless.Api.Mvc/README.md) | MVC-specific utilities |
-| [Headless.Api.Idempotency](src/Headless.Api.Idempotency/README.md) | Stripe-style HTTP idempotency middleware — cache and replay responses on retries |
 | [Headless.Api.Identity](src/Headless.Api.Identity/README.md) | ASP.NET Core Identity helpers: token providers, localized identity errors, Basic and API-key schemes |
 | [Headless.Api.Jwt](src/Headless.Api.Jwt/README.md) | JWT issuing and parsing, with a matching bearer scheme |
 | [Headless.Api.UserAgent](src/Headless.Api.UserAgent/README.md) | User-Agent parsing backed by DeviceDetector.NET |
@@ -430,6 +429,7 @@ Distributed message bus with a transactional outbox, retries, delayed delivery, 
 | [Headless.Messaging](src/Headless.Messaging/README.md) | Runtime engine: outbox, retries, delayed delivery, consumer orchestration |
 | [Headless.Messaging.SourceGenerator](src/Headless.Messaging.SourceGenerator/README.md) | Compile-time registration and typed dispatch for `[BusConsumer]` and `[QueueConsumer]` classes |
 | [Headless.Messaging.Dashboard](src/Headless.Messaging.Dashboard/README.md) | Web UI for monitoring messages, failures, and system health |
+| [Headless.Messaging.Dashboard.Consul](src/Headless.Messaging.Dashboard.Consul/README.md) | Consul node discovery and self-registration for the dashboard |
 | [Headless.Messaging.Dashboard.K8s](src/Headless.Messaging.Dashboard.K8s/README.md) | Kubernetes node auto-discovery for the dashboard |
 | [Headless.Messaging.Testing](src/Headless.Messaging.Testing/README.md) | In-process test harness for asserting on published/consumed/faulted messages |
 
@@ -505,9 +505,9 @@ Payment gateway integrations for the MENA region: cash-in (collection) and cash-
 
 | Package | Description |
 |---------|-------------|
+| [Headless.Payments.Paymob](src/Headless.Payments.Paymob/README.md) | Paymob service layer over cash-in and cash-out |
 | [Headless.Payments.Paymob.CashIn](src/Headless.Payments.Paymob.CashIn/README.md) | Paymob cash-in payments |
 | [Headless.Payments.Paymob.CashOut](src/Headless.Payments.Paymob.CashOut/README.md) | Paymob cash-out payments |
-| [Headless.Payments.Paymob.Services](src/Headless.Payments.Paymob.Services/README.md) | Paymob shared services |
 
 ### Permissions
 
@@ -606,6 +606,7 @@ Durable, tenant-scoped idempotent admission: admit a key once across processes a
 | [Headless.Idempotency.Caching](src/Headless.Idempotency.Caching/README.md) | Idempotency records in a shared cache (Redis) for autonomous calls across replicas without SQL |
 | [Headless.Idempotency.InMemory](src/Headless.Idempotency.InMemory/README.md) | In-process idempotency records for tests and single-instance hosts |
 | [Headless.Idempotency.PostgreSql](src/Headless.Idempotency.PostgreSql/README.md) | PostgreSQL idempotency records |
+| [Headless.Idempotency.ResponseReplay](src/Headless.Idempotency.ResponseReplay/README.md) | Stripe-style HTTP idempotency middleware — cache and replay responses on retries |
 | [Headless.Idempotency.SqlServer](src/Headless.Idempotency.SqlServer/README.md) | SQL Server idempotency records |
 | [Headless.Idempotency.Sqlite](src/Headless.Idempotency.Sqlite/README.md) | SQLite idempotency records; admission commits on its own |
 

@@ -181,7 +181,7 @@ internal sealed partial class ConsumerRegister
                         transportMessage,
                         executor!,
                         lane,
-                        _RunInnerReceiveAsync,
+                        RunInnerReceive,
                         hostShutdownToken
                     )
                     .ConfigureAwait(false);

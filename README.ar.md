@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-204 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+205 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -53,7 +53,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 أي service أو repository أو handler بياخد `ICache` مش هيتأثر بالتعديل دا. ونفس الكلام على `IBlobStorage` بين S3 و Azure و Cloudflare R2 و FileSystem و Redis و SFTP، وعلى `IEmailSender` بين SES و Azure Communication Services و SMTP، وعلى الـ messaging بين 8 transports.
 
-**هتركّب 3 packages، مش 204.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
+**هتركّب 3 packages، مش 205.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
 
 **الـ tests مش محتاجة Docker عشان تبقى سريعة.** الـ caching والـ distributed locks والـ messaging فيهم in-memory providers؛ والـ emails والـ SMS والـ push notifications فيهم dev providers مش بتبعت حاجة؛ والـ blob storage بيشتغل على الـ file system المحلي. يعني الـ unit tests بتجرّب نفس الـ contract الحقيقي من غير containers. ولما تحتاج الـ backend الحقيقي، `Headless.Testing.Testcontainers` بتجهّزلك الـ fixtures. الـ repo نفسه ماشي على التقسيمة دي: 122 مشروع unit tests و 63 مشروع integration tests.
 
@@ -291,7 +291,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 204 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 205 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -307,7 +307,6 @@ APIs جاهزة للـ production على ASP.NET Core: conventions للـ reques
 | [Headless.Api.Logging.Serilog](src/Headless.Api.Logging.Serilog/README.md) | Enrichers لـ Serilog على مستوى كل request |
 | [Headless.Api.MinimalApi](src/Headless.Api.MinimalApi/README.md) | أدوات للـ Minimal API |
 | [Headless.Api.Mvc](src/Headless.Api.Mvc/README.md) | أدوات للـ MVC |
-| [Headless.Api.Idempotency](src/Headless.Api.Idempotency/README.md) | HTTP idempotency middleware بأسلوب Stripe: بيـ cache الـ response ويرجّعه عند الـ retry |
 | [Headless.Api.Identity](src/Headless.Api.Identity/README.md) | ربط ASP.NET Core Identity: token providers، أخطاء identity مترجمة، و Basic و API-key schemes |
 | [Headless.Api.Jwt](src/Headless.Api.Jwt/README.md) | إصدار JWT وقراءته، مع bearer scheme بنفس القواعد |
 | [Headless.Api.UserAgent](src/Headless.Api.UserAgent/README.md) | تحليل الـ User-Agent عن طريق DeviceDetector.NET |
@@ -468,6 +467,7 @@ Message bus موزّع بـ transactional outbox، وretries، وdelayed deliver
 | [Headless.Messaging.Queue.Abstractions](src/Headless.Messaging.Queue.Abstractions/README.md) | الـ contracts بتاعة الـ publisher والـ request client بنمط point-to-point |
 | [Headless.Messaging](src/Headless.Messaging/README.md) | الـ runtime engine: outbox، وretries، وdelayed delivery، وorchestration للـ consumers |
 | [Headless.Messaging.Dashboard](src/Headless.Messaging.Dashboard/README.md) | Web UI لمتابعة الـ messages والـ failures وحالة النظام |
+| [Headless.Messaging.Dashboard.Consul](src/Headless.Messaging.Dashboard.Consul/README.md) | اكتشاف الـ nodes وتسجيلها في Consul |
 | [Headless.Messaging.Dashboard.K8s](src/Headless.Messaging.Dashboard.K8s/README.md) | اكتشاف الـ nodes أوتوماتيك جوه Kubernetes |
 | [Headless.Messaging.Testing](src/Headless.Messaging.Testing/README.md) | Test harness جوه الـ process للتحقق من الـ published والـ consumed والـ faulted messages |
 
@@ -543,9 +543,9 @@ Message bus موزّع بـ transactional outbox، وretries، وdelayed deliver
 
 | Package | الوصف |
 |---------|-------|
+| [Headless.Payments.Paymob](src/Headless.Payments.Paymob/README.md) | طبقة خدمات Paymob فوق الـ cash-in والـ cash-out |
 | [Headless.Payments.Paymob.CashIn](src/Headless.Payments.Paymob.CashIn/README.md) | تحصيل المدفوعات عن طريق Paymob |
 | [Headless.Payments.Paymob.CashOut](src/Headless.Payments.Paymob.CashOut/README.md) | صرف المدفوعات عن طريق Paymob |
-| [Headless.Payments.Paymob.Services](src/Headless.Payments.Paymob.Services/README.md) | خدمات Paymob المشتركة |
 
 ### Permissions
 
@@ -644,6 +644,7 @@ Idempotent admission دائم ومتقسّم حسب الـ tenant: اقبل ال
 | [Headless.Idempotency.Caching](src/Headless.Idempotency.Caching/README.md) | Records الـ idempotency في cache مشترك (Redis) للـ autonomous calls بين الـ replicas من غير SQL |
 | [Headless.Idempotency.InMemory](src/Headless.Idempotency.InMemory/README.md) | Records جوه الـ process للـ tests وللـ hosts اللي شغالة بـ instance واحدة |
 | [Headless.Idempotency.PostgreSql](src/Headless.Idempotency.PostgreSql/README.md) | Records الـ idempotency في PostgreSQL |
+| [Headless.Idempotency.ResponseReplay](src/Headless.Idempotency.ResponseReplay/README.md) | HTTP idempotency middleware بأسلوب Stripe: بيـ cache الـ response ويرجّعه عند الـ retry |
 | [Headless.Idempotency.SqlServer](src/Headless.Idempotency.SqlServer/README.md) | Records الـ idempotency في SQL Server |
 | [Headless.Idempotency.Sqlite](src/Headless.Idempotency.Sqlite/README.md) | Records الـ idempotency في SQLite، والـ admission بيعمل commit لوحده |
 

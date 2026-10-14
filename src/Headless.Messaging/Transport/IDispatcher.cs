@@ -39,7 +39,15 @@ public interface IDispatcher : IProcessingServer
 /// </summary>
 internal interface ICommittedDelayedMessageDispatcher
 {
-    void EnqueueCommittedDelayedMessage(MediumMessage message);
+    /// <summary>Whether the scheduler queue has no room, so it would refuse every message offered now.</summary>
+    bool IsSchedulerFull { get; }
+
+    /// <summary>Offers a committed delayed message to the in-memory scheduler without waiting for capacity.</summary>
+    /// <returns>
+    /// <see langword="false"/> when the scheduler refused it (full or stopping). An unclaimed row stays durable as
+    /// Delayed work, but a row the caller claimed is Queued and leased to this node, so the caller must hand it back.
+    /// </returns>
+    bool EnqueueCommittedDelayedMessage(MediumMessage message);
 }
 
 /// <summary>

@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Text.Json.Serialization;
+using System.Threading.Channels;
 using Headless.Messaging;
 using Headless.Messaging.Nats;
 using Headless.Testing.Tests;
@@ -44,6 +45,52 @@ public sealed class NatsExternalSubjectTests(NatsFixture fixture) : TestBase
         received.MessageName.Should().Be(scope.MessageName);
         received.MessageId.Should().MatchRegex($"^nats:{scope.Stream}:1:[0-9]+$");
         received.Value.Should().Be("done");
+    }
+
+    [Fact]
+    public async Task should_hand_a_raw_json_consumer_the_foreign_bytes_unbound()
+    {
+        // given: a host whose JSON options would reject this snake_case body if they bound it
+        var scope = TestScope.Create();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<RawRunConsumer>();
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseNats(options =>
+            {
+                options.Servers = fixture.ConnectionString;
+                options.Streams.Own(scope.Stream, s => s.Subjects(scope.StreamSubjects));
+            });
+            setup.UseInMemoryStorage();
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
+            setup.Options.JsonSerializerOptions.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;
+        });
+        services.ConfigureMessaging(messaging =>
+        {
+            messaging
+                .Message<RawJson>(scope.MessageName)
+                .OnQueue(queue =>
+                    queue
+                        .RawPayload()
+                        .UseNats(nats => nats.ExternalSubject(scope.Filter, s => s.TenantFromSubjectToken(1)))
+                );
+            messaging.AddModule<RawRunModule>();
+        });
+        await using var provider = services.BuildServiceProvider();
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        const string json = """{ "run_id" : "r4",  "note":"café \"q\"" }""";
+
+        // when
+        await _PublishNativeAsync(scope.Subject("t3", "r4"), json);
+
+        // then
+        var consumer = provider.GetRequiredService<RawRunConsumer>();
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        timeout.CancelAfter(_Wait);
+        var (tenantId, body) = await consumer.Received.Reader.ReadAsync(timeout.Token);
+        tenantId.Should().Be("t3");
+        body.Should().Be(json);
     }
 
     [Fact]
@@ -357,5 +404,23 @@ public sealed class NatsExternalSubjectTests(NatsFixture fixture) : TestBase
                 await Task.Delay(TimeSpan.FromMilliseconds(50), deadline.Token);
             }
         }
+    }
+
+    public sealed class RawRunModule : IMessagingModule
+    {
+        public static void Register(MessagingCatalogBuilder catalog) =>
+            catalog.AddQueueConsumer<RawRunConsumer, RawJson>(
+                "tests.nats.raw-run",
+                TestConsumerDispatch.FromServices<RawRunConsumer, RawJson>()
+            );
+    }
+
+    public sealed class RawRunConsumer : IConsume<RawJson>
+    {
+        public Channel<(string? TenantId, string Body)> Received { get; } =
+            Channel.CreateUnbounded<(string? TenantId, string Body)>();
+
+        public ValueTask ConsumeAsync(ConsumeContext<RawJson> context, CancellationToken cancellationToken) =>
+            Received.Writer.WriteAsync((context.TenantId, context.Message.ToString()), cancellationToken);
     }
 }

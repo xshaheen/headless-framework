@@ -110,6 +110,37 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         timeProvider.DelayCount.Should().Be(0);
     }
 
+    [Fact]
+    public async Task should_back_off_after_a_cancellation_the_processor_raised_while_the_context_runs()
+    {
+        // given — a timeout inside the processor (not the host stopping) surfaces as OperationCanceledException.
+        await using var provider = new ServiceCollection().BuildServiceProvider();
+        using var cancellation = new CancellationTokenSource();
+        var timeProvider = new ControlledTimeProvider();
+        await using var context = new ProcessingContext(provider, timeProvider, cancellation.Token);
+        var inner = new SequenceProcessor(
+            _ => Task.FromException(new OperationCanceledException("command timeout")),
+            async _ =>
+            {
+                await cancellation.CancelAsync();
+            }
+        );
+        var sut = new InfiniteRetryProcessor(inner, LoggerFactory);
+
+        // when
+        var run = sut.ProcessAsync(context);
+        await _WaitUntilAsync(() => timeProvider.DelayCount == 1 || run.IsCompleted, AbortToken);
+
+        // then — it waits like any other failure instead of re-entering the processor at once.
+        timeProvider.DelayCount.Should().Be(1, "a cancellation while the context runs is a failure to back off from");
+        timeProvider.DelayAt(0).Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(1));
+        inner.Calls.Should().Be(1);
+
+        await timeProvider.FireNextTimerAsync();
+        await run.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        inner.Calls.Should().Be(2);
+    }
+
     private static async Task _WaitUntilAsync(Func<bool> predicate, CancellationToken cancellationToken)
     {
         while (!predicate())

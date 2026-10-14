@@ -207,12 +207,6 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
         }
-      },
-      "headless.urls": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
       }
     }
   }

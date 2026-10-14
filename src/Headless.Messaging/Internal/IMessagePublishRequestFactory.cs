@@ -74,6 +74,10 @@ internal sealed class MessagePublishRequestFactory(
     IMessageCapabilityGate? capabilityGate = null
 ) : IMessagePublishRequestFactory
 {
+    // Every publish writes at least eight framework headers (id, version, correlation, sequence, name, type, sent time,
+    // intent) and often a few more; reserving room up front avoids growing the dictionary while they are added.
+    private const int _FrameworkHeaderCapacity = 16;
+
     private static readonly HashSet<string> _ReservedHeaders = new(StringComparer.Ordinal)
     {
         Headers.MessageId,
@@ -258,10 +262,18 @@ internal sealed class MessagePublishRequestFactory(
         RequestStamp? request
     )
     {
-        var headers =
-            options?.Headers != null
-                ? new Dictionary<string, string?>(options.Headers, StringComparer.Ordinal)
-                : new Dictionary<string, string?>(StringComparer.Ordinal);
+        var headers = new Dictionary<string, string?>(
+            (options?.Headers?.Count ?? 0) + _FrameworkHeaderCapacity,
+            StringComparer.Ordinal
+        );
+
+        if (options?.Headers is { } customHeaders)
+        {
+            foreach (var (name, value) in customHeaders)
+            {
+                headers.Add(name, value);
+            }
+        }
 
         _ValidateCustomHeaderNames(headers);
         _ApplyTenantId(headers, options);

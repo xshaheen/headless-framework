@@ -1,0 +1,17 @@
+﻿<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Consul integration for the Headless messaging dashboard.</Description>
+    <PackageTags>headless;messaging;dashboard;consul;dotnet</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Messaging.Dashboard.Consul.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Consul" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Messaging.Dashboard\Headless.Messaging.Dashboard.csproj" />
+    <ProjectReference Include="..\Headless.Messaging\Headless.Messaging.csproj" />
+  </ItemGroup>
+</Project>

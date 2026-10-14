@@ -444,7 +444,7 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
         appBuilder.Services.AddSingleton(Substitute.For<IHttpClientFactory>());
         appBuilder.Services.AddSingleton<MessagingDashboardCache>();
         appBuilder.Services.AddSingleton(Substitute.For<INodeDiscoveryProvider>());
-        appBuilder.Services.AddSingleton(new ConsulDiscoveryOptions { NodeName = "test-node" });
+        appBuilder.Services.AddSingleton(new CurrentNodeIdentity("test-node"));
         appBuilder.Services.AddSingleton<GatewayProxyAgent>();
 
         appBuilder.Services.AddRouting();

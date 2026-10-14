@@ -470,12 +470,6 @@
           "xunit.v3.extensibility.core": "[4.0.2, )"
         }
       },
-      "headless.urls": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
       "Meziantou.Extensions.Logging.Xunit.v3": {
         "type": "CentralTransitive",
         "requested": "[3.0.8, )",

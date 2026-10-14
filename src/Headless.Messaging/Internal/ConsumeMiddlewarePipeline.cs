@@ -291,10 +291,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         {
             return
             [
-                .. descriptors
-                    .Select(descriptor => _ResolveDescriptor(provider, descriptor))
-                    .Where(static middleware => middleware is not null)
-                    .Cast<object>(),
+                .. MiddlewareDescriptorResolver.Resolve(provider, descriptors),
                 .. _GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Consume),
             ];
         }
@@ -365,13 +362,6 @@ internal sealed class ConsumeMiddlewarePipeline(
         );
 
         return middleware.Where(current => !trackedTypes.Contains(current.GetType()));
-    }
-
-    private static object? _ResolveDescriptor(IServiceProvider provider, MiddlewareDescriptor descriptor)
-    {
-        return provider
-            .GetServices(descriptor.ServiceType)
-            .FirstOrDefault(service => service?.GetType() == descriptor.MiddlewareType);
     }
 
     private ConsumeContext _BuildConsumeContext(

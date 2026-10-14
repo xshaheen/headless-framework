@@ -262,25 +262,25 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
     public async Task should_change_multiple_messages_to_delayed_state()
     {
         // given
-        var ids = new List<Guid>();
+        var storedMessages = new List<MediumMessage>();
         for (var i = 0; i < 5; i++)
         {
             var msgId = Guid.NewGuid().ToString("D");
             var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
             var message = new Message(header, new { Data = $"test{i}" });
             var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
-            ids.Add(stored.StorageId);
+            storedMessages.Add(stored);
         }
 
         // when
-        await _storage.ChangePublishStateToDelayedAsync([.. ids], AbortToken);
+        await _storage.ChangePublishStateToDelayedAsync(storedMessages, AbortToken);
 
         // then
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var statuses = await connection.QueryAsync<string>(
             "SELECT \"status_name\" FROM headless.messaging_published WHERE \"id\" = ANY(@Ids)",
-            new { Ids = ids.ToArray() }
+            new { Ids = storedMessages.Select(m => m.StorageId).ToArray() }
         );
         statuses.Should().AllBe(nameof(StatusName.Delayed));
     }

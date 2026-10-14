@@ -46,7 +46,7 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
     RequestDelegate next,
     IEnumerable<ITenantIdentifierSource> sources,
     IOptions<TenantCatalogOptions> options,
-    IOptions<MultiTenancyOptions> tenancyOptions,
+    IOptions<HttpTenantResolutionOptions> tenancyOptions,
     IOptions<TenantTelemetryOptions> telemetryOptions,
     ILogger<TenantCatalogResolutionMiddleware> logger
 )
@@ -269,7 +269,7 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
     private static async Task<bool> _RejectOnClaimMismatchAsync(
         HttpContext context,
         string resolvedTenantId,
-        MultiTenancyOptions tenancyOptions,
+        HttpTenantResolutionOptions tenancyOptions,
         bool detailedResolutionErrors
     )
     {

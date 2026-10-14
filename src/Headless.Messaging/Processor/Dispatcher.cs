@@ -218,12 +218,14 @@ internal sealed class Dispatcher
         }
     }
 
-    void ICommittedDelayedMessageDispatcher.EnqueueCommittedDelayedMessage(MediumMessage message)
+    bool ICommittedDelayedMessageDispatcher.IsSchedulerFull => _schedulerQueue.IsFull;
+
+    bool ICommittedDelayedMessageDispatcher.EnqueueCommittedDelayedMessage(MediumMessage message)
     {
         if (_IsCancellationRequested())
         {
             _logger.MessagePersistButSystemStopped();
-            return;
+            return false;
         }
 
         if (message.ExpiresAt is not { } publishTime)
@@ -231,8 +233,9 @@ internal sealed class Dispatcher
             throw new InvalidOperationException("A committed delayed message must have an expiration time.");
         }
 
-        // A full in-memory queue is safe here: the committed message remains durable as Delayed work.
-        _ = _schedulerQueue.TryEnqueue(message, publishTime.Ticks);
+        // Never waits for capacity: a refusal goes back to the caller, which knows whether the row is an unclaimed
+        // hand-off (still durable as Delayed work) or a claim it must hand back.
+        return _schedulerQueue.TryEnqueue(message, publishTime.Ticks);
     }
 
     void ICommittedMessageDispatcher.EnqueueCommittedMessage(MediumMessage message)
@@ -443,7 +446,11 @@ internal sealed class Dispatcher
         }
         catch (Exception e)
         {
+            // Logged first so a failing release cannot hide the original error. A failure before the attempt started
+            // leaves the claim unused; release it so the row is retried now instead of after DispatchTimeout. Once the
+            // attempt started this is a no-op and its completion releases it.
             _logger.SubscriberInvocationFailed(e, message.StorageId);
+            await attempt.AbandonClaimedAsync().ConfigureAwait(false);
             return false;
         }
     }
@@ -568,17 +575,18 @@ internal sealed class Dispatcher
             }
 
             // Each row goes back to Delayed in its own outbox; one unreachable database must not keep the others'
-            // rows queued, so every group is attempted.
+            // rows queued, so every group is attempted. The queue also holds hand-off copies this node never
+            // claimed, so each message carries the lease it recorded and the store resets only rows still under it.
             var groups = _schedulerQueue
                 .UnorderedItems.GroupBy(x => x.OutboxStorage ?? _storage)
-                .Select(group => (Storage: group.Key, Ids: group.Select(x => x.StorageId).ToArray()))
+                .Select(group => (Storage: group.Key, Messages: group.ToArray()))
                 .ToArray();
 
-            foreach (var (storage, ids) in groups)
+            foreach (var (storage, messages) in groups)
             {
                 try
                 {
-                    await storage.ChangePublishStateToDelayedAsync(ids).ConfigureAwait(false);
+                    await storage.ChangePublishStateToDelayedAsync(messages).ConfigureAwait(false);
                     _logger.DelayedStorageUpdateSuccess();
                 }
                 catch (Exception e)

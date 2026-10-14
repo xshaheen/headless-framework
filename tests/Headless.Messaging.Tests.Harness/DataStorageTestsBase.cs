@@ -1497,7 +1497,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         var storedMessage = await storage.StoreMessageAsync("delayed-test", message, cancellationToken: AbortToken);
 
         // when
-        var act = async () => await storage.ChangePublishStateToDelayedAsync([storedMessage.StorageId], AbortToken);
+        var act = async () => await storage.ChangePublishStateToDelayedAsync([storedMessage], AbortToken);
 
         // then
         await act.Should().NotThrowAsync();
@@ -1529,7 +1529,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         sealedFirst.Should().BeTrue("the transition to Succeeded must win against a fresh row");
 
         // when — the late shutdown flush tries to move the sealed row back to Delayed.
-        await storage.ChangePublishStateToDelayedAsync([storedMessage.StorageId], AbortToken);
+        await storage.ChangePublishStateToDelayedAsync([storedMessage], AbortToken);
 
         // then — the row must remain terminal: a follow-up state change is still rejected by the
         // terminal guard (a Delayed row would have accepted it) and the retry pickup never sees it.
@@ -1562,8 +1562,9 @@ public abstract partial class DataStorageTestsBase : TestBase
         );
 
         // when
-        var act = async () =>
-            await storage.ChangePublishStateToDelayedAsync([storedMessage.StorageId, Guid.NewGuid()], AbortToken);
+        var unknown = _CopyMessage(storedMessage);
+        unknown.StorageId = Guid.NewGuid();
+        var act = async () => await storage.ChangePublishStateToDelayedAsync([storedMessage, unknown], AbortToken);
 
         // then
         await act.Should().NotThrowAsync("missing rows must be skipped, not faulted on");
@@ -1954,7 +1955,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         claimed.Should().ContainSingle().Which.StorageId.Should().Be(stored.StorageId);
 
         // Flush it back to Delayed, exactly as the graceful-shutdown scheduler flush does.
-        await storage.ChangePublishStateToDelayedAsync([stored.StorageId], AbortToken);
+        await storage.ChangePublishStateToDelayedAsync([claimed[0]], AbortToken);
 
         // The flush must clear the lease so the row is immediately re-claimable. With a stale lease this re-poll
         // returns empty (the message would wait out DispatchTimeout before re-dispatch).
@@ -2957,6 +2958,88 @@ public abstract partial class DataStorageTestsBase : TestBase
         (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .ContainSingle(message => message.StorageId == stored.StorageId);
+    }
+
+    public virtual async Task should_keep_another_owners_lease_when_flushing_an_unleased_copy_to_delayed()
+    {
+        if (!Capabilities.SupportsDelayedScheduling)
+        {
+            Assert.Skip("Storage does not support delayed scheduling");
+        }
+
+        // given — node A holds an unleased copy of the row (a committed hand-off), and node B then claims it.
+        var storage = GetStorage();
+        NodeMembership.SetIdentity("flush-handoff-owner");
+        var handOff = await _StoreFailedPublishedMessageAsync("flush-handoff");
+        NodeMembership.SetIdentity("flush-claim-owner");
+        var claimed = (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+            .Should()
+            .ContainSingle(message => message.StorageId == handOff.StorageId)
+            .Subject;
+
+        // when — A shuts down and flushes the copy it holds while B is mid-send.
+        NodeMembership.SetIdentity("flush-handoff-owner");
+        await storage.ChangePublishStateToDelayedAsync([handOff], AbortToken);
+
+        // then — B still owns the row, so its lease-fenced success write lands.
+        var persisted = await GetPersistedLeaseIdentityAsync(published: true, claimed.StorageId, AbortToken);
+        if (persisted is { } lease)
+        {
+            lease.Owner.Should().Be(claimed.Owner);
+            lease.LockedUntil.Should().Be(claimed.LockedUntil!.Value);
+        }
+
+        NodeMembership.SetIdentity("flush-claim-owner");
+        (
+            await storage.ChangePublishRetryStateAsync(
+                claimed,
+                StatusName.Succeeded,
+                MessageContentWrite.Preserve,
+                retryDelay: null,
+                lockedUntil: null,
+                originalRetries: claimed.Retries,
+                originalInlineAttempts: claimed.InlineAttempts,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue("a flush of a copy that never held the lease must not take the row from its owner");
+    }
+
+    public virtual async Task should_release_own_lease_when_flushing_a_claimed_row_to_delayed()
+    {
+        if (!Capabilities.SupportsDelayedScheduling)
+        {
+            Assert.Skip("Storage does not support delayed scheduling");
+        }
+
+        // given — this node claimed the row and still holds that exact lease.
+        var storage = GetStorage();
+        NodeMembership.SetIdentity("flush-own-owner");
+        var stored = await _StoreFailedPublishedMessageAsync("flush-own");
+        var claimed = (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+            .Should()
+            .ContainSingle(message => message.StorageId == stored.StorageId)
+            .Subject;
+
+        // a copy recorded on the other lane names a different row identity, so it must not reset this one
+        var otherLane = _CopyMessage(claimed);
+        otherLane.Lane = MessageLane.Queue;
+        await storage.ChangePublishStateToDelayedAsync([otherLane], AbortToken);
+        NodeMembership.SetIdentity("flush-own-successor");
+        (await storage.LeasePublishAsync(_CopyMessage(stored), TimeSpan.FromMinutes(5), AbortToken))
+            .Should()
+            .BeFalse("a lane mismatch leaves the claim in place");
+        NodeMembership.SetIdentity("flush-own-owner");
+
+        // when
+        await storage.ChangePublishStateToDelayedAsync([claimed], AbortToken);
+
+        // then — the lease is gone, so another node can take the row at once.
+        NodeMembership.SetIdentity("flush-own-successor");
+        (await storage.LeasePublishAsync(_CopyMessage(stored), TimeSpan.FromMinutes(5), AbortToken))
+            .Should()
+            .BeTrue("the flush releases the lease this node held");
     }
 
     public virtual async Task should_release_only_exact_received_retry_lease_generation()

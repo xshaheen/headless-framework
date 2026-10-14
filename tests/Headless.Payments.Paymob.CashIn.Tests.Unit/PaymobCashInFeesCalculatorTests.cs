@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Payments.Paymob.Services.CashIn;
+using Headless.Payments.Paymob.CashIn;
 using Headless.Testing.Tests;
 
 namespace Tests;

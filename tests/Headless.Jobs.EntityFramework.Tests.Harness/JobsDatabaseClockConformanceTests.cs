@@ -180,7 +180,7 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
             // A two-second stall: what a busy container or a starved thread pool can impose on one heartbeat.
             // Waiting out three heartbeat intervals lets the loop observe it.
             clock.Stall(TimeSpan.FromSeconds(2));
-            await Task.Delay(3 * JobsCoordinationFixtureExtensions.InterceptedHostHeartbeatInterval, ct);
+            await Task.Delay(3 * JobsCoordinationFixtureExtensions.SteadyHeartbeatInterval, ct);
 
             var timeJob = new TimeJobEntity { Id = Guid.NewGuid(), Function = "clock-stall-time" };
             await persistence.AddTimeJobsAsync([timeJob], ct);

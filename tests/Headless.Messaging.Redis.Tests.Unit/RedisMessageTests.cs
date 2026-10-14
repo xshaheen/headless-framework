@@ -12,6 +12,8 @@ namespace Tests;
 /// </summary>
 public sealed class RedisMessageTests : TestBase
 {
+    private static readonly JsonSerializerOptions _WebJsonOptions = new(JsonSerializerDefaults.Web);
+
     [Fact]
     public void should_convert_transport_message_to_stream_entries()
     {
@@ -265,6 +267,49 @@ public sealed class RedisMessageTests : TestBase
         // when & then
         var action = () => RedisMessage.Create(streamEntry, headersOptional: true);
         action.Should().ThrowExactly<RedisConsumeMissingBodyException>();
+    }
+
+    [Fact]
+    public void should_write_headers_bytes_identical_to_the_utf8_json_string_when_headers_hold_non_ascii_quotes_and_nulls()
+    {
+        // given
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "msg-\u00e9\u4e2d\ud83d\ude00",
+            [Headers.MessageName] = "orders.\"quoted\"",
+            ["x-arabic"] = "\u0645\u0631\u062d\u0628\u0627",
+            ["x-null"] = null,
+        };
+        var expected = Encoding.UTF8.GetBytes(JsonSerializer.Serialize<object>(headers, _WebJsonOptions));
+        var message = new TransportMessage(headers, ReadOnlyMemory<byte>.Empty);
+
+        // when
+        var headersEntry = message.AsStreamEntries().First(e => e.Name == "headers");
+
+        // then
+        ((byte[])headersEntry.Value!)
+            .Should()
+            .Equal(expected);
+    }
+
+    [Fact]
+    public void should_round_trip_headers_when_creating_from_the_written_stream_entries()
+    {
+        // given
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "msg-\u00e9",
+            [Headers.MessageName] = "orders.\"quoted\"",
+            ["x-null"] = null,
+        };
+        var entries = new TransportMessage(headers, new byte[] { 7 }).AsStreamEntries();
+
+        // when
+        var message = RedisMessage.Create(new StreamEntry("1234567-0", entries));
+
+        // then
+        message.Headers.Should().BeEquivalentTo(headers);
+        message.Body.ToArray().Should().Equal(7);
     }
 
     [Theory]

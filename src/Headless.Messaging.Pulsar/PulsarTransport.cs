@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Pulsar;
@@ -33,7 +34,7 @@ internal sealed class PulsarTransport(
                 .CreateProducerAsync(PulsarPhysicalAddress.Topic(lane, message.Name))
                 .ConfigureAwait(false);
             var headerDic = new Dictionary<string, string?>(message.Headers, StringComparer.Ordinal);
-            var pulsarMessage = producer.NewMessage(message.Body.ToArray(), key, headerDic);
+            var pulsarMessage = producer.NewMessage(TransportBody.ToArray(message.Body), key, headerDic);
             var messageId = await producer.SendAsync(pulsarMessage).ConfigureAwait(false);
 
             if (messageId != null)

@@ -17,12 +17,12 @@ namespace Headless.Messaging.Internal;
 internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) : IConsumerServiceSelector
 {
     /// <summary>
-    /// since this class be designed as a Singleton service,the following two list must be thread safe!
+    /// Compiled wildcard patterns keyed by message name. The selector is a singleton, so the cache must be thread
+    /// safe. It is keyed by the pattern itself, not by the candidate list: callers hand in lists grouped by
+    /// subscription, by subscription and lane, and by consumer identity, and no key derived from a list's first
+    /// element tells two different lists apart.
     /// </summary>
-    private readonly ConcurrentDictionary<
-        WildcardCacheKey,
-        List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>
-    > _cacheList = new();
+    private readonly ConcurrentDictionary<string, Regex> _patternCache = new(StringComparer.Ordinal);
 
     private readonly ILogger<ConsumerServiceSelector> _logger = serviceProvider.GetRequiredService<
         ILogger<ConsumerServiceSelector>
@@ -33,7 +33,7 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
 
     public void Invalidate()
     {
-        _cacheList.Clear();
+        _patternCache.Clear();
     }
 
     public IReadOnlyList<ConsumerExecutorDescriptor> SelectCandidates()
@@ -146,54 +146,27 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
         IReadOnlyList<ConsumerExecutorDescriptor> executeDescriptor
     )
     {
-        var cacheKey = _CreateWildcardCacheKey(executeDescriptor);
-        if (!_cacheList.TryGetValue(cacheKey, out var tmpList))
+        for (var i = 0; i < executeDescriptor.Count; i++)
         {
-            tmpList =
-            [
-                .. executeDescriptor.Select(x => new RegexExecuteDescriptor<ConsumerExecutorDescriptor>
-                {
-                    Name = TransportNaming.WildcardToRegex(x.MessageName),
-                    Descriptor = x,
-                }),
-            ];
+            var descriptor = executeDescriptor[i];
 
-            _cacheList.TryAdd(cacheKey, tmpList);
-        }
+            // Built once per pattern: the static Regex.IsMatch cache holds only a few patterns, so more wildcard
+            // subscriptions than that would re-parse their patterns on every delivery.
+            var pattern = _patternCache.GetOrAdd(
+                descriptor.MessageName,
+                static name => new Regex(
+                    TransportNaming.WildcardToRegex(name),
+                    RegexOptions.Singleline,
+                    TimeSpan.FromSeconds(1)
+                )
+            );
 
-        foreach (var red in tmpList)
-        {
-            if (Regex.IsMatch(key, red.Name, RegexOptions.Singleline, TimeSpan.FromSeconds(1)))
+            if (pattern.IsMatch(key))
             {
-                return red.Descriptor;
+                return descriptor;
             }
         }
 
         return null;
     }
-
-    private static WildcardCacheKey _CreateWildcardCacheKey(IReadOnlyList<ConsumerExecutorDescriptor> executeDescriptor)
-    {
-        var subscription = executeDescriptor[0].SubscriptionName;
-        var lane = executeDescriptor[0].Lane;
-
-        for (var i = 1; i < executeDescriptor.Count; i++)
-        {
-            if (executeDescriptor[i].Lane != lane)
-            {
-                return new WildcardCacheKey(subscription, Lane: null);
-            }
-        }
-
-        return new WildcardCacheKey(subscription, lane);
-    }
-
-    private sealed class RegexExecuteDescriptor<T>
-    {
-        public required string Name { get; init; }
-
-        public required T Descriptor { get; init; }
-    }
-
-    private readonly record struct WildcardCacheKey(string SubscriptionName, MessageLane? Lane);
 }

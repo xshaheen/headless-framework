@@ -44,6 +44,14 @@ internal sealed class NatsStreamProvisioner(
     // round trip; a failure stays cached until its back-off ends, then the next publish tries again.
     private readonly ConcurrentDictionary<(string Stream, string Subjects), EnsureEntry> _ensured = new();
 
+    // Resolving a name walks every declared subject pattern and builds a derived spec, which every publish would
+    // otherwise repeat. The result depends only on the stream catalog and the external bindings, both configured before
+    // the host starts, so nothing evicts it; a catalog changed after the first publish is not seen. Only the resolution
+    // is cached, never the ensure entry, so forgetting a published stream still makes its next publish ensure it again.
+    // A failed resolution throws out of GetOrAdd and stores nothing, so it fails again on every call.
+    private readonly ConcurrentDictionary<(MessageLane Lane, string Name, bool Sharded), ResolvedStream> _resolved =
+        new();
+
     public bool IsEnabled => _options.StreamProvisioning is not NatsStreamProvisioning.Disabled;
 
     /// <summary>Whether the catalog declares a stream Headless owns, so the warm-up has something to create.</summary>
@@ -115,6 +123,25 @@ internal sealed class NatsStreamProvisioner(
     /// </summary>
     public NatsStreamSpec Resolve(MessageLane lane, string messageName, bool isSharded = false)
     {
+        return _ResolveCached(lane, messageName, isSharded).Spec;
+    }
+
+    private ResolvedStream _ResolveCached(MessageLane lane, string messageName, bool isSharded)
+    {
+        return _resolved.GetOrAdd(
+            (lane, messageName, isSharded),
+            static (key, self) =>
+            {
+                var spec = self._ResolveUncached(key.Lane, key.Name, key.Sharded);
+
+                return new ResolvedStream(spec, _SubjectsKey(spec));
+            },
+            this
+        );
+    }
+
+    private NatsStreamSpec _ResolveUncached(MessageLane lane, string messageName, bool isSharded)
+    {
         if (_FindDeclared(lane, messageName) is { } declared)
         {
             return declared;
@@ -171,9 +198,14 @@ internal sealed class NatsStreamProvisioner(
         CancellationToken cancellationToken
     )
     {
-        return IsEnabled
-            ? _EnsureOnceAsync(js, lane, Resolve(lane, messageName, isSharded), cancellationToken)
-            : Task.FromResult<NatsStreamState?>(null);
+        if (!IsEnabled)
+        {
+            return Task.FromResult<NatsStreamState?>(null);
+        }
+
+        var resolved = _ResolveCached(lane, messageName, isSharded);
+
+        return _EnsureOnceAsync(js, lane, resolved.Spec, resolved.SubjectsKey, cancellationToken);
     }
 
     /// <summary>Ensures every owned declared stream, sharing the publish cache so a later publish finds it done.</summary>
@@ -188,7 +220,7 @@ internal sealed class NatsStreamProvisioner(
         {
             // A warm-up failure (often a broker not reachable yet at host start) must not start a back-off that
             // fails the first publishes; the first publish simply tries again.
-            await _EnsureOnceAsync(js, lane: null, spec, cancellationToken, backOffOnFailure: false)
+            await _EnsureOnceAsync(js, lane: null, spec, _SubjectsKey(spec), cancellationToken, backOffOnFailure: false)
                 .ConfigureAwait(false);
         }
     }
@@ -282,12 +314,13 @@ internal sealed class NatsStreamProvisioner(
         INatsJSContext js,
         MessageLane? lane,
         NatsStreamSpec spec,
+        string subjectsKey,
         CancellationToken cancellationToken,
         bool backOffOnFailure = true
     )
     {
         var entry = _ensured.GetOrAdd(
-            (spec.Name, string.Join(',', spec.Subjects)),
+            (spec.Name, subjectsKey),
             static (_, clock) => new EnsureEntry(clock),
             _backoffClock
         );
@@ -319,6 +352,8 @@ internal sealed class NatsStreamProvisioner(
             throw;
         }
     }
+
+    private static string _SubjectsKey(NatsStreamSpec spec) => string.Join(',', spec.Subjects);
 
     private async Task<NatsStreamState?> _EnsureStreamAsync(
         INatsJSContext js,
@@ -551,6 +586,9 @@ internal sealed class NatsStreamProvisioner(
     // (an overlapping subject, an invalid setting) as a 4xx API error. Anything else, a 503 included, may heal.
     private static bool _IsConfigurationFault(Exception exception) =>
         exception is InvalidOperationException or NatsJSApiException { Error.Code: >= 400 and < 500 };
+
+    /// <summary>A resolved stream and the subject part of its ensure key, computed once with it.</summary>
+    private sealed record ResolvedStream(NatsStreamSpec Spec, string SubjectsKey);
 
     /// <summary>One stream's publish-side ensure: the attempt in flight or done, and the back-off after a failure.</summary>
     private sealed class EnsureEntry(TimeProvider clock)

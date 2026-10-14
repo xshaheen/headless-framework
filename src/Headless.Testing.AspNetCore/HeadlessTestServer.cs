@@ -5,7 +5,6 @@ using System.Net.Sockets;
 using System.Security.Claims;
 using Headless.Checks;
 using Headless.Hosting;
-using Headless.Messaging.Testing;
 using Headless.Testing.DependencyInjection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -455,18 +454,6 @@ public sealed class HeadlessTestServer<TProgram>(
         await using var scope = Services.CreateAsyncScope();
         scope.ServiceProvider.SetHttpContext(principal, (System.Net.IPAddress?)null);
         await action(scope.ServiceProvider).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Resets the messaging test harness if it is registered in the service provider, after its in-flight publish
-    /// and consume work has settled (see <see cref="MessagingTestHarness.ResetAsync"/>).
-    /// </summary>
-    /// <param name="cancellationToken">Cancels the wait for in-flight work.</param>
-    public Task ResetMessagingHarnessAsync(CancellationToken cancellationToken = default)
-    {
-        var harness = Services.GetService<MessagingTestHarness>();
-
-        return harness?.ResetAsync(cancellationToken: cancellationToken) ?? Task.CompletedTask;
     }
 
     /// <summary>Starts the test host, registers the fake time provider, and runs readiness checks.</summary>

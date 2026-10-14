@@ -108,9 +108,13 @@ public sealed class SlugOptions
             return true;
         }
 
-        foreach (var t in AllowedRanges)
+        // Indexed rather than foreach: enumerating the IReadOnlyList interface allocates an enumerator, and this
+        // runs once per character of every slug.
+        var ranges = AllowedRanges;
+
+        for (var i = 0; i < ranges.Count; i++)
         {
-            if (_IsInRange(t, character))
+            if (_IsInRange(ranges[i], character))
             {
                 return true;
             }

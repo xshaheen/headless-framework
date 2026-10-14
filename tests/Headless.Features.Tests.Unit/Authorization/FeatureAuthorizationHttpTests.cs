@@ -12,8 +12,6 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
@@ -101,7 +99,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         await _AssertFeatureForbiddenAsync(response);
     }
 
-    #endregion
+    #endregion MVC
 
     #region Minimal API
 
@@ -202,7 +200,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         act.Should().Throw<ArgumentException>();
     }
 
-    #endregion
+    #endregion Minimal API
 
     #region Anonymous callers
 
@@ -275,7 +273,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         await _AssertFeatureForbiddenAsync(response);
     }
 
-    #endregion
+    #endregion Anonymous callers
 
     #region Composition with a permission policy
 
@@ -302,7 +300,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         response.StatusCode.Should().Be(expected);
     }
 
-    #endregion
+    #endregion Composition with a permission policy
 
     #region Failure reasons
 
@@ -352,7 +350,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         document.RootElement.GetProperty("detail").GetString().Should().Be("هذه الميزة غير متوفرة حاليا.");
     }
 
-    #endregion
+    #endregion Failure reasons
 
     #region Without Headless.Api
 
@@ -374,7 +372,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         response.StatusCode.Should().Be(expected);
     }
 
-    #endregion
+    #endregion Without Headless.Api
 
     #region Fail closed
 
@@ -401,7 +399,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         // given - a Minimal API host that never registers the authorization middleware's services. MVC would add them
         // itself, so the host has no controllers. AddHeadlessFeatures registered the handler services, so WebApplication
         // still adds the authorization middleware, which refuses to run without them instead of skipping the gate.
-        var act = async () =>
+        var act = static async () =>
         {
             await using var app = await _StartAsync(
                 new HostOptions
@@ -418,7 +416,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*AddAuthorization*");
     }
 
-    #endregion
+    #endregion Fail closed
 
     #region Helpers
 
@@ -580,6 +578,22 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
 
                 return new FeatureValue(name, value, Provider: null);
             });
+        featureManager
+            .GetAllAsync(Arg.Any<IReadOnlySet<string>>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var names = call.ArgAt<IReadOnlySet<string>>(0);
+
+                return names.ToDictionary(
+                    name => name,
+                    name => new FeatureValue(
+                        name,
+                        enabledFeatures.Contains(name, StringComparer.Ordinal) ? "true" : "false",
+                        Provider: null
+                    ),
+                    StringComparer.Ordinal
+                );
+            });
 
         return featureManager;
     }
@@ -669,7 +683,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         }
     }
 
-    #endregion
+    #endregion Helpers
 }
 
 [ApiController]

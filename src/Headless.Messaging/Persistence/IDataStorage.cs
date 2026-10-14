@@ -84,11 +84,21 @@ public interface IDataStorage
     );
 
     /// <summary>
-    /// Transitions the specified published message rows to the <c>Delayed</c> state for deferred dispatch.
+    /// Hands the specified published message rows back to the <c>Delayed</c> state and clears their lease, but only
+    /// while each row still carries the lease its message recorded.
     /// </summary>
-    /// <param name="storageIds">The storage row identifiers of the messages to transition.</param>
+    /// <remarks>
+    /// A row matches when its <see cref="MediumMessage.Owner"/> and <see cref="MediumMessage.LockedUntil"/> equal the
+    /// message's recorded values, both <see langword="null"/> included: an unleased copy resets only an unleased row,
+    /// and a claimed copy resets only the exact lease generation it claimed. A row another node has leased since, an
+    /// unknown row, and a terminal row are left unchanged.
+    /// </remarks>
+    /// <param name="messages">The messages to hand back, each carrying the lease identity it holds.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    ValueTask ChangePublishStateToDelayedAsync(Guid[] storageIds, CancellationToken cancellationToken = default);
+    ValueTask ChangePublishStateToDelayedAsync(
+        IReadOnlyCollection<MediumMessage> messages,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Updates the status of a published message in storage.
