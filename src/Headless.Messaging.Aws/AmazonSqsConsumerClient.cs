@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using Amazon.Auth.AccessControlPolicy;
 using Amazon.Runtime;
@@ -28,6 +29,9 @@ internal sealed class AmazonSqsConsumerClient(
 {
     private const string _TransportName = "Amazon SQS";
 
+    // A rejected message reappears after this many seconds, so the core's retry is not delayed by the full timeout.
+    private const int _RejectVisibilitySeconds = 3;
+
     // Bounds DisposeAsync, which carries no shutdown budget of its own; the core passes its remaining budget to
     // ShutdownAsync instead.
     private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
@@ -41,6 +45,7 @@ internal sealed class AmazonSqsConsumerClient(
     private readonly AmazonSqsMessagingOptions _amazonSqsOptions = options.Value;
     private readonly ILogger _logger = logger;
     private readonly SemaphoreSlim _semaphore = new(concurrency);
+    private readonly SemaphoreSlim _inlineGate = new(1, 1);
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
@@ -53,6 +58,11 @@ internal sealed class AmazonSqsConsumerClient(
 
     private ImmutableArray<string> _queueUrls = [];
 
+    // The running receive loop of each polled queue URL, and the signal that the URL set changed. Both are guarded by
+    // _queueUrlsLock together with _queueUrls.
+    private readonly Dictionary<string, Task> _receiveLoops = new(StringComparer.Ordinal);
+    private TaskCompletionSource _queueUrlsChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     // The message name each polled queue belongs to, built when the client subscribes: on the Queue lane a queue URL
     // maps to its message, and on the Bus lane the identity queue maps to its message only when it carries one.
     private FrozenDictionary<string, string> _arrivalNames = FrozenDictionary<string, string>.Empty;
@@ -63,6 +73,7 @@ internal sealed class AmazonSqsConsumerClient(
     private readonly ConcurrentDictionary<string, InflightSqsMessage> _unsettled = new(StringComparer.Ordinal);
     private readonly InFlightHandlerTracker _inFlightHandlers = new();
     private readonly ConcurrentDictionary<string, SqsDeleteBatcher> _deleteBatchers = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SqsRejectBatcher> _rejectBatchers = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _stopReceiving = new();
     private readonly CancellationTokenSource _stopHeartbeat = new();
 
@@ -238,8 +249,114 @@ internal sealed class AmazonSqsConsumerClient(
         }
     }
 
-    // Cancelled through receiveToken by the caller or by shutdown; cancellationToken tells the two apart.
+    // One loop per queue URL, so a long poll on an empty queue never holds back the messages of a busy one. Cancelled
+    // through receiveToken by the caller or by shutdown; cancellationToken tells the two apart. A loop that fails
+    // stops its siblings and its fault is what listening reports, as one failing receive loop always did.
     private async Task _ReceiveLoopAsync(
+        TimeSpan timeout,
+        CancellationToken cancellationToken,
+        CancellationToken receiveToken
+    )
+    {
+        var loopsCts = CancellationTokenSource.CreateLinkedTokenSource(receiveToken);
+
+        try
+        {
+            await _SuperviseAsync(timeout, loopsCts, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Every loop has ended by now: the supervisor returns only after awaiting them.
+            loopsCts.Dispose();
+        }
+    }
+
+    private async Task _SuperviseAsync(
+        TimeSpan timeout,
+        CancellationTokenSource loopsCts,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            while (true)
+            {
+                Task urlsChanged;
+
+                // Starting under the lock that guards the URL set and the loops' own exit check means a URL added or
+                // re-added while its old loop is finishing still ends up with exactly one loop.
+                lock (_queueUrlsLock)
+                {
+                    foreach (var queueUrl in _queueUrls)
+                    {
+                        if (!_receiveLoops.ContainsKey(queueUrl))
+                        {
+                            _receiveLoops[queueUrl] = _RunQueueLoopAsync(
+                                queueUrl,
+                                timeout,
+                                loopsCts,
+                                cancellationToken
+                            );
+                        }
+                    }
+
+                    urlsChanged = _queueUrlsChanged.Task;
+                }
+
+                await urlsChanged.WaitAsync(loopsCts.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (loopsCts.IsCancellationRequested)
+        {
+            // Stopped by the caller, by shutdown, or by a failed loop; the loops below say which.
+        }
+
+        Task[] loops;
+        lock (_queueUrlsLock)
+        {
+            loops = [.. _receiveLoops.Values];
+        }
+
+        try
+        {
+            await Task.WhenAll(loops).ConfigureAwait(false);
+        }
+        catch
+        {
+            // A sibling stopped by the failure reports cancellation; the failure itself is what the caller needs.
+            var failed = Array.Find(loops, static loop => loop.IsFaulted);
+            if (failed is not null)
+            {
+                ExceptionDispatchInfo.Capture(failed.Exception!.GetBaseException()).Throw();
+            }
+
+            throw;
+        }
+    }
+
+    private async Task _RunQueueLoopAsync(
+        string queueUrl,
+        TimeSpan timeout,
+        CancellationTokenSource loopsCts,
+        CancellationToken cancellationToken
+    )
+    {
+        // Yields first: the caller holds the URL lock while it registers this task, and the loop's first step takes it.
+        await Task.Yield();
+
+        try
+        {
+            await _ReceiveQueueLoopAsync(queueUrl, timeout, cancellationToken, loopsCts.Token).ConfigureAwait(false);
+        }
+        catch (Exception) when (!loopsCts.IsCancellationRequested)
+        {
+            await loopsCts.CancelAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    private async Task _ReceiveQueueLoopAsync(
+        string queueUrl,
         TimeSpan timeout,
         CancellationToken cancellationToken,
         CancellationToken receiveToken
@@ -251,16 +368,19 @@ internal sealed class AmazonSqsConsumerClient(
         {
             try
             {
+                // A URL dropped from the subscription ends its loop; the check and the deregistration are one step, so
+                // a URL added again afterwards starts a fresh loop.
+                if (!_KeepPolling(queueUrl))
+                {
+                    return;
+                }
+
                 await _pauseGate.WaitIfPausedAsync(receiveToken).ConfigureAwait(false);
 
-                (string QueueUrl, ReceiveMessageResponse Response)[] responses;
+                ReceiveMessageResponse response;
                 try
                 {
-                    var snapshot = _GetQueueUrlsSnapshot();
-                    responses = await Task.WhenAll(
-                            snapshot.Select(queueUrl => _ReceiveMessagesAsync(queueUrl, receiveToken))
-                        )
-                        .ConfigureAwait(false);
+                    response = await _ReceiveMessagesAsync(queueUrl, receiveToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (receiveToken.IsCancellationRequested)
                 {
@@ -276,17 +396,11 @@ internal sealed class AmazonSqsConsumerClient(
 
                 retryDelay = TimeSpan.FromSeconds(1);
 
-                var receivedAny = false;
-                foreach (var (queueUrl, response) in responses)
+                if (response.Messages?.Count > 0)
                 {
-                    if (response?.Messages?.Count > 0)
-                    {
-                        receivedAny = true;
-                        await _DispatchAsync(queueUrl, response.Messages, receiveToken).ConfigureAwait(false);
-                    }
+                    await _DispatchAsync(queueUrl, response.Messages, receiveToken).ConfigureAwait(false);
                 }
-
-                if (!receivedAny)
+                else
                 {
                     await _timeProvider.Delay(timeout, receiveToken).ConfigureAwait(false);
                 }
@@ -297,6 +411,20 @@ internal sealed class AmazonSqsConsumerClient(
                 // Shutdown stopped the loop; the caller did not cancel, so this is a normal end of listening.
                 return;
             }
+        }
+    }
+
+    private bool _KeepPolling(string queueUrl)
+    {
+        lock (_queueUrlsLock)
+        {
+            if (_queueUrls.Contains(queueUrl, StringComparer.Ordinal))
+            {
+                return true;
+            }
+
+            _receiveLoops.Remove(queueUrl);
+            return false;
         }
     }
 
@@ -345,9 +473,25 @@ internal sealed class AmazonSqsConsumerClient(
                 }
                 else
                 {
-                    var handler = _ConsumeAsync(inflight, sqsMessage);
-                    _inFlightHandlers.Track(handler);
-                    await handler.ConfigureAwait(false);
+                    // Without a concurrency bound the client handles one message at a time, across all its queue loops.
+                    await _inlineGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        var handler = _ConsumeAsync(inflight, sqsMessage);
+                        _inFlightHandlers.Track(handler);
+                        await handler.ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        try
+                        {
+                            _inlineGate.Release();
+                        }
+                        catch (ObjectDisposedException)
+                        {
+                            // A handler that outlived the shutdown drain finishes after the gate is gone.
+                        }
+                    }
                 }
             }
         }
@@ -391,7 +535,7 @@ internal sealed class AmazonSqsConsumerClient(
         }
     }
 
-    private async Task<(string QueueUrl, ReceiveMessageResponse Response)> _ReceiveMessagesAsync(
+    private async Task<ReceiveMessageResponse> _ReceiveMessagesAsync(
         string queueUrl,
         CancellationToken cancellationToken
     )
@@ -405,8 +549,7 @@ internal sealed class AmazonSqsConsumerClient(
             // Completes the send time of a raw message, which carries no Headless headers.
             MessageSystemAttributeNames = ["SentTimestamp"],
         };
-        var response = await _sqsClient!.ReceiveMessageAsync(request, cancellationToken).ConfigureAwait(false);
-        return (queueUrl, response);
+        return await _sqsClient!.ReceiveMessageAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
     private ImmutableArray<string> _GetQueueUrlsSnapshot()
@@ -419,10 +562,16 @@ internal sealed class AmazonSqsConsumerClient(
 
     private void _SetQueueUrls(ImmutableArray<string> queueUrls)
     {
+        TaskCompletionSource changed;
+
         lock (_queueUrlsLock)
         {
             _queueUrls = queueUrls;
+            changed = _queueUrlsChanged;
+            _queueUrlsChanged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         }
+
+        changed.TrySetResult();
     }
 
     private static TimeSpan _NextBackoff(TimeSpan current)
@@ -503,21 +652,20 @@ internal sealed class AmazonSqsConsumerClient(
         // Stop extending first, or the next heartbeat would hide the rejected message again for a full timeout.
         _unsettled.TryRemove(inflight.ReceiptHandle, out _);
 
-        await _visibilityGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            await _sqsClient!
-                .ChangeMessageVisibilityAsync(inflight.QueueUrl, inflight.ReceiptHandle, 3, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (MessageNotInflightException ex)
-        {
-            _MessageNotInflightLog(ex.Message);
-        }
-        finally
-        {
-            _visibilityGate.Release();
-        }
+        var batcher = _rejectBatchers.GetOrAdd(
+            inflight.QueueUrl,
+            static (queueUrl, client) =>
+                new SqsRejectBatcher(
+                    client._sqsClient!,
+                    queueUrl,
+                    client._visibilityGate,
+                    _RejectVisibilitySeconds,
+                    client._MessageNotInflightLog
+                ),
+            this
+        );
+
+        await batcher.RejectAsync(inflight.ReceiptHandle, cancellationToken).ConfigureAwait(false);
     }
 
     private void _ReleaseSemaphore()
@@ -597,6 +745,7 @@ internal sealed class AmazonSqsConsumerClient(
         _sqsClient?.Dispose();
         _snsClient?.Dispose();
         _semaphore.Dispose();
+        _inlineGate.Dispose();
         _stopReceiving.Dispose();
         _stopHeartbeat.Dispose();
         _visibilityGate.Dispose();
