@@ -344,6 +344,38 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         replay.Result.Contract.Should().Be(Contract);
     }
 
+    public virtual async Task should_round_trip_arbitrary_binary_result_bytes_exactly()
+    {
+        // Every byte value, repeated past a 4 KiB page: a store that text-encodes, truncates at a NUL, or trims
+        // trailing bytes changes this payload; UTF-8 text payloads cannot expose that.
+        var payload = new byte[256 * 1200];
+
+        for (var i = 0; i < payload.Length; i++)
+        {
+            payload[i] = (byte)(i % 256);
+        }
+
+        var key = CreateKey();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var admitted = await AdmitAsync(host, key);
+        await host.Operations.CompleteAsync(admitted, payload, Contract, cancellationToken: AbortToken);
+
+        var stored = await Fixture.ReadRecordAsync(HostKey(key), AbortToken);
+        stored!.Result.Should().Equal(payload);
+
+        var replay = await host.Operations.AdmitAsync(
+            key,
+            Fingerprint,
+            expectedContract: Contract,
+            retention: Retention,
+            cancellationToken: AbortToken
+        );
+
+        replay.Disposition.Should().Be(IdempotentDisposition.Replay);
+        replay.Result!.Payload.ToArray().Should().Equal(payload);
+    }
+
     public virtual async Task should_leave_no_record_when_an_enlisted_admission_rolls_back()
     {
         _SkipUnlessEnlistedAdmission();

@@ -11,5 +11,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Idempotency.ResponseReplay\Headless.Idempotency.ResponseReplay.csproj" />
   </ItemGroup>
 </Project>

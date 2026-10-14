@@ -577,7 +577,7 @@ public sealed class InMemoryCache
 
                 var currentValue = existingEntry.GetValue<T>(_tracksAccess);
 
-                if (!Equals(currentValue, expected))
+                if (!_EqualsExpected(currentValue, expected))
                 {
                     return existingEntry;
                 }
@@ -1624,7 +1624,7 @@ public sealed class InMemoryCache
                 break;
             }
 
-            if (!Equals(existingEntry.GetValue<T>(_tracksAccess), expected))
+            if (!_EqualsExpected(existingEntry.GetValue<T>(_tracksAccess), expected))
             {
                 break;
             }
@@ -2837,6 +2837,19 @@ public sealed class InMemoryCache
                 break;
             }
         } while (Interlocked.CompareExchange(ref _nextExpiryTicks, target, current) != current);
+    }
+
+    /// <summary>
+    /// The CAS equality: byte arrays and arrays of byte arrays compare by content, everything else by
+    /// <see cref="object.Equals(object?)" />. Redis, the cross-provider reference, compares CAS operands as raw
+    /// bytes, so a caller that read an entry and hands the copy back must win the swap — which reference equality
+    /// of a cloned byte array would refuse.
+    /// </summary>
+    private static bool _EqualsExpected<T>(T? current, T? expected)
+    {
+        return current is byte[] currentBytes
+            ? expected is byte[] expectedBytes && currentBytes.AsSpan().SequenceEqual(expectedBytes)
+            : Equals(current, expected);
     }
 
     private long _CalculateEntrySize(object? value)

@@ -153,9 +153,6 @@ public sealed class HttpIdempotencyLookupTests : IdempotencyMiddlewareTestBase
 
     private static IdempotentResult _Result(IdempotencyResponseSnapshot snapshot)
     {
-        return new IdempotentResult(
-            JsonSerializer.SerializeToUtf8Bytes(snapshot, IdempotencyJsonContext.Default.IdempotencyResponseSnapshot),
-            IdempotencyResponseSnapshot.Contract
-        );
+        return new IdempotentResult(snapshot.Encode(), IdempotencyResponseSnapshot.Contract);
     }
 }
