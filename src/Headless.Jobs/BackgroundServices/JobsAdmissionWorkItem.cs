@@ -8,53 +8,39 @@ internal static class JobsAdmissionWorkItem
 {
     /// <summary>Builds the claim-then-execute delegate both scheduler services queue: the admission-time
     /// Queued -> InProgress claim happens inside the worker (single-winner fence), with claim failures and
-    /// lost races logged because the worker pool swallows delegate exceptions.</summary>
+    /// lost races logged because the worker pool swallows delegate exceptions. The function's concurrency permit is
+    /// held by the scheduler around this delegate, so a full gate never occupies a worker slot.</summary>
     public static Func<CancellationToken, Task> Create(
         IInternalJobManager internalJobsManager,
         JobsExecutionTaskHandler taskHandler,
         ILogger logger,
-        SemaphoreSlim? semaphore,
         JobExecutionState function,
         bool isDue
     )
     {
         return async ct =>
         {
-            if (semaphore != null)
-            {
-                await semaphore.WaitAsync(ct).ConfigureAwait(false);
-            }
-
+            JobExecutionState[] claimed;
             try
             {
-                JobExecutionState[] claimed;
-                try
-                {
-                    claimed = await internalJobsManager.SetTickersInProgress([function], ct).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    // The worker pool swallows delegate exceptions; without this log a failed claim write would
-                    // leave the row Queued with zero operator signal until the fallback sweep re-claims it after
-                    // its lease lapses.
-                    logger.LogJobAdmissionClaimFailed(ex, function.JobId, function.FunctionName);
-                    return;
-                }
-
-                if (claimed.Length == 0)
-                {
-                    logger.LogJobAdmissionClaimLost(function.JobId, function.FunctionName);
-                    return;
-                }
-
-                await taskHandler
-                    .ExecuteTaskAsync(claimed[0], isDue: isDue, cancellationToken: ct)
-                    .ConfigureAwait(false);
+                claimed = await internalJobsManager.SetTickersInProgress([function], ct).ConfigureAwait(false);
             }
-            finally
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                semaphore?.Release();
+                // The worker pool swallows delegate exceptions; without this log a failed claim write would
+                // leave the row Queued with zero operator signal until the fallback sweep re-claims it after
+                // its lease lapses.
+                logger.LogJobAdmissionClaimFailed(ex, function.JobId, function.FunctionName);
+                return;
             }
+
+            if (claimed.Length == 0)
+            {
+                logger.LogJobAdmissionClaimLost(function.JobId, function.FunctionName);
+                return;
+            }
+
+            await taskHandler.ExecuteTaskAsync(claimed[0], isDue: isDue, cancellationToken: ct).ConfigureAwait(false);
         };
     }
 }
