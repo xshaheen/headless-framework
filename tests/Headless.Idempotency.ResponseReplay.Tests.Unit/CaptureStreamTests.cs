@@ -102,6 +102,23 @@ public sealed class CaptureStreamTests : TestBase
     }
 
     [Fact]
+    public void writes_past_the_initial_buffer_grow_it_and_keep_every_byte_in_order()
+    {
+        // The pooled buffer starts at 4 KiB: several chunks totalling well past it force repeated growth.
+        var expected = new byte[100_000];
+        new Random(7).NextBytes(expected);
+        using var capture = new CaptureStream(Stream.Null, expected.Length);
+
+        for (var offset = 0; offset < expected.Length; offset += 3000)
+        {
+            capture.Write(expected, offset, Math.Min(3000, expected.Length - offset));
+        }
+
+        capture.CapturedBytes.Should().Equal(expected);
+        capture.TruncatedCapture.Should().BeFalse();
+    }
+
+    [Fact]
     public void multiple_writes_concatenate_in_order_up_to_cap()
     {
         var inner = new MemoryStream();

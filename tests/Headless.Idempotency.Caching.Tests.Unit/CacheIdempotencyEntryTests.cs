@@ -111,6 +111,17 @@ public sealed class CacheIdempotencyEntryTests : TestBase
     }
 
     [Fact]
+    public void should_refuse_bytes_whose_footer_lengths_are_below_the_null_marker()
+    {
+        var payload = _Entry().Encode();
+
+        BinaryPrimitives.WriteInt32BigEndian(payload.AsSpan(payload.Length - (2 * sizeof(int))), -2);
+        var act = () => CacheIdempotencyEntry.Deserialize("key", payload);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*not an idempotency record*");
+    }
+
+    [Fact]
     public void should_refuse_plain_json_that_is_not_a_frame()
     {
         // The shape an older version stored — JSON text holding a base64 result — must be refused, not misread.

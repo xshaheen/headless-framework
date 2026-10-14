@@ -280,6 +280,27 @@ public sealed class AwsBlobStorageMultipartTests : TestBase
     }
 
     [Fact]
+    public async Task upload_rethrows_the_original_failure_when_the_abort_itself_fails()
+    {
+        _ArrangeHappyPath();
+        _s3.UploadPartAsync(Arg.Any<UploadPartRequest>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new AmazonS3Exception("part failed"));
+        _s3.AbortMultipartUploadAsync(Arg.Any<AbortMultipartUploadRequest>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new AmazonS3Exception("abort failed"));
+
+        var sut = _CreateSut();
+
+        await using var content = _Content(11 * 1024 * 1024);
+        await using var source = new NonSeekableStream(content);
+        var act = async () =>
+        {
+            await sut.UploadAsync(new BlobLocation("bucket", "video.bin"), source, cancellationToken: AbortToken);
+        };
+
+        (await act.Should().ThrowAsync<AmazonS3Exception>()).WithMessage("part failed");
+    }
+
+    [Fact]
     public async Task upload_aborts_the_multipart_upload_when_a_part_is_cancelled()
     {
         _ArrangeHappyPath();
