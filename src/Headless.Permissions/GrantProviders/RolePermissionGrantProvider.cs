@@ -47,11 +47,15 @@ public sealed class RolePermissionGrantProvider(IPermissionGrantStore grantStore
         // of a RemoveAll scan over the whole list per resolved permission.
         var pendingNames = permissionNames.ToHashSet(StringComparer.Ordinal);
 
+        // A later role is asked only about names an earlier role left undefined: resolved names are ignored anyway,
+        // and a shorter list means fewer cache keys and, on a miss, fewer rows loaded.
+        var queryNames = permissionNames;
+
         foreach (var role in roles)
         {
             var roleGrantStatusResults = await _grantStore
                 .IsGrantedAsync(
-                    names: permissionNames,
+                    names: queryNames,
                     providerName: Name,
                     providerKey: role,
                     cancellationToken: cancellationToken
@@ -80,6 +84,11 @@ public sealed class RolePermissionGrantProvider(IPermissionGrantStore grantStore
             if (result.AllGranted || result.AllProhibited || pendingNames.Count == 0)
             {
                 break;
+            }
+
+            if (pendingNames.Count < queryNames.Count)
+            {
+                queryNames = [.. permissionNames.Where(pendingNames.Contains)];
             }
         }
 

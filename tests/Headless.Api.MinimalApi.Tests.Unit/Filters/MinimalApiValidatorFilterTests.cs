@@ -24,6 +24,59 @@ public sealed class ValidatorFilterTestRequestValidator : AbstractValidator<Vali
     }
 }
 
+public sealed class NameRequiredValidator : AbstractValidator<ValidatorFilterTestRequest>
+{
+    public NameRequiredValidator()
+    {
+        RuleFor(x => x.Name).NotEmpty();
+    }
+}
+
+public sealed class EmailFormatValidator : AbstractValidator<ValidatorFilterTestRequest>
+{
+    public EmailFormatValidator()
+    {
+        RuleFor(x => x.Email).EmailAddress();
+    }
+}
+
+public sealed class ValidatorOverlapProbe
+{
+    private int _inFlight;
+    private int _maxInFlight;
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _order = new();
+
+    public int MaxInFlight => Volatile.Read(ref _maxInFlight);
+
+    public IReadOnlyList<string> Order => [.. _order];
+
+    public async Task<bool> RunAsync(string name, CancellationToken cancellationToken)
+    {
+        _order.Enqueue(name);
+        var current = Interlocked.Increment(ref _inFlight);
+        int observed;
+
+        do
+        {
+            observed = Volatile.Read(ref _maxInFlight);
+        } while (current > observed && Interlocked.CompareExchange(ref _maxInFlight, current, observed) != observed);
+
+        // Long enough that two validators started together are certain to overlap.
+        await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
+        Interlocked.Decrement(ref _inFlight);
+
+        return true;
+    }
+}
+
+public sealed class SlowAsyncValidator : AbstractValidator<ValidatorFilterTestRequest>
+{
+    public SlowAsyncValidator(ValidatorOverlapProbe probe, string name)
+    {
+        RuleFor(x => x.Name).MustAsync((_, ct) => probe.RunAsync(name, ct));
+    }
+}
+
 public sealed class MinimalApiValidatorFilterTests : TestBase
 {
     #region Happy Path
@@ -120,7 +173,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
     }
 
     [Fact]
-    public async Task should_run_multiple_validators_in_parallel()
+    public async Task should_run_each_of_multiple_validators_once()
     {
         // given
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
@@ -145,6 +198,52 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         await validator2
             .Received(1)
             .ValidateAsync(Arg.Any<ValidationContext<ValidatorFilterTestRequest>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_run_multiple_async_validators_one_at_a_time_in_registration_order()
+    {
+        // given
+        var probe = new ValidatorOverlapProbe();
+        var filter = _CreateFilter<ValidatorFilterTestRequest>();
+        var context = _CreateContext<ValidatorFilterTestRequest>(
+            new ValidatorFilterTestRequest("Name", "test@example.com"),
+            [new SlowAsyncValidator(probe, "first"), new SlowAsyncValidator(probe, "second")],
+            cancellationToken: AbortToken
+        );
+
+        // when
+        await filter.InvokeAsync(context, _CreateNext());
+
+        // then
+        probe.MaxInFlight.Should().Be(1);
+        probe.Order.Should().Equal("first", "second");
+    }
+
+    [Fact]
+    public async Task should_report_each_failure_once_when_multiple_real_validators_fail()
+    {
+        // given
+        var creator = _CreateProblemDetailsCreator();
+        var filter = _CreateFilter<ValidatorFilterTestRequest>();
+        var context = _CreateContext<ValidatorFilterTestRequest>(
+            new ValidatorFilterTestRequest("", "invalid"),
+            [new NameRequiredValidator(), new EmailFormatValidator()],
+            creator: creator,
+            cancellationToken: AbortToken
+        );
+
+        // when
+        await filter.InvokeAsync(context, _CreateNext());
+
+        // then
+        creator
+            .Received(1)
+            .UnprocessableEntity(
+                Arg.Is<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>(d =>
+                    d.Count == 2 && d["name"].Count == 1 && d["email"].Count == 1
+                )
+            );
     }
 
     [Fact]

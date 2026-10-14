@@ -194,6 +194,52 @@ public sealed class RolePermissionGrantProviderTests : TestBase
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
+    [Fact]
+    public async Task should_query_a_later_role_only_for_permissions_an_earlier_role_left_undefined()
+    {
+        // given
+        var currentUser = _CreateCurrentUser(["Admin", "Manager"]);
+        IReadOnlyList<string>? managerNames = null;
+
+        _grantStore
+            .IsGrantedAsync(Arg.Any<IReadOnlyList<string>>(), PermissionGrantProviderNames.Role, "Admin", AbortToken)
+            .Returns(
+                new Dictionary<string, PermissionGrantStatus>(StringComparer.Ordinal)
+                {
+                    ["Users.Create"] = PermissionGrantStatus.Granted,
+                    ["Users.Delete"] = PermissionGrantStatus.Undefined,
+                }
+            );
+
+        _grantStore
+            .IsGrantedAsync(
+                Arg.Do<IReadOnlyList<string>>(names => managerNames = [.. names]),
+                PermissionGrantProviderNames.Role,
+                "Manager",
+                AbortToken
+            )
+            .Returns(
+                new Dictionary<string, PermissionGrantStatus>(StringComparer.Ordinal)
+                {
+                    ["Users.Delete"] = PermissionGrantStatus.Prohibited,
+                }
+            );
+
+        // when
+        var result = await _sut.CheckAsync(
+            [_CreatePermission("Users.Create"), _CreatePermission("Users.Delete")],
+            currentUser,
+            AbortToken
+        );
+
+        // then
+        managerNames.Should().Equal("Users.Delete");
+        result["Users.Create"].Status.Should().Be(PermissionGrantStatus.Granted);
+        result["Users.Create"].ProviderKeys.Should().Equal("Admin");
+        result["Users.Delete"].Status.Should().Be(PermissionGrantStatus.Prohibited);
+        result["Users.Delete"].ProviderKeys.Should().Equal("Manager");
+    }
+
     private static PermissionDefinition _CreatePermission(string name)
     {
         var group = new PermissionGroupDefinition("TestGroup");
