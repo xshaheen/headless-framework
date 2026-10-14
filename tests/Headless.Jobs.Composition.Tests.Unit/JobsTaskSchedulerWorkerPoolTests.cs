@@ -243,6 +243,53 @@ public sealed class JobsTaskSchedulerWorkerPoolTests : TestBase
         await dispose;
     }
 
+    [Fact]
+    public async Task long_running_work_waits_for_its_function_gate()
+    {
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, TimeProvider.System);
+        using var gate = new SemaphoreSlim(1, 1);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var running = 0;
+        var maxRunning = 0;
+        var completed = 0;
+
+        for (var i = 0; i < 3; i++)
+        {
+            await scheduler.QueueAsync(
+                async _ =>
+                {
+                    var now = Interlocked.Increment(ref running);
+                    _SetMax(ref maxRunning, now);
+                    await release.Task;
+                    Interlocked.Decrement(ref running);
+                    Interlocked.Increment(ref completed);
+                },
+                JobPriority.LongRunning,
+                AbortToken,
+                AbortToken,
+                gate
+            );
+        }
+
+        await _WaitUntilAsync(() => Volatile.Read(ref running) == 1);
+        release.SetResult();
+        await _WaitUntilAsync(() => Volatile.Read(ref completed) == 3);
+
+        maxRunning.Should().Be(1);
+    }
+
+    private static void _SetMax(ref int target, int value)
+    {
+        int current;
+        while (value > (current = Volatile.Read(ref target)))
+        {
+            if (Interlocked.CompareExchange(ref target, value, current) == current)
+            {
+                return;
+            }
+        }
+    }
+
     private async Task _RunAsync(JobsTaskScheduler scheduler, SemaphoreSlim? gate)
     {
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
