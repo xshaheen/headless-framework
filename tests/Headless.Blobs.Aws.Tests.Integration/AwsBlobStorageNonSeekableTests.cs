@@ -36,9 +36,13 @@ public sealed class AwsBlobStorageNonSeekableTests(AwsBlobStorageFixture fixture
     private sealed class NonSeekableStream(Stream inner) : Stream
     {
         public override bool CanRead => true;
+
         public override bool CanSeek => false;
+
         public override bool CanWrite => false;
+
         public override long Length => throw new NotSupportedException();
+
         public override long Position
         {
             get => throw new NotSupportedException();
@@ -87,7 +91,10 @@ public sealed class AwsBlobStorageNonSeekableTests(AwsBlobStorageFixture fixture
         var container = $"nonseek-{Guid.NewGuid():N}";
         var location = new BlobLocation(container, "video.bin");
 
-        var manager = new AwsBlobContainerManager(_CreateClient(), new AwsBlobNamingNormalizer());
+        using var managerClient = _CreateClient();
+#pragma warning disable CA2000 // AwsBlobContainerManager disposes the client it owns on its own Dispose.
+        var manager = new AwsBlobContainerManager(managerClient, new AwsBlobNamingNormalizer());
+#pragma warning restore CA2000
         using (manager)
         {
             await manager.EnsureContainerAsync(container, AbortToken);
@@ -104,8 +111,9 @@ public sealed class AwsBlobStorageNonSeekableTests(AwsBlobStorageFixture fixture
 #pragma warning restore CA2000
 
             await using (var memory = new MemoryStream(content, writable: false))
+            await using (var source = new NonSeekableStream(memory))
             {
-                await storage.UploadAsync(location, new NonSeekableStream(memory), cancellationToken: AbortToken);
+                await storage.UploadAsync(location, source, cancellationToken: AbortToken);
             }
 
             var info = await storage.GetBlobInfoAsync(location, AbortToken);
@@ -122,7 +130,7 @@ public sealed class AwsBlobStorageNonSeekableTests(AwsBlobStorageFixture fixture
             {
                 var read = await downloaded!.Stream.ReadAsync(actual.AsMemory(total), AbortToken);
 
-                read.Should().BeGreaterThan(0, "the downloaded object must cover the whole uploaded content");
+                read.Should().BePositive("the downloaded object must cover the whole uploaded content");
                 total += read;
             }
 

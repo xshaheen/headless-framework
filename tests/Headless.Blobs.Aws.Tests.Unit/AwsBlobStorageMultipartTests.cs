@@ -35,6 +35,14 @@ public sealed class AwsBlobStorageMultipartTests : TestBase
         );
     }
 
+    private static byte[] _Drain(Stream stream)
+    {
+        using var drained = new MemoryStream();
+        stream.CopyTo(drained);
+
+        return drained.ToArray();
+    }
+
     private static MemoryStream _Content(int size)
     {
         // Deterministic non-zero bytes: zero-filled parts would also pass a reassembly check that lost a part.
@@ -52,9 +60,13 @@ public sealed class AwsBlobStorageMultipartTests : TestBase
     private sealed class NonSeekableStream(Stream inner) : Stream
     {
         public override bool CanRead => true;
+
         public override bool CanSeek => false;
+
         public override bool CanWrite => false;
+
         public override long Length => throw new NotSupportedException();
+
         public override long Position
         {
             get => throw new NotSupportedException();
@@ -102,8 +114,7 @@ public sealed class AwsBlobStorageMultipartTests : TestBase
 
                 // Drain the part the way the real SDK transport would, so a reassembly assertion also proves
                 // each part's stream carries exactly its declared part size.
-                using var drained = new MemoryStream();
-                request.InputStream!.CopyTo(drained);
+                _Drain(request.InputStream!);
 
                 return Task.FromResult(
                     new UploadPartResponse
@@ -127,17 +138,14 @@ public sealed class AwsBlobStorageMultipartTests : TestBase
         var sut = _CreateSut();
 
         await using var content = _Content(3 * 1024 * 1024);
-        await sut.UploadAsync(
-            new BlobLocation("bucket", "video.bin"),
-            new NonSeekableStream(content),
-            cancellationToken: AbortToken
-        );
+        await using var source = new NonSeekableStream(content);
+        await sut.UploadAsync(new BlobLocation("bucket", "video.bin"), source, cancellationToken: AbortToken);
 
         await _s3.ReceivedWithAnyArgs(1).PutObjectAsync(default!, AbortToken);
-        await _s3.DidNotReceiveWithAnyArgs().InitiateMultipartUploadAsync(default!, default);
-        await _s3.DidNotReceiveWithAnyArgs().UploadPartAsync(default!, default);
-        await _s3.DidNotReceiveWithAnyArgs().CompleteMultipartUploadAsync(default!, default);
-        await _s3.DidNotReceiveWithAnyArgs().AbortMultipartUploadAsync(default!, default);
+        await _s3.DidNotReceiveWithAnyArgs().InitiateMultipartUploadAsync(default!, AbortToken);
+        await _s3.DidNotReceiveWithAnyArgs().UploadPartAsync(default!, AbortToken);
+        await _s3.DidNotReceiveWithAnyArgs().CompleteMultipartUploadAsync(default!, AbortToken);
+        await _s3.DidNotReceiveWithAnyArgs().AbortMultipartUploadAsync(default!, AbortToken);
     }
 
     [Fact]
@@ -151,16 +159,13 @@ public sealed class AwsBlobStorageMultipartTests : TestBase
         var sut = _CreateSut();
 
         await using var content = _Content(0);
-        await sut.UploadAsync(
-            new BlobLocation("bucket", "video.bin"),
-            new NonSeekableStream(content),
-            cancellationToken: AbortToken
-        );
+        await using var source = new NonSeekableStream(content);
+        await sut.UploadAsync(new BlobLocation("bucket", "video.bin"), source, cancellationToken: AbortToken);
 
         captured.Should().NotBeNull();
-        using var drained = new MemoryStream();
-        captured!.InputStream!.CopyTo(drained);
-        drained.Length.Should().Be(0, "an empty non-seekable upload is an empty object, like a seekable empty stream");
+        _Drain(captured!.InputStream!)
+            .Should()
+            .BeEmpty("an empty non-seekable upload is an empty object, like a seekable empty stream");
     }
 
     [Fact]
@@ -171,9 +176,7 @@ public sealed class AwsBlobStorageMultipartTests : TestBase
         _s3.UploadPartAsync(
                 Arg.Do<UploadPartRequest>(r =>
                 {
-                    using var drained = new MemoryStream();
-                    r.InputStream!.CopyTo(drained);
-                    captured.Add((r.PartNumber ?? 0, r.PartSize ?? 0, r.IsLastPart, drained.ToArray()));
+                    captured.Add((r.PartNumber ?? 0, r.PartSize ?? 0, r.IsLastPart, _Drain(r.InputStream!)));
                 }),
                 Arg.Any<CancellationToken>()
             )
@@ -183,16 +186,13 @@ public sealed class AwsBlobStorageMultipartTests : TestBase
 
         // 11 MiB: two full 5 MiB parts and a short final one.
         await using var content = _Content(11 * 1024 * 1024);
+        await using var source = new NonSeekableStream(content);
         var expected = content.ToArray();
-        await sut.UploadAsync(
-            new BlobLocation("bucket", "video.bin"),
-            new NonSeekableStream(content),
-            cancellationToken: AbortToken
-        );
+        await sut.UploadAsync(new BlobLocation("bucket", "video.bin"), source, cancellationToken: AbortToken);
 
-        await _s3.DidNotReceiveWithAnyArgs().PutObjectAsync(default!, default);
-        await _s3.ReceivedWithAnyArgs(1).InitiateMultipartUploadAsync(default!, default);
-        await _s3.ReceivedWithAnyArgs(1).CompleteMultipartUploadAsync(default!, default);
+        await _s3.DidNotReceiveWithAnyArgs().PutObjectAsync(default!, AbortToken);
+        await _s3.ReceivedWithAnyArgs(1).InitiateMultipartUploadAsync(default!, AbortToken);
+        await _s3.ReceivedWithAnyArgs(1).CompleteMultipartUploadAsync(default!, AbortToken);
 
         captured.Should().HaveCount(3);
         captured.Select(p => p.PartNumber).Should().ContainInOrder(1, 2, 3);
@@ -212,13 +212,10 @@ public sealed class AwsBlobStorageMultipartTests : TestBase
 
         // Exactly two part sizes: S3 has no zero-length trailing part to upload.
         await using var content = _Content(2 * _PartSize);
-        await sut.UploadAsync(
-            new BlobLocation("bucket", "video.bin"),
-            new NonSeekableStream(content),
-            cancellationToken: AbortToken
-        );
+        await using var source = new NonSeekableStream(content);
+        await sut.UploadAsync(new BlobLocation("bucket", "video.bin"), source, cancellationToken: AbortToken);
 
-        await _s3.ReceivedWithAnyArgs(2).UploadPartAsync(default!, default);
+        await _s3.ReceivedWithAnyArgs(2).UploadPartAsync(default!, AbortToken);
         await _s3.Received()
             .UploadPartAsync(
                 Arg.Is<UploadPartRequest>(r => r.PartNumber == 2 && r.IsLastPart && r.PartSize == _PartSize),
@@ -241,13 +238,10 @@ public sealed class AwsBlobStorageMultipartTests : TestBase
         var sut = _CreateSut();
 
         await using var content = _Content(11 * 1024 * 1024);
+        await using var source = new NonSeekableStream(content);
         var act = async () =>
         {
-            await sut.UploadAsync(
-                new BlobLocation("bucket", "video.bin"),
-                new NonSeekableStream(content),
-                cancellationToken: AbortToken
-            );
+            await sut.UploadAsync(new BlobLocation("bucket", "video.bin"), source, cancellationToken: AbortToken);
         };
 
         await act.Should().ThrowAsync<AmazonS3Exception>();
@@ -257,7 +251,7 @@ public sealed class AwsBlobStorageMultipartTests : TestBase
                 Arg.Is<AbortMultipartUploadRequest>(r => r.UploadId == "upload-1"),
                 Arg.Any<CancellationToken>()
             );
-        await _s3.DidNotReceiveWithAnyArgs().CompleteMultipartUploadAsync(default!, default);
+        await _s3.DidNotReceiveWithAnyArgs().CompleteMultipartUploadAsync(default!, AbortToken);
     }
 
     [Fact]
@@ -270,13 +264,10 @@ public sealed class AwsBlobStorageMultipartTests : TestBase
         var sut = _CreateSut();
 
         await using var content = _Content(11 * 1024 * 1024);
+        await using var source = new NonSeekableStream(content);
         var act = async () =>
         {
-            await sut.UploadAsync(
-                new BlobLocation("bucket", "video.bin"),
-                new NonSeekableStream(content),
-                cancellationToken: AbortToken
-            );
+            await sut.UploadAsync(new BlobLocation("bucket", "video.bin"), source, cancellationToken: AbortToken);
         };
 
         await act.Should().ThrowAsync<AmazonS3Exception>();
@@ -301,13 +292,10 @@ public sealed class AwsBlobStorageMultipartTests : TestBase
         var sut = _CreateSut();
 
         await using var content = _Content(6 * 1024 * 1024);
+        await using var source = new NonSeekableStream(content);
         var act = async () =>
         {
-            await sut.UploadAsync(
-                new BlobLocation("bucket", "video.bin"),
-                new NonSeekableStream(content),
-                cancellationToken: cancelled.Token
-            );
+            await sut.UploadAsync(new BlobLocation("bucket", "video.bin"), source, cancellationToken: cancelled.Token);
         };
 
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -330,18 +318,15 @@ public sealed class AwsBlobStorageMultipartTests : TestBase
         var sut = _CreateSut();
 
         await using var content = _Content(11 * 1024 * 1024);
+        await using var source = new NonSeekableStream(content);
         var act = async () =>
         {
-            await sut.UploadAsync(
-                new BlobLocation("bucket", "video.bin"),
-                new NonSeekableStream(content),
-                cancellationToken: AbortToken
-            );
+            await sut.UploadAsync(new BlobLocation("bucket", "video.bin"), source, cancellationToken: AbortToken);
         };
 
         await act.Should().ThrowAsync<AmazonS3Exception>();
 
-        await _s3.DidNotReceiveWithAnyArgs().AbortMultipartUploadAsync(default!, default);
-        await _s3.DidNotReceiveWithAnyArgs().CompleteMultipartUploadAsync(default!, default);
+        await _s3.DidNotReceiveWithAnyArgs().AbortMultipartUploadAsync(default!, AbortToken);
+        await _s3.DidNotReceiveWithAnyArgs().CompleteMultipartUploadAsync(default!, AbortToken);
     }
 }

@@ -14,8 +14,8 @@ namespace Headless.Idempotency.Caching;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The entry is stored as a length-framed <c>byte[]</c> — <c>[header JSON][result][recovery state][8-byte
-/// footer]</c>, the footer holding the big-endian lengths of the two byte segments, with <c>-1</c> for a null one —
+/// The entry is stored as a length-framed <c>byte[]</c> — <c>[header JSON][result][recovery state][8-byte footer]</c>, the
+/// footer holding the big-endian lengths of the two byte segments, with <c>-1</c> for a null one —
 /// so the result payload (a captured response body) is cached raw instead of base64 inside JSON text, and a cache
 /// that stores <c>byte[]</c> natively holds it at its exact size. Every write compares against the exact bytes a
 /// call read, never a re-serialization of them, so the comparison does not depend on encoder determinism. Instants
@@ -91,7 +91,7 @@ internal sealed record CacheIdempotencyEntry(
 
             // Summed in long: two attacker-chosen footer lengths can overflow int and wrap the span arithmetic.
             var blobsLength = (long)(resultLength < 0 ? 0 : resultLength) + (recoveryLength < 0 ? 0 : recoveryLength);
-            var headerLength = span.Length - blobsLength - 2 * sizeof(int);
+            var headerLength = span.Length - blobsLength - (2 * sizeof(int));
 
             if (headerLength is <= 0 or > int.MaxValue)
             {
@@ -163,16 +163,16 @@ internal sealed record CacheIdempotencyEntryHeader(
 {
     public CacheIdempotencyEntryHeader()
         : this(
-            IdempotencyRecordStatus.Pending,
-            string.Empty,
-            [],
-            null,
-            null,
-            null,
-            DateTimeOffset.MinValue,
-            null,
-            null,
-            null
+            Status: IdempotencyRecordStatus.Pending,
+            FingerprintAlgorithm: string.Empty,
+            Fingerprint: [],
+            Generation: null,
+            LeaseExpiresAt: null,
+            ResultContract: null,
+            RetentionUntil: DateTimeOffset.MinValue,
+            RecoveryPoint: null,
+            RecoveryContract: null,
+            HighestGeneration: null
         ) { }
 
     public CacheIdempotencyEntryHeader(CacheIdempotencyEntry entry)

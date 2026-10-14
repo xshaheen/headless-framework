@@ -19,7 +19,7 @@ public sealed class CacheIdempotencyEntryTests : TestBase
 
         for (var i = 0; i < data.Length; i++)
         {
-            data[i] = (byte)((i * 7 + 13) % 251);
+            data[i] = (byte)(((i * 7) + 13) % 251);
         }
 
         return data;
@@ -103,7 +103,7 @@ public sealed class CacheIdempotencyEntryTests : TestBase
         var payload = _Entry().Encode();
 
         // Both lengths impossibly large: no framing this version wrote can satisfy them.
-        BinaryPrimitives.WriteInt32BigEndian(payload.AsSpan(payload.Length - 2 * sizeof(int)), 1 << 20);
+        BinaryPrimitives.WriteInt32BigEndian(payload.AsSpan(payload.Length - (2 * sizeof(int))), 1 << 20);
         BinaryPrimitives.WriteInt32BigEndian(payload.AsSpan(payload.Length - sizeof(int)), 1 << 20);
         var act = () => CacheIdempotencyEntry.Deserialize("key", payload);
 
