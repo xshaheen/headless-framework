@@ -15,6 +15,7 @@ public sealed class IdempotencyMessageDescriberTests
         IdempotencyMessageDescriber.InFlightTimeout().Code.Should().Be(HttpIdempotencyErrorCodes.InFlightTimeout);
         IdempotencyMessageDescriber.BodyTooLarge().Code.Should().Be(HttpIdempotencyErrorCodes.BodyTooLarge);
         IdempotencyMessageDescriber.KeyMalformed().Code.Should().Be(HttpIdempotencyErrorCodes.KeyMalformed);
+        IdempotencyMessageDescriber.KeyRequired().Code.Should().Be(HttpIdempotencyErrorCodes.KeyRequired);
     }
 
     [Fact]
@@ -77,6 +78,30 @@ public sealed class IdempotencyMessageDescriberTests
     public void should_return_non_empty_description_when_body_too_large()
     {
         var descriptor = IdempotencyMessageDescriber.BodyTooLarge();
+
+        descriptor.Description.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public void should_return_expected_code_when_key_malformed()
+    {
+        var descriptor = IdempotencyMessageDescriber.KeyMalformed();
+
+        descriptor.Code.Should().Be("g:idempotency_key_malformed");
+    }
+
+    [Fact]
+    public void should_return_expected_code_when_key_required()
+    {
+        var descriptor = IdempotencyMessageDescriber.KeyRequired();
+
+        descriptor.Code.Should().Be("g:idempotency_key_required");
+    }
+
+    [Fact]
+    public void should_return_non_empty_description_when_key_required()
+    {
+        var descriptor = IdempotencyMessageDescriber.KeyRequired();
 
         descriptor.Description.Should().NotBeNullOrEmpty();
     }
