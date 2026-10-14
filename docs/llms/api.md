@@ -533,7 +533,7 @@ The one-line bootstrap for Headless APIs. Combines `Headless.Api` primitives wit
 - One-call service registration via `AddHeadless()` (covers primitives + Aspire conventions)
 - One-call middleware defaults via `UseHeadless()`
 - One-call endpoint mapping via `MapHeadlessEndpoints()` (`/health`, `/alive`, OpenAPI JSON, static assets)
-- Opt-in host description endpoint via `MapHeadlessHostDescription(pattern, authorizationPolicy)`, behind authorization by default
+- Opt-in host manifest endpoint via `MapHeadlessHostManifest(pattern, authorizationPolicy)`, behind authorization by default
 - Service-provider validation on startup
 - Startup filter validates `UseHeadless()` and `MapHeadlessEndpoints()` were called
 - OpenTelemetry logging, metrics, tracing with sensible defaults
@@ -596,19 +596,19 @@ The forwarded-headers step starts from the app's `IOptions<ForwardedHeadersOptio
 
 `MapHeadlessEndpoints()` maps `/health` for all health checks with a JSON body containing `status` and per-check `results`, and `/alive` for checks tagged `live`. It also maps OpenAPI JSON documents and static web assets when configured. Health endpoints are named, excluded from OpenAPI descriptions, and allow anonymous requests by default. They also carry `DisableRateLimiting` metadata, so neither a global limiter nor an endpoint policy rejects a probe. `AddHeadless()` registers the default `self` liveness check, disables Kestrel's `Server` response header, and applies conservative Kestrel limits: 30MB max request body and 40 request headers. Both `UseHeadless` and `MapHeadlessEndpoints` are idempotent.
 
-#### Host description endpoint
+#### Host manifest endpoint
 
-`MapHeadlessHostDescription(pattern, authorizationPolicy = null)` maps `GET` at `pattern` to the host description JSON that `RunHeadlessAsync(args)` prints for `describe`: what each feature registered in this host, such as Messaging consumers and Jobs functions. [Utilities](utilities.md#host-description) owns the document. `MapHeadlessEndpoints()` does not map it; call it explicitly.
+`MapHeadlessHostManifest(pattern, authorizationPolicy = null)` maps `GET` at `pattern` to the host manifest JSON that `RunHeadlessCommandsAsync(args)` prints for `describe`: what each feature registered in this host, such as Messaging consumers and Jobs functions. [Utilities](utilities.md#host-manifest) owns the document. `MapHeadlessEndpoints()` does not map it; call it explicitly.
 
 ```csharp
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("operators", policy => policy.RequireRole("operator"));
 
-app.MapHeadlessHostDescription("/_headless/describe", authorizationPolicy: "operators");
+app.MapHeadlessHostManifest("/_headless/describe", authorizationPolicy: "operators");
 ```
 
 - **Fails closed.** The endpoint always requires authorization, because a forgotten authorization call would publish the host's whole consumer and job topology. With no `authorizationPolicy`, the default policy applies, which admits any authenticated principal. A host that accepts end-user tokens must pass an operator policy. To serve it anonymously, for example on a port only the cluster reaches, call `.AllowAnonymous()` on the returned `RouteHandlerBuilder`.
-- **Response.** `200` with the document as `application/json`. When a contributor fails, the endpoint logs the error (event `HEADLESS_HOST_DESCRIPTION_FAILED`) and returns a fixed `500` problem response that never carries the error text, because a contributor's message can name internal configuration.
+- **Response.** `200` with the document as `application/json`. When a contributor fails, the endpoint logs the error (event `HEADLESS_HOST_MANIFEST_FAILED`) and returns a fixed `500` problem response that never carries the error text, because a contributor's message can name internal configuration.
 - **Not in OpenAPI.** The endpoint is excluded from OpenAPI documents. The returned builder takes other conventions too, such as a rate-limiting policy.
 - An empty or whitespace `pattern` or `authorizationPolicy` throws `ArgumentException`.
 

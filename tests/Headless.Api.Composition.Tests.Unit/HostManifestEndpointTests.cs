@@ -16,7 +16,7 @@ using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-public sealed class HostDescriptionEndpointTests : TestBase
+public sealed class HostManifestEndpointTests : TestBase
 {
     private const string _Pattern = "/_headless/describe";
     private const string _OperatorPolicy = "operator";
@@ -26,7 +26,7 @@ public sealed class HostDescriptionEndpointTests : TestBase
     public async Task should_challenge_an_unauthenticated_caller_when_the_app_has_an_authentication_scheme()
     {
         // given
-        await using var app = await _StartAppAsync(endpoints => endpoints.MapHeadlessHostDescription(_Pattern));
+        await using var app = await _StartAppAsync(endpoints => endpoints.MapHeadlessHostManifest(_Pattern));
         using var client = _CreateClient(app);
 
         // when
@@ -41,7 +41,7 @@ public sealed class HostDescriptionEndpointTests : TestBase
     public async Task should_admit_any_authenticated_caller_when_no_policy_is_named()
     {
         // given
-        await using var app = await _StartAppAsync(endpoints => endpoints.MapHeadlessHostDescription(_Pattern));
+        await using var app = await _StartAppAsync(endpoints => endpoints.MapHeadlessHostManifest(_Pattern));
         using var client = _CreateClient(app, role: "reader");
 
         // when
@@ -56,7 +56,7 @@ public sealed class HostDescriptionEndpointTests : TestBase
     {
         // given
         await using var app = await _StartAppAsync(endpoints =>
-            endpoints.MapHeadlessHostDescription(_Pattern, _OperatorPolicy)
+            endpoints.MapHeadlessHostManifest(_Pattern, _OperatorPolicy)
         );
         using var client = _CreateClient(app, role: "reader");
 
@@ -69,11 +69,11 @@ public sealed class HostDescriptionEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task should_serve_the_description_to_a_caller_who_satisfies_the_named_policy()
+    public async Task should_serve_the_manifest_to_a_caller_who_satisfies_the_named_policy()
     {
         // given
         await using var app = await _StartAppAsync(endpoints =>
-            endpoints.MapHeadlessHostDescription(_Pattern, _OperatorPolicy)
+            endpoints.MapHeadlessHostManifest(_Pattern, _OperatorPolicy)
         );
         using var client = _CreateClient(app, role: _OperatorPolicy);
 
@@ -83,17 +83,15 @@ public sealed class HostDescriptionEndpointTests : TestBase
         // then
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
-        (await response.Content.ReadAsStringAsync(AbortToken))
-            .Should()
-            .Be("""{"schemaVersion":1,"sections":{"jobs":{"name":"jobs"},"messaging":{"name":"messaging"}}}""");
+        await _ShouldBeTheManifestAsync(response);
     }
 
     [Fact]
-    public async Task should_serve_the_description_anonymously_only_when_the_caller_opts_out_of_authorization()
+    public async Task should_serve_the_manifest_anonymously_only_when_the_caller_opts_out_of_authorization()
     {
         // given
         await using var app = await _StartAppAsync(endpoints =>
-            endpoints.MapHeadlessHostDescription(_Pattern).AllowAnonymous()
+            endpoints.MapHeadlessHostManifest(_Pattern).AllowAnonymous()
         );
         using var client = _CreateClient(app);
 
@@ -103,21 +101,19 @@ public sealed class HostDescriptionEndpointTests : TestBase
         // then
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
-        (await response.Content.ReadAsStringAsync(AbortToken))
-            .Should()
-            .Be("""{"schemaVersion":1,"sections":{"jobs":{"name":"jobs"},"messaging":{"name":"messaging"}}}""");
+        await _ShouldBeTheManifestAsync(response);
     }
 
     [Fact]
-    public async Task should_return_a_fixed_problem_without_the_exception_text_when_a_contributor_throws()
+    public async Task should_return_a_fixed_problem_without_the_exception_text_when_a_section_throws()
     {
         // given
         const string secret = "Server=db.internal;Password=hunter2";
         await using var app = await _StartAppAsync(
-            endpoints => endpoints.MapHeadlessHostDescription(_Pattern).AllowAnonymous(),
+            endpoints => endpoints.MapHeadlessHostManifest(_Pattern).AllowAnonymous(),
             services =>
-                services.AddSingleton<IHostDescriptionContributor>(
-                    new StubContributor(
+                services.AddSingleton<IHostManifestSection>(
+                    new StubSection(
                         "outbox",
                         writer =>
                         {
@@ -161,8 +157,8 @@ public sealed class HostDescriptionEndpointTests : TestBase
             );
         builder.Services.AddAuthorizationBuilder().AddPolicy(_OperatorPolicy, p => p.RequireRole(_OperatorPolicy));
 
-        builder.Services.AddSingleton<IHostDescriptionContributor>(new StubContributor("messaging"));
-        builder.Services.AddSingleton<IHostDescriptionContributor>(new StubContributor("jobs"));
+        builder.Services.AddSingleton<IHostManifestSection>(new StubSection("messaging"));
+        builder.Services.AddSingleton<IHostManifestSection>(new StubSection("jobs"));
         configureServices?.Invoke(builder.Services);
 
         var app = builder.Build();
@@ -187,12 +183,27 @@ public sealed class HostDescriptionEndpointTests : TestBase
         return client;
     }
 
-    private sealed class StubContributor(string sectionName, Action<Utf8JsonWriter>? write = null)
-        : IHostDescriptionContributor
+    // The endpoint serves the document describe prints: the built-in sections plus every registered one, sorted.
+    private static async Task _ShouldBeTheManifestAsync(HttpResponseMessage response)
     {
-        public string SectionName => sectionName;
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
+        var sections = document.RootElement.GetProperty("sections");
 
-        public void WriteSection(Utf8JsonWriter writer)
+        document.RootElement.GetProperty("schemaVersion").GetInt32().Should().Be(HostManifest.SchemaVersion);
+        sections
+            .EnumerateObject()
+            .Select(static x => x.Name)
+            .Should()
+            .Equal("healthChecks", "host", "jobs", "messaging");
+        sections.GetProperty("jobs").GetRawText().Should().Be("""{"name":"jobs"}""");
+        sections.GetProperty("messaging").GetRawText().Should().Be("""{"name":"messaging"}""");
+    }
+
+    private sealed class StubSection(string sectionName, Action<Utf8JsonWriter>? write = null) : IHostManifestSection
+    {
+        public string Name => sectionName;
+
+        public void Write(Utf8JsonWriter writer)
         {
             if (write is not null)
             {

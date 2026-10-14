@@ -11,10 +11,10 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests.Registration;
 
 /// <summary>
-/// Covers the <c>messaging</c> section of the host description: one entry per consumer identity and lane, read from the
+/// Covers the <c>messaging</c> section of the host manifest: one entry per consumer identity and lane, read from the
 /// host's frozen registry with the tuning and <c>ConsumeOnly</c> filter the host runs with.
 /// </summary>
-public sealed class MessagingHostDescriptionTests : TestBase
+public sealed class MessagingHostManifestTests : TestBase
 {
     private const string _Orders = "orders";
     private const string _OrderPlaced = "orders.order-placed";
@@ -23,7 +23,7 @@ public sealed class MessagingHostDescriptionTests : TestBase
     [Fact]
     public void should_print_concurrency_bound_from_configuration_without_tune()
     {
-        // Tuning applied from configuration shows up in the description exactly as the host runs it.
+        // Tuning applied from configuration shows up in the manifest exactly as the host runs it.
         using var provider = _BuildProvider(
             setup => setup.AddModule<DescribedOrdersModule>(),
             ($"Headless:Messaging:Consumers:{_Orders}:Concurrency", "8")
@@ -240,18 +240,49 @@ public sealed class MessagingHostDescriptionTests : TestBase
         section.GetRawText().Should().NotContain("hunter2").And.NotContain("broker").And.NotContain("SecretProvider");
     }
 
+    [Fact]
+    public async Task should_describe_the_publish_side_with_contract_lanes_transports_and_outboxes()
+    {
+        // The in-memory transports dispose asynchronously only, and describing resolves them.
+        await using var provider = _BuildProvider(
+            setup => setup.UseInMemory(),
+            configureServices: services =>
+                services.ConfigureMessaging(messaging =>
+                    messaging
+                        .Message<DescribedOrderPlaced>(_OrderPlaced, "2")
+                        .OnBus(bus => bus.WithDeliveryMode(DeliveryMode.Direct))
+                )
+        );
+
+        var section = _Describe(provider);
+
+        var message = section.GetProperty("messages").EnumerateArray().Should().ContainSingle().Subject;
+        message.GetProperty("name").GetString().Should().Be(_OrderPlaced);
+        message.GetProperty("contractVersion").GetString().Should().Be("2");
+        var bus = message
+            .GetProperty("lanes")
+            .EnumerateArray()
+            .Should()
+            .ContainSingle(x => x.GetProperty("lane").GetString() == "bus")
+            .Subject;
+        bus.GetProperty("deliveryMode").GetString().Should().Be("direct");
+
+        section.GetProperty("transports").GetProperty("bus").GetString().Should().NotBeNullOrEmpty();
+        section.GetProperty("outboxes").GetArrayLength().Should().Be(0, "a host without storage has no outbox");
+    }
+
     private static JsonElement _Describe(IServiceProvider provider)
     {
-        var contributor = provider
-            .GetServices<IHostDescriptionContributor>()
+        var section = provider
+            .GetServices<IHostManifestSection>()
             .Should()
-            .ContainSingle(x => x.SectionName == "messaging")
+            .ContainSingle(x => x.Name == "messaging")
             .Subject;
 
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
         {
-            contributor.WriteSection(writer);
+            section.Write(writer);
         }
 
         using var document = JsonDocument.Parse(buffer.WrittenMemory);

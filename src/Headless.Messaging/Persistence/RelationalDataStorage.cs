@@ -214,6 +214,9 @@ internal sealed partial class RelationalDataStorage
     DbConnection IRelationalOutboxStorage.CreateIdentityConnection() => _storage.CreateConnection();
 
     /// <summary>Returns the monitoring API for querying message statistics and dashboard data against this storage.</summary>
+    /// <summary>The database provider, such as <c>PostgreSQL</c>, for diagnostics that must not name the connection.</summary>
+    internal string ProviderName => _dialect.DisplayName;
+
     public IMonitoringApi GetMonitoringApi()
     {
         return new RelationalMonitoringApi(_storage, _t, _messagingOptions, _serializer, _timeProvider);

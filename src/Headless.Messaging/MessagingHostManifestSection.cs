@@ -4,30 +4,41 @@ using System.Globalization;
 using System.Text.Json;
 using Headless.Checks;
 using Headless.Hosting;
+using Headless.Messaging.Internal;
+using Headless.Messaging.Persistence;
 using Headless.Reliability;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging;
 
 /// <summary>
-/// Writes the <c>messaging</c> section of the host description: every consumer identity this host registered, read from
-/// the host's frozen registry, so the description shows the tuning and <c>ConsumeOnly</c> filter the host actually runs
-/// with.
+/// Writes the <c>messaging</c> section of the host manifest: every consumer identity this host registered, read from
+/// the host's frozen registry, so the manifest shows the tuning and <c>ConsumeOnly</c> filter the host actually runs
+/// with; and the publish side, which is every declared message contract, the outboxes, and the transport of each lane.
 /// </summary>
 /// <remarks>
 /// One entry is written per identity and lane, because an identity may own a Queue message and consume Bus messages,
 /// and each lane opens its own subscription with its own tuning. Settings an every-instance consumer cannot have (an
 /// inbox, a failure policy, a <c>ConsumeOnly</c> state) are omitted instead of being written as <see langword="null"/>.
 /// Provider-specific consumer configuration and runtime subscriptions are never written: the first can carry broker
-/// addresses, and the second is not part of what the host was built with.
+/// addresses, and the second is not part of what the host was built with. A transport is named by its broker name
+/// only, never its endpoint, and an outbox by its storage provider, never its connection.
 /// </remarks>
 /// <param name="registry">The host's consumer registry; resolving it freezes the registry if nothing has yet.</param>
-internal sealed class MessagingHostDescriptionContributor(ConsumerRegistry registry) : IHostDescriptionContributor
+/// <param name="services">
+/// The host's services, read only when the section is written so building the section resolves no storage or transport.
+/// </param>
+internal sealed class MessagingHostManifestSection(ConsumerRegistry registry, IServiceProvider services)
+    : IHostManifestSection
 {
+    private const string _PrimaryOutbox = "primary";
+
     private readonly ConsumerRegistry _registry = Argument.IsNotNull(registry);
+    private readonly IServiceProvider _services = Argument.IsNotNull(services);
 
-    public string SectionName => "messaging";
+    public string Name => "messaging";
 
-    public void WriteSection(Utf8JsonWriter writer)
+    public void Write(Utf8JsonWriter writer)
     {
         Argument.IsNotNull(writer);
 
@@ -48,8 +59,121 @@ internal sealed class MessagingHostDescriptionContributor(ConsumerRegistry regis
         }
 
         writer.WriteEndArray();
+
+        _WriteMessages(writer, _registry.DeclaredRoutes);
+        _WriteOutboxes(writer, _services.GetService<MessagingOutboxes>());
+        _WriteTransports(writer, _services.GetService<IBusTransport>(), _services.GetService<IQueueTransport>());
+
         writer.WriteEndObject();
     }
+
+    // One entry per declared contract, with the lanes it publishes on. Settings at their default are omitted, so two
+    // manifests of the same declarations diff cleanly and a new default does not show up as a change.
+    private static void _WriteMessages(Utf8JsonWriter writer, IReadOnlyList<MessageRegistration> routes)
+    {
+        writer.WriteStartArray("messages");
+
+        foreach (
+            var message in routes
+                .Where(static x => x.MessageName is not null)
+                .GroupBy(static x => x.MessageName!, StringComparer.Ordinal)
+                .OrderBy(static x => x.Key, StringComparer.Ordinal)
+        )
+        {
+            writer.WriteStartObject();
+            writer.WriteString("name", message.Key);
+            writer.WriteString("contractVersion", message.First().ContractVersion);
+            writer.WriteStartArray("lanes");
+
+            foreach (var route in message.OrderBy(static x => x.Lane))
+            {
+                writer.WriteStartObject();
+                writer.WriteString("lane", _Lane(route.Lane));
+
+                if (route.DeliveryMode is { } deliveryMode)
+                {
+                    writer.WriteString("deliveryMode", _DeliveryMode(deliveryMode));
+                }
+
+                if (route.RequiresRoutingAffinity)
+                {
+                    writer.WriteBoolean("routingAffinity", value: true);
+                }
+
+                if (route.RawPayload)
+                {
+                    writer.WriteBoolean("rawPayload", value: true);
+                }
+
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+    }
+
+    // A host without storage has no outboxes: it publishes directly or not at all.
+    private static void _WriteOutboxes(Utf8JsonWriter writer, MessagingOutboxes? outboxes)
+    {
+        writer.WriteStartArray("outboxes");
+
+        if (outboxes?.Primary is { } primary)
+        {
+            _WriteOutbox(writer, _PrimaryOutbox, primary);
+        }
+
+        // Named by registration order, as their health checks are: the registration's own name describes the call that
+        // made it, which two outboxes on one provider share.
+        var secondaries = outboxes?.Secondaries ?? [];
+
+        for (var i = 0; i < secondaries.Count; i++)
+        {
+            _WriteOutbox(writer, "outbox-" + (i + 1).ToString(CultureInfo.InvariantCulture), secondaries[i].Storage);
+        }
+
+        writer.WriteEndArray();
+    }
+
+    private static void _WriteOutbox(Utf8JsonWriter writer, string name, IDataStorage storage)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("name", name);
+        // The provider only: a relational storage knows its database engine; any other storage is named by its type.
+        writer.WriteString(
+            "storage",
+            storage is RelationalDataStorage relational ? relational.ProviderName : storage.GetType().Name
+        );
+        writer.WriteEndObject();
+    }
+
+    // The broker name only: the endpoint half of a broker address is a host name or connection target.
+    private static void _WriteTransports(Utf8JsonWriter writer, ITransport? bus, ITransport? queue)
+    {
+        writer.WriteStartObject("transports");
+
+        if (bus is not null)
+        {
+            writer.WriteString("bus", bus.BrokerAddress.Name);
+        }
+
+        if (queue is not null)
+        {
+            writer.WriteString("queue", queue.BrokerAddress.Name);
+        }
+
+        writer.WriteEndObject();
+    }
+
+    private static string _DeliveryMode(DeliveryMode deliveryMode) =>
+        deliveryMode switch
+        {
+            DeliveryMode.Durable => "durable",
+            DeliveryMode.Direct => "direct",
+            _ => ((int)deliveryMode).ToString(CultureInfo.InvariantCulture),
+        };
 
     private static void _WriteConsumer(
         Utf8JsonWriter writer,
@@ -124,7 +248,7 @@ internal sealed class MessagingHostDescriptionContributor(ConsumerRegistry regis
     }
 
     // A value this binary does not name, such as a lane added later, is written as its number rather than failing the
-    // whole description.
+    // whole manifest.
     private static string _Lane(MessageLane lane) =>
         lane switch
         {

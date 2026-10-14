@@ -7,22 +7,26 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Hosting;
 
-/// <summary>Writes the host description document from every registered <see cref="IHostDescriptionContributor" />.</summary>
+/// <summary>
+/// Writes the host manifest document: the built-in <c>host</c> and <c>healthChecks</c> sections, then every registered
+/// <see cref="IHostManifestSection" />.
+/// </summary>
 /// <remarks>
-/// The <c>describe</c> command of <c>RunHeadlessAsync</c> and the HTTP describe endpoint both write through this type, so
-/// the two forms always serve the same document.
+/// The <c>describe</c> command of <c>RunHeadlessCommandsAsync</c> and the HTTP manifest endpoint both write through this
+/// type, so the two forms always serve the same document.
 /// </remarks>
 [PublicAPI]
-public static class HostDescriptionWriter
+public static class HostManifest
 {
     /// <summary>The version of the document's shape; raise it when a change would break a reader of the old shape.</summary>
     public const int SchemaVersion = 1;
 
     /// <summary>
-    /// Writes the description built from every <see cref="IHostDescriptionContributor" /> registered in
-    /// <paramref name="services" /> to <paramref name="destination" /> as UTF-8 JSON.
+    /// Writes the manifest built from the built-in <c>host</c> and <c>healthChecks</c> sections and every
+    /// <see cref="IHostManifestSection" /> registered in <paramref name="services" /> to <paramref name="destination" />
+    /// as UTF-8 JSON.
     /// </summary>
-    /// <param name="services">The built host's services, which hold the contributors.</param>
+    /// <param name="services">The built host's services, which hold the sections.</param>
     /// <param name="destination">The stream that receives the document.</param>
     /// <param name="cancellationToken">Abandons the copy to <paramref name="destination" />.</param>
     /// <remarks>
@@ -33,8 +37,9 @@ public static class HostDescriptionWriter
     /// <paramref name="services" /> or <paramref name="destination" /> is <see langword="null" />.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Two contributors claim the same section, or a contributor failed; the message names the section and may carry
-    /// the contributor's own error text, so do not show it to an untrusted caller.
+    /// Two sections share a name (a registered section named <c>host</c> or <c>healthChecks</c> included), or a section
+    /// failed; the message names the section and may carry the section's own error text, so do not show it to an
+    /// untrusted caller.
     /// </exception>
     public static async Task WriteAsync(
         IServiceProvider services,
@@ -45,28 +50,32 @@ public static class HostDescriptionWriter
         Argument.IsNotNull(services);
         Argument.IsNotNull(destination);
 
-        var document = _Write(services.GetServices<IHostDescriptionContributor>());
+        var document = _Write([
+            new HostInfoManifestSection(services),
+            new HealthChecksManifestSection(services),
+            .. services.GetServices<IHostManifestSection>(),
+        ]);
 
         await destination.WriteAsync(document, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Writes the whole document into memory and returns its UTF-8 bytes.</summary>
     /// <remarks>
-    /// The document is buffered so a contributor that throws leaves the caller nothing half-written to send.
+    /// The document is buffered so a section that throws leaves the caller nothing half-written to send.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
-    /// Two contributors claim the same section, or a contributor failed; the message names the section.
+    /// Two sections share a name, or a section failed; the message names the section.
     /// </exception>
-    private static byte[] _Write(IEnumerable<IHostDescriptionContributor> contributors)
+    private static byte[] _Write(IEnumerable<IHostManifestSection> sections)
     {
-        var ordered = contributors.OrderBy(contributor => contributor.SectionName, StringComparer.Ordinal).ToList();
+        var ordered = sections.OrderBy(section => section.Name, StringComparer.Ordinal).ToList();
 
         for (var i = 1; i < ordered.Count; i++)
         {
-            if (string.Equals(ordered[i - 1].SectionName, ordered[i].SectionName, StringComparison.Ordinal))
+            if (string.Equals(ordered[i - 1].Name, ordered[i].Name, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
-                    $"Two host description contributors write the '{ordered[i].SectionName}' section: "
+                    $"Two host manifest sections write the '{ordered[i].Name}' section: "
                         + $"{ordered[i - 1].GetType().FullName} and {ordered[i].GetType().FullName}."
                 );
             }
@@ -80,10 +89,10 @@ public static class HostDescriptionWriter
             writer.WriteNumber("schemaVersion", SchemaVersion);
             writer.WriteStartObject("sections");
 
-            foreach (var contributor in ordered)
+            foreach (var section in ordered)
             {
-                writer.WritePropertyName(contributor.SectionName);
-                _WriteSection(writer, contributor);
+                writer.WritePropertyName(section.Name);
+                _WriteOneSection(writer, section);
             }
 
             writer.WriteEndObject();
@@ -93,18 +102,18 @@ public static class HostDescriptionWriter
         return buffer.WrittenSpan.ToArray();
     }
 
-    private static void _WriteSection(Utf8JsonWriter writer, IHostDescriptionContributor contributor)
+    private static void _WriteOneSection(Utf8JsonWriter writer, IHostManifestSection section)
     {
         try
         {
-            contributor.WriteSection(writer);
+            section.Write(writer);
         }
 #pragma warning disable CA1031 // False positive: the failure is rethrown, wrapped only to name the section that failed.
         catch (Exception exception)
 #pragma warning restore CA1031
         {
             throw new InvalidOperationException(
-                $"The '{contributor.SectionName}' host description section failed: {exception.Message}",
+                $"The '{section.Name}' host manifest section failed: {exception.Message}",
                 exception
             );
         }

@@ -10,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public sealed class JobsHostDescriptionTests : TestBase
+public sealed class JobsHostManifestTests : TestBase
 {
     private const string _Cleanup = "cleanup";
     private const string _Reports = "reports.daily";
@@ -136,16 +136,16 @@ public sealed class JobsHostDescriptionTests : TestBase
 
     private static JsonElement _Describe(IServiceProvider provider)
     {
-        var contributor = provider
-            .GetServices<IHostDescriptionContributor>()
+        var section = provider
+            .GetServices<IHostManifestSection>()
             .Should()
-            .ContainSingle(x => x.SectionName == "jobs")
+            .ContainSingle(x => x.Name == "jobs")
             .Subject;
 
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
         {
-            contributor.WriteSection(writer);
+            section.Write(writer);
         }
 
         using var document = JsonDocument.Parse(buffer.WrittenMemory);

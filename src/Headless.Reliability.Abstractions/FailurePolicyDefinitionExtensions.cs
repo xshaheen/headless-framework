@@ -5,7 +5,7 @@ using Headless.Checks;
 
 namespace Headless.Reliability;
 
-/// <summary>Writes a <see cref="FailurePolicyDefinition"/> for a host description or another diagnostic document.</summary>
+/// <summary>Writes a <see cref="FailurePolicyDefinition"/> for a host manifest or another diagnostic document.</summary>
 [PublicAPI]
 public static class FailurePolicyDefinitionExtensions
 {

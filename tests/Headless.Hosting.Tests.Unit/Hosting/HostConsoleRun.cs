@@ -15,7 +15,7 @@ public sealed class HostConsoleCollection
     public const string Name = "Host console";
 }
 
-/// <summary>What one <c>RunHeadlessAsync</c> call wrote and returned.</summary>
+/// <summary>What one <c>RunHeadlessCommandsAsync</c> call wrote and returned.</summary>
 internal sealed record HostConsoleRun(int ExitCode, string StandardOutput, string StandardError)
 {
     /// <summary>
@@ -42,7 +42,7 @@ internal sealed record HostConsoleRun(int ExitCode, string StandardOutput, strin
             configure(builder);
             var host = builder.Build();
 
-            var exitCode = await host.RunHeadlessAsync(args, cancellationToken);
+            var exitCode = await host.RunHeadlessCommandsAsync(args, cancellationToken);
 
             return new HostConsoleRun(exitCode, stdout.ToString(), stderr.ToString());
         }
@@ -64,15 +64,14 @@ internal sealed record HostConsoleRun(int ExitCode, string StandardOutput, strin
     public JsonDocument ParseStandardOutput() => JsonDocument.Parse(StandardOutput);
 }
 
-/// <summary>A contributor that writes a fixed section and records whether it ran.</summary>
-internal sealed class StubContributor(string sectionName, Action<Utf8JsonWriter>? write = null)
-    : IHostDescriptionContributor
+/// <summary>A section that writes a fixed section and records whether it ran.</summary>
+internal sealed class StubSection(string sectionName, Action<Utf8JsonWriter>? write = null) : IHostManifestSection
 {
-    public string SectionName => sectionName;
+    public string Name => sectionName;
 
     public int Calls { get; private set; }
 
-    public void WriteSection(Utf8JsonWriter writer)
+    public void Write(Utf8JsonWriter writer)
     {
         Calls++;
 
@@ -91,9 +90,9 @@ internal sealed class StubContributor(string sectionName, Action<Utf8JsonWriter>
 
 internal static class HostConsoleServiceCollectionExtensions
 {
-    public static IServiceCollection AddStubContributor(this IServiceCollection services, StubContributor contributor)
+    public static IServiceCollection AddStubSection(this IServiceCollection services, StubSection section)
     {
         // Not TryAddEnumerable: it collapses instances of one implementation type, and these tests register several.
-        return services.AddSingleton<IHostDescriptionContributor>(contributor);
+        return services.AddSingleton<IHostManifestSection>(section);
     }
 }

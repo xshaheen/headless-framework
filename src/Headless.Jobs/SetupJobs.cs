@@ -318,7 +318,7 @@ public static class SetupJobs
         services.TryAddSingleton(provider => provider.GetRequiredService<JobFunctionRegistry>().ClusterConcurrency);
         var runsJobs = optionInstance.RegisterBackgroundServices;
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IHostDescriptionContributor, JobsHostDescriptionContributor>(provider =>
+            ServiceDescriptor.Singleton<IHostManifestSection, JobsHostManifestSection>(provider =>
                 new(provider.GetRequiredService<JobFunctionRegistry>(), schedulerOptionsBuilder, runsJobs)
             )
         );

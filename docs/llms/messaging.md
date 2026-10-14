@@ -1465,7 +1465,7 @@ The collector obtains one fixed provider-clock history cutoff snapshot per invoc
 
 ### Runtime behavior
 
-Registers messaging services, hosted processors, publishers, consumers, storage abstractions, runtime registries, middleware registries, keyed messaging lock defaults, and the always-on `DeadOwnerRecoveryBridge<MessagingDeadOwnerReclaimer>` hosted service. Also registers the `messaging` and `messaging-consumers` readiness checks, `messaging-outboxes` when the host adds an outbox, and the `messaging` host description contributor; see [Readiness and host description](#readiness-and-host-description).
+Registers messaging services, hosted processors, publishers, consumers, storage abstractions, runtime registries, middleware registries, keyed messaging lock defaults, and the always-on `DeadOwnerRecoveryBridge<MessagingDeadOwnerReclaimer>` hosted service. Also registers the `messaging` and `messaging-consumers` readiness checks, `messaging-outboxes` when the host adds an outbox, and the `messaging` host manifest contributor; see [Readiness and host manifest](#readiness-and-host-manifest).
 
 ## Retry Policy
 
@@ -2092,7 +2092,7 @@ await retryMonitor.ResetBackpressureAsync(cancellationToken);
 
 The circuit breaker operates per-process only. There is no cross-instance coordination — each application instance maintains its own circuit state. In a multi-replica deployment, one instance may have an open circuit while others remain closed.
 
-## Readiness and host description
+## Readiness and host manifest
 
 ### Health checks
 
@@ -2124,9 +2124,9 @@ Known limitations:
 
 Transports that retry a lost broker inside their own receive loop (Azure Service Bus, Amazon SQS, Pulsar, Redis Streams) report through `OnLogCallback` with `MqLogType.BrokerUnreachable` (`14`) on each failed receive and `MqLogType.BrokerReachable` (`15`) on the first receive that succeeds after one. These leave the client running instead of rebuilding it, and log `TransportBrokerUnreachable` (event 122, Warning) and `TransportBrokerReachable` (event 123, Information). The warning stops once a failure run makes the broker unreachable, so a client that retries every second does not log every retry; the next run after a success logs again.
 
-### Host description
+### Host manifest
 
-`AddHeadlessMessaging` writes the `messaging` section of the host description that `RunHeadlessAsync(args)` prints for `describe` and that `MapHeadlessHostDescription` serves; [Utilities](utilities.md#host-description) owns the command, the document envelope, and the endpoint. The section is read from the host's frozen consumer registry, so it shows the tuning that configuration applied (`Headless:Messaging:Consumers:{identity}:Concurrency`) and this host's `ConsumeOnly` filter. A host without `AddHeadlessMessaging` has no `messaging` section.
+`AddHeadlessMessaging` writes the `messaging` section of the host manifest that `RunHeadlessCommandsAsync(args)` prints for `describe` and that `MapHeadlessHostManifest` serves; [Utilities](utilities.md#host-manifest) owns the command, the document envelope, and the endpoint. The section is read from the host's frozen consumer registry, so it shows the tuning that configuration applied (`Headless:Messaging:Consumers:{identity}:Concurrency`) and this host's `ConsumeOnly` filter. A host without `AddHeadlessMessaging` has no `messaging` section.
 
 ```json
 {
@@ -2145,7 +2145,19 @@ Transports that retry a lost broker inside their own receive loop (Azure Service
       "circuitBreaker": { "enabled": true, "failureThreshold": 5 },
       "middleware": ["MyApp.Messaging.AuditMiddleware"]
     }
-  ]
+  ],
+  "messages": [
+    {
+      "name": "orders.placed",
+      "contractVersion": "1",
+      "lanes": [{ "lane": "bus", "deliveryMode": "direct" }, { "lane": "queue" }]
+    }
+  ],
+  "outboxes": [
+    { "name": "primary", "storage": "PostgreSQL" },
+    { "name": "outbox-1", "storage": "SQL Server" }
+  ],
+  "transports": { "bus": "RabbitMQ", "queue": "RabbitMQ" }
 }
 ```
 
@@ -2153,6 +2165,9 @@ Transports that retry a lost broker inside their own receive loop (Azure Service
 - **`delivery`** is `competing` or `every-instance`. **`runState`** is `runs-here` when this host starts clients for the entry and `registered-not-run-here` when its `ConsumeOnly` filter leaves the entry out. An every-instance consumer always runs here.
 - **`consumeOnly`** appears only on a competing consumer of a host that calls `ConsumeOnly`: `listed` or `not-listed`.
 - **Tuning.** `concurrency` is always written. `inboxRetentionSeconds` appears on competing consumers only, because an every-instance subscription stores no inbox rows. `failurePolicy` appears when the consumer has one, with the same fields as Jobs: the delay fields only when `delayedRetries` is above zero, `failOn` and `failWhenRules` only when set. `rateLimit` carries `algorithm` plus `tokenLimit`, `tokensPerPeriod`, and `replenishmentPeriodSeconds` for `token-bucket`, or `permitLimit` and `windowSeconds` otherwise. `circuitBreaker` lists only the overrides the consumer sets (`enabled`, `failureThreshold`, `openDurationSeconds`, and `customTransientPredicate: true` for a custom predicate); unset values fall back to the host-wide options. `middleware` lists per-consumer middleware type names.
+- **`messages`** is the publish side: one entry per `Message<T>(name, version)` contract, ordered by name, with each lane it declares. A lane shows `deliveryMode` only when the contract pins one (`durable` or `direct`; otherwise publishes use the host default), and `routingAffinity` and `rawPayload` only when set.
+- **`outboxes`** lists the primary storage as `primary`, then each `AddOutbox()` outbox as `outbox-{n}` in call order, matching its `messaging-storage-…-outbox-{n}` health check. `storage` is the database provider (`PostgreSQL`, `SQL Server`) for relational storage and the storage type name otherwise. A host without storage has none.
+- **`transports`** names the broker of each lane's transport, from `BrokerAddress.Name`; a lane with no transport is absent. The endpoint half of the broker address is never written.
 - **Not described:** runtime subscriptions (they attach after startup and are not in the registry), provider-specific consumer configuration, broker addresses, connection strings, and credentials.
 
 ## Messaging runtime effects

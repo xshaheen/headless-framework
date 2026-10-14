@@ -11,23 +11,23 @@ namespace Microsoft.Extensions.Hosting;
 
 /// <summary>Runs a Headless host from its entry point, or answers a command about it instead.</summary>
 [PublicAPI]
-public static class HeadlessHostRunExtensions
+public static class HeadlessHostCommandExtensions
 {
     private const string _DescribeCommand = "describe";
 
     extension(IHost host)
     {
         /// <summary>
-        /// Runs the host until shutdown, or, when the first argument is <c>describe</c>, prints the host description as
+        /// Runs the host until shutdown, or, when the first argument is <c>describe</c>, prints the host manifest as
         /// JSON to standard output and returns without starting the host.
         /// </summary>
         /// <param name="args">The process arguments. Any first argument other than <c>describe</c> runs the host.</param>
-        /// <param name="cancellationToken">Stops the host, or abandons the description.</param>
-        /// <returns>The process exit code: 0 on success, 1 when the description fails.</returns>
+        /// <param name="cancellationToken">Stops the host, or abandons the manifest.</param>
+        /// <returns>The process exit code: 0 on success, 1 when the manifest fails.</returns>
         /// <remarks>
         /// <para>
-        /// Call it from <c>Program.cs</c> in place of <c>RunAsync</c>: <c>return await app.RunHeadlessAsync(args);</c>.
-        /// Only the host's own entry point sees its real configuration sources, so the description shows the tuning the
+        /// Call it from <c>Program.cs</c> in place of <c>RunAsync</c>: <c>return await app.RunHeadlessCommandsAsync(args);</c>.
+        /// Only the host's own entry point sees its real configuration sources, so the manifest shows the tuning the
         /// host would run with.
         /// </para>
         /// <para>
@@ -42,7 +42,7 @@ public static class HeadlessHostRunExtensions
         /// <para>Like <c>RunAsync</c>, it disposes the host in both modes.</para>
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="args" /> is <see langword="null" />.</exception>
-        public async Task<int> RunHeadlessAsync(string[] args, CancellationToken cancellationToken = default)
+        public async Task<int> RunHeadlessCommandsAsync(string[] args, CancellationToken cancellationToken = default)
         {
             Argument.IsNotNull(host);
             Argument.IsNotNull(args);
@@ -71,7 +71,7 @@ public static class HeadlessHostRunExtensions
         {
             _RouteConsoleLoggerToStandardError(host.Services);
 
-            string description;
+            string manifest;
 
             try
             {
@@ -79,21 +79,21 @@ public static class HeadlessHostRunExtensions
 #pragma warning disable RCS1261 // Fix makes the code worse: a MemoryStream releases nothing asynchronously, and await using would bring back the ConfigureAwait ceremony.
                 using var buffer = new MemoryStream();
 #pragma warning restore RCS1261
-                await HostDescriptionWriter.WriteAsync(host.Services, buffer, cancellationToken).ConfigureAwait(false);
-                description = Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
+                await HostManifest.WriteAsync(host.Services, buffer, cancellationToken).ConfigureAwait(false);
+                manifest = Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
             }
 #pragma warning disable CA1031, EPC12 // False positive: the command's process boundary reports any failure as its message and an exit code, by design.
             catch (Exception exception)
             {
                 // The message only: validators write it for the operator, and a stack trace adds noise to a CLI error.
-                await stderr.WriteLineAsync($"Host description failed: {exception.Message}").ConfigureAwait(false);
+                await stderr.WriteLineAsync($"Host manifest failed: {exception.Message}").ConfigureAwait(false);
                 await stderr.FlushAsync(cancellationToken).ConfigureAwait(false);
 
                 return 1;
             }
 #pragma warning restore CA1031, EPC12
 
-            await stdout.WriteLineAsync(description).ConfigureAwait(false);
+            await stdout.WriteLineAsync(manifest).ConfigureAwait(false);
             await stdout.FlushAsync(cancellationToken).ConfigureAwait(false);
 
             return 0;
@@ -120,7 +120,7 @@ public static class HeadlessHostRunExtensions
         // The Microsoft console logger's error threshold is the only switch that moves its lines off the stdout writer
         // it holds, and the logger reloads that threshold from configuration. Hosts from HostApplicationBuilder and
         // WebApplicationBuilder expose a configuration that still accepts sources; the last source added wins, and the
-        // host never runs afterwards, so the override reaches nothing but the description run.
+        // host never runs afterwards, so the override reaches nothing but the manifest run.
         if (services.GetService<IConfiguration>() is IConfigurationBuilder configuration)
         {
             configuration.AddInMemoryCollection([new("Logging:Console:LogToStandardErrorThreshold", "Trace")]);

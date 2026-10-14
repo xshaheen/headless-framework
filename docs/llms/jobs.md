@@ -14,7 +14,7 @@ Required packages: `Jobs` + `Jobs.EntityFramework` (persistence) + `Jobs.SourceG
 Optional add-ons:
 - `Jobs.Dashboard` — monitoring UI with authentication (basic, API key, host auth) plus live-cluster node view
 - OpenTelemetry tracing and metrics ship inside `Jobs` (see [OpenTelemetry Instrumentation](#opentelemetry-instrumentation)); there is no separate instrumentation package
-- Readiness checks and the `jobs` section of the host description register with Jobs itself (see [Readiness and host description](#readiness-and-host-description))
+- Readiness checks and the `jobs` section of the host manifest register with Jobs itself (see [Readiness and host manifest](#readiness-and-host-manifest))
 - `Jobs.Abstractions` — interfaces only; pulled in transitively by `Jobs`; install directly only when building a library on top
 
 Minimum wiring (in-memory storage, no persistence):
@@ -1257,7 +1257,7 @@ builder.Services.AddHeadlessJobs(options =>
 - Registers `JobsTaskScheduler` (shared-thread-pool logical workers bounded by active async `MaxConcurrency`; dedicated threads only for `LongRunning`).
 - Registers a per-host `CronScheduleCache` (scheduler timezone) and the per-host `JobsRequestSerializationOptions` singleton (request JSON options, GZip, decompression cap) consumed by `JobsHelper` — no process-global serializer state.
 - Registers the Jobs tenancy primitives: `TenantPropagationScheduleMiddleware` / `TenantRestoreExecuteMiddleware` (`TryAddSingleton`), an `AsyncLocal`-backed `ICurrentTenantAccessor`, and the `ICurrentTenant` fallback (`NullCurrentTenant`, replaced by a real `CurrentTenant` once an HTTP / EF / consumer seam registers one). Inserts the schedule and execute tenancy middleware into the process-global registry once per process at `JobMiddlewarePriority.Tenancy`; both no-op until the tenancy seam enables `JobsTenancyOptions`.
-- Registers the `jobs` and `jobs-scheduler` readiness checks when background services run, and the `jobs` host description contributor always. See [Readiness and host description](#readiness-and-host-description).
+- Registers the `jobs` and `jobs-scheduler` readiness checks when background services run, and the `jobs` host manifest contributor always. See [Readiness and host manifest](#readiness-and-host-manifest).
 
 ### Trimming and native AOT
 
@@ -1476,7 +1476,7 @@ Emits `JobsModule.g.cs` at compile time. The generated file:
 
 ---
 
-## Readiness and host description
+## Readiness and host manifest
 
 ### Health checks
 
@@ -1490,9 +1490,9 @@ Jobs contributes readiness checks automatically; there is no `AddJobsHealthCheck
 
 A scheduling-only host (`DisableBackgroundServices()`) gets only the storage check, because it has no scheduler loop to report on. The `Degraded` default of `jobs-scheduler` is a default only: `ConfigureHeadlessHealthCheck("jobs-scheduler", o => o.FailureStatus = HealthStatus.Unhealthy)` overrides it, before or after `AddHeadlessJobs`.
 
-### Host description
+### Host manifest
 
-`AddHeadlessJobs` writes the `jobs` section of the host description that `RunHeadlessAsync(args)` prints for `describe` and that `MapHeadlessHostDescription` serves; [Utilities](utilities.md#host-description) owns the command, the document envelope, and the endpoint. The section is read from the host's frozen job registry, so it shows the tuning that configuration applied and this host's `RunOnly` filter. A host without `AddHeadlessJobs` has no `jobs` section.
+`AddHeadlessJobs` writes the `jobs` section of the host manifest that `RunHeadlessCommandsAsync(args)` prints for `describe` and that `MapHeadlessHostManifest` serves; [Utilities](utilities.md#host-manifest) owns the command, the document envelope, and the endpoint. The section is read from the host's frozen job registry, so it shows the tuning that configuration applied and this host's `RunOnly` filter. A host without `AddHeadlessJobs` has no `jobs` section.
 
 ```json
 {

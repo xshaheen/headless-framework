@@ -11,19 +11,19 @@ using Serilog;
 namespace Tests.Hosting;
 
 [Collection(HostConsoleCollection.Name)]
-public sealed class RunHeadlessAsyncTests : TestBase
+public sealed class RunHeadlessCommandsAsyncTests : TestBase
 {
     [Fact]
     public async Task should_fail_before_any_contributor_runs_when_a_startup_validator_fails()
     {
         // given
-        var contributor = new StubContributor("jobs");
+        var section = new StubSection("jobs");
 
         // when
         var run = await HostConsoleRun.DescribeAsync(
             builder =>
             {
-                builder.Services.AddStubContributor(contributor);
+                builder.Services.AddStubSection(section);
                 builder.Services.AddStartupValidator(_ => new FailingValidator("The cache provider is missing."));
             },
             AbortToken
@@ -31,7 +31,7 @@ public sealed class RunHeadlessAsyncTests : TestBase
 
         // then
         run.ExitCode.Should().Be(1);
-        contributor.Calls.Should().Be(0);
+        section.Calls.Should().Be(0);
         run.StandardError.Should().Contain("The cache provider is missing.");
     }
 
@@ -46,7 +46,7 @@ public sealed class RunHeadlessAsyncTests : TestBase
         var run = await HostConsoleRun.DescribeAsync(
             builder =>
             {
-                builder.Services.AddStubContributor(new StubContributor("jobs"));
+                builder.Services.AddStubSection(new StubSection("jobs"));
                 builder.Services.AddStartupValidator(_ => new FailingValidator(catalogError));
             },
             AbortToken
@@ -62,13 +62,13 @@ public sealed class RunHeadlessAsyncTests : TestBase
     public async Task should_fail_when_an_option_validated_on_start_is_invalid()
     {
         // given
-        var contributor = new StubContributor("jobs");
+        var section = new StubSection("jobs");
 
         // when
         var run = await HostConsoleRun.DescribeAsync(
             builder =>
             {
-                builder.Services.AddStubContributor(contributor);
+                builder.Services.AddStubSection(section);
                 builder
                     .Services.AddOptions<SampleOptions>()
                     .Validate(options => options.Concurrency > 0, "Concurrency must be positive.")
@@ -79,7 +79,7 @@ public sealed class RunHeadlessAsyncTests : TestBase
 
         // then
         run.ExitCode.Should().Be(1);
-        contributor.Calls.Should().Be(0);
+        section.Calls.Should().Be(0);
         run.StandardOutput.Should().BeEmpty();
         run.StandardError.Should().Contain("Concurrency must be positive.");
     }
@@ -91,7 +91,7 @@ public sealed class RunHeadlessAsyncTests : TestBase
         var run = await HostConsoleRun.DescribeAsync(
             builder =>
             {
-                builder.Services.AddStubContributor(new StubContributor("jobs"));
+                builder.Services.AddStubSection(new StubSection("jobs"));
                 builder.Services.AddStartupValidator(sp => new LoggingValidator(
                     sp.GetRequiredService<ILogger<LoggingValidator>>()
                 ));
@@ -123,7 +123,7 @@ public sealed class RunHeadlessAsyncTests : TestBase
                         ),
                     preserveStaticLogger: true
                 );
-                builder.Services.AddStubContributor(new StubContributor("jobs"));
+                builder.Services.AddStubSection(new StubSection("jobs"));
                 builder.Services.AddStartupValidator(sp => new LoggingValidator(
                     sp.GetRequiredService<ILogger<LoggingValidator>>()
                 ));
@@ -164,14 +164,14 @@ public sealed class RunHeadlessAsyncTests : TestBase
         // given
         var args = commandLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var worker = new StoppingHostedService();
-        var contributor = new StubContributor("jobs");
+        var section = new StubSection("jobs");
 
         // when
         var run = await HostConsoleRun.RunAsync(
             builder =>
             {
                 builder.Services.AddHostedService(sp => worker.Bind(sp));
-                builder.Services.AddStubContributor(contributor);
+                builder.Services.AddStubSection(section);
             },
             args,
             AbortToken
@@ -180,7 +180,7 @@ public sealed class RunHeadlessAsyncTests : TestBase
         // then
         run.ExitCode.Should().Be(0);
         worker.Started.Should().BeTrue();
-        contributor.Calls.Should().Be(0);
+        section.Calls.Should().Be(0);
     }
 
     private sealed class SampleOptions

@@ -12,16 +12,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Api.ServiceDefaults;
 
-/// <summary>Maps the HTTP form of the host description that <c>RunHeadlessAsync(args)</c> prints for <c>describe</c>.</summary>
+/// <summary>Maps the HTTP form of the host manifest that <c>RunHeadlessCommandsAsync(args)</c> prints for <c>describe</c>.</summary>
 [PublicAPI]
-public static partial class HostDescriptionEndpoint
+public static partial class HostManifestEndpoint
 {
-    private const string _LoggerCategory = "Headless.Api.ServiceDefaults.HostDescription";
+    private const string _LoggerCategory = "Headless.Api.ServiceDefaults.HostManifest";
 
     extension(IEndpointRouteBuilder endpoints)
     {
         /// <summary>
-        /// Maps <c>GET</c> at <paramref name="pattern" /> to the host description JSON: what each feature registered in
+        /// Maps <c>GET</c> at <paramref name="pattern" /> to the host manifest JSON: what each feature registered in
         /// this host, such as Messaging consumers and Jobs functions.
         /// </summary>
         /// <param name="pattern">The route pattern, such as <c>/_headless/describe</c>.</param>
@@ -40,14 +40,14 @@ public static partial class HostDescriptionEndpoint
         /// <para>
         /// The document is the one <c>describe</c> prints, served as <c>application/json</c>. When it cannot be built,
         /// the endpoint logs the error and answers a fixed 500 problem response that never carries the error text,
-        /// because a contributor's message can name internal configuration.
+        /// because a section's message can name internal configuration.
         /// </para>
         /// <para>The endpoint is excluded from OpenAPI documents.</para>
         /// </remarks>
         /// <exception cref="ArgumentException">
         /// <paramref name="pattern" />, or a non-null <paramref name="authorizationPolicy" />, is empty or whitespace.
         /// </exception>
-        public RouteHandlerBuilder MapHeadlessHostDescription(
+        public RouteHandlerBuilder MapHeadlessHostManifest(
             [StringSyntax("Route")] string pattern,
             string? authorizationPolicy = null
         )
@@ -77,21 +77,21 @@ public static partial class HostDescriptionEndpoint
 
         try
         {
-            await HostDescriptionWriter
+            await HostManifest
                 .WriteAsync(context.RequestServices, document, context.RequestAborted)
                 .ConfigureAwait(false);
         }
-#pragma warning disable CA1031 // False positive: the endpoint is the boundary that turns any contributor failure into a logged, fixed problem response.
+#pragma warning disable CA1031 // False positive: the endpoint is the boundary that turns any section failure into a logged, fixed problem response.
         catch (Exception exception) when (exception is not OperationCanceledException)
 #pragma warning restore CA1031
         {
             var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(_LoggerCategory);
-            LogHostDescriptionFailed(logger, exception);
+            LogHostManifestFailed(logger, exception);
 
             return TypedResults.Problem(
-                detail: "The host description could not be built. The host's logs carry the cause.",
+                detail: "The host manifest could not be built. The host's logs carry the cause.",
                 statusCode: StatusCodes.Status500InternalServerError,
-                title: "Host description failed"
+                title: "Host manifest failed"
             );
         }
 
@@ -100,10 +100,10 @@ public static partial class HostDescriptionEndpoint
 
     [LoggerMessage(
         EventId = 1,
-        EventName = "HEADLESS_HOST_DESCRIPTION_FAILED",
+        EventName = "HEADLESS_HOST_MANIFEST_FAILED",
         Level = LogLevel.Error,
-        Message = "The host description endpoint could not build the description."
+        Message = "The host manifest endpoint could not build the manifest."
     )]
     // ReSharper disable once InconsistentNaming
-    private static partial void LogHostDescriptionFailed(ILogger logger, Exception exception);
+    private static partial void LogHostManifestFailed(ILogger logger, Exception exception);
 }

@@ -41,7 +41,7 @@ public sealed class ConsumerRateLimit
         TokenBucket = 1,
     }
 
-    // The limiter keeps its options private, so the parameters are kept here for the host description to print.
+    // The limiter keeps its options private, so the parameters are kept here for the host manifest to print.
 
     /// <summary>The algorithm this rate was created with; it decides which of the parameters below are set.</summary>
     internal LimiterAlgorithm Algorithm { get; }

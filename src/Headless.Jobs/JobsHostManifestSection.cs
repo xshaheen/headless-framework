@@ -9,12 +9,12 @@ using Headless.Reliability;
 namespace Headless.Jobs;
 
 /// <summary>
-/// Writes the <c>jobs</c> section of the host description: every job function this host registered, read from the
-/// host's frozen registry, so the description shows the tuning and filter the scheduler actually runs with.
+/// Writes the <c>jobs</c> section of the host manifest: every job function this host registered, read from the
+/// host's frozen registry, so the manifest shows the tuning and filter the scheduler actually runs with.
 /// </summary>
 /// <remarks>
 /// Cron-only settings are omitted for a time job instead of being written as <see langword="null"/>, and nothing about
-/// the persistence provider or its connection is written: the description is meant to be printed and shared.
+/// the persistence provider or its connection is written: the manifest is meant to be printed and shared.
 /// </remarks>
 /// <param name="registry">The host's frozen job registry.</param>
 /// <param name="schedulerOptions">The scheduler options whose cron defaults seed an undeclared policy.</param>
@@ -22,18 +22,18 @@ namespace Headless.Jobs;
 /// Whether this host runs background services. A host without them claims nothing, so no function runs here even when
 /// the run filter admits it.
 /// </param>
-internal sealed class JobsHostDescriptionContributor(
+internal sealed class JobsHostManifestSection(
     JobFunctionRegistry registry,
     SchedulerOptionsBuilder schedulerOptions,
     bool runsJobs
-) : IHostDescriptionContributor
+) : IHostManifestSection
 {
     private readonly JobFunctionRegistry _registry = Argument.IsNotNull(registry);
     private readonly SchedulerOptionsBuilder _schedulerOptions = Argument.IsNotNull(schedulerOptions);
 
-    public string SectionName => "jobs";
+    public string Name => "jobs";
 
-    public void WriteSection(Utf8JsonWriter writer)
+    public void Write(Utf8JsonWriter writer)
     {
         Argument.IsNotNull(writer);
 
@@ -100,7 +100,7 @@ internal sealed class JobsHostDescriptionContributor(
     }
 
     // A value this binary does not name, such as a member added later, is written as its number rather than failing
-    // the whole description.
+    // the whole manifest.
     private static string _Priority(JobPriority priority) =>
         priority switch
         {
