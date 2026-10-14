@@ -57,7 +57,7 @@ public static class SetupMiddlewares
         {
             services.AddSingleton(new AuthorizationFailureReasonMarker());
             services.TryAddSingleton<IAuthorizationMiddlewareResultHandler, AuthorizationMiddlewareResultHandler>();
-            services.TryDecorate<IAuthorizationMiddlewareResultHandler, AuthorizationFailureReasonResultHandler>();
+            services.TryDecorateWith<IAuthorizationMiddlewareResultHandler, AuthorizationFailureReasonResultHandler>();
         }
 
         return services;

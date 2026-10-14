@@ -17,7 +17,7 @@ public sealed class SqlServerTransactionalInboxScopeTests(SqlServerTestFixture f
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
         setup.ConfigureStorage(storage => storage.Schema = _Schema);
-        setup.UseEntityFramework<InboxScopeDbContext>();
+        setup.UseSqlServerEntityFramework<InboxScopeDbContext>();
     }
 
     protected override string CreateEffectsTableSql =>

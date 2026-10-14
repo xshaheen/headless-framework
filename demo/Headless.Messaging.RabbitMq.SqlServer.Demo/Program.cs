@@ -12,7 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 //docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=yourStrong(!)Password" -e "MSSQL_PID=Evaluation" -p 1433:1433 \
 // --name sqlpreview --hostname sqlpreview -d mcr.microsoft.com/mssql/server:2022-preview-ubuntu-22.04
 // Plain AddDbContext — no AddInterceptors needed: because messaging uses the EF storage path
-// (setup.UseEntityFramework<AppDbContext>() below), the transactional outbox is ON BY DEFAULT and the
+// (setup.UseSqlServerEntityFramework<AppDbContext>() below), the transactional outbox is ON BY DEFAULT and the
 // commit-coordination interceptor is auto-attached to this context's options.
 builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlServer(AppDbContext.ConnectionString));
 
@@ -41,7 +41,7 @@ await using (var connection = new SqlConnection(AppDbContext.ConnectionString))
 builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.AddModule<Headless.Messaging.RabbitMq.SqlServer.Demo.MessagingModule>();
-    setup.UseEntityFramework<AppDbContext>();
+    setup.UseSqlServerEntityFramework<AppDbContext>();
     setup.UseRabbitMq("127.0.0.1");
     setup.UseDashboard(d => d.WithNoAuth());
 
@@ -59,7 +59,7 @@ builder.Services.AddHeadlessMessaging(setup =>
     //setup.Options.JsonSerializerOptions.Encoder = JavaScriptEncoder.Create(UnicodeRanges.All);
 });
 
-// The EF-storage path (setup.UseEntityFramework<AppDbContext>() above) already enlists the transactional outbox
+// The EF-storage path (setup.UseSqlServerEntityFramework<AppDbContext>() above) already enlists the transactional outbox
 // through the scoped IUnitOfWorkFactory that AddHeadlessMessaging registers, so the /coordinated/ef,
 // /coordinated/rollback, and /coordinated/delay endpoints need no extra wiring. These two calls declare the
 // providers this demo enlists through: the EF Core helpers (RunAsync(db, …)) and the SqlServer ADO helpers

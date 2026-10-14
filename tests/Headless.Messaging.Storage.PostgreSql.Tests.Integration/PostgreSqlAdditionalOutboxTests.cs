@@ -28,10 +28,10 @@ public sealed class PostgreSqlAdditionalOutboxTests(PostgreSqlTestFixture fixtur
         options.UseNpgsql(connectionString);
 
     protected override void UsePrimaryStorage<TContext>(MessagingSetupBuilder setup) =>
-        setup.UseEntityFramework<TContext>();
+        setup.UsePostgreSqlEntityFramework<TContext>();
 
     protected override MessagingSetupBuilder UseOutboxStorage<TContext>(OutboxStorageBuilder outbox) =>
-        outbox.UseEntityFramework<TContext>();
+        outbox.UsePostgreSqlEntityFramework<TContext>();
 
     protected override MessagingSetupBuilder UseOutboxStorage(OutboxStorageBuilder outbox, string connectionString) =>
         outbox.UsePostgreSql(connectionString);

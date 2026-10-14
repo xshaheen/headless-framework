@@ -71,7 +71,9 @@ public sealed class BlobStorageDecorationTests
         services.AddHeadlessBlobs(blobs =>
         {
             blobs.RegisterDefaultProvider(s => s.AddSingleton(store));
-            blobs.RegisterCrossCuttingExtension(s => s.Decorate<IBlobStorage>((inner, _) => new CrossCutting(inner)));
+            blobs.RegisterCrossCuttingExtension(s =>
+                s.DecorateWith<IBlobStorage>((inner, _) => new CrossCutting(inner))
+            );
         });
 
         await using var provider = services.BuildServiceProvider();

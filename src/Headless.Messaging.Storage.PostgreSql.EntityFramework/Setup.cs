@@ -31,15 +31,15 @@ public static class SetupMessagingPostgreSqlEntityFramework
     extension(MessagingSetupBuilder setup)
     {
         /// <summary>Uses the PostgreSQL connection configured for <typeparamref name="TContext"/>.</summary>
-        public MessagingSetupBuilder UseEntityFramework<TContext>()
+        public MessagingSetupBuilder UsePostgreSqlEntityFramework<TContext>()
             where TContext : DbContext
         {
-            return setup.UseEntityFramework<TContext>(_ => { });
+            return setup.UsePostgreSqlEntityFramework<TContext>(_ => { });
         }
 
         /// <summary>Uses the PostgreSQL connection configured for <typeparamref name="TContext"/>.</summary>
         /// <param name="configure">Configures the EF-backed messaging storage path.</param>
-        public MessagingSetupBuilder UseEntityFramework<TContext>(
+        public MessagingSetupBuilder UsePostgreSqlEntityFramework<TContext>(
             Action<PostgreSqlEntityFrameworkMessagingOptions> configure
         )
             where TContext : DbContext
@@ -66,12 +66,12 @@ public static class SetupMessagingPostgreSqlEntityFramework
         /// <typeparam name="TContext">The context whose database holds the outbox.</typeparam>
         /// <returns>The messaging setup builder, for chaining.</returns>
         /// <exception cref="InvalidOperationException">This outbox already has a storage.</exception>
-        public MessagingSetupBuilder UseEntityFramework<TContext>()
+        public MessagingSetupBuilder UsePostgreSqlEntityFramework<TContext>()
             where TContext : DbContext
         {
             var setup = SetupMessagingPostgreSql.AddPostgreSqlOutboxCore(
                 outbox,
-                $"AddOutbox().UseEntityFramework<{typeof(TContext).Name}>()",
+                $"AddOutbox().UsePostgreSqlEntityFramework<{typeof(TContext).Name}>()",
                 options =>
                     options.Configure<IServiceScopeFactory>(
                         (storageOptions, scopeFactory) =>
@@ -312,7 +312,7 @@ public static class SetupMessagingPostgreSqlEntityFramework
             if (!dbContext.Database.IsNpgsql())
             {
                 throw new InvalidOperationException(
-                    $"Messaging UseEntityFramework<{typeof(TContext).Name}> requires a PostgreSQL DbContext."
+                    $"Messaging UsePostgreSqlEntityFramework<{typeof(TContext).Name}> requires a PostgreSQL DbContext."
                 );
             }
 

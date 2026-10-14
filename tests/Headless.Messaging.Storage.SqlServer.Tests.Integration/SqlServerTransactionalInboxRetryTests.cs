@@ -17,7 +17,7 @@ public sealed class SqlServerTransactionalInboxRetryTests(SqlServerTestFixture f
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
         setup.ConfigureStorage(storage => storage.Schema = _Schema);
-        setup.UseEntityFramework<InboxRetryDbContext>();
+        setup.UseSqlServerEntityFramework<InboxRetryDbContext>();
     }
 
     protected override string CreateEffectsTableSql =>

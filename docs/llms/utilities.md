@@ -285,7 +285,7 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 
 ### API and behavior
 
-- DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `Unregister<T>`, and decorators (`Decorate`/`TryDecorate` for unkeyed registrations, `TryDecorateKeyed` for one service key) that preserve each registration's lifetime
+- DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `Unregister<T>`, and decorators (`DecorateWith`/`TryDecorateWith` for unkeyed registrations, `TryDecorateKeyedWith` for one service key) that preserve each registration's lifetime
 - `AddHeadlessGuidGenerator()` — registers keyed `IGuidGenerator` strategies for `SequentialGuidType.Version7` and `SequentialGuidType.SqlServer`, plus an unkeyed backend-agnostic default. The `IGuidGenerator` / `SequentialGuidType` contracts live in `Headless.Extensions` (see [extensions.md](extensions.md))
 - `LogState` / `HeadlessLoggerExtensions` — structured-logging scope builder with fluent property/tag methods and level-gated `Log*` overloads that build the scope inline
 - Startup validators (`IHeadlessStartupValidator`, `AddStartupValidator`) that run before any hosted service starts and report every failure together
@@ -376,13 +376,13 @@ services.AddOrReplaceFallbackSingleton<IService, NullFallback, DefaultImpl>();
 
 ```csharp
 // Wraps every unkeyed IService registration; the factory receives the original instance.
-services.TryDecorate<IService>((inner, sp) => new LoggingService(inner));
+services.TryDecorateWith<IService>((inner, sp) => new LoggingService(inner));
 
 // Wraps only the registrations under one key; other keys and the unkeyed registration are untouched.
-services.TryDecorateKeyed<IService>("reports", (inner, sp) => new LoggingService(inner));
+services.TryDecorateKeyedWith<IService>("reports", (inner, sp) => new LoggingService(inner));
 ```
 
-A decorator that returns a different instance owns disposing the inner one, because the container only tracks what the factory returns. Decorating turns every registration into a factory, so an instance the application registered and owned (`AddSingleton(instance)`) becomes container-disposed. `TryDecorateKeyed` does not decorate a `KeyedService.AnyKey` registration, which serves every key.
+A decorator that returns a different instance owns disposing the inner one, because the container only tracks what the factory returns. Decorating turns every registration into a factory, so an instance the application registered and owned (`AddSingleton(instance)`) becomes container-disposed. `TryDecorateKeyedWith` does not decorate a `KeyedService.AnyKey` registration, which serves every key.
 
 #### Startup Validators
 
@@ -527,7 +527,7 @@ No configuration required.
 
 None directly. Utilities for managing service registration.
 
-`Headless.Hosting` declares `IsAotCompatible`. The helpers that construct a type argument (`AddOrReplace*`, `Decorate`, `AddOptions<TOptions, TValidator>`, `Configure<TOption, TOptionValidator>`, `AddSeeder`, `AddStartupValidator`) annotate it with `DynamicallyAccessedMembers`, so trimming keeps the constructor the container calls. The helpers that bind an `IConfiguration` (`GetOptions`, `GetRequired`, and the `Configure*` overloads that take one) or validate with data annotations are marked `[RequiresUnreferencedCode]`, and the binding ones also `[RequiresDynamicCode]`, so a trimmed or native AOT app gets a warning at the call site instead of a failure at startup. In such an app, configure options through the `Action<TOptions>` overloads with FluentValidation.
+`Headless.Hosting` declares `IsAotCompatible`. The helpers that construct a type argument (`AddOrReplace*`, `DecorateWith`, `AddOptions<TOptions, TValidator>`, `Configure<TOption, TOptionValidator>`, `AddSeeder`, `AddStartupValidator`) annotate it with `DynamicallyAccessedMembers`, so trimming keeps the constructor the container calls. The helpers that bind an `IConfiguration` (`GetOptions`, `GetRequired`, and the `Configure*` overloads that take one) or validate with data annotations are marked `[RequiresUnreferencedCode]`, and the binding ones also `[RequiresDynamicCode]`, so a trimmed or native AOT app gets a warning at the call site instead of a failure at startup. In such an app, configure options through the `Action<TOptions>` overloads with FluentValidation.
 ---
 ## Headless.Http.Resilience
 

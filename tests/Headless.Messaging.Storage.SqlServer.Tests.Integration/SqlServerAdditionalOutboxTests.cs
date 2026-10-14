@@ -74,10 +74,10 @@ public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture)
         options.UseSqlServer(connectionString);
 
     protected override void UsePrimaryStorage<TContext>(MessagingSetupBuilder setup) =>
-        setup.UseEntityFramework<TContext>();
+        setup.UseSqlServerEntityFramework<TContext>();
 
     protected override MessagingSetupBuilder UseOutboxStorage<TContext>(OutboxStorageBuilder outbox) =>
-        outbox.UseEntityFramework<TContext>();
+        outbox.UseSqlServerEntityFramework<TContext>();
 
     protected override MessagingSetupBuilder UseOutboxStorage(OutboxStorageBuilder outbox, string connectionString) =>
         outbox.UseSqlServer(connectionString);

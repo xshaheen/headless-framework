@@ -38,7 +38,7 @@ public sealed class BlobStorageDecoration(Func<IBlobStorage, string?, IServicePr
 
         _applied = true;
 
-        if (services.TryDecorate<IBlobStorage>((inner, provider) => _decorate(inner, null, provider)))
+        if (services.TryDecorateWith<IBlobStorage>((inner, provider) => _decorate(inner, null, provider)))
         {
             DecoratedRegistrations++;
         }
@@ -54,7 +54,9 @@ public sealed class BlobStorageDecoration(Func<IBlobStorage, string?, IServicePr
         // being decorated themselves.
         foreach (var name in storeNames)
         {
-            if (services.TryDecorateKeyed<IBlobStorage>(name, (inner, provider) => _decorate(inner, name, provider)))
+            if (
+                services.TryDecorateKeyedWith<IBlobStorage>(name, (inner, provider) => _decorate(inner, name, provider))
+            )
             {
                 DecoratedRegistrations++;
             }

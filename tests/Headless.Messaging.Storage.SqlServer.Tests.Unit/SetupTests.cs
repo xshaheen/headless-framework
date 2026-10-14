@@ -27,7 +27,7 @@ public sealed class SetupTests : TestBase
         await using var provider = services.BuildServiceProvider();
 
         // The raw (non-EF) path never enables the transactional inbox runner — that only exists when
-        // UseEntityFramework<TContext>() wires an EF-backed transaction boundary.
+        // UseSqlServerEntityFramework<TContext>() wires an EF-backed transaction boundary.
         provider.GetService<IInboxTransactionRunner>().Should().BeNull();
     }
 

@@ -589,7 +589,7 @@ public sealed class HeadlessTenantCatalogResolutionBuilder
 
         _services.AddSingleton(TenantAmbientRouteValueLinkGenerator.RegistrationMarker.Instance);
 
-        if (!_services.TryDecorate<LinkGenerator, TenantAmbientRouteValueLinkGenerator>())
+        if (!_services.TryDecorateWith<LinkGenerator, TenantAmbientRouteValueLinkGenerator>())
         {
             throw new InvalidOperationException(
                 "AddRouteSource() could not decorate the routing LinkGenerator: no unkeyed LinkGenerator "
