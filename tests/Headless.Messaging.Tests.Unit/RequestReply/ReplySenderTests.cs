@@ -43,7 +43,7 @@ public sealed class ReplySenderTests : TestBase
         var sent = await sender.SendAsync(address, _Reply(), AbortToken);
 
         // then
-        sent.Should().BeFalse();
+        sent.Should().Be(ReplySendOutcome.AddressRefused);
         await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, default, AbortToken);
         measurements.InvalidAddressDrops.Should().Equal("invalid_reply_address");
     }
@@ -61,7 +61,7 @@ public sealed class ReplySenderTests : TestBase
         var sent = await sender.SendAsync(_ValidAddress, _Reply(), AbortToken);
 
         // then
-        sent.Should().BeFalse();
+        sent.Should().Be(ReplySendOutcome.AddressRefused);
         await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, default, AbortToken);
         measurements.InvalidAddressDrops.Should().Equal("invalid_reply_address");
     }
@@ -79,7 +79,7 @@ public sealed class ReplySenderTests : TestBase
         var sent = await sender.SendAsync(_ValidAddress, reply, AbortToken);
 
         // then
-        sent.Should().BeTrue();
+        sent.Should().Be(ReplySendOutcome.Sent);
         await transport.Received(1).SendAsync(_ValidAddress, reply, Arg.Any<CancellationToken>());
     }
 
@@ -98,7 +98,7 @@ public sealed class ReplySenderTests : TestBase
         var sent = await sender.SendAsync(_ValidAddress, _Reply(), AbortToken);
 
         // then
-        sent.Should().BeFalse();
+        sent.Should().Be(ReplySendOutcome.Failed);
     }
 
     private static TransportMessage _Reply()

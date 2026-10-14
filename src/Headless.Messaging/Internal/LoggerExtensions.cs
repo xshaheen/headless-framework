@@ -964,7 +964,7 @@ internal static partial class LoggerExtensions
         EventId = 113,
         EventName = "ReplySendFailed",
         Level = LogLevel.Warning,
-        Message = "The reply to request {RequestId} could not be sent and is not retried; the caller will time out."
+        Message = "The reply to request {RequestId} could not be sent and is not retried."
     )]
     public static partial void ReplySendFailed(this ILogger logger, Exception exception, string? requestId);
 
@@ -996,7 +996,7 @@ internal static partial class LoggerExtensions
         EventId = 117,
         EventName = "ReplyBuildFailed",
         Level = LogLevel.Warning,
-        Message = "The reply to request {RequestId} could not be built, so it is not sent; the caller will time out."
+        Message = "The reply to request {RequestId} could not be built, so it is not sent."
     )]
     public static partial void ReplyBuildFailed(this ILogger logger, Exception exception, string? requestId);
 

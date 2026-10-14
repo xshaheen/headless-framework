@@ -4,18 +4,18 @@ namespace Headless.Messaging;
 
 /// <summary>
 /// The reply to an <see cref="IRequestClient.GetReplyAsync{TRequest, TResponse}"/> call: the response with the headers
-/// its responder set.
+/// it arrived with.
 /// </summary>
 /// <typeparam name="TResponse">The response type the responder returns.</typeparam>
 /// <remarks>
 /// <para>
-/// <see cref="Headers"/> holds only what the responder set through <see cref="ConsumeContext.SetResponseHeader"/>. The
-/// reply protocol's own headers (every <c>headless-</c> name) and trace propagation headers are removed, so nothing in
-/// it can be mistaken for framework metadata.
+/// <see cref="Headers"/> holds every header the reply arrived with except the reply protocol's own (every
+/// <c>headless-</c> name) and trace propagation headers, so nothing in it can be mistaken for framework metadata. That is
+/// usually exactly what the responder set through <see cref="ConsumeContext.SetResponseHeader"/>, but a transport or
+/// broker plugin on the reply's path can add a header of its own, and it arrives here too.
 /// </para>
 /// <para>
-/// The values are wire data written by the responder: treat them as input from another service, not as facts the
-/// framework checked.
+/// The values are wire data: treat them as input from another service, not as facts the framework checked.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -25,7 +25,10 @@ public sealed record Reply<TResponse>
     /// <summary>Gets the response. Never <see langword="null"/>.</summary>
     public required TResponse Message { get; init; }
 
-    /// <summary>Gets the headers the responder set, keyed by ordinal name. Empty when it set none.</summary>
+    /// <summary>
+    /// Gets the reply's headers other than framework and trace propagation headers, keyed by ordinal name. Empty when
+    /// it carried none.
+    /// </summary>
     public required IReadOnlyDictionary<string, string?> Headers { get; init; }
 
     /// <summary>Gets the reply's message identifier, or <see langword="null"/> when the reply carried none.</summary>

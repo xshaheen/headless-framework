@@ -235,6 +235,17 @@ public static class Headers
     internal const int MaxHeaderNameLength = 255;
 
     /// <summary>
+    /// The most a responder's reply headers may add up to: the UTF-8 bytes of every name and value it sets.
+    /// </summary>
+    /// <remarks>
+    /// The tightest reply transport is RabbitMQ, which must fit every header into one frame of <c>frame_max</c> bytes
+    /// (128 KiB by default, lower when a broker sets it lower), and NATS counts headers against the same
+    /// <c>max_payload</c> as the body. A sixteenth of that frame leaves the framework's headers and the body their
+    /// room, so a reply within it is never refused for its headers alone.
+    /// </remarks>
+    internal const int MaxReplyHeadersBytes = 16 * 1024;
+
+    /// <summary>
     /// Returns whether <paramref name="name"/> is a header name every transport can carry: 1 to
     /// <see cref="MaxHeaderNameLength"/> printable ASCII characters (<c>'!'</c> through <c>'~'</c>) other than
     /// <c>':'</c>.

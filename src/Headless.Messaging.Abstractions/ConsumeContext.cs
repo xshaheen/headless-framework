@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel;
+using System.Globalization;
+using System.Text;
 using Headless.Checks;
 using Headless.UnitOfWork;
 
@@ -184,8 +186,9 @@ public record ConsumeContext
     /// A responder sends its reply after the request's outcome is durable and never fails it afterwards, so a header
     /// the reply could not carry is refused here instead: a framework header (any <c>headless-</c> name), a trace
     /// propagation header (<c>traceparent</c>, <c>tracestate</c>, <c>baggage</c>), a name that is not 1 to 255
-    /// printable ASCII characters without <c>':'</c>, a <see langword="null"/> value, or a value with a control
-    /// character. A fault reply carries none of these headers.
+    /// printable ASCII characters without <c>':'</c>, a name that differs only in case from one already set, a
+    /// <see langword="null"/> value, a value with a control character, or a header that brings the UTF-8 bytes of every
+    /// reply header name and value past 16 KiB. A fault reply carries none of these headers.
     /// </remarks>
     /// <param name="key">The response header key.</param>
     /// <param name="value">The response header value. A responder must pass a non-null value.</param>
@@ -232,10 +235,53 @@ public record ConsumeContext
                     nameof(value)
                 );
             }
+
+            _EnsureReplyHeaderFits(key, value);
         }
 
         ResponseHeaders ??= new Dictionary<string, string?>(StringComparer.Ordinal);
         ResponseHeaders[key] = value;
+    }
+
+    private void _EnsureReplyHeaderFits(string key, string value)
+    {
+        var total = Encoding.UTF8.GetByteCount(key) + Encoding.UTF8.GetByteCount(value);
+
+        if (ResponseHeaders is not null)
+        {
+            foreach (var (existingKey, existingValue) in ResponseHeaders)
+            {
+                if (string.Equals(existingKey, key, StringComparison.Ordinal))
+                {
+                    // An overwrite replaces this entry, so its old size no longer counts.
+                    continue;
+                }
+
+                // Some transports and intermediaries fold header case, so two names that differ only in case could
+                // arrive as one, and which value survives would depend on the transport.
+                if (string.Equals(existingKey, key, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new ArgumentException(
+                        $"Reply header '{key}' differs only in case from header '{existingKey}' already set.",
+                        nameof(key)
+                    );
+                }
+
+                total += Encoding.UTF8.GetByteCount(existingKey) + Encoding.UTF8.GetByteCount(existingValue!);
+            }
+        }
+
+        if (total > Headless.Messaging.Headers.MaxReplyHeadersBytes)
+        {
+            throw new ArgumentException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Reply header '{key}' would bring the reply headers to {total} bytes, over the "
+                        + $"{Headless.Messaging.Headers.MaxReplyHeadersBytes}-byte limit a reply can carry on every transport."
+                ),
+                nameof(value)
+            );
+        }
     }
 
     /// <summary>

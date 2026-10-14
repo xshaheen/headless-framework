@@ -13,9 +13,10 @@ internal sealed record ReceivedReply(
 )
 {
     /// <summary>
-    /// Builds the reply from the wire headers, keeping only those the responder set: the framework's own and trace
-    /// propagation headers are not the responder's to send, so a forged one never reaches the caller, and a header
-    /// without a value is dropped so every transport gives the caller the same set.
+    /// Builds the reply from the wire headers, removing the framework's own and trace propagation headers: they are not
+    /// the responder's to send, so a forged one never reaches the caller. A header without a value is dropped too, so
+    /// every transport gives the caller the same set. Anything else on the wire is kept, including a header a transport
+    /// added on the reply's path.
     /// </summary>
     public static ReceivedReply From(object message, IDictionary<string, string?> wireHeaders)
     {

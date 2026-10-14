@@ -12,7 +12,7 @@ namespace Tests.RequestReply;
 
 /// <summary>
 /// A fault reply carries what the caller may learn about the failure, bounded so a responder's exception never floods
-/// the caller's logs, and a reply that cannot be built costs the caller a timeout, never the consumed message.
+/// the caller's logs, and a response that cannot be built or sent becomes a fault, never a lost consumed message.
 /// </summary>
 public sealed class ResponderRepliesTests : TestBase
 {
@@ -72,7 +72,7 @@ public sealed class ResponderRepliesTests : TestBase
     }
 
     [Fact]
-    public async Task should_log_and_send_nothing_when_the_response_cannot_be_serialized()
+    public async Task should_send_a_response_not_sent_fault_when_the_response_cannot_be_serialized()
     {
         // given — a serializer that fails on the response body
         var log = new List<(LogLevel Level, EventId EventId, string Message)>();
@@ -93,10 +93,47 @@ public sealed class ResponderRepliesTests : TestBase
                 .SendResponseAsync(request, new PriceQuote(1), typeof(PriceQuote), responseHeaders: null, default)
                 .AsTask();
 
-        // then — the consumed message is not at risk: nothing throws, nothing is sent, the failure is logged
+        // then — the consumed message is not at risk, and the caller learns the work ran instead of timing out
         await act.Should().NotThrowAsync();
-        host.Replies.Sent.Should().BeEmpty();
+        _SingleFault(host).Code.Should().Be(RequestFaultCodes.ResponseNotSent);
         log.Should().Contain(entry => entry.EventId.Id == 117 && entry.Level == LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task should_send_a_response_not_sent_fault_when_the_transport_refuses_the_response()
+    {
+        // given — a broker that refuses the ok reply, as one over its size limit would, and takes the small fault
+        await using var host = ResponderExecutorHost.Create();
+        host.Replies.FailWith = new InvalidOperationException("maximum payload exceeded");
+        host.Replies.FailOnlyStatus = ReplyProtocol.StatusOk;
+        var request = host.Request(TimeSpan.FromSeconds(30)).Origin;
+
+        // when
+        await _Replies(host)
+            .SendResponseAsync(request, new PriceQuote(1), typeof(PriceQuote), responseHeaders: null, default);
+
+        // then
+        _SingleFault(host).Code.Should().Be(RequestFaultCodes.ResponseNotSent);
+    }
+
+    [Fact]
+    public async Task should_not_send_a_fault_after_a_response_whose_reply_address_was_refused()
+    {
+        // given — a reply address outside the reply namespace, which a fault would be refused for too
+        var log = new List<(LogLevel Level, EventId EventId, string Message)>();
+        await using var host = ResponderExecutorHost.Create(configureServices: services =>
+            services.AddLogging(logging => logging.AddProvider(new CapturingLoggerProvider(log)))
+        );
+        var request = host.Request(TimeSpan.FromSeconds(30)).Origin;
+        request.Headers[Headers.ReplyTo] = "orders.placed";
+
+        // when
+        await _Replies(host)
+            .SendResponseAsync(request, new PriceQuote(1), typeof(PriceQuote), responseHeaders: null, default);
+
+        // then — refused once, for the response alone
+        host.Replies.Sent.Should().BeEmpty();
+        log.Where(entry => entry.EventId.Id == 112).Should().ContainSingle();
     }
 
     [Fact]

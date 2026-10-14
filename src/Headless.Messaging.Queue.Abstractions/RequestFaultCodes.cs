@@ -26,4 +26,10 @@ public static class RequestFaultCodes
 
     /// <summary>The responder returned <see langword="null"/> instead of a response.</summary>
     public const string NullResponse = "null_response";
+
+    /// <summary>
+    /// The responder completed the work, but its response could not be built or sent, for example because the
+    /// serializer failed or the broker refused a reply that large. The work's effects stand.
+    /// </summary>
+    public const string ResponseNotSent = "response_not_sent";
 }
