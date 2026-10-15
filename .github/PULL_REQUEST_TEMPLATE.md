@@ -1,6 +1,8 @@
 <!-- Title: type(scope)!: the outcome, not the mechanism. The ! marks a breaking change.
      Write in plain words: no filler, no internal jargon, no plan, review, or finding IDs. -->
 
+<!-- Two sentences a reviewer can stop after: what is different now, and what was wrong before. -->
+
 ## Problem
 
 <!-- What was wrong or missing, and who it hurt, in the words of the person who hit it: the call, the input, and
