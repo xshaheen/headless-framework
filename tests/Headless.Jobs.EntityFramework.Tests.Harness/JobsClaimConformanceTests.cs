@@ -200,7 +200,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             Request = [9],
             ExecutionTime = DateTime.UtcNow.AddMinutes(30),
         };
-        using (var host = fixture.BuildHost("tuple-before-restart"))
+        using (var host = fixture.BuildHost("tuple-before-restart", fastMembership: true))
         {
             await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
             await host.StartAsync(ct);
@@ -227,7 +227,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             }
         }
 
-        using var restarted = fixture.BuildHost("tuple-after-restart");
+        using var restarted = fixture.BuildHost("tuple-after-restart", fastMembership: true);
         await restarted.StartAsync(ct);
         try
         {
@@ -936,7 +936,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("cas-fallback-reschedule", useNativeClaims: false);
+        using var host = fixture.BuildHost("cas-fallback-reschedule", useNativeClaims: false, fastMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
 
         var rescheduledId = Guid.NewGuid();
@@ -1436,8 +1436,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             await fixture.ResetDatabaseAsync(ct);
             using var host = fixture.BuildHost(
                 $"terminal-dedup-{(useNativeClaims ? "native" : "cas")}",
-                useNativeClaims: useNativeClaims,
-                steadyMembership: true
+                useNativeClaims: useNativeClaims
             );
             await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
             await host.StartAsync(ct);
@@ -1606,7 +1605,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         await fixture.ResetDatabaseAsync(ct);
         // Seeding and claiming a full page can stall a heartbeat past the fixture's second-scale dead threshold on a
         // loaded run; the dead-owner reclaim would then hand this live node's own claims back to Idle.
-        using var host = fixture.BuildHost("page-a", steadyMembership: true);
+        using var host = fixture.BuildHost("page-a");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 

@@ -263,7 +263,7 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("progress-recovery");
+        using var host = fixture.BuildHost("progress-recovery", fastMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 

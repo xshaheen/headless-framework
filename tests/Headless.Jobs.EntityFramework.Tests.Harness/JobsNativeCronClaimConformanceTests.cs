@@ -26,7 +26,8 @@ public abstract class JobsNativeCronClaimConformanceTests<TFixture>(TFixture fix
             "native-cron-batch",
             timeProvider: new SkewedTimeProvider(TimeSpan.FromHours(-1)),
             leaseDuration: leaseDuration,
-            interceptor: capture
+            interceptor: capture,
+            fastMembership: true
         );
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
