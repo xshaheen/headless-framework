@@ -48,7 +48,8 @@ public interface INodeMembership : IMembershipEventSource
     /// Registers this process as a cluster member and returns the allocated node and incarnation identity.
     /// The backing store atomically allocates a strictly increasing incarnation for the node identifier, so a
     /// restarted process always obtains a higher incarnation than any previous run. Concurrent calls share one
-    /// registration and return the same identity.
+    /// registration and return the same identity; cancelling one caller's token abandons only that caller's wait, and the
+    /// shared registration continues for the others.
     /// </summary>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The allocated <see cref="NodeIdentity"/> for this process.</returns>

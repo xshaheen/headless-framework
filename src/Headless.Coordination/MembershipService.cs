@@ -18,6 +18,11 @@ internal sealed class MembershipService(
     private static readonly TimeSpan _MaxDefaultSelfFenceMargin = TimeSpan.FromSeconds(5);
 
     private readonly CancellationTokenSource _localMembershipLost = new();
+
+    // The shared registration runs on the service's lifetime, not on the token of whichever caller started it: one
+    // caller giving up must not cancel the attempt every other caller is awaiting, nor abandon a store write that
+    // already landed before the lease is published.
+    private readonly CancellationTokenSource _registrationLifetime = new();
     private readonly TaskCompletionSource _registered = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Lock _gate = new();
     private readonly Lock _timerGate = new();
@@ -85,7 +90,7 @@ internal sealed class MembershipService(
                 || (_registration.IsCompletedSuccessfully && _lease is null)
             )
             {
-                _registration = _RegisterCoreAsync(cancellationToken);
+                _registration = _RegisterCoreAsync(_registrationLifetime.Token);
             }
 
             registration = _registration;
@@ -414,11 +419,18 @@ internal sealed class MembershipService(
     {
         lock (_timerGate)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             _disposed = true;
             _fenceTimer?.Dispose();
             _fenceTimer = null;
         }
 
+        _registrationLifetime.Cancel();
+        _registrationLifetime.Dispose();
         _localMembershipLost.Dispose();
     }
 

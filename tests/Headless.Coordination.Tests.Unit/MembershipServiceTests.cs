@@ -510,6 +510,27 @@ public sealed class MembershipServiceTests : TestBase
     }
 
     [Fact]
+    public async Task should_complete_a_shared_registration_when_the_caller_that_started_it_cancels()
+    {
+        // given: two callers share one registration whose allocation is still in flight
+        var store = new FakeMembershipStore { BlockOnAllocate = true };
+        using var sut = _CreateService(store);
+        using var firstCallerCts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var first = sut.RegisterAsync(firstCallerCts.Token).AsTask();
+        var second = sut.RegisterAsync(AbortToken).AsTask();
+
+        // when: the caller that started the attempt gives up before it completes
+        await firstCallerCts.CancelAsync();
+        store.AllocateRelease.TrySetResult();
+
+        // then: only that caller's wait is cancelled; the attempt still registers for everyone else
+        await FluentActions.Awaiting(() => first).Should().ThrowAsync<OperationCanceledException>();
+        var identity = await second.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        sut.Identity.Should().Be(identity);
+        store.AllocateIncarnationCalls.Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_allocate_one_incarnation_for_concurrent_registrations()
     {
         // given
