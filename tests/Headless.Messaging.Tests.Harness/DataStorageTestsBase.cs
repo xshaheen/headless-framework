@@ -3961,6 +3961,19 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Should()
             .BeFalse("a consumer identity that differs only by a trailing space is another consumer");
         (await admitted("tenant-a ", messageId, "orders.consumer-a", MessageLane.Bus)).Should().BeFalse();
+
+        // An untenanted admission, the common single-tenant case, matches only an untenanted lookup.
+        var untenantedId = $"admitted-untenanted-{Guid.NewGuid():N}";
+        await _AdmitInboxAsync(
+            storage,
+            CreateMessage(untenantedId, "orders.created"),
+            consumerIdentity: "orders.consumer-a",
+            contractVersion: "v1"
+        );
+        (await admitted(null, untenantedId, "orders.consumer-a", MessageLane.Bus))
+            .Should()
+            .BeTrue("an untenanted redelivery of untenanted work is a duplicate");
+        (await admitted("tenant-a", untenantedId, "orders.consumer-a", MessageLane.Bus)).Should().BeFalse();
         (
             await storage.IsInboxMessageAdmittedAsync(
                 "tenant-a",
@@ -4407,6 +4420,18 @@ public abstract partial class DataStorageTestsBase : TestBase
         terminalRow.Should().NotBeNull();
         terminalRow!.StatusName.Should().Be(StatusName.Failed);
         terminalRow.NextRetryAt.Should().BeNull();
+
+        // and the received-side read carries the status the same way
+        var received = await storage.StoreReceivedMessageAsync(
+            "status-received",
+            "status-group",
+            CreateMessage(),
+            AbortToken
+        );
+        await storage.ChangeReceiveStateAsync(received, StatusName.Succeeded, cancellationToken: AbortToken);
+        var receivedRow = await monitoring.GetReceivedMessageAsync(received.StorageId, AbortToken);
+        receivedRow.Should().NotBeNull();
+        receivedRow!.StatusName.Should().Be(StatusName.Succeeded);
     }
 
     private async Task<MediumMessage> _StoreFailedPublishedMessageAsync(string name)

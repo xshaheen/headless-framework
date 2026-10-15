@@ -279,6 +279,44 @@ public sealed class InMemoryConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_wait_longer_before_each_further_redelivery_of_a_rejected_message()
+    {
+        // given: a message rejected on its first two deliveries
+        var clock = new FakeTimeProvider();
+        await using var client = new InMemoryConsumerClient(_queue, "growth-group", 1, redeliveryClock: clock);
+        await client.SubscribeAsync(["growth-messageName"], AbortToken);
+
+        var deliveries = 0;
+        using var delivered = new SemaphoreSlim(0);
+        client.OnMessageCallback = async (_, sender) =>
+        {
+            if (Interlocked.Increment(ref deliveries) <= 2)
+            {
+                await client.RejectAsync(sender, AbortToken);
+            }
+
+            delivered.Release();
+        };
+
+        using var cts = new CancellationTokenSource();
+        _StartListening(client, cts.Token);
+        _queue.SendBus(_CreateTestMessage("msg-1", "growth-messageName"));
+        (await delivered.WaitAsync(TimeSpan.FromSeconds(5), AbortToken)).Should().BeTrue();
+
+        // when: the first delay (at most one second) passes
+        clock.Advance(TimeSpan.FromSeconds(1) + TimeSpan.FromMilliseconds(1));
+        (await delivered.WaitAsync(TimeSpan.FromSeconds(5), AbortToken)).Should().BeTrue();
+
+        // then: the second delay is at least 1.5 seconds, so the same wait again is not enough
+        clock.Advance(TimeSpan.FromMilliseconds(1400));
+        (await delivered.WaitAsync(TimeSpan.FromMilliseconds(200), AbortToken)).Should().BeFalse();
+        clock.Advance(TimeSpan.FromMilliseconds(601));
+        (await delivered.WaitAsync(TimeSpan.FromSeconds(5), AbortToken)).Should().BeTrue();
+        await cts.CancelAsync();
+        deliveries.Should().Be(3);
+    }
+
+    [Fact]
     public async Task should_not_grow_concurrency_when_a_message_is_rejected_repeatedly()
     {
         // given
@@ -294,6 +332,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var running = 0;
         var maxRunning = 0;
         var blockingStarted = 0;
+        var firstBlockingStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         client.OnMessageCallback = async (message, sender) =>
         {
             if (string.Equals(message.Id, "rejected", StringComparison.Ordinal))
@@ -312,6 +351,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
 
             var now = Interlocked.Increment(ref running);
             Interlocked.Increment(ref blockingStarted);
+            firstBlockingStarted.TrySetResult();
             int seen;
             while (now > (seen = Volatile.Read(ref maxRunning)))
             {
@@ -337,7 +377,9 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // when
         _queue.SendBus(_CreateTestMessage("blocking-1", "slots-messageName"));
         _queue.SendBus(_CreateTestMessage("blocking-2", "slots-messageName"));
-        await Task.Delay(200, AbortToken);
+        await firstBlockingStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        // The second handler would start right behind the first if a reject had leaked an extra slot.
+        await Task.Delay(100, AbortToken);
 
         // then: one handler at a time, as configured, however many times a delivery was rejected
         Volatile.Read(ref blockingStarted).Should().Be(1);
