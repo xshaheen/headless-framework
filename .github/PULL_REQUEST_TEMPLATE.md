@@ -1,29 +1,27 @@
 <!-- Title: type(scope)!: the outcome, not the mechanism. The ! marks a breaking change.
      Write in plain words: no filler, no internal jargon, no plan, review, or finding IDs. -->
 
-<!-- Two sentences a reviewer can stop after: what is different now, and what was wrong before. -->
+## Problem
+
+<!-- What was wrong or missing, and who it hurt, in the words of the person who hit it: the call, the input, and
+     the wrong result. -->
 
 > **Rollout risk:** <!-- what can go wrong when this deploys, and how to back out of it. Write "none" if nothing can. -->
 
 Fixes #
 
-## What changes
+## Solution
 
-<!-- One row per behavior a consumer or operator can observe, in their words. Each row should map to a test, so a
-     reviewer can check the claim. Add a diagram only for a mechanism a table cannot show. -->
+<!-- One sentence on what is different now. Then, when behavior changed, one row per behavior a consumer or operator
+     can observe, each backed by a test. Add a diagram only for a mechanism a table cannot show. Don't restate the
+     diff. -->
 
 | Situation | Before | After |
 | --- | --- | --- |
 
-## Decisions you're approving
+## Decisions
 
-<!-- Delete if none. One line each: the choice, and the alternative you rejected with the reason. These are what a
-     reviewer most needs and cannot get from the diff. -->
-
-## Review map
-
-<!-- Delete for a small PR. Where to start, in order, and the question to check at each stop. Never a list of
-     changed files: the diff already shows those. -->
+<!-- Delete if none. One line each: the choice, and the alternative you rejected with the reason. -->
 
 ## Contract changes
 
@@ -46,16 +44,17 @@ Fixes #
 
 ## Verification
 
-- Regression: <!-- the test that fails on main and passes here, and the behavior it holds -->
-- Unit: <!-- make verify-affected on the head commit: result and counts -->
-- Integration: <!-- make test-affected-integration on the head commit, or why it was not run. CI runs none. -->
-- Not verified: <!-- each claim no check covers, and why. Delete if none. -->
-- Coverage below floor: <!-- each warning the proof's coverage gate lists, with its reason (glue code,
-  integration-only behavior, unreachable branch, cost above risk; see AGENTS.md). Delete if none. -->
-- Docs: <!-- docs/llms/<domain>.md, or "none: internal" -->
+| Check | Result on `<head commit>` |
+| --- | --- |
+| `make verify-affected` | |
+| `make test-affected-integration` | <!-- or why it was not run; CI runs none --> |
 
-<!-- Paste each proof's artifacts/proof/<run>/summary.md below, inside its own collapsed <details> block,
-     so the prose above stays the first thing a reviewer reads. -->
+- **Regression:** <!-- one line: the behavior the new tests hold that fails on main -->
+- **Not verified:** <!-- each claim no check covers, and why. Delete if none. -->
+- **Coverage below floor:** <!-- each warning the proof's coverage gate lists, with its reason (glue code,
+  integration-only behavior, unreachable branch, cost above risk; see AGENTS.md). Delete if none. -->
+
+<!-- Paste each proof's artifacts/proof/<run>/summary.md here, each inside its own collapsed <details> block. -->
 
 ## Left out
 
