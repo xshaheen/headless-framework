@@ -2120,8 +2120,9 @@ The `messaging` check does not ping the broker (only NATS adds its own `messagin
 
 Known limitations:
 
-- **Idle Azure Service Bus consumer-only host.** After the broker recovers, the host reads unreachable until a message arrives or a send succeeds, because the Service Bus processor reports no success while idle.
 - **Direct delivery.** A Direct-mode publish does not feed reachability: its failure reaches the caller as an exception instead.
+
+An Azure Service Bus processor reports no success while idle, so after a failed receive the client peeks its entity on a real-time back-off (about 1 second, doubling to 30) until a peek reaches Service Bus or a message arrives, then reports the broker reachable. A peek locks and settles nothing; a client with no failure never peeks.
 
 Transports that retry a lost broker inside their own receive loop (Azure Service Bus, Amazon SQS, Pulsar, Redis Streams) report through `OnLogCallback` with `MqLogType.BrokerUnreachable` (`14`) on each failed receive and `MqLogType.BrokerReachable` (`15`) on the first receive that succeeds after one. These leave the client running instead of rebuilding it, and log `TransportBrokerUnreachable` (event 122, Warning) and `TransportBrokerReachable` (event 123, Information). The warning stops once a failure run makes the broker unreachable, so a client that retries every second does not log every retry; the next run after a success logs again.
 

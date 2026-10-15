@@ -759,6 +759,83 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
         reports.Should().Equal(MqLogType.BrokerReachable);
     }
 
+    [Fact]
+    public async Task should_report_an_idle_client_reachable_once_a_probe_peek_reaches_service_bus()
+    {
+        // given an idle queue consumer on a namespace whose peeks succeed again
+        var (client, receiver) = await _CreateConnectedQueueClientAsync();
+        await using var _ = client;
+        var recovered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.AttachCallbacks(
+            (_, _) => Task.CompletedTask,
+            log =>
+            {
+                if (log.LogType == MqLogType.BrokerReachable)
+                {
+                    recovered.TrySetResult();
+                }
+            }
+        );
+
+        // when a receive fails and no message arrives afterwards
+        await _RaiseProcessorErrorAsync(
+            client,
+            new ServiceBusException("The service is unreachable", ServiceBusFailureReason.ServiceCommunicationProblem),
+            ServiceBusErrorSource.Receive
+        );
+
+        // then the probe's first peek, after about a second of back-off, reports the recovery
+        await recovered.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await receiver.Received().PeekMessageAsync(Arg.Any<long?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_not_probe_a_client_that_reported_no_failure()
+    {
+        // given
+        var (client, _) = await _CreateConnectedQueueClientAsync();
+        await using var _ = client;
+        client.AttachCallbacks((_, _) => Task.CompletedTask, _ => { });
+
+        // when a delivery succeeds
+        await _DeliverAsync(client);
+
+        // then
+        _probedClient.DidNotReceiveWithAnyArgs().CreateReceiver(default!);
+    }
+
+    private ServiceBusClient _probedClient = null!;
+
+    private async Task<(
+        AzureServiceBusConsumerClient Client,
+        ServiceBusReceiver Receiver
+    )> _CreateConnectedQueueClientAsync()
+    {
+        _probedClient = Substitute.For<ServiceBusClient>();
+        var receiver = Substitute.For<ServiceBusReceiver>();
+        _probedClient.CreateReceiver(Arg.Any<string>()).Returns(receiver);
+        _probedClient
+            .CreateProcessor(Arg.Any<string>(), Arg.Any<ServiceBusProcessorOptions>())
+            .Returns(_ => Substitute.For<ServiceBusProcessor>());
+        var pool = Substitute.For<IAzureServiceBusClientPool>();
+        pool.GetClient().Returns(_probedClient);
+
+        var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            pool,
+            MessageLane.Queue
+        );
+        await client.ConnectAsync(AbortToken);
+        // A queue client creates its processors, and so its probe target, when it subscribes.
+        await client.SubscribeAsync(["test-queue"], AbortToken);
+
+        return (client, receiver);
+    }
+
     private static Task _RaiseProcessorErrorAsync(
         AzureServiceBusConsumerClient client,
         Exception exception,

@@ -5,6 +5,7 @@ using Azure.Messaging.ServiceBus.Administration;
 using Headless.Checks;
 using Headless.Messaging.AzureServiceBus.Helpers;
 using Headless.Messaging.Transport;
+using Headless.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -65,6 +66,11 @@ internal sealed class AzureServiceBusConsumerClient(
 #pragma warning restore CA2213
     private ServiceBusProcessorFacade? _serviceBusProcessor;
     private readonly List<ServiceBusProcessorFacade> _queueProcessors = [];
+
+    // The entity the recovery probe peeks: the first one a processor reads, which shares the namespace with the rest.
+    private (string EntityPath, string? Subscription)? _probeTarget;
+    private readonly CancellationTokenSource _disposeCts = new();
+    private int _probing;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
@@ -378,6 +384,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
         _pauseGate.Release();
         _ready.TrySetCanceled();
+        await _disposeCts.CancelAsync().ConfigureAwait(false);
 
         if (_serviceBusProcessor is not null)
         {
@@ -394,6 +401,66 @@ internal sealed class AzureServiceBusConsumerClient(
 
         _connectionLock.Dispose();
         _semaphore.Dispose();
+        _disposeCts.Dispose();
+    }
+
+    // The processor reports a success only by delivering a message, so an idle consumer whose broker came back would read
+    // unreachable until traffic arrived. After a failure, one probe loop peeks the entity on a real-time back-off until a
+    // peek reaches Service Bus or a delivery reports the recovery first. A healthy client never probes.
+    private void _StartRecoveryProbe()
+    {
+        if (_probeTarget is null || _serviceBusClient is null || Interlocked.CompareExchange(ref _probing, 1, 0) != 0)
+        {
+            return;
+        }
+
+        _ = _ProbeUntilReachableAsync(_serviceBusClient, _probeTarget.Value, _disposeCts.Token);
+    }
+
+    private async Task _ProbeUntilReachableAsync(
+        ServiceBusClient serviceBusClient,
+        (string EntityPath, string? Subscription) target,
+        CancellationToken cancellationToken
+    )
+    {
+        var backoff = new ReconnectBackoff();
+
+        try
+        {
+            while (_reachability.HasPendingFailure && await backoff.WaitAsync(cancellationToken).ConfigureAwait(false))
+            {
+                try
+                {
+                    var receiver = target.Subscription is null
+                        ? serviceBusClient.CreateReceiver(target.EntityPath)
+                        : serviceBusClient.CreateReceiver(target.EntityPath, target.Subscription);
+
+                    await using (receiver.ConfigureAwait(false))
+                    {
+                        // A peek reads without locking or settling, so it changes nothing a consumer would see.
+                        await receiver.PeekMessageAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+                    }
+
+                    _reachability.ReportSuccess(OnLogCallback);
+
+                    return;
+                }
+#pragma warning disable CA1031 // False positive: a failed peek is the outage the loop waits out; it tries again after the back-off.
+                catch (Exception) when (!cancellationToken.IsCancellationRequested)
+#pragma warning restore CA1031
+                {
+                    // Still unreachable.
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The client is being disposed.
+        }
+        finally
+        {
+            Volatile.Write(ref _probing, 0);
+        }
     }
 
     private void _ReleaseSemaphore()
@@ -431,6 +498,7 @@ internal sealed class AzureServiceBusConsumerClient(
         if (args.ErrorSource is ServiceBusErrorSource.Receive or ServiceBusErrorSource.AcceptSession)
         {
             _reachability.ReportFailure(OnLogCallback, args.Exception);
+            _StartRecoveryProbe();
         }
 
         return
@@ -695,6 +763,7 @@ internal sealed class AzureServiceBusConsumerClient(
     // concurrency on sessions instead.
     private ServiceBusProcessorFacade _CreateProcessor(string entityPath, string? topicSubscription)
     {
+        _probeTarget ??= (entityPath, topicSubscription);
         var concurrency = Math.Max(1, (int)groupConcurrent);
 
         if (!_asbOptions.EnableSessions)

@@ -14,6 +14,9 @@ internal sealed class BrokerReachabilityReporter
 {
     private int _failureReported;
 
+    /// <summary>Gets whether a failure was reported and no success has ended it yet.</summary>
+    public bool HasPendingFailure => Volatile.Read(ref _failureReported) == 1;
+
     /// <summary>Reports a receive that failed because the broker could not be reached.</summary>
     /// <param name="onLog">The client's log callback, read at the call because the core attaches it after creation.</param>
     /// <param name="exception">The failure, whose message becomes the reported reason.</param>
