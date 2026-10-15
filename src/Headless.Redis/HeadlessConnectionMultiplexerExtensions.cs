@@ -71,6 +71,28 @@ public static class HeadlessConnectionMultiplexerExtensions
     }
 
     /// <summary>
+    /// Names the Redis deployment this multiplexer is configured for by its endpoints, sorted, with no credential, such
+    /// as <c>redis://cache-1:6379,cache-2:6379</c>, so two packages that use one deployment can tell they share it.
+    /// </summary>
+    /// <param name="muxer">The multiplexer.</param>
+    /// <returns>The key; reading the configured endpoints sends nothing to the server.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="muxer" /> is <see langword="null" />.</exception>
+    public static string GetEndpointsKey(this IConnectionMultiplexer muxer)
+    {
+        Argument.IsNotNull(muxer);
+
+        return "redis://"
+            + string.Join(
+                    ',',
+                    muxer
+                        .GetEndPoints()
+                        .Select(static endpoint => endpoint.ToString())
+                        .Order(StringComparer.OrdinalIgnoreCase)
+                )
+                .ToLowerInvariant();
+    }
+
+    /// <summary>
     /// Probes every endpoint the multiplexer was configured with, the way a readiness check should: a <c>PING</c> to
     /// each standalone, replica, or sentinel server, and <c>CLUSTER INFO</c> on each cluster node, which must report
     /// <c>cluster_state:ok</c>.

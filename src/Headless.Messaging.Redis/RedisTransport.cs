@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace Headless.Messaging.Redis;
 
@@ -50,7 +52,9 @@ internal sealed class RedisTransport(
         {
             var wrapperEx = new PublisherSentFailedException(ex.Message, ex);
 
-            return OperateResult.Failed(wrapperEx);
+            return RedisBrokerFailures.IsUnreachable(ex)
+                ? OperateResult.BrokerUnreachable(wrapperEx)
+                : OperateResult.Failed(wrapperEx);
         }
     }
 

@@ -157,6 +157,7 @@ public static class SetupMessaging
         services.TryAddSingleton<IRuntimeConsumerRegistry, RuntimeConsumerRegistry>();
         services.TryAddSingleton<IRuntimeSubscriber, RuntimeSubscriber>();
         services.TryAddSingleton<IConsumerHostOwnership, ConsumerHostOwnership>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostManifestSection, MessagingHostManifestSection>());
 
         services.TryAddSingleton<IConsumerServiceSelector, ConsumerServiceSelector>();
         services.TryAddSingleton<IConsumeMiddlewarePipeline, ConsumeMiddlewarePipeline>();
@@ -168,6 +169,10 @@ public static class SetupMessaging
         services.TryAddSingleton<MethodMatcherCache>();
 
         services.TryAddSingleton<IConsumerRegister, ConsumerRegister>();
+
+        // One per host: consumer clients and the outbox sender both report into it, so a publish-only host still
+        // learns that its broker went away.
+        services.TryAddSingleton<TransportConnectivity>();
 
         // Fallback lock provider under the messaging-scoped key. Isolated from any app-level
         // IDistributedLock so UseStorageLock always targets the provider wired via
@@ -303,6 +308,9 @@ public static class SetupMessaging
         services.TryAddSingleton<Bootstrapper>();
         services.TryAddSingleton<IBootstrapper>(sp => sp.GetRequiredService<Bootstrapper>());
         services.AddHostedService(sp => sp.GetRequiredService<Bootstrapper>());
+
+        // Readiness for every host, consuming or publish-only; the probes read state only and connect to nothing.
+        MessagingHealthChecks.Add(services, hasAdditionalOutboxes: setup.OutboxBuilders.Count != 0);
 
         return new MessagingBuilder(services);
     }

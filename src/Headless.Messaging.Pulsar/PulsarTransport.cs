@@ -55,9 +55,22 @@ internal sealed class PulsarTransport(
         {
             var wrapperEx = new PublisherSentFailedException(ex.Message, ex);
 
-            return OperateResult.Failed(wrapperEx);
+            return IsBrokerUnreachable(ex)
+                ? OperateResult.BrokerUnreachable(wrapperEx)
+                : OperateResult.Failed(wrapperEx);
         }
     }
+
+    // A lost connection or a broker that does not answer counts; a closed producer or a failed topic lookup can be this
+    // message's own problem, so it does not.
+    internal static bool IsBrokerUnreachable(Exception exception) =>
+        exception
+            is global::Pulsar.Client.Api.ConnectException
+                or global::Pulsar.Client.Api.NotConnectedException
+                or global::Pulsar.Client.Api.ConnectionFailedOnSend
+                or global::Pulsar.Client.Api.TimeoutException
+                or global::Pulsar.Client.Api.RequestTimeoutException
+        || BrokerFailures.IsConnectivity(exception);
 
     public ValueTask DisposeAsync()
     {

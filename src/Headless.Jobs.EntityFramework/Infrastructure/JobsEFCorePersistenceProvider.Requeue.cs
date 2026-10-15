@@ -14,6 +14,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 {
     public async Task<JobRequeueOutcome> RequeueCronJobOccurrenceAsync(
         Guid occurrenceId,
+        string? traceParent,
         CancellationToken cancellationToken = default
     )
     {
@@ -118,6 +119,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                                     .SetProperty(x => x.ProgressPercent, _ => null)
                                     .SetProperty(x => x.ProgressMessage, _ => null)
                                     .SetProperty(x => x.ProgressUpdatedAt, _ => null)
+                                    // The requeue is the new cause, so the rerun links to the requeue request.
+                                    .SetProperty(x => x.TraceParent, traceParent)
                                     // An audit stamp inside the transaction, which BasePersistenceProvider's clock
                                     // invariant permits: only lease deadlines must never be written inside an explicit
                                     // transaction.

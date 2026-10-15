@@ -203,6 +203,12 @@ public static class SetupRedisCache
 
         services.AddHeadlessHealthCheck(
             "cache-redis-" + name,
+            HeadlessHealthCheckResource.Shared(provider =>
+                provider
+                    .GetRequiredService<IOptionsMonitor<RedisCacheOptions>>()
+                    .Get(name)
+                    .ConnectionMultiplexer.GetEndpointsKey()
+            ),
             async (provider, cancellationToken) =>
                 await provider
                     .GetRequiredService<IOptionsMonitor<RedisCacheOptions>>()
@@ -264,6 +270,9 @@ public static class SetupRedisCache
         services.TryAddSingleton<IRemoteCache, RedisCache>();
         services.AddHeadlessHealthCheck(
             "cache-redis",
+            HeadlessHealthCheckResource.Shared(static provider =>
+                provider.GetRequiredService<RedisCacheOptions>().ConnectionMultiplexer.GetEndpointsKey()
+            ),
             static async (provider, cancellationToken) =>
                 await provider
                     .GetRequiredService<RedisCacheOptions>()

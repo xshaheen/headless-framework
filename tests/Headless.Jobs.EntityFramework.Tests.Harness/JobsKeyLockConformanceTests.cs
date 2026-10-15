@@ -9,6 +9,7 @@ using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
+#pragma warning disable RCS1196 // False positive: on an array, the instance form binds to the in-place MemoryExtensions.Reverse(Span<T>), which returns void.
 namespace Tests;
 
 public abstract class JobsKeyLockConformanceTests(Action<DbContextOptionsBuilder> configureStore) : TestBase

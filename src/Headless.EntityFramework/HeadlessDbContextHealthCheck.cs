@@ -29,6 +29,17 @@ internal static class HeadlessDbContextHealthCheck
     {
         services.AddHeadlessHealthCheck(
             NameOf<TDbContext>(),
+            HeadlessHealthCheckResource.Owned(static provider =>
+            {
+                // Building a context opens no connection; it only reads the configured provider and connection string.
+                using var scope = provider.CreateScope();
+                var database = scope.ServiceProvider.GetRequiredService<TDbContext>().Database;
+
+                return HeadlessHealthCheckResource.DatabaseKey(
+                    database.ProviderName ?? "ef",
+                    database.GetConnectionString()
+                );
+            }),
             static (builder, name, tags) =>
                 builder.AddDbContextCheck<TDbContext>(
                     name,

@@ -9,8 +9,12 @@ namespace Headless.Jobs.Instrumentation;
 /// </summary>
 internal interface IJobsInstrumentation
 {
+    /// <summary>
+    /// Starts the execution span as the root of a new trace, linked to the context that scheduled the row when
+    /// <see cref="JobExecutionState.TraceParent"/> holds one.
+    /// </summary>
     Activity? StartJobActivity(string activityName, JobExecutionState context);
-    void LogJobEnqueued(string jobType, string functionName, Guid jobId, string? enqueuedFrom = null);
+    void LogJobStarted(Guid jobId, string functionName, string jobType);
     void LogJobCompleted(Guid jobId, string functionName, long executionTimeMs, bool success);
     void LogJobFailed(Guid jobId, string functionName, Exception exception, int retryCount);
     void LogJobCancelled(Guid jobId, string functionName, string reason);

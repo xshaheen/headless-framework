@@ -210,6 +210,11 @@ public static class SetupMessagingPostgreSql
                 exportOnly: true
             )
         );
+        PostgreSqlMessagingStorageHealthCheck.Add(
+            setup.Services,
+            PostgreSqlMessagingStorageHealthCheck.OutboxCheckName(optionsName),
+            serviceProvider => serviceProvider.GetRequiredService<IOptionsMonitor<PostgreSqlOptions>>().Get(optionsName)
+        );
 
         return setup;
     }
@@ -262,6 +267,11 @@ public static class SetupMessagingPostgreSql
                     sp.GetRequiredService<IOptions<PostgreSqlOptions>>().Value,
                     sp.GetRequiredService<IOptions<MessagingStorageOptions>>().Value
                 )
+            );
+            PostgreSqlMessagingStorageHealthCheck.Add(
+                services,
+                PostgreSqlMessagingStorageHealthCheck.PrimaryCheckName,
+                sp => sp.GetRequiredService<IOptions<PostgreSqlOptions>>().Value
             );
         }
     }

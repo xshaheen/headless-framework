@@ -8,7 +8,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
-    public Task<JobRequeueOutcome> RequeueTimeJobAsync(Guid jobId, CancellationToken cancellationToken = default)
+    public Task<JobRequeueOutcome> RequeueTimeJobAsync(
+        Guid jobId,
+        string? traceParent,
+        CancellationToken cancellationToken = default
+    )
     {
         // The keyed-operations lock is what keyed scheduling holds while it reads and supersedes a generation, so the
         // current-generation check and the write below cannot interleave with a supersede.
@@ -48,6 +52,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.ProgressUpdatedAt = null;
             updated.CancelRequested = false;
             updated.ExecutionTime = now.UtcDateTime;
+            updated.TraceParent = traceParent;
             updated.UpdatedAt = now;
 
             if (!_TryUpdateTimeJob(jobId, updated, job))
@@ -62,6 +67,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     public Task<JobRequeueOutcome> RequeueCronJobOccurrenceAsync(
         Guid occurrenceId,
+        string? traceParent,
         CancellationToken cancellationToken = default
     )
     {
@@ -137,6 +143,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.ProgressPercent = null;
             updated.ProgressMessage = null;
             updated.ProgressUpdatedAt = null;
+            updated.TraceParent = traceParent;
             updated.UpdatedAt = now;
 
             return Task.FromResult(

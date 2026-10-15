@@ -204,7 +204,8 @@ public sealed class JobProgressExecutionTests : TestBase
                 registry,
                 new JobsExecutionCancellationRegistry(),
                 _options,
-                NullLogger<JobsExecutionTaskHandler>.Instance
+                NullLogger<JobsExecutionTaskHandler>.Instance,
+                new JobsFunctionTagBound(registry)
             );
 
             await handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);

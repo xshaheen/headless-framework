@@ -2,6 +2,7 @@
 
 using Headless.EntityFramework;
 using Headless.Hosting;
+using Headless.Jobs.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -49,6 +50,7 @@ public class CronJobOccurrenceConfigurations<TCronJob>(
 
         builder.Property(x => x.TenantId).HasMaxLength(JobsTenancyOptions.TenantIdMaxLength);
         builder.Property(x => x.ProgressMessage).HasMaxLength(JobProgress.MessageMaxLength);
+        builder.Property(x => x.TraceParent).HasMaxLength(JobTraceParent.MaxLength);
 
         var table = JobsStorageNaming.Table(style, JobsStorageNaming.CronJobOccurrences);
 

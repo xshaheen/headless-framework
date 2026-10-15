@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
@@ -114,9 +115,16 @@ internal sealed class NatsTransport(
         }
         catch (Exception ex)
         {
-            return OperateResult.Failed(new PublisherSentFailedException(ex.Message, ex));
+            var failure = new PublisherSentFailedException(ex.Message, ex);
+
+            return IsBrokerUnreachable(ex) ? OperateResult.BrokerUnreachable(failure) : OperateResult.Failed(failure);
         }
     }
+
+    // A lost connection or a server that does not answer counts; an oversized payload or no responder does not.
+    internal static bool IsBrokerUnreachable(Exception exception) =>
+        exception is NatsConnectionFailedException or NatsTimeoutException or NatsNoReplyException
+        || BrokerFailures.IsConnectivity(exception);
 
     public ValueTask DisposeAsync()
     {

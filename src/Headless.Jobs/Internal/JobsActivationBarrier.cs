@@ -29,6 +29,12 @@ internal sealed class JobsActivationBarrier
     );
 
     /// <summary>
+    /// <see langword="true"/> once activation completed successfully; <see langword="false"/> while it is pending or
+    /// after it failed. Reads the state without waiting, for callers such as readiness that must not block on startup.
+    /// </summary>
+    public bool IsActivated => _activated.Task is { IsCompletedSuccessfully: true, Result: null };
+
+    /// <summary>
     /// Waits until activation has been signalled.
     /// </summary>
     /// <param name="cancellationToken">Cancels the wait (host shutdown or membership loss).</param>

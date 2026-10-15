@@ -1,94 +1,63 @@
-<!-- Title: type(scope)!: summary. The ! marks a breaking change. -->
-<!-- Write it in noslop way, avoiding unnecessary jargon and keeping it clear and concise -->
+<!-- Title: type(scope)!: the outcome, not the mechanism. The ! marks a breaking change.
+     Write in plain words: no filler, no internal jargon, no plan, review, or finding IDs. -->
+
+<!-- Two sentences a reviewer can stop after: what is different now, and what was wrong before. -->
 
 ## Problem
 
-<!-- What is wrong or missing, and who it hurts. Name the
-     call, the input, and the wrong result. -->
+<!-- What was wrong or missing, and who it hurt, in the words of the person who hit it: the call, the input, and
+     the wrong result. -->
 
-## Solution
-
-<!-- The behavior a consumer gets now, and why this approach
-     instead of the alternative you rejected. Don't restate
-     the diff. No plan, review, or finding IDs. -->
+> **Rollout risk:** <!-- what can go wrong when this deploys, and how to back out of it. Write "none" if nothing can. -->
 
 Fixes #
 
-## Public API
+## Solution
 
-<!-- Delete if no public or protected API was added, changed,
-     or removed. Show what a consumer sees, not the
-     implementation, in up to three csharp blocks:
+<!-- One sentence on what is different now. Then, when behavior changed, one row per behavior a consumer or operator
+     can observe, each backed by a test. Add a diagram only for a mechanism a table cannot show. Don't restate the
+     diff. -->
 
-     1. Surface. Each added, changed, or removed member as a
-        bare declaration (no body, no XML docs), grouped by
-        type. Mark each line // Added, // Removed, or
-        // Changed with a before and an after line.
-     2. Usage. The registration and the call a consumer
-        writes for the main scenario, and what it returns.
-        Copy it from a test or docs sample that compiles.
-     3. Contract. What a signature can't show, as bullets:
-        result statuses, exceptions, defaults, ordering,
-        thread safety, and the docs/llms section that owns it.
+| Situation | Before | After |
+| --- | --- | --- |
 
-     Example:
+## Decisions
 
-     ```csharp
-     // Added
-     public enum LeaseTakeover { Allowed = 0, AfterSweep = 1 }
+<!-- Delete if none. One line each: the choice, and the alternative you rejected with the reason. -->
 
-     public interface IFencedLeases
-     {
-         // Added
-         ValueTask<LeaseFenceStatus> GetStatusAsync(FencedLease lease, CancellationToken cancellationToken = default);
-     }
+## Contract changes
 
-     public interface IUnitOfWorkLeases
-     {
-         // Changed
-         // before: ValueTask<LeaseGrantResult> GrantAsync(IUnitOfWork unitOfWork, string kind, string resource, TimeSpan duration, CancellationToken cancellationToken = default);
-         // after:  ValueTask<LeaseGrantResult> GrantAsync(IUnitOfWork unitOfWork, string kind, string resource, TimeSpan duration, LeaseTakeover takeover, CancellationToken cancellationToken = default);
-     }
-     ```
+<!-- Delete if none. One row per surface a consumer depends on: public or protected API, default, config key,
+     schema, metric or span name, package ID. -->
 
-     ```csharp
-     services.AddHeadlessFencing(setup => setup.UsePostgreSql(connectionString));
+| Surface | Change | Who breaks, and the migration |
+| --- | --- | --- |
 
-     var grant = await leases.GrantAsync("run", runId, TimeSpan.FromSeconds(30), LeaseTakeover.AfterSweep, ct);
-     // grant.Status: Granted, Held, or Expired (the last attempt expired and waits for the sweep)
-     ```
--->
+<!-- Then, collapsed: each added, changed, or removed member as a bare declaration marked // Added, // Removed, or
+     // Changed (with a before and an after line), and the registration and call a consumer writes, copied from a
+     test or docs sample that compiles. -->
 
-## Breaking changes
+<details><summary><strong>Full public API</strong></summary>
 
-<!-- Delete if none. One row per broken surface: API,
-     behavior or default, config, schema, package ID. An
-     API row points to its Public API entry instead of
-     repeating the signature. -->
-| Change | Consumer impact and migration |
-| --- | --- |
+```csharp
+```
+
+</details>
 
 ## Verification
 
-<!-- Only what CI and the proof below don't show: -->
-- Regression: <!-- the test that fails on main -->
-- Integration: <!-- make test-affected-integration
-  result, or why it wasn't run. CI runs none. -->
-- Manual: <!-- sandbox or browser walk, before → after.
-  Delete if none. -->
-- Unrelated failures: <!-- test name and evidence it
-  fails on main. Delete if none. -->
-- Coverage below floor: <!-- each warning the proof's coverage gate
-  lists, with its reason (glue code, integration-only behavior,
-  unreachable branch, cost above risk; see AGENTS.md). Delete if none. -->
-- Docs: <!-- docs/llms/<domain>.md, or "none: internal" -->
+| Check | Result on `<head commit>` |
+| --- | --- |
+| `make verify-affected` | |
+| `make test-affected-integration` | <!-- or why it was not run; CI runs none --> |
 
-<!-- Paste artifacts/proof/<run>/summary.md below.
-     When the affected set has integration projects, paste
-     make test-affected-integration's summary.md too: it checks
-     those packages' changed lines against the coverage floors. -->
+- **Regression:** <!-- one line: the behavior the new tests hold that fails on main -->
+- **Not verified:** <!-- each claim no check covers, and why. Delete if none. -->
+- **Coverage below floor:** <!-- each warning the proof's coverage gate lists, with its reason (glue code,
+  integration-only behavior, unreachable branch, cost above risk; see AGENTS.md). Delete if none. -->
 
-## Out of scope
+<!-- Paste each proof's artifacts/proof/<run>/summary.md here, each inside its own collapsed <details> block. -->
 
-<!-- Delete if none. Related problems you saw and left,
-     so a reviewer doesn't ask. -->
+## Left out
+
+<!-- Delete if none. Related problems you saw and deliberately left, so a reviewer doesn't ask. -->

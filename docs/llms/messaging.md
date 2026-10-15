@@ -660,7 +660,7 @@ public static class SetupMessagesMyBroker
 
 ### Publishing: `ITransport.SendAsync`
 
-`SendAsync(...)` receives a fully prepared `TransportMessage`. The transport publishes `message.Body` as the broker payload, preserves `message.Headers`, returns `OperateResult.Success` on broker success, returns `OperateResult.Failed(new PublisherSentFailedException(...))` on broker failure, and lets `OperationCanceledException` propagate.
+`SendAsync(...)` receives a fully prepared `TransportMessage`. The transport publishes `message.Body` as the broker payload, preserves `message.Headers`, returns `OperateResult.Success` on broker success, and lets `OperationCanceledException` propagate. On failure it returns `OperateResult.BrokerUnreachable(new PublisherSentFailedException(...))` when the broker could not be reached (a lost connection, a timeout, a broker that reports itself down), which counts toward [broker reachability](#broker-reachability), and `OperateResult.Failed(new PublisherSentFailedException(...))` when the broker refused this message, which does not.
 
 After `DisposeAsync`, `SendAsync` returns `OperateResult.Failed(new ObjectDisposedException(...))` without contacting the broker. It does not throw, so a publisher treats a send on a disposed transport like any other failed send. This holds even when `DisposeAsync` releases nothing because a shared pool owns the connection: disposal still stops that transport instance from sending. The `should_return_failed_result_when_sending_after_dispose` case in `TransportTestsBase` checks it.
 
@@ -678,7 +678,7 @@ On the Bus lane, derive the broker-legal subscription name from the identity wit
 - **`CommitAsync` and `RejectAsync`** map the callback token back to broker semantics: ack or nack, delete or abandon, commit or seek, complete, dead-letter, or requeue. If the broker cannot reject, make that explicit and implement the best available no-op or requeue behavior.
 - **`DeadLetterAsync(sender, reason, description)`** settles a message poisoned on arrival after Core stored its poison row. Core calls it only for the delivery that stored the row; a redelivery of a message already recorded terminal is committed, so the dead-letter destination holds one copy per poisoned message. The default implementation calls `CommitAsync`, so a transport without a dead-letter destination needs no change. Override it when the broker can keep the message aside, and attach `reason` and `description` when the broker can carry them. Reason codes: `SubscriberNotFound`, `ReceiveRejected` (a receive middleware's `Reject`), `DeserializationFailed`, and `ReceiveFailed` (a contract-version mismatch, a receive middleware fault, or an undeclared outcome). An explicit `Reject` is `ReceiveRejected` whatever cause it carries. The description is the sanitized exception message capped at 1024 characters, except for `ReceiveFailed`, which carries only the exception type, because a middleware's own exception message can echo header values such as a signature or token.
 - **`PauseAsync` and `ResumeAsync`** serve circuit-breaker backpressure. They must be idempotent, safe to call concurrently, and stop new message pulls once `PauseAsync` returns. In-flight deliveries may complete. Pause and resume keep the long-running listener alive; a provider may cancel an in-flight broker receive to reach its pause gate, but it must install fresh receive state before reopening the gate.
-- **`OnLogCallback`** emits `MqLogType` events for connection failures, broker shutdown, consumer registration and cancellation, and receive-loop errors. Core relies on them to keep transport health and restart behavior accurate.
+- **`OnLogCallback`** emits `MqLogType` events for connection failures, broker shutdown, consumer registration and cancellation, and receive-loop errors. Core relies on them to keep transport health and restart behavior accurate. A client that retries a lost broker inside its own receive loop, instead of failing the loop, reports each failed receive as `MqLogType.BrokerUnreachable` and the first successful receive after one as `MqLogType.BrokerReachable`; Core counts these toward [broker reachability](#broker-reachability) without rebuilding the client.
 - **`DisposeAsync`** disposes only resources owned by that client instance, never shared pools or connections still used elsewhere in the package.
 
 ### Header and payload rules
@@ -1465,7 +1465,7 @@ The collector obtains one fixed provider-clock history cutoff snapshot per invoc
 
 ### Runtime behavior
 
-Registers messaging services, hosted processors, publishers, consumers, storage abstractions, runtime registries, middleware registries, keyed messaging lock defaults, and the always-on `DeadOwnerRecoveryBridge<MessagingDeadOwnerReclaimer>` hosted service.
+Registers messaging services, hosted processors, publishers, consumers, storage abstractions, runtime registries, middleware registries, keyed messaging lock defaults, and the always-on `DeadOwnerRecoveryBridge<MessagingDeadOwnerReclaimer>` hosted service. Also registers the `messaging` and `messaging-consumers` readiness checks, `messaging-outboxes` when the host adds an outbox, and the `messaging` host manifest contributor; see [Readiness and host manifest](#readiness-and-host-manifest).
 
 ## Retry Policy
 
@@ -2091,6 +2091,86 @@ await retryMonitor.ResetBackpressureAsync(cancellationToken);
 ### Cluster Scope Limitation
 
 The circuit breaker operates per-process only. There is no cross-instance coordination — each application instance maintains its own circuit state. In a multi-replica deployment, one instance may have an open circuit while others remain closed.
+
+## Readiness and host manifest
+
+### Health checks
+
+Messaging contributes readiness checks automatically; there is no `AddMessagingHealthChecks()` call. Each carries the `ready` and `headless` tags plus `messaging`, follows the rules in [Health checks](utilities.md#health-checks), and is removed with `RemoveHealthChecks`. The probes read state the host already keeps or run one read-only query; none publishes, consumes, or writes.
+
+| Check | Registered by | Failure status | Fails when |
+| --- | --- | --- | --- |
+| `messaging` | `AddHeadlessMessaging` | `Unhealthy` | The host has not started, host shutdown has begun, or the broker is unreachable (see [Broker reachability](#broker-reachability)). Applies to consuming and publish-only hosts on every transport |
+| `messaging-consumers` | `AddHeadlessMessaging` | `Degraded` | Any consumer circuit is `Open`, whether it tripped or an operator called `ICircuitBreakerMonitor.ForceOpenAsync`. `HalfOpen` reports healthy: it is already resuming, and reporting it would make alerts flap |
+| `messaging-outboxes` | `AddHeadlessMessaging` with at least one `AddOutbox()` | `Degraded` | An [additional outbox](#additional-outboxes) is not initialized yet. Its initialization keeps retrying and only units of work on that database are refused, so the host stays ready |
+| `messaging-storage-postgresql-default`, `messaging-storage-sqlserver-default` | The primary PostgreSQL or SQL Server storage, raw or EF; also tagged `database` | `Unhealthy` | A connection from the storage's options cannot open, or `SELECT 1` on it fails |
+| `messaging-storage-postgresql-outbox-{n}`, `messaging-storage-sqlserver-outbox-{n}` | Each additional PostgreSQL or SQL Server outbox; also tagged `database` | `Unhealthy` | The same probe against that outbox's database. `{n}` is the outbox's position, from 1, in `AddOutbox()` call order |
+| `messaging-nats` | `UseNats` | `Unhealthy` | A NATS `PING` fails (see [Headless.Messaging.Nats](#headlessmessagingnats)) |
+
+The `Degraded` defaults are defaults only: `ConfigureHeadlessHealthCheck("messaging-consumers", o => o.FailureStatus = HealthStatus.Unhealthy)` overrides one, before or after `AddHeadlessMessaging`. The storage probe runs a query rather than only opening a connection, because a pooled open can return an idle connection without a round trip and would report a stopped database as reachable. The in-memory storage and transport contribute no storage or broker probe.
+
+### Broker reachability
+
+The `messaging` check does not ping the broker (only NATS adds its own `messaging-nats` probe). It judges reachability from the receive and send outcomes the host already observes:
+
+- **Unreachable** after 3 broker failures in a row with no success between them. A failure is a consumer client that cannot connect or that reports a lost connection, a transport receive that fails because the broker cannot be reached, a dispatcher send whose transport returns `OperateResult.BrokerUnreachable` (or throws a socket, I/O, HTTP, or timeout failure), or a send that hits the publish timeout. One failed receive or send is often a blip the client retries through, so readiness does not follow it.
+- **A refused message never counts.** A send the broker answered with a refusal, such as a missing SNS topic or Service Bus entity, a RabbitMQ exchange that does not exist, a Kafka or NATS message over the size limit, or a NATS publish no stream acknowledged, returns a plain `OperateResult.Failed`. It fails that message's attempt and leaves reachability alone, so one bad outbox row cannot take a host out of readiness.
+- **Reachable again** only on an observed success: a successful dispatcher send, a delivered message, a receive that reaches the broker after a failure, a consumer registration, or a consumer client established with no broker failure reported while it started. Any of them ends the run, whichever path started it, so deliveries clear a run that failed sends started. A transport restart alone does not count, because the restart resets before any client has reached the broker.
+- Every transport feeds the same state, so a publish-only host and a consuming host answer the same way. Under the default Durable delivery mode, the outbox dispatcher's sends feed it.
+
+Known limitations:
+
+- **Direct delivery.** A Direct-mode publish does not feed reachability: its failure reaches the caller as an exception instead.
+
+An Azure Service Bus processor reports no success while idle, so after a failed receive the client peeks its entity on a real-time back-off (about 1 second, doubling to 30) until a peek reaches Service Bus or a message arrives, then reports the broker reachable. A peek locks and settles nothing; a client with no failure never peeks.
+
+Transports that retry a lost broker inside their own receive loop (Azure Service Bus, Amazon SQS, Pulsar, Redis Streams) report through `OnLogCallback` with `MqLogType.BrokerUnreachable` (`14`) on each failed receive and `MqLogType.BrokerReachable` (`15`) on the first receive that succeeds after one. These leave the client running instead of rebuilding it, and log `TransportBrokerUnreachable` (event 122, Warning) and `TransportBrokerReachable` (event 123, Information). The warning stops once a failure run makes the broker unreachable, so a client that retries every second does not log every retry; the next run after a success logs again.
+
+### Host manifest
+
+`AddHeadlessMessaging` writes the `messaging` section of the host manifest that `RunHeadlessAsync(args)` prints for `describe` and that `MapHeadlessHostManifest` serves; [Utilities](utilities.md#host-manifest) owns the command, the document envelope, and the endpoint. The section is read from the host's frozen consumer registry, so it shows the tuning that configuration applied (`Headless:Messaging:Consumers:{identity}:Concurrency`) and this host's `ConsumeOnly` filter. A host without `AddHeadlessMessaging` has no `messaging` section.
+
+```json
+{
+  "consumers": [
+    {
+      "identity": "orders.fulfillment",
+      "lane": "bus",
+      "delivery": "competing",
+      "runState": "runs-here",
+      "consumeOnly": "listed",
+      "messages": [{ "name": "orders.placed", "contractVersion": "1" }],
+      "concurrency": 8,
+      "failurePolicy": { "immediateRetries": 2, "delayedRetries": 0 },
+      "inboxRetentionSeconds": 604800,
+      "rateLimit": { "algorithm": "fixed-window", "permitLimit": 100, "windowSeconds": 1 },
+      "circuitBreaker": { "enabled": true, "failureThreshold": 5 },
+      "middleware": ["MyApp.Messaging.AuditMiddleware"]
+    }
+  ],
+  "messages": [
+    {
+      "name": "orders.placed",
+      "contractVersion": "1",
+      "lanes": [{ "lane": "bus", "deliveryMode": "direct" }, { "lane": "queue" }]
+    }
+  ],
+  "outboxes": [
+    { "name": "primary", "storage": "PostgreSQL" },
+    { "name": "outbox-1", "storage": "SQL Server" }
+  ],
+  "transports": { "bus": "RabbitMQ", "queue": "RabbitMQ" }
+}
+```
+
+- **One entry per identity and lane,** ordered by identity, then lane (`bus` or `queue`): an identity that owns a Queue message and consumes Bus messages opens a subscription, with its own tuning, on each lane. `messages` lists every message the entry consumes, by name, with its contract version.
+- **`delivery`** is `competing` or `every-instance`. **`runState`** is `runs-here` when this host starts clients for the entry and `registered-not-run-here` when its `ConsumeOnly` filter leaves the entry out. An every-instance consumer always runs here.
+- **`consumeOnly`** appears only on a competing consumer of a host that calls `ConsumeOnly`: `listed` or `not-listed`.
+- **Tuning.** `concurrency` is always written. `inboxRetentionSeconds` appears on competing consumers only, because an every-instance subscription stores no inbox rows. `failurePolicy` appears when the consumer has one, with the same fields as Jobs: the delay fields only when `delayedRetries` is above zero, `failOn` and `failWhenRules` only when set. `rateLimit` carries `algorithm` plus `tokenLimit`, `tokensPerPeriod`, and `replenishmentPeriodSeconds` for `token-bucket`, or `permitLimit` and `windowSeconds` otherwise. `circuitBreaker` lists only the overrides the consumer sets (`enabled`, `failureThreshold`, `openDurationSeconds`, and `customTransientPredicate: true` for a custom predicate); unset values fall back to the host-wide options. `middleware` lists per-consumer middleware type names.
+- **`messages`** is the publish side: one entry per `Message<T>(name, version)` contract, ordered by name, with each lane it declares. A lane shows `deliveryMode` only when the contract pins one (`durable` or `direct`; otherwise publishes use the host default), and `routingAffinity` and `rawPayload` only when set.
+- **`outboxes`** lists the primary storage as `primary`, then each `AddOutbox()` outbox as `outbox-{n}` in call order, matching its `messaging-storage-…-outbox-{n}` health check. `storage` is the database provider (`PostgreSQL`, `SQL Server`) for relational storage and the storage type name otherwise. A host without storage has none.
+- **`transports`** names the broker of each lane's transport, from `BrokerAddress.Name`; a lane with no transport is absent. The endpoint half of the broker address is never written.
+- **Not described:** runtime subscriptions (they attach after startup and are not in the registry), provider-specific consumer configuration, broker addresses, connection strings, and credentials.
 
 ## Messaging runtime effects
 
@@ -3091,7 +3171,7 @@ History retention uses the shared `MessagingOptions` defaults: cleanup receipts/
 
 ### Runtime behavior
 
-Registers PostgreSQL storage, the monitoring API, table-name resolution, and the messaging schema contribution. It does not register EF Core or `Headless.UnitOfWork`.
+Registers PostgreSQL storage, the monitoring API, table-name resolution, the messaging schema contribution, and the `messaging-storage-postgresql-default` readiness check (`messaging-storage-postgresql-outbox-{n}` for an additional outbox; see [Health checks](#health-checks)). It does not register EF Core or `Headless.UnitOfWork`.
 
 ## Headless.Messaging.Storage.PostgreSql.EntityFramework
 
@@ -3146,7 +3226,7 @@ Fresh schemas directly create `([StatusName],[Added])` indexes for dashboard tim
 
 ### Runtime behavior
 
-Registers SQL Server storage, the monitoring API, table-name resolution, and the messaging schema contribution. It does not register EF Core or `Headless.UnitOfWork`.
+Registers SQL Server storage, the monitoring API, table-name resolution, the messaging schema contribution, and the `messaging-storage-sqlserver-default` readiness check (`messaging-storage-sqlserver-outbox-{n}` for an additional outbox; see [Health checks](#health-checks)). It does not register EF Core or `Headless.UnitOfWork`.
 
 - **Monitoring skips locked rows**: dashboard counts, pages, and timelines read with `READPAST`, so a row another transaction holds locked (a claim, an admission, a state change in flight) is left out of that read instead of blocking it. PostgreSQL's monitoring reads instead see the row's last committed version. Counts can therefore dip briefly under load on SQL Server.
 - **Inbox operation lock**: concurrent requests of one inbox operation (hold, release, purge, force-reprocess) that share an operation id serialize on a transaction-scoped `sp_getapplock` named `headless.messaging.inbox.operation.{operationId}`, so one applies and the others replay its receipt. The lock has no timeout of its own, so the wait is bounded by `MessagingOptions.CommandTimeout`, and a timed-out request can be retried with the same operation id.

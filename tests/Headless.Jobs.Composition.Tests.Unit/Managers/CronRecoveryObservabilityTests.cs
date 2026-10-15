@@ -160,7 +160,7 @@ public sealed class CronRecoveryObservabilityTests : TestBase
 
         public Activity? StartJobActivity(string name, JobExecutionState state) => null;
 
-        public void LogJobEnqueued(string jobType, string functionName, Guid jobId, string? enqueuedFrom = null) { }
+        public void LogJobStarted(Guid jobId, string functionName, string jobType) { }
 
         public void LogJobCompleted(Guid jobId, string functionName, long executionTimeMs, bool success) { }
 
@@ -199,6 +199,7 @@ public sealed class CronRecoveryObservabilityTests : TestBase
         services.AddSingleton(new SchedulerOptionsBuilder { NodeId = "node-a" });
         services.AddSingleton(Substitute.For<IJobsHostScheduler>());
         services.AddSingleton<IJobsInstrumentation>(new CapturingInstrumentation(outcomes, rebases));
+        services.AddSingleton(new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], [])));
         var sp = services.BuildServiceProvider();
 
         var provider = new JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>(sp);

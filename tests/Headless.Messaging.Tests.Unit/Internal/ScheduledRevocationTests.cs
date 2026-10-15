@@ -59,6 +59,7 @@ public sealed class ScheduledRevocationTests : TestBase
         senderServices.AddSingleton(provider.GetRequiredService<IOptions<MessagingOptions>>());
         senderServices.AddSingleton(TimeProvider.System);
         senderServices.AddSingleton(transport);
+        senderServices.AddSingleton(new TransportConnectivity());
         await using var senderProvider = senderServices.BuildServiceProvider();
         var sender = new MessageSender(senderProvider.GetRequiredService<ILogger<MessageSender>>(), senderProvider);
         await sender.SendAsync(candidate);

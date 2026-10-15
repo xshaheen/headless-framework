@@ -663,7 +663,8 @@ public sealed class RetryBehaviorTests : TestBase
             _EmptyRegistry,
             new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
-            NullLogger<JobsExecutionTaskHandler>.Instance
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(_EmptyRegistry)
         );
         var childInvoked = false;
         var parent = new JobExecutionState
@@ -1199,7 +1200,8 @@ public sealed class RetryBehaviorTests : TestBase
                 LeaseDuration = TimeSpan.FromMinutes(5),
                 LeaseRenewalInterval = TimeSpan.FromMilliseconds(100),
             },
-            NullLogger<JobsExecutionTaskHandler>.Instance
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(_EmptyRegistry)
         );
 
         var context = new JobExecutionState
@@ -1272,7 +1274,8 @@ public sealed class RetryBehaviorTests : TestBase
                 LeaseDuration = TimeSpan.FromMinutes(5),
                 LeaseRenewalInterval = TimeSpan.FromMilliseconds(100),
             },
-            NullLogger<JobsExecutionTaskHandler>.Instance
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(_EmptyRegistry)
         );
 
         var context = new JobExecutionState
@@ -1326,7 +1329,8 @@ public sealed class RetryBehaviorTests : TestBase
                 LeaseDuration = TimeSpan.FromMinutes(5),
                 LeaseRenewalInterval = TimeSpan.FromMilliseconds(20),
             },
-            NullLogger<JobsExecutionTaskHandler>.Instance
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(_EmptyRegistry)
         );
         var context = new JobExecutionState
         {
@@ -1381,7 +1385,8 @@ public sealed class RetryBehaviorTests : TestBase
             _EmptyRegistry,
             new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
-            logger
+            logger,
+            new JobsFunctionTagBound(_EmptyRegistry)
         );
 
         var invoked = false;
@@ -1463,7 +1468,8 @@ public sealed class RetryBehaviorTests : TestBase
                 LeaseDuration = TimeSpan.FromMinutes(5),
                 LeaseRenewalInterval = TimeSpan.FromMilliseconds(20),
             },
-            logger
+            logger,
+            new JobsFunctionTagBound(_EmptyRegistry)
         );
 
         var context = new JobExecutionState
@@ -1521,7 +1527,8 @@ public sealed class RetryBehaviorTests : TestBase
                 LeaseDuration = TimeSpan.FromMilliseconds(250),
                 LeaseRenewalInterval = TimeSpan.FromMilliseconds(40),
             },
-            NullLogger<JobsExecutionTaskHandler>.Instance
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(_EmptyRegistry)
         );
 
         var context = new JobExecutionState
@@ -1583,7 +1590,8 @@ public sealed class RetryBehaviorTests : TestBase
             _EmptyRegistry,
             new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
-            logger
+            logger,
+            new JobsFunctionTagBound(_EmptyRegistry)
         );
 
         var context = new JobExecutionState
@@ -1692,6 +1700,7 @@ public sealed class RetryBehaviorTests : TestBase
             new JobsExecutionCancellationRegistry(),
             schedulerOptions ?? new SchedulerOptionsBuilder(),
             logger ?? NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(functionRegistry ?? _EmptyRegistry),
             retryOptions
         );
 

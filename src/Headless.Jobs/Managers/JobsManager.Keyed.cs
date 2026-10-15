@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Jobs.Internal;
 using Headless.UnitOfWork;
 
 namespace Headless.Jobs.Managers;
@@ -24,10 +25,15 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         JobIntentFingerprint.RejectOrdinaryMutation(entity);
         JobIntentFingerprint.Validate(entity);
         var coordinated = _TryCaptureCoordinatedContext(unitOfWork, entity.Function, requireSavepoints: true);
+
+        // A supersede writes a new generation row from this entity, so the superseding call's context replaces the
+        // old one: the new schedule is the cause of the run that follows.
+        using var scheduleActivity = JobsDiagnostics.StartSchedule(JobType.TimeJob, entity.Function);
+        var traceParent = JobTraceParent.Capture(scheduleActivity);
         var now = timeProvider.GetUtcNow();
-        _StampTimeJobTree(entity, now, assignIds: true);
+        _StampTimeJobTree(entity, now, assignIds: true, traceParent);
         await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
-        _StampTimeJobTree(entity, now, assignIds: false);
+        _StampTimeJobTree(entity, now, assignIds: false, traceParent);
         _ResolveChainTenants(entity);
         if (!_functionRegistry.Functions.ContainsKey(entity.Function))
         {

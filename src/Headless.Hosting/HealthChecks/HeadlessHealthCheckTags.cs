@@ -28,4 +28,7 @@ public static class HeadlessHealthCheckTags
 
     /// <summary>Marks a check that probes a blob store.</summary>
     public const string Blobs = "blobs";
+
+    /// <summary>Marks a check that reports whether a Jobs host can run jobs: its activation, scheduler, or job store.</summary>
+    public const string Jobs = "jobs";
 }
