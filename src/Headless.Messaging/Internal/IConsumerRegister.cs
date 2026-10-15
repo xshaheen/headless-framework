@@ -1403,6 +1403,9 @@ internal sealed partial class ConsumerRegister(
                 _connectivity.ReportBrokerSuccess();
                 _logger.TransportBrokerReachable(reason);
                 break;
+            case MqLogType.SettlementFailed:
+                _logger.TransportSettlementFailed(reason);
+                break;
             default:
                 throw new InvalidOperationException($"Unknown {nameof(MqLogType)}={logMessage.LogType}");
         }

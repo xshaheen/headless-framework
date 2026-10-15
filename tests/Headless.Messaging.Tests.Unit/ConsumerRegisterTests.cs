@@ -1043,6 +1043,36 @@ public sealed class ConsumerRegisterTests : TestBase
         logs.Single(entry => entry.EventId.Id is 4114 or 4115).EventId.Id.Should().Be(4115);
     }
 
+    [Fact]
+    public async Task should_log_a_transport_settlement_failure_as_a_warning()
+    {
+        // given
+        var logs = new List<(LogLevel Level, EventId EventId, string Message)>();
+        await using var provider = _CreateProvider(
+            configureMessaging: setup => setup.AddConsumer<BootstrapReadyConsumer>(),
+            configureServices: services =>
+                services
+                    .ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"))
+                    .AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs))
+        );
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        await using var client = new InboxConsumerClient();
+        var serializer = provider.GetRequiredService<Headless.Messaging.IMessageSerializer>();
+        var dispatcher = provider.GetRequiredService<IDispatcher>();
+        _AttachInboxProcessor(provider, register, client, dispatcher, serializer);
+
+        // when
+        client.OnLogCallback!(
+            new LogMessageEventArgs { LogType = MqLogType.SettlementFailed, Reason = "ack lost: channel closed" }
+        );
+
+        // then: a lost ack is redelivered and deduplicated, so it is a warning for an operator, not an error
+        logs.Should()
+            .ContainSingle(entry => entry.Message.Contains("ack lost: channel closed", StringComparison.Ordinal))
+            .Which.Level.Should()
+            .Be(LogLevel.Warning);
+    }
+
     // --- Receive middleware ring (outcome table) ---------------------------------------------------------
 
     private sealed record ReceiveRingTestRun(

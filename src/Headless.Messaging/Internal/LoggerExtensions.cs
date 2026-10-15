@@ -436,6 +436,16 @@ internal static partial class LoggerExtensions
     [LoggerMessage(EventId = 55, Level = LogLevel.Warning, Message = "Transport configuration warning. --> {Reason}")]
     public static partial void TransportConfigurationWarning(this ILogger logger, string reason);
 
+    // Warning, not Error: the broker redelivers an unsettled message and the inbox deduplicates the redelivery, so no
+    // message is lost, but repeated failures mean duplicate work and a broker connection worth checking.
+    [LoggerMessage(
+        EventId = 4120,
+        EventName = "TransportSettlementFailed",
+        Level = LogLevel.Warning,
+        Message = "Transport could not settle a delivery with the broker; the broker will redeliver it. --> {Reason}"
+    )]
+    public static partial void TransportSettlementFailed(this ILogger logger, string reason);
+
     [LoggerMessage(
         EventId = 122,
         EventName = "TransportBrokerUnreachable",
