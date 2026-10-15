@@ -8,7 +8,7 @@ namespace Headless.UnitOfWork.Internal;
 
 /// <summary>
 /// The SQLite half of <see cref="RelationalTransientFaults" />. <c>Microsoft.Data.Sqlite</c> reports a busy database
-/// as <c>SqliteException</c> with <see cref="DbException.IsTransient" /> false, so the result code is read from its
+/// as <c>SqliteException</c> with <c>DbException.IsTransient</c> false, so the result code is read from its
 /// <c>SqliteErrorCode</c> property, by reflection because this package references no driver.
 /// </summary>
 /// <remarks>
