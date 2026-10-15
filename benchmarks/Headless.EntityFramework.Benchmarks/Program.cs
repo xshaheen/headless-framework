@@ -10,5 +10,5 @@ if (args.Contains("--save-pipeline-probe", StringComparer.Ordinal))
 }
 
 BenchmarkSwitcher
-    .FromTypes([typeof(NavigationTrackingBenchmarks), typeof(SavePipelineBenchmarks), typeof(AuditedInsertBenchmarks)])
+    .FromTypes([typeof(SavePipelineBenchmarks), typeof(AuditedInsertBenchmarks)])
     .Run(args, BenchmarkRunConfig.Create());

@@ -119,7 +119,7 @@ Custom processors registered via `options.AddSaveEntryProcessor<TProcessor>(Serv
 
 An audited save issues one database save when every audit row's entity id is known at capture: inserts with client-assigned keys (such as the Guid keys the value generators produce at `Add`), updates, and deletes. Audit rows for inserts whose key the store generates (identity, sequence, database default) follow in a second save once the key exists. `SaveChanges` returns the count of the caller's rows only; audit rows are never counted. This applies only to a store that adds rows to the saving context (`IAuditLogStore.AddsToSavingContext`, true for the EF store); the raw ADO.NET stores still write after the entity save succeeds.
 
-`HeadlessDbContextOptions.TrackNavigationChanges` (default `false`) turns on a per-context record of entities that changed only through a collection navigation. It costs an identity lookup, a lock, and navigation copies for every tracked `IEntity`, about 13 MB of extra allocation per 10,000-row tracking query, and the save pipeline does not read it. Set it before the first context is created; a context built without the application service provider keeps it off.
+EF Core leaves a principal `Unchanged` when only its navigations change (a child added to or removed from a collection); the framework does not track that case, so no update stamp, audit row, or `EntityUpdated` event is raised for the principal itself. The child rows carry their own.
 
 The full save-transaction order within a `HeadlessDbContext` pipeline-owned transaction is:
 

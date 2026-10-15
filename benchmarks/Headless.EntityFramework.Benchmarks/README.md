@@ -1,15 +1,13 @@
 # Headless EntityFramework benchmarks
 
-Measures the cost of the EF save pipeline and change-tracker handlers: a 10k-row tracking query with the
-navigation-change tracker off and on, one audited save among 1,000 unchanged tracked entities, and audited inserts of
-1, 10, and 100 rows.
+Measures the cost of the EF save pipeline: one audited save among 1,000 unchanged tracked entities, and audited
+inserts of 1, 10, and 100 rows.
 
 The database is in-memory SQLite, so absolute times exclude network and server cost. Compare the relative cost of the
 framework's own work between runs, not production latency.
 
 ```bash
 make bench BENCH_AREA=EntityFramework
-make bench BENCH_AREA=EntityFramework BENCH_FILTER='*NavigationTracking*'
 dotnet run -c Release --project benchmarks/Headless.EntityFramework.Benchmarks -- --save-pipeline-probe
 ```
 

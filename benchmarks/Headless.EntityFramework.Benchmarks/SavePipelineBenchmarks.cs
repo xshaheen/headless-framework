@@ -26,7 +26,7 @@ public class SavePipelineBenchmarks
     [GlobalSetup]
     public async Task Setup()
     {
-        _host = new BenchmarkHost(trackNavigationChanges: false);
+        _host = new BenchmarkHost();
         _scope = _host.CreateScope();
         _db = _scope.ServiceProvider.GetRequiredService<BenchmarkDbContext>();
 
@@ -72,7 +72,7 @@ public class AuditedInsertBenchmarks
     public int Rows { get; set; }
 
     [GlobalSetup]
-    public void Setup() => _host = new BenchmarkHost(trackNavigationChanges: false);
+    public void Setup() => _host = new BenchmarkHost();
 
     [GlobalCleanup]
     public void Cleanup() => _host.Dispose();

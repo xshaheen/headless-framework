@@ -2,7 +2,6 @@
 
 using System.Reflection;
 using Headless.Domain;
-using Headless.EntityFramework.ChangeTrackers;
 using Headless.EntityFramework.Contexts;
 using Headless.MultiTenancy;
 using Headless.UnitOfWork;
@@ -19,7 +18,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.EntityFramework;
 
 /// <summary>
-/// Per-<see cref="DbContext"/> runtime that wires the navigation-change tracker and the tenant stamp, runs
+/// Per-<see cref="DbContext"/> runtime that wires the tenant stamp, runs
 /// framework conventions in <c>OnModelCreating</c>, and forwards <c>SaveChanges</c> to the
 /// <see cref="IHeadlessSaveChangesPipeline"/> of the context's current service binding.
 /// </summary>
@@ -75,31 +74,10 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     {
         // Attached in the constructor so EF's pool snapshot captures them and SetLease restores them on every lease;
         // handlers attached later would be dropped by the next lease. The tenant stamp is always attached and checks
-        // the write-guard option when it fires, because the option is not known until a provider is bound. The
-        // navigation tracker is attached only when enabled: the application provider is fixed for the instance's life,
-        // so deciding here is as final as deciding per lease would be.
-        if (_IsNavigationTrackingEnabled())
-        {
-            var tracker = new HeadlessEntityFrameworkNavigationModifiedTracker();
-            NavigationModifiedTracker = tracker;
-            _db.ChangeTracker.Tracked += tracker.ChangeTrackerTracked;
-            _db.ChangeTracker.StateChanged += tracker.ChangeTrackerStateChanged;
-        }
-
+        // the write-guard option when it fires, because the option is not known until a provider is bound.
         _db.ChangeTracker.Tracking += _OnTracking;
         _db.ChangeTracker.StateChanging += _OnStateChanging;
     }
-
-    /// <summary>The navigation-change tracker, or <see langword="null"/> when navigation tracking is off.</summary>
-    internal HeadlessEntityFrameworkNavigationModifiedTracker? NavigationModifiedTracker { get; private set; }
-
-    // Best effort: a context built without an application provider cannot read the option and keeps tracking off,
-    // whereas the lazy provider lookup used for scoped collaborators throws.
-    private bool _IsNavigationTrackingEnabled() =>
-        _db.GetService<IDbContextOptions>()
-            .FindExtension<CoreOptionsExtension>()
-            ?.ApplicationServiceProvider?.GetService<HeadlessDbContextOptions>()
-            ?.TrackNavigationChanges == true;
 
     /// <summary>The ambient tenant, read on every access so a tenant change inside one lease is observed.</summary>
     public string? TenantId => (_currentTenant ??= _SingletonServices().GetRequiredService<ICurrentTenant>()).Id;
@@ -202,7 +180,6 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
         _pipeline = null;
         _currentTenant = null;
         _guardOptions = null;
-        NavigationModifiedTracker?.Clear();
 
         return ownedScope;
     }
@@ -293,30 +270,14 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
         CancellationToken cancellationToken
     )
     {
-        try
-        {
-            return await _GetPipeline()
-                .SaveChangesAsync(_db, baseSaveChangesAsync, acceptAllChangesOnSuccess, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            // Run cleanup on both success and failure paths so a thrown CrossTenantWriteException
-            // (or any other pipeline failure) does not leak stale modified-entry tracking state.
-            NavigationModifiedTracker?.RemoveModifiedEntityEntries();
-        }
+        return await _GetPipeline()
+            .SaveChangesAsync(_db, baseSaveChangesAsync, acceptAllChangesOnSuccess, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public int SaveChanges(Func<bool, int> baseSaveChanges, bool acceptAllChangesOnSuccess)
     {
-        try
-        {
-            return _GetPipeline().SaveChanges(_db, baseSaveChanges, acceptAllChangesOnSuccess);
-        }
-        finally
-        {
-            NavigationModifiedTracker?.RemoveModifiedEntityEntries();
-        }
+        return _GetPipeline().SaveChanges(_db, baseSaveChanges, acceptAllChangesOnSuccess);
     }
 
     /// <summary>

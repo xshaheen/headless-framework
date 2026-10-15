@@ -51,43 +51,6 @@ public sealed class HeadlessDbContextPoolingTests : TestBase
         act.Should().Throw<MissingTenantContextException>();
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task should_attach_the_navigation_tracker_only_when_enabled_and_keep_it_across_leases(bool enabled)
-    {
-        // given
-        await using var connection = new SqliteConnection("Data Source=:memory:");
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddHeadlessDbContextPool<FactoryTestDbContext>(
-            options => options.UseSqlite(connection),
-            options => options.TrackNavigationChanges = enabled,
-            poolSize: 1
-        );
-        await using var provider = services.BuildServiceProvider(validateScopes: true);
-        var factory = provider.GetRequiredService<IDbContextFactory<FactoryTestDbContext>>();
-
-        // when — lease, return, and lease again: EF restores only the handlers its first-lease snapshot captured
-        FactoryTestDbContext first;
-        await using (first = await factory.CreateDbContextAsync(AbortToken)) { }
-
-        await using var second = await factory.CreateDbContextAsync(AbortToken);
-
-        // then
-        second.Should().BeSameAs(first);
-        var tracker = ((IHeadlessDbContextRuntimeOwner)second).Runtime.NavigationModifiedTracker;
-
-        if (enabled)
-        {
-            tracker.Should().NotBeNull();
-        }
-        else
-        {
-            tracker.Should().BeNull();
-        }
-    }
-
     [Fact]
     public async Task should_open_a_private_scope_only_when_a_scoped_collaborator_is_needed()
     {

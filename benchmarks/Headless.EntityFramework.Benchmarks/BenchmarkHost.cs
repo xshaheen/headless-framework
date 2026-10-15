@@ -61,7 +61,7 @@ internal sealed class BenchmarkHost : IDisposable
     private readonly string? _postgresDatabase;
     private readonly ServiceProvider _provider;
 
-    public BenchmarkHost(bool trackNavigationChanges)
+    public BenchmarkHost()
     {
         string? postgres = null;
 
@@ -81,16 +81,14 @@ internal sealed class BenchmarkHost : IDisposable
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessDbContext<BenchmarkDbContext>(
-            options =>
-                (postgres is null ? options.UseSqlite(_connection) : options.UseNpgsql(postgres)).LogTo(
-                    (id, _) =>
-                        id == CoreEventId.DetectChangesStarting
-                        || id == CoreEventId.SaveChangesStarting
-                        || id == RelationalEventId.CommandExecuted,
-                    data => Counter.Log(data.EventId)
-                ),
-            headless => headless.TrackNavigationChanges = trackNavigationChanges
+        services.AddHeadlessDbContext<BenchmarkDbContext>(options =>
+            (postgres is null ? options.UseSqlite(_connection) : options.UseNpgsql(postgres)).LogTo(
+                (id, _) =>
+                    id == CoreEventId.DetectChangesStarting
+                    || id == CoreEventId.SaveChangesStarting
+                    || id == RelationalEventId.CommandExecuted,
+                data => Counter.Log(data.EventId)
+            )
         );
         services.AddHeadlessAuditLog(setup => setup.UseEntityFramework<BenchmarkDbContext>());
         _provider = services.BuildServiceProvider();

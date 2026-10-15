@@ -14,7 +14,7 @@ internal static class SavePipelineProbe
 {
     public static async Task RunAsync()
     {
-        using (var host = new BenchmarkHost(trackNavigationChanges: false))
+        using (var host = new BenchmarkHost())
         {
             await using var scope = host.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<BenchmarkDbContext>();
@@ -47,7 +47,7 @@ internal static class SavePipelineProbe
 
         foreach (var rows in new[] { 1, 10, 100 })
         {
-            using var host = new BenchmarkHost(trackNavigationChanges: false);
+            using var host = new BenchmarkHost();
             await using var scope = host.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<BenchmarkDbContext>();
 
