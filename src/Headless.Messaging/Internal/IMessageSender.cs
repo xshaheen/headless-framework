@@ -199,9 +199,37 @@ internal sealed class MessageSender : IMessageSender
         publishCts.CancelAfter(_options.TransportPublishTimeout);
         OperateResult result;
 
+        // Slides the lease forward while the send runs, so a send that outlasts DispatchTimeout keeps its row.
+        var renewal = _StartLeaseRenewal(message, publishCts.Token);
         try
         {
-            result = await transport.SendAsync(transportMsg, publishCts.Token).ConfigureAwait(false);
+            try
+            {
+                result = await transport.SendAsync(transportMsg, renewal.AttemptToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                // The state write below fences on the lease identity, which a renewal in flight could still move.
+                await renewal.StopAsync().ConfigureAwait(false);
+            }
+
+            renewal.ThrowIfLost();
+        }
+        catch (Exception ex) when (renewal.IsLost)
+        {
+            // Another node may own the row now, so the attempt writes nothing: any write would carry a lease identity
+            // the row no longer has. The broker may still have taken the send, so the row's next dispatch can duplicate
+            // it, as after a crash at this point.
+            MessagingTelemetry.PublishAmbiguous(
+                traceHandle.Activity,
+                transportMsg,
+                brokerAddress,
+                ex,
+                traceHandle.ElapsedMs(_NowMs()),
+                message.Lane
+            );
+
+            return MessagingRetryAttempt.Completed(OperateResult.Failed(ex));
         }
         catch (OperationCanceledException ex)
         {
@@ -246,6 +274,10 @@ internal sealed class MessageSender : IMessageSender
             // path below; the exception then propagates unchanged.
             _TracingError(traceHandle, transportMsg, message.Lane, brokerAddress, OperateResult.Failed(ex));
             throw;
+        }
+        finally
+        {
+            await renewal.DisposeAsync().ConfigureAwait(false);
         }
 
         if (result.Succeeded)
@@ -296,6 +328,19 @@ internal sealed class MessageSender : IMessageSender
         {
             _connectivity.ReportBrokerFailure();
         }
+    }
+
+    private MessageLeaseRenewal _StartLeaseRenewal(MediumMessage message, CancellationToken cancellationToken)
+    {
+        return MessageLeaseRenewal.Start(
+            message,
+            _StorageOf(message).RenewPublishLeaseAsync,
+            _retryPolicy.DispatchTimeout,
+            _retryPolicy.ResolveLeaseRenewalInterval(),
+            _timeProvider,
+            _logger,
+            cancellationToken
+        );
     }
 
     private async Task<(ITransport? Transport, OperateResult? Result)> _ResolveTransportAsync(

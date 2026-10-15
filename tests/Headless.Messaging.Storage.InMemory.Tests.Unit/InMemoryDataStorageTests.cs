@@ -1197,7 +1197,8 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         var staleLockedUntil = message.LockedUntil;
         var staleOwner = message.Owner;
 
-        _fakeTimeProvider!.Advance(lease);
+        // The reservation re-stamped the lease, so the replacement waits out the reserved lease, not the first one.
+        _fakeTimeProvider!.Advance(staleLockedUntil!.Value - _fakeTimeProvider.GetUtcNow());
         NodeMembership.SetIdentity("owner-b");
         (await storage.LeasePublishAsync(message, lease, AbortToken)).Should().BeTrue();
         message.LockedUntil = staleLockedUntil;
@@ -1233,7 +1234,8 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         var staleLockedUntil = message.LockedUntil;
         var staleOwner = message.Owner;
 
-        _fakeTimeProvider!.Advance(lease);
+        // The reservation re-stamped the lease, so the replacement waits out the reserved lease, not the first one.
+        _fakeTimeProvider!.Advance(staleLockedUntil!.Value - _fakeTimeProvider.GetUtcNow());
         NodeMembership.SetIdentity("owner-b");
         (await storage.LeaseReceiveAsync(message, lease, AbortToken)).Should().BeTrue();
         message.LockedUntil = staleLockedUntil;
@@ -1402,6 +1404,30 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     public override Task should_stamp_owner_on_claim()
     {
         return base.should_stamp_owner_on_claim();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_restamp_the_lease_when_an_attempt_is_reserved_late_in_a_claimed_batch(bool published)
+    {
+        return base.should_restamp_the_lease_when_an_attempt_is_reserved_late_in_a_claimed_batch(published);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_renew_only_the_live_lease_generation_the_caller_holds(bool published)
+    {
+        return base.should_renew_only_the_live_lease_generation_the_caller_holds(published);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_not_renew_a_lease_that_lapsed_and_another_node_took(bool published)
+    {
+        return base.should_not_renew_a_lease_that_lapsed_and_another_node_took(published);
     }
 
     [Fact]

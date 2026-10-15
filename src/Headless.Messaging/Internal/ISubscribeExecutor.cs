@@ -352,106 +352,158 @@ internal sealed class SubscribeExecutor(
                 .ConfigureAwait(false);
         }
 
+        // Slides the lease forward while the handler runs, so a handler that outlasts DispatchTimeout keeps its row.
+        MessageLeaseRenewal? renewal = null;
         try
         {
-            logger.ConsumerExecuting(
-                descriptor.ConsumerType.Name,
-                descriptor.MethodName,
-                descriptor.ResolvedConsumerIdentity
-            );
-
-            var startedAt = Stopwatch.GetTimestamp();
-
-            if (message.InboxKey is not null && _options.MinimumInboxGuarantee is InboxGuarantee.Transactional)
+            try
             {
-                message.ExpiresAt = timeProvider.GetUtcNow().AddSeconds(_options.SucceedMessageExpiredAfter);
-                // The runner and consumer must share the same DbContext, alive until commit or rollback.
-                await using var attemptScope = dispatchServices.CreateAsyncScope();
-                var attemptServices = attemptScope.ServiceProvider;
-                var middlewareRegistry = attemptServices.GetService<IMiddlewareDescriptorRegistry>();
-                var propagateTenant =
-                    descriptor.MessageType is { } messageType
-                    && middlewareRegistry is not null
-                    && middlewareRegistry.TryGetConsumeDescriptors(
-                        messageType,
-                        descriptor.Lane,
-                        out var middlewareDescriptors
-                    )
-                    && middlewareDescriptors.Any(m => m.MiddlewareType == typeof(TenantPropagationConsumeMiddleware));
-
-                // Tenant-aware services can read the tenant at resolution, and auto-save runs after consume middleware.
-                using var tenantScope = propagateTenant
-                    ? TenantContextScope.ChangeFromEnvelope(attemptServices, message.Origin, logger)
-                    : null;
-                var transactionRunner = attemptServices.GetRequiredService<IInboxTransactionRunner>();
-                await transactionRunner
-                    .ExecuteAsync(
-                        message,
-                        // The transactional tier binds the reply to the unit's commit, so the attempt returns none here.
-                        async (unitOfWork, ct) =>
-                        {
-                            _ = await _InvokeConsumerMethodAsync(message, descriptor, attemptServices, unitOfWork, ct)
-                                .ConfigureAwait(false);
-                        },
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-                executionState?.RecordLeaseTransition(affected: true, lockedUntil: null);
-                await _ReportSuccessfulStateAsync(message).ConfigureAwait(false);
-            }
-            else
-            {
-                var pendingReply = await _InvokeConsumerMethodAsync(
-                        message,
-                        descriptor,
-                        services: null,
-                        unitOfWork: null,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-                bool updated;
-                try
-                {
-                    updated = await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (!RetryHelper.IsCancellation(ex, cancellationToken))
-                {
-                    // The handler's work is done, so this is not a consumer failure: running it again inline,
-                    // exhausting the row, or counting it against the consumer's circuit would each misreport it.
-                    // The row stays as it was, and the retry pickup settles it once its lease is released or
-                    // expires; that may run the handler again, as after a crash at this point (at-least-once).
-                    logger.ConsumerSucceededButStateWriteFailed(ex, message.StorageId);
-                    await _ReportSuccessfulStateAsync(message).ConfigureAwait(false);
-                    return MessagingRetryAttempt.Completed(OperateResult.Failed(ex));
-                }
-
-                // Only the attempt whose success write took effect answers: a row another attempt already finished
-                // was answered, or failed, by that attempt.
-                if (updated && pendingReply is { } reply)
-                {
-                    await _SendReplyAsync(message, reply).ConfigureAwait(false);
-                }
-            }
-
-            _RecordInboxMetric(message, InboxMetricKind.Terminal, InboxMetricOutcome.Succeeded);
-
-            var elapsedMilliseconds = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
-
-            MessageEventCounterSource.Log.WriteInvokeTimeMetrics(elapsedMilliseconds);
-            if (logger.IsEnabled(LogLevel.Information))
-            {
-                var executionInstanceId = message.Origin.GetExecutionInstanceId();
-                logger.ConsumerExecuted(
+                logger.ConsumerExecuting(
                     descriptor.ConsumerType.Name,
                     descriptor.MethodName,
-                    descriptor.ResolvedConsumerIdentity,
-                    elapsedMilliseconds,
-                    executionInstanceId
+                    descriptor.ResolvedConsumerIdentity
                 );
-            }
 
-            return MessagingRetryAttempt.Completed(OperateResult.Success);
+                var startedAt = Stopwatch.GetTimestamp();
+
+                if (message.InboxKey is not null && _options.MinimumInboxGuarantee is InboxGuarantee.Transactional)
+                {
+                    message.ExpiresAt = timeProvider.GetUtcNow().AddSeconds(_options.SucceedMessageExpiredAfter);
+                    // The runner and consumer must share the same DbContext, alive until commit or rollback.
+                    await using var attemptScope = dispatchServices.CreateAsyncScope();
+                    var attemptServices = attemptScope.ServiceProvider;
+                    var middlewareRegistry = attemptServices.GetService<IMiddlewareDescriptorRegistry>();
+                    var propagateTenant =
+                        descriptor.MessageType is { } messageType
+                        && middlewareRegistry is not null
+                        && middlewareRegistry.TryGetConsumeDescriptors(
+                            messageType,
+                            descriptor.Lane,
+                            out var middlewareDescriptors
+                        )
+                        && middlewareDescriptors.Any(m =>
+                            m.MiddlewareType == typeof(TenantPropagationConsumeMiddleware)
+                        );
+
+                    // Tenant-aware services can read the tenant at resolution, and auto-save runs after consume middleware.
+                    using var tenantScope = propagateTenant
+                        ? TenantContextScope.ChangeFromEnvelope(attemptServices, message.Origin, logger)
+                        : null;
+                    var transactionRunner = attemptServices.GetRequiredService<IInboxTransactionRunner>();
+                    var leaseRenewal = renewal = _StartLeaseRenewal(message, cancellationToken);
+                    await transactionRunner
+                        .ExecuteAsync(
+                            message,
+                            // The transactional tier binds the reply to the unit's commit, so the attempt returns none here.
+                            async (unitOfWork, ct) =>
+                            {
+                                try
+                                {
+                                    _ = await _InvokeConsumerMethodAsync(
+                                            message,
+                                            descriptor,
+                                            attemptServices,
+                                            unitOfWork,
+                                            ct
+                                        )
+                                        .ConfigureAwait(false);
+                                }
+                                finally
+                                {
+                                    // The commit completes the inbox row fenced on the lease identity, which a renewal in
+                                    // flight could still move, so the renewal stops before it.
+                                    await leaseRenewal.StopAsync().ConfigureAwait(false);
+                                }
+
+                                // Rolls the unit back: another node may own the row now.
+                                leaseRenewal.ThrowIfLost();
+                            },
+                            leaseRenewal.AttemptToken
+                        )
+                        .ConfigureAwait(false);
+                    executionState?.RecordLeaseTransition(affected: true, lockedUntil: null);
+                    await _ReportSuccessfulStateAsync(message).ConfigureAwait(false);
+                }
+                else
+                {
+                    renewal = _StartLeaseRenewal(message, cancellationToken);
+                    var pendingReply = await _InvokeConsumerMethodAsync(
+                            message,
+                            descriptor,
+                            services: null,
+                            unitOfWork: null,
+                            renewal.AttemptToken
+                        )
+                        .ConfigureAwait(false);
+
+                    // The success write fences on the lease identity, which a renewal in flight could still move.
+                    await renewal.StopAsync().ConfigureAwait(false);
+                    renewal.ThrowIfLost();
+
+                    bool updated;
+                    try
+                    {
+                        updated = await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (!RetryHelper.IsCancellation(ex, cancellationToken))
+                    {
+                        // The handler's work is done, so this is not a consumer failure: running it again inline,
+                        // exhausting the row, or counting it against the consumer's circuit would each misreport it.
+                        // The row stays as it was, and the retry pickup settles it once its lease is released or
+                        // expires; that may run the handler again, as after a crash at this point (at-least-once).
+                        logger.ConsumerSucceededButStateWriteFailed(ex, message.StorageId);
+                        await _ReportSuccessfulStateAsync(message).ConfigureAwait(false);
+                        return MessagingRetryAttempt.Completed(OperateResult.Failed(ex));
+                    }
+
+                    // Only the attempt whose success write took effect answers: a row another attempt already finished
+                    // was answered, or failed, by that attempt.
+                    if (updated && pendingReply is { } reply)
+                    {
+                        await _SendReplyAsync(message, reply).ConfigureAwait(false);
+                    }
+                }
+
+                _RecordInboxMetric(message, InboxMetricKind.Terminal, InboxMetricOutcome.Succeeded);
+
+                var elapsedMilliseconds = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+
+                MessageEventCounterSource.Log.WriteInvokeTimeMetrics(elapsedMilliseconds);
+                if (logger.IsEnabled(LogLevel.Information))
+                {
+                    var executionInstanceId = message.Origin.GetExecutionInstanceId();
+                    logger.ConsumerExecuted(
+                        descriptor.ConsumerType.Name,
+                        descriptor.MethodName,
+                        descriptor.ResolvedConsumerIdentity,
+                        elapsedMilliseconds,
+                        executionInstanceId
+                    );
+                }
+
+                return MessagingRetryAttempt.Completed(OperateResult.Success);
+            }
+            finally
+            {
+                // Every state write below fences on the lease identity, which a renewal in flight could still move.
+                if (renewal is not null)
+                {
+                    await renewal.StopAsync().ConfigureAwait(false);
+                }
+            }
+        }
+        catch (Exception ex) when (renewal is { IsLost: true })
+        {
+            // Another node may own the row now, so the attempt writes nothing: any write would carry a lease identity
+            // the row no longer has. The row is recovered like a crashed attempt.
+            logger.ConsumerExecuteFailed(
+                ex,
+                LogSanitizer.Sanitize(message.Origin.Name),
+                message.StorageId,
+                message.Origin.GetExecutionInstanceId()
+            );
+            _ReleaseHalfOpenProbe(message);
+            return MessagingRetryAttempt.Completed(OperateResult.Failed(ex));
         }
         catch (Exception ex)
             when (ex
@@ -528,6 +580,26 @@ internal sealed class SubscribeExecutor(
 
             return MessagingRetryAttempt.Retryable(OperateResult.Failed(ex));
         }
+        finally
+        {
+            if (renewal is not null)
+            {
+                await renewal.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    private MessageLeaseRenewal _StartLeaseRenewal(MediumMessage message, CancellationToken cancellationToken)
+    {
+        return MessageLeaseRenewal.Start(
+            message,
+            dataStorage.RenewReceiveLeaseAsync,
+            _retryPolicy.DispatchTimeout,
+            _retryPolicy.ResolveLeaseRenewalInterval(),
+            timeProvider,
+            logger,
+            cancellationToken
+        );
     }
 
     private async ValueTask<bool> _SetSuccessfulState(MediumMessage message, RetryExecutionState? executionState)

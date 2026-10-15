@@ -378,6 +378,22 @@ internal static partial class LoggerExtensions
     )]
     public static partial void ReplayedRequestRunsWithoutCaller(this ILogger logger, Guid storageId, long generation);
 
+    [LoggerMessage(
+        EventId = 4121,
+        EventName = "MessageLeaseRenewalFailed",
+        Level = LogLevel.Warning,
+        Message = "Renewing the lease on message {StorageId} failed; the attempt is cancelled because the lease can no longer be vouched for."
+    )]
+    public static partial void MessageLeaseRenewalFailed(this ILogger logger, Exception exception, Guid storageId);
+
+    [LoggerMessage(
+        EventId = 4122,
+        EventName = "MessageLeaseLost",
+        Level = LogLevel.Warning,
+        Message = "The lease on message {StorageId} was lost while its attempt ran; the attempt is cancelled and writes no state, and the row is recovered like a crashed attempt."
+    )]
+    public static partial void MessageLeaseLost(this ILogger logger, Guid storageId);
+
     [LoggerMessage(EventId = 42, Level = LogLevel.Warning, Message = "RabbitMQ consumer cancelled. --> {Reason}")]
     public static partial void RabbitMqConsumerCancelled(this ILogger logger, string reason);
 

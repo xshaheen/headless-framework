@@ -123,6 +123,27 @@ public sealed class RetryPolicyOptions
     public TimeSpan DispatchTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
+    /// Gets or sets how often a running publish or consume attempt slides its lease forward, so an attempt that runs
+    /// longer than <see cref="DispatchTimeout"/> keeps its row and is not dispatched a second time on another node.
+    /// <see langword="null"/> (the default) renews every third of <see cref="DispatchTimeout"/>, so a single missed
+    /// renewal cannot let the lease lapse.
+    /// </summary>
+    /// <remarks>
+    /// Each renewal re-stamps <c>LockedUntil</c> to the store's clock plus <see cref="DispatchTimeout"/> and is fenced on
+    /// the lease the attempt holds. A renewal that finds the lease gone, or that the store does not confirm within one
+    /// interval, cancels the attempt's token and the attempt writes no state; the row is then recovered like a crashed
+    /// attempt. <see cref="DispatchTimeout"/> now sizes how long a stalled attempt keeps its row, not how long a healthy
+    /// attempt may run. An explicit value must be greater than zero and less than <see cref="DispatchTimeout"/>.
+    /// </remarks>
+    public TimeSpan? LeaseRenewalInterval { get; set; }
+
+    /// <summary>The effective renewal cadence: <see cref="LeaseRenewalInterval"/>, or a third of <see cref="DispatchTimeout"/>.</summary>
+    internal TimeSpan ResolveLeaseRenewalInterval()
+    {
+        return LeaseRenewalInterval ?? TimeSpan.FromTicks(DispatchTimeout.Ticks / 3);
+    }
+
+    /// <summary>
     /// Gets or sets the upper bound on how long the framework will await the
     /// <see cref="OnExhausted"/> callback before logging a timeout and continuing.
     /// Default is 30 seconds.
@@ -161,6 +182,7 @@ public sealed class RetryPolicyOptions
         target.MaxPersistedRetries = MaxPersistedRetries;
         target.InitialDispatchGrace = InitialDispatchGrace;
         target.DispatchTimeout = DispatchTimeout;
+        target.LeaseRenewalInterval = LeaseRenewalInterval;
         target.OnExhausted = OnExhausted;
         target.OnExhaustedTimeout = OnExhaustedTimeout;
     }
@@ -250,6 +272,14 @@ internal sealed class RetryPolicyOptionsValidator : AbstractValidator<RetryPolic
             .WithMessage("DispatchTimeout must be greater than zero.")
             .LessThanOrEqualTo(TimeSpan.FromHours(1))
             .WithMessage("DispatchTimeout must not exceed 1 hour.");
+        RuleFor(x => x.LeaseRenewalInterval)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("LeaseRenewalInterval must be greater than zero.")
+            .LessThan(x => x.DispatchTimeout)
+            .WithMessage(
+                "LeaseRenewalInterval must be less than DispatchTimeout, so a renewal lands before the lease ends."
+            )
+            .When(x => x.LeaseRenewalInterval is not null);
         RuleFor(x => x.OnExhaustedTimeout)
             .GreaterThan(TimeSpan.Zero)
             .WithMessage("OnExhaustedTimeout must be greater than zero.")
