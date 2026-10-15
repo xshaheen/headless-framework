@@ -138,7 +138,8 @@ public sealed class MessageLeaseRenewalTests : TestBase
             (_, _, _) =>
             {
                 Interlocked.Increment(ref _calls);
-                return ValueTask.FromResult(_outcomes.TryDequeue(out var outcome) ? outcome() : true);
+                // Once the scripted outcomes run out, every renewal confirms the lease.
+                return ValueTask.FromResult(!_outcomes.TryDequeue(out var outcome) || outcome());
             },
             policy,
             _clock,
