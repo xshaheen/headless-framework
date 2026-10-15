@@ -84,7 +84,9 @@ internal sealed class AmazonSqsQueueTransport(
                 Description = ex.Message,
             };
 
-            return OperateResult.Failed(wrapperEx, errors);
+            return AwsBrokerFailures.IsUnreachable(ex)
+                ? OperateResult.BrokerUnreachable(wrapperEx, errors)
+                : OperateResult.Failed(wrapperEx, errors);
         }
     }
 

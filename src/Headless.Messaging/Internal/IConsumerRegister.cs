@@ -1290,7 +1290,18 @@ internal sealed partial class ConsumerRegister(
         {
             client.AttachCallbacks(
                 (transportMessage, sender) =>
-                    _OnEveryInstanceMessageAsync(client, subscriptionKey, transportMessage, sender, hostShutdownToken),
+                {
+                    // A delivery proves the broker answers, so it ends any failure run, a sends' run included.
+                    _connectivity.ReportBrokerSuccess();
+
+                    return _OnEveryInstanceMessageAsync(
+                        client,
+                        subscriptionKey,
+                        transportMessage,
+                        sender,
+                        hostShutdownToken
+                    );
+                },
                 _WriteLog
             );
 
@@ -1299,14 +1310,18 @@ internal sealed partial class ConsumerRegister(
 
         client.AttachCallbacks(
             (transportMessage, sender) =>
-                _OnCompetingMessageAsync(
+            {
+                _connectivity.ReportBrokerSuccess();
+
+                return _OnCompetingMessageAsync(
                     client,
                     subscriptionKey,
                     clientHandle,
                     transportMessage,
                     sender,
                     hostShutdownToken
-                ),
+                );
+            },
             _WriteLog
         );
     }

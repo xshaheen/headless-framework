@@ -46,7 +46,11 @@ internal sealed class AzureServiceBusQueueTransport(
         }
         catch (Exception ex)
         {
-            return OperateResult.Failed(new PublisherSentFailedException(ex.Message, ex));
+            var failure = new PublisherSentFailedException(ex.Message, ex);
+
+            return AzureServiceBusFailures.IsUnreachable(ex)
+                ? OperateResult.BrokerUnreachable(failure)
+                : OperateResult.Failed(failure);
         }
     }
 

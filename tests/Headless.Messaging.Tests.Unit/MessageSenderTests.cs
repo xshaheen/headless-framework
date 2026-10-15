@@ -18,6 +18,31 @@ public sealed class MessageSenderTests : TestBase
 {
     private static readonly IServiceProvider _EmptyScope = new ServiceCollection().BuildServiceProvider();
 
+    // Four attempts of one message (three inline retries), each failing the way the transport is told to.
+    private MessageSender _CreateFailingSender(TransportConnectivity connectivity, Func<OperateResult> send)
+    {
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport.SendAsync(transportMessage, Arg.Any<CancellationToken>()).Returns(_ => Task.FromResult(send()));
+
+        return _CreateSender(
+            Substitute.For<IDataStorage>(),
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(3), MaxPersistedRetries = 0 },
+            },
+            connectivity: connectivity
+        );
+    }
+
     private static MediumMessage _CreateMediumMessage(MessageLane lane = MessageLane.Bus)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -238,7 +263,7 @@ public sealed class MessageSenderTests : TestBase
                 reachableAtEachSend.Add(connectivity.IsReachable);
                 return Task.FromResult(
                     reachableAtEachSend.Count <= 3
-                        ? OperateResult.Failed(new PublisherSentFailedException("connection refused"))
+                        ? OperateResult.BrokerUnreachable(new PublisherSentFailedException("connection refused"))
                         : OperateResult.Success
                 );
             });
@@ -261,6 +286,45 @@ public sealed class MessageSenderTests : TestBase
         result.Succeeded.Should().BeTrue();
         reachableAtEachSend.Should().Equal(true, true, true, false);
         connectivity.IsReachable.Should().BeTrue("the fourth send reached the broker");
+    }
+
+    [Fact]
+    public async Task should_stay_reachable_when_the_broker_refuses_every_send()
+    {
+        // given a broker that answers but refuses the message, as for a missing topic or an oversized message
+        var connectivity = new TransportConnectivity();
+        var sender = _CreateFailingSender(
+            connectivity,
+            () => OperateResult.Failed(new PublisherSentFailedException("topic not found"))
+        );
+
+        // when one message fails every inline retry
+        var result = await sender.SendAsync(_CreateMediumMessage());
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        connectivity.IsReachable.Should().BeTrue("a refused message says nothing about whether the broker is up");
+    }
+
+    [Fact]
+    public async Task should_count_a_thrown_socket_failure_toward_the_broker_being_unreachable()
+    {
+        // given a transport that throws a socket failure instead of returning a result
+        var connectivity = new TransportConnectivity();
+        var sender = _CreateFailingSender(
+            connectivity,
+            () => throw new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.ConnectionRefused)
+        );
+
+        // when - a throwing send propagates after one attempt, so three messages reach the threshold
+        for (var i = 0; i < TransportConnectivity.FailureThreshold; i++)
+        {
+            var send = () => sender.SendAsync(_CreateMediumMessage());
+            await send.Should().ThrowAsync<System.Net.Sockets.SocketException>();
+        }
+
+        // then
+        connectivity.IsReachable.Should().BeFalse();
     }
 
     [Fact]

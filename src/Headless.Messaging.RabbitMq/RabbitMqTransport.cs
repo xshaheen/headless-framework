@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Exceptions;
@@ -111,7 +112,9 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
                 Description = ex.Message,
             };
 
-            return OperateResult.Failed(wrapperEx, errors);
+            return IsBrokerUnreachable(ex)
+                ? OperateResult.BrokerUnreachable(wrapperEx, errors)
+                : OperateResult.Failed(wrapperEx, errors);
         }
         finally
         {
@@ -126,6 +129,22 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
     {
         Volatile.Write(ref _disposed, 1);
         return ValueTask.CompletedTask;
+    }
+
+    // A lost or refused connection counts; a channel the broker closed over this message (a missing exchange, a denied
+    // access) is a refusal, so it does not.
+    internal static bool IsBrokerUnreachable(Exception exception)
+    {
+        if (
+            exception is BrokerUnreachableException or ConnectFailureException
+            || BrokerFailures.IsConnectivity(exception)
+        )
+        {
+            return true;
+        }
+
+        return exception is OperationInterruptedException { ShutdownReason: { } reason }
+            && (reason.Initiator == ShutdownInitiator.Library || reason.ReplyCode == Constants.ConnectionForced);
     }
 }
 

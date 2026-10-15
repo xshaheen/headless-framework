@@ -4,6 +4,7 @@ using System.Diagnostics;
 using Headless.Checks;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Retry;
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -275,17 +276,23 @@ internal sealed class MessageSender : IMessageSender
             return MessagingRetryAttempt.Completed(OperateResult.Success);
         }
 
-        _ReportSendFailure(result.Exception);
+        // Only a failure that could not reach the broker counts: one message the broker refused says nothing about it.
+        if (result.IsBrokerUnreachable)
+        {
+            _connectivity.ReportBrokerFailure();
+        }
+
         _TracingError(traceHandle, transportMsg, message.Lane, brokerAddress, result);
 
         return MessagingRetryAttempt.Retryable(OperateResult.Failed(result.Exception!));
     }
 
     // Serialization and storage failures happen outside the transport call, so only what the transport itself failed
-    // reaches here. A transport disposed under a stopping host refuses the send without asking the broker.
-    private void _ReportSendFailure(Exception? exception)
+    // reaches here. A transport that throws instead of returning a result is judged by the failures all transports
+    // share; a transport disposed under a stopping host refuses the send without asking the broker.
+    private void _ReportSendFailure(Exception exception)
     {
-        if (exception is not ObjectDisposedException)
+        if (BrokerFailures.IsConnectivity(exception))
         {
             _connectivity.ReportBrokerFailure();
         }

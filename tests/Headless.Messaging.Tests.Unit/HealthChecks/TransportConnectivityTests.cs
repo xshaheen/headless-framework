@@ -163,6 +163,29 @@ public sealed class TransportConnectivityTests : TestBase
     }
 
     [Fact]
+    public async Task should_turn_reachable_when_a_message_is_delivered_after_send_failures()
+    {
+        // given a run of send failures that no consumer client reported
+        var factory = new ControlledClientFactory();
+        await using var provider = _CreateProvider(factory);
+        var register = provider.GetRequiredService<IConsumerRegister>();
+        var connectivity = provider.GetRequiredService<TransportConnectivity>();
+        await register.StartAsync(AbortToken);
+        for (var i = 0; i < TransportConnectivity.FailureThreshold; i++)
+        {
+            connectivity.ReportBrokerFailure();
+        }
+
+        // when a delivery arrives
+        await factory.LatestListeningClient.DeliverAsync();
+
+        // then
+        connectivity.IsReachable.Should().BeTrue("a delivered message proves the broker answers");
+
+        await register.DisposeAsync();
+    }
+
+    [Fact]
     public async Task should_stay_unreachable_across_restarts_while_the_broker_is_down()
     {
         var factory = new ControlledClientFactory();
@@ -351,6 +374,30 @@ public sealed class TransportConnectivityTests : TestBase
         public void Report(MqLogType logType)
         {
             OnLogCallback!(new LogMessageEventArgs { LogType = logType, Reason = "test" });
+        }
+
+        // Only the arrival matters here, so a message the consumer pipeline later rejects is fine.
+        public async Task DeliverAsync()
+        {
+            var message = new TransportMessage(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = Guid.NewGuid().ToString(),
+                    [Headers.MessageName] = "connectivity-probe",
+                },
+                ReadOnlyMemory<byte>.Empty
+            );
+
+            try
+            {
+                await OnMessageCallback!(message, arg2: null);
+            }
+#pragma warning disable CA1031 // False positive: the test asserts the arrival's effect, not how the pipeline handles the probe.
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+                // The probe has no valid body; the pipeline's handling of it is not under test.
+            }
         }
 
         // Only a listening client subscribes, and it does so before the register reports the start complete.
