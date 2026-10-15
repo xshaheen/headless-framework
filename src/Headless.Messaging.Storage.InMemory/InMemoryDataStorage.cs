@@ -1420,11 +1420,6 @@ internal sealed partial class InMemoryDataStorage(
         _ = MessageLaneCompatibility.ToPersistedValue(lane);
         var now = timeProvider.GetUtcNow();
         var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
-        // Only published rows are capped by the host-wide MaxPersistedRetries. A received row's budget belongs to its
-        // consumer's failure policy, which the executor checks after the claim, as the relational providers do.
-        int? maxPersistedRetries = ReferenceEquals(source, PublishedMessages)
-            ? messagingOptions.Value.RetryPolicy.MaxPersistedRetries
-            : null;
         var retryBatchSize = orphaned is true
             ? messagingOptions.Value.OrphanProbeBatchSize
             : messagingOptions.Value.RetryBatchSize;
@@ -1485,11 +1480,6 @@ internal sealed partial class InMemoryDataStorage(
                 }
 
                 if (candidate.Lane != lane)
-                {
-                    continue;
-                }
-
-                if (maxPersistedRetries is { } cap && candidate.Retries > cap)
                 {
                     continue;
                 }

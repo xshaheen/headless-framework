@@ -4206,15 +4206,13 @@ public abstract partial class DataStorageTestsBase : TestBase
             );
     }
 
-    public virtual async Task should_cap_published_retry_pickup_at_max_persisted_retries_and_leave_received_uncapped()
+    public virtual async Task should_claim_published_rows_past_max_persisted_retries_and_leave_received_uncapped()
     {
-        // given — the fixtures set MaxPersistedRetries = 4, which caps published rows only: `Retries <= 4`.
-        // Retries == 4 is the LAST allowed publish pickup (where the helper returns Exhausted on
-        // budget consumption). Retries == 5 represents the terminal state past the budget
-        // and must NOT be picked up. Total dispatches = (MaxPersistedRetries + 1) = 5.
+        // given — the fixtures set MaxPersistedRetries = 4. A published row at the cap still gets its last attempt, and
+        // a row past it (the cap was lowered after the row was scheduled) must still be claimed: the sender ends it as
+        // exhausted, so a claim filter on Retries would strand it forever, never exhausted and never purged.
         var storage = GetStorage();
 
-        // Boundary case 1 (published): Retries == MaxPersistedRetries → picked up.
         var atLimit = await storage.StoreMessageAsync(
             "max-retries-test-pub",
             CreateMessage(),
@@ -4228,13 +4226,12 @@ public abstract partial class DataStorageTestsBase : TestBase
             cancellationToken: AbortToken
         );
 
-        // Boundary case 2 (published): Retries == MaxPersistedRetries + 1 → NOT picked up.
         var aboveLimit = await storage.StoreMessageAsync(
             "above-retries-test-pub",
             CreateMessage(),
             cancellationToken: AbortToken
         );
-        aboveLimit.Retries = 5;
+        aboveLimit.Retries = 6;
         await storage.ChangePublishStateAsync(
             aboveLimit,
             StatusName.Failed,
@@ -4247,7 +4244,12 @@ public abstract partial class DataStorageTestsBase : TestBase
 
         // then
         retriable.Should().Contain(m => m.StorageId == atLimit.StorageId);
-        retriable.Should().NotContain(m => m.StorageId == aboveLimit.StorageId);
+        retriable
+            .Should()
+            .Contain(
+                m => m.StorageId == aboveLimit.StorageId && m.Retries == 6,
+                "a published row past the cap is claimed so the sender can end it"
+            );
 
         // A received row's budget is its consumer's failure policy, which only the executor knows: the claim must not
         // clip it at the publish cap, so a consumer with 20 delayed retries is still picked up for retry 16 and beyond.

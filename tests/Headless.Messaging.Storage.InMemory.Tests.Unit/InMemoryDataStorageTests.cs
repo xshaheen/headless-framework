@@ -1319,9 +1319,9 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
-    public override Task should_cap_published_retry_pickup_at_max_persisted_retries_and_leave_received_uncapped()
+    public override Task should_claim_published_rows_past_max_persisted_retries_and_leave_received_uncapped()
     {
-        return base.should_cap_published_retry_pickup_at_max_persisted_retries_and_leave_received_uncapped();
+        return base.should_claim_published_rows_past_max_persisted_retries_and_leave_received_uncapped();
     }
 
     [Fact]

@@ -121,6 +121,30 @@ internal static class RetryHelper
         return MessagingRetryAttempt.Retryable(OperateResult.Failed(overrunException), bypassClassification: true);
     }
 
+    /// <summary>
+    /// The publish-side counterpart of <see cref="DetectBudgetOverrun(int, ConsumeRetryBudget)"/>: detects a published
+    /// row whose <see cref="MediumMessage.Retries"/> already exceeds <paramref name="maxPersistedRetries"/>, typically
+    /// because the cap was lowered since the row was scheduled. Returns a synthetic retryable attempt (classification
+    /// bypassed) so the row ends through the same exhausted path as a spent budget, without a transport send;
+    /// <see langword="null"/> while the row is within the cap.
+    /// </summary>
+    public static MessagingRetryAttempt? DetectBudgetOverrun(int retries, int maxPersistedRetries)
+    {
+        if (retries <= maxPersistedRetries)
+        {
+            return null;
+        }
+
+        var overrunException = new InvalidOperationException(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"The message has used {retries} persisted retries, more than MaxPersistedRetries allows ({maxPersistedRetries})."
+            )
+        );
+
+        return MessagingRetryAttempt.Retryable(OperateResult.Failed(overrunException), bypassClassification: true);
+    }
+
     private static MessagingRetryAttempt _CrashRecoveredAttempt()
     {
         var recoveryException = new InvalidOperationException(

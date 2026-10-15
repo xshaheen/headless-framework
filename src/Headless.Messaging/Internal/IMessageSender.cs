@@ -151,8 +151,16 @@ internal sealed class MessageSender : IMessageSender
         // state-write predicates validate the stored lease identity and activity.
         var needsLease = message.LockedUntil is null;
 
-        var inlineRetries = message.InlineAttempts;
-        if (RetryHelper.DetectCrashRecoveredReservation(inlineRetries, _retryPolicy) is { } recoveryAttempt)
+        // A crashed dispatch that already reserved its final attempt must not run another; a row already past
+        // MaxPersistedRetries (the cap was lowered since it was scheduled) must not be sent at all. Both end through
+        // the retry decision without a transport send, so a lowered cap ends the row instead of stranding it.
+        if (
+            (
+                RetryHelper.DetectCrashRecoveredReservation(message.InlineAttempts, _retryPolicy)
+                ?? RetryHelper.DetectBudgetOverrun(message.Retries, _retryPolicy.MaxPersistedRetries)
+            ) is
+            { } recoveryAttempt
+        )
         {
             // The recovery transition still writes CAS-guarded state, which requires an active
             // lease — take a plain lease (no fresh reservation; the crashed reservation is spent).
@@ -416,8 +424,10 @@ internal sealed class MessageSender : IMessageSender
     )
     {
         var inlineRetries = Math.Max(0, message.InlineAttempts - 1);
+        // A row past the cap is exhausted whatever inline budget remains: its attempt reserved no inline slot, so
+        // continuing would re-enter the burst and persist another retry instead of ending the row.
         var decision =
-            strategyFailed ? MessagingRetryDecision.Exhausted
+            strategyFailed || message.Retries > _retryPolicy.MaxPersistedRetries ? MessagingRetryDecision.Exhausted
             : !_retryPolicy.HasMoreInlineAttempts(inlineRetries) && message.Retries >= _retryPolicy.MaxPersistedRetries
                 ? MessagingRetryDecision.Exhausted
             : MessagingRetryDecision.Continue(delay);
