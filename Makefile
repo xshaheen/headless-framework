@@ -76,10 +76,14 @@ TEST_TIMEOUT ?= 15m
 # MinVerSkip pins Version to the SDK default, so alternating a fast build with an analyzed one
 # rewrites the generated AssemblyInfo and recompiles the graph; stay on one or the other per session.
 FAST_BUILD_ARGS ?= -p:RunAnalyzers=false -p:MinVerSkip=true
-# Base ref for the affected-scope targets: the branch's upstream, else origin/main. Resolved once
-# per make invocation (a recursive `?=` would re-run git on every reference).
+# Base ref for the affected-scope targets: the branch's upstream when it is another branch (a stacked
+# branch tracking its parent), else origin/main. A branch's own pushed copy is never the base: once the
+# branch is pushed, diffing against it selects nothing, and every affected gate then passes with zero
+# tests. Resolved once per make invocation (a recursive `?=` would re-run git on every reference).
 ifeq ($(origin AFFECTED_BASE),undefined)
-AFFECTED_BASE := $(shell git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || echo origin/main)
+AFFECTED_UPSTREAM := $(shell git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)
+AFFECTED_OWN_COPY := origin/$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
+AFFECTED_BASE := $(or $(filter-out $(AFFECTED_OWN_COPY),$(AFFECTED_UPSTREAM)),origin/main)
 endif
 # Filter targets scope to one project when TEST_PROJECT is set and fall back to the whole solution.
 TEST_SCOPE_TARGET = $(if $(TEST_PROJECT),test-project,test)
@@ -438,7 +442,7 @@ hook-pre-push-message:
 # merge gate proves anyway. Run `make hook-build` by hand when you want that solution-wide compile
 # before pushing. Assumes `make bootstrap` already restored tools (no tool-restore in the hot path).
 .PHONY: hook-format-check
-hook-format-check: ## Git hook: CSharpier-check the C# files committed since AFFECTED_BASE (upstream, else origin/main).
+hook-format-check: ## Git hook: CSharpier-check the C# files committed since AFFECTED_BASE (a stacked branch's parent, else origin/main).
 	@$(FORMAT_CHANGED) committed
 
 # CSharpier costs ~60 ms per path argument and ~0.3 s per directory scan (measured: 80 files 4.5 s as
@@ -1079,7 +1083,7 @@ test-package-verifier: ## Run isolated positive and negative package-verifier fi
 	./tests/scripts/verify-packages-tests.sh
 
 # Benchmarks report evidence; nothing gates on them. BENCH_AREA names a project under benchmarks/
-# (Blobs, Caching, Idempotency.ResponseReplay, Jobs, Messaging, Serializer). The JSON export is what
+# (Blobs, Caching, Idempotency.ResponseReplay, Jobs, Messaging, Serializer, Threading). The JSON export is what
 # bench-compare reads; the default `short` job trades precision for a run an agent can wait on.
 # Every run happens in a temporary worktree: BenchmarkDotNet locates its project by searching the
 # repository for <name>.csproj, and the copies under .worktrees/ make that search ambiguous. The
