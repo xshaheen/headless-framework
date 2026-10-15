@@ -84,7 +84,7 @@ public sealed class RedeliveryBackoffTests : TestBase
     public async Task default_delayed_reject_falls_back_to_a_plain_reject()
     {
         // given: a transport that implements only the plain reject
-        var client = new PlainRejectClient();
+        await using var client = new PlainRejectClient();
 
         // when: the host is already stopping, so the default does not wait
         await ((IConsumerClient)client).RejectAsync(

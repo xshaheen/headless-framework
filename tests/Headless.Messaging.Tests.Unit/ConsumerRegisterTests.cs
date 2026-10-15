@@ -2413,7 +2413,7 @@ public sealed class ConsumerRegisterTests : TestBase
     public async Task redelivery_delay_grows_while_admissions_keep_failing_and_starts_over_once_one_succeeds()
     {
         // given: a first delivery the store could not take in
-        var failingWrites = 1 + RedeliveryBackoff.AdmissionRetries;
+        const int failingWrites = 1 + RedeliveryBackoff.AdmissionRetries;
         await using var run = await _RunReceiveDeliveryAsync(
             null,
             "admission-escalation-1",
