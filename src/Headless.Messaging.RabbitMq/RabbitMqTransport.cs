@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
@@ -7,27 +8,24 @@ using RabbitMQ.Client.Exceptions;
 
 namespace Headless.Messaging.RabbitMq;
 
-internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
+internal sealed class RabbitMqTransport(
+    ILogger<RabbitMqTransport> logger,
+    IConnectionChannelPool connectionChannelPool,
+    MessageLane lane = MessageLane.Bus,
+    TimeProvider? timeProvider = null
+) : IBusTransport, IQueueTransport
 {
-    private readonly IConnectionChannelPool _connectionChannelPool;
-    private readonly string _exchange;
-    private readonly MessageLane _lane;
-    private readonly ILogger _logger;
+    private readonly IConnectionChannelPool _connectionChannelPool = connectionChannelPool;
+    private readonly string _exchange = RabbitMqPhysicalAddress.Exchange(connectionChannelPool.Exchange, lane);
+    private readonly MessageLane _lane = lane;
+    private readonly ILogger _logger = logger;
+
+    // The remaining-time TTL is an application-recorded deadline read at send; the system clock is the default so
+    // existing direct constructions keep working.
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
     private int _disposed;
-
-    public RabbitMqTransport(
-        ILogger<RabbitMqTransport> logger,
-        IConnectionChannelPool connectionChannelPool,
-        MessageLane lane = MessageLane.Bus
-    )
-    {
-        _logger = logger;
-        _connectionChannelPool = connectionChannelPool;
-        _lane = lane;
-        _exchange = RabbitMqPhysicalAddress.Exchange(_connectionChannelPool.Exchange, lane);
-    }
 
     public BrokerAddress BrokerAddress => new("rabbitmq", _connectionChannelPool.HostAddress);
 
@@ -61,6 +59,19 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
                 DeliveryMode = DeliveryModes.Persistent,
                 Headers = message.Headers.ToDictionary(x => x.Key, object? (x) => x.Value, StringComparer.Ordinal),
             };
+
+            // A delivery deadline the broker can enforce itself: with a per-message TTL an undelivered message
+            // expires inside the queue instead of lingering past the instant nobody may consume it at. The relay
+            // drops an already-expired message before it ever reaches this send, so the remaining time is positive.
+            if (DeliverByEnvelope.GetDeadline(message.Headers) is { } deliverBy)
+            {
+                var remaining = deliverBy - _timeProvider.GetUtcNow();
+                if (remaining > TimeSpan.Zero)
+                {
+                    // RabbitMQ takes the TTL in milliseconds as a string.
+                    props.Expiration = ((long)remaining.TotalMilliseconds).ToString(CultureInfo.InvariantCulture);
+                }
+            }
 
             // A Queue-lane message must reach its queue, so the broker returns one it cannot route instead of dropping
             // it, and with publisher confirms the client fails the publish. A Bus message with no subscribed identity

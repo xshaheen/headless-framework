@@ -121,17 +121,23 @@ internal sealed class SubscribeExecutor(
 
         // An operator replays a request long after its caller stopped waiting, so the replay runs for the operator,
         // not the caller: with no reply address and no deadline it is a plain Queue message that gets the host's whole
-        // failure policy and answers nobody. Only this generation's envelope changes; the parent row keeps the
-        // original request.
-        if (
-            message.InboxKey is { Generation: > 0 } replayKey
-            && RequestEnvelope.IsRequest(message.Lane, message.Origin.Headers)
-        )
+        // failure policy and answers nobody. The delivery deadline comes off too: an operator replaying a row works
+        // past the deadline the publisher set, or the replay could only ever fail. Only this generation's envelope
+        // changes; the parent row keeps the original headers.
+        if (message.InboxKey is { Generation: > 0 } replayKey)
         {
-            message.Origin.Headers.Remove(Headers.ReplyTo);
-            message.Origin.Headers.Remove(Headers.RequestDeadline);
-            message.HasUnpersistedOriginChanges = true;
-            logger.ReplayedRequestRunsWithoutCaller(message.StorageId, replayKey.Generation);
+            if (RequestEnvelope.IsRequest(message.Lane, message.Origin.Headers))
+            {
+                message.Origin.Headers.Remove(Headers.ReplyTo);
+                message.Origin.Headers.Remove(Headers.RequestDeadline);
+                message.HasUnpersistedOriginChanges = true;
+                logger.ReplayedRequestRunsWithoutCaller(message.StorageId, replayKey.Generation);
+            }
+
+            if (message.Origin.Headers.Remove(Headers.DeliverBy))
+            {
+                message.HasUnpersistedOriginChanges = true;
+            }
         }
 
         if (descriptor == null)
@@ -317,6 +323,20 @@ internal sealed class SubscribeExecutor(
                     .ConfigureAwait(false);
             }
 
+            // A delivery deadline behaves the same at a recovery boundary: running the handler or exhausting the
+            // budget for a message nobody can deliver anymore reports work that cannot matter.
+            if (DeliverByEnvelope.IsExpired(message.Origin.Headers, timeProvider.GetUtcNow()))
+            {
+                return await _EndDeliverByExceededAsync(
+                        message,
+                        budget,
+                        dispatchServices,
+                        executionState,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
             return recoveryAttempt;
         }
 
@@ -349,6 +369,20 @@ internal sealed class SubscribeExecutor(
         if (RequestEnvelope.IsExpired(message.Lane, message.Origin.Headers, timeProvider.GetUtcNow()))
         {
             return await _EndExpiredRequestAsync(message, budget, dispatchServices, executionState, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        // A message can wait in the inbox or behind retries just as long: past its delivery deadline it ends without
+        // running the consumer, like an expired request but with no reply to suppress.
+        if (DeliverByEnvelope.IsExpired(message.Origin.Headers, timeProvider.GetUtcNow()))
+        {
+            return await _EndDeliverByExceededAsync(
+                    message,
+                    budget,
+                    dispatchServices,
+                    executionState,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
 
@@ -651,7 +685,38 @@ internal sealed class SubscribeExecutor(
                 expired,
                 dispatchServices,
                 budget,
-                MessagingRetryDecision.RequestExpired,
+                MessagingRetryDecision.SilentExpiry,
+                budgetSpent: false,
+                executionState,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return MessagingRetryAttempt.Completed(OperateResult.Failed(expired));
+    }
+
+    /// <summary>
+    /// Ends a stored message whose delivery deadline (<c>MessageOptions.DeliverWithin</c>) passed before an attempt
+    /// could run: terminal Failed with the expiry reason, no consumer invocation, no exhausted callback, and no
+    /// circuit-breaker report — nobody can deliver the message anymore, so its expiry is not a consumer failure.
+    /// </summary>
+    private async Task<MessagingRetryAttempt> _EndDeliverByExceededAsync(
+        MediumMessage message,
+        ConsumeRetryBudget budget,
+        IServiceProvider dispatchServices,
+        RetryExecutionState? executionState,
+        CancellationToken cancellationToken
+    )
+    {
+        logger.MessageDeliverByExceededBeforeAttempt(message.StorageId);
+
+        var expired = new MessageDeliverByExceededException(DeliverByEnvelope.GetDeadline(message.Origin.Headers));
+        await _SetFailedState(
+                message,
+                expired,
+                dispatchServices,
+                budget,
+                MessagingRetryDecision.SilentExpiry,
                 budgetSpent: false,
                 executionState,
                 cancellationToken
@@ -828,7 +893,7 @@ internal sealed class SubscribeExecutor(
         if (
             affected
             && decision.Outcome is not MessagingRetryDecision.Kind.Continue
-            && !decision.IsRequestExpired
+            && !decision.IsSilentExpiry
             && RequestEnvelope.IsRequest(message.Lane, message.Origin.Headers)
             && _GetResponderReplies() is { } replies
         )
@@ -874,7 +939,7 @@ internal sealed class SubscribeExecutor(
         // Skip the report when the conditional UPDATE returned zero affected rows: that signals a
         // broker redelivery of an already-terminal row, not a fresh failure — counting it would
         // wrongly accumulate toward the breaker threshold.
-        if (decision.IsRequestExpired)
+        if (decision.IsSilentExpiry)
         {
             // An expired request is no consumer failure, so it neither counts toward nor holds the circuit.
             _ReleaseHalfOpenProbe(message);
@@ -987,6 +1052,9 @@ internal sealed class SubscribeExecutor(
     {
         switch (decision.Outcome)
         {
+            // An expired request or delivery deadline already logged its own drop; it is not a consumer failure.
+            case MessagingRetryDecision.Kind.Stop when decision.IsSilentExpiry:
+                break;
             case MessagingRetryDecision.Kind.Stop:
             case MessagingRetryDecision.Kind.Exhausted when !budgetSpent:
                 logger.StoredMessageNonRetryableFailure(message.StorageId, ex.GetType().Name);

@@ -9,10 +9,14 @@ namespace Headless.Messaging.AzureServiceBus;
 internal sealed class AzureServiceBusTransport(
     ILogger<AzureServiceBusTransport> logger,
     IOptions<AzureServiceBusMessagingOptions> busOptions,
-    IAzureServiceBusClientPool clientPool
+    IAzureServiceBusClientPool clientPool,
+    TimeProvider? timeProvider = null
 ) : IBusTransport, IServiceBusProducerDescriptorFactory
 {
     private readonly ILogger _logger = logger;
+
+    // Reads the delivery deadline's remaining time on the app clock; defaults to the system clock for direct construction.
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
     private int _disposed;
@@ -48,7 +52,8 @@ internal sealed class AzureServiceBusTransport(
             var producer = CreateProducerForMessage(transportMessage);
             var message = AzureServiceBusMessageBuilder.Build(
                 transportMessage,
-                busOptions.Value.EnableSessions || producer.EnableSessions
+                busOptions.Value.EnableSessions || producer.EnableSessions,
+                _timeProvider.GetUtcNow()
             );
 
             var sender = clientPool.GetSender(producer.TopicPath);

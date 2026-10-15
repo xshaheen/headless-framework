@@ -172,6 +172,41 @@ public sealed class EveryInstanceDeliveryTests : TestBase
     }
 
     [Fact]
+    public async Task should_commit_without_consuming_when_every_instance_delivery_deadline_passed()
+    {
+        // given
+        var factory = new RecordingFactory();
+        var outcomes = new ConcurrentBag<string>();
+        using var listener = _ListenToEveryInstanceOutcomes(PriceCache.Identity, outcomes);
+        await using var provider = _BuildHost(
+            factory,
+            configure: services => services.ConfigureMessaging(m => m.AddModule<PriceCacheModule>())
+        );
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        var probe = provider.GetRequiredService<EveryInstanceProbe>();
+        var message = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "expired-1",
+                [Headers.MessageName] = probe.Established[0].MessageNames[0],
+                [Headers.DeliverBy] = DateTimeOffset
+                    .UtcNow.AddSeconds(-1)
+                    .ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+            },
+            "{\"Sku\":\"sku-1\"}"u8.ToArray()
+        );
+
+        // when
+        await factory.LatestClient(PriceCache.Identity).DeliverAsync(message, RecordingClient.OutOfBandSender);
+
+        // then — committed and dropped before any middleware or consumer
+        factory.Commits(PriceCache.Identity).Should().Be(1);
+        factory.Rejects(PriceCache.Identity).Should().Be(0);
+        probe.Consumed.Should().BeEmpty();
+        outcomes.Should().BeEquivalentTo(["dropped"]);
+    }
+
+    [Fact]
     public async Task should_finish_startup_when_a_subscription_hook_never_returns()
     {
         // given
