@@ -1,10 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Messaging.InMemory;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
+using Headless.Threading;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -100,7 +103,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
 
         // then
         receivedMessage.Id.Should().Be("msg-1");
-        receivedSender.Should().BeNull();
+        receivedSender.Should().NotBeNull("the sender is the settlement token a reject requeues");
     }
 
     [Fact]
@@ -169,38 +172,244 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public async Task should_reject_and_release_semaphore()
     {
         // given
-        await _client.SubscribeAsync(["test-messageName"], AbortToken);
+        var clock = new FakeTimeProvider();
+        await using var client = new InMemoryConsumerClient(_queue, "reject-group", 1, redeliveryClock: clock);
+        await client.SubscribeAsync(["reject-messageName"], AbortToken);
 
         var rejected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _client.OnMessageCallback = async (_, sender) =>
+        var committed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var deliveries = 0;
+        client.OnMessageCallback = async (_, sender) =>
         {
-            await _client.RejectAsync(sender);
-            rejected.SetResult();
+            if (Interlocked.Increment(ref deliveries) == 1)
+            {
+                await client.RejectAsync(sender, AbortToken);
+                rejected.SetResult();
+                return;
+            }
+
+            await client.CommitAsync(sender, AbortToken);
+            committed.TrySetResult();
         };
 
         using var cts = new CancellationTokenSource();
-        var listenTask = Task.Run(
-            async () =>
-            {
-                try
-                {
-                    await _client.ListeningAsync(TimeSpan.FromSeconds(5), cts.Token);
-                }
-                catch (OperationCanceledException) { }
-            },
-            AbortToken
-        );
-
-        await Task.Delay(50, AbortToken);
+        _StartListening(client, cts.Token);
 
         // when
-        _queue.SendBus(_CreateTestMessage("msg-1", "test-messageName"));
-
+        _queue.SendBus(_CreateTestMessage("msg-1", "reject-messageName"));
         await rejected.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        clock.Advance(_MaxFirstRedeliveryDelay);
+
+        // then: the rejected delivery comes back and settles; the slot it held was released, or it could not run
+        await committed.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
+        deliveries.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task should_redeliver_a_rejected_message_to_the_same_client_after_the_redelivery_delay()
+    {
+        // given
+        var clock = new FakeTimeProvider();
+        await using var client = new InMemoryConsumerClient(_queue, "redeliver-group", 1, redeliveryClock: clock);
+        await client.SubscribeAsync(["redeliver-messageName"], AbortToken);
+
+        var deliveredIds = new ConcurrentQueue<string>();
+        var rejected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var redelivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = async (message, sender) =>
+        {
+            deliveredIds.Enqueue(message.Id);
+            if (deliveredIds.Count == 1)
+            {
+                await client.RejectAsync(sender, AbortToken);
+                rejected.SetResult();
+                return;
+            }
+
+            await client.CommitAsync(sender, AbortToken);
+            redelivered.TrySetResult();
+        };
+
+        using var cts = new CancellationTokenSource();
+        _StartListening(client, cts.Token);
+        _queue.SendBus(_CreateTestMessage("msg-1", "redeliver-messageName"));
+        await rejected.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        clock.Advance(_MaxFirstRedeliveryDelay);
 
         // then
-        rejected.Task.IsCompletedSuccessfully.Should().BeTrue();
+        await redelivered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await cts.CancelAsync();
+        deliveredIds.Should().Equal("msg-1", "msg-1");
+    }
+
+    [Fact]
+    public async Task should_not_redeliver_a_rejected_message_before_the_first_redelivery_delay_elapses()
+    {
+        // given
+        var clock = new FakeTimeProvider();
+        await using var client = new InMemoryConsumerClient(_queue, "early-group", 1, redeliveryClock: clock);
+        await client.SubscribeAsync(["early-messageName"], AbortToken);
+
+        var deliveries = 0;
+        var rejected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = async (_, sender) =>
+        {
+            if (Interlocked.Increment(ref deliveries) == 1)
+            {
+                await client.RejectAsync(sender, AbortToken);
+                rejected.SetResult();
+            }
+        };
+
+        using var cts = new CancellationTokenSource();
+        _StartListening(client, cts.Token);
+        _queue.SendBus(_CreateTestMessage("msg-1", "early-messageName"));
+        await rejected.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when: just short of the shortest first delay (a second jittered down by at most a quarter)
+        clock.Advance(_MinFirstRedeliveryDelay - TimeSpan.FromMilliseconds(1));
+        await Task.Delay(200, AbortToken);
+
+        // then: an immediate requeue would spin on a delivery the core keeps rejecting
+        await cts.CancelAsync();
+        deliveries.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_not_grow_concurrency_when_a_message_is_rejected_repeatedly()
+    {
+        // given
+        var clock = new FakeTimeProvider();
+        await using var client = new InMemoryConsumerClient(_queue, "slots-group", 1, redeliveryClock: clock);
+        await client.SubscribeAsync(["slots-messageName"], AbortToken);
+
+        const int rejections = 3;
+        var rejectCount = 0;
+        using var rejectedOnce = new SemaphoreSlim(0);
+        var rejectedDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var blockingGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var running = 0;
+        var maxRunning = 0;
+        var blockingStarted = 0;
+        client.OnMessageCallback = async (message, sender) =>
+        {
+            if (string.Equals(message.Id, "rejected", StringComparison.Ordinal))
+            {
+                if (Interlocked.Increment(ref rejectCount) <= rejections)
+                {
+                    await client.RejectAsync(sender, AbortToken);
+                    rejectedOnce.Release();
+                    return;
+                }
+
+                await client.CommitAsync(sender, AbortToken);
+                rejectedDone.TrySetResult();
+                return;
+            }
+
+            var now = Interlocked.Increment(ref running);
+            Interlocked.Increment(ref blockingStarted);
+            int seen;
+            while (now > (seen = Volatile.Read(ref maxRunning)))
+            {
+                Interlocked.CompareExchange(ref maxRunning, now, seen);
+            }
+
+            await blockingGate.Task.WaitAsync(AbortToken);
+            Interlocked.Decrement(ref running);
+            await client.CommitAsync(sender, AbortToken);
+        };
+
+        using var cts = new CancellationTokenSource();
+        _StartListening(client, cts.Token);
+        _queue.SendBus(_CreateTestMessage("rejected", "slots-messageName"));
+        for (var i = 0; i < rejections; i++)
+        {
+            (await rejectedOnce.WaitAsync(TimeSpan.FromSeconds(5), AbortToken)).Should().BeTrue();
+            clock.Advance(ReconnectBackoff.Ceiling);
+        }
+
+        await rejectedDone.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        _queue.SendBus(_CreateTestMessage("blocking-1", "slots-messageName"));
+        _queue.SendBus(_CreateTestMessage("blocking-2", "slots-messageName"));
+        await Task.Delay(200, AbortToken);
+
+        // then: one handler at a time, as configured, however many times a delivery was rejected
+        Volatile.Read(ref blockingStarted).Should().Be(1);
+        blockingGate.SetResult();
+        await cts.CancelAsync();
+        Volatile.Read(ref maxRunning).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_drop_a_rejected_message_when_the_client_stops_before_the_redelivery_delay_ends()
+    {
+        // given
+        var clock = new FakeTimeProvider();
+        var client = new InMemoryConsumerClient(_queue, "stopped-group", 1, redeliveryClock: clock);
+        await client.SubscribeAsync(["stopped-messageName"], AbortToken);
+
+        var deliveries = 0;
+        var rejected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = async (_, sender) =>
+        {
+            Interlocked.Increment(ref deliveries);
+            await client.RejectAsync(sender, AbortToken);
+            rejected.TrySetResult();
+        };
+
+        using var cts = new CancellationTokenSource();
+        _StartListening(client, cts.Token);
+        _queue.SendBus(_CreateTestMessage("msg-1", "stopped-messageName"));
+        await rejected.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        await client.DisposeAsync();
+        clock.Advance(ReconnectBackoff.Ceiling);
+        await Task.Delay(100, AbortToken);
+
+        // then
+        await cts.CancelAsync();
+        deliveries.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_not_throw_or_redeliver_when_rejecting_after_the_client_stopped()
+    {
+        // given
+        var clock = new FakeTimeProvider();
+        var client = new InMemoryConsumerClient(_queue, "late-group", 1, redeliveryClock: clock);
+        await client.SubscribeAsync(["late-messageName"], AbortToken);
+
+        var deliveries = 0;
+        var delivered = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = (_, sender) =>
+        {
+            Interlocked.Increment(ref deliveries);
+            delivered.TrySetResult(sender);
+            return Task.CompletedTask;
+        };
+
+        using var cts = new CancellationTokenSource();
+        _StartListening(client, cts.Token);
+        _queue.SendBus(_CreateTestMessage("msg-1", "late-messageName"));
+        var sender = await delivered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await client.DisposeAsync();
+
+        // when
+        var act = async () => await client.RejectAsync(sender, AbortToken);
+
+        // then
+        await act.Should().NotThrowAsync();
+        clock.Advance(ReconnectBackoff.Ceiling);
+        await Task.Delay(100, AbortToken);
+        await cts.CancelAsync();
+        deliveries.Should().Be(1);
     }
 
     [Fact]
@@ -587,6 +796,25 @@ public sealed class InMemoryConsumerClientTests : TestBase
 
         // when & then
         act.Should().NotThrow();
+    }
+
+    // The first redelivery waits about a second, jittered down by at most a quarter.
+    private static readonly TimeSpan _MinFirstRedeliveryDelay = TimeSpan.FromMilliseconds(750);
+    private static readonly TimeSpan _MaxFirstRedeliveryDelay = TimeSpan.FromSeconds(1);
+
+    private void _StartListening(InMemoryConsumerClient client, CancellationToken cancellationToken)
+    {
+        _ = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    await client.ListeningAsync(TimeSpan.FromSeconds(5), cancellationToken);
+                }
+                catch (OperationCanceledException) { }
+            },
+            AbortToken
+        );
     }
 
     private static TransportMessage _CreateTestMessage(string id, string messageName)

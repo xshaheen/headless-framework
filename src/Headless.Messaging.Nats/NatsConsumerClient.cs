@@ -1130,7 +1130,7 @@ internal sealed class NatsConsumerClient(
             {
                 // The core rejects every delivery while the consumer's circuit is open or a half-open probe is out, and
                 // JetStream redelivers a plain NAK on the next pull, so without a delay those deliveries spin.
-                var delay = NakDelay(msg.Metadata?.NumDelivered ?? 1, Random.Shared);
+                var delay = RejectRedeliveryDelay.For(msg.Metadata?.NumDelivered ?? 1, Random.Shared);
                 await msg.NakAsync(new AckOpts { NakDelay = delay }, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -1159,22 +1159,6 @@ internal sealed class NatsConsumerClient(
             default:
                 return null;
         }
-    }
-
-    /// <summary>
-    /// The delay before JetStream redelivers a rejected delivery: about one second for the first delivery, doubling with
-    /// each redelivery up to 30 seconds, and jittered so the deliveries rejected by one open circuit do not return
-    /// together.
-    /// </summary>
-    /// <param name="numDelivered">How many times JetStream has delivered the message, this delivery included.</param>
-    /// <param name="random">The jitter source.</param>
-    internal static TimeSpan NakDelay(ulong numDelivered, Random random)
-    {
-        // Five doublings from one second already pass the 30 s ceiling.
-        var doublings = (int)Math.Min(numDelivered <= 1 ? 0 : numDelivered - 1, 5);
-        var nominal = TimeSpan.FromTicks(ReconnectBackoff.FirstDelay.Ticks << doublings);
-
-        return ReconnectBackoff.Jitter(nominal, TimeSpan.Zero, random);
     }
 
     private void _ReleaseSemaphore()

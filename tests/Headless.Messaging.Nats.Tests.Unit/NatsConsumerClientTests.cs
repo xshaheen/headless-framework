@@ -509,9 +509,7 @@ public sealed class NatsConsumerClientTests : TestBase
     {
         var nominal = TimeSpan.FromSeconds(nominalSeconds);
 
-        var delays = Enumerable
-            .Range(0, 200)
-            .Select(seed => NatsConsumerClient.NakDelay(numDelivered, new Random(seed)));
+        var delays = Enumerable.Range(0, 200).Select(seed => RejectRedeliveryDelay.For(numDelivered, new Random(seed)));
 
         // Jittered down by at most a quarter, so rejections of one open circuit do not return together.
         delays.Should().OnlyContain(delay => delay <= nominal && delay >= nominal * 0.75);
