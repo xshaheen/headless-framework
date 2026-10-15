@@ -2536,7 +2536,7 @@ public sealed class ConsumerRegisterTests : TestBase
         // given - a delivery whose message id or tenant header could never have been admitted
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.ContractVersion] = "2" };
         var messageId = "inadmissible-header";
-        if (header == "message-id")
+        if (string.Equals(header, "message-id", StringComparison.Ordinal))
         {
             messageId = new string('m', MessageOptions.MessageIdMaxLength + 1);
         }
