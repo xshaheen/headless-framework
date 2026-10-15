@@ -2,11 +2,10 @@
 
 using Headless;
 using Headless.Checks;
+using Headless.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.ValueGeneration;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Microsoft.EntityFrameworkCore;
 
@@ -58,56 +57,13 @@ public static class HeadlessDbContextOptionsBuilderExtensions
 
     private sealed class StringCompactGuidValueGenerator(bool value) : ValueGenerator<string>
     {
-        private const string _SqlServerProviderName = "Microsoft.EntityFrameworkCore.SqlServer";
-
-        private static readonly IGuidGenerator _Version7GuidGenerator = new SequentialGuidGenerator(
-            SequentialGuidType.Version7
-        );
-
-        private static readonly IGuidGenerator _SqlServerGuidGenerator = new SequentialGuidGenerator(
-            SequentialGuidType.SqlServer
-        );
-
         public override bool GeneratesTemporaryValues { get; } = value;
 
+        // String primary keys share the framework's single guid source (fakeable in tests, swappable for a different
+        // strategy), with the framework default when the context has no application service provider.
         public override string Next(EntityEntry entry)
         {
-            return _ResolveGuidGenerator(entry.Context).Create().ToString("N");
-        }
-
-        // Pull the application-registered IGuidGenerator so string primary keys share the framework's single
-        // guid source (fakeable in tests, swappable for a different strategy). Falls back to the framework
-        // default when the context was built without an application service provider (e.g. a hand-constructed
-        // DbContextOptions).
-        private static IGuidGenerator _ResolveGuidGenerator(DbContext context)
-        {
-            var key = _GetKey(context.Database.ProviderName);
-            var fallback = _GetFallback(key);
-            var applicationServiceProvider = context
-                .GetService<IDbContextOptions>()
-                .FindExtension<CoreOptionsExtension>()
-                ?.ApplicationServiceProvider;
-
-            if (applicationServiceProvider is null)
-            {
-                return fallback;
-            }
-
-            return applicationServiceProvider.GetKeyedService<IGuidGenerator>(key)
-                ?? applicationServiceProvider.GetService<IGuidGenerator>()
-                ?? fallback;
-        }
-
-        private static SequentialGuidType _GetKey(string? providerName)
-        {
-            return string.Equals(providerName, _SqlServerProviderName, StringComparison.Ordinal)
-                ? SequentialGuidType.SqlServer
-                : SequentialGuidType.Version7;
-        }
-
-        private static IGuidGenerator _GetFallback(SequentialGuidType key)
-        {
-            return key == SequentialGuidType.SqlServer ? _SqlServerGuidGenerator : _Version7GuidGenerator;
+            return HeadlessGuidGeneratorResolver.Resolve(entry.Context).Create().ToString("N");
         }
     }
 
