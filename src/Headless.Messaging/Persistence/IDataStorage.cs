@@ -77,7 +77,7 @@ public interface IDataStorage
     /// <returns>
     /// <see langword="true"/> when an inbox row for this tenant, message id, message name, consumer identity, and lane
     /// exists. A
-    /// provider without an inbox admits nothing, so its default answer is <see langword="false"/>.
+    /// provider without an inbox admits nothing and answers <see langword="false"/>.
     /// </returns>
     ValueTask<bool> IsInboxMessageAdmittedAsync(
         string? tenantId,
@@ -86,7 +86,7 @@ public interface IDataStorage
         string consumerIdentity,
         MessageLane lane,
         CancellationToken cancellationToken = default
-    ) => ValueTask.FromResult(false);
+    );
 
     /// <summary>Defers a missing registration by the configured orphan probe interval and releases ownership atomically under the complete attempt fence. Does not consume failure retries.</summary>
     ValueTask<bool> DeferReceivedInboxOrphanAsync(MediumMessage message, CancellationToken cancellationToken = default);

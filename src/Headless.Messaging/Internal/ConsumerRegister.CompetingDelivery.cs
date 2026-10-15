@@ -314,9 +314,13 @@ internal sealed partial class ConsumerRegister
                 // A message the inbox already admitted for this consumer is a redelivery of work that ran, for example
                 // a lost acknowledgement redelivered to a node on another contract version during a rolling deploy.
                 // It is committed as a duplicate: no poison row, dead-letter, fault reply, exhausted callback, or
-                // breaker report, and the finally releases the probe. Without a consumer no inbox row can exist.
+                // breaker report, and the finally releases the probe. Without a consumer no inbox row can exist. An
+                // explicit receive-middleware Reject is the middleware's verdict on this delivery, so it keeps its
+                // poison row and dead-letter even when the id matches admitted work: a forged copy of a known message
+                // must leave evidence.
                 if (
                     executor is not null
+                    && !receiveRejectIsPolicy
                     && await _IsAdmittedRedeliveryAsync(message, name, consumerIdentity, lane, hostShutdownToken)
                         .ConfigureAwait(false)
                 )

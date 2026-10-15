@@ -1120,6 +1120,8 @@ public sealed class ConsumerRegisterTests : TestBase
         /// <summary>When set, the admitted-inbox lookup fails with it instead of reaching the storage.</summary>
         public Exception? AdmissionLookupFailure { get; set; }
 
+        public int AdmissionLookups { get; private set; }
+
         public static Headless.Messaging.Persistence.IDataStorage For(
             Headless.Messaging.Persistence.IDataStorage inner,
             out RecordingDataStorage recorder
@@ -1169,6 +1171,17 @@ public sealed class ConsumerRegisterTests : TestBase
             )
             {
                 Admissions.Add(((string)args[0]!, (string)args[1]!, (string)args[2]!, (MediumMessage)args[3]!));
+            }
+
+            if (
+                string.Equals(
+                    name,
+                    nameof(Headless.Messaging.Persistence.IDataStorage.IsInboxMessageAdmittedAsync),
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                AdmissionLookups++;
             }
 
             if (
@@ -2476,6 +2489,75 @@ public sealed class ConsumerRegisterTests : TestBase
         run.Storage.ReceivedExceptionRows.Should().ContainSingle();
         run.Client.DeadLetters.Should().ContainSingle();
         run.Client.RejectCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task receive_policy_reject_of_an_admitted_message_keeps_its_poison_evidence()
+    {
+        // given - the message was admitted; then a receive middleware rejects a copy with the same id
+        var middleware = new RecordingReceiveMiddleware();
+        await using var run = await _RunReceiveDeliveryAsync(
+            middleware,
+            "admitted-then-rejected",
+            "{}"u8.ToArray(),
+            nativeDeadLetter: true
+        );
+        run.Storage.Admissions.Should().ContainSingle();
+        middleware.Behavior = (context, _) =>
+        {
+            context.Reject("signature-invalid", new InvalidOperationException("signature mismatch"));
+            return ValueTask.CompletedTask;
+        };
+
+        // when
+        await run.Client.OnMessageCallback!(
+            new TransportMessage(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = "admitted-then-rejected",
+                    [Headers.MessageName] = "ready-messageName",
+                },
+                "{}"u8.ToArray()
+            ),
+            null
+        );
+
+        // then - the middleware's verdict leaves evidence even though the id matches admitted work
+        run.Storage.AdmissionLookups.Should().Be(0);
+        run.Storage.ReceivedExceptionRows.Should().ContainSingle();
+        run.Client.DeadLetters.Should().ContainSingle().Which.Reason.Should().Be("ReceiveRejected");
+    }
+
+    [Theory]
+    [InlineData("message-id")]
+    [InlineData("tenant")]
+    public async Task receive_redelivery_with_an_inadmissible_identity_header_skips_the_admitted_lookup(string header)
+    {
+        // given - a delivery whose message id or tenant header could never have been admitted
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.ContractVersion] = "2" };
+        var messageId = "inadmissible-header";
+        if (header == "message-id")
+        {
+            messageId = new string('m', MessageOptions.MessageIdMaxLength + 1);
+        }
+        else
+        {
+            headers[Headers.TenantId] = new string('t', MessageOptions.TenantIdMaxLength + 1);
+        }
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            messageId,
+            "{}"u8.ToArray(),
+            publisherHeaders: headers,
+            nativeDeadLetter: true
+        );
+
+        // then - no lookup runs, and the delivery keeps the poison path
+        run.Storage.AdmissionLookups.Should().Be(0);
+        run.Storage.ReceivedExceptionRows.Should().ContainSingle();
+        run.Client.DeadLetters.Should().ContainSingle();
     }
 
     [Fact]
