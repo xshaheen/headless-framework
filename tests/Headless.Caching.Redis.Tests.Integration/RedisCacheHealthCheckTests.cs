@@ -14,7 +14,7 @@ namespace Tests;
 public sealed class RedisCacheHealthCheckTests(RedisCacheFixture fixture) : TestBase
 {
     [Fact]
-    public async Task should_report_default_and_named_redis_caches_healthy()
+    public async Task should_report_default_and_named_caches_on_one_deployment_as_one_healthy_check()
     {
         // given
         var services = new ServiceCollection();
@@ -32,10 +32,10 @@ public sealed class RedisCacheHealthCheckTests(RedisCacheFixture fixture) : Test
         // when
         var report = await provider.GetRequiredService<HealthCheckService>().CheckHealthAsync(AbortToken);
 
-        // then
+        // then - both caches reach one Redis deployment, so one probe reports it
         report.Entries["cache-redis"].Status.Should().Be(HealthStatus.Healthy);
-        report.Entries["cache-redis-tenant"].Status.Should().Be(HealthStatus.Healthy);
         report.Entries["cache-redis"].Tags.Should().Contain(HeadlessHealthCheckTags.Redis);
+        report.Entries.Keys.Should().NotContain("cache-redis-tenant");
     }
 
     [Fact]

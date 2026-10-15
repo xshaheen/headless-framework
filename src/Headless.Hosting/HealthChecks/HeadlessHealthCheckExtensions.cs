@@ -325,7 +325,7 @@ public static class HeadlessHealthCheckExtensions
             is not HeadlessHealthCheckDefaults defaults
         )
         {
-            defaults = new HeadlessHealthCheckDefaults();
+            defaults = [];
             services.AddSingleton(defaults);
         }
 
