@@ -452,12 +452,12 @@ internal sealed partial class RelationalDataStorage
         var intentType = MessageLaneCompatibility.ToPersistedValue(row.Lane);
         var identityHash = CreateConsumerIdentityHash(Options.Version, row.MessageId, intentType, row.ConsumerIdentity);
 
-        void bindIdentity(DbCommand command)
+        void bindIdentityHash(DbCommand command)
         {
             _dialect.AddParameter(
                 command,
                 "ConsumerIdentityHash",
-                SqlColumnType.FixedBinary(_InboxKeyHashLength),
+                SqlColumnType.FixedBinary(_Sha256HashLength),
                 identityHash
             );
         }
@@ -501,7 +501,7 @@ internal sealed partial class RelationalDataStorage
                         CommandTimeoutSeconds,
                         command =>
                         {
-                            bindIdentity(command);
+                            bindIdentityHash(command);
                             bindIdentityColumns(command);
                             bindValues(command);
                             _dialect.AddParameter(command, "Id", SqlColumnType.Guid, row.Id);
@@ -534,7 +534,7 @@ internal sealed partial class RelationalDataStorage
                                 transaction,
                                 lockSql,
                                 CommandTimeoutSeconds,
-                                bindIdentity,
+                                bindIdentityHash,
                                 static async (reader, token) =>
                                     await reader.ReadAsync(token).ConfigureAwait(false)
                                         ? reader.GetGuid(0)

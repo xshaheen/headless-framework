@@ -14,7 +14,7 @@ namespace Headless.Messaging.Persistence;
 internal sealed partial class RelationalDataStorage
 {
     private const int _ContractVersionMaxLength = 100;
-    private const int _InboxKeyHashLength = 32;
+    private const int _Sha256HashLength = 32;
 
     public async ValueTask<InboxAdmissionResult> AdmitReceivedMessageAsync(
         string name,
@@ -184,21 +184,24 @@ internal sealed partial class RelationalDataStorage
     public async ValueTask<bool> IsInboxMessageAdmittedAsync(
         string? tenantId,
         string messageId,
+        string messageName,
         string consumerIdentity,
         MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNull(messageId);
+        Argument.IsNotNull(messageName);
         Argument.IsNotNull(consumerIdentity);
 
         // The inbox key hash covers the contract version, which a redelivery failing its contract check cannot supply,
         // so the lookup seeks the identity columns instead. SQL Server's = pads trailing spaces, so the candidates are
         // confirmed ordinally here: an id that differs only by a trailing space is another message.
         var sql = $"""
-            SELECT {_t.MessageId},{_t.ConsumerIdentity},{_t.TenantPresent},{_t.TenantId}
+            SELECT {_t.MessageId},{_t.ConsumerIdentity},{_t.TenantPresent},{_t.TenantId},{_t.ContractIdentity}
             FROM {_receivedTable}
-            WHERE {_t.MessageId}=@MessageId AND {_t.ConsumerIdentity}=@ConsumerIdentity AND {_t.IntentType}=@IntentType
+            WHERE {_t.MessageId}=@MessageId AND {_t.ContractIdentity}=@ContractIdentity
+              AND {_t.ConsumerIdentity}=@ConsumerIdentity AND {_t.IntentType}=@IntentType
               AND {_t.IsInboxRecord} = {_t.True};
             """;
 
@@ -213,6 +216,12 @@ internal sealed partial class RelationalDataStorage
                 command =>
                 {
                     _dialect.AddParameter(command, "MessageId", _MessageIdType, messageId);
+                    _dialect.AddParameter(
+                        command,
+                        "ContractIdentity",
+                        SqlColumnType.KeyText(_NameMaxLength),
+                        messageName
+                    );
                     _dialect.AddParameter(command, "ConsumerIdentity", _IdentityType, consumerIdentity);
                     _dialect.AddParameter(
                         command,
@@ -229,6 +238,7 @@ internal sealed partial class RelationalDataStorage
                         if (
                             string.Equals(reader.GetString(0), messageId, StringComparison.Ordinal)
                             && string.Equals(reader.GetString(1), consumerIdentity, StringComparison.Ordinal)
+                            && string.Equals(reader.GetString(4), messageName, StringComparison.Ordinal)
                             && tenantPresent == (tenantId is not null)
                             && (
                                 !tenantPresent || string.Equals(reader.GetString(3), tenantId, StringComparison.Ordinal)
@@ -260,7 +270,7 @@ internal sealed partial class RelationalDataStorage
 
     private void _BindInboxRootKey(DbCommand command, InboxRootKey key, byte[] keyHash)
     {
-        _dialect.AddParameter(command, "InboxKeyHash", SqlColumnType.FixedBinary(_InboxKeyHashLength), keyHash);
+        _dialect.AddParameter(command, "InboxKeyHash", SqlColumnType.FixedBinary(_Sha256HashLength), keyHash);
         _dialect.AddParameter(command, "TenantPresent", SqlColumnType.Boolean, key.TenantPresent);
         _dialect.AddParameter(command, "TenantId", SqlColumnType.KeyText(_NameMaxLength), key.TenantId);
         _dialect.AddParameter(command, "MessageId", _MessageIdType, key.MessageId);

@@ -182,7 +182,7 @@ internal static class SqlServerMessagingSchemaContribution
             -- version, which a redelivery that fails its contract check cannot supply.
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_InboxMessageConsumer' AND object_id = OBJECT_ID(N'{received}'))
                 EXEC(N'CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_InboxMessageConsumer]
-                    ON {received} ([MessageId],[ConsumerIdentity],[IntentType]) WHERE [IsInboxRecord]=1');
+                    ON {received} ([MessageId],[ContractIdentity],[ConsumerIdentity],[IntentType]) WHERE [IsInboxRecord]=1');
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_GenerationIncarnationId' AND object_id = OBJECT_ID(N'{received}'))
                 EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_GenerationIncarnationId] ON {received} ([GenerationIncarnationId] ASC) WHERE [GenerationIncarnationId] IS NOT NULL');

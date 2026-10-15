@@ -317,7 +317,7 @@ internal sealed partial class ConsumerRegister
                 // breaker report, and the finally releases the probe. Without a consumer no inbox row can exist.
                 if (
                     executor is not null
-                    && await _IsAdmittedRedeliveryAsync(message, consumerIdentity, lane, hostShutdownToken)
+                    && await _IsAdmittedRedeliveryAsync(message, name, consumerIdentity, lane, hostShutdownToken)
                         .ConfigureAwait(false)
                 )
                 {
@@ -627,13 +627,14 @@ internal sealed partial class ConsumerRegister
     }
 
     /// <summary>
-    /// Whether the inbox already admitted this message for the consumer on this lane and tenant, whatever contract
-    /// version it was admitted under. A delivery whose message id or tenant could never have been admitted answers
+    /// Whether the inbox already admitted this message, under this name, for the consumer on this lane and tenant,
+    /// whatever contract version it was admitted under. A delivery whose message id or tenant could never have been admitted answers
     /// <see langword="false"/> without a lookup, and a lookup that fails is logged and answers <see langword="false"/>,
     /// so the delivery keeps its poison evidence rather than being dropped.
     /// </summary>
     private async ValueTask<bool> _IsAdmittedRedeliveryAsync(
         Message message,
+        string messageName,
         string consumerIdentity,
         MessageLane lane,
         CancellationToken cancellationToken
@@ -658,6 +659,7 @@ internal sealed partial class ConsumerRegister
                 .IsInboxMessageAdmittedAsync(
                     TenantContextScope.ResolveTenantId(message.Headers, logger: null),
                     messageId,
+                    messageName,
                     consumerIdentity,
                     lane,
                     cancellationToken

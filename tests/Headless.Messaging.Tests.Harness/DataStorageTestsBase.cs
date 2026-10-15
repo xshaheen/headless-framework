@@ -3945,7 +3945,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await _AdmitInboxAsync(storage, origin, consumerIdentity: "orders.consumer-a", contractVersion: "v1");
 
         Task<bool> admitted(string? tenantId, string id, string consumer, MessageLane lane) =>
-            storage.IsInboxMessageAdmittedAsync(tenantId, id, consumer, lane, AbortToken).AsTask();
+            storage.IsInboxMessageAdmittedAsync(tenantId, id, "orders.created", consumer, lane, AbortToken).AsTask();
 
         (await admitted("tenant-a", messageId, "orders.consumer-a", MessageLane.Bus))
             .Should()
@@ -3961,6 +3961,18 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Should()
             .BeFalse("a consumer identity that differs only by a trailing space is another consumer");
         (await admitted("tenant-a ", messageId, "orders.consumer-a", MessageLane.Bus)).Should().BeFalse();
+        (
+            await storage.IsInboxMessageAdmittedAsync(
+                "tenant-a",
+                messageId,
+                "orders.shipped",
+                "orders.consumer-a",
+                MessageLane.Bus,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse("a producer may reuse one id across message names, and another name is another message");
     }
 
     public virtual async Task should_not_report_a_non_inbox_received_row_as_admitted()
@@ -3969,7 +3981,16 @@ public abstract partial class DataStorageTestsBase : TestBase
         var messageId = $"not-admitted-{Guid.NewGuid():N}";
         (await _StorePoisonAsync(messageId, "orders.consumer-a")).Should().BeTrue();
 
-        (await storage.IsInboxMessageAdmittedAsync(null, messageId, "orders.consumer-a", MessageLane.Bus, AbortToken))
+        (
+            await storage.IsInboxMessageAdmittedAsync(
+                null,
+                messageId,
+                "poisoned",
+                "orders.consumer-a",
+                MessageLane.Bus,
+                AbortToken
+            )
+        )
             .Should()
             .BeFalse("a poison row records a delivery that never reached the inbox");
     }

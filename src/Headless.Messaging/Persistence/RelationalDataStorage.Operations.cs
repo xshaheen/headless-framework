@@ -672,12 +672,7 @@ internal sealed partial class RelationalDataStorage
                     _dialect.AddParameter(command, "OperationId", SqlColumnType.Guid, request.OperationId);
                     _dialect.AddParameter(command, "Instant", SqlColumnType.Timestamp, now);
                     _dialect.AddDuration(command, "Grace", Options.RetryPolicy.InitialDispatchGrace);
-                    _dialect.AddParameter(
-                        command,
-                        "InboxKeyHash",
-                        SqlColumnType.FixedBinary(_InboxKeyHashLength),
-                        hash
-                    );
+                    _dialect.AddParameter(command, "InboxKeyHash", SqlColumnType.FixedBinary(_Sha256HashLength), hash);
                 },
                 cancellationToken
             )

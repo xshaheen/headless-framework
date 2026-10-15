@@ -199,7 +199,7 @@ internal static class PostgreSqlMessagingSchemaContribution
             -- Finds the inbox rows of a redelivered message by identity alone: the root-key hash covers the contract
             -- version, which a redelivery that fails its contract check cannot supply.
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_inbox_message_consumer" ON {received}
-                ("message_id","consumer_identity","intent_type") WHERE "is_inbox_record";
+                ("message_id","contract_identity","consumer_identity","intent_type") WHERE "is_inbox_record";
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_inbox_retention" ON {received} ("effective_expires_at","id")
                 INCLUDE ("status_name","next_retry_at","intent_type") WHERE "is_inbox_record" AND NOT "is_held";
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_expires_at_status_name" ON {received} ("expires_at","status_name");

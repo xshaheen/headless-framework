@@ -111,14 +111,12 @@ internal static class RetryHelper
             return null;
         }
 
-        var overrunException = new InvalidOperationException(
+        return _OverrunAttempt(
             string.Create(
                 CultureInfo.InvariantCulture,
                 $"The message has used {retries} delayed retries, more than its consumer's failure policy allows ({budget.Policy.DelayedRetries})."
             )
         );
-
-        return MessagingRetryAttempt.Retryable(OperateResult.Failed(overrunException), bypassClassification: true);
     }
 
     /// <summary>
@@ -130,19 +128,32 @@ internal static class RetryHelper
     /// </summary>
     public static MessagingRetryAttempt? DetectBudgetOverrun(int retries, int maxPersistedRetries)
     {
-        if (retries <= maxPersistedRetries)
+        if (!IsOverPersistedBudget(retries, maxPersistedRetries))
         {
             return null;
         }
 
-        var overrunException = new InvalidOperationException(
+        return _OverrunAttempt(
             string.Create(
                 CultureInfo.InvariantCulture,
                 $"The message has used {retries} persisted retries, more than MaxPersistedRetries allows ({maxPersistedRetries})."
             )
         );
+    }
 
-        return MessagingRetryAttempt.Retryable(OperateResult.Failed(overrunException), bypassClassification: true);
+    /// <summary>
+    /// Whether a published row has already used more persisted retries than <paramref name="maxPersistedRetries"/>
+    /// allows. The overrun detection and the exhausted decision share this one comparison so they cannot disagree
+    /// about which rows end without a send.
+    /// </summary>
+    public static bool IsOverPersistedBudget(int retries, int maxPersistedRetries) => retries > maxPersistedRetries;
+
+    private static MessagingRetryAttempt _OverrunAttempt(string reason)
+    {
+        return MessagingRetryAttempt.Retryable(
+            OperateResult.Failed(new InvalidOperationException(reason)),
+            bypassClassification: true
+        );
     }
 
     private static MessagingRetryAttempt _CrashRecoveredAttempt()

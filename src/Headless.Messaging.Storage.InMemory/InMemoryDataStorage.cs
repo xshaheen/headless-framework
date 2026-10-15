@@ -626,6 +626,7 @@ internal sealed partial class InMemoryDataStorage(
     public ValueTask<bool> IsInboxMessageAdmittedAsync(
         string? tenantId,
         string messageId,
+        string messageName,
         string consumerIdentity,
         MessageLane lane,
         CancellationToken cancellationToken = default
@@ -635,13 +636,14 @@ internal sealed partial class InMemoryDataStorage(
 
         // Every contract version and generation counts, replay children included, as on the relational providers: the
         // caller cannot know which one was admitted. The identity index holds root generations only, so the rows are
-        // scanned; this runs only for a delivery that already failed before admission.
-        foreach (var row in ReceivedMessages.Values)
+        // scanned without copying the dictionary; this runs only for a delivery that already failed before admission.
+        foreach (var (_, row) in ReceivedMessages)
         {
             if (
                 row.InboxKey is { } key
                 && key.Lane == lane
                 && string.Equals(key.MessageId, messageId, StringComparison.Ordinal)
+                && string.Equals(key.ContractIdentity, messageName, StringComparison.Ordinal)
                 && string.Equals(key.ConsumerIdentity, consumerIdentity, StringComparison.Ordinal)
                 && string.Equals(key.TenantId, tenantId, StringComparison.Ordinal)
             )

@@ -460,7 +460,8 @@ internal sealed class MessageSender : IMessageSender
         // A row past the cap is exhausted whatever inline budget remains: its attempt reserved no inline slot, so
         // continuing would re-enter the burst and persist another retry instead of ending the row.
         var decision =
-            strategyFailed || message.Retries > _retryPolicy.MaxPersistedRetries ? MessagingRetryDecision.Exhausted
+            strategyFailed || RetryHelper.IsOverPersistedBudget(message.Retries, _retryPolicy.MaxPersistedRetries)
+                ? MessagingRetryDecision.Exhausted
             : !_retryPolicy.HasMoreInlineAttempts(inlineRetries) && message.Retries >= _retryPolicy.MaxPersistedRetries
                 ? MessagingRetryDecision.Exhausted
             : MessagingRetryDecision.Continue(delay);
