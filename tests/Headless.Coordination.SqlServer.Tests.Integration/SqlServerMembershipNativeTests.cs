@@ -142,14 +142,22 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
 
         try
         {
-            var identities = await Task.WhenAll(
-                nodes.Select(node => node.Membership.RegisterAsync(AbortToken).AsTask())
-            );
-            var currentPairs = nodes
-                .Zip(identities)
-                .GroupBy(static pair => pair.Second.NodeId)
-                .Select(static group => group.MaxBy(static pair => pair.Second.Incarnation.Value))
+            // Six processes per node id race registration. A process whose incarnation is superseded before its
+            // descriptor write lands is refused (the duplicate-NodeId race); the last allocator for each node id always
+            // registers, so every node id ends with its newest incarnation live.
+            var outcomes = await Task.WhenAll(nodes.Select(node => _TryRegisterAsync(node.Membership)));
+            var registered = nodes
+                .Zip(outcomes)
+                .Where(static pair => pair.Second is not null)
+                .Select(static pair => (Node: pair.First, Identity: pair.Second!.Value))
                 .ToArray();
+            var currentPairs = registered
+                .GroupBy(static pair => pair.Identity.NodeId)
+                .Select(static group => group.MaxBy(static pair => pair.Identity.Incarnation.Value))
+                .Select(static pair => (First: pair.Node, Second: pair.Identity))
+                .ToArray();
+
+            currentPairs.Should().HaveCount(4);
             var accepted = await Task.WhenAll(
                 currentPairs.Select(pair => pair.First.Membership.HeartbeatAsync(AbortToken).AsTask())
             );
@@ -164,6 +172,18 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
             {
                 await node.DisposeAsync();
             }
+        }
+    }
+
+    private static async Task<NodeIdentity?> _TryRegisterAsync(INodeMembership membership)
+    {
+        try
+        {
+            return await membership.RegisterAsync(AbortToken);
+        }
+        catch (MembershipRegistrationRejectedException)
+        {
+            return null;
         }
     }
 

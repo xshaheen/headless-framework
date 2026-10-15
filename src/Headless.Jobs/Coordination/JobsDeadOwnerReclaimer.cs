@@ -21,8 +21,12 @@ internal sealed class JobsDeadOwnerReclaimer(
 {
     private readonly IInternalJobManager _internalJobManager = internalJobManager;
 
+    /// <summary>
+    /// The effective reconcile cadence, shared with the fallback service's orphaned-owner sweep so both run on one
+    /// value. Resolved and, when clamped, logged once per host.
+    /// </summary>
     public TimeSpan ReconcileInterval { get; } =
-        _ClampToDeadVisibilityWindow(
+        ResolveReconcileInterval(
             optionsBuilder.DeadNodeReconcileInterval,
             coordinationOptions?.Value,
             logger ?? NullLogger<JobsDeadOwnerReclaimer>.Instance
@@ -50,24 +54,26 @@ internal sealed class JobsDeadOwnerReclaimer(
     // event is missed — with a reconcile interval wider than half the visibility window, a dead owner has roughly
     // coin-flip odds of ever being observed Dead. Clamp rather than validate: the two values live in different
     // options classes (Jobs vs Coordination) and neither owns the other.
-    private static TimeSpan _ClampToDeadVisibilityWindow(
-        TimeSpan configured,
+    internal static TimeSpan ResolveReconcileInterval(
+        TimeSpan? configured,
         CoordinationOptions? coordination,
         ILogger logger
     )
     {
-        if (coordination is null)
+        var retentionWindow = (coordination ?? new CoordinationOptions()).DeadRetentionWindow;
+        var ceiling = TimeSpan.FromTicks(retentionWindow.Ticks / 2);
+
+        if (configured is not { } explicitInterval)
         {
-            return configured;
+            return ceiling;
         }
 
-        var ceiling = TimeSpan.FromTicks(coordination.DeadRetentionWindow.Ticks / 2);
-        if (ceiling <= TimeSpan.Zero || configured <= ceiling)
+        if (coordination is null || ceiling <= TimeSpan.Zero || explicitInterval <= ceiling)
         {
-            return configured;
+            return explicitInterval;
         }
 
-        logger.LogJobsReconcileIntervalClamped(configured, ceiling, coordination.DeadRetentionWindow);
+        logger.LogJobsReconcileIntervalClamped(explicitInterval, ceiling, retentionWindow);
         return ceiling;
     }
 }

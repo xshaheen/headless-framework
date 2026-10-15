@@ -148,9 +148,9 @@ public sealed class MembershipOracleSession : IMembershipOracleTarget
             Metadata = metadata,
         };
 
-        await _store.UpsertDescriptorAsync(descriptor, cancellationToken).ConfigureAwait(false);
+        var accepted = await _store.UpsertDescriptorAsync(descriptor, cancellationToken).ConfigureAwait(false);
 
-        return "register";
+        return accepted ? "register:accepted" : "register:refused";
     }
 
     private async Task<string> _LeaveAsync(MembershipOracleOp.Leave op, CancellationToken cancellationToken)

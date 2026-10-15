@@ -28,9 +28,15 @@ public sealed class RedisMembershipConformanceTests(RedisMembershipFixture fixtu
     }
 
     [Fact]
-    public override Task should_allocate_exactly_one_through_n_for_concurrent_allocations()
+    public override Task should_allocate_distinct_incarnations_for_concurrent_allocations()
     {
-        return base.should_allocate_exactly_one_through_n_for_concurrent_allocations();
+        return base.should_allocate_distinct_incarnations_for_concurrent_allocations();
+    }
+
+    [Fact]
+    public override Task should_refuse_upsert_for_a_superseded_incarnation_without_writing_liveness()
+    {
+        return base.should_refuse_upsert_for_a_superseded_incarnation_without_writing_liveness();
     }
 
     [Fact]
@@ -189,6 +195,7 @@ public sealed class RedisMembershipConformanceTests(RedisMembershipFixture fixtu
         {
             // Provider-default RedisKnownNodeRetention (7 days), not the fixture's 600ms override.
             setup.UseRedis(static _ => { });
+            setup.DisableMembershipHeartbeat();
             setup.Configure(options =>
             {
                 options.ClusterName = cluster;

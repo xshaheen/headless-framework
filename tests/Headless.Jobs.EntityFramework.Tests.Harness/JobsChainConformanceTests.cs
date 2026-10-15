@@ -745,7 +745,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("chain-failure");
+        using var host = fixture.BuildHost("chain-failure", fastMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
@@ -806,7 +806,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("chain-reclaim");
+        using var host = fixture.BuildHost("chain-reclaim", fastMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
@@ -862,7 +862,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("chain-immediate");
+        using var host = fixture.BuildHost("chain-immediate", fastMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
@@ -921,7 +921,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("chain-immediate-batch");
+        using var host = fixture.BuildHost("chain-immediate-batch", fastMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
@@ -1006,7 +1006,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         await fixture.ResetDatabaseAsync(ct);
         // Not started: the walk is driven directly with a fixed owner, so no coordination membership is needed and the
         // recovery bridge cannot race the leases under test.
-        using var host = fixture.BuildHost("walk-batch-fence");
+        using var host = fixture.BuildHost("walk-batch-fence", fastMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
 
         var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
@@ -1342,8 +1342,8 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var hostA = fixture.BuildHost("native-a");
-        using var hostB = fixture.BuildHost("native-b");
+        using var hostA = fixture.BuildHost("native-a", fastMembership: true);
+        using var hostB = fixture.BuildHost("native-b", fastMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(hostA, ct);
         await hostA.StartAsync(ct);
         await hostB.StartAsync(ct);

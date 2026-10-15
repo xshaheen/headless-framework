@@ -62,6 +62,77 @@ public sealed class CoordinationOptionsValidatorTests : TestBase
         result.Errors.Should().Contain(x => x.PropertyName == propertyName);
     }
 
+    [Fact]
+    public void should_accept_the_default_self_fence_margin()
+    {
+        _sut.Validate(new CoordinationOptions()).IsValid.Should().BeTrue();
+    }
+
+    [Theory]
+    // 1.2s threshold on 200ms beats: a fixed 5s margin would leave a negative window.
+    [InlineData(200, 1200)]
+    // The tightest valid triangle: DeadThreshold exactly three beats.
+    [InlineData(1000, 3000)]
+    public void should_accept_a_short_dead_threshold_when_the_margin_is_left_to_its_derived_default(
+        int heartbeatMilliseconds,
+        int deadMilliseconds
+    )
+    {
+        var options = new CoordinationOptions
+        {
+            HeartbeatInterval = TimeSpan.FromMilliseconds(heartbeatMilliseconds),
+            SuspicionThreshold = TimeSpan.FromMilliseconds(heartbeatMilliseconds * 2),
+            DeadThreshold = TimeSpan.FromMilliseconds(deadMilliseconds),
+            DeadRetentionWindow = TimeSpan.FromMilliseconds(deadMilliseconds),
+        };
+
+        _sut.Validate(options).IsValid.Should().BeTrue();
+    }
+
+    [Theory]
+    // Negative margin.
+    [InlineData(-1, 1000, 3000)]
+    // DeadThreshold 30s minus a 21s margin leaves 9s, under two 5s beats.
+    [InlineData(21_000, 5000, 30_000)]
+    // A 1.2s DeadThreshold cannot carry an explicit 5s margin.
+    [InlineData(5000, 200, 1200)]
+    public void should_reject_a_self_fence_margin_that_leaves_less_than_two_beats(
+        int marginMilliseconds,
+        int heartbeatMilliseconds,
+        int deadMilliseconds
+    )
+    {
+        // given
+        var options = new CoordinationOptions
+        {
+            HeartbeatInterval = TimeSpan.FromMilliseconds(heartbeatMilliseconds),
+            SuspicionThreshold = TimeSpan.FromMilliseconds(heartbeatMilliseconds * 2),
+            DeadThreshold = TimeSpan.FromMilliseconds(deadMilliseconds),
+            DeadRetentionWindow = TimeSpan.FromMilliseconds(deadMilliseconds),
+            SelfFenceMargin = TimeSpan.FromMilliseconds(marginMilliseconds),
+        };
+
+        // when
+        var result = _sut.Validate(options);
+
+        // then
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(CoordinationOptions.SelfFenceMargin));
+    }
+
+    [Fact]
+    public void should_accept_a_margin_that_leaves_exactly_two_beats()
+    {
+        var options = new CoordinationOptions
+        {
+            HeartbeatInterval = TimeSpan.FromSeconds(5),
+            SuspicionThreshold = TimeSpan.FromSeconds(15),
+            DeadThreshold = TimeSpan.FromSeconds(30),
+            SelfFenceMargin = TimeSpan.FromSeconds(20),
+        };
+
+        _sut.Validate(options).IsValid.Should().BeTrue();
+    }
+
     [Theory]
     [InlineData("cluster one")]
     [InlineData("cluster/one")]

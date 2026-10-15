@@ -143,6 +143,7 @@ public sealed class EventDerivationTests : TestBase
             new StaticNodeIdProvider(_Identity("local", 1).NodeId),
             new CoordinationOptions(),
             source,
+            new FakeTimeProvider(),
             new FakeHostApplicationLifetime(),
             NullLogger<MembershipService>.Instance
         );
