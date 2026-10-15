@@ -930,7 +930,7 @@ Redis distributed cache implementation for multi-instance applications.
 - Set/list operations with pagination.
 - Lua scripts for atomic multi-key operations.
 - O(1) logical tag invalidation and `ClearAsync` through timestamp markers (Family-2), compared against each entry's birth time on read — one marker key per tag, so tagging works on Redis Cluster.
-- Redis Cluster support for all operations, including tagging and clear.
+- Redis Cluster support for all operations, including tagging and clear. A bulk call splits into one command per hash slot and keeps at most 16 of them in flight, so a very large call queues in waves instead of sending every slot at once and hitting command timeouts.
 - Implements `IBufferCache` — `TryGetToAsync` writes the decoded value slice into the caller's `IBufferWriter<byte>` and `UpsertRawAsync` splices a `ReadOnlySequence<byte>` payload into the frame buffer, both reusing the same envelope stamping so expiry/tags/sliding/`CreatedAt` match the generic path; the frame is byte-identical and the read exposes the payload as a slice of the received buffer (one copy). See [Zero-intermediate-copy buffer path](#zero-intermediate-copy-buffer-path).
 - `cache.Events` event surface (`ICacheEvents`): direct-op `Hit`/`Miss`/`Set`/`Remove` (`Tier=l2`) and the bulk `RemoveAll`/`RemoveByPrefix`/`RemoveByTag`/`Clear`/`Flush` signals (Redis server-side evictions are not client-observable, so no `Eviction` event). See [Events](#events).
 - Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching`.
