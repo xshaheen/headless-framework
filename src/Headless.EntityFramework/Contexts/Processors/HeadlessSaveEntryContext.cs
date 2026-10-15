@@ -65,6 +65,12 @@ public sealed class HeadlessSaveEntryContext(DbContext dbContext, string? tenant
     /// </summary>
     internal int SnapshotCursor { get; set; }
 
+    /// <summary>
+    /// Whether a domain-event handler may have run during this save's drain, and so changed the tracked graph after the
+    /// first snapshot and audit capture.
+    /// </summary>
+    internal bool HandlerMayHaveChangedGraph { get; set; }
+
     /// <summary>Clears the event buffers on each captured emitter once they have been dispatched.</summary>
     internal void ClearEmitterMessages()
     {

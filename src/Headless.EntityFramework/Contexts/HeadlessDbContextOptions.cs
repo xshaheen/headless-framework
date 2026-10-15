@@ -93,6 +93,18 @@ public sealed class HeadlessDbContextOptions
         }
     }
 
+    /// <summary>
+    /// Whether the chain holds only the framework's processors, which write every stamp through the change tracker.
+    /// A consumer processor may write CLR members that only a change-detection pass reveals.
+    /// </summary>
+    internal bool HasOnlyBuiltInSaveEntryProcessors =>
+        _saveEntryProcessors.TrueForAll(static x =>
+            x.ImplementationType == typeof(HeadlessEntitySaveEntryProcessor)
+            || x.ImplementationType == typeof(HeadlessAuditSaveEntryProcessor)
+            || x.ImplementationType == typeof(HeadlessLocalEventSaveEntryProcessor)
+            || x.ImplementationType == typeof(HeadlessMessageCollectorSaveEntryProcessor)
+        );
+
     internal IReadOnlyList<IHeadlessSaveEntryProcessor> ResolveSaveEntryProcessors(IServiceProvider serviceProvider)
     {
         return _saveEntryProcessors

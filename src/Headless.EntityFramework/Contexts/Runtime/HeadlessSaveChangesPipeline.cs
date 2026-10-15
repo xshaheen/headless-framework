@@ -71,6 +71,8 @@ internal sealed class HeadlessSaveChangesPipeline(
         serviceProvider
     );
 
+    private readonly bool _hasOnlyBuiltInProcessors = options.HasOnlyBuiltInSaveEntryProcessors;
+
     private readonly ILogger<HeadlessSaveChangesPipeline> _logger =
         logger ?? NullLogger<HeadlessSaveChangesPipeline>.Instance;
 
@@ -360,11 +362,12 @@ internal sealed class HeadlessSaveChangesPipeline(
                     var dispatcher =
                         domainEventDispatcher
                         ?? throw new InvalidOperationException(_MissingDomainEventDispatcherMessage);
+                    state.SaveContext.HandlerMayHaveChangedGraph = true;
                     await dispatcher.DispatchAsync(occurrence, state.CancellationToken).ConfigureAwait(false);
                     state.SaveContext.DomainEventCursor++;
                 }
 
-                state.AuditEntries.Value = auditPersistence.CaptureEntries(_SnapshotEntries(state.Context));
+                _RecaptureAuditEntries(state.Context, state.SaveContext, state.AuditEntries);
                 state.DomainEventsPublished.Value = true;
             }
 
@@ -498,11 +501,12 @@ internal sealed class HeadlessSaveChangesPipeline(
                     var dispatcher =
                         domainEventDispatcher
                         ?? throw new InvalidOperationException(_MissingDomainEventDispatcherMessage);
+                    state.SaveContext.HandlerMayHaveChangedGraph = true;
                     _DispatchDomainEventBlocking(dispatcher, occurrence);
                     state.SaveContext.DomainEventCursor++;
                 }
 
-                state.AuditEntries.Value = auditPersistence.CaptureEntries(_SnapshotEntries(state.Context));
+                _RecaptureAuditEntries(state.Context, state.SaveContext, state.AuditEntries);
                 state.DomainEventsPublished.Value = true;
             }
 
@@ -585,6 +589,36 @@ internal sealed class HeadlessSaveChangesPipeline(
 
             ExceptionDispatchInfo.Capture(caught).Throw();
             throw; // unreachable; satisfies analyzers
+        }
+    }
+
+    /// <summary>
+    /// Refreshes the audit entries captured before the drain when the drain could have changed what they describe.
+    /// </summary>
+    /// <remarks>
+    /// With only the built-in processors, every framework write goes through the change tracker, so the entries
+    /// captured before the drain are still exact unless a handler ran; after one ran, the drain's last recollection
+    /// already took the snapshot to capture from. A consumer processor may write CLR members that only change
+    /// detection reveals, so a chain with one keeps taking a fresh snapshot.
+    /// </remarks>
+    private void _RecaptureAuditEntries(
+        DbContext context,
+        HeadlessSaveEntryContext saveContext,
+        StrongBox<IReadOnlyList<AuditLogEntryData>?> auditEntries
+    )
+    {
+        if (!_hasOnlyBuiltInProcessors)
+        {
+            auditEntries.Value = auditPersistence.CaptureEntries(_SnapshotEntries(context));
+
+            return;
+        }
+
+        if (saveContext.HandlerMayHaveChangedGraph)
+        {
+            auditEntries.Value = auditPersistence.CaptureEntries(
+                saveContext.TrackedEntries ?? _SnapshotEntries(context)
+            );
         }
     }
 
