@@ -62,6 +62,10 @@ internal sealed class SqlServerConnectionScopedLockStorage(
     // unset; tests make it throw just before the release command runs.
     internal Func<ValueTask>? BeforeReleaseAsync { get; init; }
 
+    // Failure-injection seam for proving a session whose acquire cleanup failed is never pooled. Production leaves this
+    // unset; tests make it throw LockCleanupFailedException after the server granted the lock.
+    internal Func<ValueTask>? AfterAcquireSessionAsync { get; init; }
+
     // Set at the top of DisposeAsync so an acquire racing teardown does not register a lock the teardown snapshot of
     // _heldByLeaseId already iterated past (which would leak its connection and applock).
     private volatile bool _disposed;
@@ -135,6 +139,11 @@ internal sealed class SqlServerConnectionScopedLockStorage(
                         cancellationToken
                     )
                     .ConfigureAwait(false);
+
+                if (AfterAcquireSessionAsync is not null)
+                {
+                    await AfterAcquireSessionAsync().ConfigureAwait(false);
+                }
             }
             catch (LockCleanupFailedException)
             {
@@ -719,7 +728,8 @@ internal sealed class SqlServerConnectionScopedLockStorage(
             _lostTokenSource.Dispose();
             _connectionGate.Dispose();
 
-            if (clearPool)
+            // A closed or broken connection's session is already gone, so it holds no lock and is not pooled.
+            if (clearPool && Connection.State is not (ConnectionState.Closed or ConnectionState.Broken))
             {
                 SqlConnection.ClearPool(Connection);
             }

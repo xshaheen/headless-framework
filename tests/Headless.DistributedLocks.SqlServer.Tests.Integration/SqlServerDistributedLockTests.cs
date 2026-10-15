@@ -572,6 +572,49 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
         (await _WaitUntilSessionLockFreeAsync(resource, TimeSpan.FromSeconds(5))).Should().BeTrue();
     }
 
+    [Fact]
+    public async Task should_free_the_application_lock_when_acquire_cleanup_fails()
+    {
+        // given (the server granted the lock, then the acquire failed and so did its cleanup release)
+        await using var storage = new SqlServerConnectionScopedLockStorage(
+            Options.Create(
+                new SqlServerDistributedLockOptions
+                {
+                    ConnectionString = fixture.ConnectionString,
+                    KeyPrefix = DistributedLockOptions.DefaultKeyPrefix,
+                    EnableFencing = false,
+                }
+            ),
+            Options.Create(new DistributedLocksStorageOptions()),
+            TimeProvider.System
+        )
+        {
+            AfterAcquireSessionAsync = () =>
+                throw new LockCleanupFailedException(
+                    [
+                        new TimeoutException("Simulated acquire failure."),
+                        new TimeoutException("Simulated cleanup failure."),
+                    ],
+                    "Simulated cleanup failure."
+                ),
+        };
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        // when
+        var acquire = async () =>
+            await storage.TryAcquireAsync(
+                resource,
+                Guid.NewGuid().ToString("N"),
+                isShared: false,
+                observeLoss: false,
+                AbortToken
+            );
+
+        // then (the session is ended rather than pooled, so the lock does not outlive the failed cleanup)
+        await acquire.Should().ThrowAsync<LockCleanupFailedException>();
+        (await _WaitUntilSessionLockFreeAsync(resource, TimeSpan.FromSeconds(5))).Should().BeTrue();
+    }
+
     private async Task<bool> _WaitUntilSessionLockFreeAsync(string resource, TimeSpan within)
     {
         var started = TimeProvider.System.GetTimestamp();

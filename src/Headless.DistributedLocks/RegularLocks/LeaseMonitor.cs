@@ -346,8 +346,14 @@ internal sealed class LeaseMonitor : IAsyncDisposable
             }
 
             // A renew can move the deadline after this callback was already queued, and a timer can fire a little
-            // early; in both cases wait for the real deadline instead of declaring a held lease lost.
+            // early; in both cases wait for the real deadline instead of declaring a held lease lost. A renew that made
+            // the lease non-expiring leaves no deadline at all.
             var remaining = _GetTimeUntilDeadline(_anchorTimestamp, _anchorTtl);
+
+            if (remaining == Timeout.InfiniteTimeSpan)
+            {
+                return;
+            }
 
             if (remaining > TimeSpan.Zero)
             {

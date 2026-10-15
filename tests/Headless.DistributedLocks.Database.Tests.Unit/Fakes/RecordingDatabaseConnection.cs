@@ -49,6 +49,12 @@ internal sealed class RecordingDatabaseConnection : DatabaseConnection
 
     public bool IsOpen => _fake.State == ConnectionState.Open;
 
+    /// <summary>Moves the underlying connection to <see cref="ConnectionState.Broken"/>, as a dropped session does.</summary>
+    public void Break()
+    {
+        _fake.SetState(ConnectionState.Broken);
+    }
+
     public override bool ShouldPrepareCommands => false;
 
     protected override void ClearPool()

@@ -94,6 +94,28 @@ public sealed class MultiplexedConnectionLockPoisonTests : TestBase
         connection.DisposeCount.Should().BePositive();
     }
 
+    [Fact]
+    public async Task should_dispose_without_clearing_the_pool_when_the_connection_broke_during_the_failed_unlock()
+    {
+        // given (the session died mid-unlock, so the server already dropped its locks and the driver will not pool it)
+        var strategy = new FakeSynchronizationStrategy
+        {
+            ThrowOnReleaseIdentity = "resource-a",
+            BreakConnectionOnFailedRelease = true,
+        };
+        var pool = _CreatePool();
+        var handle = await _AcquireAsync(pool, "resource-a", strategy);
+        var connection = _connections.Should().ContainSingle().Subject;
+
+        // when
+        var release = async () => await handle!.DisposeAsync();
+
+        // then (clearing would drop every idle connection of a possibly shared pool for no gain)
+        await release.Should().ThrowAsync<InvalidOperationException>();
+        connection.PoolClearCount.Should().Be(0);
+        connection.DisposeCount.Should().BePositive();
+    }
+
     private MultiplexedConnectionLockPool _CreatePool()
     {
         return new MultiplexedConnectionLockPool(_ =>

@@ -360,6 +360,24 @@ public sealed class LeaseMonitorTests : TestBase
         sut.LostToken.IsCancellationRequested.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task should_not_mark_lost_when_queued_deadline_callback_runs_after_renew_made_lease_non_expiring()
+    {
+        // given - the deadline callback was already queued when a renew made the lease non-expiring
+        var timeProvider = new CallbackCapturingTimeProvider();
+        var handle = new FakeLeaseHandle(timeProvider) { MonitoringCadence = TimeSpan.FromSeconds(10) };
+        await using var sut = new LeaseMonitor(handle, timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        sut.OnLeaseRenewed(timeProvider.GetTimestamp(), Timeout.InfiniteTimeSpan);
+
+        // when
+        timeProvider.RunCallbacks("DeadlineTimerState");
+        await DistributedLockTestSupport.DrainUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
+
+        // then
+        sut.LostToken.IsCancellationRequested.Should().BeFalse();
+    }
+
     private static async Task _WaitForLossAsync(LeaseMonitor sut)
     {
         var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
