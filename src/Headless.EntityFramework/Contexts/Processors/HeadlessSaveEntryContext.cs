@@ -60,16 +60,22 @@ public sealed class HeadlessSaveEntryContext(DbContext dbContext, string? tenant
     internal int DomainEventCursor { get; set; }
 
     /// <summary>
-    /// The <see cref="DomainEventCursor"/> value when <see cref="TrackedEntries"/> was last taken. Handlers run only
-    /// between cursor advances, so while the two match nothing could have changed the graph since the snapshot.
-    /// </summary>
-    internal int SnapshotCursor { get; set; }
-
-    /// <summary>
     /// Whether a domain-event handler may have run during this save's drain, and so changed the tracked graph after the
     /// first snapshot and audit capture.
     /// </summary>
     internal bool HandlerMayHaveChangedGraph { get; set; }
+
+    /// <summary>Whether a domain-event handler may have run since <see cref="TrackedEntries"/> was taken.</summary>
+    internal bool GraphChangedSinceSnapshot { get; set; }
+
+    /// <summary>
+    /// Answers whether a domain-event payload type has a registered handler, or <see langword="null"/> when the
+    /// dispatcher cannot tell, in which case every payload counts as handled.
+    /// </summary>
+    internal Func<Type, bool>? DomainEventHandlerFilter { get; init; }
+
+    /// <summary>Whether dispatching a payload of <paramref name="payloadType"/> could reach a handler.</summary>
+    internal bool HasDomainEventHandler(Type payloadType) => DomainEventHandlerFilter?.Invoke(payloadType) ?? true;
 
     /// <summary>Clears the event buffers on each captured emitter once they have been dispatched.</summary>
     internal void ClearEmitterMessages()

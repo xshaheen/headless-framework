@@ -73,6 +73,13 @@ internal sealed class HeadlessSaveChangesPipeline(
 
     private readonly bool _hasOnlyBuiltInProcessors = options.HasOnlyBuiltInSaveEntryProcessors;
 
+    // Only the built-in dispatcher resolves handlers from DI, so only it can say a payload has none; any other
+    // dispatcher may deliver events elsewhere, and every event it would receive is still synthesized and dispatched.
+    private readonly Func<Type, bool>? _domainEventHandlerFilter = domainEventDispatcher
+        is ServiceProviderDomainEventDispatcher builtIn
+        ? builtIn.HasHandler
+        : null;
+
     private readonly ILogger<HeadlessSaveChangesPipeline> _logger =
         logger ?? NullLogger<HeadlessSaveChangesPipeline>.Instance;
 
@@ -219,7 +226,11 @@ internal sealed class HeadlessSaveChangesPipeline(
     private HeadlessSaveEntryContext _ProcessEntries(DbContext context, IReadOnlyList<EntityEntry> entries)
     {
         var tenantId = context is IHeadlessDbContext headlessContext ? headlessContext.TenantId : null;
-        var saveContext = new HeadlessSaveEntryContext(context, tenantId) { TrackedEntries = entries };
+        var saveContext = new HeadlessSaveEntryContext(context, tenantId)
+        {
+            TrackedEntries = entries,
+            DomainEventHandlerFilter = _domainEventHandlerFilter,
+        };
 
         foreach (var entry in entries)
         {
@@ -362,8 +373,11 @@ internal sealed class HeadlessSaveChangesPipeline(
                     var dispatcher =
                         domainEventDispatcher
                         ?? throw new InvalidOperationException(_MissingDomainEventDispatcherMessage);
-                    state.SaveContext.HandlerMayHaveChangedGraph = true;
-                    await dispatcher.DispatchAsync(occurrence, state.CancellationToken).ConfigureAwait(false);
+                    if (_MarkHandledOccurrence(state.SaveContext, occurrence))
+                    {
+                        await dispatcher.DispatchAsync(occurrence, state.CancellationToken).ConfigureAwait(false);
+                    }
+
                     state.SaveContext.DomainEventCursor++;
                 }
 
@@ -501,8 +515,11 @@ internal sealed class HeadlessSaveChangesPipeline(
                     var dispatcher =
                         domainEventDispatcher
                         ?? throw new InvalidOperationException(_MissingDomainEventDispatcherMessage);
-                    state.SaveContext.HandlerMayHaveChangedGraph = true;
-                    _DispatchDomainEventBlocking(dispatcher, occurrence);
+                    if (_MarkHandledOccurrence(state.SaveContext, occurrence))
+                    {
+                        _DispatchDomainEventBlocking(dispatcher, occurrence);
+                    }
+
                     state.SaveContext.DomainEventCursor++;
                 }
 
@@ -593,6 +610,23 @@ internal sealed class HeadlessSaveChangesPipeline(
     }
 
     /// <summary>
+    /// Records that a handler is about to run for <paramref name="occurrence"/>, or reports that none is registered:
+    /// an occurrence nobody handles is skipped, and it cannot change the graph.
+    /// </summary>
+    private static bool _MarkHandledOccurrence(HeadlessSaveEntryContext saveContext, EventContext<object> occurrence)
+    {
+        if (!saveContext.HasDomainEventHandler(occurrence.Payload.GetType()))
+        {
+            return false;
+        }
+
+        saveContext.HandlerMayHaveChangedGraph = true;
+        saveContext.GraphChangedSinceSnapshot = true;
+
+        return true;
+    }
+
+    /// <summary>
     /// Refreshes the audit entries captured before the drain when the drain could have changed what they describe.
     /// </summary>
     /// <remarks>
@@ -627,16 +661,16 @@ internal sealed class HeadlessSaveChangesPipeline(
 
     private EventContext<object>? _TryTakeDomainOccurrence(DbContext context, HeadlessSaveEntryContext saveContext)
     {
-        // Recollect after each completed pass, without synthesizing lifecycle events again for existing entries.
-        // The snapshot _ProcessEntries just processed is still current until a handler has run, so the first pass of
-        // a save with no occurrences, or with all of them still pending, skips a full tracker traversal.
+        // Recollect after each completed pass, without synthesizing lifecycle events again for existing entries. Only a
+        // handler can add entities or events, so the last snapshot stays current until one has run: a save with no
+        // occurrences, or whose occurrences have no handlers, skips a full tracker traversal.
         if (
             saveContext.DomainEventCursor == saveContext.PendingDomainEvents.Count
-            && saveContext.SnapshotCursor != saveContext.DomainEventCursor
+            && saveContext.GraphChangedSinceSnapshot
         )
         {
             var collector = _ResolveMessageCollector();
-            saveContext.SnapshotCursor = saveContext.DomainEventCursor;
+            saveContext.GraphChangedSinceSnapshot = false;
             var snapshot = _SnapshotEntries(context);
             saveContext.TrackedEntries = snapshot;
             foreach (var entry in snapshot)
@@ -714,7 +748,22 @@ internal sealed class HeadlessSaveChangesPipeline(
     {
         return _HasAuditEntries(auditEntries)
             || saveContext.IntegrationEventEmitters.Count > 0
-            || saveContext.DomainEventEmitters.Count > 0;
+            || _HasHandledDomainEvent(saveContext);
+    }
+
+    // A domain event without a handler has nothing to run inside the transaction; its emitter is cleared after the
+    // save either way.
+    private static bool _HasHandledDomainEvent(HeadlessSaveEntryContext saveContext)
+    {
+        foreach (var occurrence in saveContext.PendingDomainEvents)
+        {
+            if (saveContext.HasDomainEventHandler(occurrence.Payload.GetType()))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool _HasAuditEntries(IReadOnlyList<AuditLogEntryData>? auditEntries)

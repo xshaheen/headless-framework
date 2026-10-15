@@ -81,6 +81,40 @@ internal sealed class ServiceProviderDomainEventDispatcher(IServiceProvider serv
         }
     }
 
+    /// <summary>
+    /// Whether dispatching a payload of <paramref name="payloadType"/> could reach a handler: a registration of
+    /// <c>IDomainEventHandler&lt;payloadType&gt;</c>, closed or through an open generic, exists in the container.
+    /// </summary>
+    /// <remarks>
+    /// Dispatch resolves handlers for the exact runtime payload type, so the same question decides whether the event
+    /// has any observer. A container that cannot answer it reports every payload as handled. Answers are cached per
+    /// container, because registrations are fixed once the container is built.
+    /// </remarks>
+    internal bool HasHandler(Type payloadType)
+    {
+        if (services.GetService<IServiceProviderIsService>() is not { } isService)
+        {
+            return true;
+        }
+
+        return _HandlerPresence
+            .GetValue(isService, _CreateHandlerPresence)
+            .GetOrAdd(payloadType, _IsHandled, isService);
+    }
+
+    private static readonly ConditionalWeakTable<
+        IServiceProviderIsService,
+        ConcurrentDictionary<Type, bool>
+    > _HandlerPresence = [];
+
+    private static readonly ConditionalWeakTable<
+        IServiceProviderIsService,
+        ConcurrentDictionary<Type, bool>
+    >.CreateValueCallback _CreateHandlerPresence = static _ => new();
+
+    private static readonly Func<Type, IServiceProviderIsService, bool> _IsHandled = static (payloadType, isService) =>
+        payloadType.IsValueType || isService.IsService(typeof(IDomainEventHandler<>).MakeGenericType(payloadType));
+
     #region Helpers
 
     private static int _GetHandlerOrder(Type handlerType)
