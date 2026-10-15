@@ -15,7 +15,12 @@ internal sealed class RedisMembershipHeartbeatScriptDefinition : RedisScriptDefi
         : base(
             """
             local current = redis.call('get', @genKey)
-            if current == false or tonumber(current) ~= tonumber(@incarnation) then
+            -- A missing generation key means the store lost it (flush or lossy failover), not a superseded
+            -- incarnation; -1 lets the client name the reset while refusing the beat exactly like 0.
+            if current == false then
+              return -1
+            end
+            if tonumber(current) ~= tonumber(@incarnation) then
               return 0
             end
 

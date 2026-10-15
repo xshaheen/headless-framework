@@ -120,6 +120,10 @@ public static class CoordinationFixtureExtensions
         {
             fixture.ConfigureProvider(services, setup);
 
+            // Conformance tests drive registration and beats by hand; a live heartbeat loop would beat behind their
+            // back and its self-fence would stop nodes on its own schedule.
+            setup.DisableMembershipHeartbeat();
+
             if (schema is not null)
             {
                 setup.ConfigureStorage(storage => storage.Schema = schema);

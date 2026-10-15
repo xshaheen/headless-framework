@@ -14,6 +14,12 @@ internal sealed class FakeMembershipStore : IMembershipStore
 
     public bool ThrowOnRegister { get; set; }
 
+    public bool UpsertAccepted { get; set; } = true;
+
+    public bool BlockOnAllocate { get; set; }
+
+    public TaskCompletionSource AllocateRelease { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     /// <summary>The number of registration attempts that fail before allocation succeeds.</summary>
     public int FailingRegistrations { get; set; }
 
@@ -47,7 +53,7 @@ internal sealed class FakeMembershipStore : IMembershipStore
 
     public List<NodeIdentity> Leaves { get; } = [];
 
-    public ValueTask<NodeIncarnation> AllocateIncarnationAsync(
+    public async ValueTask<NodeIncarnation> AllocateIncarnationAsync(
         NodeId nodeId,
         CancellationToken cancellationToken = default
     )
@@ -60,15 +66,29 @@ internal sealed class FakeMembershipStore : IMembershipStore
             throw new InvalidOperationException("registration unavailable");
         }
 
-        return ValueTask.FromResult(NextIncarnation);
+        if (BlockOnAllocate)
+        {
+            await AllocateRelease.Task.ConfigureAwait(false);
+        }
+
+        return NextIncarnation;
     }
 
-    public ValueTask UpsertDescriptorAsync(NodeDescriptor descriptor, CancellationToken cancellationToken = default)
+    public ValueTask<bool> UpsertDescriptorAsync(
+        NodeDescriptor descriptor,
+        CancellationToken cancellationToken = default
+    )
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (!UpsertAccepted)
+        {
+            return ValueTask.FromResult(false);
+        }
+
         Descriptors.Add(descriptor);
 
-        return ValueTask.CompletedTask;
+        return ValueTask.FromResult(true);
     }
 
     public async ValueTask<bool> HeartbeatAsync(NodeIdentity identity, CancellationToken cancellationToken = default)

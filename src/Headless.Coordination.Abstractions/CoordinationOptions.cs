@@ -72,6 +72,23 @@ public sealed class CoordinationOptions
     public TimeSpan DeadThreshold { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Gets or sets how long before <see cref="DeadThreshold"/> the local node fences itself. The node measures its
+    /// fence from the instant just before its registration write and from the start of each accepted heartbeat, and
+    /// stops treating itself as a member at that anchor plus <see cref="DeadThreshold"/> minus this margin, so it stops
+    /// stamping work before any peer can classify it <see cref="NodeLivenessState.Dead"/> and reclaim that work. A
+    /// timer enforces the deadline even when no heartbeat completes, and <see cref="INodeMembership.Identity"/> reads
+    /// <see langword="null"/> from that instant. The fence runs only on a host that runs the membership heartbeat.
+    /// </summary>
+    /// <remarks>
+    /// Defaults to <see langword="null"/>, which means the smaller of 5 seconds and one sixth of
+    /// <see cref="DeadThreshold"/> (5 seconds with the default 30-second threshold, 200 milliseconds with a
+    /// 1.2-second one). That default always leaves the two heartbeat intervals the validation below requires, so a
+    /// short <see cref="DeadThreshold"/> needs no explicit margin. An explicit value must be zero or greater, and
+    /// <see cref="DeadThreshold"/> minus it must be at least twice <see cref="HeartbeatInterval"/>.
+    /// </remarks>
+    public TimeSpan? SelfFenceMargin { get; set; }
+
+    /// <summary>
     /// Gets or sets the minimum duration dead node records are retained in the backing store before becoming
     /// eligible for removal. Must be at least twice <see cref="HeartbeatInterval"/>, so a reader is guaranteed
     /// to see the dead record at least once before it disappears. This value is a floor, not a ceiling:

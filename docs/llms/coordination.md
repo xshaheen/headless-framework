@@ -32,7 +32,7 @@ Membership answers "which node incarnations are alive?". It reports liveness onl
 
 ### Node Identity
 
-`NodeIdentity` is `NodeId + NodeIncarnation` and formats as `node@incarnation`. The store allocates incarnation monotonically per node id. A restarted process with the same node id becomes a different identity, so consumers can reclaim `node@1` work without touching `node@2`. A `NodeId` must be text every membership store keeps unchanged (`Argument.IsPortableKey`): surrounding white space, a NUL character, or an unpaired UTF-16 surrogate throws `ArgumentException`. It is at most `NodeId.MaxLength` (256) characters and `ClusterName` at most `CoordinationOptions.ClusterNameMaxLength` (128): every membership row is keyed by both, and SQL Server caps a clustered key at 900 bytes.
+`NodeIdentity` is `NodeId + NodeIncarnation` and formats as `node@incarnation`. The store allocates incarnations strictly increasing per node id, not as a dense sequence: Redis seeds them from its server clock (see [Headless.Coordination.Redis](#headlesscoordinationredis)). A restarted process with the same node id becomes a different identity, so consumers can reclaim `node@1` work without touching `node@2`. A `NodeId` must be text every membership store keeps unchanged (`Argument.IsPortableKey`): surrounding white space, a NUL character, or an unpaired UTF-16 surrogate throws `ArgumentException`. It is at most `NodeId.MaxLength` (256) characters and `ClusterName` at most `CoordinationOptions.ClusterNameMaxLength` (128): every membership row is keyed by both, and SQL Server caps a clustered key at 900 bytes.
 
 The per-node generation counter is never purged by any provider — purging it would let a returning node reuse an incarnation and defeat stale-owner detection — so every distinct node id ever registered leaves one permanent generation row (relational) or `:gen:<node-id>` key (Redis). Keep node-id cardinality bounded: prefer stable ids (StatefulSet ordinals, configured ids, or pod name plus namespace) and avoid the generated-`{guid}` fallback in long-lived deployments, where every process start mints a new immortal entry and the generation keyspace grows without bound.
 
@@ -79,7 +79,9 @@ Coordination is fencing-safe, fail-stop, and fail-closed when backed by an autho
 
 The abstraction is a liveness substrate, not an ownership store. Consumers own their domain rows and stamp `NodeIdentity`.
 
-`HeartbeatAsync()` returns `false` when the local incarnation has been superseded or is terminal. Callers must stop ownership-sensitive work and re-register rather than attempting to resurrect that identity.
+`HeartbeatAsync()` returns `false` when the local incarnation has been superseded or is terminal, or when the node is past its self-fence deadline. Callers must stop ownership-sensitive work; a process whose membership was lost must restart, because `RegisterAsync` throws `InvalidOperationException` once local membership is lost.
+
+`RegisterAsync` throws `MembershipRegistrationRejectedException` (a `CoordinationException`) when the store refuses the registration because a newer incarnation of the same node id was allocated first: another process is registering with the same `NodeId`. `Identity` stays unset and startup fails; registration is not retried. Concurrent `RegisterAsync` calls in one process share a single registration and get the same identity.
 
 ### Install
 
@@ -115,8 +117,8 @@ None.
 ### API and behavior
 
 - An internal membership service implements `INodeMembership` (consumers resolve `INodeMembership`).
-- Background heartbeat service registers the node at start, derives lifecycle events from authoritative snapshots, leaves gracefully on host shutdown under a bounded timeout, and stops beating once local membership is lost.
-- `setup.DisableMembershipHeartbeat()` skips that hosted service. Use it on test hosts and tools that must not join the cluster on their own; `INodeMembership` stays registered, so a test can call `RegisterAsync` and `HeartbeatAsync` itself. A node that keeps running without heartbeats reads as `Dead` to its peers once `DeadThreshold` passes, so production nodes keep the heartbeat. `AddHeadlessJobs` on the durable store refuses the switch unless Jobs background services are off, since a node that claims work without beating would have that work released to peers while it still runs it.
+- Background heartbeat service starts its beat loop in `IHostedLifecycleService.StartingAsync`, before any hosted service's `StartAsync`. The loop waits for whichever caller registers first (the Jobs startup gate, or the service's own register-if-null in `StartAsync` on hosts without Jobs) and never registers itself, so a node registered early in startup keeps beating through a slow `StartingAsync` in a later service. It derives lifecycle events from authoritative snapshots, leaves gracefully on host shutdown under a bounded timeout, and stops beating once local membership is lost. A registration the store refuses fails startup without a retry.
+- `setup.DisableMembershipHeartbeat()` skips that hosted service. Use it on test hosts and tools that must not join the cluster on their own; `INodeMembership` stays registered, so a test can call `RegisterAsync` and `HeartbeatAsync` itself. Such a host never self-fences (it has no beat source, so it would only ever reach the deadline); a node that keeps running without heartbeats reads as `Dead` to its peers once `DeadThreshold` passes, so production nodes keep the heartbeat. `AddHeadlessJobs` on the durable store refuses the switch unless Jobs background services are off, since a node that claims work without beating would have that work released to peers while it still runs it.
 - Clocks: the registered `TimeProvider` paces beats, the dead-owner reconcile, and the local self-fence, so a test advances it to drive liveness. The registration retry back-off, the bounded leave on shutdown, the dead-owner watch re-subscribe back-off, and the reconcile's snapshot-read timeout wait real time, so a host that registers a `FakeTimeProvider` and never advances it still registers after a transient store failure and still stops.
 - Bounded per-subscriber event channels isolate slow consumers from heartbeats.
 - Default node-id provider resolves configured id, Kubernetes pod identity, hostname, then generated id.
@@ -125,7 +127,7 @@ None.
 
 `RegisterAsync` durably establishes both the cold descriptor and an initial store-clock liveness entry in one guarded write, so a node is `Alive` (and its role/metadata are visible) immediately after register — without waiting for the first heartbeat. The background loop owns every subsequent beat. Registration is incarnation-guarded: a stale or superseded incarnation establishes no liveness.
 
-Self-heartbeat rejection is a local fencing failure. A heartbeat write is deadline-bounded by the remaining `DeadThreshold` budget, so a continuously failing or hung store call self-fences the node once no write has been confirmed for that threshold; snapshot-read failures do not fence a node whose heartbeats still succeed. The default `MembershipLostBehavior.StopApplication` asks the host to stop; `StopMembershipOnly` is for hosts that explicitly quiesce every worker.
+Self-heartbeat rejection is a local fencing failure. On a host that runs the heartbeat service, the node also fences itself on a deadline: the anchor is the instant just before its registration write, and each accepted heartbeat moves it to the instant that beat started. At anchor + `DeadThreshold` - `SelfFenceMargin` a `TimeProvider` timer fail-stops the node even when no beat or loop tick runs, so it stops before any peer can classify it `Dead` and reclaim its work. From that instant `Identity` reads `null` even if the timer callback is late, so stamp sites (such as the Jobs owner identity) stop handing out an owner; a beat the store accepts after the deadline does not bring the identity back. `INodeMembership.LeaveAsync` still writes the departure for a node past its deadline whose timer has not fired yet, so peers see `NodeLeft` instead of waiting out `DeadThreshold`. Each beat is bounded by the fence budget left, and the loop waits the smaller of `HeartbeatInterval` and that budget, so a continuously failing or hung store call fences the node at the deadline. Snapshot-read failures do not fence a node whose heartbeats still succeed. The default `MembershipLostBehavior.StopApplication` asks the host to stop; `StopMembershipOnly` is for hosts that explicitly quiesce every worker.
 
 An incarnation is terminal once it leaves, reaches `DeadThreshold`, or its retained liveness entry is pruned. PostgreSQL, SQL Server, and Redis reject later heartbeats for that same incarnation; recovery requires allocating and registering a higher incarnation, so a delayed process cannot resurrect its old ownership identity.
 
@@ -151,6 +153,22 @@ Applications normally use a provider package and call `AddHeadlessCoordination(s
 ### Configuration
 
 Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadThreshold` must be at least three heartbeat intervals (a single missed or slow beat must not kill the node), and `DeadRetentionWindow` must be at least two heartbeat intervals.
+
+`SelfFenceMargin` is how long before `DeadThreshold` the node fences itself. Leave it `null` (the default) and the node uses the smaller of 5 seconds and one sixth of `DeadThreshold`: 5 seconds with the default 30-second threshold, 200 milliseconds with a 1.2-second one. That derived value always passes validation, so a short-threshold profile needs no margin of its own. An explicit margin must be zero or greater, and `DeadThreshold - SelfFenceMargin` must be at least twice `HeartbeatInterval`; startup validation fails otherwise. Set it only to widen the margin for a store with slow or skewed writes, or to `TimeSpan.Zero` to fence exactly at `DeadThreshold`:
+
+```csharp
+services.AddHeadlessCoordination(setup =>
+{
+    setup.UsePostgreSql(connectionString);
+    setup.Configure(options =>
+    {
+        options.HeartbeatInterval = TimeSpan.FromSeconds(2);
+        options.SuspicionThreshold = TimeSpan.FromSeconds(6);
+        options.DeadThreshold = TimeSpan.FromSeconds(12);
+        options.SelfFenceMargin = TimeSpan.FromSeconds(3); // derived default would be 2 seconds
+    });
+});
+```
 
 Storage naming is a separate, feature-owned options type. `CoordinationStorageOptions.Schema` (default `"headless"`, the schema every Headless feature shares) names the database schema that holds the membership tables, and it is configured through the setup builder rather than through any one provider:
 
@@ -180,6 +198,8 @@ Registers `TimeProvider.System`, framework GUID generator defaults, `IHostIdenti
 - `RelationalCoordinationOptions`, the options base both providers share: `ConnectionString`, `CommandTimeout` (positive, at most 10 minutes; default 30 seconds), and `InitializeOnStartup`.
 - Allocation is one upsert of the node's generation row. Registration and heartbeats take that row's update-intent lock first, so neither interleaves with an allocation that supersedes the incarnation they write for.
 - A heartbeat is one fenced liveness update: current incarnation, not left, and beat younger than `DeadThreshold`, decided in its `WHERE`. It writes the later of the stored beat and the database clock, so a database clock that steps back never moves a beat backwards. Registering the current incarnation again revives its liveness the same way.
+- `UpsertDescriptorAsync` returns `false` when the incarnation is no longer current, and writes neither the descriptor nor liveness.
+- Incarnations come from an `INCR`-style counter in the generation row. A database restored from a backup rolls those counters back, so incarnations issued after the backup are issued again while rows in other stores may still carry them as owners. Restore coordination together with the stores that hold `node@incarnation` owners, or not at all.
 - `LeaveAsync` stamps the leave once; leaving an incarnation that already left is a no-op.
 - Every comparison runs on the database clock with exact durations; the application clock never classifies a node.
 - Every call runs on its own READ COMMITTED transaction and retries a transient fault raised before its commit (a deadlock, a serialization conflict, a lock timeout, a dropped connection), at most 3 attempts. A fault from the commit is never retried. See the kit's [retry rule](sql.md#store-statement-kit-for-provider-authors).
@@ -267,7 +287,9 @@ Registers the core membership services, the PostgreSQL membership store, and the
 
 ### API and behavior
 
-- Incarnation allocation uses persistent `INCR` counters.
+- Incarnation allocation sets the generation to the larger of the current value plus one and the Redis server time in milliseconds times 1000 (`redis.call('TIME')`), so an incarnation allocated after a reset or a lossy failover still exceeds every earlier one. Values stay below 2^53, so Lua numbers hold them exactly.
+- `UpsertDescriptorAsync` returns `false` when the registration is refused, and fills the store's local descriptor cache only for an accepted registration.
+- A heartbeat whose generation key is missing (the store was flushed or failed over without it) is refused like a superseded one, and the store logs a distinct `RedisCoordinationStoreReset` error.
 - Heartbeat/read/leave/cleanup scripts use Redis `TIME`.
 - Heartbeats reject dead, gracefully left, and missing/pruned member payloads for the same incarnation.
 - Leave is a guarded no-op for an absent, pruned, or superseded-and-swept identity — it never materializes a member payload.
@@ -279,7 +301,7 @@ Registers the core membership services, the PostgreSQL membership store, and the
 
 Redis keys use a cluster hash tag around `ClusterName`. The durable `:gen:<node-id>` counters carry no TTL, so an `allkeys-*` `maxmemory-policy` can evict a live node's counter under memory pressure. The next heartbeat then fails the generation guard, the node treats its own membership as lost, and under the default `MembershipLostBehavior.StopApplication` the host is asked to stop — a silent eviction surfaces as a spurious shutdown. Run coordination against a Redis instance or logical database configured with `noeviction` or a `volatile-*` policy; coordination keys carry no TTL, so `volatile-*` never evicts them.
 
-**Membership needs Redis persistence.** The `:gen:<node-id>` counters are the only record of which incarnations were issued, so run coordination on a Redis with persistence enabled (AOF, `appendfsync everysec` or stricter). A reset (`FLUSHALL`, a restart without persistence) or a failover to a replica that missed recent writes loses or rolls back those counters. Every live node's next heartbeat then fails the generation guard, so under the default `MembershipLostBehavior.StopApplication` every host stops. When the nodes restart, `INCR` allocates incarnations again from the lost or rolled-back value, so a `node@incarnation` identity already issued before the loss can be issued again while rows in other stores still carry it as their owner.
+**Membership needs Redis persistence.** The `:gen:<node-id>` counters are the only record of which incarnations were issued, so run coordination on a Redis with persistence enabled (AOF, `appendfsync everysec` or stricter). A reset (`FLUSHALL`, a restart without persistence) or a failover to a replica that missed recent writes loses or rolls back those counters. Every live node's next heartbeat then fails the generation guard and logs `RedisCoordinationStoreReset`, so under the default `MembershipLostBehavior.StopApplication` every host stops; a reset is still fail-stop. When the nodes restart, allocation seeds new incarnations from the Redis server clock, so an identity issued before the loss is not issued again, provided the server clock has not stepped back across the reset.
 
 **Generation mirrors in `:known` are read-path projections, not authority.** The durable per-node generation key remains the heartbeat guard. Allocation and heartbeat scripts mirror the current value into a reserved `:known` hash field named `__gen:<node-id>`, so read Lua can classify retained member payloads from one `HGETALL` result instead of calling `GET` for every member. Cleanup sweeps a mirror field once its node has no surviving member payload (orphan prune); the durable generation key is never touched, so a restarting node re-mirrors on its next allocate or heartbeat.
 

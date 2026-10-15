@@ -29,7 +29,12 @@ public interface IMembershipStore
     /// guarded by the current generation. This makes a node live immediately after register, independent of
     /// the heartbeat loop. A stale or impossible incarnation must not establish or overwrite liveness.
     /// </summary>
-    ValueTask UpsertDescriptorAsync(NodeDescriptor descriptor, CancellationToken cancellationToken = default);
+    /// <returns>
+    /// <see langword="true"/> when the store established the registration; <see langword="false"/> when it refused
+    /// it because the incarnation is no longer current (another process allocated a newer incarnation of the same
+    /// node id) or the generation is missing. A refusal writes neither the descriptor nor liveness.
+    /// </returns>
+    ValueTask<bool> UpsertDescriptorAsync(NodeDescriptor descriptor, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Refreshes a live current incarnation. Returns <see langword="false"/> when the incarnation is superseded,
