@@ -130,9 +130,10 @@ public sealed class RetryPolicyOptions
     /// </summary>
     /// <remarks>
     /// Each renewal re-stamps <c>LockedUntil</c> to the store's clock plus <see cref="DispatchTimeout"/> and is fenced on
-    /// the lease the attempt holds. A renewal that finds the lease gone, or that the store does not confirm within one
-    /// interval, cancels the attempt's token and the attempt writes no state; the row is then recovered like a crashed
-    /// attempt. <see cref="DispatchTimeout"/> sizes how long a stalled attempt keeps its row, not how long a healthy
+    /// the lease the attempt holds. A renewal that finds the lease gone cancels the attempt's token and the attempt writes no
+    /// state; the row is then recovered like a crashed attempt. A renewal that throws or times out is retried on the next
+    /// tick while the lease it last confirmed is still live, and cancels the attempt only once that lease could lapse
+    /// before the next tick (the second failure in a row at the default cadence). <see cref="DispatchTimeout"/> sizes how long a stalled attempt keeps its row, not how long a healthy
     /// attempt may run. An explicit value must be greater than zero and less than <see cref="DispatchTimeout"/>.
     /// </remarks>
     public TimeSpan? LeaseRenewalInterval { get; set; }

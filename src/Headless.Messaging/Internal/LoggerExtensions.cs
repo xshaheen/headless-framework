@@ -382,9 +382,21 @@ internal static partial class LoggerExtensions
         EventId = 4121,
         EventName = "MessageLeaseRenewalFailed",
         Level = LogLevel.Warning,
-        Message = "Renewing the lease on message {StorageId} failed; the attempt is cancelled because the lease can no longer be vouched for."
+        Message = "Renewing the lease on message {StorageId} failed; the lease it last confirmed is still live, so the renewal is retried on the next tick."
     )]
     public static partial void MessageLeaseRenewalFailed(this ILogger logger, Exception exception, Guid storageId);
+
+    [LoggerMessage(
+        EventId = 4123,
+        EventName = "MessageLeaseRenewalFailedPastLease",
+        Level = LogLevel.Warning,
+        Message = "Renewing the lease on message {StorageId} failed and the lease it last confirmed could lapse before the next tick; the attempt is cancelled."
+    )]
+    public static partial void MessageLeaseRenewalFailedPastLease(
+        this ILogger logger,
+        Exception exception,
+        Guid storageId
+    );
 
     [LoggerMessage(
         EventId = 4122,

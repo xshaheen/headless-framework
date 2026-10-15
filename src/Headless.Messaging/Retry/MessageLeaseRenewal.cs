@@ -11,9 +11,16 @@ namespace Headless.Messaging.Retry;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A lease the attempt cannot renew may already belong to another node, so the attempt must stop and write nothing:
-/// its fenced state write would carry an identity the row no longer has. A renewal the store does not confirm within
-/// one interval counts as lost too, because the lease may lapse before a slow store answers.
+/// A renewal that finds the lease gone means it may already belong to another node, so the attempt must stop and write
+/// nothing: its fenced state write would carry an identity the row no longer has.
+/// </para>
+/// <para>
+/// A renewal that throws or times out says nothing about the lease, only that the store did not answer, so a short
+/// store blip does not abort a healthy attempt. The loop tries again on the next tick while the lease it last
+/// confirmed is still live, and gives up only once that lease could lapse before the next tick. That deadline counts
+/// from the moment the last confirmed renewal started (or the loop started, right after the reservation stamped the
+/// lease), which is no later than the store's own stamp, so the estimate errs on the early side. A later renewal is
+/// still fenced on the identity the attempt holds, so tolerating a failure never revives a lease another node took.
 /// </para>
 /// <para>
 /// Stopping never cancels a renewal already in flight. A renewal that committed but was cancelled before it returned
@@ -36,6 +43,7 @@ internal sealed class MessageLeaseRenewal : IAsyncDisposable
     private readonly CancellationTokenSource _attempt;
     private readonly CancellationTokenSource _stopping = new();
     private readonly Task _loop;
+    private long _lastConfirmedAt;
     private int _lost;
     private int _stopped;
 
@@ -56,6 +64,7 @@ internal sealed class MessageLeaseRenewal : IAsyncDisposable
         _clock = clock;
         _logger = logger;
         _attempt = CancellationTokenSource.CreateLinkedTokenSource(attemptToken);
+        _lastConfirmedAt = clock.GetTimestamp();
         _loop = _RenewLoopAsync();
     }
 
@@ -133,6 +142,7 @@ internal sealed class MessageLeaseRenewal : IAsyncDisposable
                 return;
             }
 
+            var renewalStartedAt = _clock.GetTimestamp();
             bool renewed;
             try
             {
@@ -148,11 +158,22 @@ internal sealed class MessageLeaseRenewal : IAsyncDisposable
             }
             catch (Exception exception)
             {
-                _logger.MessageLeaseRenewalFailed(exception, _message.StorageId);
+                // Lost only once the last confirmed lease could lapse before the next tick; until then, try again.
+                if (_clock.GetElapsedTime(_lastConfirmedAt) + _interval < _leaseDuration)
+                {
+                    _logger.MessageLeaseRenewalFailed(exception, _message.StorageId);
+                    continue;
+                }
+
+                _logger.MessageLeaseRenewalFailedPastLease(exception, _message.StorageId);
                 renewed = false;
             }
 
-            if (!renewed)
+            if (renewed)
+            {
+                _lastConfirmedAt = renewalStartedAt;
+            }
+            else
             {
                 Volatile.Write(ref _lost, 1);
                 _logger.MessageLeaseLost(_message.StorageId);
