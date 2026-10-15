@@ -504,6 +504,7 @@ public sealed class DisposableDistributedLockTests : TestBase
             fencingToken,
             TimeSpan.FromSeconds(10),
             timeWaitedForLock ?? TimeSpan.Zero,
+            _timeProvider.GetTimestamp(),
             _lockProvider,
             releaseOnDispose,
             autoExtend,

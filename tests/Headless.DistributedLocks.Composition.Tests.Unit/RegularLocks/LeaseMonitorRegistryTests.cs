@@ -70,7 +70,7 @@ public sealed class LeaseMonitorRegistryTests : TestBase
     private LeaseMonitor _CreateMonitor(string resource, string leaseId)
     {
         var monitor = new LeaseMonitor(
-            new FakeLeaseHandle
+            new FakeLeaseHandle(_timeProvider)
             {
                 Resource = resource,
                 LeaseId = leaseId,
@@ -101,7 +101,7 @@ public sealed class LeaseMonitorRegistryTests : TestBase
         // safety net removes the bucket when an abandoned (leaked, undisposed) monitor is GC'd.
 #pragma warning disable CA2000 // CA2000: intentional — this test verifies GC reclaims an abandoned (undisposed) monitor; disposing defeats it.
         var monitor = new LeaseMonitor(
-            new FakeLeaseHandle
+            new FakeLeaseHandle(timeProvider)
             {
                 Resource = resource,
                 LeaseId = leaseId,

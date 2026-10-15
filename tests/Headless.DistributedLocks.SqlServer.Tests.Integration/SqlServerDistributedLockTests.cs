@@ -35,6 +35,76 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
     }
 
     [Fact]
+    public async Task should_issue_a_higher_token_to_the_next_holder_when_the_first_holders_session_is_killed()
+    {
+        // given
+        var keyPrefix = $"sqlserver:{Faker.Random.AlphaNumeric(6)}:";
+        var resource = Faker.Random.AlphaNumeric(12);
+        await using var firstProvider = _CreateProvider(options => options.KeyPrefix = keyPrefix);
+        await using var secondProvider = _CreateProvider(options => options.KeyPrefix = keyPrefix);
+        await firstProvider.GetRequiredService<SchemaRunner>().ApplyAsync(AbortToken);
+        var first = await firstProvider
+            .GetRequiredService<IDistributedLock>()
+            .AcquireAsync(resource, cancellationToken: AbortToken);
+
+        // when (the server ends the first holder's session, which drops its application lock)
+        await _KillAsync(await _SessionHoldingAsync(SqlServerResourceName.Encode(keyPrefix + resource)));
+        await using var second = await secondProvider
+            .GetRequiredService<IDistributedLock>()
+            .AcquireAsync(
+                resource,
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(10) },
+                AbortToken
+            );
+
+        // then (a write fenced by the dead holder's token is rejected once the new holder's token is recorded)
+        second.FencingToken!.Value.Should().BeGreaterThan(first.FencingToken!.Value);
+    }
+
+    [Fact]
+    public async Task should_refuse_a_contended_fenced_acquire_without_consuming_a_token()
+    {
+        // given (the fenced grant batch takes its not-granted branch when another session holds the lock)
+        var keyPrefix = $"sqlserver:{Faker.Random.AlphaNumeric(6)}:";
+        var resource = Faker.Random.AlphaNumeric(12);
+        await using var firstProvider = _CreateProvider(options => options.KeyPrefix = keyPrefix);
+        await using var secondProvider = _CreateProvider(options => options.KeyPrefix = keyPrefix);
+        await firstProvider.GetRequiredService<SchemaRunner>().ApplyAsync(AbortToken);
+        var secondLocks = secondProvider.GetRequiredService<IDistributedLock>();
+        var first = await firstProvider
+            .GetRequiredService<IDistributedLock>()
+            .AcquireAsync(resource, cancellationToken: AbortToken);
+        var firstToken = first.FencingToken!.Value.Value;
+
+        // when
+        var refused = await secondLocks.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
+        );
+        await first.ReleaseAsync();
+        await using var next = await secondLocks.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        // then (the key prefix has its own sequence, so a refused attempt that drew a value would make this first + 2)
+        refused.Should().BeNull();
+        next.FencingToken!.Value.Value.Should().Be(firstToken + 1);
+    }
+
+    [Fact]
+    public async Task should_issue_no_token_when_fencing_is_disabled()
+    {
+        // given (no schema runner: with fencing off the acquire must not touch a fence sequence at all)
+        await using var provider = _CreateProvider(options => options.EnableFencing = false);
+        var locks = provider.GetRequiredService<IDistributedLock>();
+
+        // when
+        await using var handle = await locks.AcquireAsync(Faker.Random.AlphaNumeric(12), cancellationToken: AbortToken);
+
+        // then
+        handle.FencingToken.Should().BeNull();
+    }
+
+    [Fact]
     public async Task should_enforce_shared_and_exclusive_reader_writer_modes()
     {
         await using var provider = _CreateProvider(options => options.EnableFencing = false);
@@ -182,6 +252,7 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
                 isShared: false,
                 TimeSpan.Zero,
                 TimeSpan.FromSeconds(30),
+                fenceSequence: null,
                 cancellation.Token
             );
 
@@ -239,6 +310,7 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
                 isShared: false,
                 TimeSpan.FromSeconds(30),
                 TimeSpan.FromSeconds(30),
+                fenceSequence: null,
                 cancellation.Token
             );
 
@@ -431,8 +503,11 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
                 {
                     ConnectionString = fixture.ConnectionString,
                     KeyPrefix = $"sqlserver:{Faker.Random.AlphaNumeric(6)}:",
+                    // No schema runner here, so no fence sequence: this test is about the probe gate, not tokens.
+                    EnableFencing = false,
                 }
             ),
+            Options.Create(new DistributedLocksStorageOptions()),
             timeProvider
         )
         {
@@ -458,6 +533,117 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
 
         releaseWaitedForProbe.Should().BeTrue();
         handle.ConnectionLostToken.IsCancellationRequested.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_free_the_application_lock_when_its_release_throws()
+    {
+        // given (a release that fails before it reaches the server leaves the lock held on its session)
+        await using var storage = new SqlServerConnectionScopedLockStorage(
+            Options.Create(
+                new SqlServerDistributedLockOptions
+                {
+                    ConnectionString = fixture.ConnectionString,
+                    KeyPrefix = DistributedLockOptions.DefaultKeyPrefix,
+                    EnableFencing = false,
+                }
+            ),
+            Options.Create(new DistributedLocksStorageOptions()),
+            TimeProvider.System
+        )
+        {
+            BeforeReleaseAsync = () => throw new InvalidOperationException("Simulated release failure."),
+        };
+        var resource = Faker.Random.AlphaNumeric(12);
+        var handle = await storage.TryAcquireAsync(
+            resource,
+            Guid.NewGuid().ToString("N"),
+            isShared: false,
+            observeLoss: false,
+            AbortToken
+        );
+        handle.Should().NotBeNull();
+
+        // when
+        var release = async () => await handle!.ReleaseAsync(AbortToken);
+
+        // then (the session is ended rather than pooled, so the lock does not outlive the failed release)
+        await release.Should().ThrowAsync<InvalidOperationException>();
+        (await _WaitUntilSessionLockFreeAsync(resource, TimeSpan.FromSeconds(5))).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_free_the_application_lock_when_acquire_cleanup_fails()
+    {
+        // given (the server granted the lock, then the acquire failed and so did its cleanup release)
+        await using var storage = new SqlServerConnectionScopedLockStorage(
+            Options.Create(
+                new SqlServerDistributedLockOptions
+                {
+                    ConnectionString = fixture.ConnectionString,
+                    KeyPrefix = DistributedLockOptions.DefaultKeyPrefix,
+                    EnableFencing = false,
+                }
+            ),
+            Options.Create(new DistributedLocksStorageOptions()),
+            TimeProvider.System
+        )
+        {
+            AfterAcquireSessionAsync = () =>
+                throw new LockCleanupFailedException(
+                    [
+                        new TimeoutException("Simulated acquire failure."),
+                        new TimeoutException("Simulated cleanup failure."),
+                    ],
+                    "Simulated cleanup failure."
+                ),
+        };
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        // when
+        var acquire = async () =>
+            await storage.TryAcquireAsync(
+                resource,
+                Guid.NewGuid().ToString("N"),
+                isShared: false,
+                observeLoss: false,
+                AbortToken
+            );
+
+        // then (the session is ended rather than pooled, so the lock does not outlive the failed cleanup)
+        await acquire.Should().ThrowAsync<LockCleanupFailedException>();
+        (await _WaitUntilSessionLockFreeAsync(resource, TimeSpan.FromSeconds(5))).Should().BeTrue();
+    }
+
+    private async Task<bool> _WaitUntilSessionLockFreeAsync(string resource, TimeSpan within)
+    {
+        var started = TimeProvider.System.GetTimestamp();
+
+        while (TimeProvider.System.GetElapsedTime(started) < within)
+        {
+            if (await _CanTakeExclusiveSessionLockAsync(resource))
+            {
+                return true;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
+        }
+
+        return await _CanTakeExclusiveSessionLockAsync(resource);
+    }
+
+    private async Task<bool> _CanTakeExclusiveSessionLockAsync(string resource)
+    {
+        // Unpooled, so the probe can never be handed the pooled session that holds the lock: APPLOCK_TEST on the owning
+        // session reports the lock as available.
+        var builder = new SqlConnectionStringBuilder(fixture.ConnectionString) { Pooling = false };
+        await using var connection = new SqlConnection(builder.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT APPLOCK_TEST(N'public', @resource, N'Exclusive', N'Session');";
+        command.Parameters.AddWithValue("resource", _Encode(resource));
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture) == 1;
     }
 
     private ServiceProvider _CreateProvider(Action<SqlServerDistributedLockOptions>? configure = null)
@@ -493,12 +679,13 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
     private async Task<SqlConnection> _HoldSessionLockAsync(string resource)
     {
         var connection = await _OpenAsync();
-        var acquired = await SqlServerApplicationLock.TryAcquireSessionAsync(
+        var (acquired, _) = await SqlServerApplicationLock.TryAcquireSessionAsync(
             connection,
             _Encode(resource),
             isShared: false,
             TimeSpan.Zero,
             TimeSpan.FromSeconds(30),
+            fenceSequence: null,
             AbortToken
         );
         acquired.Should().BeTrue();
@@ -562,6 +749,29 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
 
             await Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
         }
+    }
+
+    private async Task<short> _SessionHoldingAsync(string encodedResource)
+    {
+        await using var connection = await _OpenAsync();
+        await using var command = connection.CreateCommand();
+
+        // dm_tran_locks shows at most the first 32 characters of an application lock name; the random key prefix keeps
+        // that fragment unique to this test.
+        command.CommandText = """
+            SELECT TOP (1) CAST(request_session_id AS smallint)
+            FROM sys.dm_tran_locks
+            WHERE resource_type = N'APPLICATION'
+              AND request_owner_type = N'SESSION'
+              AND request_status = N'GRANT'
+              AND resource_description LIKE N'%' + @fragment + N'%'
+            """;
+        command.Parameters.AddWithValue("fragment", encodedResource[..Math.Min(encodedResource.Length, 32)]);
+
+        var sessionId = await command.ExecuteScalarAsync(AbortToken);
+        sessionId.Should().NotBeNull("the first holder's session must be found");
+
+        return (short)sessionId!;
     }
 
     private async Task _KillAsync(short sessionId)

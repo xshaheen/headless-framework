@@ -113,7 +113,7 @@ public sealed class MultiplexedConnectionLockPoolTests : TestBase
     }
 
     [Fact]
-    public async Task should_not_close_the_connection_when_a_release_throws_while_other_locks_are_held()
+    public async Task should_destroy_the_connection_after_the_last_sibling_releases_when_a_release_throws_while_other_locks_are_held()
     {
         // given
         var strategy = new FakeSynchronizationStrategy();
@@ -122,6 +122,7 @@ public sealed class MultiplexedConnectionLockPoolTests : TestBase
         var handleA = await _AcquireAsync(pool, "resource-a", strategy);
         var handleB = await _AcquireAsync(pool, "resource-b", strategy);
         var connection = _connections.Should().ContainSingle().Subject;
+        var siblingLost = handleB!.LostToken;
 
         // resource-a's resolved identity is the resource string itself (no mapping)
         strategy.ThrowOnReleaseIdentity = "resource-a";
@@ -132,16 +133,19 @@ public sealed class MultiplexedConnectionLockPoolTests : TestBase
         // then (the failure propagates, but the connection is NOT force-closed: closing it would release resource-b's
         // advisory lock server-side without firing resource-b's connection-lost token, leaving its holder believing it
         // still owns a lock another process could take — a mutual-exclusion violation. resource-a lingers held until
-        // resource-b releases and the connection closes normally; that bounded latency is the safe trade.)
+        // resource-b releases; that bounded latency is the safe trade.)
         await release.Should().ThrowAsync<InvalidOperationException>();
         connection.CloseCount.Should().Be(0, "the connection must stay open while resource-b is still held");
         connection.IsOpen.Should().BeTrue();
+        connection.PoolClearCount.Should().Be(0);
+        siblingLost.IsCancellationRequested.Should().BeFalse();
 
-        // and (releasing the last held lock closes the connection normally, which releases resource-a server-side too)
-        strategy.ThrowOnReleaseIdentity = null;
-        await handleB!.DisposeAsync();
-        connection.CloseCount.Should().BePositive("the last release closes the connection once nothing is held");
-        connection.IsOpen.Should().BeFalse();
+        // and (releasing the last held lock destroys the connection instead of closing it back to the driver's pool,
+        // where the session would keep resource-a held)
+        await handleB.DisposeAsync();
+        connection.CloseCount.Should().Be(0);
+        connection.PoolClearCount.Should().Be(1);
+        connection.DisposeCount.Should().BePositive();
     }
 
     private MultiplexedConnectionLockPool _CreatePool()

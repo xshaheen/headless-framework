@@ -4,7 +4,7 @@ using Headless.DistributedLocks;
 
 namespace Tests.Fakes;
 
-internal sealed class FakeLeaseHandle : LeaseMonitor.ILeaseHandle
+internal sealed class FakeLeaseHandle(TimeProvider timeProvider) : LeaseMonitor.ILeaseHandle
 {
     private readonly Queue<object> _results = [];
 
@@ -15,6 +15,11 @@ internal sealed class FakeLeaseHandle : LeaseMonitor.ILeaseHandle
     public TimeSpan LeaseDuration { get; init; } = TimeSpan.FromSeconds(10);
 
     public TimeSpan MonitoringCadence { get; init; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>The acquire send time; defaults to the moment the fake is built, as a provider would record it.</summary>
+    public long AcquireTimestamp { get; init; } = timeProvider.GetTimestamp();
+
+    public TimeSpan StorageDeadline { get; init; } = TimeSpan.FromSeconds(5);
 
     public int InvocationCount { get; private set; }
 

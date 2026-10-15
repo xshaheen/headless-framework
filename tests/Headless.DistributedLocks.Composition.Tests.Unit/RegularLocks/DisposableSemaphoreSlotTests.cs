@@ -432,6 +432,7 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
                 slot.FencingToken,
                 TimeSpan.FromSeconds(10),
                 slot.TimeWaitedForLock,
+                _timeProvider.GetTimestamp(),
                 provider,
                 releaseOnDispose,
                 autoExtend,
