@@ -68,6 +68,16 @@ public sealed class CircuitBreakerDefaultsTests : TestBase
         public override bool IsTransient { get; } = isTransient;
     }
 
+    [Theory]
+    [InlineData(64, true)] // connection broken
+    [InlineData(40613, true)] // database unavailable
+    [InlineData(2627, false)] // unique key violation
+    public void sql_server_fault_is_classified_by_its_error_number(int number, bool transient)
+    {
+        // SqlClient reports nothing through DbException.IsTransient, so only the error number can tell.
+        CircuitBreakerDefaults.IsTransient(new Microsoft.Data.SqlClient.SqlException(number)).Should().Be(transient);
+    }
+
     [Fact]
     public void task_canceled_exception_without_cancellation_requested_is_transient()
     {

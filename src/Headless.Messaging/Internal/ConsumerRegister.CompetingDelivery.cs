@@ -81,7 +81,7 @@ internal sealed partial class ConsumerRegister
                     await client
                         .RejectAsync(
                             sender,
-                            RedeliveryBackoff.RedeliveryDelay(failures: 1, _backoffJitter),
+                            RedeliveryBackoff.RedeliveryDelay(failures: 1, Random.Shared),
                             hostShutdownToken
                         )
                         .ConfigureAwait(false);
@@ -589,11 +589,13 @@ internal sealed partial class ConsumerRegister
                 {
                     // The delivery was not taken in, almost always because its store write failed. A failure the
                     // consumer's transient predicate accepts counts toward its circuit, so a lasting outage pauses the
-                    // client instead of cycling every delivery through the broker; the report owns the probe.
+                    // client instead of cycling every delivery through the broker. Nothing about the handler's
+                    // dependency is known yet, so a non-transient failure only releases a half-open probe rather than
+                    // closing the circuit; either way the report owns the probe.
                     if (!probeOutcomeTransferred && _circuitBreakerStateManager is not null && circuitKey is not null)
                     {
                         await _circuitBreakerStateManager
-                            .ReportFailureAsync(circuitKey, e, CancellationToken.None)
+                            .ReportPreHandlerFailureAsync(circuitKey, e, admissionEpoch, CancellationToken.None)
                             .ConfigureAwait(false);
 
                         probeOutcomeTransferred = true;
@@ -603,7 +605,7 @@ internal sealed partial class ConsumerRegister
                     // outage, so the redelivery waits longer for each delivery in a row the client could not take in.
                     var redeliveryDelay = RedeliveryBackoff.RedeliveryDelay(
                         clientHandle.RecordDeliveryFailure(),
-                        _backoffJitter
+                        Random.Shared
                     );
 
                     await client.RejectAsync(sender, redeliveryDelay, hostShutdownToken).ConfigureAwait(false);
@@ -657,7 +659,7 @@ internal sealed partial class ConsumerRegister
                     && !hostShutdownToken.IsCancellationRequested
                 )
             {
-                var delay = RedeliveryBackoff.AdmissionRetryDelay(retry, _backoffJitter);
+                var delay = RedeliveryBackoff.AdmissionRetryDelay(retry, Random.Shared);
                 _logger.LogInboxAdmissionRetrying(
                     e,
                     LogSanitizer.Sanitize(messageId),

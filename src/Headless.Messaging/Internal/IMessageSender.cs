@@ -335,8 +335,7 @@ internal sealed class MessageSender : IMessageSender
         return MessageLeaseRenewal.Start(
             message,
             _StorageOf(message).RenewPublishLeaseAsync,
-            _retryPolicy.DispatchTimeout,
-            _retryPolicy.ResolveLeaseRenewalInterval(),
+            _retryPolicy,
             _timeProvider,
             _logger,
             cancellationToken

@@ -26,12 +26,7 @@ internal static class RedeliveryBackoff
     /// <summary>The jittered wait before admission retry <paramref name="retry"/> (1-based): about 250 ms, doubling.</summary>
     public static TimeSpan AdmissionRetryDelay(int retry, Random random)
     {
-        var doublings = Math.Clamp(retry - 1, 0, AdmissionRetries - 1);
-        return ReconnectBackoff.Jitter(
-            TimeSpan.FromTicks(_FirstAdmissionRetryDelay.Ticks << doublings),
-            TimeSpan.Zero,
-            random
-        );
+        return _Doubling(_FirstAdmissionRetryDelay, retry, maxDoublings: AdmissionRetries - 1, random);
     }
 
     /// <summary>
@@ -41,12 +36,13 @@ internal static class RedeliveryBackoff
     public static TimeSpan RedeliveryDelay(long failures, Random random)
     {
         // Five doublings from one second already pass the 30 s ceiling.
-        var doublings = (int)Math.Clamp(failures - 1, 0, 5);
-        return ReconnectBackoff.Jitter(
-            TimeSpan.FromTicks(ReconnectBackoff.FirstDelay.Ticks << doublings),
-            TimeSpan.Zero,
-            random
-        );
+        return _Doubling(ReconnectBackoff.FirstDelay, failures, maxDoublings: 5, random);
+    }
+
+    private static TimeSpan _Doubling(TimeSpan first, long attempt, int maxDoublings, Random random)
+    {
+        var doublings = (int)Math.Clamp(attempt - 1, 0, maxDoublings);
+        return ReconnectBackoff.Jitter(TimeSpan.FromTicks(first.Ticks << doublings), TimeSpan.Zero, random);
     }
 
     /// <summary>
@@ -62,16 +58,10 @@ internal static class RedeliveryBackoff
         CancellationToken cancellationToken
     )
     {
-        if (delay > TimeSpan.Zero && !cancellationToken.IsCancellationRequested)
+        // A stopping host cuts the wait short and hands the delivery back at once.
+        if (delay > TimeSpan.Zero)
         {
-            try
-            {
-                await Task.Delay(delay, clock, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                // Stopping: hand the delivery back now rather than hold it through shutdown.
-            }
+            await clock.DelayUntilElapsedOrCancel(delay, cancellationToken).ConfigureAwait(false);
         }
 
         await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);

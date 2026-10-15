@@ -43,7 +43,6 @@ internal sealed partial class ConsumerRegister(
     // Admission retries wait for a store to come back in real time, which an app clock that a test host fakes and never
     // advances would never allow, so they run on the system clock rather than the registered TimeProvider.
     private readonly TimeProvider _backoffClock = TimeProvider.System;
-    private readonly Random _backoffJitter = Random.Shared;
 
     private readonly MessagingTelemetry _telemetry =
         serviceProvider.GetService<MessagingTelemetry>() ?? MessagingTelemetry.Default;

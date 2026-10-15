@@ -460,7 +460,7 @@ internal sealed partial class RelationalDataStorage
                         _BindInboxAttempt(command, message.InboxAttemptFence, matchStorageId: true);
                     }
                 },
-                async (reader, ct) => await _ReadLeaseAsync(reader, readsAttempt: false, ct).ConfigureAwait(false),
+                (reader, ct) => _ReadLeaseAsync(reader, readsAttempt: false, ct),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -549,7 +549,7 @@ internal sealed partial class RelationalDataStorage
                         _BindInboxAttempt(command, message.InboxAttemptFence, matchStorageId: true);
                     }
                 },
-                async (reader, ct) => await _ReadLeaseAsync(reader, readsAttempt: false, ct).ConfigureAwait(false),
+                (reader, ct) => _ReadLeaseAsync(reader, readsAttempt: false, ct),
                 cancellationToken
             )
             .ConfigureAwait(false);

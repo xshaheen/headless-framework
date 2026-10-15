@@ -390,7 +390,8 @@ internal sealed class SubscribeExecutor(
                         ? TenantContextScope.ChangeFromEnvelope(attemptServices, message.Origin, logger)
                         : null;
                     var transactionRunner = attemptServices.GetRequiredService<IInboxTransactionRunner>();
-                    var leaseRenewal = renewal = _StartLeaseRenewal(message, cancellationToken);
+                    renewal = _StartLeaseRenewal(message, cancellationToken);
+                    var leaseRenewal = renewal;
                     await transactionRunner
                         .ExecuteAsync(
                             message,
@@ -594,8 +595,7 @@ internal sealed class SubscribeExecutor(
         return MessageLeaseRenewal.Start(
             message,
             dataStorage.RenewReceiveLeaseAsync,
-            _retryPolicy.DispatchTimeout,
-            _retryPolicy.ResolveLeaseRenewalInterval(),
+            _retryPolicy,
             timeProvider,
             logger,
             cancellationToken

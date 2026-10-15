@@ -65,18 +65,28 @@ internal sealed class MessageLeaseRenewal : IAsyncDisposable
     /// <summary>Whether a renewal found the lease gone; the attempt must then write no state.</summary>
     public bool IsLost => Volatile.Read(ref _lost) == 1;
 
-    /// <summary>Starts renewing <paramref name="message"/>'s lease every <paramref name="interval"/>.</summary>
+    /// <summary>
+    /// Starts renewing <paramref name="message"/>'s lease for <see cref="RetryPolicyOptions.DispatchTimeout"/> on the
+    /// policy's renewal cadence.
+    /// </summary>
     public static MessageLeaseRenewal Start(
         MediumMessage message,
         Func<MediumMessage, TimeSpan, CancellationToken, ValueTask<bool>> renew,
-        TimeSpan leaseDuration,
-        TimeSpan interval,
+        RetryPolicyOptions policy,
         TimeProvider clock,
         ILogger logger,
         CancellationToken attemptToken
     )
     {
-        return new MessageLeaseRenewal(message, renew, leaseDuration, interval, clock, logger, attemptToken);
+        return new MessageLeaseRenewal(
+            message,
+            renew,
+            policy.DispatchTimeout,
+            policy.ResolveLeaseRenewalInterval(),
+            clock,
+            logger,
+            attemptToken
+        );
     }
 
     /// <summary>
@@ -111,10 +121,7 @@ internal sealed class MessageLeaseRenewal : IAsyncDisposable
 
     private async Task _RenewLoopAsync()
     {
-        // Yield first, so the constructor returns before the loop runs, and wait one interval before the first renewal:
-        // an attempt that ends within one interval writes no renewal.
-        await Task.Yield();
-
+        // Waits one interval before the first renewal: an attempt that ends within one interval writes no renewal.
         while (true)
         {
             try
@@ -129,13 +136,14 @@ internal sealed class MessageLeaseRenewal : IAsyncDisposable
             bool renewed;
             try
             {
-                // Bounded by one interval, not by the stop signal; see the remarks.
-                using var timeout = new CancellationTokenSource(_interval, _clock);
+                // Bounded by one interval, not by the stop signal; see the remarks. The bound waits real time: on an
+                // app clock that a test host fakes and never advances, a hung store call would never time out.
+                using var timeout = new CancellationTokenSource(_interval, TimeProvider.System);
                 renewed = await _renew(_message, _leaseDuration, timeout.Token).ConfigureAwait(false);
             }
             catch (NotSupportedException)
             {
-                // The store cannot renew; the attempt keeps the lease its reservation stamped, as it always has.
+                // The store cannot renew; the attempt keeps the lease its reservation stamped.
                 return;
             }
             catch (Exception exception)

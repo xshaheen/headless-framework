@@ -2456,9 +2456,10 @@ public sealed class ConsumerRegisterTests : TestBase
         // then: the failure counts once, and the report owns the probe, so it is not released as well
         await circuitBreaker
             .Received(1)
-            .ReportFailureAsync(
+            .ReportPreHandlerFailureAsync(
                 $"{MessageLane.Bus:D}:{BootstrapReadyConsumer.Identity}",
                 Arg.Any<TimeoutException>(),
+                1L,
                 Arg.Any<CancellationToken>()
             );
         circuitBreaker.DidNotReceive().ReleaseHalfOpenProbe(Arg.Any<string>(), Arg.Any<long>());

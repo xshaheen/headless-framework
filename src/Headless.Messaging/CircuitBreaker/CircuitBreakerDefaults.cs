@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data.Common;
 using System.Net.Sockets;
+using Headless.UnitOfWork;
 
 namespace Headless.Messaging;
 
@@ -33,8 +33,10 @@ public static class CircuitBreakerDefaults
             HttpRequestException { InnerException: SocketException } => true,
             SocketException => true,
             BrokerConnectionException => true,
-            // A database the provider reports unreachable or overloaded, such as the message store during an outage.
-            DbException { IsTransient: true } => true,
+            // A database that is unreachable, overloaded, or failing over, such as the message store during an outage.
+            // SqlClient reports none of these through DbException.IsTransient, so the shared relational classifier
+            // also reads SQL Server error numbers and PostgreSQL SQLSTATEs.
+            _ when RelationalTransientFaults.IsTransient(exception, CancellationToken.None) => true,
             TaskCanceledException tce when !tce.CancellationToken.IsCancellationRequested => true,
             _ => false,
         };

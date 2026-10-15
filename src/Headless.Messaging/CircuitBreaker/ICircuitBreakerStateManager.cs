@@ -48,6 +48,23 @@ internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
     );
 
     /// <summary>
+    /// Reports a failure that happened before the consumer ran, such as the store failing to take a delivery in. A
+    /// transient failure counts like any other, so a lasting outage still opens the circuit. A non-transient one says
+    /// nothing about the dependency a half-open probe tests, so it never closes the circuit: it only releases the probe
+    /// acquired with <paramref name="probeEpoch"/>.
+    /// </summary>
+    /// <param name="consumerKey">The consumer name.</param>
+    /// <param name="exception">The exception that caused the failure.</param>
+    /// <param name="probeEpoch">The epoch <see cref="TryAcquireHalfOpenProbe"/> returned for the delivery.</param>
+    /// <param name="cancellationToken">Token to cancel the operation (e.g. transport pause callback).</param>
+    ValueTask ReportPreHandlerFailureAsync(
+        string consumerKey,
+        Exception exception,
+        long probeEpoch,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
     /// Attempts to acquire the single HalfOpen probe slot for the specified consumer.
     /// Returns the current admission epoch when the probe slot was acquired successfully
     /// or when the consumer is not HalfOpen; returns <see langword="null"/> when the probe slot is already held.
