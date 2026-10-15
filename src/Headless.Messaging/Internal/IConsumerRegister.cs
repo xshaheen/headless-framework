@@ -40,6 +40,11 @@ internal sealed partial class ConsumerRegister(
 
     private readonly TimeProvider _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
 
+    // Admission retries wait for a store to come back in real time, which an app clock that a test host fakes and never
+    // advances would never allow, so they run on the system clock rather than the registered TimeProvider.
+    private readonly TimeProvider _backoffClock = TimeProvider.System;
+    private readonly Random _backoffJitter = Random.Shared;
+
     private readonly MessagingTelemetry _telemetry =
         serviceProvider.GetService<MessagingTelemetry>() ?? MessagingTelemetry.Default;
 
@@ -1439,6 +1444,17 @@ internal sealed partial class ConsumerRegister(
             set => Volatile.Write(ref _lastAppliedEpoch, value);
         }
 
+        private long _consecutiveDeliveryFailures;
+
+        /// <summary>
+        /// Counts a delivery the core could not take in and returns the count since the last one it took in, so the
+        /// redelivery delay grows while the cause, usually a store outage, lasts.
+        /// </summary>
+        public long RecordDeliveryFailure() => Interlocked.Increment(ref _consecutiveDeliveryFailures);
+
+        /// <summary>Starts the redelivery delay over once a delivery is taken in again.</summary>
+        public void RecordDeliveryTakenIn() => Interlocked.Exchange(ref _consecutiveDeliveryFailures, 0);
+
         private readonly List<IConsumerClient> _clients = [];
 
         public required ILogger Logger { get; init; }
@@ -1616,5 +1632,20 @@ internal static partial class ConsumerRegisterLog
         this ILogger logger,
         Exception exception,
         string subscriptionName
+    );
+
+    [LoggerMessage(
+        EventId = 4120,
+        EventName = "InboxAdmissionRetrying",
+        Level = LogLevel.Warning,
+        Message = "Storing received message '{MessageId}' in the inbox failed; retry {Retry} of {Retries} in {Delay}."
+    )]
+    public static partial void LogInboxAdmissionRetrying(
+        this ILogger logger,
+        Exception exception,
+        string? messageId,
+        int retry,
+        int retries,
+        TimeSpan delay
     );
 }

@@ -1115,15 +1115,31 @@ internal sealed class NatsConsumerClient(
         }
     }
 
-    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+    public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+    {
+        return _NakAsync(sender, TimeSpan.Zero, cancellationToken);
+    }
+
+    // JetStream delays the redelivery itself, so the delivery is released at once rather than held for the delay.
+    public ValueTask RejectAsync(object? sender, TimeSpan redeliveryDelay, CancellationToken cancellationToken)
+    {
+        return _NakAsync(sender, redeliveryDelay, CancellationToken.None);
+    }
+
+    private async ValueTask _NakAsync(object? sender, TimeSpan minimumDelay, CancellationToken cancellationToken)
     {
         try
         {
             if (await _SettlingMessageAsync(sender).ConfigureAwait(false) is { } msg)
             {
-                // The core rejects every delivery while the consumer's circuit is open or a half-open probe is out, and
-                // JetStream redelivers a plain NAK on the next pull, so without a delay those deliveries spin.
+                // JetStream redelivers a plain NAK on the next pull, so every reject carries a delay that grows with
+                // the delivery count; the core's own delay wins when it is longer.
                 var delay = NakDelay(msg.Metadata?.NumDelivered ?? 1, Random.Shared);
+                if (minimumDelay > delay)
+                {
+                    delay = minimumDelay;
+                }
+
                 await msg.NakAsync(new AckOpts { NakDelay = delay }, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -1163,11 +1179,7 @@ internal sealed class NatsConsumerClient(
     /// <param name="random">The jitter source.</param>
     internal static TimeSpan NakDelay(ulong numDelivered, Random random)
     {
-        // Five doublings from one second already pass the 30 s ceiling.
-        var doublings = (int)Math.Min(numDelivered <= 1 ? 0 : numDelivered - 1, 5);
-        var nominal = TimeSpan.FromTicks(ReconnectBackoff.FirstDelay.Ticks << doublings);
-
-        return ReconnectBackoff.Jitter(nominal, TimeSpan.Zero, random);
+        return RedeliveryBackoff.RedeliveryDelay((long)Math.Min(numDelivered, long.MaxValue), random);
     }
 
     private void _ReleaseSemaphore()

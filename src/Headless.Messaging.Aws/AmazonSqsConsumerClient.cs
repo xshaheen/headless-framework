@@ -32,6 +32,9 @@ internal sealed class AmazonSqsConsumerClient(
     // A rejected message reappears after this many seconds, so the core's retry is not delayed by the full timeout.
     private const int _RejectVisibilitySeconds = 3;
 
+    // The longest visibility timeout SQS accepts: twelve hours.
+    private const int _MaxVisibilityTimeoutSeconds = 43_200;
+
     // Bounds DisposeAsync, which carries no shutdown budget of its own; the core passes its remaining budget to
     // ShutdownAsync instead.
     private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
@@ -649,7 +652,26 @@ internal sealed class AmazonSqsConsumerClient(
         await batcher.DeleteAsync(inflight.ReceiptHandle, cancellationToken).ConfigureAwait(false);
     }
 
-    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+    public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+    {
+        return _RejectAsync(sender, _RejectVisibilitySeconds, cancellationToken);
+    }
+
+    // SQS delays the redelivery itself through the message's visibility timeout, so the delivery is released at once
+    // rather than held for the delay.
+    public ValueTask RejectAsync(object? sender, TimeSpan redeliveryDelay, CancellationToken cancellationToken)
+    {
+        var hiddenSeconds = (int)
+            Math.Clamp(
+                Math.Ceiling(redeliveryDelay.TotalSeconds),
+                _RejectVisibilitySeconds,
+                _MaxVisibilityTimeoutSeconds
+            );
+
+        return _RejectAsync(sender, hiddenSeconds, CancellationToken.None);
+    }
+
+    private async ValueTask _RejectAsync(object? sender, int hiddenSeconds, CancellationToken cancellationToken)
     {
         var inflight = _GetInflightMessage(sender);
 
@@ -669,7 +691,7 @@ internal sealed class AmazonSqsConsumerClient(
             this
         );
 
-        await batcher.RejectAsync(inflight.ReceiptHandle, cancellationToken).ConfigureAwait(false);
+        await batcher.RejectAsync(inflight.ReceiptHandle, hiddenSeconds, cancellationToken).ConfigureAwait(false);
     }
 
     private void _ReleaseSemaphore()

@@ -39,6 +39,49 @@ public sealed class SqsRejectBatcherTests : TestBase
     }
 
     [Fact]
+    public async Task should_hide_each_rejected_message_for_its_own_redelivery_delay()
+    {
+        // given: the first reject is in flight, so the next two share a batch
+        var firstCall = new TaskCompletionSource<ChangeMessageVisibilityResponse>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        _sqs.ChangeMessageVisibilityAsync(_QueueUrl, "receipt-0", 8, Arg.Any<CancellationToken>())
+            .Returns(firstCall.Task);
+        List<ChangeMessageVisibilityBatchRequestEntry>? batch = null;
+        _sqs.ChangeMessageVisibilityBatchAsync(
+                _QueueUrl,
+                Arg.Any<List<ChangeMessageVisibilityBatchRequestEntry>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                batch = call.Arg<List<ChangeMessageVisibilityBatchRequestEntry>>();
+                return new ChangeMessageVisibilityBatchResponse
+                {
+                    Successful =
+                    [
+                        .. batch.Select(entry => new ChangeMessageVisibilityBatchResultEntry { Id = entry.Id }),
+                    ],
+                };
+            });
+        var batcher = _CreateBatcher();
+        var first = batcher.RejectAsync("receipt-0", hiddenSeconds: 8, AbortToken);
+
+        // when
+        var second = batcher.RejectAsync("receipt-1", hiddenSeconds: 16, AbortToken);
+        var third = batcher.RejectAsync("receipt-2", AbortToken);
+        firstCall.SetResult(new ChangeMessageVisibilityResponse());
+        await Task.WhenAll(first, second, third);
+
+        // then
+        await _sqs.Received(1).ChangeMessageVisibilityAsync(_QueueUrl, "receipt-0", 8, CancellationToken.None);
+        batch!
+            .Select(entry => (entry.ReceiptHandle, entry.VisibilityTimeout))
+            .Should()
+            .Equal(("receipt-1", 16), ("receipt-2", 3));
+    }
+
+    [Fact]
     public async Task should_send_the_rejects_that_arrive_during_a_call_together_in_the_next_one()
     {
         // given: the first reject is in flight

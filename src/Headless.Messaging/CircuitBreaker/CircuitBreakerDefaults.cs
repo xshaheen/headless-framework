@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using System.Net.Sockets;
 
 namespace Headless.Messaging;
@@ -32,6 +33,8 @@ public static class CircuitBreakerDefaults
             HttpRequestException { InnerException: SocketException } => true,
             SocketException => true,
             BrokerConnectionException => true,
+            // A database the provider reports unreachable or overloaded, such as the message store during an outage.
+            DbException { IsTransient: true } => true,
             TaskCanceledException tce when !tce.CancellationToken.IsCancellationRequested => true,
             _ => false,
         };

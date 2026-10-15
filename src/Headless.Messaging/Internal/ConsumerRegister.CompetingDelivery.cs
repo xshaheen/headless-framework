@@ -75,8 +75,16 @@ internal sealed partial class ConsumerRegister
 
                 if (probeEpoch is null)
                 {
-                    // Settlement is must-complete: never abandon a reject on host shutdown.
-                    await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
+                    // The circuit is half-open and its one probe is already out. A plain reject comes straight back on
+                    // most brokers and spends the delivery limit until the probe settles, so the redelivery waits. The
+                    // reject itself is must-complete on host shutdown.
+                    await client
+                        .RejectAsync(
+                            sender,
+                            RedeliveryBackoff.RedeliveryDelay(failures: 1, _backoffJitter),
+                            hostShutdownToken
+                        )
+                        .ConfigureAwait(false);
 
                     return;
                 }
@@ -479,6 +487,7 @@ internal sealed partial class ConsumerRegister
                         .ConfigureAwait(false);
 
                     runtimeMessage.Origin = message;
+                    clientHandle.RecordDeliveryTakenIn();
                     _TracingAfter(traceHandle, transportMessage, _serverAddress);
                     consumeOutcomeRecorded = true;
 
@@ -495,23 +504,29 @@ internal sealed partial class ConsumerRegister
                     return;
                 }
 
-                var admission = await _storage
-                    .AdmitReceivedMessageAsync(
-                        name,
-                        consumerIdentity,
-                        message.Headers[Headers.ContractVersion]!,
-                        new MediumMessage
-                        {
-                            StorageId = Guid.Empty,
-                            Origin = message,
-                            Content = string.Empty,
-                            Lane = lane,
-                        },
-                        inboxRetention: executor.InboxRetention,
-                        cancellationToken: CancellationToken.None
+                var contractVersion = message.Headers[Headers.ContractVersion]!;
+                var admission = await _AdmitWithRetryAsync(
+                        () =>
+                            _storage.AdmitReceivedMessageAsync(
+                                name,
+                                consumerIdentity,
+                                contractVersion,
+                                new MediumMessage
+                                {
+                                    StorageId = Guid.Empty,
+                                    Origin = message,
+                                    Content = string.Empty,
+                                    Lane = lane,
+                                },
+                                inboxRetention: executor.InboxRetention,
+                                cancellationToken: CancellationToken.None
+                            ),
+                        message.Id,
+                        hostShutdownToken
                     )
                     .ConfigureAwait(false);
 
+                clientHandle.RecordDeliveryTakenIn();
                 admission.Message.Origin = message;
 
                 var storageCapability = _capabilityModel.StorageProvider;
@@ -565,8 +580,34 @@ internal sealed partial class ConsumerRegister
 
             if (!transportSettled)
             {
-                // Settlement is must-complete: never abandon a reject on host shutdown.
-                await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
+                if (e is OperationCanceledException)
+                {
+                    // Settlement is must-complete: never abandon a reject on host shutdown.
+                    await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
+                }
+                else
+                {
+                    // The delivery was not taken in, almost always because its store write failed. A failure the
+                    // consumer's transient predicate accepts counts toward its circuit, so a lasting outage pauses the
+                    // client instead of cycling every delivery through the broker; the report owns the probe.
+                    if (!probeOutcomeTransferred && _circuitBreakerStateManager is not null && circuitKey is not null)
+                    {
+                        await _circuitBreakerStateManager
+                            .ReportFailureAsync(circuitKey, e, CancellationToken.None)
+                            .ConfigureAwait(false);
+
+                        probeOutcomeTransferred = true;
+                    }
+
+                    // The broker would hand the delivery straight back and spend its delivery limit within a short
+                    // outage, so the redelivery waits longer for each delivery in a row the client could not take in.
+                    var redeliveryDelay = RedeliveryBackoff.RedeliveryDelay(
+                        clientHandle.RecordDeliveryFailure(),
+                        _backoffJitter
+                    );
+
+                    await client.RejectAsync(sender, redeliveryDelay, hostShutdownToken).ConfigureAwait(false);
+                }
             }
 
             if (e is OperationCanceledException)
@@ -585,6 +626,47 @@ internal sealed partial class ConsumerRegister
             if (probeEpoch is not null && !probeOutcomeTransferred && circuitKey is not null)
             {
                 _circuitBreakerStateManager?.ReleaseHalfOpenProbe(circuitKey, admissionEpoch);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Runs the inbox admission write, retrying a failure a few times in process before the delivery goes back to the
+    /// broker, so a store blip of a second or two costs no redelivery. The retries stay well inside every broker's lock
+    /// or visibility window; a stopping host ends them.
+    /// </summary>
+    /// <remarks>
+    /// A retry is safe even when a failed attempt committed before its connection dropped: admission is keyed by message
+    /// and consumer, so the retry finds the row and returns a duplicate disposition, as a broker redelivery would.
+    /// </remarks>
+    private async ValueTask<InboxAdmissionResult> _AdmitWithRetryAsync(
+        Func<ValueTask<InboxAdmissionResult>> admit,
+        string? messageId,
+        CancellationToken hostShutdownToken
+    )
+    {
+        for (var retry = 1; ; retry++)
+        {
+            try
+            {
+                return await admit().ConfigureAwait(false);
+            }
+            catch (Exception e)
+                when (retry <= RedeliveryBackoff.AdmissionRetries
+                    && e is not OperationCanceledException
+                    && !hostShutdownToken.IsCancellationRequested
+                )
+            {
+                var delay = RedeliveryBackoff.AdmissionRetryDelay(retry, _backoffJitter);
+                _logger.LogInboxAdmissionRetrying(
+                    e,
+                    LogSanitizer.Sanitize(messageId),
+                    retry,
+                    RedeliveryBackoff.AdmissionRetries,
+                    delay
+                );
+
+                await Task.Delay(delay, _backoffClock, hostShutdownToken).ConfigureAwait(false);
             }
         }
     }
