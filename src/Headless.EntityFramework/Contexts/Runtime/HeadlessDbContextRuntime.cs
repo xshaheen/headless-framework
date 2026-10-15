@@ -364,9 +364,11 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
 
     private static void _ConfigureDateTimeValueConverters(ModelBuilder modelBuilder)
     {
+        // Every type in a hierarchy, each with its declared properties only: a DateTime declared on a TPH-derived type
+        // is not among the root's properties, and visiting inherited ones again would configure them twice.
         foreach (var type in modelBuilder.Model.GetEntityTypes())
         {
-            if (type.BaseType is null && !type.IsOwned())
+            if (!type.IsOwned())
             {
                 _ConfigureDateTimeValueConverters(modelBuilder, type);
             }
@@ -375,7 +377,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
 
     private static void _ConfigureDateTimeValueConverters(ModelBuilder modelBuilder, IMutableEntityType type)
     {
-        var properties = type.GetProperties()
+        var properties = type.GetDeclaredProperties()
             .Where(property =>
                 property.PropertyInfo is { CanWrite: true }
                 && (
