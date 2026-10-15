@@ -286,6 +286,31 @@ public sealed class MembershipServiceTests : TestBase
     }
 
     [Fact]
+    public async Task should_fence_a_registration_made_before_the_fence_was_enabled_from_its_original_anchor()
+    {
+        // given: the Jobs startup gate can register before the heartbeat service attaches and enables the fence
+        var timeProvider = new FakeTimeProvider();
+        var options = _FenceOptions();
+        var store = new FakeMembershipStore();
+        using var sut = _CreateService(store, options, timeProvider: timeProvider);
+        await sut.RegisterAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+
+        // when: the fence is enabled a second after registration, then the rest of the budget passes
+        sut.EnableSelfFence();
+        timeProvider.Advance(TimeSpan.FromSeconds(1) - TimeSpan.FromTicks(1));
+
+        // then: still a member one tick before the deadline measured from the registration
+        sut.Identity.Should().NotBeNull();
+
+        timeProvider.Advance(TimeSpan.FromTicks(1));
+
+        // then: the timer armed on enable fences at the original deadline, not a fresh one
+        sut.Identity.Should().BeNull();
+        sut.LocalMembershipLostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_fire_the_fence_timer_at_the_margin_when_every_beat_fails_fast()
     {
         // given
