@@ -200,9 +200,10 @@ public static partial class JobsCoordinationFixtureExtensions
 
     /// <summary>
     /// Builds (but does not start) a host wired the way a production Jobs node is: a Coordination provider
-    /// registered <em>before</em> the durable Jobs store so the require-a-provider check is satisfied. Pass
-    /// <paramref name="steadyMembership" /> for a scenario that never waits for a node to die but must keep its own
-    /// claims through a loaded run.
+    /// registered <em>before</em> the durable Jobs store so the require-a-provider check is satisfied. The host runs
+    /// on the steady membership profile; pass <paramref name="fastMembership" /> only for a scenario that waits for a
+    /// node to die. A crossed self-fence is terminal, so on the second-scale profile one heartbeat a loaded database
+    /// stalls past the threshold leaves the host without an owner identity for the rest of the test.
     /// </summary>
     public static IHost BuildHost(
         this IJobsCoordinationFixture fixture,
@@ -214,7 +215,7 @@ public static partial class JobsCoordinationFixtureExtensions
         IInterceptor? interceptor = null,
         Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? configureJobs = null,
         bool runBackgroundServices = false,
-        bool steadyMembership = false
+        bool fastMembership = false
     )
     {
         return _BuildHost<JobsDbContext>(
@@ -227,16 +228,26 @@ public static partial class JobsCoordinationFixtureExtensions
             useNativeClaims,
             interceptor,
             configureJobs,
-            membershipTimings: steadyMembership ? _SteadyMembershipTimings : null,
+            membershipTimings: fastMembership ? null : _SteadyMembershipTimings,
             runBackgroundServices: runBackgroundServices
         );
     }
 
-    /// <summary>Builds a host with a custom Jobs DbContext so provider SQL can be verified against renamed mappings.</summary>
+    /// <summary>
+    /// Builds a host with a custom Jobs DbContext so provider SQL can be verified against renamed mappings. Mapping
+    /// scenarios never wait for a node to die, so the host runs on the steady membership profile.
+    /// </summary>
     public static IHost BuildMappedHost<TDbContext>(this IJobsCoordinationFixture fixture, string nodeId, string schema)
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
-        return _BuildHost<TDbContext>(fixture, nodeId, schema, MembershipLostBehavior.StopMembershipOnly, null);
+        return _BuildHost<TDbContext>(
+            fixture,
+            nodeId,
+            schema,
+            MembershipLostBehavior.StopMembershipOnly,
+            null,
+            membershipTimings: _SteadyMembershipTimings
+        );
     }
 
     /// <summary>
@@ -301,6 +312,10 @@ public static partial class JobsCoordinationFixtureExtensions
                 options.SuspicionThreshold = suspicion;
                 options.DeadThreshold = dead;
                 options.DeadRetentionWindow = deadRetention;
+                // Fence at DeadThreshold, where these hosts fenced before the margin existed: their 200ms beats against
+                // a loaded database container can stall past the derived 1s fence and stop stamping mid-test, and
+                // these hosts exercise claims and stamping, not the margin.
+                options.SelfFenceMargin = TimeSpan.Zero;
                 options.MembershipLostBehavior = lostBehavior;
             });
         });
@@ -457,6 +472,10 @@ public static partial class JobsCoordinationFixtureExtensions
                 options.SuspicionThreshold = SuspicionThreshold;
                 options.DeadThreshold = DeadThreshold;
                 options.DeadRetentionWindow = DeadRetentionWindow;
+                // Fence at DeadThreshold, where these hosts fenced before the margin existed: their 200ms beats against
+                // a loaded database container can stall past the derived 1s fence and stop stamping mid-test, and
+                // these hosts exercise claims and stamping, not the margin.
+                options.SelfFenceMargin = TimeSpan.Zero;
             });
         });
 

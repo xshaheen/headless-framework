@@ -89,34 +89,24 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
 
     public virtual async Task should_allocate_unique_increasing_incarnations_for_same_node_id()
     {
+        // Successive restarts of one node: each registration supersedes the previous one. The SPI promises strictly
+        // increasing incarnations, not a dense sequence: Redis seeds them from its server clock so they keep rising
+        // across a store reset. (Concurrent registrations of one node id are the duplicate-NodeId race, which the
+        // store refuses; concurrent allocation is covered separately.)
         var cluster = _Cluster();
-        var nodes = new List<CoordinationNodeHandle>();
+        var identities = new List<NodeIdentity>();
 
-        try
+        for (var i = 0; i < 6; i++)
         {
-            for (var i = 0; i < 6; i++)
-            {
-                nodes.Add(await fixture.CreateNodeAsync(cluster, "node-a", AbortToken));
-            }
-
-            var identities = await Task.WhenAll(
-                nodes.Select(node => node.Membership.RegisterAsync(AbortToken).AsTask())
-            );
-
-            identities.Select(x => x.NodeId.Value).Should().OnlyContain(x => x == "node-a");
-            identities.Should().OnlyHaveUniqueItems(x => x.Incarnation.Value);
-            identities.Select(x => x.Incarnation.Value).Should().BeEquivalentTo([1L, 2L, 3L, 4L, 5L, 6L]);
+            await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+            identities.Add(await node.Membership.RegisterAsync(AbortToken));
         }
-        finally
-        {
-            foreach (var node in nodes)
-            {
-                await node.DisposeAsync();
-            }
-        }
+
+        identities.Select(x => x.NodeId.Value).Should().OnlyContain(x => x == "node-a");
+        identities.Select(x => x.Incarnation.Value).Should().BeInAscendingOrder().And.OnlyHaveUniqueItems();
     }
 
-    public virtual async Task should_allocate_exactly_one_through_n_for_concurrent_allocations()
+    public virtual async Task should_allocate_distinct_incarnations_for_concurrent_allocations()
     {
         const int racers = 32;
         await using var node = await fixture.CreateNodeAsync(_Cluster(), "node-a", AbortToken);
@@ -138,11 +128,39 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
 
         var incarnations = await Task.WhenAll(allocations);
 
-        incarnations
-            .Select(static x => x.Value)
-            .Order()
-            .Should()
-            .Equal(Enumerable.Range(1, racers).Select(static x => (long)x));
+        incarnations.Should().HaveCount(racers).And.OnlyHaveUniqueItems(static x => x.Value);
+        incarnations.Should().OnlyContain(static x => x.Value > 0);
+    }
+
+    public virtual async Task should_refuse_upsert_for_a_superseded_incarnation_without_writing_liveness()
+    {
+        // A duplicate NodeId racing registration: the first process's incarnation is superseded before its
+        // descriptor write lands, and the store must say so instead of silently dropping the write.
+        await using var node = await fixture.CreateNodeAsync(_Cluster(), "node-a", AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+        var nodeId = new NodeId("duplicate");
+        var superseded = new NodeIdentity(nodeId, await store.AllocateIncarnationAsync(nodeId, AbortToken));
+        var current = new NodeIdentity(nodeId, await store.AllocateIncarnationAsync(nodeId, AbortToken));
+
+        var supersededAccepted = await store.UpsertDescriptorAsync(_Descriptor(superseded), AbortToken);
+        var currentAccepted = await store.UpsertDescriptorAsync(_Descriptor(current), AbortToken);
+
+        supersededAccepted.Should().BeFalse();
+        currentAccepted.Should().BeTrue();
+        (await store.ReadNodeLivenessAsync(superseded, AbortToken)).Should().BeNull();
+        (await store.ReadLiveNodesAsync(AbortToken)).Should().Equal([current]);
+        (await store.ReadLivenessAsync(AbortToken)).Should().NotContain(x => x.Identity == superseded);
+    }
+
+    private static NodeDescriptor _Descriptor(NodeIdentity identity)
+    {
+        return new NodeDescriptor
+        {
+            Identity = identity,
+            HostName = "conformance-host",
+            Role = null,
+            Metadata = new Dictionary<string, string>(StringComparer.Ordinal),
+        };
     }
 
     public virtual async Task should_filter_operational_reads_to_current_generation()
@@ -259,8 +277,12 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         var firstLive = await first.Membership.GetLiveNodesAsync(AbortToken);
         var secondLive = await second.Membership.GetLiveNodesAsync(AbortToken);
 
-        firstIdentity.Should().Be(new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1)));
-        secondIdentity.Should().Be(new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1)));
+        // The same node id in another cluster has its own generation, so registering there supersedes nothing here.
+        var firstStillCurrent = await first.Membership.HeartbeatAsync(AbortToken);
+
+        firstIdentity.NodeId.Should().Be(new NodeId("node-a"));
+        secondIdentity.NodeId.Should().Be(new NodeId("node-a"));
+        firstStillCurrent.Should().BeTrue();
         firstLive.Should().Equal([firstIdentity]);
         secondLive.Should().Equal([secondIdentity]);
     }

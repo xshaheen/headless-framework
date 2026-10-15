@@ -81,13 +81,21 @@ internal static partial class LoggerExtensions
         EventId = 10,
         EventName = "HeartbeatFailed",
         Level = LogLevel.Error,
-        Message = "Coordination heartbeat for {Identity} failed for {Elapsed}; the node self-fences after {DeadThreshold} without a confirmed store write."
+        Message = "Coordination heartbeat for {Identity} failed with {Remaining} of fence budget left; the node self-fences {FenceBudget} after its last confirmed store write."
     )]
     public static partial void HeartbeatFailed(
         this ILogger logger,
         Exception exception,
         NodeIdentity identity,
-        TimeSpan elapsed,
-        TimeSpan deadThreshold
+        TimeSpan remaining,
+        TimeSpan fenceBudget
     );
+
+    [LoggerMessage(
+        EventId = 11,
+        EventName = "SelfFenceFailed",
+        Level = LogLevel.Error,
+        Message = "Coordination self-fence for {Identity} failed while signalling local membership loss."
+    )]
+    public static partial void SelfFenceFailed(this ILogger logger, Exception exception, NodeIdentity identity);
 }

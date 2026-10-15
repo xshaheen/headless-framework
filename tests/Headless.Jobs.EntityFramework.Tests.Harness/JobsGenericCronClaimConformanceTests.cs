@@ -16,7 +16,7 @@ public abstract class JobsGenericCronClaimConformanceTests<TFixture>(TFixture fi
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("generic-cron-claim", useNativeClaims: false);
+        using var host = fixture.BuildHost("generic-cron-claim", useNativeClaims: false, fastMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 

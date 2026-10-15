@@ -487,7 +487,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
-        using var host = fixture.BuildHost("node-a");
+        using var host = fixture.BuildHost("node-a", fastMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
@@ -539,7 +539,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
-        using var host = fixture.BuildHost("node-a");
+        using var host = fixture.BuildHost("node-a", fastMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
@@ -580,7 +580,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
-        using var host = fixture.BuildHost("node-a");
+        using var host = fixture.BuildHost("node-a", fastMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
@@ -712,7 +712,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
-        using var host = fixture.BuildHost("node-a");
+        using var host = fixture.BuildHost("node-a", fastMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
@@ -748,8 +748,8 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
         // Two nodes in one cluster. No Redis anywhere in the wiring — recovery flows purely through the
         // coordination NodeLeft event into the Jobs MembershipRecoveryBridge.
-        var hostA = fixture.BuildHost("node-a");
-        var hostB = fixture.BuildHost("node-b");
+        var hostA = fixture.BuildHost("node-a", fastMembership: true);
+        var hostB = fixture.BuildHost("node-b", fastMembership: true);
 
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(hostA, ct);
         await hostA.StartAsync(ct);
@@ -899,7 +899,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
-        using var host = fixture.BuildHost("node-a");
+        using var host = fixture.BuildHost("node-a", fastMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
@@ -1019,7 +1019,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         // reclaim is a direct persistence call and must not depend on the skewed clock driving membership.
         var skewedClock = new SkewedTimeProvider(TimeSpan.FromHours(1));
 
-        using var host = fixture.BuildHost("node-skew", timeProvider: skewedClock);
+        using var host = fixture.BuildHost("node-skew", timeProvider: skewedClock, fastMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
 
         var validId = Guid.NewGuid(); // lease valid per DB clock (~5 min out), but "lapsed" per the +1h skew
@@ -1070,7 +1070,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         await fixture.ResetDatabaseAsync(ct);
 
         var skewedClock = new SkewedTimeProvider(TimeSpan.FromHours(1));
-        using var host = fixture.BuildHost("node-skew", timeProvider: skewedClock);
+        using var host = fixture.BuildHost("node-skew", timeProvider: skewedClock, fastMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
 
         var cronId = Guid.NewGuid();
@@ -1299,7 +1299,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
-        using var host = fixture.BuildHost("node-a");
+        using var host = fixture.BuildHost("node-a", fastMembership: true);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 

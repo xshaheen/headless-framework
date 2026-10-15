@@ -24,7 +24,7 @@ internal sealed class RedisMembershipReadNodeLivenessScriptDefinition : RedisScr
             end
 
             -- Resolve the node's current generation mirror-first (matching the read script), gen: key fallback.
-            -- The mirror is a bare decimal written by tostring(incarnation); reading it avoids a second key when present.
+            -- The mirror is a bare decimal string written by the allocate/heartbeat scripts; reading it avoids a second key when present.
             local current = redis.call('hget', @knownKey, @generationField)
             if current == false then
               current = redis.call('get', @genKey)
