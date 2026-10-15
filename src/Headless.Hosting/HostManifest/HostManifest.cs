@@ -12,7 +12,7 @@ namespace Headless.Hosting;
 /// <see cref="IHostManifestSection" />.
 /// </summary>
 /// <remarks>
-/// The <c>describe</c> command of <c>RunHeadlessCommandsAsync</c> and the HTTP manifest endpoint both write through this
+/// The <c>describe</c> command of <c>RunHeadlessAsync</c> and the HTTP manifest endpoint both write through this
 /// type, so the two forms always serve the same document.
 /// </remarks>
 [PublicAPI]

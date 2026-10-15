@@ -11,7 +11,7 @@ using Serilog;
 namespace Tests.Hosting;
 
 [Collection(HostConsoleCollection.Name)]
-public sealed class RunHeadlessCommandsAsyncTests : TestBase
+public sealed class RunHeadlessAsyncTests : TestBase
 {
     [Fact]
     public async Task should_fail_before_any_section_runs_when_a_startup_validator_fails()
@@ -123,7 +123,7 @@ public sealed class RunHeadlessCommandsAsyncTests : TestBase
             var host = Host.CreateDefaultBuilder().Build();
 
             // when
-            exitCode = await host.RunHeadlessCommandsAsync(["describe"], AbortToken);
+            exitCode = await host.RunHeadlessAsync(["describe"], AbortToken);
         }
         finally
         {

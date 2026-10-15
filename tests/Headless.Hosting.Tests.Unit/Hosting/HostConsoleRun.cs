@@ -15,7 +15,7 @@ public sealed class HostConsoleCollection
     public const string Name = "Host console";
 }
 
-/// <summary>What one <c>RunHeadlessCommandsAsync</c> call wrote and returned.</summary>
+/// <summary>What one <c>RunHeadlessAsync</c> call wrote and returned.</summary>
 internal sealed record HostConsoleRun(int ExitCode, string StandardOutput, string StandardError)
 {
     /// <summary>
@@ -42,7 +42,7 @@ internal sealed record HostConsoleRun(int ExitCode, string StandardOutput, strin
             configure(builder);
             var host = builder.Build();
 
-            var exitCode = await host.RunHeadlessCommandsAsync(args, cancellationToken);
+            var exitCode = await host.RunHeadlessAsync(args, cancellationToken);
 
             return new HostConsoleRun(exitCode, stdout.ToString(), stderr.ToString());
         }

@@ -12,7 +12,7 @@ namespace Microsoft.Extensions.Hosting;
 
 /// <summary>Runs a Headless host from its entry point, or answers a command about it instead.</summary>
 [PublicAPI]
-public static class HeadlessHostCommandExtensions
+public static class HeadlessHostRunExtensions
 {
     private const string _DescribeCommand = "describe";
 
@@ -27,7 +27,7 @@ public static class HeadlessHostCommandExtensions
         /// <returns>The process exit code: 0 on success, 1 when the manifest fails.</returns>
         /// <remarks>
         /// <para>
-        /// Call it from <c>Program.cs</c> in place of <c>RunAsync</c>: <c>return await app.RunHeadlessCommandsAsync(args);</c>.
+        /// Call it from <c>Program.cs</c> in place of <c>RunAsync</c>: <c>return await app.RunHeadlessAsync(args);</c>.
         /// Only the host's own entry point sees its real configuration sources, so the manifest shows the tuning the
         /// host would run with.
         /// </para>
@@ -43,7 +43,7 @@ public static class HeadlessHostCommandExtensions
         /// <para>Like <c>RunAsync</c>, it disposes the host in both modes.</para>
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="args" /> is <see langword="null" />.</exception>
-        public async Task<int> RunHeadlessCommandsAsync(string[] args, CancellationToken cancellationToken = default)
+        public async Task<int> RunHeadlessAsync(string[] args, CancellationToken cancellationToken = default)
         {
             Argument.IsNotNull(host);
             Argument.IsNotNull(args);

@@ -598,7 +598,7 @@ The forwarded-headers step starts from the app's `IOptions<ForwardedHeadersOptio
 
 #### Host manifest endpoint
 
-`MapHeadlessHostManifest(pattern, authorizationPolicy = null)` maps `GET` at `pattern` to the host manifest JSON that `RunHeadlessCommandsAsync(args)` prints for `describe`: what each feature registered in this host, such as Messaging consumers and Jobs functions. [Utilities](utilities.md#host-manifest) owns the document. `MapHeadlessEndpoints()` does not map it; call it explicitly.
+`MapHeadlessHostManifest(pattern, authorizationPolicy = null)` maps `GET` at `pattern` to the host manifest JSON that `RunHeadlessAsync(args)` prints for `describe`: what each feature registered in this host, such as Messaging consumers and Jobs functions. [Utilities](utilities.md#host-manifest) owns the document. `MapHeadlessEndpoints()` does not map it; call it explicitly.
 
 ```csharp
 builder.Services.AddAuthorizationBuilder()

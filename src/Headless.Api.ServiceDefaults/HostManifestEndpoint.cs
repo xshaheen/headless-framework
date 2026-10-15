@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Api.ServiceDefaults;
 
-/// <summary>Maps the HTTP form of the host manifest that <c>RunHeadlessCommandsAsync(args)</c> prints for <c>describe</c>.</summary>
+/// <summary>Maps the HTTP form of the host manifest that <c>RunHeadlessAsync(args)</c> prints for <c>describe</c>.</summary>
 [PublicAPI]
 public static partial class HostManifestEndpoint
 {

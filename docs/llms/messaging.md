@@ -2128,7 +2128,7 @@ Transports that retry a lost broker inside their own receive loop (Azure Service
 
 ### Host manifest
 
-`AddHeadlessMessaging` writes the `messaging` section of the host manifest that `RunHeadlessCommandsAsync(args)` prints for `describe` and that `MapHeadlessHostManifest` serves; [Utilities](utilities.md#host-manifest) owns the command, the document envelope, and the endpoint. The section is read from the host's frozen consumer registry, so it shows the tuning that configuration applied (`Headless:Messaging:Consumers:{identity}:Concurrency`) and this host's `ConsumeOnly` filter. A host without `AddHeadlessMessaging` has no `messaging` section.
+`AddHeadlessMessaging` writes the `messaging` section of the host manifest that `RunHeadlessAsync(args)` prints for `describe` and that `MapHeadlessHostManifest` serves; [Utilities](utilities.md#host-manifest) owns the command, the document envelope, and the endpoint. The section is read from the host's frozen consumer registry, so it shows the tuning that configuration applied (`Headless:Messaging:Consumers:{identity}:Concurrency`) and this host's `ConsumeOnly` filter. A host without `AddHeadlessMessaging` has no `messaging` section.
 
 ```json
 {

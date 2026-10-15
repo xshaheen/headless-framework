@@ -54,7 +54,7 @@ public sealed class JobsStoreHostManifestTests : TestBase
 
         try
         {
-            var exitCode = await host.RunHeadlessCommandsAsync(["describe"], AbortToken);
+            var exitCode = await host.RunHeadlessAsync(["describe"], AbortToken);
 
             return (exitCode, stdout.ToString());
         }

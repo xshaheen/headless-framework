@@ -291,7 +291,7 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 - Startup validators (`IHeadlessStartupValidator`, `AddStartupValidator`) that run before any hosted service starts and report every failure together
 - Dependency health checks: provider packages contribute readiness checks through `AddHeadlessHealthCheck`, tagged with `HeadlessHealthCheckTags`; applications drop any of them with `RemoveHealthChecks`. See [Health checks](#health-checks)
 - Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
-- Host manifest: `RunHeadlessCommandsAsync(args)` prints, for the `describe` verb, the JSON each `IHostManifestSection` writes about what its feature registered, without starting the host. See [Host manifest](#host-manifest)
+- Host manifest: `RunHeadlessAsync(args)` prints, for the `describe` verb, the JSON each `IHostManifestSection` writes about what its feature registered, without starting the host. See [Host manifest](#host-manifest)
 - Options validation with FluentValidation
 - Configuration binding extensions
 - Environment detection extensions
@@ -505,7 +505,7 @@ A provider package that talks to an external dependency contributes a readiness 
 
 A host manifest is a JSON document that lists what each feature registered in the host: Messaging consumer identities with their effective tuning, Jobs functions with theirs. It is read from the same frozen registries the host runs, so it shows the values configuration applied, and it answers "what does this deployed host consume and run?" without starting it.
 
-Print it from the host's own entry point by replacing `RunAsync` with `RunHeadlessCommandsAsync(args)`:
+Print it from the host's own entry point by replacing `RunAsync` with `RunHeadlessAsync(args)`:
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -515,14 +515,14 @@ builder.Services.AddHeadlessJobs(options => { /* ... */ });
 var app = builder.Build();
 // ... middleware and endpoints ...
 
-return await app.RunHeadlessCommandsAsync(args);
+return await app.RunHeadlessAsync(args);
 ```
 
 ```bash
 dotnet MyApp.dll describe | jq '.sections.jobs.functions[].name'
 ```
 
-- **`describe` verb.** When the first argument is `describe`, `RunHeadlessCommandsAsync` (namespace `Microsoft.Extensions.Hosting`) builds the manifest instead of running the host and returns the exit code. Any other first argument runs the host as `RunAsync` does and returns 0. It disposes the host in both modes.
+- **`describe` verb.** When the first argument is `describe`, `RunHeadlessAsync` (namespace `Microsoft.Extensions.Hosting`) builds the manifest instead of running the host and returns the exit code. Any other first argument runs the host as `RunAsync` does and returns 0. It disposes the host in both modes.
 - **Validates like a start, starts nothing.** It first runs options marked `ValidateOnStart`, then every `IHeadlessStartupValidator`, in the same order a real start does. It never starts a hosted service, so it opens no broker connection and claims no job. Only the entry point sees the host's real configuration sources, which is why the command runs there rather than in a separate tool.
 - **Needs no infrastructure.** Neither validation nor any section opens a connection, so `describe` succeeds when the broker and databases are unreachable or absent, for example in CI or on a laptop. Configuration still has to be valid: a missing RabbitMQ password, or two outboxes on one database, fails the command as it would fail a start.
 - **Output.** On success, standard output carries only the JSON document and the exit code is 0. On any failure (a validator, an options validation, or a section), standard output stays empty, `Host manifest failed: {message}` goes to standard error, and the exit code is 1.

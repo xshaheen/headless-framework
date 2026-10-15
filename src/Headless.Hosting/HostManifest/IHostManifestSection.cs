@@ -11,7 +11,7 @@ namespace Headless.Hosting;
 /// <remarks>
 /// <para>
 /// A feature registers its section as a singleton <see cref="IHostManifestSection" />, typically with
-/// <c>TryAddEnumerable</c>. The host manifest is printed by <c>RunHeadlessCommandsAsync</c> when the host's first argument
+/// <c>TryAddEnumerable</c>. The host manifest is printed by <c>RunHeadlessAsync</c> when the host's first argument
 /// is <c>describe</c>, after the startup validation a real start would run and without starting any hosted service.
 /// <c>MapHeadlessHostManifest</c> in <c>Headless.Api.ServiceDefaults</c> serves the same document over HTTP, behind
 /// authorization, and <see cref="HostManifest" /> writes it for both, so the two forms never differ.

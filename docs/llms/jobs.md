@@ -1492,7 +1492,7 @@ A scheduling-only host (`DisableBackgroundServices()`) gets only the storage che
 
 ### Host manifest
 
-`AddHeadlessJobs` writes the `jobs` section of the host manifest that `RunHeadlessCommandsAsync(args)` prints for `describe` and that `MapHeadlessHostManifest` serves; [Utilities](utilities.md#host-manifest) owns the command, the document envelope, and the endpoint. The section is read from the host's frozen job registry, so it shows the tuning that configuration applied and this host's `RunOnly` filter. A host without `AddHeadlessJobs` has no `jobs` section.
+`AddHeadlessJobs` writes the `jobs` section of the host manifest that `RunHeadlessAsync(args)` prints for `describe` and that `MapHeadlessHostManifest` serves; [Utilities](utilities.md#host-manifest) owns the command, the document envelope, and the endpoint. The section is read from the host's frozen job registry, so it shows the tuning that configuration applied and this host's `RunOnly` filter. A host without `AddHeadlessJobs` has no `jobs` section.
 
 ```json
 {
