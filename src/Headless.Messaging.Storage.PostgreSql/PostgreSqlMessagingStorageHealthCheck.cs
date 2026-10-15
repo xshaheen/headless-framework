@@ -30,6 +30,13 @@ internal static class PostgreSqlMessagingStorageHealthCheck
     {
         services.AddHeadlessHealthCheck(
             name,
+            // Shared: an outbox on the application's own database folds into that database's sql- or dbcontext- check.
+            HeadlessHealthCheckResource.Shared(provider =>
+            {
+                using var connection = options(provider).CreateConnection();
+
+                return HeadlessHealthCheckResource.DatabaseKey("postgresql", connection.ConnectionString);
+            }),
             async (provider, cancellationToken) =>
             {
                 var connection = options(provider).CreateConnection();

@@ -262,6 +262,16 @@ internal static class ServiceBuilder
     {
         services.AddHeadlessHealthCheck(
             "jobs-storage-" + (typeof(TContext).FullName ?? typeof(TContext).Name),
+            // Shared: on the application's own database it folds into that database's dbcontext- or sql- check.
+            HeadlessHealthCheckResource.Shared(static provider =>
+            {
+                using var context = provider.GetRequiredService<IDbContextFactory<TContext>>().CreateDbContext();
+
+                return HeadlessHealthCheckResource.DatabaseKey(
+                    context.Database.ProviderName ?? "ef",
+                    context.Database.GetConnectionString()
+                );
+            }),
             static async (provider, cancellationToken) =>
             {
                 var factory = provider.GetRequiredService<IDbContextFactory<TContext>>();

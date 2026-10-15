@@ -71,6 +71,12 @@ public static class SetupSqlPostgreSql
         services.TryAddScoped<ISqlCurrentConnection, DefaultSqlCurrentConnection>();
         services.AddHeadlessHealthCheck(
             "sql-postgresql",
+            HeadlessHealthCheckResource.Owned(static provider =>
+                HeadlessHealthCheckResource.DatabaseKey(
+                    "postgresql",
+                    provider.GetService<ISqlConnectionFactory>()?.GetConnectionString()
+                )
+            ),
             static (provider, cancellationToken) =>
                 provider
                     .GetRequiredService<ISqlConnectionFactory>()

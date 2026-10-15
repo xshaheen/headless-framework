@@ -192,6 +192,9 @@ public static class SetupDistributedLocksRedis
             );
             services.AddHeadlessHealthCheck(
                 "distributed-locks-redis",
+                HeadlessHealthCheckResource.Shared(static provider =>
+                    provider.GetRequiredService<IConnectionMultiplexer>().GetEndpointsKey()
+                ),
                 static async (provider, cancellationToken) =>
                     await provider
                         .GetRequiredService<IConnectionMultiplexer>()

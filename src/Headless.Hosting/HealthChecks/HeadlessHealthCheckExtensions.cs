@@ -50,45 +50,33 @@ public static class HeadlessHealthCheckExtensions
             params IEnumerable<string> tags
         )
         {
-            Argument.IsNotNull(services);
-            Argument.IsNotNullOrWhiteSpace(name);
-            Argument.IsNotNull(probe);
-            Argument.IsNotNull(tags);
+            return _AddProbeCheck(services, name, resource: null, probe, tags);
+        }
 
-            if (!_GetNames(services).Add(name))
-            {
-                _MergeTags(services, name, tags);
+        /// <summary>
+        /// Contributes a readiness health check that runs <paramref name="probe" /> against
+        /// <paramref name="resource" />, collapsing into one check with every other contribution that probes the same
+        /// resource (see <see cref="HeadlessHealthCheckResource" />).
+        /// </summary>
+        /// <param name="name">The registration name, unique in the host.</param>
+        /// <param name="resource">The dependency the probe reaches, which decides what the check collapses with.</param>
+        /// <param name="probe">Probes the dependency; completing is healthy and throwing reports the failure status.</param>
+        /// <param name="tags">Tags added to <see cref="HeadlessHealthCheckTags.Ready" /> and <see cref="HeadlessHealthCheckTags.Headless" />.</param>
+        /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
+        /// <exception cref="ArgumentNullException">
+        /// <paramref name="resource" /> or <paramref name="probe" /> is <see langword="null" />.
+        /// </exception>
+        /// <exception cref="ArgumentException"><paramref name="name" /> is <see langword="null" />, empty, or whitespace.</exception>
+        public IServiceCollection AddHeadlessHealthCheck(
+            string name,
+            HeadlessHealthCheckResource resource,
+            Func<IServiceProvider, CancellationToken, Task> probe,
+            params IEnumerable<string> tags
+        )
+        {
+            Argument.IsNotNull(resource);
 
-                return services;
-            }
-
-            string[] allTags = [HeadlessHealthCheckTags.Ready, HeadlessHealthCheckTags.Headless, .. tags];
-
-            services.AddHealthChecks();
-            services.Configure<HealthCheckServiceOptions>(options =>
-            {
-                // An application check registered under the same name first keeps the name.
-                foreach (var registration in options.Registrations)
-                {
-                    if (string.Equals(registration.Name, name, StringComparison.Ordinal))
-                    {
-                        return;
-                    }
-                }
-
-                options.Registrations.Add(
-                    new HealthCheckRegistration(
-                        name,
-                        provider => new HeadlessProbeHealthCheck(provider, probe),
-                        failureStatus: null,
-                        allTags
-                    )
-                );
-            });
-
-            _ApplyOptions(services, name, sanitize: false);
-
-            return services;
+            return _AddProbeCheck(services, name, resource, probe, tags);
         }
 
         /// <summary>
@@ -113,28 +101,33 @@ public static class HeadlessHealthCheckExtensions
             params IEnumerable<string> tags
         )
         {
-            Argument.IsNotNull(services);
-            Argument.IsNotNullOrWhiteSpace(name);
-            Argument.IsNotNull(register);
-            Argument.IsNotNull(tags);
+            return _AddRegisteredCheck(services, name, resource: null, register, tags);
+        }
 
-            // Tracked at registration time: the third-party method adds its registration unconditionally, and the
-            // health check service rejects two registrations with one name.
-            if (!_GetNames(services).Add(name))
-            {
-                _MergeTags(services, name, tags);
+        /// <summary>
+        /// Contributes a readiness health check that a third-party registration method adds for
+        /// <paramref name="resource" />, collapsing into one check with every other contribution that probes the same
+        /// resource (see <see cref="HeadlessHealthCheckResource" />).
+        /// </summary>
+        /// <param name="name">The registration name, unique in the host.</param>
+        /// <param name="resource">The dependency the check reaches, which decides what the check collapses with.</param>
+        /// <param name="register">Adds the check to the builder under the name and tags it receives.</param>
+        /// <param name="tags">Tags added to <see cref="HeadlessHealthCheckTags.Ready" /> and <see cref="HeadlessHealthCheckTags.Headless" />.</param>
+        /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
+        /// <exception cref="ArgumentNullException">
+        /// <paramref name="resource" /> or <paramref name="register" /> is <see langword="null" />.
+        /// </exception>
+        /// <exception cref="ArgumentException"><paramref name="name" /> is <see langword="null" />, empty, or whitespace.</exception>
+        public IServiceCollection AddHeadlessHealthCheck(
+            string name,
+            HeadlessHealthCheckResource resource,
+            Action<IHealthChecksBuilder, string, IReadOnlyList<string>> register,
+            params IEnumerable<string> tags
+        )
+        {
+            Argument.IsNotNull(resource);
 
-                return services;
-            }
-
-            string[] allTags = [HeadlessHealthCheckTags.Ready, HeadlessHealthCheckTags.Headless, .. tags];
-
-            register(services.AddHealthChecks(), name, allTags);
-
-            // Runs after the registration method's own Configure call, so the registration exists to adjust.
-            _ApplyOptions(services, name, sanitize: true);
-
-            return services;
+            return _AddRegisteredCheck(services, name, resource, register, tags);
         }
 
         /// <summary>
@@ -193,6 +186,172 @@ public static class HeadlessHealthCheckExtensions
 
             return services;
         }
+    }
+
+    private static IServiceCollection _AddProbeCheck(
+        IServiceCollection services,
+        string name,
+        HeadlessHealthCheckResource? resource,
+        Func<IServiceProvider, CancellationToken, Task> probe,
+        IEnumerable<string> tags
+    )
+    {
+        Argument.IsNotNull(services);
+        Argument.IsNotNullOrWhiteSpace(name);
+        Argument.IsNotNull(probe);
+        Argument.IsNotNull(tags);
+
+        if (!_GetNames(services).Add(name))
+        {
+            _MergeTags(services, name, tags);
+
+            return services;
+        }
+
+        if (resource is not null)
+        {
+            _GetResources(services)[name] = resource;
+        }
+
+        string[] allTags = [HeadlessHealthCheckTags.Ready, HeadlessHealthCheckTags.Headless, .. tags];
+
+        services.AddHealthChecks();
+        services.Configure<HealthCheckServiceOptions>(options =>
+        {
+            // An application check registered under the same name first keeps the name.
+            foreach (var registration in options.Registrations)
+            {
+                if (string.Equals(registration.Name, name, StringComparison.Ordinal))
+                {
+                    return;
+                }
+            }
+
+            options.Registrations.Add(
+                new HealthCheckRegistration(
+                    name,
+                    provider => new HeadlessProbeHealthCheck(provider, probe),
+                    failureStatus: null,
+                    allTags
+                )
+            );
+        });
+
+        _ApplyOptions(services, name, sanitize: false);
+
+        return services;
+    }
+
+    private static IServiceCollection _AddRegisteredCheck(
+        IServiceCollection services,
+        string name,
+        HeadlessHealthCheckResource? resource,
+        Action<IHealthChecksBuilder, string, IReadOnlyList<string>> register,
+        IEnumerable<string> tags
+    )
+    {
+        Argument.IsNotNull(services);
+        Argument.IsNotNullOrWhiteSpace(name);
+        Argument.IsNotNull(register);
+        Argument.IsNotNull(tags);
+
+        // Tracked at registration time: the third-party method adds its registration unconditionally, and the
+        // health check service rejects two registrations with one name.
+        if (!_GetNames(services).Add(name))
+        {
+            _MergeTags(services, name, tags);
+
+            return services;
+        }
+
+        if (resource is not null)
+        {
+            _GetResources(services)[name] = resource;
+        }
+
+        string[] allTags = [HeadlessHealthCheckTags.Ready, HeadlessHealthCheckTags.Headless, .. tags];
+
+        register(services.AddHealthChecks(), name, allTags);
+
+        // Runs after the registration method's own Configure call, so the registration exists to adjust.
+        _ApplyOptions(services, name, sanitize: true);
+
+        return services;
+    }
+
+    private static HeadlessHealthCheckResources _GetResources(IServiceCollection services)
+    {
+        if (
+            services
+                .FirstOrDefault(static descriptor => descriptor.ServiceType == typeof(HeadlessHealthCheckResources))
+                ?.ImplementationInstance
+            is not HeadlessHealthCheckResources resources
+        )
+        {
+            resources = new HeadlessHealthCheckResources();
+            services.AddSingleton(resources);
+
+            // A post-configuration, so it sees each check after its options turned it off or retuned it.
+            services
+                .AddOptions<HealthCheckServiceOptions>()
+                .PostConfigure<IServiceProvider>(
+                    (options, provider) => _Collapse(options.Registrations, resources, provider)
+                );
+        }
+
+        return resources;
+    }
+
+    /// <summary>
+    /// Folds the checks that probe one dependency into one: the owner's, else the first registered, which takes the
+    /// others' tags.
+    /// </summary>
+    private static void _Collapse(
+        ICollection<HealthCheckRegistration> registrations,
+        HeadlessHealthCheckResources resources,
+        IServiceProvider provider
+    )
+    {
+        var keyed = new List<(HealthCheckRegistration Registration, string Key, bool Owns)>();
+
+        foreach (var registration in registrations)
+        {
+            if (resources.TryGetValue(registration.Name, out var resource) && _Key(resource, provider) is { } key)
+            {
+                keyed.Add((registration, key, resource.OwnsConnection));
+            }
+        }
+
+        foreach (var group in keyed.GroupBy(static x => x.Key, StringComparer.Ordinal).Where(static x => x.Count() > 1))
+        {
+            var survivor = group.FirstOrDefault(static x => x.Owns).Registration ?? group.First().Registration;
+
+            foreach (var (registration, _, _) in group)
+            {
+                if (ReferenceEquals(registration, survivor))
+                {
+                    continue;
+                }
+
+                survivor.Tags.UnionWith(registration.Tags);
+                registrations.Remove(registration);
+            }
+        }
+    }
+
+    // A key that cannot be computed leaves its check alone rather than failing every health request.
+    private static string? _Key(HeadlessHealthCheckResource resource, IServiceProvider provider)
+    {
+        try
+        {
+            return resource.Key(provider);
+        }
+#pragma warning disable CA1031, ERP022 // False positive: a dependency the key cannot describe is simply not deduplicated; the check itself still runs and reports any real failure.
+        catch (Exception)
+        {
+            return null;
+        }
+#pragma warning restore CA1031, ERP022
     }
 
     private static HeadlessHealthCheckNames _GetNames(IServiceCollection services)
@@ -299,6 +458,12 @@ public static class HeadlessHealthCheckExtensions
         {
             registrations.Remove(registration);
         }
+    }
+
+    private sealed class HeadlessHealthCheckResources : Dictionary<string, HeadlessHealthCheckResource>
+    {
+        public HeadlessHealthCheckResources()
+            : base(StringComparer.Ordinal) { }
     }
 
     private sealed class HeadlessHealthCheckNames : HashSet<string>

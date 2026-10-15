@@ -2,6 +2,7 @@
 
 using Headless.Hosting;
 using Headless.Messaging;
+using Headless.Sql;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -65,6 +66,36 @@ public sealed class PostgreSqlStorageHealthCheckRegistrationTests : TestBase
                 "messaging-storage-postgresql-outbox-1",
                 "messaging-storage-postgresql-outbox-2"
             );
+    }
+
+    [Fact]
+    public async Task should_fold_the_storage_check_into_the_sql_check_of_the_same_database()
+    {
+        // given the application's SQL connection and Messaging storage on one database, with different users
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddPostgreSqlSql("Host=db1;Port=5432;Database=app;Username=app;Password=secret");
+
+        // when
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            setup.UsePostgreSql("Host=db1;Port=5432;Database=app;Username=messaging;Password=other");
+            setup.AddOutbox().UsePostgreSql("Host=db1;Port=5432;Database=billing");
+        });
+
+        // then - one probe for the shared database, which carries Messaging's tag; the other database keeps its own
+        await using var provider = services.BuildServiceProvider();
+        var registrations = provider.GetRequiredService<IOptions<HealthCheckServiceOptions>>().Value.Registrations;
+        registrations
+            .Where(static x => x.Tags.Contains(HeadlessHealthCheckTags.Database))
+            .Select(static x => x.Name)
+            .Should()
+            .BeEquivalentTo("sql-postgresql", "messaging-storage-postgresql-outbox-1");
+        registrations
+            .Single(static x => x.Name == "sql-postgresql")
+            .Tags.Should()
+            .Contain(HeadlessHealthCheckTags.Messaging);
     }
 
     private static async Task<List<HealthCheckRegistration>> _StorageRegistrationsAsync(ServiceCollection services)

@@ -31,6 +31,10 @@ internal static class SqlServerMessagingStorageHealthCheck
     {
         services.AddHeadlessHealthCheck(
             name,
+            // Shared: an outbox on the application's own database folds into that database's sql- or dbcontext- check.
+            HeadlessHealthCheckResource.Shared(provider =>
+                HeadlessHealthCheckResource.DatabaseKey("sqlserver", options(provider).ConnectionString)
+            ),
             async (provider, cancellationToken) =>
             {
                 var connection = new SqlConnection(options(provider).ConnectionString);

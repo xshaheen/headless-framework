@@ -158,6 +158,151 @@ public sealed class HeadlessHealthCheckTests : TestBase
     }
 
     [Fact]
+    public void should_collapse_checks_that_probe_one_resource_into_the_first_with_every_tag()
+    {
+        // given
+        var services = _CreateServices();
+        var cache = HeadlessHealthCheckResource.Shared(static _ => "redis://cache:6379");
+
+        // when
+        services.AddHeadlessHealthCheck("cache-redis", cache, (_, _) => Task.CompletedTask, "cache");
+        services.AddHeadlessHealthCheck("locks-redis", cache, (_, _) => Task.CompletedTask, "locks");
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        var registration = _Registrations(provider).Should().ContainSingle().Subject;
+        registration.Name.Should().Be("cache-redis");
+        registration.Tags.Should().Contain(["cache", "locks"]);
+    }
+
+    [Fact]
+    public void should_keep_the_owner_check_whichever_is_registered_first()
+    {
+        // given
+        var services = _CreateServices();
+        const string Database = "postgresql://db1:5432/orders";
+
+        // when - the feature that only uses the database registers before the package that owns the connection
+        services.AddHeadlessHealthCheck(
+            "jobs-storage",
+            HeadlessHealthCheckResource.Shared(static _ => Database),
+            (_, _) => Task.CompletedTask,
+            HeadlessHealthCheckTags.Jobs
+        );
+        services.AddHeadlessHealthCheck(
+            "sql-postgresql",
+            HeadlessHealthCheckResource.Owned(static _ => Database),
+            (_, _) => Task.CompletedTask,
+            HeadlessHealthCheckTags.Database
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        var registration = _Registrations(provider).Should().ContainSingle().Subject;
+        registration.Name.Should().Be("sql-postgresql");
+        registration.Tags.Should().Contain([HeadlessHealthCheckTags.Jobs, HeadlessHealthCheckTags.Database]);
+    }
+
+    [Fact]
+    public void should_keep_checks_on_different_resources_and_those_whose_key_fails()
+    {
+        // given
+        var services = _CreateServices();
+
+        // when
+        services.AddHeadlessHealthCheck(
+            "orders-db",
+            HeadlessHealthCheckResource.Shared(static _ => "postgresql://db1:5432/orders"),
+            (_, _) => Task.CompletedTask
+        );
+        services.AddHeadlessHealthCheck(
+            "billing-db",
+            HeadlessHealthCheckResource.Shared(static _ => "postgresql://db1:5432/billing"),
+            (_, _) => Task.CompletedTask
+        );
+        services.AddHeadlessHealthCheck(
+            "unknown-db",
+            HeadlessHealthCheckResource.Shared(static _ => throw new InvalidOperationException("no connection string")),
+            (_, _) => Task.CompletedTask
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        _Registrations(provider)
+            .Select(static x => x.Name)
+            .Should()
+            .BeEquivalentTo("orders-db", "billing-db", "unknown-db");
+    }
+
+    [Fact]
+    public void should_keep_the_other_check_when_configuration_turns_the_owner_off()
+    {
+        // given
+        var services = _CreateServices(("Headless:HealthChecks:sql-postgresql:Enabled", "false"));
+        const string Database = "postgresql://db1:5432/orders";
+
+        // when
+        services.AddHeadlessHealthCheck(
+            "sql-postgresql",
+            HeadlessHealthCheckResource.Owned(static _ => Database),
+            (_, _) => Task.CompletedTask
+        );
+        services.AddHeadlessHealthCheck(
+            "jobs-storage",
+            HeadlessHealthCheckResource.Shared(static _ => Database),
+            (_, _) => Task.CompletedTask
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // then - turning one check off never leaves the database unprobed
+        _Registrations(provider).Should().ContainSingle().Which.Name.Should().Be("jobs-storage");
+    }
+
+    [Theory]
+    [InlineData(
+        "postgresql",
+        "Host=DB1;Port=5432;Database=Orders;Username=app;Password=secret",
+        "postgresql://db1:5432/orders"
+    )]
+    [InlineData(
+        "postgresql",
+        "Host=db1;Port=5432;Database=orders;Username=reporting;Password=other",
+        "postgresql://db1:5432/orders"
+    )]
+    [InlineData(
+        "Npgsql.EntityFrameworkCore.PostgreSQL",
+        "Host=db1;Port=5432;Database=orders",
+        "postgresql://db1:5432/orders"
+    )]
+    [InlineData(
+        "sqlserver",
+        "Server=tcp:sql1,1433;Initial Catalog=Orders;User ID=app;Password=secret",
+        "sqlserver://sql1:1433/orders"
+    )]
+    [InlineData(
+        "Microsoft.EntityFrameworkCore.SqlServer",
+        "Data Source=sql1,1433;Initial Catalog=orders",
+        "sqlserver://sql1:1433/orders"
+    )]
+    public void should_key_a_database_by_provider_host_port_and_name_without_credentials(
+        string provider,
+        string connectionString,
+        string expected
+    )
+    {
+        HeadlessHealthCheckResource.DatabaseKey(provider, connectionString).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("Database=orders")]
+    public void should_give_no_database_key_without_a_host(string? connectionString)
+    {
+        HeadlessHealthCheckResource.DatabaseKey("postgresql", connectionString).Should().BeNull();
+    }
+
+    [Fact]
     public void should_not_run_the_probe_at_registration()
     {
         // given
