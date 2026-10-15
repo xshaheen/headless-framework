@@ -2384,7 +2384,7 @@ public sealed class ConsumerRegisterTests : TestBase
         exhausted.Should().BeNull();
         await circuitBreaker
             .DidNotReceive()
-            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
         circuitBreaker.Received(1).ReleaseHalfOpenProbe(Arg.Any<string>(), 1L);
     }
 
