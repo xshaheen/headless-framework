@@ -57,6 +57,12 @@ public class MediumMessage
     public int Retries { get; set; }
 
     /// <summary>
+    /// Gets or sets the row's stored status as the monitoring API read it. <see langword="null"/> when the row was not
+    /// read through the monitoring API, which is the only reader that loads it.
+    /// </summary>
+    public StatusName? StatusName { get; set; }
+
+    /// <summary>
     /// Gets or sets the number of delivery attempts durably reserved in the current inline burst.
     /// The reservation is written before invoking user code or a transport so crash recovery cannot
     /// grant a fresh inline budget. It resets to zero when <see cref="Retries"/> advances.

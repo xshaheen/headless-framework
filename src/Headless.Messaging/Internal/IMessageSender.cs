@@ -404,11 +404,44 @@ internal sealed class MessageSender : IMessageSender
 
         if (!updated)
         {
-            // Storage's terminal-row guard rejected the write — the row is already in a terminal
-            // state (typically Failed/NULL after a prior exhausted attempt). The broker DID accept
-            // the publish, so the consumer will observe the message; at-least-once delivery means
-            // duplicates are the user's responsibility to dedupe on the receive side.
+            // The broker DID accept the publish, so the consumer will observe the message; at-least-once delivery
+            // means duplicates are the user's responsibility to dedupe on the receive side. The fenced write cannot
+            // say why it missed, so read the row back on this rare path to tell the operator which cause it was.
+            await _LogSuccessWriteMissAsync(message, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task _LogSuccessWriteMissAsync(MediumMessage message, CancellationToken cancellationToken)
+    {
+        MediumMessage? row;
+        try
+        {
+            row = await _StorageOf(message)
+                .GetMonitoringApi()
+                .GetPublishedMessageAsync(message.StorageId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // The diagnostic read must never fail a publish the broker already accepted.
+            _logger.PublishSucceededButLeaseLost(ex, message.StorageId);
+            return;
+        }
+
+        if (row is null)
+        {
+            _logger.PublishSucceededButStorageRowMissing(message.StorageId);
+        }
+        else if (row.StatusName is StatusName.Succeeded or StatusName.Failed && row.NextRetryAt is null)
+        {
+            // The terminal guard's own predicate: the row ended (typically Failed after a prior exhausted attempt).
             _logger.PublishSucceededButStorageTerminal(message.StorageId);
+        }
+        else
+        {
+            // A live row the fence rejected: another claimer took the lease or it lapsed. A claimed delayed publish
+            // is live with no NextRetryAt, so the status, not NextRetryAt alone, tells it apart from a terminal row.
+            _logger.PublishSucceededButLeaseLost(exception: null, message.StorageId);
         }
     }
 

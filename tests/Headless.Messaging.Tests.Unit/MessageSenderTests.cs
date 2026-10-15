@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
@@ -124,7 +125,8 @@ public sealed class MessageSenderTests : TestBase
         MessagingOptions options,
         IHostApplicationLifetime? lifetime = null,
         TransportConnectivity? connectivity = null,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        ILoggerProvider? loggerProvider = null
     )
     {
         storage
@@ -167,7 +169,13 @@ public sealed class MessageSenderTests : TestBase
             .Returns(ValueTask.FromResult(true));
 
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddLogging(logging =>
+        {
+            if (loggerProvider is not null)
+            {
+                logging.AddProvider(loggerProvider);
+            }
+        });
         services.AddSingleton(storage);
         services.AddSingleton(serializer);
         services.AddSingleton(transport);
@@ -1713,5 +1721,163 @@ public sealed class MessageSenderTests : TestBase
         result.Succeeded.Should().BeFalse();
         exhaustedCalls.Should().Be(0);
         await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, AbortToken);
+    }
+
+    public static TheoryData<string, int> SuccessWriteMissCases =>
+        new()
+        {
+            // The row reached a terminal state before this success write: the existing terminal event.
+            { "terminal", 69 },
+            // Another claimer holds the row under a different lease.
+            { "lease-lost", 4118 },
+            // A claimed delayed publish is live with no NextRetryAt, so only its status tells it is not terminal.
+            { "queued-lease-lost", 4118 },
+            { "missing", 4119 },
+        };
+
+    [Theory]
+    [MemberData(nameof(SuccessWriteMissCases))]
+    public async Task should_log_success_write_miss_by_cause_when_the_fenced_success_write_misses(
+        string rowState,
+        int expectedEventId
+    )
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        var message = _CreateMediumMessage();
+        var monitoring = Substitute.For<IMonitoringApi>();
+        storage.GetMonitoringApi().Returns(monitoring);
+        monitoring
+            .GetPublishedMessageAsync(message.StorageId, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(_RowFor(message, rowState)));
+        using var log = new CapturingLoggerProvider();
+        var (sender, transportMessage, transport) = _CreateSucceedingSenderWithMissedWrite(storage, log);
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await transport.Received(1).SendAsync(transportMessage, Arg.Any<CancellationToken>());
+        log.Entries.Select(e => e.EventId.Id).Where(id => id is 69 or 4118 or 4119).Should().Equal(expectedEventId);
+    }
+
+    [Fact]
+    public async Task should_complete_publish_and_log_lease_lost_or_unknown_when_the_diagnostic_read_throws()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        var message = _CreateMediumMessage();
+        var monitoring = Substitute.For<IMonitoringApi>();
+        storage.GetMonitoringApi().Returns(monitoring);
+        var readFailure = new InvalidOperationException("database unavailable");
+        monitoring
+            .GetPublishedMessageAsync(message.StorageId, Arg.Any<CancellationToken>())
+            .Returns<ValueTask<MediumMessage?>>(_ => throw readFailure);
+        using var log = new CapturingLoggerProvider();
+        var (sender, _, _) = _CreateSucceedingSenderWithMissedWrite(storage, log);
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        log.Entries.Should().ContainSingle(e => e.EventId.Id == 4118).Which.Exception.Should().BeSameAs(readFailure);
+        log.Entries.Should().NotContain(e => e.EventId.Id == 69 || e.EventId.Id == 4119);
+    }
+
+    private static (
+        MessageSender Sender,
+        TransportMessage TransportMessage,
+        ITransport Transport
+    ) _CreateSucceedingSenderWithMissedWrite(IDataStorage storage, CapturingLoggerProvider log)
+    {
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport.SendAsync(transportMessage, Arg.Any<CancellationToken>()).Returns(OperateResult.Success);
+        var sender = _CreateSender(storage, serializer, transport, new MessagingOptions(), loggerProvider: log);
+        storage
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Succeeded,
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(false));
+        return (sender, transportMessage, transport);
+    }
+
+    private static MediumMessage? _RowFor(MediumMessage message, string rowState)
+    {
+        if (string.Equals(rowState, "missing", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var row = _CreateMediumMessage();
+        row.StorageId = message.StorageId;
+        switch (rowState)
+        {
+            case "terminal":
+                row.StatusName = StatusName.Failed;
+                row.NextRetryAt = null;
+                row.LockedUntil = null;
+                break;
+            case "lease-lost":
+                row.StatusName = StatusName.Scheduled;
+                row.NextRetryAt = DateTimeOffset.UtcNow.AddMinutes(1);
+                row.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+                break;
+            case "queued-lease-lost":
+                row.StatusName = StatusName.Queued;
+                row.NextRetryAt = null;
+                row.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(rowState), rowState, null);
+        }
+
+        return row;
+    }
+
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly ConcurrentQueue<(LogLevel Level, EventId EventId, Exception? Exception)> _entries = new();
+
+        public IReadOnlyList<(LogLevel Level, EventId EventId, Exception? Exception)> Entries => [.. _entries];
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(_entries);
+
+        public void Dispose() { }
+
+        private sealed class CapturingLogger(
+            ConcurrentQueue<(LogLevel Level, EventId EventId, Exception? Exception)> entries
+        ) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                entries.Enqueue((logLevel, eventId, exception));
+            }
+        }
     }
 }

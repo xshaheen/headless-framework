@@ -527,7 +527,7 @@ internal sealed class RelationalMonitoringApi(
             ? _t.ExceptionInfo
             : $"NULL AS {_t.ExceptionInfo}";
         var sql =
-            $"SELECT {_t.Id},{_t.Content},{_t.IntentType},{_t.Added},{_t.ExpiresAt},{_t.Retries},{exceptionInfo},{_t.NextRetryAt},{_t.LockedUntil} FROM {_dialect.ReadWithoutWaiting(tableName)} WHERE {_dialect.InList(_t.Id, "Ids", SqlColumnType.Guid)} AND {_t.IntentType} IN (0, 1);";
+            $"SELECT {_t.Id},{_t.Content},{_t.IntentType},{_t.Added},{_t.ExpiresAt},{_t.Retries},{exceptionInfo},{_t.NextRetryAt},{_t.LockedUntil},{_t.StatusName} FROM {_dialect.ReadWithoutWaiting(tableName)} WHERE {_dialect.InList(_t.Id, "Ids", SqlColumnType.Guid)} AND {_t.IntentType} IN (0, 1);";
 
         await using var connection = _storage.CreateConnection();
         return await RelationalCommand
@@ -557,6 +557,7 @@ internal sealed class RelationalMonitoringApi(
                                 ExceptionInfo = await _StringAsync(reader, 6, token).ConfigureAwait(false),
                                 NextRetryAt = await _InstantAsync(reader, 7, token).ConfigureAwait(false),
                                 LockedUntil = await _InstantAsync(reader, 8, token).ConfigureAwait(false),
+                                StatusName = Enum.Parse<StatusName>(reader.GetString(9)),
                             }
                         );
                     }

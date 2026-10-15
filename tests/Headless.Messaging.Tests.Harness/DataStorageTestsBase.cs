@@ -4283,6 +4283,31 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Contain(aboveCapReceived.Select(m => m.StorageId), "received pickup carries no global retry cap");
     }
 
+    public virtual async Task should_return_stored_status_when_monitoring_reads_a_published_message()
+    {
+        // given — the sender reads the status back to tell a terminal row from a live one whose lease it lost
+        var storage = GetStorage();
+        var live = await storage.StoreMessageAsync("status-live-pub", CreateMessage(), cancellationToken: AbortToken);
+        var terminal = await storage.StoreMessageAsync(
+            "status-terminal-pub",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        await storage.ChangePublishStateAsync(terminal, StatusName.Failed, cancellationToken: AbortToken);
+
+        // when
+        var monitoring = storage.GetMonitoringApi();
+        var liveRow = await monitoring.GetPublishedMessageAsync(live.StorageId, AbortToken);
+        var terminalRow = await monitoring.GetPublishedMessageAsync(terminal.StorageId, AbortToken);
+
+        // then
+        liveRow.Should().NotBeNull();
+        liveRow!.StatusName.Should().Be(StatusName.Scheduled);
+        terminalRow.Should().NotBeNull();
+        terminalRow!.StatusName.Should().Be(StatusName.Failed);
+        terminalRow.NextRetryAt.Should().BeNull();
+    }
+
     private async Task<MediumMessage> _StoreFailedPublishedMessageAsync(string name)
     {
         var storage = GetStorage();

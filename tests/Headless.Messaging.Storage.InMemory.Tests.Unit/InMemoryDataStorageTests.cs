@@ -1325,6 +1325,12 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
+    public override Task should_return_stored_status_when_monitoring_reads_a_published_message()
+    {
+        return base.should_return_stored_status_when_monitoring_reads_a_published_message();
+    }
+
+    [Fact]
     public override Task should_schedule_growing_consume_delayed_retries_from_the_storage_clock()
     {
         return base.should_schedule_growing_consume_delayed_retries_from_the_storage_clock();
