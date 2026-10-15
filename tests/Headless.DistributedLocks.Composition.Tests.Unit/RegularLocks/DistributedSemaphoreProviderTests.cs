@@ -170,6 +170,47 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
     }
 
     [Fact]
+    public async Task should_fire_handle_lost_token_one_margin_before_slot_expiry_when_renewed_manually()
+    {
+        // given - monitor mode, 10s slot. At 2s the caller renews with no TTL, which the provider maps to its 20-minute
+        // default, so the store now expires the slot at 2s + 20m and the deadline is that minus min(10% of 20m, the
+        // 5s storage deadline). The in-memory store keeps the slot the whole time, so only the deadline can fire.
+        var provider = _CreateProvider();
+        var semaphore = provider.CreateSemaphore(Faker.Random.AlphaNumeric(10), maxCount: 1);
+        await using var slot = await semaphore.TryAcquireAsync(
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(10),
+                Monitoring = LockMonitoringMode.Monitor,
+            },
+            AbortToken
+        );
+        slot.Should().NotBeNull();
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        (await slot!.RenewAsync(cancellationToken: AbortToken)).Should().BeTrue();
+        var deadlineFromRenew = provider.DefaultTimeUntilExpires - TimeSpan.FromSeconds(5);
+
+        // when - past the acquire deadline (9s) and up to just short of the renewed one
+        _timeProvider.Advance(deadlineFromRenew - TimeSpan.FromMilliseconds(1));
+        await DistributedLockTestSupport.DrainUntilAsync(() => slot.LostToken.IsCancellationRequested, AbortToken);
+
+        // then
+        slot.LostToken.IsCancellationRequested.Should().BeFalse();
+
+        // when
+        var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var registration = slot.LostToken.Register(
+            static state => ((TaskCompletionSource)state!).TrySetResult(),
+            lostSignal
+        );
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+
+        // then
+        await lostSignal.Task.Bounded();
+        (await provider.ValidateAsync(slot.Resource, slot.LeaseId, AbortToken)).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_fire_handle_lost_token_when_lease_is_lost_in_poll_mode()
     {
         // given — acquire with Monitor mode; storage will expire the slot when time advances

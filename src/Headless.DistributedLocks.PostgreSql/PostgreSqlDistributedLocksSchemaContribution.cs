@@ -8,7 +8,8 @@ namespace Headless.DistributedLocks.PostgreSql;
 
 /// <summary>
 /// The DistributedLocks feature's schema contribution for PostgreSQL: the fence sequence that
-/// <see cref="PostgresFencingTokenSource"/> reads, as one idempotent step the Headless schema runner applies.
+/// exclusive advisory acquires draw from in their grant statement, as one idempotent step the Headless schema runner
+/// applies.
 /// </summary>
 internal static class PostgreSqlDistributedLocksSchemaContribution
 {

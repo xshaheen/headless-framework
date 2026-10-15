@@ -211,4 +211,30 @@ public sealed class InMemoryDistributedLockTests : DistributedLockTestsBase
     {
         return base.should_not_fire_handle_lost_token_on_clean_release();
     }
+
+    [Fact]
+    public override Task should_drop_released_lock_from_active_locks()
+    {
+        return base.should_drop_released_lock_from_active_locks();
+    }
+
+    [Fact]
+    public override Task should_issue_greater_fencing_token_after_release_than_any_before()
+    {
+        return base.should_issue_greater_fencing_token_after_release_than_any_before();
+    }
+
+    [Fact]
+    public async Task should_count_no_active_locks_when_only_lock_released()
+    {
+        // Each GetLockProvider call builds its own in-memory store, so the global count is exact here, unlike
+        // the shared stores the cross-provider harness also runs against.
+        var locker = GetLockProvider();
+        var handle = await locker.TryAcquireAsync(Faker.Random.String2(3, 10), cancellationToken: AbortToken);
+        handle.Should().NotBeNull();
+
+        await handle!.ReleaseAsync();
+
+        (await locker.GetActiveLocksCountAsync(AbortToken)).Should().Be(0);
+    }
 }

@@ -21,6 +21,7 @@ internal sealed class DisposableSemaphoreSlot : DistributedLockHandleBase
     /// <param name="fencingToken">The fencing token issued by the backend, or <see langword="null"/> if unsupported.</param>
     /// <param name="leaseDuration">The finite TTL of the slot (used for monitoring cadence calculation).</param>
     /// <param name="timeWaitedForLock">The wall-clock time spent waiting before the slot was granted.</param>
+    /// <param name="acquireTimestamp">Timestamp taken immediately before the storage call that granted the slot.</param>
     /// <param name="provider">The provider used for extend, validate, and release operations.</param>
     /// <param name="releaseOnDispose">When <see langword="true"/>, <see cref="DistributedLockHandleBase.DisposeAsync"/> calls <see cref="DistributedLockHandleBase.ReleaseAsync"/>.</param>
     /// <param name="autoExtend">When <see langword="true"/>, the attached monitor extends the slot TTL at each cadence tick.</param>
@@ -34,6 +35,7 @@ internal sealed class DisposableSemaphoreSlot : DistributedLockHandleBase
         LockFencingToken? fencingToken,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
+        long acquireTimestamp,
         DistributedSemaphoreProvider provider,
         bool releaseOnDispose,
         bool autoExtend,
@@ -48,6 +50,7 @@ internal sealed class DisposableSemaphoreSlot : DistributedLockHandleBase
             fencingToken,
             leaseDuration,
             timeWaitedForLock,
+            acquireTimestamp,
             releaseOnDispose,
             autoExtend,
             options,
@@ -60,33 +63,18 @@ internal sealed class DisposableSemaphoreSlot : DistributedLockHandleBase
     }
 
     /// <summary>
-    /// Extends the slot TTL in storage via the owning <see cref="DistributedSemaphoreProvider"/>,
-    /// incrementing the renewal counter on success.
+    /// Extends the slot TTL in storage via the owning <see cref="DistributedSemaphoreProvider"/>.
+    /// <see langword="null"/> applies the provider's default TTL.
     /// </summary>
-    /// <param name="timeUntilExpires">
-    /// The new TTL from now. <see langword="null"/> applies the provider's default TTL.
-    /// </param>
-    /// <param name="cancellationToken">Token to cancel the renewal storage call.</param>
-    /// <returns>
-    /// <see langword="true"/> when the slot was found and its TTL was extended;
-    /// <see langword="false"/> when the slot is no longer held (expired or released by another path).
-    /// </returns>
-    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
-    public override async Task<bool> RenewAsync(
-        TimeSpan? timeUntilExpires = null,
-        CancellationToken cancellationToken = default
-    )
+    protected override Task<bool> RenewCoreAsync(TimeSpan? timeUntilExpires, CancellationToken cancellationToken)
     {
-        var result = await _provider
-            .RenewAsync(Resource, LeaseId, timeUntilExpires, cancellationToken)
-            .ConfigureAwait(false);
+        return _provider.RenewAsync(Resource, LeaseId, timeUntilExpires, cancellationToken);
+    }
 
-        if (result)
-        {
-            IncrementRenewalCount();
-        }
-
-        return result;
+    // A slot is stored with a finite expiry score, so the provider maps both null and infinite to its default.
+    protected override TimeSpan? GetAppliedRenewTtl(TimeSpan? timeUntilExpires)
+    {
+        return timeUntilExpires is { } ttl && ttl != Timeout.InfiniteTimeSpan ? ttl : _provider.DefaultTimeUntilExpires;
     }
 
     protected override Task<bool> RenewLeaseAsync(CancellationToken cancellationToken)

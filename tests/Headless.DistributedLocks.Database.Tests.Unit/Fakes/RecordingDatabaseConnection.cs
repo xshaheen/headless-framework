@@ -44,9 +44,23 @@ internal sealed class RecordingDatabaseConnection : DatabaseConnection
 
     public int DisposeCount => _fake.DisposeCount;
 
+    /// <summary>Number of times the engine asked the driver to clear this connection's pool before destroying it.</summary>
+    public int PoolClearCount { get; private set; }
+
     public bool IsOpen => _fake.State == ConnectionState.Open;
 
+    /// <summary>Moves the underlying connection to <see cref="ConnectionState.Broken"/>, as a dropped session does.</summary>
+    public void Break()
+    {
+        _fake.SetState(ConnectionState.Broken);
+    }
+
     public override bool ShouldPrepareCommands => false;
+
+    protected override void ClearPool()
+    {
+        PoolClearCount++;
+    }
 
     public override bool IsCommandCancellationException(Exception exception)
     {

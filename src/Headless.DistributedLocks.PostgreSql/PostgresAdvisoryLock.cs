@@ -16,9 +16,26 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// which drives its own wait loop); a finite/infinite timeout maps to the blocking <c>pg_advisory_lock</c> family with a
 /// server-side <c>lock_timeout</c> (used by the transaction-coupled API, where a server-side block is correct). When the
 /// connection has a transaction the <c>_xact_</c> variants are emitted, which release on transaction end.
+/// <para>
+/// When <paramref name="fenceSequence"/> is set, the exclusive non-blocking session acquire draws its fencing token in
+/// the same statement that takes the lock (<c>CASE WHEN pg_try_advisory_lock(...) THEN nextval(...) END</c>), on the
+/// holding session. A session that dies before the statement returns therefore never holds a token, so it cannot carry
+/// one above the next real holder's.
+/// </para>
 /// </remarks>
-internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider timeProvider, bool allowHashing = true)
-    : IDbSynchronizationStrategy<object>
+/// <param name="isShared"><see langword="true"/> for shared (reader) advisory locks.</param>
+/// <param name="timeProvider">Clock for the externally-owned re-entry wait.</param>
+/// <param name="allowHashing">Whether long resource names may be hashed into an advisory key.</param>
+/// <param name="fenceSequence">
+/// The quoted, schema-qualified fence sequence the exclusive session acquire draws from, or <see langword="null"/> for
+/// no fencing.
+/// </param>
+internal sealed partial class PostgresAdvisoryLock(
+    bool isShared,
+    TimeProvider timeProvider,
+    bool allowHashing = true,
+    string? fenceSequence = null
+) : IDbSynchronizationStrategy<object>
 {
     // A non-null sentinel returned on success; advisory locks carry no per-acquire release state beyond the key.
     private static readonly object _Cookie = new();
@@ -79,7 +96,15 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
         var savePointDefined = await _DefineSavePointIfNeededAsync(connection, savePointName, cancellationToken)
             .ConfigureAwait(false);
 
-        using var acquireCommand = _CreateAcquireCommand(connection, key, timeout);
+        // Only the exclusive non-blocking session acquire is fenced: reader locks never carry a token, and the blocking
+        // and transaction-scoped variants back the transaction API, which issues none.
+        var fenced =
+            fenceSequence is not null
+            && !isShared
+            && timeout == TimeSpan.Zero
+            && !_UseTransactionScopedLock(connection);
+
+        using var acquireCommand = _CreateAcquireCommand(connection, key, timeout, fenced);
 
         object? acquireCommandResult;
 
@@ -138,13 +163,16 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
             throw;
         }
 
-        var acquired = acquireCommandResult switch
+        var acquired = (fenced, acquireCommandResult) switch
         {
-            DBNull => true, // pg_advisory_lock (blocking) returns void
-            null => true, // Npgsql 8 returns null instead of DBNull for void
-            false => false,
-            true => true,
-            _ => (bool?)null,
+            (true, long) => true,
+            (true, DBNull or null) => false, // the fenced CASE yields NULL when the lock was not granted
+            (true, _) => (bool?)null,
+            (false, DBNull) => true, // pg_advisory_lock (blocking) returns void
+            (false, null) => true, // Npgsql 8 returns null instead of DBNull for void
+            (false, false) => false,
+            (false, true) => true,
+            _ => null,
         };
 
         await rollBackTransactionTimeoutVariablesIfNeededAsync(isAcquired: acquired == true).ConfigureAwait(false);
@@ -153,7 +181,7 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
         return acquired switch
         {
             false => null,
-            true => _Cookie,
+            true => fenced ? new FencedLockCookie(new LockFencingToken((long)acquireCommandResult!)) : _Cookie,
             null => throw new InvalidOperationException(
                 $"Unexpected value '{acquireCommandResult}' from the advisory-lock acquire command."
             ),
@@ -230,7 +258,8 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
     private DatabaseCommand _CreateAcquireCommand(
         DatabaseConnection connection,
         PostgreSqlAdvisoryLockKey key,
-        TimeSpan timeout
+        TimeSpan timeout,
+        bool fenced
     )
     {
         var command = connection.CreateCommand();
@@ -250,7 +279,7 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
 
         var isTry = timeout == TimeSpan.Zero;
 
-        commandText.Append("SELECT pg_catalog.pg");
+        commandText.Append(fenced ? "SELECT CASE WHEN pg_catalog.pg" : "SELECT pg_catalog.pg");
 
         if (isTry)
         {
@@ -271,7 +300,15 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
             commandText.Append("_shared");
         }
 
-        commandText.Append('(').Append(key.AddKeyParameters(command)).Append(") AS result");
+        commandText.Append('(').Append(key.AddKeyParameters(command)).Append(')');
+
+        if (fenced)
+        {
+            // CASE evaluates THEN only when the lock was granted, so a refused acquire never consumes a token.
+            commandText.Append(" THEN pg_catalog.nextval('").Append(fenceSequence).Append("') END");
+        }
+
+        commandText.Append(" AS result");
 
         command.SetCommandText(commandText.ToString());
         command.SetTimeout(timeout);

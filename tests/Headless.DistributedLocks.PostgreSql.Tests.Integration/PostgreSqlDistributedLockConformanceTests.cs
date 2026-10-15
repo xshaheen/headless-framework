@@ -275,4 +275,16 @@ public sealed class PostgreSqlDistributedLockConformanceTests : DistributedLockT
     {
         return base.should_not_renew_after_lock_holding_connection_dies();
     }
+
+    [Fact]
+    public override Task should_drop_released_lock_from_active_locks()
+    {
+        return base.should_drop_released_lock_from_active_locks();
+    }
+
+    [Fact]
+    public override Task should_issue_greater_fencing_token_after_release_than_any_before()
+    {
+        return base.should_issue_greater_fencing_token_after_release_than_any_before();
+    }
 }

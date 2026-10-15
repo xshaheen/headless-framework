@@ -218,4 +218,16 @@ public sealed class RedisDistributedLockConformanceTests(RedisTestFixture fixtur
     {
         return base.should_keep_lock_alive_when_auto_extend_is_enabled_smoke();
     }
+
+    [Fact]
+    public override Task should_drop_released_lock_from_active_locks()
+    {
+        return base.should_drop_released_lock_from_active_locks();
+    }
+
+    [Fact]
+    public override Task should_issue_greater_fencing_token_after_release_than_any_before()
+    {
+        return base.should_issue_greater_fencing_token_after_release_than_any_before();
+    }
 }

@@ -4,7 +4,7 @@ using Microsoft.Data.SqlClient;
 
 namespace Headless.DistributedLocks.SqlServer;
 
-#pragma warning disable CA2100 // SQL text is fixed except lock owner, selected from Session/Transaction constants.
+#pragma warning disable CA2100 // SQL text is fixed except the lock owner, selected from Session/Transaction constants, and the fence sequence, built from validated and quoted identifiers.
 /// <summary>
 /// Low-level helpers that issue <c>sys.sp_getapplock</c> / <c>sys.sp_releaseapplock</c> and
 /// <c>APPLOCK_MODE</c> T-SQL calls on behalf of the SQL Server distributed-lock provider.
@@ -37,11 +37,17 @@ internal static class SqlServerApplicationLock
     /// <see cref="TimeSpan.Zero"/> or negative maps to <c>0</c> (try-once, no wait).
     /// </param>
     /// <param name="commandTimeout">ADO.NET command timeout for the SQL command.</param>
+    /// <param name="fenceSequence">
+    /// The quoted, schema-qualified fence sequence to draw a fencing token from in the same batch that takes the lock, or
+    /// <see langword="null"/> to issue no token. Drawing it in the grant batch, on the holding session, means a session
+    /// that dies before the batch returns never holds a token.
+    /// </param>
     /// <param name="cancellationToken">Token used to cancel the acquisition attempt.</param>
     /// <returns>
-    /// <see langword="true"/> if the lock was acquired; <see langword="false"/> if the resource is held in
-    /// a conflicting mode and the acquire timeout was reached (including re-entrant attempts with a
-    /// non-infinite timeout, which return <see langword="false"/> rather than blocking).
+    /// <c>Acquired</c> is <see langword="true"/> if the lock was acquired and <see langword="false"/> if the resource is
+    /// held in a conflicting mode and the acquire timeout was reached (including re-entrant attempts with a
+    /// non-infinite timeout, which return <see langword="false"/> rather than blocking). <c>FencingToken</c> is the token
+    /// drawn with a granted lock when <paramref name="fenceSequence"/> is set, otherwise <see langword="null"/>.
     /// </returns>
     /// <exception cref="ArgumentException">Thrown when SQL Server rejects the resource name or lock mode parameters (<c>sp_getapplock</c> returns -999).</exception>
     /// <exception cref="InvalidOperationException">
@@ -52,18 +58,19 @@ internal static class SqlServerApplicationLock
     /// <exception cref="DistributedLockDeadlockException">Thrown when SQL Server detects a deadlock (<c>sp_getapplock</c> returns -3).</exception>
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> fires or SQL Server cancels the wait (<c>sp_getapplock</c> returns -2).</exception>
     /// <exception cref="LockCleanupFailedException">Thrown when the acquire failed and releasing what it may have been granted failed too.</exception>
-    public static async ValueTask<bool> TryAcquireSessionAsync(
+    public static async ValueTask<(bool Acquired, LockFencingToken? FencingToken)> TryAcquireSessionAsync(
         SqlConnection connection,
         string resource,
         bool isShared,
         TimeSpan acquireTimeout,
         TimeSpan commandTimeout,
+        string? fenceSequence,
         CancellationToken cancellationToken = default
     )
     {
         // A session acquire always runs on a connection that holds nothing for this resource (the storage dedicates
         // one per lock), so whatever a failed acquire leaves held is this acquire's own grant.
-        var result = await _ExecuteAcquireAsync(
+        var (result, fence) = await _ExecuteAcquireAsync(
                 connection,
                 transaction: null,
                 resource,
@@ -71,11 +78,14 @@ internal static class SqlServerApplicationLock
                 _SessionOwner,
                 acquireTimeout,
                 commandTimeout,
+                fenceSequence,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        return MapAcquireResult(resource, result, acquireTimeout, cancellationToken);
+        var acquired = MapAcquireResult(resource, result, acquireTimeout, cancellationToken);
+
+        return (acquired, acquired && fence is { } value ? new LockFencingToken(value) : null);
     }
 
     /// <summary>
@@ -129,7 +139,7 @@ internal static class SqlServerApplicationLock
             return true;
         }
 
-        var result = await _ExecuteAcquireAsync(
+        var (result, _) = await _ExecuteAcquireAsync(
                 connection,
                 transaction,
                 resource,
@@ -137,6 +147,7 @@ internal static class SqlServerApplicationLock
                 _TransactionOwner,
                 acquireTimeout,
                 commandTimeout,
+                fenceSequence: null,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -321,7 +332,7 @@ internal static class SqlServerApplicationLock
                     continue;
                 }
 
-                var result = await _ExecuteAcquireAsync(
+                var (result, _) = await _ExecuteAcquireAsync(
                         connection,
                         transaction,
                         resource,
@@ -329,6 +340,7 @@ internal static class SqlServerApplicationLock
                         _TransactionOwner,
                         wait,
                         commandTimeout,
+                        fenceSequence: null,
                         cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -523,7 +535,8 @@ internal static class SqlServerApplicationLock
             isShared: false,
             _TransactionOwner,
             acquireTimeout,
-            commandTimeout
+            commandTimeout,
+            fenceSequence: null
         );
 
         try
@@ -546,7 +559,7 @@ internal static class SqlServerApplicationLock
         }
     }
 
-    private static async ValueTask<int> _ExecuteAcquireAsync(
+    private static async ValueTask<(int Result, long? Fence)> _ExecuteAcquireAsync(
         SqlConnection connection,
         SqlTransaction? transaction,
         string resource,
@@ -554,6 +567,7 @@ internal static class SqlServerApplicationLock
         string lockOwner,
         TimeSpan acquireTimeout,
         TimeSpan commandTimeout,
+        string? fenceSequence,
         CancellationToken cancellationToken
     )
     {
@@ -564,15 +578,37 @@ internal static class SqlServerApplicationLock
             isShared,
             lockOwner,
             acquireTimeout,
-            commandTimeout
+            commandTimeout,
+            fenceSequence
         );
 
         try
         {
-            return Convert.ToInt32(
-                await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
-                CultureInfo.InvariantCulture
-            );
+            if (fenceSequence is null)
+            {
+                var result = Convert.ToInt32(
+                    await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+                    CultureInfo.InvariantCulture
+                );
+
+                return (result, null);
+            }
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException(
+                    $"The fenced sp_getapplock batch for distributed lock '{resource}' returned no row."
+                );
+            }
+
+            var grant = reader.GetInt32(0);
+            long? fence = await reader.IsDBNullAsync(1, cancellationToken).ConfigureAwait(false)
+                ? null
+                : reader.GetInt64(1);
+
+            return (grant, fence);
         }
         catch (Exception exception)
         {
@@ -708,28 +744,51 @@ internal static class SqlServerApplicationLock
         bool isShared,
         string lockOwner,
         TimeSpan acquireTimeout,
-        TimeSpan commandTimeout
+        TimeSpan commandTimeout,
+        string? fenceSequence
     )
     {
         var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandTimeout = GetCommandTimeoutSeconds(acquireTimeout, commandTimeout);
-        command.CommandText = $$"""
-            DECLARE @result int;
+        command.CommandText = fenceSequence is null
+            ? $$"""
+                DECLARE @result int;
 
-            IF APPLOCK_MODE(N'public', @resource, N'{{lockOwner}}') <> N'NoLock'
-                SELECT CAST(103 AS int);
-            ELSE
-            BEGIN
-                EXEC @result = sys.sp_getapplock
-                    @Resource = @resource,
-                    @LockMode = @lockMode,
-                    @LockOwner = N'{{lockOwner}}',
-                    @LockTimeout = @lockTimeout,
-                    @DbPrincipal = N'public';
-                SELECT @result;
-            END;
-            """;
+                IF APPLOCK_MODE(N'public', @resource, N'{{lockOwner}}') <> N'NoLock'
+                    SELECT CAST(103 AS int);
+                ELSE
+                BEGIN
+                    EXEC @result = sys.sp_getapplock
+                        @Resource = @resource,
+                        @LockMode = @lockMode,
+                        @LockOwner = N'{{lockOwner}}',
+                        @LockTimeout = @lockTimeout,
+                        @DbPrincipal = N'public';
+                    SELECT @result;
+                END;
+                """
+            // NEXT VALUE FOR is not allowed inside CASE, so the grant decides the draw with IF. Only a granted lock
+            // consumes a token, and it is drawn on the session that now holds the lock.
+            : $$"""
+                DECLARE @result int;
+
+                IF APPLOCK_MODE(N'public', @resource, N'{{lockOwner}}') <> N'NoLock'
+                    SELECT CAST(103 AS int), CAST(NULL AS bigint);
+                ELSE
+                BEGIN
+                    EXEC @result = sys.sp_getapplock
+                        @Resource = @resource,
+                        @LockMode = @lockMode,
+                        @LockOwner = N'{{lockOwner}}',
+                        @LockTimeout = @lockTimeout,
+                        @DbPrincipal = N'public';
+                    IF @result >= 0
+                        SELECT @result, NEXT VALUE FOR {{fenceSequence}};
+                    ELSE
+                        SELECT @result, CAST(NULL AS bigint);
+                END;
+                """;
         command.Parameters.AddWithValue(nameof(resource), resource);
         command.Parameters.AddWithValue("lockMode", isShared ? SharedLockMode : ExclusiveLockMode);
         command.Parameters.AddWithValue("lockTimeout", _ToLockTimeoutMilliseconds(acquireTimeout));

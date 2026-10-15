@@ -93,6 +93,49 @@ public sealed class OptimisticConnectionMultiplexingDbDistributedLockTests : Tes
         await outerHandle!.DisposeAsync();
     }
 
+    [Fact]
+    public async Task should_destroy_the_dedicated_connection_when_its_release_throws()
+    {
+        // given (an upgradeable strategy takes a dedicated connection)
+        var strategy = new FakeSynchronizationStrategy { IsUpgradeable = true, ThrowOnReleaseIdentity = "resource-a" };
+        var handle = await _CreateLock("resource-a", _CreatePool())
+            .TryAcquireAsync(_Timeout, strategy, contextHandle: null, AbortToken);
+        var connection = _connections.Should().ContainSingle().Subject;
+
+        // when
+        var release = async () => await handle!.DisposeAsync();
+
+        // then (the session may still hold the lock, so it must not go back to the driver's pool)
+        await release.Should().ThrowAsync<InvalidOperationException>();
+        connection.PoolClearCount.Should().Be(1);
+        connection.DisposeCount.Should().BePositive();
+    }
+
+    [Fact]
+    public async Task should_destroy_the_dedicated_connection_when_acquire_cleanup_fails()
+    {
+        // given
+        var strategy = new FakeSynchronizationStrategy
+        {
+            IsUpgradeable = true,
+            ThrowOnAcquire = new LockCleanupFailedException(
+                [new TimeoutException("acquire"), new TimeoutException("cleanup")],
+                "cleanup failed"
+            ),
+        };
+
+        // when
+        var acquire = async () =>
+            await _CreateLock("resource-a", _CreatePool())
+                .TryAcquireAsync(_Timeout, strategy, contextHandle: null, AbortToken);
+
+        // then
+        await acquire.Should().ThrowAsync<LockCleanupFailedException>();
+        var connection = _connections.Should().ContainSingle().Subject;
+        connection.PoolClearCount.Should().Be(1);
+        connection.DisposeCount.Should().BePositive();
+    }
+
     private MultiplexedConnectionLockPool _CreatePool()
     {
         return new MultiplexedConnectionLockPool(_ =>

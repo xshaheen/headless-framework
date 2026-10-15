@@ -18,6 +18,11 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
     private readonly Action<string, string>? _deregisterMonitor;
     private readonly AsyncLock _lock = new();
     private readonly long _timestamp;
+    private readonly long _acquireTimestamp;
+
+    // Serializes manual and automatic renews so the order they are sent is the order the store applies them; the
+    // monitor's loss deadline then always follows the write that set the lease's current expiry.
+    private readonly AsyncLock _renewLock = new();
 
     // Snapshotted cadence + per-iteration storage deadline. Avoids re-reading the interface-cast
     // MonitoringCadence on every iteration (which recomputes ticks * fraction and allocates) and is
@@ -59,6 +64,9 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
     /// <param name="fencingToken">Backend-assigned fencing token, or <see langword="null"/>.</param>
     /// <param name="leaseDuration">The finite TTL negotiated with the backend at acquire time.</param>
     /// <param name="timeWaitedForLock">Wall-clock time spent waiting before acquisition.</param>
+    /// <param name="acquireTimestamp">
+    /// <see cref="TimeProvider.GetTimestamp"/> taken immediately before the storage call that granted the lease.
+    /// </param>
     /// <param name="releaseOnDispose">When <see langword="true"/>, <see cref="DisposeAsync"/> triggers <see cref="ReleaseAsync"/>.</param>
     /// <param name="autoExtend">When <see langword="true"/>, the attached monitor extends TTL; otherwise it only validates.</param>
     /// <param name="options">Configuration used to compute monitoring cadence and dispose timeout.</param>
@@ -74,6 +82,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
         LockFencingToken? fencingToken,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
+        long acquireTimestamp,
         bool releaseOnDispose,
         bool autoExtend,
         DistributedLockOptions options,
@@ -88,6 +97,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
         AcquiredAt = timeProvider.GetUtcNow();
         TimeWaitedForLock = timeWaitedForLock;
         _timestamp = timeProvider.GetTimestamp();
+        _acquireTimestamp = acquireTimestamp;
         LeaseDuration = leaseDuration;
         ReleaseOnDispose = releaseOnDispose;
         AutoExtend = autoExtend;
@@ -147,6 +157,10 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
 
     TimeSpan LeaseMonitor.ILeaseHandle.MonitoringCadence => _monitoringCadenceSnapshot;
 
+    long LeaseMonitor.ILeaseHandle.AcquireTimestamp => _acquireTimestamp;
+
+    TimeSpan LeaseMonitor.ILeaseHandle.StorageDeadline => _storageDeadlineSnapshot;
+
     /// <summary>
     /// Attaches a <see cref="LeaseMonitor"/> to this handle and snapshots its
     /// <see cref="LeaseMonitor.LostToken"/> into <see cref="LostToken"/>. Must be called at most
@@ -192,15 +206,23 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
         return null;
     }
 
-    /// <summary>Increments the observable renewal counter. Called by derived handles after a manual renew.</summary>
-    protected void IncrementRenewalCount()
-    {
-        Interlocked.Increment(ref _renewalCount);
-    }
+    /// <summary>
+    /// Sends a manual renew to the provider. Returns <see langword="true"/> when the store extended the lease.
+    /// </summary>
+    /// <param name="timeUntilExpires">The caller's TTL, passed to the provider unchanged.</param>
+    /// <param name="cancellationToken">Token to cancel the renewal storage call.</param>
+    protected abstract Task<bool> RenewCoreAsync(TimeSpan? timeUntilExpires, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Extends the lease TTL in the storage backend. Derived types implement this by calling the
-    /// provider's renew API and incrementing <see cref="RenewalCount"/> on success.
+    /// The TTL the provider's renew applies for <paramref name="timeUntilExpires"/>, after its defaulting and
+    /// clamping; <see cref="Timeout.InfiniteTimeSpan"/> when the lease no longer expires, or <see langword="null"/>
+    /// when the store keeps the lease's current expiry, so the loss deadline must not move.
+    /// </summary>
+    protected abstract TimeSpan? GetAppliedRenewTtl(TimeSpan? timeUntilExpires);
+
+    /// <summary>
+    /// Extends the lease TTL in the storage backend and, on success, increments <see cref="RenewalCount"/> and
+    /// moves the attached monitor's loss deadline to this renew's send time plus the TTL the store applied.
     /// </summary>
     /// <param name="timeUntilExpires">
     /// New TTL from now. <see langword="null"/> applies the provider's default lease duration.
@@ -211,10 +233,36 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
     /// no longer held in storage (expired or released by another path).
     /// </returns>
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
-    public abstract Task<bool> RenewAsync(
-        TimeSpan? timeUntilExpires = null,
-        CancellationToken cancellationToken = default
-    );
+    public async Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
+    {
+        using (await _renewLock.LockAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var sendTimestamp = _timeProvider.GetTimestamp();
+            var renewed = await RenewCoreAsync(timeUntilExpires, cancellationToken).ConfigureAwait(false);
+
+            if (renewed)
+            {
+                if (GetAppliedRenewTtl(timeUntilExpires) is { } appliedTtl)
+                {
+                    _OnRenewed(sendTimestamp, appliedTtl);
+                }
+                else
+                {
+                    Interlocked.Increment(ref _renewalCount);
+                }
+            }
+
+            return renewed;
+        }
+    }
+
+    private void _OnRenewed(long sendTimestamp, TimeSpan appliedTtl)
+    {
+        // Move the deadline before publishing the count, so anyone who observes the new count also sees the deadline
+        // that renew set.
+        Volatile.Read(ref _monitor)?.OnLeaseRenewed(sendTimestamp, appliedTtl);
+        Interlocked.Increment(ref _renewalCount);
+    }
 
     /// <summary>
     /// Releases the lease/slot in storage and stops the attached monitor. Idempotent — subsequent
@@ -310,7 +358,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
     /// <see cref="LeaseMonitor.LeaseState.Renewed"/>. A <see langword="false"/> result is ambiguous
     /// (genuine fence mismatch vs. transient retry-exhaustion), so we probe ownership via
     /// <see cref="ValidateOwnershipAsync"/>: still owner ⇒ <see cref="LeaseMonitor.LeaseState.Unknown"/>
-    /// (let the safety net self-promote on repeated failures), lost ⇒
+    /// (the monitor's loss deadline fires if no renew succeeds in time), lost ⇒
     /// <see cref="LeaseMonitor.LeaseState.Lost"/>. Polling mode: only probe ownership.
     /// </summary>
     async Task<LeaseMonitor.LeaseState> LeaseMonitor.ILeaseHandle.RenewOrValidateLeaseAsync(
@@ -321,7 +369,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
         // (e.g., a StackExchange.Redis reconnect storm that ignores its CT) cannot wedge
         // MonitoringTask — and therefore cannot wedge LeaseMonitor.DisposeAsync, which awaits that
         // task. Capped at min(5s, cadence) and snapshotted at construction. On deadline trip we
-        // classify as Unknown (transient) and let the safety net self-promote on repeated misses.
+        // classify as Unknown (transient); the monitor's loss deadline covers repeated misses.
         var leaseProbe = _GetOrStartLeaseProbe(cancellationToken);
         var clearCompletedProbe = false;
 
@@ -402,12 +450,21 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
     {
         if (AutoExtend)
         {
-            var renewed = await RenewLeaseAsync(cancellationToken).ConfigureAwait(false);
+            bool renewed;
+
+            using (await _renewLock.LockAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var sendTimestamp = _timeProvider.GetTimestamp();
+                renewed = await RenewLeaseAsync(cancellationToken).ConfigureAwait(false);
+
+                if (renewed)
+                {
+                    _OnRenewed(sendTimestamp, LeaseDuration);
+                }
+            }
 
             if (renewed)
             {
-                IncrementRenewalCount();
-
                 return LeaseMonitor.LeaseState.Renewed;
             }
 

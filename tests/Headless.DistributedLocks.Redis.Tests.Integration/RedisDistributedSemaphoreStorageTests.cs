@@ -185,4 +185,10 @@ public sealed class RedisDistributedSemaphoreStorageTests(RedisTestFixture fixtu
     {
         return "{" + resource + "}:holders";
     }
+
+    [Fact]
+    public override Task should_issue_greater_fencing_token_after_all_slots_released()
+    {
+        return base.should_issue_greater_fencing_token_after_all_slots_released();
+    }
 }

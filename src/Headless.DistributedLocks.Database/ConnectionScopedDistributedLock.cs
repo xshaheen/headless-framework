@@ -8,10 +8,10 @@ namespace Headless.DistributedLocks;
 
 /// <summary>
 /// <see cref="IDistributedLock"/> implementation over the connection-scoped seams. A custom database
-/// provider supplies an <see cref="IConnectionScopedLockStorage"/>, an <see cref="IReleaseSignal"/>, and an
-/// optional <see cref="IFencingTokenSource"/>; this type owns the portable concerns: single-attempt acquire
-/// plus retry loop, acquire-timeout contract, jittered polling backed by the release signal, waiter caps for
-/// DoS protection, and fencing-token stamping on exclusive handles.
+/// provider supplies an <see cref="IConnectionScopedLockStorage"/> and an <see cref="IReleaseSignal"/>; this type owns
+/// the portable concerns: single-attempt acquire plus retry loop, acquire-timeout contract, jittered polling backed by
+/// the release signal, waiter caps for DoS protection, and carrying the storage's grant-time fencing token onto
+/// exclusive handles.
 /// </summary>
 /// <remarks>
 /// Connection-scoped locks have no TTL: <see cref="RenewAsync"/> only confirms the lock is still held and
@@ -25,7 +25,6 @@ namespace Headless.DistributedLocks;
 /// <param name="guidGenerator">Source of per-acquisition lock ids.</param>
 /// <param name="timeProvider">Clock used for deadlines and waits (deterministic under test).</param>
 /// <param name="logger">Logger for release-failure diagnostics.</param>
-/// <param name="fencingTokenSource">Optional source of monotonic fencing tokens for exclusive locks.</param>
 /// <param name="pollingFallback">Maximum delay between retry attempts; defaults to 100ms.</param>
 internal sealed class ConnectionScopedDistributedLock(
     IConnectionScopedLockStorage storage,
@@ -34,7 +33,6 @@ internal sealed class ConnectionScopedDistributedLock(
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     ILogger<ConnectionScopedDistributedLock> logger,
-    IFencingTokenSource? fencingTokenSource = null,
     TimeSpan? pollingFallback = null
 ) : IDistributedLock
 {
@@ -161,8 +159,8 @@ internal sealed class ConnectionScopedDistributedLock(
 
         using var activity = _StartLockActivity(resource);
 
-        // Records the wait-time histogram plus the failure counter for any non-acquiring outcome (timeout,
-        // past-deadline, or fencing failure), mirroring the sibling DistributedLock's instrumentation.
+        // Records the wait-time histogram plus the failure counter for any non-acquiring outcome (timeout or
+        // past-deadline), mirroring the sibling DistributedLock's instrumentation.
         // Always `reason=contended`: this connection-scoped provider has no `_NonBlockingAcquireDeadline`
         // safety-deadline path (the database driver's own command/connection timeout bounds a stalled
         // call), so the `stalled` reason emitted by the in-memory/Redis providers does not apply here.
@@ -184,33 +182,9 @@ internal sealed class ConnectionScopedDistributedLock(
 
                 if (handle is not null)
                 {
-                    LockFencingToken? fencingToken;
-
-                    try
-                    {
-                        fencingToken =
-                            isShared || fencingTokenSource is null
-                                ? null
-                                : await fencingTokenSource
-                                    .NextAsync(resource, handle.HeldConnection, cancellationToken)
-                                    .ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        try
-                        {
-                            await _ReleaseAsync(handle, CancellationToken.None).ConfigureAwait(false);
-                        }
-                        catch (Exception releaseException)
-                        {
-                            logger.LogConnectionScopedLockReleaseFailed(releaseException, resource, leaseId);
-                        }
-
-                        recordFailedAcquisition();
-
-                        throw;
-                    }
-
+                    // The storage drew the token in the grant statement, on the holding session. Readers never carry
+                    // one, whatever the storage returned.
+                    var fencingToken = isShared ? null : handle.FencingToken;
                     var waited = timeProvider.GetElapsedTime(started);
 
                     DistributedLockMetrics.LockWaitTime.Record(waited.TotalMilliseconds);

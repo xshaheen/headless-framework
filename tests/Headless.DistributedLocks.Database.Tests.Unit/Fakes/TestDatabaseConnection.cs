@@ -19,6 +19,8 @@ internal sealed class TestDatabaseConnection(
 
     public override bool ShouldPrepareCommands => false;
 
+    protected override void ClearPool() { }
+
     public override bool IsCommandCancellationException(Exception exception)
     {
         return exception is OperationCanceledException;

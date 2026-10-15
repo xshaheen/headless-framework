@@ -217,6 +217,10 @@ public sealed class DistributedLock(
         var isFirstAttempt = true;
         var insertFaulted = false;
 
+        // Taken before each insert; after the loop it is the send time of the attempt that won, which is the
+        // earliest moment the store can have started the lease's TTL.
+        long acquireTimestamp = 0;
+
         try
         {
             do
@@ -234,6 +238,7 @@ public sealed class DistributedLock(
                 // Try to acquire the lock
                 try
                 {
+                    acquireTimestamp = timeProvider.GetTimestamp();
                     (acquireResult, var faulted) = await _TryInsertAsync(
                             resource,
                             leaseId,
@@ -345,6 +350,7 @@ public sealed class DistributedLock(
             acquireResult.FencingToken,
             leaseDuration,
             timeWaitedForLock,
+            acquireTimestamp,
             releaseOnDispose,
             monitorLease,
             autoExtend
@@ -377,6 +383,7 @@ public sealed class DistributedLock(
         var attemptToken = linkedCts?.Token ?? safetyCts.Token;
         DistributedLockAcquireResult acquireResult;
         var safetyDeadlineFired = false;
+        var acquireTimestamp = timeProvider.GetTimestamp();
 
         try
         {
@@ -442,6 +449,7 @@ public sealed class DistributedLock(
             acquireResult.FencingToken,
             leaseDuration,
             timeWaitedForLock,
+            acquireTimestamp,
             releaseOnDispose,
             monitorLease,
             autoExtend
@@ -454,6 +462,7 @@ public sealed class DistributedLock(
         LockFencingToken? fencingToken,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
+        long acquireTimestamp,
         bool releaseOnDispose,
         bool monitorLease,
         bool autoExtend
@@ -465,6 +474,7 @@ public sealed class DistributedLock(
             fencingToken,
             leaseDuration,
             timeWaitedForLock,
+            acquireTimestamp,
             this,
             releaseOnDispose,
             autoExtend,

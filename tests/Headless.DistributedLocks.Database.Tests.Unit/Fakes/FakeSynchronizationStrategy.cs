@@ -28,6 +28,12 @@ internal sealed class FakeSynchronizationStrategy : IDbSynchronizationStrategy<o
     /// <summary>When set, releasing this identity throws — used to exercise the release-failure path.</summary>
     public object? ThrowOnReleaseIdentity { get; set; }
 
+    /// <summary>When set, a failing release first breaks its connection, as a network drop during the unlock would.</summary>
+    public bool BreakConnectionOnFailedRelease { get; set; }
+
+    /// <summary>When set, every acquire throws this exception — used to exercise the acquire-cleanup-failure path.</summary>
+    public Exception? ThrowOnAcquire { get; set; }
+
     public int AcquireCount { get; private set; }
 
     public int ReleaseCount { get; private set; }
@@ -55,6 +61,11 @@ internal sealed class FakeSynchronizationStrategy : IDbSynchronizationStrategy<o
         var id = ((RecordingDatabaseConnection)connection).Id;
         var identity = GetHeldLockIdentity(resourceName);
 
+        if (ThrowOnAcquire is not null)
+        {
+            throw ThrowOnAcquire;
+        }
+
         if (FailAcquireOnConnection == id)
         {
             return ValueTask.FromResult<object?>(null);
@@ -75,6 +86,11 @@ internal sealed class FakeSynchronizationStrategy : IDbSynchronizationStrategy<o
 
         if (ThrowOnReleaseIdentity is not null && Equals(ThrowOnReleaseIdentity, lockCookie))
         {
+            if (BreakConnectionOnFailedRelease)
+            {
+                ((RecordingDatabaseConnection)connection).Break();
+            }
+
             throw new InvalidOperationException("Simulated release failure.");
         }
 

@@ -245,7 +245,7 @@ internal sealed class DistributedReadWriteLock(
     /// <see langword="false"/> when the lease has been lost (expired, evicted, or writer-preference
     /// refusal for read leases).
     /// Called by <see cref="DisposableReaderWriterLock"/> during auto-extend or manual
-    /// <see cref="DisposableReaderWriterLock.RenewAsync"/> calls.
+    /// <see cref="DistributedLockHandleBase.RenewAsync"/> calls.
     /// </summary>
     /// <param name="mode">Whether this is a read or write lease renewal.</param>
     /// <param name="resource">The locked resource name.</param>
@@ -510,6 +510,10 @@ internal sealed class DistributedReadWriteLock(
         var waitingMarkerPlanted = false;
         ReleaseWaiterRegistry.Entry? releaseWaiter = null;
 
+        // Taken before each attempt; after the loop it is the send time of the attempt that won, which is the
+        // earliest moment the store can have started the lease's TTL.
+        long acquireTimestamp = 0;
+
         try
         {
             do
@@ -519,6 +523,7 @@ internal sealed class DistributedReadWriteLock(
 
                 try
                 {
+                    acquireTimestamp = timeProvider.GetTimestamp();
                     gotLock = await _TryAcquireStorageAsync(mode, resource, leaseId, timeUntilExpires, attemptToken)
                         .ConfigureAwait(false);
                 }
@@ -614,6 +619,7 @@ internal sealed class DistributedReadWriteLock(
             leaseId,
             leaseDuration,
             timeWaitedForLock,
+            acquireTimestamp,
             acquireOptions.ReleaseOnDispose,
             monitorLease,
             autoExtend
@@ -641,6 +647,7 @@ internal sealed class DistributedReadWriteLock(
         var attemptToken = linkedCts?.Token ?? safetyCts.Token;
         bool gotLock;
         var safetyDeadlineFired = false;
+        var acquireTimestamp = timeProvider.GetTimestamp();
 
         try
         {
@@ -713,6 +720,7 @@ internal sealed class DistributedReadWriteLock(
             leaseId,
             leaseDuration,
             timeWaitedForLock,
+            acquireTimestamp,
             releaseOnDispose,
             monitorLease,
             autoExtend
@@ -760,6 +768,7 @@ internal sealed class DistributedReadWriteLock(
         string leaseId,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
+        long acquireTimestamp,
         bool releaseOnDispose,
         bool monitorLease,
         bool autoExtend
@@ -771,6 +780,7 @@ internal sealed class DistributedReadWriteLock(
             leaseId,
             leaseDuration,
             timeWaitedForLock,
+            acquireTimestamp,
             this,
             releaseOnDispose,
             autoExtend,

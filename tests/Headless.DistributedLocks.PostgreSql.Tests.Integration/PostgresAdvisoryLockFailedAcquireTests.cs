@@ -243,6 +243,12 @@ public sealed class PostgresAdvisoryLockFailedAcquireTests(PostgreSqlDistributed
 
         public override bool ShouldPrepareCommands => true;
 
+        // Externally owned, so the engine never destroys it.
+        protected override void ClearPool()
+        {
+            throw new NotSupportedException();
+        }
+
         public void InjectAfterAcquire(Func<ValueTask<Exception>> failure)
         {
             Faults.AfterAcquire = failure;

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
+using Headless.Hosting.Initialization.Schema;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -17,31 +18,37 @@ public sealed class SqlServerDistributedLockConformanceTests : DistributedLockTe
     private readonly ServiceProvider _services;
     private readonly IDistributedLock _provider;
     private readonly string _connectionString;
+    private IDistributedLock? _fencedProvider;
 
     public SqlServerDistributedLockConformanceTests(SqlServerDistributedLockFixture fixture)
     {
         _connectionString = fixture.ConnectionString;
+        _services = _CreateServices(enableFencing: false);
+        _provider = _services.GetRequiredService<IDistributedLock>();
+    }
 
+    protected override IDistributedLock GetLockProvider()
+    {
+        return _fencedProvider ?? _provider;
+    }
+
+    private ServiceProvider _CreateServices(bool enableFencing)
+    {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessDistributedLocks(setup =>
             setup.UseSqlServer(options =>
             {
-                options.ConnectionString = fixture.ConnectionString;
-                options.EnableFencing = false;
+                options.ConnectionString = _connectionString;
+                // Fencing needs the fence sequence the schema runner creates, so only the token cases turn it on.
+                options.EnableFencing = enableFencing;
                 options.KeyPrefix = $"conformance:{Faker.Random.AlphaNumeric(6)}:";
                 // A killed session raises no StateChange, so the connection-death cases wait for the probe.
                 options.ConnectionProbeInterval = TimeSpan.FromSeconds(1);
             })
         );
 
-        _services = services.BuildServiceProvider();
-        _provider = _services.GetRequiredService<IDistributedLock>();
-    }
-
-    protected override IDistributedLock GetLockProvider()
-    {
-        return _provider;
+        return services.BuildServiceProvider();
     }
 
     /// <summary>
@@ -269,5 +276,21 @@ public sealed class SqlServerDistributedLockConformanceTests : DistributedLockTe
     public override Task should_keep_lock_alive_when_auto_extend_is_enabled_smoke()
     {
         return base.should_keep_lock_alive_when_auto_extend_is_enabled_smoke();
+    }
+
+    [Fact]
+    public override Task should_drop_released_lock_from_active_locks()
+    {
+        return base.should_drop_released_lock_from_active_locks();
+    }
+
+    [Fact]
+    public override async Task should_issue_greater_fencing_token_after_release_than_any_before()
+    {
+        await using var fenced = _CreateServices(enableFencing: true);
+        await fenced.GetRequiredService<SchemaRunner>().ApplyAsync(AbortToken);
+        _fencedProvider = fenced.GetRequiredService<IDistributedLock>();
+
+        await base.should_issue_greater_fencing_token_after_release_than_any_before();
     }
 }

@@ -359,6 +359,47 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         handle.CanObserveLoss.Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_fire_handle_lost_token_one_margin_before_lease_expiry_when_monitor_probes_stay_held(
+        bool readLease
+    )
+    {
+        var mode = readLease ? ReaderWriterLockMode.Read : ReaderWriterLockMode.Write;
+        // given - monitor mode, 10s lease, nothing renews it; the in-memory store keeps the lease until 10s, so every
+        // probe answers Held. The deadline is 10s - min(10% of 10s, 5s) = 9s.
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+        var options = new DistributedLockAcquireOptions
+        {
+            TimeUntilExpires = TimeSpan.FromSeconds(10),
+            Monitoring = LockMonitoringMode.Monitor,
+        };
+        await using var handle = readLease
+            ? await provider.AcquireReadLockAsync(resource, options, AbortToken)
+            : await provider.AcquireWriteLockAsync(resource, options, AbortToken);
+
+        // when
+        _timeProvider.Advance(TimeSpan.FromSeconds(9) - TimeSpan.FromMilliseconds(1));
+        await DistributedLockTestSupport.DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
+
+        // then
+        handle.LostToken.IsCancellationRequested.Should().BeFalse();
+
+        // when
+        var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var registration = handle.LostToken.Register(
+            static state => ((TaskCompletionSource)state!).TrySetResult(),
+            lostSignal
+        );
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+
+        // then
+        await lostSignal.Task.Bounded();
+        (await provider.ValidateAsync(mode, resource, handle.LeaseId, AbortToken)).Should().BeTrue();
+    }
+
     [Fact]
     public async Task should_dispose_handle_without_firing_handle_lost_when_monitoring_is_enabled()
     {
