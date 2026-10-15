@@ -432,7 +432,7 @@ internal sealed class MessageSender : IMessageSender
         {
             _logger.PublishSucceededButStorageRowMissing(message.StorageId);
         }
-        else if (row.StatusName is StatusName.Succeeded or StatusName.Failed && row.NextRetryAt is null)
+        else if (MessageTerminalState.IsTerminal(row.StatusName, row.NextRetryAt))
         {
             // The terminal guard's own predicate: the row ended (typically Failed after a prior exhausted attempt).
             _logger.PublishSucceededButStorageTerminal(message.StorageId);

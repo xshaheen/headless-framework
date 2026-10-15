@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Data.Common;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 
 namespace Headless.Messaging.Storage.InMemory;
@@ -31,7 +32,7 @@ internal sealed partial class InMemoryDataStorage
             }
 
             if (
-                ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
+                MessageTerminalState.IsTerminal(current.StatusName, current.NextRetryAt)
                 || current.Retries != message.Retries
                 || current.InlineAttempts != originalInlineAttempts
                 || (current.InboxGeneration is not null && !_MatchesInboxFence(current, message.InboxAttemptFence))
@@ -79,7 +80,7 @@ internal sealed partial class InMemoryDataStorage
             // counter CAS; no owner match is required because this path is TAKING the lease.
             var nowUtc = timeProvider.GetUtcNow();
             if (
-                ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
+                MessageTerminalState.IsTerminal(current.StatusName, current.NextRetryAt)
                 || current.Retries != message.Retries
                 || current.InlineAttempts != originalInlineAttempts
                 || (current.LockedUntil is not null && current.LockedUntil > nowUtc)
