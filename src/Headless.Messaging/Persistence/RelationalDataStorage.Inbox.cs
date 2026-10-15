@@ -3,6 +3,7 @@
 using System.Data.Common;
 using System.Security.Cryptography;
 using System.Text;
+using Headless.Checks;
 using Headless.Messaging.Internal;
 using Headless.Sql;
 
@@ -179,6 +180,71 @@ internal sealed partial class RelationalDataStorage
 
     /// <summary>The filter of the root-key unique index: inbox root generations, never replay children.</summary>
     private string InboxRootPredicate => $"{_t.IsInboxRecord} = {_t.True} AND {_t.ReplayParentIncarnationId} IS NULL";
+
+    public async ValueTask<bool> IsInboxMessageAdmittedAsync(
+        string? tenantId,
+        string messageId,
+        string consumerIdentity,
+        MessageLane lane,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(messageId);
+        Argument.IsNotNull(consumerIdentity);
+
+        // The inbox key hash covers the contract version, which a redelivery failing its contract check cannot supply,
+        // so the lookup seeks the identity columns instead. SQL Server's = pads trailing spaces, so the candidates are
+        // confirmed ordinally here: an id that differs only by a trailing space is another message.
+        var sql = $"""
+            SELECT {_t.MessageId},{_t.ConsumerIdentity},{_t.TenantPresent},{_t.TenantId}
+            FROM {_receivedTable}
+            WHERE {_t.MessageId}=@MessageId AND {_t.ConsumerIdentity}=@ConsumerIdentity AND {_t.IntentType}=@IntentType
+              AND {_t.IsInboxRecord} = {_t.True};
+            """;
+
+        await using var connection = _CreateConnection();
+
+        return await RelationalCommand
+            .ExecuteReaderAsync(
+                connection,
+                transaction: null,
+                sql,
+                CommandTimeoutSeconds,
+                command =>
+                {
+                    _dialect.AddParameter(command, "MessageId", _MessageIdType, messageId);
+                    _dialect.AddParameter(command, "ConsumerIdentity", _IdentityType, consumerIdentity);
+                    _dialect.AddParameter(
+                        command,
+                        "IntentType",
+                        SqlColumnType.Int16,
+                        MessageLaneCompatibility.ToPersistedValue(lane)
+                    );
+                },
+                async (reader, token) =>
+                {
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
+                    {
+                        var tenantPresent = reader.GetBoolean(2);
+                        if (
+                            string.Equals(reader.GetString(0), messageId, StringComparison.Ordinal)
+                            && string.Equals(reader.GetString(1), consumerIdentity, StringComparison.Ordinal)
+                            && tenantPresent == (tenantId is not null)
+                            && (
+                                !tenantPresent || string.Equals(reader.GetString(3), tenantId, StringComparison.Ordinal)
+                            )
+                        )
+                        {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
 
     /// <summary>An inbox root generation's logical identity, as the admission and its read-back match it.</summary>
     private sealed record InboxRootKey(

@@ -947,6 +947,18 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     }
 
     [Fact]
+    public override Task should_report_an_admitted_inbox_message_only_for_its_exact_identity()
+    {
+        return base.should_report_an_admitted_inbox_message_only_for_its_exact_identity();
+    }
+
+    [Fact]
+    public override Task should_not_report_a_non_inbox_received_row_as_admitted()
+    {
+        return base.should_not_report_a_non_inbox_received_row_as_admitted();
+    }
+
+    [Fact]
     public override Task should_handle_concurrent_redelivery_storm_on_same_message_id()
     {
         return base.should_handle_concurrent_redelivery_storm_on_same_message_id();

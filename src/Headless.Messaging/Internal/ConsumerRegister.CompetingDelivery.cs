@@ -311,6 +311,38 @@ internal sealed partial class ConsumerRegister
 
             if (message.HasException())
             {
+                // A message the inbox already admitted for this consumer is a redelivery of work that ran, for example
+                // a lost acknowledgement redelivered to a node on another contract version during a rolling deploy.
+                // It is committed as a duplicate: no poison row, dead-letter, fault reply, exhausted callback, or
+                // breaker report, and the finally releases the probe. Without a consumer no inbox row can exist.
+                if (
+                    executor is not null
+                    && await _IsAdmittedRedeliveryAsync(message, consumerIdentity, lane, hostShutdownToken)
+                        .ConfigureAwait(false)
+                )
+                {
+                    if (_logger.IsEnabled(LogLevel.Information))
+                    {
+                        _logger.AdmittedRedeliveryCommitted(
+                            LogSanitizer.Sanitize(transportMessage.Id),
+                            LogSanitizer.Sanitize(name),
+                            LogSanitizer.Sanitize(consumerIdentity),
+                            lane.ToString()
+                        );
+                    }
+
+                    if (!consumeOutcomeRecorded)
+                    {
+                        _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                        consumeOutcomeRecorded = true;
+                    }
+
+                    // Settlement is must-complete: never abandon a commit on host shutdown.
+                    await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
+                    transportSettled = true;
+                    return;
+                }
+
                 if (
                     dispatchBypassException is not null
                     && _circuitBreakerStateManager is not null
@@ -591,6 +623,56 @@ internal sealed partial class ConsumerRegister
             {
                 _circuitBreakerStateManager?.ReleaseHalfOpenProbe(circuitKey, admissionEpoch);
             }
+        }
+    }
+
+    /// <summary>
+    /// Whether the inbox already admitted this message for the consumer on this lane and tenant, whatever contract
+    /// version it was admitted under. A delivery whose message id or tenant could never have been admitted answers
+    /// <see langword="false"/> without a lookup, and a lookup that fails is logged and answers <see langword="false"/>,
+    /// so the delivery keeps its poison evidence rather than being dropped.
+    /// </summary>
+    private async ValueTask<bool> _IsAdmittedRedeliveryAsync(
+        Message message,
+        string consumerIdentity,
+        MessageLane lane,
+        CancellationToken cancellationToken
+    )
+    {
+        if (
+            !message.Headers.TryGetValue(Headers.MessageId, out var messageId)
+            || string.IsNullOrWhiteSpace(messageId)
+            || messageId.Length > MessageOptions.MessageIdMaxLength
+            || (
+                message.Headers.TryGetValue(Headers.TenantId, out var rawTenant)
+                && rawTenant?.Length > MessageOptions.TenantIdMaxLength
+            )
+        )
+        {
+            return false;
+        }
+
+        try
+        {
+            return await _storage
+                .IsInboxMessageAdmittedAsync(
+                    TenantContextScope.ResolveTenantId(message.Headers, logger: null),
+                    messageId,
+                    consumerIdentity,
+                    lane,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _logger.AdmittedInboxLookupFailed(
+                e,
+                LogSanitizer.Sanitize(messageId),
+                LogSanitizer.Sanitize(consumerIdentity)
+            );
+
+            return false;
         }
     }
 

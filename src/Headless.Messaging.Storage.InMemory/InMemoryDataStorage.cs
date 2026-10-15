@@ -623,6 +623,36 @@ internal sealed partial class InMemoryDataStorage(
         }
     }
 
+    public ValueTask<bool> IsInboxMessageAdmittedAsync(
+        string? tenantId,
+        string messageId,
+        string consumerIdentity,
+        MessageLane lane,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Every contract version and generation counts, replay children included, as on the relational providers: the
+        // caller cannot know which one was admitted. The identity index holds root generations only, so the rows are
+        // scanned; this runs only for a delivery that already failed before admission.
+        foreach (var row in ReceivedMessages.Values)
+        {
+            if (
+                row.InboxKey is { } key
+                && key.Lane == lane
+                && string.Equals(key.MessageId, messageId, StringComparison.Ordinal)
+                && string.Equals(key.ConsumerIdentity, consumerIdentity, StringComparison.Ordinal)
+                && string.Equals(key.TenantId, tenantId, StringComparison.Ordinal)
+            )
+            {
+                return ValueTask.FromResult(true);
+            }
+        }
+
+        return ValueTask.FromResult(false);
+    }
+
     public ValueTask<bool> DeferReceivedInboxOrphanAsync(
         MediumMessage message,
         CancellationToken cancellationToken = default

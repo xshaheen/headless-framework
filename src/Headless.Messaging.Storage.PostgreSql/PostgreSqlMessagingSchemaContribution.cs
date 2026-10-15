@@ -196,6 +196,10 @@ internal static class PostgreSqlMessagingSchemaContribution
                 WHERE "generation_incarnation_id" IS NOT NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_non_inbox_consumer_identity" ON {received}
                 ("consumer_identity_hash") WHERE "is_inbox_record" = FALSE;
+            -- Finds the inbox rows of a redelivered message by identity alone: the root-key hash covers the contract
+            -- version, which a redelivery that fails its contract check cannot supply.
+            CREATE INDEX IF NOT EXISTS "idx_messaging_received_inbox_message_consumer" ON {received}
+                ("message_id","consumer_identity","intent_type") WHERE "is_inbox_record";
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_inbox_retention" ON {received} ("effective_expires_at","id")
                 INCLUDE ("status_name","next_retry_at","intent_type") WHERE "is_inbox_record" AND NOT "is_held";
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_expires_at_status_name" ON {received} ("expires_at","status_name");

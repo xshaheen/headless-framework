@@ -3936,6 +3936,44 @@ public abstract partial class DataStorageTestsBase : TestBase
         bareAgain.Should().BeFalse("a redelivery to the bare consumer still finds its own terminal row");
     }
 
+    public virtual async Task should_report_an_admitted_inbox_message_only_for_its_exact_identity()
+    {
+        var storage = GetStorage();
+        var messageId = $"admitted-{Guid.NewGuid():N}";
+        var origin = CreateMessage(messageId, "orders.created");
+        origin.Headers[Headers.TenantId] = "tenant-a";
+        await _AdmitInboxAsync(storage, origin, consumerIdentity: "orders.consumer-a", contractVersion: "v1");
+
+        Task<bool> admitted(string? tenantId, string id, string consumer, MessageLane lane) =>
+            storage.IsInboxMessageAdmittedAsync(tenantId, id, consumer, lane, AbortToken).AsTask();
+
+        (await admitted("tenant-a", messageId, "orders.consumer-a", MessageLane.Bus))
+            .Should()
+            .BeTrue("the lookup ignores the contract version a redelivery cannot supply");
+        (await admitted("tenant-a", messageId, "orders.consumer-b", MessageLane.Bus)).Should().BeFalse();
+        (await admitted("tenant-a", messageId, "orders.consumer-a", MessageLane.Queue)).Should().BeFalse();
+        (await admitted("tenant-b", messageId, "orders.consumer-a", MessageLane.Bus)).Should().BeFalse();
+        (await admitted(null, messageId, "orders.consumer-a", MessageLane.Bus)).Should().BeFalse();
+        (await admitted("tenant-a", messageId + " ", "orders.consumer-a", MessageLane.Bus))
+            .Should()
+            .BeFalse("an id that differs only by a trailing space is another message");
+        (await admitted("tenant-a", messageId, "orders.consumer-a ", MessageLane.Bus))
+            .Should()
+            .BeFalse("a consumer identity that differs only by a trailing space is another consumer");
+        (await admitted("tenant-a ", messageId, "orders.consumer-a", MessageLane.Bus)).Should().BeFalse();
+    }
+
+    public virtual async Task should_not_report_a_non_inbox_received_row_as_admitted()
+    {
+        var storage = GetStorage();
+        var messageId = $"not-admitted-{Guid.NewGuid():N}";
+        (await _StorePoisonAsync(messageId, "orders.consumer-a")).Should().BeTrue();
+
+        (await storage.IsInboxMessageAdmittedAsync(null, messageId, "orders.consumer-a", MessageLane.Bus, AbortToken))
+            .Should()
+            .BeFalse("a poison row records a delivery that never reached the inbox");
+    }
+
     private async Task<bool> _StorePoisonAsync(string messageId, string consumerIdentity)
     {
         return await GetStorage()

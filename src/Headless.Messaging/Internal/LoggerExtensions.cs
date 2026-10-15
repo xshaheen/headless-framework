@@ -1095,4 +1095,31 @@ internal static partial class LoggerExtensions
         Exception exception,
         Guid storageId
     );
+
+    [LoggerMessage(
+        EventId = 4123,
+        EventName = "AdmittedRedeliveryCommitted",
+        Level = LogLevel.Information,
+        Message = "Message {MessageId} (name '{MessageName}', consumer '{Consumer}', lane '{Lane}') failed before admission, but the inbox already admitted it; the redelivery is committed as a duplicate instead of being stored as poison."
+    )]
+    public static partial void AdmittedRedeliveryCommitted(
+        this ILogger logger,
+        string messageId,
+        string messageName,
+        string consumer,
+        string lane
+    );
+
+    [LoggerMessage(
+        EventId = 4124,
+        EventName = "AdmittedInboxLookupFailed",
+        Level = LogLevel.Warning,
+        Message = "Could not check whether the inbox already admitted message {MessageId} (consumer '{Consumer}'), which failed before admission; it is stored as poison."
+    )]
+    public static partial void AdmittedInboxLookupFailed(
+        this ILogger logger,
+        Exception exception,
+        string messageId,
+        string consumer
+    );
 }
