@@ -2107,6 +2107,8 @@ Messaging contributes readiness checks automatically; there is no `AddMessagingH
 | `messaging-storage-postgresql-outbox-{n}`, `messaging-storage-sqlserver-outbox-{n}` | Each additional PostgreSQL or SQL Server outbox; also tagged `database` | `Unhealthy` | The same probe against that outbox's database. `{n}` is the outbox's position, from 1, in `AddOutbox()` call order |
 | `messaging-nats` | `UseNats` | `Unhealthy` | A NATS `PING` fails (see [Headless.Messaging.Nats](#headlessmessagingnats)) |
 
+`messaging`, `messaging-consumers`, and `messaging-outboxes` read the running host's state, so they also carry `host-state` (`HeadlessHealthCheckTags.HostState`), and the [`check` command](utilities.md#health-check-command) skips them before the host starts; the storage and NATS checks probe their dependency and run there.
+
 The `Degraded` defaults are defaults only: `ConfigureHeadlessHealthCheck("messaging-consumers", o => o.FailureStatus = HealthStatus.Unhealthy)` overrides one, before or after `AddHeadlessMessaging`. The storage probe runs a query rather than only opening a connection, because a pooled open can return an idle connection without a round trip and would report a stopped database as reachable. The in-memory storage and transport contribute no storage or broker probe.
 
 ### Broker reachability

@@ -52,7 +52,8 @@ internal static class MessagingHealthChecks
                     ? Task.CompletedTask
                     : throw new InvalidOperationException("The message broker is unreachable.");
             },
-            HeadlessHealthCheckTags.Messaging
+            HeadlessHealthCheckTags.Messaging,
+            HeadlessHealthCheckTags.HostState
         );
 
         // An Open circuit, tripped or forced by an operator, means the consumer takes nothing. HalfOpen is already
@@ -71,7 +72,8 @@ internal static class MessagingHealthChecks
 
                 return Task.CompletedTask;
             },
-            HeadlessHealthCheckTags.Messaging
+            HeadlessHealthCheckTags.Messaging,
+            HeadlessHealthCheckTags.HostState
         );
 
         if (hasAdditionalOutboxes)
@@ -92,7 +94,8 @@ internal static class MessagingHealthChecks
 
                     return Task.CompletedTask;
                 },
-                HeadlessHealthCheckTags.Messaging
+                HeadlessHealthCheckTags.Messaging,
+                HeadlessHealthCheckTags.HostState
             );
         }
 
