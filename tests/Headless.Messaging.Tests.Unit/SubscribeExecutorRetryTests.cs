@@ -574,7 +574,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         invocations().Should().Be(1);
         writes.Should().BeEmpty("no retry or failure state is written for a handler that succeeded");
         exhausted.Should().BeEmpty();
-        await circuitBreaker.DidNotReceiveWithAnyArgs().ReportFailureAsync(default!, default!, AbortToken);
+        await circuitBreaker.DidNotReceiveWithAnyArgs().ReportFailureAsync(default!, default, default!, AbortToken);
     }
 
     [Fact]

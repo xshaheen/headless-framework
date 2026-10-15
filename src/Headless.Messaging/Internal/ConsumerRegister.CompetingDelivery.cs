@@ -325,7 +325,12 @@ internal sealed partial class ConsumerRegister
                     if (!receiveRejectIsPolicy)
                     {
                         await _circuitBreakerStateManager
-                            .ReportFailureAsync(circuitKey, dispatchBypassException, CancellationToken.None)
+                            .ReportFailureAsync(
+                                circuitKey,
+                                admissionEpoch,
+                                dispatchBypassException,
+                                CancellationToken.None
+                            )
                             .ConfigureAwait(false);
 
                         probeOutcomeTransferred = true;

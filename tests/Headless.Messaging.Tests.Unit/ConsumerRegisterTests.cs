@@ -1583,7 +1583,7 @@ public sealed class ConsumerRegisterTests : TestBase
         outcomes.Should().Contain("skipped").And.NotContain("no_responder");
         await circuitBreaker
             .DidNotReceive()
-            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
         circuitBreaker.Received(1).ReleaseHalfOpenProbe(Arg.Any<string>(), Arg.Any<long>());
         await run
             .Dispatcher.DidNotReceive()
@@ -1959,7 +1959,7 @@ public sealed class ConsumerRegisterTests : TestBase
         exhausted.RetryCount.Should().Be(0);
         await circuitBreaker
             .DidNotReceive()
-            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
         circuitBreaker.Received(1).ReleaseHalfOpenProbe(Arg.Any<string>(), Arg.Any<long>());
     }
 
@@ -1972,7 +1972,7 @@ public sealed class ConsumerRegisterTests : TestBase
             Behavior = (_, _) => throw new InvalidOperationException("middleware fault"),
         };
         var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
-        circuitBreaker.TryAcquireHalfOpenProbe(Arg.Any<string>()).Returns(1L);
+        circuitBreaker.TryAcquireHalfOpenProbe(Arg.Any<string>()).Returns(61L);
 
         await using var run = await _RunReceiveDeliveryAsync(
             middleware,
@@ -1991,7 +1991,7 @@ public sealed class ConsumerRegisterTests : TestBase
         exhausted.Should().NotBeNull();
         await circuitBreaker
             .Received(1)
-            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+            .ReportFailureAsync(Arg.Any<string>(), 61L, Arg.Any<Exception>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
