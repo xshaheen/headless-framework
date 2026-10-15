@@ -183,6 +183,21 @@ public sealed class KeyedAsyncLock : IDisposable
         var shard = _GetShard(key);
         var semaphore = shard.GetOrCreate(key);
 
+        // A free lock needs no timer, linked token source, or WhenAny race: take it synchronously. A caller that
+        // already cancelled still gets the cancellation, as the awaited wait below would have reported it.
+        try
+        {
+            if (semaphore.Wait(0, cancellationToken))
+            {
+                return new Releaser(shard, key);
+            }
+        }
+        catch
+        {
+            shard.DecrementRefCount(key);
+            throw;
+        }
+
         // When the caller token cannot be cancelled, skip the linked CTS — one allocation instead of two.
         if (!cancellationToken.CanBeCanceled)
         {

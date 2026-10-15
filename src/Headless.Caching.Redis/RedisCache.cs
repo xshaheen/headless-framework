@@ -49,6 +49,10 @@ public sealed class RedisCache(
     private static readonly byte[] _NullValueBytes = (byte[])_NullValue!;
     private const int _BatchSize = 250;
 
+    // Caps the per-hash-slot commands a cluster bulk call keeps in flight. Sending every slot at once on a huge
+    // call queues enough work behind the multiplexer to hit command timeouts.
+    private const int _MaxInFlightSlotCommands = 16;
+
     /// <summary>
     /// Reserved namespace segment for Family-2 per-tag invalidation markers: each tag's last-invalidation
     /// timestamp (Unix-ms string) lives at <c>{KeyPrefix}\0__tag:{tag}</c>. One key per tag, so tag invalidation
@@ -377,17 +381,16 @@ public sealed class RedisCache(
         if (IsCluster)
         {
             var slotBuckets = _GroupBySlot(pairs, static pair => pair.Key);
-            var slotWrites = new Task<int>[slotBuckets.Count];
-            var slotIndex = 0;
+            var slotWrites = new List<Func<Task<int>>>(slotBuckets.Count);
 
-            // Issue every slot's write before awaiting any, so a batch costs one round-trip wave instead of one
+            // Slot writes overlap up to the in-flight cap, so a batch costs a few round-trip waves instead of one
             // round trip per slot. On a failing slot the others are still written before the exception surfaces.
             foreach (var bucket in slotBuckets.Values)
             {
-                slotWrites[slotIndex++] = _SetAllInternalAsync([.. bucket], expiration);
+                slotWrites.Add(() => _SetAllInternalAsync([.. bucket], expiration));
             }
 
-            var slotCounts = await Task.WhenAll(slotWrites).ConfigureAwait(false);
+            var slotCounts = await Task.WhenAllBoundedAsync(slotWrites, _MaxInFlightSlotCommands).ConfigureAwait(false);
             writtenCount = slotCounts.Sum();
         }
         else
@@ -1614,19 +1617,20 @@ public sealed class RedisCache(
             // #36: group by hash slot ONCE before chunking to avoid re-allocating a Dictionary per chunk.
             // Previously _GroupBySlot was called inside the Chunk loop: N/250 allocations for N keys.
             var slotBuckets = _GroupBySlot(redisKeys, static key => key);
-            var batchDeletes = new List<Task<long>>(slotBuckets.Count);
+            var batchDeletes = new List<Func<Task<long>>>(slotBuckets.Count);
 
-            // Issue every slot batch before awaiting any, so the removal costs one round-trip wave instead of one
+            // Batches overlap up to the in-flight cap, so the removal costs a few round-trip waves instead of one
             // round trip per batch. Each batch still logs and skips its own failure, as the sequential loop did.
             foreach (var (slot, bucket) in slotBuckets)
             {
                 foreach (var batch in bucket.Chunk(_BatchSize))
                 {
-                    batchDeletes.Add(deleteBatchAsync(slot, batch));
+                    batchDeletes.Add(() => deleteBatchAsync(slot, batch));
                 }
             }
 
-            var batchCounts = await Task.WhenAll(batchDeletes).ConfigureAwait(false);
+            var batchCounts = await Task.WhenAllBoundedAsync(batchDeletes, _MaxInFlightSlotCommands)
+                .ConfigureAwait(false);
             deleted = batchCounts.Sum();
 
             async Task<long> deleteBatchAsync(int slot, RedisKey[] hashSlotKeys)
@@ -2287,10 +2291,9 @@ public sealed class RedisCache(
         var values = new RedisValue[redisKeys.Length];
         var slotBuckets = _GroupBySlot(indexedKeys, static entry => entry.Redis);
         var buckets = new List<(RedisKey Redis, int Index)>[slotBuckets.Count];
-        var slotReads = new Task<RedisValue[]>[slotBuckets.Count];
-        var slotIndex = 0;
+        var slotReads = new List<Func<Task<RedisValue[]>>>(slotBuckets.Count);
 
-        // Issue every slot's MGET before awaiting any, so a bulk read costs one round-trip wave instead of one
+        // Slot MGETs overlap up to the in-flight cap, so a bulk read costs a few round-trip waves instead of one
         // round trip per slot; values are placed by input index once all reads complete.
         foreach (var bucket in slotBuckets.Values)
         {
@@ -2301,11 +2304,11 @@ public sealed class RedisCache(
                 slotKeys[i] = bucket[i].Redis;
             }
 
-            buckets[slotIndex] = bucket;
-            slotReads[slotIndex++] = _database.StringGetAsync(slotKeys, cacheOptions.ReadMode);
+            buckets[slotReads.Count] = bucket;
+            slotReads.Add(() => _database.StringGetAsync(slotKeys, cacheOptions.ReadMode));
         }
 
-        var slotValues = await Task.WhenAll(slotReads).ConfigureAwait(false);
+        var slotValues = await Task.WhenAllBoundedAsync(slotReads, _MaxInFlightSlotCommands).ConfigureAwait(false);
 
         for (var s = 0; s < buckets.Length; s++)
         {
@@ -3732,17 +3735,17 @@ public sealed class RedisCache(
         if (isCluster)
         {
             var slotBuckets = _GroupBySlot(keys, static key => key);
-            var slotDeletes = new Task<long>[slotBuckets.Count];
-            var slotIndex = 0;
+            var slotDeletes = new List<Func<Task<long>>>(slotBuckets.Count);
 
-            // Issue every slot's DEL before awaiting any, so a scan page costs one round-trip wave instead of one
+            // Slot DELs overlap up to the in-flight cap, so a scan page costs a few round-trip waves instead of one
             // round trip per slot. On a failing slot the others are still deleted before the exception surfaces.
             foreach (var bucket in slotBuckets.Values)
             {
-                slotDeletes[slotIndex++] = _database.KeyDeleteAsync([.. bucket]);
+                slotDeletes.Add(() => _database.KeyDeleteAsync([.. bucket]));
             }
 
-            var slotCounts = await Task.WhenAll(slotDeletes).ConfigureAwait(false);
+            var slotCounts = await Task.WhenAllBoundedAsync(slotDeletes, _MaxInFlightSlotCommands)
+                .ConfigureAwait(false);
 
             return slotCounts.Sum();
         }
