@@ -311,6 +311,26 @@ public sealed class MembershipServiceTests : TestBase
     }
 
     [Fact]
+    public async Task should_write_the_departure_when_leaving_past_the_deadline_before_the_timer_fires()
+    {
+        // given: the deadline has passed but the fence timer is late, so Identity already reads null
+        var timeProvider = new LateTimerTimeProvider();
+        var store = new FakeMembershipStore();
+        using var sut = _CreateService(store, _FenceOptions(), timeProvider: timeProvider);
+        sut.EnableSelfFence();
+        var identity = await sut.RegisterAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        sut.Identity.Should().BeNull();
+
+        // when
+        await sut.LeaveAsync(AbortToken);
+
+        // then: peers still get the explicit departure instead of waiting out DeadThreshold
+        store.Leaves.Should().ContainSingle().Which.Should().Be(identity);
+        sut.TryGetFence(out _, out _).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_fire_the_fence_timer_at_the_margin_when_every_beat_fails_fast()
     {
         // given

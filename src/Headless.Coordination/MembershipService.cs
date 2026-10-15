@@ -188,17 +188,16 @@ internal sealed class MembershipService(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (Identity is not { } identity)
+        // Leave on the held lease, not Identity: a node past its fence deadline whose timer has not fired yet reads a
+        // null Identity, but still owes peers the explicit departure so they react to NodeLeft instead of waiting out
+        // DeadThreshold. The store's leave is a guarded no-op for an incarnation it already superseded.
+        if (_lease is not { } lease)
         {
             return;
         }
 
-        await store.LeaveAsync(identity, cancellationToken).ConfigureAwait(false);
-
-        if (_lease is { } lease && lease.Identity == identity)
-        {
-            _TryReplaceLease(lease, replacement: null);
-        }
+        await store.LeaveAsync(lease.Identity, cancellationToken).ConfigureAwait(false);
+        _TryReplaceLease(lease, replacement: null);
     }
 
     /// <summary>

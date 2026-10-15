@@ -16,7 +16,7 @@ internal sealed class RedisMembershipAllocateIncarnationScriptDefinition : Redis
     private RedisMembershipAllocateIncarnationScriptDefinition()
         : base(
             """
-            -- Seed from the server clock (microsecond resolution, ~1.8e15 today, below 2^53) so an incarnation
+            -- Seed from the server clock (millisecond resolution in microsecond units, ~1.8e15 today, below 2^53) so an incarnation
             -- issued after a flush or a lossy failover still exceeds every incarnation issued before it; a plain
             -- INCR would restart at 1 and hand out identities that earlier rows were stamped with.
             local current = tonumber(redis.call('get', @genKey) or '0')

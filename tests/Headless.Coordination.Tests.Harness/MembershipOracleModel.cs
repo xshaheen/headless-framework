@@ -130,7 +130,7 @@ public sealed class MembershipOracleModel(MembershipOracleScope scope) : IMember
 
         if (!_IsCurrent(identity))
         {
-            return "register";
+            return "register:refused";
         }
 
         // Write-once descriptor; liveness revived without moving its beat backwards.
@@ -140,7 +140,7 @@ public sealed class MembershipOracleModel(MembershipOracleScope scope) : IMember
             ? new Liveness(_Later(stored.LastBeat), LeftAt: null)
             : new Liveness(TimeSpan.Zero, LeftAt: null);
 
-        return "register";
+        return "register:accepted";
     }
 
     private bool _Heartbeat(NodeIdentity identity)
