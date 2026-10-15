@@ -378,7 +378,8 @@ public sealed class JobsWakeClockDomainTests : TestBase
                 registry,
                 new JobsExecutionCancellationRegistry(),
                 new SchedulerOptionsBuilder(),
-                NullLogger<JobsExecutionTaskHandler>.Instance
+                NullLogger<JobsExecutionTaskHandler>.Instance,
+                new JobsFunctionTagBound(registry)
             );
 
             var ownerIdentity = Substitute.For<IJobsOwnerIdentity>();

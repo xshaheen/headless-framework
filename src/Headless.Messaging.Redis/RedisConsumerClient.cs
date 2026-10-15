@@ -39,6 +39,7 @@ internal sealed class RedisConsumerClient(
     private readonly string _groupName = RedisPhysicalAddress.ConsumerGroup(lane, subscriptionName);
     private readonly SemaphoreSlim _semaphore = new(concurrency);
     private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly BrokerReachabilityReporter _reachability = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly IServiceProvider _serviceProvider = serviceProvider ?? _NoServices;
@@ -143,7 +144,7 @@ internal sealed class RedisConsumerClient(
             var reads =
                 kind is ConsumerSubscriptionKind.EveryInstance
                     ? _ConsumeMessages(
-                        redis.PollStreamsFromAsync(_everyInstanceStart, timeout, readCts.Token),
+                        redis.PollStreamsFromAsync(_everyInstanceStart, timeout, _ReportRead, readCts.Token),
                         StreamPosition.NewMessages,
                         readCts.Token
                     )
@@ -252,6 +253,20 @@ internal sealed class RedisConsumerClient(
         }
     }
 
+    // The stream manager retries a failed read on its own and the multiplexer reconnects underneath it, so its read
+    // loops are the only place the host can learn that Redis went away and came back.
+    private void _ReportRead(Exception? failure)
+    {
+        if (failure is null)
+        {
+            _reachability.ReportSuccess(OnLogCallback);
+        }
+        else
+        {
+            _reachability.ReportFailure(OnLogCallback, failure);
+        }
+    }
+
     private async Task _ListeningForMessagesAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
         //first time, we want to read our pending messages, in case we crashed and are recovering.
@@ -260,6 +275,7 @@ internal sealed class RedisConsumerClient(
             _groupName,
             _consumerName.Name,
             timeout,
+            _ReportRead,
             cancellationToken
         );
 
@@ -271,6 +287,7 @@ internal sealed class RedisConsumerClient(
             _consumerName.Name,
             options.Value.PendingClaimMinIdleTime,
             timeout,
+            _ReportRead,
             cancellationToken
         );
         var stalePendingReads = _ConsumeMessages(stalePendingMsgs, StreamPosition.Beginning, cancellationToken);
@@ -282,6 +299,7 @@ internal sealed class RedisConsumerClient(
             _groupName,
             _consumerName.Name,
             timeout,
+            _ReportRead,
             cancellationToken
         );
 

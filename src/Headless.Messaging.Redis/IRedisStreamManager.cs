@@ -14,11 +14,14 @@ internal interface IRedisStreamManager
 
     Task PublishAsync(string stream, NameValueEntry[] message, CancellationToken cancellationToken = default);
 
+    // onRead hears of each read the token did not end: null when it reached the server, or the failure the loop logged
+    // and retries through. It is how a consumer learns of an outage the loop otherwise hides.
     IAsyncEnumerable<IEnumerable<RedisStreamMessages>> PollStreamsLatestMessagesAsync(
         string[] streams,
         string consumerGroup,
         string consumerName,
         TimeSpan pollDelay,
+        Action<Exception?>? onRead,
         CancellationToken token
     );
 
@@ -27,13 +30,15 @@ internal interface IRedisStreamManager
         string consumerGroup,
         string consumerName,
         TimeSpan pollDelay,
+        Action<Exception?>? onRead,
         CancellationToken token
     );
 
     /// <summary>
     /// Polls the groups' pending entries with XAUTOCLAIM, claiming for <paramref name="consumerName"/> each entry pending
     /// longer than <paramref name="claimMinIdleTime"/>, and periodically deletes the group's idle consumers that hold no
-    /// pending entry.
+    /// pending entry. <paramref name="onRead"/> hears of each claim pass the token did not end, as
+    /// <see cref="PollStreamsLatestMessagesAsync"/> describes.
     /// </summary>
     IAsyncEnumerable<IEnumerable<RedisStreamMessages>> PollStreamsStalePendingMessagesAsync(
         string[] streams,
@@ -41,6 +46,7 @@ internal interface IRedisStreamManager
         string consumerName,
         TimeSpan claimMinIdleTime,
         TimeSpan pollDelay,
+        Action<Exception?>? onRead,
         CancellationToken token
     );
 
@@ -52,11 +58,13 @@ internal interface IRedisStreamManager
 
     /// <summary>
     /// Polls <paramref name="startPositions"/> with group-less XREAD, advancing each stream past the entries it
-    /// yields, so the reads need no consumer group and leave nothing on the server.
+    /// yields, so the reads need no consumer group and leave nothing on the server. <paramref name="onRead"/> hears of
+    /// each read the token did not end, as <see cref="PollStreamsLatestMessagesAsync"/> describes.
     /// </summary>
     IAsyncEnumerable<IEnumerable<RedisStreamMessages>> PollStreamsFromAsync(
         StreamPosition[] startPositions,
         TimeSpan pollDelay,
+        Action<Exception?>? onRead,
         CancellationToken token
     );
 

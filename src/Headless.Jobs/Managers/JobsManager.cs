@@ -3,6 +3,7 @@
 using System.Runtime.InteropServices;
 using Headless.Checks;
 using Headless.Jobs.BackgroundServices;
+using Headless.Jobs.Internal;
 using Headless.MultiTenancy;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
@@ -190,8 +191,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             entity.Function,
             requireSavepoints: idempotency is not null
         );
+        using var scheduleActivity = JobsDiagnostics.StartSchedule(JobType.TimeJob, entity.Function);
+        var traceParent = JobTraceParent.Capture(scheduleActivity);
         var now = timeProvider.GetUtcNow();
-        _StampTimeJobTree(entity, now, assignIds: true);
+        _StampTimeJobTree(entity, now, assignIds: true, traceParent);
+        scheduleActivity?.SetTag("headless.job.id", entity.Id.ToString());
 
         // Mirror the batch path: on any pre-persistence failure, restore captured tenant mutations so a retried
         // entity is not treated as explicitly tenanted with a stale captured value.
@@ -201,7 +205,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         try
         {
             await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
-            _StampTimeJobTree(entity, now, assignIds: false);
+            _StampTimeJobTree(entity, now, assignIds: false, traceParent);
             _ResolveChainTenants(entity);
 
             if (!_functionRegistry.Functions.ContainsKey(entity.Function))
@@ -896,6 +900,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             ContractVersion = job.ContractVersion,
             CorrelationId = job.CorrelationId,
             CausationId = job.CausationId,
+            TraceParent = job.TraceParent,
             JobId = job.Id,
             Type = JobType.TimeJob,
             Retries = job.Retries,
@@ -928,6 +933,13 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             $"time-job batch ({entities.Count})",
             requireSavepoints: false
         );
+
+        // One span for the batch: the rows share the single call that scheduled them.
+        using var scheduleActivity = JobsDiagnostics.StartSchedule(
+            JobType.TimeJob,
+            entities.Count == 1 ? entities[0].Function : null
+        );
+        var traceParent = JobTraceParent.Capture(scheduleActivity);
         var jobFunctionsHashSet = new HashSet<string>(_functionRegistry.Functions.Keys, StringComparer.Ordinal);
         var immediateTickers = new List<Guid>();
         var now = timeProvider.GetUtcNow();
@@ -945,7 +957,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         {
             foreach (var entity in entities)
             {
-                _StampTimeJobTree(entity, now, assignIds: true);
+                _StampTimeJobTree(entity, now, assignIds: true, traceParent);
 
                 if (!jobFunctionsHashSet.Contains(entity.Function))
                 {
@@ -958,7 +970,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 try
                 {
                     await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
-                    _StampTimeJobTree(entity, now, assignIds: false);
+                    _StampTimeJobTree(entity, now, assignIds: false, traceParent);
                     _ResolveChainTenants(entity);
                 }
                 catch (JobValidatorException ex)
@@ -1210,7 +1222,9 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         return validEntities;
     }
 
-    private void _StampTimeJobTree(TTimeJob root, DateTimeOffset now, bool assignIds)
+    // Every node of a chain carries the one scheduling context: the whole tree was written by one scheduling call, and
+    // an inline child's execution links to it rather than to its parent's execution span.
+    private void _StampTimeJobTree(TTimeJob root, DateTimeOffset now, bool assignIds, string? traceParent)
     {
         var pending = new Stack<(TTimeJob Job, Guid? ParentId)>();
         var visited = new HashSet<TTimeJob>(ReferenceEqualityComparer.Instance);
@@ -1225,6 +1239,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
             _StampJob(current.Job, now, assignIds);
             current.Job.ParentId = current.ParentId;
+            current.Job.TraceParent = traceParent;
 
             if (current.ParentId is not null)
             {

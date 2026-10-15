@@ -40,6 +40,12 @@ public class JobExecutionState
     /// <summary>Immediate business cause.</summary>
     public string? CausationId { get; set; }
 
+    /// <summary>
+    /// Persisted W3C <c>traceparent</c> of the span that scheduled the row; the execution span links to it. Must be
+    /// carried by every entity-to-state projection, or the execution loses its link to the scheduling request.
+    /// </summary>
+    public string? TraceParent { get; set; }
+
     /// <summary>Local registration version mismatch detected before deserialization.</summary>
     public string? ContractVersionError { get; internal set; }
 

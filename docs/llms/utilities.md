@@ -291,6 +291,7 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 - Startup validators (`IHeadlessStartupValidator`, `AddStartupValidator`) that run before any hosted service starts and report every failure together
 - Dependency health checks: provider packages contribute readiness checks through `AddHeadlessHealthCheck`, tagged with `HeadlessHealthCheckTags`; applications drop any of them with `RemoveHealthChecks`. See [Health checks](#health-checks)
 - Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
+- Host manifest: `RunHeadlessAsync(args)` prints, for the `describe` verb, the JSON each `IHostManifestSection` writes about what its feature registered, without starting the host. See [Host manifest](#host-manifest)
 - Options validation with FluentValidation
 - Configuration binding extensions
 - Environment detection extensions
@@ -413,7 +414,7 @@ services.AddStartupValidator<OrdersModelValidator>();
 
 #### Health Checks
 
-A provider package that talks to an external dependency contributes a readiness health check when it is registered, so `/health` reports the database, Redis, broker, or blob store the host depends on instead of only the process. Nothing is resolved and no connection opens at registration: each check probes its dependency only when a health check runs.
+A provider package that talks to an external dependency contributes a readiness health check when it is registered, so `/health` reports the database, Redis, broker, or blob store the host depends on instead of only the process. Nothing is resolved and no connection opens at registration: each check probes its dependency only when a health check runs. Messaging and Jobs also contribute checks that read their own host state (started, shutting down, paused, broker reachability) without any I/O. A `Degraded` status named in the Probe column is that check's default failure status; `ConfigureHeadlessHealthCheck` overrides it.
 
 | Registered by | Check name | Dependency tag | Probe |
 | --- | --- | --- | --- |
@@ -424,8 +425,15 @@ A provider package that talks to an external dependency contributes a readiness 
 | Distributed locks `UseRedis` | `distributed-locks-redis` | `redis` | The same endpoint probe through the registered `IConnectionMultiplexer` |
 | Messaging `UseNats` | `messaging-nats` | `messaging` | NATS `PING` on a pooled connection |
 | Blobs `UseAzure` | `blobs-azure` (named: `blobs-azure-{name}`) | `blobs` | Reads one page of the account's container list, or the properties of `AzureStorageOptions.HealthCheckContainerName` when set |
+| `AddHeadlessMessaging` | `messaging` | `messaging` | Reads host state: `Unhealthy` before the Messaging host starts, once shutdown begins, and while the broker is unreachable, judged from receive and send outcomes ([Messaging](messaging.md#broker-reachability)) |
+| `AddHeadlessMessaging` | `messaging-consumers` | `messaging` | Reads circuit state: `Degraded` by default while any consumer circuit is `Open`, including an operator pause |
+| `AddHeadlessMessaging` with `AddOutbox()` | `messaging-outboxes` | `messaging` | Reads outbox state: `Degraded` by default while an additional outbox is not initialized |
+| Messaging PostgreSQL / SQL Server storage | `messaging-storage-postgresql-default`, `messaging-storage-sqlserver-default`; per additional outbox `messaging-storage-postgresql-outbox-{n}`, `messaging-storage-sqlserver-outbox-{n}` | `messaging`, `database` | `SELECT 1` on a new connection from that store's options |
+| `AddHeadlessJobs` with background services | `jobs` | `jobs` | Reads host state: `Unhealthy` until Jobs activation completes and once shutdown begins |
+| `AddHeadlessJobs` with background services | `jobs-scheduler` | `jobs` | Reads `IJobsHostScheduler.IsRunning`: `Degraded` by default while the scheduler is stopped by an operator or by manual start mode |
+| Jobs `UseEntityFramework` | `jobs-storage-{DbContext full name}` | `jobs`, `database` | `Database.CanConnectAsync` on a context from the store's pooled factory |
 
-- **Tags.** Every contributed check carries `ready` (`HeadlessHealthCheckTags.Ready`), `headless` (`HeadlessHealthCheckTags.Headless`), and its dependency tag. None carries the liveness tag, so `MapHeadlessEndpoints()` shows them on `/health` and keeps them off `/alive`: a database outage never makes an orchestrator restart a healthy process. Map a readiness endpoint by tag when the platform probes readiness separately:
+- **Tags.** Every contributed check carries `ready` (`HeadlessHealthCheckTags.Ready`), `headless` (`HeadlessHealthCheckTags.Headless`), and its dependency tag: `database`, `redis`, `messaging`, `blobs`, or `jobs` (`HeadlessHealthCheckTags.Jobs`, for the checks that report whether a Jobs host can run jobs). A storage check of Messaging or Jobs carries both its feature tag and `database`. None carries the liveness tag, so `MapHeadlessEndpoints()` shows them on `/health` and keeps them off `/alive`: a database outage never makes an orchestrator restart a healthy process. Map a readiness endpoint by tag when the platform probes readiness separately:
 
   ```csharp
   app.MapHealthChecks("/ready", new HealthCheckOptions
@@ -434,7 +442,13 @@ A provider package that talks to an external dependency contributes a readiness 
   });
   ```
 
-- **Opting out.** `RemoveHealthChecks(predicate)` removes matching registrations after every other configuration runs, so its position in `Program.cs` does not matter:
+- **Turning one off.** Set `Headless:HealthChecks:{name}:Enabled` to `false` in configuration, or `options.Enabled = false` in `ConfigureHeadlessHealthCheck(name, ...)`, and the check is not registered on any endpoint. Configuration lets one deployment drop a check without a code change:
+
+  ```json
+  { "Headless": { "HealthChecks": { "cache-redis": { "Enabled": false } } } }
+  ```
+
+- **Opting out in code.** `RemoveHealthChecks(predicate)` removes matching registrations after every other configuration runs, so its position in `Program.cs` does not matter. Use it for a check Headless did not contribute, or to remove a group by tag:
 
   ```csharp
   // Drop one contributed check.
@@ -444,7 +458,7 @@ A provider package that talks to an external dependency contributes a readiness 
   builder.Services.RemoveHealthChecks(registration => registration.Tags.Contains(HeadlessHealthCheckTags.Headless));
   ```
 
-- **Configuring one.** `services.ConfigureHeadlessHealthCheck(name, options => ...)` changes a contributed check through `HeadlessHealthCheckOptions`, named options validated at startup; the call's position relative to the provider registration does not matter:
+- **Configuring one.** `services.ConfigureHeadlessHealthCheck(name, options => ...)` changes a contributed check through `HeadlessHealthCheckOptions`, named options validated at startup; the call's position relative to the provider registration does not matter. The same settings bind from `Headless:HealthChecks:{name}` (`Enabled`, `FailureStatus`, `Timeout` as `hh:mm:ss`, `Tags`, `TestCommand`); code wins over configuration whichever is registered first, and a value that does not parse fails with the key named:
 
   ```csharp
   builder.Services.ConfigureHeadlessHealthCheck("cache-redis", options =>
@@ -459,10 +473,11 @@ A provider package that talks to an external dependency contributes a readiness 
 
   `FailureStatus` (default `Unhealthy`; `Healthy` is rejected) is what a failed or timed-out probe reports. `Timeout` (default none) bounds the probe; the health check service cancels it and reports `FailureStatus` with `A timeout occurred while running check.`. Without one, a probe runs until its driver gives up or the health request is cancelled. `Tags` adds tags. `TestCommand` replaces the query of the SQL and DbContext checks and is ignored by the others; the Azure blob check takes a container through `AzureStorageOptions.HealthCheckContainerName` instead. For anything else, mutate the registration in `services.PostConfigure<HealthCheckServiceOptions>(...)`.
 - **Failure reporting.** A probe that throws reports the registration's failure status (`Unhealthy` by default) with the fixed description `The '{name}' dependency probe failed.` and the exception attached for the health-check log. The driver's message stays out of the description because health endpoints are usually anonymous. A cancelled health request cancels the probe and reports nothing, rather than reporting the dependency as down. The report entry's `Duration` carries the probe latency; checks add no result data, because server versions and endpoint names do not belong on an anonymous endpoint.
-- **One check per name.** A second contribution with the same name adds nothing, so a provider registered twice keeps one check. A named cache or blob store gets its own check.
-- **Not covered.** A storage feature configured with its own connection string, instead of the shared `AddPostgreSqlSql` / `AddSqlServerSql` connection or a `HeadlessDbContext`, contributes no check; add one with `AddHeadlessHealthCheck`. SQLite and in-memory providers contribute none. The data-protection key-ring check stays opt-in through `AddDataProtectionKeyRing()`, because its default probe writes to the store (see [api.md](api.md)).
+- **One check per name.** A second contribution with the same name adds no second check; its tags join the first one's, so a provider registered twice keeps one check and two packages that probe one dependency under one name report it once with both packages' tags. A named cache or blob store gets its own check, unless it reaches the same deployment as another check (see *One check per dependency*).
+- **One check per dependency.** Packages that probe one database or one Redis deployment report it once. Each resource check declares the dependency it reaches as a `HeadlessHealthCheckResource`: a key computed when the health check service first builds its options (provider, host, port, and database for SQL and EF, from `HeadlessHealthCheckResource.DatabaseKey`; the sorted endpoints for Redis, from `GetEndpointsKey()`), and whether the package owns the connection. Checks with equal keys collapse into the owner's check (`sql-*`, `dbcontext-*`), or the first registered when no owner is present, which takes the others' tags and keeps its own name, failure status, and timeout. So `jobs-storage-{T}` folds into `dbcontext-{T}`, a Messaging store on the app's database folds into `sql-postgresql`, and `distributed-locks-redis` folds into `cache-redis` when both use one deployment. A store on its own database keeps its own check. Two connection pools to one database with different users share the probe; a credential that breaks for one of them surfaces in its queries, not in readiness. The off-switch applies first, so turning the owner off leaves the next check probing the dependency. To dedupe a check of your own, pass a resource: `services.AddHeadlessHealthCheck(name, HeadlessHealthCheckResource.Shared(sp => key), probe, tags)`.
+- **Not covered.** A storage feature configured with its own connection string, instead of the shared `AddPostgreSqlSql` / `AddSqlServerSql` connection or a `HeadlessDbContext`, contributes no check; add one with `AddHeadlessHealthCheck`. Messaging PostgreSQL and SQL Server storage is the exception: it probes each store's own connection whether that connection is shared or its own, and on a database another check already probes, it folds into that check (see *One check per dependency*). SQLite and in-memory providers contribute none. The data-protection key-ring check stays opt-in through `AddDataProtectionKeyRing()`, because its default probe writes to the store (see [api.md](api.md)).
 - **Wrapping a third-party check.** `services.AddHeadlessHealthCheck(name, (builder, name, tags) => builder.AddXxxCheck(name, failureStatus: null, tags), dependencyTag)` contributes a check that another package's `IHealthChecksBuilder` method registers, under the same conventions: the `ready` and `headless` tags, one registration per name, and failures (thrown or returned) reported with the registration's failure status and the fixed description. The DbContext check uses it to run Microsoft's `AddDbContextCheck<T>`, whose own failures put the driver message in the description.
-- **Writing one.** A provider package contributes its own check with `services.AddHeadlessHealthCheck(name, probe, tags)`. The probe receives the services of the check's scope and a cancellation token; completing means healthy and throwing means unhealthy:
+- **Writing one.** A provider package contributes its own check with `services.AddHeadlessHealthCheck(name, probe, tags)`. A package that wants a different default, such as `Degraded` for a check whose failure leaves the host working, sets it with `services.ConfigureHeadlessHealthCheckDefault(name, options => ...)`: configuration and the application's `ConfigureHeadlessHealthCheck` override it whichever is registered first. The probe receives the services of the check's scope and a cancellation token; completing means healthy and throwing means unhealthy:
 
   ```csharp
   services.AddHeadlessHealthCheck(
@@ -485,6 +500,91 @@ A provider package that talks to an external dependency contributes a readiness 
   | Azure blobs | [`AzureBlobStorageHealthCheck`](https://github.com/Xabaril/AspNetCore.Diagnostics.HealthChecks/blob/3b6abbd374a5d7bc8d209ff48bc38df947266054/src/HealthChecks.Azure.Storage.Blobs/AzureBlobStorageHealthCheck.cs): one page of containers, or a named container's properties | The provider's client; the same two probes |
 
   Every community check above takes `failureStatus`, `tags`, and `timeout` at registration; `HeadlessHealthCheckOptions` covers the same three. Prefer a community package when the app needs what these checks deliberately leave out: deciding health from a query's result (`HealthCheckResultBuilder`, for example replication lag), a check for a dependency no Headless provider owns, or a check against a connection string the app does not otherwise use. Register it next to the contributed checks under another name, or drop the contributed one with `RemoveHealthChecks`.
+
+#### Host manifest
+
+A host manifest is a JSON document that lists what each feature registered in the host: Messaging consumer identities with their effective tuning, Jobs functions with theirs. It is read from the same frozen registries the host runs, so it shows the values configuration applied, and it answers "what does this deployed host consume and run?" without starting it.
+
+Print it from the host's own entry point by replacing `RunAsync` with `RunHeadlessAsync(args)`:
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddHeadlessMessaging(setup => { /* ... */ });
+builder.Services.AddHeadlessJobs(options => { /* ... */ });
+
+var app = builder.Build();
+// ... middleware and endpoints ...
+
+return await app.RunHeadlessAsync(args);
+```
+
+```bash
+dotnet MyApp.dll describe | jq '.sections.jobs.functions[].name'
+```
+
+- **`describe` verb.** When the first argument is `describe`, `RunHeadlessAsync` (namespace `Microsoft.Extensions.Hosting`) builds the manifest instead of running the host and returns the exit code. Any other first argument runs the host as `RunAsync` does and returns 0. It disposes the host in both modes.
+- **Validates like a start, starts nothing.** It first runs options marked `ValidateOnStart`, then every `IHeadlessStartupValidator`, in the same order a real start does. It never starts a hosted service, so it opens no broker connection and claims no job. Only the entry point sees the host's real configuration sources, which is why the command runs there rather than in a separate tool.
+- **Needs no infrastructure.** Neither validation nor any section opens a connection, so `describe` succeeds when the broker and databases are unreachable or absent, for example in CI or on a laptop. Configuration still has to be valid: a missing RabbitMQ password, or two outboxes on one database, fails the command as it would fail a start.
+- **Output.** On success, standard output carries only the JSON document and the exit code is 0. On any failure (a validator, an options validation, or a section), standard output stays empty, `Host manifest failed: {message}` goes to standard error, and the exit code is 1.
+- **Console logging.** For hosts built with `HostApplicationBuilder` or `WebApplicationBuilder`, console log lines written during `describe` go to standard error. A host built with the legacy `Host.CreateDefaultBuilder` can still write Microsoft console logger lines to standard output during `describe`, because its configuration cannot be redirected after the build. `describe` then writes a warning to standard error before the manifest; filter the log lines out, or turn console logging off for the command.
+
+The document:
+
+```json
+{
+  "schemaVersion": 1,
+  "sections": {
+    "healthChecks": [
+      { "name": "messaging", "tags": ["headless", "messaging", "ready"], "failureStatus": "unhealthy" }
+    ],
+    "host": {
+      "applicationName": "Orders.Api",
+      "environment": "Production",
+      "applicationVersion": "2.4.0+9f2c1e7",
+      "headlessVersion": "0.9.0+c56441b",
+      "runtime": ".NET 10.0.13"
+    },
+    "jobs": { "functions": [] },
+    "messaging": { "consumers": [], "messages": [], "outboxes": [], "transports": {} }
+  }
+}
+```
+
+- `schemaVersion` is `HostManifest.SchemaVersion`; it changes only when a change would break a reader of the old shape.
+- **`host`** is always written: the host environment's application and environment names, the entry assembly's and Headless's informational versions (which carry the source revision when the build stamps one), and the .NET runtime. It names no machine and no address.
+- **`healthChecks`** is always written: every registered health check, ordered by name, with its sorted tags, its `failureStatus` (`unhealthy` or `degraded`), and `timeoutSeconds` when it has a timeout. It is read from the configured health check options without running a probe, so a check removed with `RemoveHealthChecks` is absent here as it is from the health endpoints.
+- `sections` has the two built-in sections and one property per registered section, sorted ordinally by name. A feature that is not registered has no section, and a registered section named `host` or `healthChecks` fails the manifest. The [Messaging](messaging.md#host-manifest) and [Jobs](jobs.md#host-manifest) guides document their sections.
+- The manifest never carries connection strings, broker addresses, credentials, provider-specific transport configuration, or runtime state.
+
+`MapHeadlessHostManifest(pattern, authorizationPolicy)` in `Headless.Api.ServiceDefaults` serves the same document over HTTP, behind authorization by default; see [API & Web](api.md#host-manifest-endpoint). `HostManifest.WriteAsync(services, stream, cancellationToken)` writes it to any stream; both forms use it, so they serve identical documents.
+
+**Adding a section.** A feature implements `IHostManifestSection` (`Headless.Hosting`) and registers it as a singleton with `TryAddEnumerable`:
+
+```csharp
+internal sealed class SearchHostManifestSection(SearchIndexRegistry registry) : IHostManifestSection
+{
+    public string Name => "search";
+
+    public void Write(Utf8JsonWriter writer)
+    {
+        writer.WriteStartObject();
+        writer.WriteStartArray("indexes");
+        foreach (var index in registry.Indexes.OrderBy(x => x.Name, StringComparer.Ordinal))
+        {
+            writer.WriteStringValue(index.Name);
+        }
+        writer.WriteEndArray();
+        writer.WriteEndObject();
+    }
+}
+
+services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostManifestSection, SearchHostManifestSection>());
+```
+
+- `Write` writes exactly one complete JSON value, normally an object, after the section's property name.
+- Read only state that exists once the host is built. Never start a hosted service, open a connection, or call a broker.
+- Write entries in a stable order, and omit a setting that does not apply to an entry instead of writing `null`, so two manifests of the same configuration diff cleanly.
+- Two sections with the same `Name` fail the manifest. A section that throws fails it too, with a message that names the section and carries the section's error text, so never show that message to an untrusted caller. The whole document is built in memory first, so a failure writes nothing to the destination stream.
 
 #### Required Services
 
@@ -687,7 +787,7 @@ Redis utilities and Lua script management for StackExchange.Redis.
 
 ### API and behavior
 
-- `HeadlessConnectionMultiplexerExtensions` - Helper extensions for Redis connections; `PingAsync` sends `PING` through the default database and returns the round-trip time (its token abandons the wait; the command itself ends through the multiplexer timeout), `ProbeEndpointsAsync` sends `PING` to every configured endpoint and checks `CLUSTER INFO` reports `cluster_state:ok` on cluster nodes (the Redis readiness checks use it), and `CountAllKeysAsync` accepts an optional trailing `CancellationToken`, checks it before endpoint discovery and between endpoint queries, and cannot interrupt an in-flight `DBSIZE` because StackExchange.Redis exposes no cancellation for that command
+- `HeadlessConnectionMultiplexerExtensions` - Helper extensions for Redis connections; `PingAsync` sends `PING` through the default database and returns the round-trip time (its token abandons the wait; the command itself ends through the multiplexer timeout), `ProbeEndpointsAsync` sends `PING` to every configured endpoint and checks `CLUSTER INFO` reports `cluster_state:ok` on cluster nodes (the Redis readiness checks use it), `GetEndpointsKey` names the deployment by its sorted configured endpoints, with no credential and without contacting the server (the Redis readiness checks collapse on it), and `CountAllKeysAsync` accepts an optional trailing `CancellationToken`, checks it before endpoint discovery and between endpoint queries, and cannot interrupt an in-flight `DBSIZE` because StackExchange.Redis exposes no cancellation for that command
 - `RedisScriptDefinition` - Base type for named Lua script definitions
 - `HeadlessRedisScriptsLoader` - Generic Lua script loader and evaluator
 - Repository integration tests retain an internal destructive `FlushAllAsync` helper; it is not part of the package's supported public API

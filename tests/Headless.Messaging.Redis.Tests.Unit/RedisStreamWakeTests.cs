@@ -105,7 +105,12 @@ public sealed class RedisStreamWakeTests : TestBase
     {
         // given
         var sut = _CreateManager();
-        await using var enumerator = sut.PollStreamsFromAsync([new(_Stream, "0-0")], _PollDelay, AbortToken)
+        await using var enumerator = sut.PollStreamsFromAsync(
+                [new(_Stream, "0-0")],
+                _PollDelay,
+                onRead: null,
+                AbortToken
+            )
             .GetAsyncEnumerator(AbortToken);
         (await enumerator.MoveNextAsync()).Should().BeTrue();
 
@@ -135,7 +140,12 @@ public sealed class RedisStreamWakeTests : TestBase
     {
         // given
         var sut = _CreateManager(options => options.WakeConsumersOnPublish = false);
-        await using var enumerator = sut.PollStreamsFromAsync([new(_Stream, "0-0")], _PollDelay, AbortToken)
+        await using var enumerator = sut.PollStreamsFromAsync(
+                [new(_Stream, "0-0")],
+                _PollDelay,
+                onRead: null,
+                AbortToken
+            )
             .GetAsyncEnumerator(AbortToken);
         (await enumerator.MoveNextAsync()).Should().BeTrue();
 

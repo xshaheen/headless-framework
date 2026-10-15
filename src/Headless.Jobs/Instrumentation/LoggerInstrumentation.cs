@@ -25,7 +25,7 @@ internal sealed class LoggerInstrumentation(
 
     public override Activity? StartJobActivity(string activityName, JobExecutionState context)
     {
-        var activity = JobsDiagnostics.Start(activityName);
+        var activity = JobsDiagnostics.StartExecution(activityName, context.TraceParent);
 
         if (activity != null)
         {
@@ -58,25 +58,6 @@ internal sealed class LoggerInstrumentation(
         }
 
         return activity;
-    }
-
-    public override void LogJobEnqueued(string jobType, string functionName, Guid jobId, string? enqueuedFrom = null)
-    {
-        using var activity = JobsDiagnostics.Start("job.enqueue");
-        activity?.SetTag("headless.job.id", jobId.ToString());
-        activity?.SetTag("headless.job.type", jobType);
-        activity?.SetTag("headless.job.function", functionName);
-
-        // Get detailed caller information for OpenTelemetry
-        var callerInfo = enqueuedFrom;
-        if (string.IsNullOrEmpty(callerInfo))
-        {
-            callerInfo = logger.IsEnabled(LogLevel.Information) ? CallerInfoHelper.GetCallerInfo(6) : null;
-        }
-
-        activity?.SetTag("headless.job.enqueued_from", callerInfo);
-
-        base.LogJobEnqueued(jobType, functionName, jobId, callerInfo);
     }
 
     public override void LogJobCompleted(Guid jobId, string functionName, long executionTimeMs, bool success)

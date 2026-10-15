@@ -179,7 +179,8 @@ public sealed class CronRecoveryContextPropagationTests : TestBase
             JobFunctionRegistryBuilder.Build([], [], []),
             new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
-            NullLogger<JobsExecutionTaskHandler>.Instance
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], []))
         );
 
         await handler.ExecuteTaskAsync(state, isDue: true, cancellationToken: AbortToken);

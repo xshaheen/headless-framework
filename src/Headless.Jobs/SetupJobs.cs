@@ -286,6 +286,9 @@ public static class SetupJobs
                     sp.GetRequiredService<ILogger<JobsTaskScheduler>>()
                 );
             });
+
+            // Readiness only describes a host that runs jobs; a scheduling-only host has no loop to report on.
+            JobsHealthChecks.Add(services);
         }
         else
         {
@@ -308,8 +311,17 @@ public static class SetupJobs
                 defaultFailurePolicy
             )
         );
+        services.TryAddSingleton(provider => new JobsFunctionTagBound(
+            provider.GetRequiredService<JobFunctionRegistry>()
+        ));
         services.TryAddSingleton(provider => provider.GetRequiredService<JobFunctionRegistry>().RunFilter);
         services.TryAddSingleton(provider => provider.GetRequiredService<JobFunctionRegistry>().ClusterConcurrency);
+        var runsJobs = optionInstance.RegisterBackgroundServices;
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHostManifestSection, JobsHostManifestSection>(provider =>
+                new(provider.GetRequiredService<JobFunctionRegistry>(), schedulerOptionsBuilder, runsJobs)
+            )
+        );
 
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);
         optionInstance.DashboardServiceAction?.Invoke(services, requestSerializationOptions);

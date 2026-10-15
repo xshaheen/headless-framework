@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace Headless.Messaging.Redis;
 
@@ -46,7 +48,11 @@ internal sealed class RedisBusTransport(
         }
         catch (Exception ex)
         {
-            return OperateResult.Failed(new PublisherSentFailedException(ex.Message, ex));
+            var failure = new PublisherSentFailedException(ex.Message, ex);
+
+            return RedisBrokerFailures.IsUnreachable(ex)
+                ? OperateResult.BrokerUnreachable(failure)
+                : OperateResult.Failed(failure);
         }
     }
 

@@ -39,7 +39,8 @@ public sealed class UnregisteredFunctionReleaseTests : TestBase
             JobFunctionRegistryBuilder.Build([], [], []),
             new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
-            NullLogger<JobsExecutionTaskHandler>.Instance
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], []))
         );
 
         var state = new JobExecutionState
@@ -94,7 +95,8 @@ public sealed class UnregisteredFunctionReleaseTests : TestBase
             JobFunctionRegistryBuilder.Build([], [], []),
             new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
-            NullLogger<JobsExecutionTaskHandler>.Instance
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], []))
         );
 
         var parent = new JobExecutionState

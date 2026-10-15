@@ -437,6 +437,22 @@ internal static partial class LoggerExtensions
     public static partial void TransportConfigurationWarning(this ILogger logger, string reason);
 
     [LoggerMessage(
+        EventId = 122,
+        EventName = "TransportBrokerUnreachable",
+        Level = LogLevel.Warning,
+        Message = "The transport could not reach the broker and keeps retrying. --> {Reason}"
+    )]
+    public static partial void TransportBrokerUnreachable(this ILogger logger, string reason);
+
+    [LoggerMessage(
+        EventId = 123,
+        EventName = "TransportBrokerReachable",
+        Level = LogLevel.Information,
+        Message = "The transport reached the broker again. --> {Reason}"
+    )]
+    public static partial void TransportBrokerReachable(this ILogger logger, string reason);
+
+    [LoggerMessage(
         EventId = 56,
         Level = LogLevel.Error,
         Message = "Message (Name:{GetName},Consumer:{Consumer}) can not be found subscriber. Ensure a consumer with this identity is registered for the message."

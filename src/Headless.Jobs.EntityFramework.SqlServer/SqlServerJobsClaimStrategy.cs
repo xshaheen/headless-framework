@@ -92,6 +92,21 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             )
             .ConfigureAwait(false);
 
+        // Counted once the claim committed, so a transient retry of the claim is not a conflict. Only the candidate page
+        // the claim was asked for counts; candidates past it were never attempted.
+        if (JobsMetrics.ClaimConflictsEnabled)
+        {
+            JobsMetrics.ClaimConflicts(
+                JobsMetrics.ClaimStrategySqlServer,
+                JobsClaimConflicts.CountLost(
+                    timeJobs.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize),
+                    claim.Roots,
+                    _runFilter,
+                    _clusterConcurrency
+                )
+            );
+        }
+
         // The peek-hydrated tree may include non-idle nodes (and their tails) the claim did not lease; prune to
         // the claimed set (root + leased non-timed descendants) so nothing runs unclaimed — parity with the CAS path.
         var claimedIds = claim.LeasedIds.ToHashSet();
@@ -230,11 +245,12 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             yield break;
         }
 
-        var claimed = await _ExecuteWithRetryAsync(
+        var (claimed, lostCount) = await _ExecuteWithRetryAsync(
                 JobsClaimRetry.ClaimCronJobOccurrences,
                 async (attempt, ct) =>
                 {
                     CronJobOccurrenceEntity<TCronJob>[] attemptClaimed = [];
+                    var lost = 0;
                     await using var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
                         dbContextFactory,
                         attempt,
@@ -319,6 +335,13 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                                     .ConfigureAwait(false)
                             : null;
 
+                        // A lease this claim meant to take and could not: another node holds the occurrence or wrote the
+                        // instant first.
+                        if (lease && occurrenceId is null)
+                        {
+                            lost++;
+                        }
+
                         if (lease && occurrenceId is { } id)
                         {
                             claimedIds.Add(id);
@@ -354,11 +377,13 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     }
 
                     await claimTransaction.CommitAsync(ct).ConfigureAwait(false);
-                    return attemptClaimed;
+                    return (attemptClaimed, lost);
                 },
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        JobsMetrics.ClaimConflicts(JobsMetrics.ClaimStrategySqlServer, lostCount);
 
         foreach (var occurrence in claimed)
         {

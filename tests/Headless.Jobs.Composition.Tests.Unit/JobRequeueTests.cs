@@ -84,7 +84,7 @@ public sealed class JobRequeueTests : TestBase
         await store.AddTimeJobsAsync([job], AbortToken);
         (await store.GetEarliestTimeJobsAsync(AbortToken)).Jobs.Should().BeEmpty("a failed row is not claimable");
 
-        var outcome = await store.RequeueTimeJobAsync(job.Id, AbortToken);
+        var outcome = await store.RequeueTimeJobAsync(job.Id, traceParent: null, AbortToken);
 
         outcome.Should().Be(JobRequeueOutcome.Requeued);
         var requeued = await store.GetTimeJobByIdAsync(job.Id, AbortToken);
@@ -120,7 +120,7 @@ public sealed class JobRequeueTests : TestBase
         await store.AddTimeJobsAsync([job], AbortToken);
         var before = await store.GetTimeJobByIdAsync(job.Id, AbortToken);
 
-        var outcome = await store.RequeueTimeJobAsync(job.Id, AbortToken);
+        var outcome = await store.RequeueTimeJobAsync(job.Id, traceParent: null, AbortToken);
 
         outcome.Should().Be(JobRequeueOutcome.NotFailed);
         var after = await store.GetTimeJobByIdAsync(job.Id, AbortToken);
@@ -132,7 +132,9 @@ public sealed class JobRequeueTests : TestBase
     {
         var (store, _) = _Create();
 
-        (await store.RequeueTimeJobAsync(Guid.NewGuid(), AbortToken)).Should().Be(JobRequeueOutcome.NotFound);
+        (await store.RequeueTimeJobAsync(Guid.NewGuid(), traceParent: null, AbortToken))
+            .Should()
+            .Be(JobRequeueOutcome.NotFound);
     }
 
     [Fact]
@@ -145,8 +147,12 @@ public sealed class JobRequeueTests : TestBase
         parent.Children = [child];
         await store.AddTimeJobsAsync([parent], AbortToken);
 
-        (await store.RequeueTimeJobAsync(parent.Id, AbortToken)).Should().Be(JobRequeueOutcome.ChainMember);
-        (await store.RequeueTimeJobAsync(child.Id, AbortToken)).Should().Be(JobRequeueOutcome.ChainMember);
+        (await store.RequeueTimeJobAsync(parent.Id, traceParent: null, AbortToken))
+            .Should()
+            .Be(JobRequeueOutcome.ChainMember);
+        (await store.RequeueTimeJobAsync(child.Id, traceParent: null, AbortToken))
+            .Should()
+            .Be(JobRequeueOutcome.ChainMember);
 
         (await store.GetTimeJobByIdAsync(parent.Id, AbortToken))!.Status.Should().Be(JobStatus.Failed);
         (await store.GetTimeJobByIdAsync(child.Id, AbortToken))!.Status.Should().Be(JobStatus.Failed);
@@ -159,10 +165,14 @@ public sealed class JobRequeueTests : TestBase
         var current = await _FailedKeyedAsync(store, "current", isCurrent: true);
         var superseded = await _FailedKeyedAsync(store, "superseded", isCurrent: false);
 
-        (await store.RequeueTimeJobAsync(superseded, AbortToken)).Should().Be(JobRequeueOutcome.SupersededGeneration);
+        (await store.RequeueTimeJobAsync(superseded, traceParent: null, AbortToken))
+            .Should()
+            .Be(JobRequeueOutcome.SupersededGeneration);
         (await store.GetTimeJobByIdAsync(superseded, AbortToken))!.Status.Should().Be(JobStatus.Failed);
 
-        (await store.RequeueTimeJobAsync(current, AbortToken)).Should().Be(JobRequeueOutcome.Requeued);
+        (await store.RequeueTimeJobAsync(current, traceParent: null, AbortToken))
+            .Should()
+            .Be(JobRequeueOutcome.Requeued);
         var requeued = await store.GetTimeJobByIdAsync(current, AbortToken);
         requeued!.Status.Should().Be(JobStatus.Idle);
         requeued.IsCurrentGeneration.Should().BeTrue();
@@ -178,7 +188,9 @@ public sealed class JobRequeueTests : TestBase
         var outcomes = await Task.WhenAll(
             Enumerable
                 .Range(0, 16)
-                .Select(_ => Task.Run(() => store.RequeueTimeJobAsync(job.Id, AbortToken), AbortToken))
+                .Select(_ =>
+                    Task.Run(() => store.RequeueTimeJobAsync(job.Id, traceParent: null, AbortToken), AbortToken)
+                )
         );
 
         outcomes.Count(x => x == JobRequeueOutcome.Requeued).Should().Be(1);
@@ -186,7 +198,9 @@ public sealed class JobRequeueTests : TestBase
             .Where(x => x != JobRequeueOutcome.Requeued)
             .Should()
             .OnlyContain(x => x == JobRequeueOutcome.NotFailed || x == JobRequeueOutcome.Conflict);
-        (await store.RequeueTimeJobAsync(job.Id, AbortToken)).Should().Be(JobRequeueOutcome.NotFailed);
+        (await store.RequeueTimeJobAsync(job.Id, traceParent: null, AbortToken))
+            .Should()
+            .Be(JobRequeueOutcome.NotFailed);
     }
 
     #endregion
@@ -205,7 +219,7 @@ public sealed class JobRequeueTests : TestBase
             .Should()
             .BeEmpty("a failed occurrence is not claimable");
 
-        var outcome = await store.RequeueCronJobOccurrenceAsync(occurrence.Id, AbortToken);
+        var outcome = await store.RequeueCronJobOccurrenceAsync(occurrence.Id, traceParent: null, AbortToken);
 
         outcome.Should().Be(JobRequeueOutcome.Requeued);
         var requeued = (await store.GetAllCronJobOccurrencesAsync(x => x.Id == occurrence.Id, AbortToken)).Single();
@@ -235,7 +249,9 @@ public sealed class JobRequeueTests : TestBase
         var occurrence = _Occurrence(definition, _FailedAt, status);
         await store.InsertCronJobOccurrencesAsync([occurrence], AbortToken);
 
-        (await store.RequeueCronJobOccurrenceAsync(occurrence.Id, AbortToken)).Should().Be(JobRequeueOutcome.NotFailed);
+        (await store.RequeueCronJobOccurrenceAsync(occurrence.Id, traceParent: null, AbortToken))
+            .Should()
+            .Be(JobRequeueOutcome.NotFailed);
 
         var after = (await store.GetAllCronJobOccurrencesAsync(x => x.Id == occurrence.Id, AbortToken)).Single();
         after.Status.Should().Be(status);
@@ -247,7 +263,9 @@ public sealed class JobRequeueTests : TestBase
     {
         var (store, _) = _Create();
 
-        (await store.RequeueCronJobOccurrenceAsync(Guid.NewGuid(), AbortToken)).Should().Be(JobRequeueOutcome.NotFound);
+        (await store.RequeueCronJobOccurrenceAsync(Guid.NewGuid(), traceParent: null, AbortToken))
+            .Should()
+            .Be(JobRequeueOutcome.NotFound);
     }
 
     [Fact]
@@ -260,7 +278,9 @@ public sealed class JobRequeueTests : TestBase
         await store.InsertCronJobOccurrencesAsync([occurrence], AbortToken);
         await store.RemoveCronJobsAsync([definition.Id], AbortToken);
 
-        (await store.RequeueCronJobOccurrenceAsync(occurrence.Id, AbortToken)).Should().Be(JobRequeueOutcome.NotFound);
+        (await store.RequeueCronJobOccurrenceAsync(occurrence.Id, traceParent: null, AbortToken))
+            .Should()
+            .Be(JobRequeueOutcome.NotFound);
 
         (await store.GetAllCronJobOccurrencesAsync(x => x.Id == occurrence.Id, AbortToken))
             .Single()
@@ -278,7 +298,9 @@ public sealed class JobRequeueTests : TestBase
         var running = _Occurrence(definition, _FailedAt.AddMinutes(30), JobStatus.InProgress);
         await store.InsertCronJobOccurrencesAsync([failed, running], AbortToken);
 
-        (await store.RequeueCronJobOccurrenceAsync(failed.Id, AbortToken)).Should().Be(JobRequeueOutcome.Overlap);
+        (await store.RequeueCronJobOccurrenceAsync(failed.Id, traceParent: null, AbortToken))
+            .Should()
+            .Be(JobRequeueOutcome.Overlap);
         (await store.GetAllCronJobOccurrencesAsync(x => x.Id == failed.Id, AbortToken))
             .Single()
             .Status.Should()
@@ -288,7 +310,9 @@ public sealed class JobRequeueTests : TestBase
         var finished = _Occurrence(definition, _FailedAt.AddMinutes(30), JobStatus.Succeeded);
         await store.InsertCronJobOccurrencesAsync([finished], AbortToken);
 
-        (await store.RequeueCronJobOccurrenceAsync(failed.Id, AbortToken)).Should().Be(JobRequeueOutcome.Requeued);
+        (await store.RequeueCronJobOccurrenceAsync(failed.Id, traceParent: null, AbortToken))
+            .Should()
+            .Be(JobRequeueOutcome.Requeued);
     }
 
     [Fact]
@@ -301,7 +325,9 @@ public sealed class JobRequeueTests : TestBase
         var running = _Occurrence(definition, _FailedAt.AddMinutes(30), JobStatus.InProgress);
         await store.InsertCronJobOccurrencesAsync([failed, running], AbortToken);
 
-        (await store.RequeueCronJobOccurrenceAsync(failed.Id, AbortToken)).Should().Be(JobRequeueOutcome.Requeued);
+        (await store.RequeueCronJobOccurrenceAsync(failed.Id, traceParent: null, AbortToken))
+            .Should()
+            .Be(JobRequeueOutcome.Requeued);
     }
 
     [Fact]
@@ -314,7 +340,9 @@ public sealed class JobRequeueTests : TestBase
         var live = _Occurrence(definition, _FailedAt, JobStatus.Idle);
         await store.InsertCronJobOccurrencesAsync([failed, live], AbortToken);
 
-        (await store.RequeueCronJobOccurrenceAsync(failed.Id, AbortToken)).Should().Be(JobRequeueOutcome.Conflict);
+        (await store.RequeueCronJobOccurrenceAsync(failed.Id, traceParent: null, AbortToken))
+            .Should()
+            .Be(JobRequeueOutcome.Conflict);
         (await store.GetAllCronJobOccurrencesAsync(x => x.Id == failed.Id, AbortToken))
             .Single()
             .Status.Should()
@@ -333,7 +361,12 @@ public sealed class JobRequeueTests : TestBase
         var outcomes = await Task.WhenAll(
             Enumerable
                 .Range(0, 16)
-                .Select(_ => Task.Run(() => store.RequeueCronJobOccurrenceAsync(failed.Id, AbortToken), AbortToken))
+                .Select(_ =>
+                    Task.Run(
+                        () => store.RequeueCronJobOccurrenceAsync(failed.Id, traceParent: null, AbortToken),
+                        AbortToken
+                    )
+                )
         );
 
         outcomes.Count(x => x == JobRequeueOutcome.Requeued).Should().Be(1);

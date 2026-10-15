@@ -20,9 +20,16 @@ namespace Headless.Messaging;
 /// <param name="succeeded">A value indicating whether the operation succeeded.</param>
 /// <param name="exception">The exception that occurred during the operation, or null if successful.</param>
 /// <param name="error">Additional error details, or null if no structured error information is available.</param>
+/// <param name="isBrokerUnreachable">
+/// Whether the operation failed because the broker could not be reached, as opposed to the broker refusing it.
+/// </param>
 [PublicAPI]
-public readonly struct OperateResult(bool succeeded, Exception? exception = null, OperateError? error = null)
-    : IEquatable<OperateResult>
+public readonly struct OperateResult(
+    bool succeeded,
+    Exception? exception = null,
+    OperateError? error = null,
+    bool isBrokerUnreachable = false
+) : IEquatable<OperateResult>
 {
     private readonly OperateError? _operateError = error;
 
@@ -36,6 +43,17 @@ public readonly struct OperateResult(bool succeeded, Exception? exception = null
     /// This is typically populated when <see cref="Succeeded"/> is false.
     /// </summary>
     public Exception? Exception { get; } = exception;
+
+    /// <summary>
+    /// Gets whether the operation failed because the broker could not be reached: a connection, socket, or timeout
+    /// failure, or a broker that reports itself down. A refusal the broker answered with, such as a missing topic, a
+    /// rejected message, or one too large, is <see langword="false" />.
+    /// </summary>
+    /// <remarks>
+    /// Only these failures count toward the host's broker reachability, so one message the broker refuses cannot take
+    /// a host out of readiness. A transport sets it with <see cref="BrokerUnreachable" />.
+    /// </remarks>
+    public bool IsBrokerUnreachable { get; } = isBrokerUnreachable;
 
     /// <summary>
     /// Gets a static <see cref="OperateResult"/> representing a successful operation.
@@ -54,6 +72,18 @@ public readonly struct OperateResult(bool succeeded, Exception? exception = null
     }
 
     /// <summary>
+    /// Creates a failed <see cref="OperateResult"/> for an operation that could not reach the broker, which counts toward
+    /// the host's broker reachability (see <see cref="IsBrokerUnreachable" />).
+    /// </summary>
+    /// <param name="ex">The connection, socket, or timeout failure.</param>
+    /// <param name="errors">Optional structured error information describing the failure.</param>
+    /// <returns>A failed <see cref="OperateResult"/> with <see cref="IsBrokerUnreachable" /> set.</returns>
+    public static OperateResult BrokerUnreachable(Exception ex, OperateError? errors = null)
+    {
+        return new(succeeded: false, ex, errors, isBrokerUnreachable: true);
+    }
+
+    /// <summary>
     /// Returns a string representation of the operation result.
     /// </summary>
     /// <returns>
@@ -69,10 +99,11 @@ public readonly struct OperateResult(bool succeeded, Exception? exception = null
     /// the wrapped exception reference, and the structured error.
     /// </summary>
     /// <param name="other">The result to compare with.</param>
-    /// <returns>true if both results match on all three fields; otherwise false.</returns>
+    /// <returns>true if both results match on every field; otherwise false.</returns>
     public bool Equals(OperateResult other)
     {
         return Succeeded == other.Succeeded
+            && IsBrokerUnreachable == other.IsBrokerUnreachable
             && ReferenceEquals(Exception, other.Exception)
             && Nullable.Equals(_operateError, other._operateError);
     }
@@ -89,7 +120,7 @@ public readonly struct OperateResult(bool succeeded, Exception? exception = null
     /// <returns>A hash code combining the error, success status, and exception information.</returns>
     public override int GetHashCode()
     {
-        return HashCode.Combine(_operateError, Succeeded, Exception);
+        return HashCode.Combine(_operateError, Succeeded, IsBrokerUnreachable, Exception);
     }
 
     public static bool operator ==(OperateResult left, OperateResult right) => left.Equals(right);

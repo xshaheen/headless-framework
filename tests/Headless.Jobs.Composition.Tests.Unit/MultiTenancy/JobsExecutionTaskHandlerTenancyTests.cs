@@ -36,6 +36,7 @@ public sealed class JobsExecutionTaskHandlerTenancyTests : TestBase
             new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
             NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], [])),
             currentTenant: tenant
         );
 
@@ -115,6 +116,7 @@ public sealed class JobsExecutionTaskHandlerTenancyTests : TestBase
             new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
             NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], [])),
             retryOptions,
             tenant
         );
@@ -171,6 +173,7 @@ public sealed class JobsExecutionTaskHandlerTenancyTests : TestBase
             new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
             NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], [])),
             new JobsRetryOptions(),
             tenant,
             Microsoft.Extensions.Options.Options.Create(new JobsTenancyOptions { PropagateTenant = true })

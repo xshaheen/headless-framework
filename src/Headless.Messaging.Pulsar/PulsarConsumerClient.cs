@@ -33,6 +33,7 @@ internal sealed class PulsarConsumerClient(
     private readonly bool _everyInstance = request.Kind is ConsumerSubscriptionKind.EveryInstance;
     private readonly SemaphoreSlim _semaphore = new(request.Concurrency);
     private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly BrokerReachabilityReporter _reachability = new();
 #pragma warning disable CA2213 // Disposing a transition gate can race queued pause/resume callers during shutdown.
     private readonly SemaphoreSlim _pauseResumeLock = new(1, 1);
 #pragma warning restore CA2213
@@ -228,6 +229,7 @@ internal sealed class PulsarConsumerClient(
 
                     consumerResult = await _consumerClient!.ReceiveAsync(linkedReceiveCts!.Token).ConfigureAwait(false);
                     retryDelay = TimeSpan.FromMilliseconds(200);
+                    _reachability.ReportSuccess(OnLogCallback);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -244,7 +246,7 @@ internal sealed class PulsarConsumerClient(
                 }
                 catch (Exception e)
                 {
-                    OnLogCallback!(new LogMessageEventArgs { LogType = MqLogType.ConsumeError, Reason = e.Message });
+                    _reachability.ReportFailure(OnLogCallback, e);
                     retryDelay = _NextBackoff(retryDelay);
                     await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
                     continue;
@@ -360,18 +362,20 @@ internal sealed class PulsarConsumerClient(
         }
     }
 
-    // Pulsar.Client recovers a lost connection on its own and resubscribes, but a non-durable subscription keeps nothing
+    // Pulsar.Client recovers a lost connection on its own and resubscribes, and a receive waits quietly meanwhile, so
+    // the monitor's connection state is how the host learns of an outage. A non-durable subscription also keeps nothing
     // for the time it was away, so the core must learn about each recovery to tell the every-instance consumer.
     private Task _StartReconnectMonitor(CancellationToken cancellationToken)
     {
-        if (!_everyInstance || _consumerClient is null)
+        if (_consumerClient is null)
         {
             return Task.CompletedTask;
         }
 
         return PulsarReconnectMonitor.RunAsync(
             _consumerClient,
-            token => Volatile.Read(ref _onReestablished)?.Invoke(token) ?? Task.CompletedTask,
+            _everyInstance ? token => Volatile.Read(ref _onReestablished)?.Invoke(token) ?? Task.CompletedTask : null,
+            _ReportConnectionState,
             e =>
                 OnLogCallback?.Invoke(
                     new LogMessageEventArgs
@@ -383,6 +387,21 @@ internal sealed class PulsarConsumerClient(
             _timeProvider,
             cancellationToken
         );
+    }
+
+    private void _ReportConnectionState(bool connected)
+    {
+        if (connected)
+        {
+            _reachability.ReportSuccess(OnLogCallback);
+        }
+        else
+        {
+            _reachability.ReportFailure(
+                OnLogCallback,
+                "The Pulsar consumer lost its broker connection and is reconnecting."
+            );
+        }
     }
 
     public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)

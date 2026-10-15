@@ -47,6 +47,15 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         return _instrumentation ??= serviceProvider.GetService<IJobsInstrumentation>();
     }
 
+    // Resolved lazily, like the instrumentation above, so only the recovery and rebase paths that record a metric need
+    // it; AddHeadlessJobs always registers the host's bound.
+    private JobsFunctionTagBound? _functionTags;
+
+    private JobsFunctionTagBound _ResolveFunctionTags()
+    {
+        return _functionTags ??= serviceProvider.GetRequiredService<JobsFunctionTagBound>();
+    }
+
     private readonly TimeSpan _strandedSweepInterval = schedulerOptions.FallbackIntervalChecker;
 
     // Claim the sweep slot at most once per FallbackIntervalChecker. GetNextJobs is the scheduler's hot path
@@ -249,6 +258,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             ContractVersion = timeJob.ContractVersion,
             CorrelationId = timeJob.CorrelationId,
             CausationId = timeJob.CausationId,
+            TraceParent = timeJob.TraceParent,
             JobId = timeJob.Id,
             Type = JobType.TimeJob,
             Retries = timeJob.Retries,
@@ -278,6 +288,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             ContractVersion = child.ContractVersion,
             CorrelationId = child.CorrelationId,
             CausationId = child.CausationId,
+            TraceParent = child.TraceParent,
             JobId = child.Id,
             Type = JobType.TimeJob,
             Retries = child.Retries,
@@ -735,6 +746,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             );
 
         JobsMetrics.CronOccurrencesSkipped(
+            _ResolveFunctionTags(),
             JobsMetrics.SkipReasonMissedRun,
             candidate.FunctionName,
             recovery.SkippedOccurrenceCount
@@ -744,7 +756,12 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         {
             // The coalesced run was established and then recorded as skipped: an earlier occurrence is still
             // unfinished and the definition forbids overlap. Nothing is left to claim.
-            JobsMetrics.CronOccurrencesSkipped(JobsMetrics.SkipReasonOverlap, candidate.FunctionName, 1);
+            JobsMetrics.CronOccurrencesSkipped(
+                _ResolveFunctionTags(),
+                JobsMetrics.SkipReasonOverlap,
+                candidate.FunctionName,
+                1
+            );
             _ResolveInstrumentation()
                 ?.LogCronOccurrenceSkippedForOverlap(
                     candidate.CronJobId,
@@ -867,7 +884,12 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         {
             // The skipped row already accounts for the instant and the position moved past it; the claim path must
             // never see it.
-            JobsMetrics.CronOccurrencesSkipped(JobsMetrics.SkipReasonOverlap, candidate.FunctionName, 1);
+            JobsMetrics.CronOccurrencesSkipped(
+                _ResolveFunctionTags(),
+                JobsMetrics.SkipReasonOverlap,
+                candidate.FunctionName,
+                1
+            );
 
             if (materialized.OccurrenceId is { } skippedId)
             {
@@ -1184,13 +1206,30 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     public Task<bool?> IsTimeJobCancellationRequestedAsync(Guid jobId, CancellationToken cancellationToken = default) =>
         persistenceProvider.IsTimeJobCancellationRequestedAsync(jobId, cancellationToken);
 
-    public Task<JobRequeueOutcome> RequeueTimeJobAsync(Guid jobId, CancellationToken cancellationToken = default) =>
-        persistenceProvider.RequeueTimeJobAsync(jobId, cancellationToken);
+    // A requeue is an operator decision to run the row again, so it is the new cause: the rerun links to the requeue
+    // request rather than to whatever originally scheduled the row.
+    public async Task<JobRequeueOutcome> RequeueTimeJobAsync(Guid jobId, CancellationToken cancellationToken = default)
+    {
+        using var scheduleActivity = JobsDiagnostics.StartSchedule(JobType.TimeJob, function: null);
+        scheduleActivity?.SetTag("headless.job.id", jobId.ToString());
 
-    public Task<JobRequeueOutcome> RequeueCronJobOccurrenceAsync(
+        return await persistenceProvider
+            .RequeueTimeJobAsync(jobId, JobTraceParent.Capture(scheduleActivity), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<JobRequeueOutcome> RequeueCronJobOccurrenceAsync(
         Guid occurrenceId,
         CancellationToken cancellationToken = default
-    ) => persistenceProvider.RequeueCronJobOccurrenceAsync(occurrenceId, cancellationToken);
+    )
+    {
+        using var scheduleActivity = JobsDiagnostics.StartSchedule(JobType.CronJobOccurrence, function: null);
+        scheduleActivity?.SetTag("headless.job.id", occurrenceId.ToString());
+
+        return await persistenceProvider
+            .RequeueCronJobOccurrenceAsync(occurrenceId, JobTraceParent.Capture(scheduleActivity), cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     public async Task<bool> PauseCronJobAsync(Guid cronJobId, CancellationToken cancellationToken = default)
     {

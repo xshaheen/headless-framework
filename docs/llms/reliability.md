@@ -147,6 +147,7 @@ var wait = definition.GetDelayedRetryDelay(delayedAttempt: 3); // about 120 s, Â
 | `FailurePolicyBuilder` | `Immediate(retries)`, `Delayed(retries, initialDelay, maxDelay)`, `FailOn<TException>()`, `FailWhen(predicate)`, `Build()`. A second `Immediate` or `Delayed` call replaces the tier. |
 | `FailurePolicyDefinition` | Sealed and immutable. `ImmediateRetries`, `DelayedRetries`, `DelayedInitialDelay`, `DelayedMaxDelay`, `TotalAttempts`, `FailOnExceptionTypes`, `FailWhenRuleCount`, `GetDelayedRetryBaseDelay`, `GetDelayedRetryDelay`, `ShouldFail`, `With`, and `None`. `Create<TPolicy>()` builds a policy type's definition, and `Create(configure)` builds one described inline on a fresh builder. |
 | `FailurePolicyOverrides` | Nullable numeric values that `With` applies over a resolved definition. `TryParse` reads them from configuration key/value settings. |
+| `FailurePolicyDefinitionExtensions` | `definition.WriteDescription(Utf8JsonWriter)` writes the policy as one JSON object value: `immediateRetries` and `delayedRetries`; `delayedInitialDelaySeconds` and `delayedMaxDelaySeconds` only when `DelayedRetries` is above zero; `failOn` (full type names, declaration order) and `failWhenRules` (a count, since predicates are code) only when declared. The Messaging and Jobs host manifests write each `failurePolicy` with it. |
 
 ### Design constraints
 

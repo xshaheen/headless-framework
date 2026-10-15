@@ -12,11 +12,6 @@ internal abstract class JobsBaseLoggerInstrumentation(ILogger logger, IJobsOwner
 
     public abstract Activity? StartJobActivity(string activityName, JobExecutionState context);
 
-    public virtual void LogJobEnqueued(string jobType, string functionName, Guid jobId, string? enqueuedFrom = null)
-    {
-        logger.JobEnqueued(jobType, functionName, jobId, enqueuedFrom ?? "Unknown");
-    }
-
     public virtual void LogJobStarted(Guid jobId, string functionName, string jobType)
     {
         logger.JobStarted(jobType, functionName, jobId);
@@ -123,19 +118,6 @@ internal abstract class JobsBaseLoggerInstrumentation(ILogger logger, IJobsOwner
 
 internal static partial class JobsBaseLoggerInstrumentationLog
 {
-    [LoggerMessage(
-        EventId = 1000,
-        Level = LogLevel.Information,
-        Message = "Jobs Job enqueued: {JobType} - {Function} ({JobId}) from {EnqueuedFrom}"
-    )]
-    public static partial void JobEnqueued(
-        this ILogger logger,
-        string jobType,
-        string function,
-        Guid jobId,
-        string enqueuedFrom
-    );
-
     [LoggerMessage(
         EventId = 1001,
         Level = LogLevel.Information,

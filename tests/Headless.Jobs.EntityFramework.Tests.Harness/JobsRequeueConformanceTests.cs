@@ -34,7 +34,9 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
             await persistence.AddTimeJobsAsync([job], ct);
             (await persistence.GetEarliestTimeJobsAsync(ct)).Jobs.Should().BeEmpty("a failed row is not claimable");
 
-            (await persistence.RequeueTimeJobAsync(job.Id, ct)).Should().Be(JobRequeueOutcome.Requeued);
+            (await persistence.RequeueTimeJobAsync(job.Id, traceParent: null, ct))
+                .Should()
+                .Be(JobRequeueOutcome.Requeued);
 
             var requeued = await persistence.GetTimeJobByIdAsync(job.Id, ct);
             requeued!.Status.Should().Be(JobStatus.Idle);
@@ -71,7 +73,7 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
         var job = _FailedJob();
         await persistence.AddTimeJobsAsync([job], ct);
 
-        (await persistence.RequeueTimeJobAsync(job.Id, ct)).Should().Be(JobRequeueOutcome.Requeued);
+        (await persistence.RequeueTimeJobAsync(job.Id, traceParent: null, ct)).Should().Be(JobRequeueOutcome.Requeued);
 
         (await persistence.GetTimeJobByIdAsync(job.Id, ct))!
             .ExecutionTime.Should()
@@ -94,7 +96,9 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
             await persistence.AddTimeJobsAsync([job], ct);
             var before = await persistence.GetTimeJobByIdAsync(job.Id, ct);
 
-            (await persistence.RequeueTimeJobAsync(job.Id, ct)).Should().Be(JobRequeueOutcome.NotFailed);
+            (await persistence.RequeueTimeJobAsync(job.Id, traceParent: null, ct))
+                .Should()
+                .Be(JobRequeueOutcome.NotFailed);
 
             var after = await persistence.GetTimeJobByIdAsync(job.Id, ct);
             after!.Status.Should().Be(status);
@@ -102,7 +106,9 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
             after.ExecutionTime.Should().Be(before.ExecutionTime);
         }
 
-        (await persistence.RequeueTimeJobAsync(Guid.NewGuid(), ct)).Should().Be(JobRequeueOutcome.NotFound);
+        (await persistence.RequeueTimeJobAsync(Guid.NewGuid(), traceParent: null, ct))
+            .Should()
+            .Be(JobRequeueOutcome.NotFound);
     }
 
     /// <summary>A chain parent and a chain child are refused.</summary>
@@ -119,8 +125,12 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
         parent.Children = [child];
         await persistence.AddTimeJobsAsync([parent], ct);
 
-        (await persistence.RequeueTimeJobAsync(parent.Id, ct)).Should().Be(JobRequeueOutcome.ChainMember);
-        (await persistence.RequeueTimeJobAsync(child.Id, ct)).Should().Be(JobRequeueOutcome.ChainMember);
+        (await persistence.RequeueTimeJobAsync(parent.Id, traceParent: null, ct))
+            .Should()
+            .Be(JobRequeueOutcome.ChainMember);
+        (await persistence.RequeueTimeJobAsync(child.Id, traceParent: null, ct))
+            .Should()
+            .Be(JobRequeueOutcome.ChainMember);
 
         (await persistence.GetTimeJobByIdAsync(parent.Id, ct))!.Status.Should().Be(JobStatus.Failed);
         (await persistence.GetTimeJobByIdAsync(child.Id, ct))!.Status.Should().Be(JobStatus.Failed);
@@ -142,12 +152,14 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
         await _MarkTimeJobFailedAsync(first.RunId!.Value, ct);
         await _MarkTimeJobFailedAsync(second.RunId!.Value, ct);
 
-        (await persistence.RequeueTimeJobAsync(first.RunId.Value, ct))
+        (await persistence.RequeueTimeJobAsync(first.RunId.Value, traceParent: null, ct))
             .Should()
             .Be(JobRequeueOutcome.SupersededGeneration);
         (await persistence.GetTimeJobByIdAsync(first.RunId.Value, ct))!.Status.Should().Be(JobStatus.Failed);
 
-        (await persistence.RequeueTimeJobAsync(second.RunId.Value, ct)).Should().Be(JobRequeueOutcome.Requeued);
+        (await persistence.RequeueTimeJobAsync(second.RunId.Value, traceParent: null, ct))
+            .Should()
+            .Be(JobRequeueOutcome.Requeued);
         var requeued = await persistence.GetTimeJobByIdAsync(second.RunId.Value, ct);
         requeued!.Status.Should().Be(JobStatus.Idle);
         requeued.IsCurrentGeneration.Should().BeTrue();
@@ -165,7 +177,9 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
         await persistence.AddTimeJobsAsync([job], ct);
 
         var outcomes = await Task.WhenAll(
-            Enumerable.Range(0, 8).Select(_ => Task.Run(() => persistence.RequeueTimeJobAsync(job.Id, ct), ct))
+            Enumerable
+                .Range(0, 8)
+                .Select(_ => Task.Run(() => persistence.RequeueTimeJobAsync(job.Id, traceParent: null, ct), ct))
         );
 
         outcomes.Count(x => x == JobRequeueOutcome.Requeued).Should().Be(1);
@@ -194,7 +208,9 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
                 .Should()
                 .BeEmpty("a failed occurrence is not claimable");
 
-            (await persistence.RequeueCronJobOccurrenceAsync(failedId, ct)).Should().Be(JobRequeueOutcome.Requeued);
+            (await persistence.RequeueCronJobOccurrenceAsync(failedId, traceParent: null, ct))
+                .Should()
+                .Be(JobRequeueOutcome.Requeued);
 
             var requeued = (await persistence.GetAllCronJobOccurrencesAsync(x => x.Id == failedId, ct)).Single();
             requeued.Status.Should().Be(JobStatus.Idle);
@@ -226,9 +242,15 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
         var succeededId = await _SeedOccurrenceAsync(cronId, JobStatus.Succeeded, _Instant(-3), ct);
         var runningId = await _SeedOccurrenceAsync(cronId, JobStatus.InProgress, _Instant(-2), ct);
 
-        (await persistence.RequeueCronJobOccurrenceAsync(succeededId, ct)).Should().Be(JobRequeueOutcome.NotFailed);
-        (await persistence.RequeueCronJobOccurrenceAsync(runningId, ct)).Should().Be(JobRequeueOutcome.NotFailed);
-        (await persistence.RequeueCronJobOccurrenceAsync(Guid.NewGuid(), ct)).Should().Be(JobRequeueOutcome.NotFound);
+        (await persistence.RequeueCronJobOccurrenceAsync(succeededId, traceParent: null, ct))
+            .Should()
+            .Be(JobRequeueOutcome.NotFailed);
+        (await persistence.RequeueCronJobOccurrenceAsync(runningId, traceParent: null, ct))
+            .Should()
+            .Be(JobRequeueOutcome.NotFailed);
+        (await persistence.RequeueCronJobOccurrenceAsync(Guid.NewGuid(), traceParent: null, ct))
+            .Should()
+            .Be(JobRequeueOutcome.NotFound);
     }
 
     /// <summary>Skip overlap refuses while another occurrence runs; Allow requeues beside it.</summary>
@@ -247,12 +269,16 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
         var allowFailed = await _SeedOccurrenceAsync(allowId, JobStatus.Failed, _Instant(-3), ct);
         await _SeedOccurrenceAsync(allowId, JobStatus.InProgress, _Instant(-2), ct);
 
-        (await persistence.RequeueCronJobOccurrenceAsync(skipFailed, ct)).Should().Be(JobRequeueOutcome.Overlap);
+        (await persistence.RequeueCronJobOccurrenceAsync(skipFailed, traceParent: null, ct))
+            .Should()
+            .Be(JobRequeueOutcome.Overlap);
         (await persistence.GetAllCronJobOccurrencesAsync(x => x.Id == skipFailed, ct))
             .Single()
             .Status.Should()
             .Be(JobStatus.Failed);
-        (await persistence.RequeueCronJobOccurrenceAsync(allowFailed, ct)).Should().Be(JobRequeueOutcome.Requeued);
+        (await persistence.RequeueCronJobOccurrenceAsync(allowFailed, traceParent: null, ct))
+            .Should()
+            .Be(JobRequeueOutcome.Requeued);
     }
 
     /// <summary>Skip overlap accepts the requeue once no other occurrence is unfinished.</summary>
@@ -267,7 +293,9 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
         var failed = await _SeedOccurrenceAsync(cronId, JobStatus.Failed, _Instant(-3), ct);
         await _SeedOccurrenceAsync(cronId, JobStatus.Succeeded, _Instant(-2), ct);
 
-        (await persistence.RequeueCronJobOccurrenceAsync(failed, ct)).Should().Be(JobRequeueOutcome.Requeued);
+        (await persistence.RequeueCronJobOccurrenceAsync(failed, traceParent: null, ct))
+            .Should()
+            .Be(JobRequeueOutcome.Requeued);
     }
 
     /// <summary>A live row already holding the occurrence's instant refuses the requeue instead of violating the index.</summary>
@@ -283,7 +311,9 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
         var failed = await _SeedOccurrenceAsync(cronId, JobStatus.Failed, instant, ct);
         await _SeedOccurrenceAsync(cronId, JobStatus.Idle, instant, ct);
 
-        (await persistence.RequeueCronJobOccurrenceAsync(failed, ct)).Should().Be(JobRequeueOutcome.Conflict);
+        (await persistence.RequeueCronJobOccurrenceAsync(failed, traceParent: null, ct))
+            .Should()
+            .Be(JobRequeueOutcome.Conflict);
         (await persistence.GetAllCronJobOccurrencesAsync(x => x.Id == failed, ct))
             .Single()
             .Status.Should()
@@ -304,7 +334,9 @@ public abstract class JobsRequeueConformanceTests<TFixture>(TFixture fixture) : 
         var outcomes = await Task.WhenAll(
             Enumerable
                 .Range(0, 8)
-                .Select(_ => Task.Run(() => persistence.RequeueCronJobOccurrenceAsync(failed, ct), ct))
+                .Select(_ =>
+                    Task.Run(() => persistence.RequeueCronJobOccurrenceAsync(failed, traceParent: null, ct), ct)
+                )
         );
 
         outcomes.Count(x => x == JobRequeueOutcome.Requeued).Should().Be(1);
