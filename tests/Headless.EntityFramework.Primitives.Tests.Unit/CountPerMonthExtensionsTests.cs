@@ -6,6 +6,7 @@ using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Tests;
 
@@ -58,6 +59,76 @@ public sealed class CountPerMonthExtensionsTests : TestBase
         fixture.CommandLog.Commands.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task should_compile_date_only_count_per_month_once_for_any_dates()
+    {
+        // given
+        await using var fixture = await MonthCountFixture.CreateAsync(AbortToken);
+        await _CompilationsAsync(fixture, _ => new DateOnly(2026, 1, 15));
+        var sameDates = await _CompilationsAsync(fixture, _ => new DateOnly(2026, 1, 15));
+
+        // when
+        var distinctDates = await _CompilationsAsync(fixture, call => new DateOnly(2025, 1 + call, 15));
+
+        // then: the dates are query parameters, so new dates reuse the compiled query
+        distinctDates.Should().Be(sameDates);
+    }
+
+    [Fact]
+    public async Task should_compile_date_time_offset_count_per_month_once_for_any_dates()
+    {
+        // given
+        await using var fixture = await MonthCountFixture.CreateAsync(AbortToken);
+        var offset = TimeSpan.FromHours(2);
+        await _CompilationsAsync(fixture, _ => new DateTimeOffset(2026, 1, 15, 0, 0, 0, offset));
+        var sameDates = await _CompilationsAsync(fixture, _ => new DateTimeOffset(2026, 1, 15, 0, 0, 0, offset));
+
+        // when
+        var distinctDates = await _CompilationsAsync(
+            fixture,
+            call => new DateTimeOffset(2025, 1 + call, 15, 0, 0, 0, offset)
+        );
+
+        // then
+        distinctDates.Should().Be(sameDates);
+    }
+
+    private static async Task<int> _CompilationsAsync(MonthCountFixture fixture, Func<int, DateOnly> start)
+    {
+        fixture.Compilations = 0;
+
+        for (var call = 0; call < 3; call++)
+        {
+            var from = start(call);
+            _ = await fixture.Context.Rows.CountPerMonthAsync(
+                static row => row.DateOnlyValue,
+                from,
+                from.AddMonths(4),
+                AbortToken
+            );
+        }
+
+        return fixture.Compilations;
+    }
+
+    private static async Task<int> _CompilationsAsync(MonthCountFixture fixture, Func<int, DateTimeOffset> start)
+    {
+        fixture.Compilations = 0;
+
+        for (var call = 0; call < 3; call++)
+        {
+            var from = start(call);
+            _ = await fixture.Context.Rows.CountPerMonthAsync(
+                static row => row.DateTimeOffsetValue,
+                from,
+                from.AddMonths(4),
+                AbortToken
+            );
+        }
+
+        return fixture.Compilations;
+    }
+
     private static bool _IsGroupedCountSql(string sql)
     {
         return sql.Contains("GROUP BY", StringComparison.OrdinalIgnoreCase)
@@ -79,15 +150,23 @@ public sealed class CountPerMonthExtensionsTests : TestBase
 
         public CommandLog CommandLog { get; }
 
+        public int Compilations { get; set; }
+
         public static async Task<MonthCountFixture> CreateAsync(CancellationToken cancellationToken)
         {
             var connection = new SqliteConnection("DataSource=:memory:");
             await connection.OpenAsync(cancellationToken);
 
             var commandLog = new CommandLog();
+            MonthCountFixture? fixture = null;
             var options = new DbContextOptionsBuilder<MonthCountDbContext>()
                 .UseSqlite(connection)
                 .AddInterceptors(commandLog)
+                .LogTo(
+                    _ => fixture!.Compilations++,
+                    (id, _) => id == CoreEventId.QueryCompilationStarting,
+                    DbContextLoggerOptions.None
+                )
                 .Options;
             var context = new MonthCountDbContext(options);
 
@@ -123,7 +202,9 @@ public sealed class CountPerMonthExtensionsTests : TestBase
 
                 await context.SaveChangesAsync(cancellationToken);
 
-                return new(connection, context, commandLog);
+                fixture = new(connection, context, commandLog);
+
+                return fixture;
             }
             catch
             {
@@ -143,6 +224,15 @@ public sealed class CountPerMonthExtensionsTests : TestBase
     private sealed class MonthCountDbContext(DbContextOptions<MonthCountDbContext> options) : DbContext(options)
     {
         public DbSet<MonthCountRow> Rows => Set<MonthCountRow>();
+
+        // SQLite cannot compare DateTimeOffset columns; a binary column keeps the date-range predicate translatable.
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder
+                .Entity<MonthCountRow>()
+                .Property(x => x.DateTimeOffsetValue)
+                .HasConversion(new DateTimeOffsetToBinaryConverter());
+        }
     }
 
     private sealed class MonthCountRow

@@ -38,7 +38,6 @@ public static partial class HeadlessQueryableExtensions
         var first = last.AddMonths(-months);
 
         var entityType = typeof(T);
-        var dateType = typeof(DateTimeOffset);
         var typeParameter = Expression.Parameter(entityType, "e");
 
         // Property accessor expressions
@@ -46,15 +45,16 @@ public static partial class HeadlessQueryableExtensions
         var propertyAccessor = Expression.Property(typeParameter, selectedPropertyInfo);
 
         // Greater than start Predicate
-        var startMonthBefore = start.AddMonths(-1);
-        var startConstant = Expression.Constant(startMonthBefore, dateType);
-        var greaterThanStartExpression = Expression.GreaterThan(left: propertyAccessor, right: startConstant);
+        // The bounds are read from a captured object so EF Core extracts them as query parameters: inline constants
+        // would compile and cache a separate query for every date range.
+        var bounds = Expression.Constant(new DateBounds<DateTimeOffset>(start.AddMonths(-1), last.AddMonths(1)));
+        var startBound = Expression.Property(bounds, nameof(DateBounds<>.After));
+        var greaterThanStartExpression = Expression.GreaterThan(left: propertyAccessor, right: startBound);
         var greaterThanStartPredicate = Expression.Lambda<Func<T, bool>>(greaterThanStartExpression, typeParameter);
 
         // Less than end Predicate
-        var lastMonthLater = last.AddMonths(1);
-        var endConstant = Expression.Constant(lastMonthLater);
-        var lessThanEndExpression = Expression.LessThan(left: propertyAccessor, right: endConstant);
+        var endBound = Expression.Property(bounds, nameof(DateBounds<>.Before));
+        var lessThanEndExpression = Expression.LessThan(left: propertyAccessor, right: endBound);
         var lessThanEndPredicate = Expression.Lambda<Func<T, bool>>(lessThanEndExpression, typeParameter);
 
         // Query
