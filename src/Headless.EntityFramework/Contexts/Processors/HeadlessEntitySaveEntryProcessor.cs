@@ -3,7 +3,6 @@
 using Headless.Domain;
 using Headless.EntityFramework.Contexts;
 using Headless.MultiTenancy;
-using Headless.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -235,32 +234,26 @@ public sealed class HeadlessEntitySaveEntryProcessor(
             return;
         }
 
-        ObjectPropertiesHelper.TrySetPropertyValue(entity, nameof(IMultiTenant.TenantId), tenantId);
+        HeadlessEntryStamping.SetValue(entry, nameof(IMultiTenant.TenantId), tenantId);
     }
 
     private static void _TrySetConcurrencyStamp(EntityEntry entry)
     {
-        if (entry.State == EntityState.Added)
+        if (entry.Entity is not IHasConcurrencyStamp stamped)
         {
-            if (entry.Entity is IHasConcurrencyStamp { ConcurrencyStamp: null } added)
-            {
-                ObjectPropertiesHelper.TrySetProperty(
-                    added,
-                    nameof(IHasConcurrencyStamp.ConcurrencyStamp),
-                    () => Guid.NewGuid().ToString("N")
-                );
-            }
-
             return;
         }
 
-        if (entry.Entity is IHasConcurrencyStamp modified)
+        // An added entity keeps a stamp the caller already chose; every other write gets a new one.
+        if (entry.State == EntityState.Added && stamped.ConcurrencyStamp is not null)
         {
-            ObjectPropertiesHelper.TrySetProperty(
-                modified,
-                nameof(IHasConcurrencyStamp.ConcurrencyStamp),
-                () => Guid.NewGuid().ToString("N")
-            );
+            return;
         }
+
+        HeadlessEntryStamping.SetValue(
+            entry,
+            nameof(IHasConcurrencyStamp.ConcurrencyStamp),
+            Guid.NewGuid().ToString("N")
+        );
     }
 }

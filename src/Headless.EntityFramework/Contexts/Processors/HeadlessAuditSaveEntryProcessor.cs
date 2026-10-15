@@ -3,7 +3,6 @@
 using Headless.Context;
 using Headless.Domain;
 using Headless.EntityFramework.Contexts;
-using Headless.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using AccountId = Headless.Primitives.AccountId;
@@ -28,11 +27,6 @@ namespace Headless.EntityFramework;
 public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, ICurrentUser currentUser)
     : IHeadlessSaveEntryProcessor
 {
-    // Method group captured once instead of a `() => timeProvider.GetUtcNow()` lambda per stamped entity:
-    // that lambda closes over `this`, so it allocates on every save. Stays a factory rather than an eager
-    // value so the clock is read only when the target property actually exists.
-    private readonly Func<DateTimeOffset> _getUtcNow = timeProvider.GetUtcNow;
-
     /// <summary>Stamps audit fields on the entry based on its current <see cref="EntityState"/>.</summary>
     /// <param name="entry">The tracked entity entry to audit.</param>
     /// <param name="context">The per-save scratchpad (tenant id unused by this processor).</param>
@@ -69,7 +63,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
 
         if (entity.CreatedAt == default)
         {
-            ObjectPropertiesHelper.TrySetProperty(entity, nameof(ICreateAudit.CreatedAt), _getUtcNow);
+            HeadlessEntryStamping.SetValue(entry, nameof(ICreateAudit.CreatedAt), timeProvider.GetUtcNow());
         }
 
         _TrySetCreateAuditId(entry, currentUser.UserId, currentUser.AccountId);
@@ -105,14 +99,14 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
 
         if (byUser is not null && byUser.CreatedById == null && currentUserId is not null)
         {
-            ObjectPropertiesHelper.TrySetPropertyValue(byUser, nameof(ICreateAudit<>.CreatedById), currentUserId);
+            HeadlessEntryStamping.SetValue(entry, nameof(ICreateAudit<>.CreatedById), currentUserId);
 
             return;
         }
 
         if (byAccount is not null && byAccount.CreatedById == null && currentAccountId is not null)
         {
-            ObjectPropertiesHelper.TrySetPropertyValue(byAccount, nameof(ICreateAudit<>.CreatedById), currentAccountId);
+            HeadlessEntryStamping.SetValue(entry, nameof(ICreateAudit<>.CreatedById), currentAccountId);
         }
     }
 
@@ -218,7 +212,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
 
         if (mode is StampMode.FillMissing ? timestamp.CurrentValue is null : !timestampSetBySave)
         {
-            timestamp.CurrentValue = _getUtcNow();
+            timestamp.CurrentValue = timeProvider.GetUtcNow();
         }
 
         if (!kind.IsUser && !kind.IsAccount)
