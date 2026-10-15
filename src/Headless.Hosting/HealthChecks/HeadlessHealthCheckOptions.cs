@@ -7,12 +7,19 @@ namespace Headless.Hosting;
 
 /// <summary>
 /// What an application can change about one health check a Headless provider package contributes. Configure it under
-/// the check's name with <c>services.ConfigureHeadlessHealthCheck(name, options =&gt; ...)</c>; a check nobody configures
-/// keeps the defaults.
+/// the check's name with <c>services.ConfigureHeadlessHealthCheck(name, options =&gt; ...)</c>, or in configuration under
+/// <c>Headless:HealthChecks:{name}</c>; a check nobody configures keeps the defaults. Code wins over configuration.
 /// </summary>
 [PublicAPI]
 public sealed class HeadlessHealthCheckOptions
 {
+    /// <summary>
+    /// Whether the check is registered at all. <see langword="false" /> removes it from every health endpoint, for
+    /// example <c>Headless:HealthChecks:cache-redis:Enabled = false</c> for a deployment that does not want its Redis
+    /// probed. Default: <see langword="true" />.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
     /// <summary>
     /// The status a failed or timed-out probe reports. <see cref="HealthStatus.Degraded" /> keeps a non-critical
     /// dependency from failing readiness. Default: <see cref="HealthStatus.Unhealthy" />.

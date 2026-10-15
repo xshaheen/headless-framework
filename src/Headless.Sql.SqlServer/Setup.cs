@@ -71,6 +71,12 @@ public static class SetupSqlSqlServer
         services.TryAddScoped<ISqlCurrentConnection, DefaultSqlCurrentConnection>();
         services.AddHeadlessHealthCheck(
             "sql-sqlserver",
+            HeadlessHealthCheckResource.Owned(static provider =>
+                HeadlessHealthCheckResource.DatabaseKey(
+                    "sqlserver",
+                    provider.GetService<ISqlConnectionFactory>()?.GetConnectionString()
+                )
+            ),
             static (provider, cancellationToken) =>
                 provider
                     .GetRequiredService<ISqlConnectionFactory>()

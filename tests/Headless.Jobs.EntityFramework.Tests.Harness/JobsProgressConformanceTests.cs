@@ -300,7 +300,7 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
                 .Should()
                 .Be(1);
             (await store.GetTimeJobByIdAsync(failed, ct))!.ProgressPercent.Should().Be(40);
-            (await store.RequeueTimeJobAsync(failed, ct)).Should().Be(JobRequeueOutcome.Requeued);
+            (await store.RequeueTimeJobAsync(failed, traceParent: null, ct)).Should().Be(JobRequeueOutcome.Requeued);
             var requeued = (await store.GetTimeJobByIdAsync(failed, ct))!;
             requeued.ProgressPercent.Should().BeNull();
             requeued.ProgressMessage.Should().BeNull();
@@ -394,7 +394,9 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
                 ct
             );
 
-            (await store.RequeueCronJobOccurrenceAsync(occurrence, ct)).Should().Be(JobRequeueOutcome.Requeued);
+            (await store.RequeueCronJobOccurrenceAsync(occurrence, traceParent: null, ct))
+                .Should()
+                .Be(JobRequeueOutcome.Requeued);
 
             var requeued = (await store.GetAllCronJobOccurrencesAsync(x => x.Id == occurrence, ct)).Single();
             requeued.ProgressPercent.Should().BeNull();

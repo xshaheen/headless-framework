@@ -81,9 +81,28 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaProdu
                 producerProvider.DiscardFailedProducer(producer);
             }
 
-            return OperateResult.Failed(new PublisherSentFailedException(e.Message, e));
+            var failure = new PublisherSentFailedException(e.Message, e);
+
+            return IsBrokerUnreachable(e) ? OperateResult.BrokerUnreachable(failure) : OperateResult.Failed(failure);
         }
     }
+
+    // Delivery that timed out or found no broker counts; a message the broker refused, such as one over the size limit,
+    // does not.
+    internal static bool IsBrokerUnreachable(Exception exception) =>
+        exception
+            is KafkaException
+            {
+                Error.Code: ErrorCode.Local_Transport
+                    or ErrorCode.Local_AllBrokersDown
+                    or ErrorCode.Local_MsgTimedOut
+                    or ErrorCode.Local_TimedOut
+                    or ErrorCode.Local_Resolve
+                    or ErrorCode.NetworkException
+                    or ErrorCode.RequestTimedOut
+                    or ErrorCode.BrokerNotAvailable,
+            }
+        || BrokerFailures.IsConnectivity(exception);
 
     public ValueTask DisposeAsync()
     {

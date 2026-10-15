@@ -273,8 +273,10 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// Atomically moves a <c>Failed</c> standalone time job back to <c>Idle</c>: <c>RetryCount</c> 0, exception,
     /// owner, lease, cancellation flag, and run audit cleared, and <c>ExecutionTime</c> set to the store's current
     /// instant so the main peek claims it promptly. Stored <c>Retries</c> and <c>RetryIntervals</c> are kept.
+    /// <c>TraceParent</c> is replaced with <paramref name="traceParent"/>, because the requeue is the new cause.
     /// </summary>
     /// <param name="jobId">Identifier of the time job to requeue.</param>
+    /// <param name="traceParent">W3C <c>traceparent</c> of the requeue request, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Token that aborts the requeue itself.</param>
     /// <returns>
     /// <see cref="JobRequeueOutcome.Requeued"/> when this call moved the row; otherwise the refusal reason. A chain
@@ -283,7 +285,11 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// moves the row.
     /// </returns>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
-    Task<JobRequeueOutcome> RequeueTimeJobAsync(Guid jobId, CancellationToken cancellationToken = default);
+    Task<JobRequeueOutcome> RequeueTimeJobAsync(
+        Guid jobId,
+        string? traceParent,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Reconciles the <b>timed</b> chain descendants (<c>ExecutionTime != null</c>) of parents that have reached a
@@ -918,9 +924,11 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <summary>
     /// Atomically moves a <c>Failed</c> cron occurrence back to <c>Idle</c>: <c>RetryCount</c> 0 and exception,
     /// owner, lease, and run audit cleared. <c>ExecutionTime</c> is kept because it identifies the scheduled instant
-    /// the occurrence stands for, so the fallback claim picks the row up.
+    /// the occurrence stands for, so the fallback claim picks the row up. <c>TraceParent</c> is replaced with
+    /// <paramref name="traceParent"/>, because the requeue is the new cause.
     /// </summary>
     /// <param name="occurrenceId">Identifier of the occurrence to requeue.</param>
+    /// <param name="traceParent">W3C <c>traceparent</c> of the requeue request, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Token that aborts the requeue itself.</param>
     /// <returns>
     /// <see cref="JobRequeueOutcome.Requeued"/> when this call moved the row; otherwise the refusal reason. Under a
@@ -935,6 +943,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<JobRequeueOutcome> RequeueCronJobOccurrenceAsync(
         Guid occurrenceId,
+        string? traceParent,
         CancellationToken cancellationToken = default
     );
 

@@ -2,6 +2,7 @@
 
 using Headless.Hosting;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
@@ -48,6 +49,301 @@ public sealed class HeadlessHealthCheckTests : TestBase
 
         // then
         _Registrations(provider).Should().ContainSingle();
+    }
+
+    [Fact]
+    public void should_add_the_second_contribution_tags_to_the_one_check()
+    {
+        // given
+        var services = _CreateServices();
+
+        // when - two packages probe one dependency under one name
+        services.AddHeadlessHealthCheck("db", (_, _) => Task.CompletedTask, HeadlessHealthCheckTags.Database);
+        services.AddHeadlessHealthCheck("db", (_, _) => Task.CompletedTask, HeadlessHealthCheckTags.Jobs);
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        _Registrations(provider)
+            .Should()
+            .ContainSingle()
+            .Which.Tags.Should()
+            .Contain([HeadlessHealthCheckTags.Database, HeadlessHealthCheckTags.Jobs]);
+    }
+
+    [Fact]
+    public void should_drop_a_check_that_configuration_turns_off()
+    {
+        // given
+        var services = _CreateServices(("Headless:HealthChecks:db:Enabled", "false"));
+
+        // when
+        services.AddHeadlessHealthCheck("db", (_, _) => Task.CompletedTask);
+        services.AddHeadlessHealthCheck("cache", (_, _) => Task.CompletedTask);
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        _Registrations(provider).Select(static x => x.Name).Should().Equal("cache");
+    }
+
+    [Fact]
+    public void should_drop_a_third_party_check_that_code_turns_off()
+    {
+        // given
+        var services = _CreateServices();
+        services.ConfigureHeadlessHealthCheck("external", static options => options.Enabled = false);
+
+        // when
+        services.AddHeadlessHealthCheck(
+            "external",
+            static (builder, name, tags) => builder.AddCheck(name, static () => HealthCheckResult.Healthy(), tags)
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        _Registrations(provider).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_let_code_win_over_configuration_whichever_is_registered_first()
+    {
+        // given - code turns the check back on before the provider registers it, configuration turns it off
+        var services = _CreateServices(
+            ("Headless:HealthChecks:db:Enabled", "false"),
+            ("Headless:HealthChecks:db:FailureStatus", "Degraded")
+        );
+        services.ConfigureHeadlessHealthCheck("db", static options => options.Enabled = true);
+
+        // when
+        services.AddHeadlessHealthCheck("db", (_, _) => Task.CompletedTask);
+        using var provider = services.BuildServiceProvider();
+
+        // then - code kept the check; configuration still set what code left alone
+        _Registrations(provider).Should().ContainSingle().Which.FailureStatus.Should().Be(HealthStatus.Degraded);
+    }
+
+    [Fact]
+    public void should_apply_failure_status_timeout_and_tags_from_configuration()
+    {
+        // given
+        var services = _CreateServices(
+            ("Headless:HealthChecks:db:FailureStatus", "degraded"),
+            ("Headless:HealthChecks:db:Timeout", "00:00:03"),
+            ("Headless:HealthChecks:db:Tags:0", "critical")
+        );
+
+        // when
+        services.AddHeadlessHealthCheck("db", (_, _) => Task.CompletedTask);
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        var registration = _Registrations(provider).Should().ContainSingle().Subject;
+        registration.FailureStatus.Should().Be(HealthStatus.Degraded);
+        registration.Timeout.Should().Be(TimeSpan.FromSeconds(3));
+        registration.Tags.Should().Contain("critical");
+    }
+
+    [Fact]
+    public void should_name_the_key_when_a_configured_value_is_invalid()
+    {
+        // given
+        var services = _CreateServices(("Headless:HealthChecks:db:Enabled", "sometimes"));
+        services.AddHeadlessHealthCheck("db", (_, _) => Task.CompletedTask);
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => _Registrations(provider);
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Headless:HealthChecks:db:Enabled*");
+    }
+
+    [Fact]
+    public void should_collapse_checks_that_probe_one_resource_into_the_first_with_every_tag()
+    {
+        // given
+        var services = _CreateServices();
+        var cache = HeadlessHealthCheckResource.Shared(static _ => "redis://cache:6379");
+
+        // when
+        services.AddHeadlessHealthCheck("cache-redis", cache, (_, _) => Task.CompletedTask, "cache");
+        services.AddHeadlessHealthCheck("locks-redis", cache, (_, _) => Task.CompletedTask, "locks");
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        var registration = _Registrations(provider).Should().ContainSingle().Subject;
+        registration.Name.Should().Be("cache-redis");
+        registration.Tags.Should().Contain(["cache", "locks"]);
+    }
+
+    [Fact]
+    public void should_keep_the_owner_check_whichever_is_registered_first()
+    {
+        // given
+        var services = _CreateServices();
+        const string Database = "postgresql://db1:5432/orders";
+
+        // when - the feature that only uses the database registers before the package that owns the connection
+        services.AddHeadlessHealthCheck(
+            "jobs-storage",
+            HeadlessHealthCheckResource.Shared(static _ => Database),
+            (_, _) => Task.CompletedTask,
+            HeadlessHealthCheckTags.Jobs
+        );
+        services.AddHeadlessHealthCheck(
+            "sql-postgresql",
+            HeadlessHealthCheckResource.Owned(static _ => Database),
+            (_, _) => Task.CompletedTask,
+            HeadlessHealthCheckTags.Database
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        var registration = _Registrations(provider).Should().ContainSingle().Subject;
+        registration.Name.Should().Be("sql-postgresql");
+        registration.Tags.Should().Contain([HeadlessHealthCheckTags.Jobs, HeadlessHealthCheckTags.Database]);
+    }
+
+    [Fact]
+    public void should_keep_checks_on_different_resources_and_those_whose_key_fails()
+    {
+        // given
+        var services = _CreateServices();
+
+        // when
+        services.AddHeadlessHealthCheck(
+            "orders-db",
+            HeadlessHealthCheckResource.Shared(static _ => "postgresql://db1:5432/orders"),
+            (_, _) => Task.CompletedTask
+        );
+        services.AddHeadlessHealthCheck(
+            "billing-db",
+            HeadlessHealthCheckResource.Shared(static _ => "postgresql://db1:5432/billing"),
+            (_, _) => Task.CompletedTask
+        );
+        services.AddHeadlessHealthCheck(
+            "unknown-db",
+            HeadlessHealthCheckResource.Shared(static _ => throw new InvalidOperationException("no connection string")),
+            (_, _) => Task.CompletedTask
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        _Registrations(provider)
+            .Select(static x => x.Name)
+            .Should()
+            .BeEquivalentTo("orders-db", "billing-db", "unknown-db");
+    }
+
+    [Fact]
+    public void should_keep_the_other_check_when_configuration_turns_the_owner_off()
+    {
+        // given
+        var services = _CreateServices(("Headless:HealthChecks:sql-postgresql:Enabled", "false"));
+        const string Database = "postgresql://db1:5432/orders";
+
+        // when
+        services.AddHeadlessHealthCheck(
+            "sql-postgresql",
+            HeadlessHealthCheckResource.Owned(static _ => Database),
+            (_, _) => Task.CompletedTask
+        );
+        services.AddHeadlessHealthCheck(
+            "jobs-storage",
+            HeadlessHealthCheckResource.Shared(static _ => Database),
+            (_, _) => Task.CompletedTask
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // then - turning one check off never leaves the database unprobed
+        _Registrations(provider).Should().ContainSingle().Which.Name.Should().Be("jobs-storage");
+    }
+
+    [Theory]
+    [InlineData(
+        "postgresql",
+        "Host=DB1;Port=5432;Database=Orders;Username=app;Password=secret",
+        "postgresql://db1:5432/orders"
+    )]
+    [InlineData(
+        "postgresql",
+        "Host=db1;Port=5432;Database=orders;Username=reporting;Password=other",
+        "postgresql://db1:5432/orders"
+    )]
+    [InlineData(
+        "Npgsql.EntityFrameworkCore.PostgreSQL",
+        "Host=db1;Port=5432;Database=orders",
+        "postgresql://db1:5432/orders"
+    )]
+    [InlineData(
+        "sqlserver",
+        "Server=tcp:sql1,1433;Initial Catalog=Orders;User ID=app;Password=secret",
+        "sqlserver://sql1:1433/orders"
+    )]
+    [InlineData(
+        "Microsoft.EntityFrameworkCore.SqlServer",
+        "Data Source=sql1,1433;Initial Catalog=orders",
+        "sqlserver://sql1:1433/orders"
+    )]
+    public void should_key_a_database_by_provider_host_port_and_name_without_credentials(
+        string provider,
+        string connectionString,
+        string expected
+    )
+    {
+        HeadlessHealthCheckResource.DatabaseKey(provider, connectionString).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("Database=orders")]
+    public void should_give_no_database_key_without_a_host(string? connectionString)
+    {
+        HeadlessHealthCheckResource.DatabaseKey("postgresql", connectionString).Should().BeNull();
+    }
+
+    [Fact]
+    public void should_apply_a_package_default_before_configuration_and_code_whatever_the_order()
+    {
+        // given - code and configuration are registered before the package's default, which comes before the check
+        var services = _CreateServices(("Headless:HealthChecks:db:Timeout", "00:00:05"));
+        services.ConfigureHeadlessHealthCheck("db", static options => options.Tags.Add("from-code"));
+        services.ConfigureHeadlessHealthCheckDefault(
+            "db",
+            static options =>
+            {
+                options.FailureStatus = HealthStatus.Degraded;
+                options.Timeout = TimeSpan.FromSeconds(1);
+            }
+        );
+
+        // when
+        services.AddHeadlessHealthCheck("db", (_, _) => Task.CompletedTask);
+        using var provider = services.BuildServiceProvider();
+
+        // then - the default stands where nothing overrides it, configuration overrides it, code adds on top
+        var registration = _Registrations(provider).Should().ContainSingle().Subject;
+        registration.FailureStatus.Should().Be(HealthStatus.Degraded);
+        registration.Timeout.Should().Be(TimeSpan.FromSeconds(5));
+        registration.Tags.Should().Contain("from-code");
+    }
+
+    [Fact]
+    public void should_let_configuration_override_a_package_default()
+    {
+        // given
+        var services = _CreateServices(("Headless:HealthChecks:db:FailureStatus", "Unhealthy"));
+
+        // when
+        services.AddHeadlessHealthCheck("db", (_, _) => Task.CompletedTask);
+        services.ConfigureHeadlessHealthCheckDefault(
+            "db",
+            static options => options.FailureStatus = HealthStatus.Degraded
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        _Registrations(provider).Should().ContainSingle().Which.FailureStatus.Should().Be(HealthStatus.Unhealthy);
     }
 
     [Fact]
@@ -282,11 +578,20 @@ public sealed class HeadlessHealthCheckTests : TestBase
         _Registrations(provider).Should().ContainSingle();
     }
 
-    private static ServiceCollection _CreateServices()
+    private static ServiceCollection _CreateServices(params (string Key, string Value)[] settings)
     {
         var services = new ServiceCollection();
         services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+
+        if (settings.Length > 0)
+        {
+            services.AddSingleton<IConfiguration>(
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(settings.Select(x => new KeyValuePair<string, string?>(x.Key, x.Value)))
+                    .Build()
+            );
+        }
 
         return services;
     }

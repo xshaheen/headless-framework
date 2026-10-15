@@ -67,6 +67,7 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
             new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
             NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(registry),
             new JobsRetryOptions
             {
                 OnExhausted = (_, _) =>
@@ -194,6 +195,7 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
                 new JobsExecutionCancellationRegistry(),
                 options,
                 NullLogger<JobsExecutionTaskHandler>.Instance,
+                new JobsFunctionTagBound(registry),
                 retryOptions
             );
             await handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
@@ -258,7 +260,8 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
             JobFunctionRegistryBuilder.Build([], [], []),
             new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
-            NullLogger<JobsExecutionTaskHandler>.Instance
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], []))
         );
 
         var parentStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -470,7 +473,8 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
             JobFunctionRegistryBuilder.Build([], [], []),
             new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder { CancellationObservationInterval = TimeSpan.FromMilliseconds(10) },
-            NullLogger<JobsExecutionTaskHandler>.Instance
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], []))
         );
 
         var childRan = false;
@@ -568,7 +572,8 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
             JobFunctionRegistryBuilder.Build([], [], []),
             new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
-            NullLogger<JobsExecutionTaskHandler>.Instance
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], []))
         );
     }
 

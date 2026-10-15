@@ -460,7 +460,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-    public async Task<JobRequeueOutcome> RequeueTimeJobAsync(Guid jobId, CancellationToken cancellationToken = default)
+    public async Task<JobRequeueOutcome> RequeueTimeJobAsync(
+        Guid jobId,
+        string? traceParent,
+        CancellationToken cancellationToken = default
+    )
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -494,6 +498,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.ProgressUpdatedAt, _ => null)
                         .SetProperty(x => x.CancelRequested, valueExpression: false)
                         .SetProperty(x => x.ExecutionTime, _ => DateTime.UtcNow)
+                        // The requeue is the new cause, so the rerun links to the requeue request.
+                        .SetProperty(x => x.TraceParent, traceParent)
                         .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 cancellationToken
             )

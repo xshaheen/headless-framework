@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Reflection;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
@@ -11,6 +12,7 @@ using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using NSubstitute.ExceptionExtensions;
 using SqsMessage = Amazon.SQS.Model.Message;
 
@@ -1537,5 +1539,65 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         // then - should not throw
         sqsClient.Received(1).Dispose();
+    }
+
+    [Fact]
+    public async Task should_report_each_failed_receive_as_broker_unreachable_and_the_next_successful_receive_as_reachable()
+    {
+        // given a queue whose first two receives cannot reach the broker
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        var time = new FakeTimeProvider();
+        await using var client = new AmazonSqsConsumerClient(
+            "test-group",
+            1,
+            _CreateOptions(),
+            logger,
+            MessageLane.Bus,
+            time
+        );
+        var reports = new ConcurrentQueue<MqLogType>();
+        client.AttachCallbacks((_, _) => Task.CompletedTask, log => reports.Enqueue(log.LogType));
+
+        var receives = 0;
+        var sqsClient = Substitute.For<IAmazonSQS>();
+        sqsClient
+            .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+                Interlocked.Increment(ref receives) <= 2
+                    ? Task.FromException<ReceiveMessageResponse>(new HttpRequestException("Connection refused"))
+                    : Task.FromResult(new ReceiveMessageResponse { Messages = [] })
+            );
+        _SetPrivateFields(client, sqsClient, "http://test");
+
+        // when the loop retries through the outage and then polls an empty queue twice more
+        using var cts = new CancellationTokenSource();
+        var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
+        await _AdvanceUntilAsync(time, () => Volatile.Read(ref receives) >= 5);
+        await cts.CancelAsync();
+        try
+        {
+            await listening;
+        }
+        catch (OperationCanceledException)
+        {
+            // The caller canceled listening.
+        }
+
+        // then only the recovery itself is reported, not every later empty poll
+        reports.Should().Equal(MqLogType.BrokerUnreachable, MqLogType.BrokerUnreachable, MqLogType.BrokerReachable);
+    }
+
+    // The receive loop waits on the fake clock between polls, and a wait may register just after an advance, so the
+    // clock keeps moving until the loop has done what the test waits for.
+    private static async Task _AdvanceUntilAsync(FakeTimeProvider time, Func<bool> done)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+
+        while (!done())
+        {
+            time.Advance(TimeSpan.FromMinutes(1));
+            await Task.Delay(10, timeout.Token);
+        }
     }
 }

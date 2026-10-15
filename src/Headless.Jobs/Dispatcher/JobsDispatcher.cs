@@ -31,7 +31,7 @@ internal sealed class JobsDispatcher(
 
             await taskScheduler
                 .QueueAsync(
-                    ct => taskHandler.ExecuteTaskAsync(context, isDue: false, cancellationToken: ct),
+                    ct => taskHandler.ExecuteImmediateTaskAsync(context, ct),
                     context.CachedPriority,
                     capacityCancellationToken: cancellationToken,
                     executionCancellationToken: executionToken,

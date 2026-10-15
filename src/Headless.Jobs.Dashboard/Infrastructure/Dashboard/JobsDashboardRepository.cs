@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Coordination;
+using Headless.Jobs.Internal;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs.Infrastructure.Dashboard;
@@ -393,6 +394,8 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
     public async Task AddOnDemandCronJobOccurrenceAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        // Unlike an occurrence the scheduler generates, a run-now has a cause: the dashboard request. Its run links to it.
+        using var scheduleActivity = JobsDiagnostics.StartSchedule(JobType.CronJobOccurrence, function: null);
         var now = _timeProvider.GetUtcNow();
         var onDemandOccurrence = new CronJobOccurrenceEntity<TCronJob>
         {
@@ -401,9 +404,11 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             ExecutionTime = now.UtcDateTime,
             LockedUntil = null,
             CronJobId = id,
+            TraceParent = JobTraceParent.Capture(scheduleActivity),
             CreatedAt = now,
             UpdatedAt = now,
         };
+        scheduleActivity?.SetTag("headless.job.id", onDemandOccurrence.Id.ToString());
 
         await _persistenceProvider
             .InsertCronJobOccurrencesAsync([onDemandOccurrence], cancellationToken)
@@ -427,6 +432,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
                 ContractVersion = occurrence.ContractVersion,
                 CorrelationId = occurrence.CorrelationId,
                 CausationId = occurrence.CausationId,
+                TraceParent = occurrence.TraceParent,
                 TenantId = occurrence.TenantId,
                 JobId = occurrence.Id,
                 Type = JobType.CronJobOccurrence,

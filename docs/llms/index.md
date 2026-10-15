@@ -93,7 +93,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | Find a primitive, result type, collection helper, concurrency helper, IO helper, or URL builder | [Extensions and Primitives](extensions.md) |
 | Serialize JSON or MessagePack behind `ISerializer` | [Serialization](serialization.md) |
 | Configure Serilog defaults | [Logging](logging.md) |
-| Use hosting helpers, validators, source-generated primitives, Redis scripts, geospatial helpers, sitemaps, or slugs | [Utilities](utilities.md) |
+| Use hosting helpers, validators, health checks, the host manifest (`describe` command), source-generated primitives, Redis scripts, geospatial helpers, sitemaps, or slugs | [Utilities](utilities.md) |
 | Write unit/integration tests or use Testcontainers and the messaging harness | [Testing](testing.md) |
 
 ## Choosing a coordination primitive

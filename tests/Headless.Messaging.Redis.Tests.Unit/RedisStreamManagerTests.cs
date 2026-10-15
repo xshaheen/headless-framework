@@ -211,6 +211,7 @@ public sealed class RedisStreamManagerTests : TestBase
                 "consumer",
                 claimMinIdleTime,
                 pollDelay,
+                onRead: null,
                 AbortToken
             )
             .GetAsyncEnumerator(AbortToken);
@@ -265,6 +266,7 @@ public sealed class RedisStreamManagerTests : TestBase
                 "consumer",
                 TimeSpan.FromSeconds(60),
                 TimeSpan.FromSeconds(1),
+                onRead: null,
                 AbortToken
             )
             .GetAsyncEnumerator(AbortToken);
@@ -297,7 +299,14 @@ public sealed class RedisStreamManagerTests : TestBase
         var sut = _CreateSut(timeProvider);
         var pollDelay = TimeSpan.FromMinutes(1);
 
-        await using var enumerator = sut.PollStreamsLatestMessagesAsync([], "group", "consumer", pollDelay, AbortToken)
+        await using var enumerator = sut.PollStreamsLatestMessagesAsync(
+                [],
+                "group",
+                "consumer",
+                pollDelay,
+                onRead: null,
+                AbortToken
+            )
             .GetAsyncEnumerator(AbortToken);
 
         // when
@@ -311,6 +320,182 @@ public sealed class RedisStreamManagerTests : TestBase
         timeProvider.Advance(pollDelay);
 
         (await secondMoveTask).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_tell_the_read_observer_of_a_failed_latest_read_and_of_the_next_successful_one()
+    {
+        // given a pool whose first connection attempt fails
+        var timeProvider = new FakeTimeProvider();
+        var failure = new RedisException("No connection is available");
+        var connects = 0;
+        _mockConnectionPool
+            .ConnectAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+                Interlocked.Increment(ref connects) == 1
+                    ? Task.FromException<IConnectionMultiplexer>(failure)
+                    : Task.FromResult(_mockMultiplexer)
+            );
+        var sut = _CreateSut(timeProvider);
+        var outcomes = new List<Exception?>();
+
+        await using var enumerator = sut.PollStreamsLatestMessagesAsync(
+                [],
+                "group",
+                "consumer",
+                TimeSpan.FromMinutes(1),
+                outcomes.Add,
+                AbortToken
+            )
+            .GetAsyncEnumerator(AbortToken);
+
+        // when the loop backs off after the failure and reads again
+        (await enumerator.MoveNextAsync())
+            .Should()
+            .BeTrue();
+        var secondRead = enumerator.MoveNextAsync().AsTask();
+        timeProvider.Advance(TimeSpan.FromMinutes(10));
+        (await secondRead).Should().BeTrue();
+
+        // then
+        outcomes.Should().Equal(failure, null);
+    }
+
+    [Fact]
+    public async Task should_report_a_failed_latest_read_when_creating_the_consumer_group_cannot_reach_redis()
+    {
+        // given a connection lost while the read sets up its consumer group
+        var failure = _SocketClosed();
+        _GivenConsumerGroupSetupFailsWith(failure);
+        var sut = _CreateSut(new FakeTimeProvider());
+        var outcomes = new List<Exception?>();
+
+        await using var enumerator = sut.PollStreamsLatestMessagesAsync(
+                ["test-stream"],
+                "group",
+                "consumer",
+                TimeSpan.FromMinutes(1),
+                outcomes.Add,
+                AbortToken
+            )
+            .GetAsyncEnumerator(AbortToken);
+
+        // when
+        (await enumerator.MoveNextAsync())
+            .Should()
+            .BeTrue();
+
+        // then the outage counts, instead of passing as an empty successful read
+        outcomes.Should().Equal(failure);
+    }
+
+    [Fact]
+    public async Task should_skip_a_stream_without_reporting_a_failure_when_the_server_refuses_its_consumer_group()
+    {
+        // given a server that answers the group setup with an error of its own
+        _GivenConsumerGroupSetupFailsWith(
+            new RedisServerException(
+                RedisErrorKind.WrongType,
+                CommandFlags.None,
+                "WRONGTYPE Operation against a key holding the wrong kind of value"
+            )
+        );
+        var sut = _CreateSut(new FakeTimeProvider());
+        var outcomes = new List<Exception?>();
+
+        await using var enumerator = sut.PollStreamsLatestMessagesAsync(
+                ["test-stream"],
+                "group",
+                "consumer",
+                TimeSpan.FromMinutes(1),
+                outcomes.Add,
+                AbortToken
+            )
+            .GetAsyncEnumerator(AbortToken);
+
+        // when
+        (await enumerator.MoveNextAsync())
+            .Should()
+            .BeTrue();
+
+        // then the server was reached, so the read is no outage
+        outcomes.Should().Equal([null]);
+        enumerator.Current.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_report_a_failed_pending_read_when_redis_cannot_be_reached()
+    {
+        // given
+        var failure = _SocketClosed();
+        _GivenConsumerGroupSetupFailsWith(failure);
+        var sut = _CreateSut(new FakeTimeProvider());
+        var outcomes = new List<Exception?>();
+
+        await using var enumerator = sut.PollStreamsPendingMessagesAsync(
+                ["test-stream"],
+                "group",
+                "consumer",
+                TimeSpan.FromMinutes(1),
+                outcomes.Add,
+                AbortToken
+            )
+            .GetAsyncEnumerator(AbortToken);
+
+        // when
+        (await enumerator.MoveNextAsync())
+            .Should()
+            .BeTrue();
+
+        // then
+        outcomes.Should().Equal(failure);
+    }
+
+    [Fact]
+    public async Task should_report_a_failed_stale_claim_when_redis_cannot_be_reached()
+    {
+        // given
+        var failure = _SocketClosed();
+        _GivenConsumerGroupSetupFailsWith(failure);
+        var sut = _CreateSut(new FakeTimeProvider(), options => options.IdleConsumerDeleteAfter = TimeSpan.Zero);
+        var outcomes = new List<Exception?>();
+
+        await using var enumerator = sut.PollStreamsStalePendingMessagesAsync(
+                ["test-stream"],
+                "group",
+                "consumer",
+                TimeSpan.FromMinutes(5),
+                TimeSpan.FromMinutes(1),
+                outcomes.Add,
+                AbortToken
+            )
+            .GetAsyncEnumerator(AbortToken);
+
+        // when
+        (await enumerator.MoveNextAsync())
+            .Should()
+            .BeTrue();
+
+        // then
+        outcomes.Should().Equal(failure);
+    }
+
+    private static RedisConnectionException _SocketClosed()
+    {
+        return new RedisConnectionException(
+            ConnectionFailureType.SocketClosed,
+            CommandFlags.None,
+            "SocketClosed",
+            innerException: null,
+            CommandStatus.Unknown
+        );
+    }
+
+    private void _GivenConsumerGroupSetupFailsWith(Exception failure)
+    {
+        _mockDatabase
+            .KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromException<bool>(failure));
     }
 
     [Fact]
@@ -338,6 +523,7 @@ public sealed class RedisStreamManagerTests : TestBase
                 "consumer-1",
                 claimMinIdleTime,
                 pollDelay,
+                onRead: null,
                 AbortToken
             )
             .GetAsyncEnumerator(AbortToken);
@@ -384,6 +570,7 @@ public sealed class RedisStreamManagerTests : TestBase
                 "group",
                 "consumer",
                 pollDelay,
+                onRead: null,
                 AbortToken
             )
             .GetAsyncEnumerator(AbortToken);
@@ -413,6 +600,7 @@ public sealed class RedisStreamManagerTests : TestBase
                 "group",
                 "consumer",
                 pollDelay,
+                onRead: null,
                 AbortToken
             )
             .GetAsyncEnumerator(AbortToken);
@@ -441,6 +629,7 @@ public sealed class RedisStreamManagerTests : TestBase
                 "group",
                 "consumer",
                 pollDelay,
+                onRead: null,
                 AbortToken
             )
             .GetAsyncEnumerator(AbortToken);
@@ -484,6 +673,7 @@ public sealed class RedisStreamManagerTests : TestBase
                 "group",
                 "consumer",
                 TimeSpan.FromSeconds(1),
+                onRead: null,
                 AbortToken
             )
             .GetAsyncEnumerator(AbortToken);

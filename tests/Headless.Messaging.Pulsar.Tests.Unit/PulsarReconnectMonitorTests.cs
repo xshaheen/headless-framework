@@ -15,6 +15,7 @@ public sealed class PulsarReconnectMonitorTests : TestBase
     private bool _connected = true;
     private int _probes;
     private int _callbacks;
+    private readonly System.Collections.Concurrent.ConcurrentQueue<bool> _states = new();
 
     public PulsarReconnectMonitorTests()
     {
@@ -113,6 +114,7 @@ public sealed class PulsarReconnectMonitorTests : TestBase
                 Interlocked.Increment(ref _callbacks);
                 return Task.CompletedTask;
             },
+            _states.Enqueue,
             _ => Interlocked.Increment(ref errors),
             _time,
             cts.Token
@@ -127,6 +129,56 @@ public sealed class PulsarReconnectMonitorTests : TestBase
         Volatile.Read(ref errors).Should().Be(1);
         await cts.CancelAsync();
         await monitor.WaitAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_report_the_connection_state_on_every_probe()
+    {
+        // given
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var monitor = _RunAsync(cts.Token);
+        await _AdvanceUntilAsync(() => !_states.IsEmpty);
+
+        // when the broker goes away for a few probes and comes back
+        Volatile.Write(ref _connected, false);
+        await _AdvanceUntilAsync(() => _states.Where(static connected => !connected).Skip(2).Any());
+        Volatile.Write(ref _connected, true);
+        var probesBeforeRecovery = _states.Count;
+        await _AdvanceUntilAsync(() => _states.Count > probesBeforeRecovery);
+        await cts.CancelAsync();
+        await monitor.WaitAsync(AbortToken);
+
+        // then the probes read connected, then lost, then connected again
+        _states.Should().StartWith(true).And.EndWith(true).And.Contain(false);
+    }
+
+    [Fact]
+    public async Task should_report_the_connection_state_without_a_recovery_callback()
+    {
+        // given a subscription that loses nothing while away
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var monitor = PulsarReconnectMonitor.RunAsync(
+            _consumer,
+            onReestablished: null,
+            _states.Enqueue,
+            e => throw new InvalidOperationException("The monitor reported an unexpected error.", e),
+            _time,
+            cts.Token
+        );
+        await _AdvanceUntilAsync(() => Volatile.Read(ref _probes) >= 1);
+
+        // when it loses and recovers its connection
+        Volatile.Write(ref _connected, false);
+        Volatile.Write(ref _lastDisconnected, 1_000);
+        await _AdvanceUntilAsync(() => _states.Contains(false));
+        Volatile.Write(ref _connected, true);
+        var probesBeforeRecovery = Volatile.Read(ref _probes);
+        await _AdvanceUntilAsync(() => Volatile.Read(ref _probes) >= probesBeforeRecovery + 2);
+        await cts.CancelAsync();
+        await monitor.WaitAsync(AbortToken);
+
+        // then the state still reaches the host
+        _states.Should().Contain(false).And.EndWith(true);
     }
 
     [Fact]
@@ -153,6 +205,7 @@ public sealed class PulsarReconnectMonitorTests : TestBase
                 Interlocked.Increment(ref _callbacks);
                 return Task.CompletedTask;
             },
+            _states.Enqueue,
             e => throw new InvalidOperationException("The monitor reported an unexpected error.", e),
             _time,
             cancellationToken

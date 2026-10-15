@@ -50,6 +50,6 @@ public sealed class MessagingEnumCompatibilityTests
     [Fact]
     public void should_keep_transport_log_type_numeric_contract_stable()
     {
-        Enum.GetValues<MqLogType>().Select(static value => (int)value).Should().Equal(Enumerable.Range(0, 14));
+        Enum.GetValues<MqLogType>().Select(static value => (int)value).Should().Equal(Enumerable.Range(0, 16));
     }
 }

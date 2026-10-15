@@ -33,6 +33,15 @@ public class CronJobOccurrenceEntity<TCronJob>
     /// <summary>Cron occurrences are system scoped; this value must remain null.</summary>
     public virtual string? TenantId { get; set; }
 
+    /// <summary>
+    /// W3C <c>traceparent</c> of the span that created this occurrence on demand (a dashboard run-now) or requeued it,
+    /// so its execution links to that request. Occurrences the scheduler generates from the definition carry none:
+    /// no request caused them.
+    /// </summary>
+    public virtual string? TraceParent { get; internal set; }
+
+    // Leaves TraceParent untouched: a scheduler-generated occurrence has no scheduling request to link to, and an
+    // on-demand occurrence keeps the context its creator stamped.
     internal void SnapshotContract(TCronJob definition)
     {
         Function = JobContract.ValidateName(definition.Function);

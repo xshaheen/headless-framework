@@ -40,7 +40,8 @@ public sealed class JobsFallbackMembershipFencingTests : TestBase
             JobFunctionRegistryBuilder.Build([], [], []),
             new JobsExecutionCancellationRegistry(),
             new SchedulerOptionsBuilder(),
-            NullLogger<JobsExecutionTaskHandler>.Instance
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], []))
         );
 
         using var service = new JobsFallbackBackgroundService(

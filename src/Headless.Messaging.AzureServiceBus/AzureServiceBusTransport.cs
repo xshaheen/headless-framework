@@ -67,7 +67,9 @@ internal sealed class AzureServiceBusTransport(
         {
             var wrapperEx = new PublisherSentFailedException(ex.Message, ex);
 
-            return OperateResult.Failed(wrapperEx);
+            return AzureServiceBusFailures.IsUnreachable(ex)
+                ? OperateResult.BrokerUnreachable(wrapperEx)
+                : OperateResult.Failed(wrapperEx);
         }
     }
 

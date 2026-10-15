@@ -116,6 +116,7 @@ internal sealed class RedisStreamManager(
         string consumerGroup,
         string consumerName,
         TimeSpan pollDelay,
+        Action<Exception?>? onRead,
         [EnumeratorCancellation] CancellationToken token
     )
     {
@@ -131,20 +132,16 @@ internal sealed class RedisStreamManager(
             await wake.EnsureSubscribedAsync(token).ConfigureAwait(false);
             var readStartedAt = _timeProvider.GetTimestamp();
 
-            var (succeeded, streamsRead) = await _TryReadConsumerGroupAsync(
-                    consumerGroup,
-                    consumerName,
-                    positions,
-                    token
-                )
+            var (failure, streamsRead) = await _TryReadConsumerGroupAsync(consumerGroup, consumerName, positions, token)
                 .ConfigureAwait(false);
+            _ReportRead(onRead, failure, token);
 
             // Materialized once: it is yielded and then inspected for a full batch.
             var result = streamsRead.ToArray();
 
             yield return result;
 
-            if (succeeded)
+            if (failure is null)
             {
                 errorDelay = pollDelay;
 
@@ -170,6 +167,7 @@ internal sealed class RedisStreamManager(
         string consumerGroup,
         string consumerName,
         TimeSpan pollDelay,
+        Action<Exception?>? onRead,
         [EnumeratorCancellation] CancellationToken token
     )
     {
@@ -181,11 +179,13 @@ internal sealed class RedisStreamManager(
         {
             token.ThrowIfCancellationRequested();
 
+            var (failure, streamsRead) = await _TryReadConsumerGroupAsync(consumerGroup, consumerName, positions, token)
+                .ConfigureAwait(false);
+            _ReportRead(onRead, failure, token);
+
             // Materialize the lazy SelectMany result once: it is both yielded to the consumer and
             // re-inspected by the All() check below, so leaving it deferred would flatten it twice.
-            var result = (
-                await _TryReadConsumerGroupAsync(consumerGroup, consumerName, positions, token).ConfigureAwait(false)
-            ).Streams.ToArray();
+            var result = streamsRead.ToArray();
 
             yield return result;
 
@@ -205,6 +205,7 @@ internal sealed class RedisStreamManager(
         string consumerName,
         TimeSpan claimMinIdleTime,
         TimeSpan pollDelay,
+        Action<Exception?>? onRead,
         [EnumeratorCancellation] CancellationToken token
     )
     {
@@ -227,7 +228,7 @@ internal sealed class RedisStreamManager(
                 await _TryDeleteIdleConsumersAsync(streams, consumerGroup, token).ConfigureAwait(false);
             }
 
-            var (succeeded, result) = await _TryAutoClaimStalePendingAsync(
+            var (failure, result) = await _TryAutoClaimStalePendingAsync(
                     consumerGroup,
                     consumerName,
                     positions,
@@ -237,10 +238,11 @@ internal sealed class RedisStreamManager(
                     token
                 )
                 .ConfigureAwait(false);
+            _ReportRead(onRead, failure, token);
 
             yield return result;
 
-            if (succeeded)
+            if (failure is null)
             {
                 errorDelay = pollDelay;
 
@@ -288,6 +290,7 @@ internal sealed class RedisStreamManager(
     public async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> PollStreamsFromAsync(
         StreamPosition[] startPositions,
         TimeSpan pollDelay,
+        Action<Exception?>? onRead,
         [EnumeratorCancellation] CancellationToken token
     )
     {
@@ -303,11 +306,12 @@ internal sealed class RedisStreamManager(
             await wake.EnsureSubscribedAsync(token).ConfigureAwait(false);
             var readStartedAt = _timeProvider.GetTimestamp();
 
-            var (succeeded, result) = await _TryReadAsync(positions, token).ConfigureAwait(false);
+            var (failure, result) = await _TryReadAsync(positions, token).ConfigureAwait(false);
+            _ReportRead(onRead, failure, token);
 
             yield return result;
 
-            if (!succeeded)
+            if (failure is not null)
             {
                 errorDelay = _NextBackoff(errorDelay);
                 await _timeProvider.Delay(errorDelay, token).ConfigureAwait(false);
@@ -338,7 +342,16 @@ internal sealed class RedisStreamManager(
         await _redis!.GetDatabase().StreamAcknowledgeAsync(stream, consumerGroup, messageId).ConfigureAwait(false);
     }
 
-    private async Task<(bool Succeeded, IEnumerable<RedisStreamMessages> Streams)> _TryReadConsumerGroupAsync(
+    // A read that a canceled token ended says nothing about the server, so the caller is told only of real outcomes.
+    private static void _ReportRead(Action<Exception?>? onRead, Exception? failure, CancellationToken token)
+    {
+        if (!token.IsCancellationRequested)
+        {
+            onRead?.Invoke(failure);
+        }
+    }
+
+    private async Task<(Exception? Failure, IEnumerable<RedisStreamMessages> Streams)> _TryReadConsumerGroupAsync(
         string consumerGroup,
         string consumerName,
         StreamPosition[] positions,
@@ -358,11 +371,11 @@ internal sealed class RedisStreamManager(
 
             if (readSet is null)
             {
-                return (Succeeded: true, Streams: []);
+                return (Failure: null, Streams: []);
             }
 
             return (
-                Succeeded: true,
+                Failure: null,
                 Streams: readSet.SelectMany(set =>
                     set.Select(stream => new RedisStreamMessages(stream.Key, stream.Entries))
                 )
@@ -371,14 +384,13 @@ internal sealed class RedisStreamManager(
         catch (OperationCanceledException)
         {
             // Cancellation is not a read failure; the caller's next Delay(token) ends the poll loop.
-            return (Succeeded: true, Streams: []);
+            return (Failure: null, Streams: []);
         }
         catch (Exception ex)
         {
             logger.LogReadConsumerGroupFailed(ex, consumerGroup);
+            return (Failure: ex, Streams: []);
         }
-
-        return (Succeeded: false, Streams: []);
     }
 
     // Reads the group's streams, re-creating a group the server reports missing (NOGROUP) and reading once more, so a
@@ -447,7 +459,7 @@ internal sealed class RedisStreamManager(
         }
     }
 
-    private async Task<(bool Succeeded, RedisStreamMessages[] Streams)> _TryReadAsync(
+    private async Task<(Exception? Failure, RedisStreamMessages[] Streams)> _TryReadAsync(
         StreamPosition[] positions,
         CancellationToken token
     )
@@ -492,21 +504,20 @@ internal sealed class RedisStreamManager(
                 }
             }
 
-            return (Succeeded: true, Streams: [.. streams]);
+            return (Failure: null, Streams: [.. streams]);
         }
         catch (OperationCanceledException)
         {
-            return (Succeeded: true, Streams: []);
+            return (Failure: null, Streams: []);
         }
         catch (Exception ex)
         {
             logger.LogReadStreamsFailed(ex);
+            return (Failure: ex, Streams: []);
         }
-
-        return (Succeeded: false, Streams: []);
     }
 
-    private async Task<(bool Succeeded, RedisStreamMessages[] Streams)> _TryAutoClaimStalePendingAsync(
+    private async Task<(Exception? Failure, RedisStreamMessages[] Streams)> _TryAutoClaimStalePendingAsync(
         string consumerGroup,
         string consumerName,
         StreamPosition[] positions,
@@ -573,18 +584,17 @@ internal sealed class RedisStreamManager(
                 }
             }
 
-            return (Succeeded: true, Streams: [.. streams]);
+            return (Failure: null, Streams: [.. streams]);
         }
         catch (OperationCanceledException)
         {
-            return (Succeeded: true, Streams: []);
+            return (Failure: null, Streams: []);
         }
         catch (Exception ex)
         {
             logger.LogAutoClaimConsumerGroupFailed(ex, consumerGroup);
+            return (Failure: ex, Streams: []);
         }
-
-        return (Succeeded: false, Streams: []);
     }
 
     private async Task _TryDeleteIdleConsumersAsync(string[] streams, string consumerGroup, CancellationToken token)

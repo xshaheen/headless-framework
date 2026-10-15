@@ -319,6 +319,7 @@ Default implementation package for provider-agnostic SQL helpers.
 - Reopens the underlying connection if it is observed closed.
 - `SqlAutonomousTransaction` and `SqlAutonomousAttempt` — the store kit's autonomous-call retry (see [Store statement kit](#store-statement-kit-for-provider-authors)). They classify faults through `RelationalTransientFaults`, so the package depends on `Headless.UnitOfWork`.
 - `PingAsync(CancellationToken)` / `PingAsync(string commandText, CancellationToken)` on `ISqlConnectionFactory` — opens a new connection and runs `SELECT 1` or the given query; throws the driver's `DbException` when the server is unreachable or rejects the query.
+- The same `PingAsync` pair on `DbConnection` (`HeadlessDbConnectionPingExtensions`, namespace `System.Data.Common`) runs the query on a connection you already opened, such as one built from a feature's own connection options. It neither opens nor disposes the connection; a closed connection fails with the driver's `InvalidOperationException`.
 - `SqlDiagnostics` and the `AddSqlInstrumentation()` extensions on `TracerProviderBuilder` and `MeterProviderBuilder` — the autonomous-call telemetry (see [Store kit observability](#store-kit-observability)).
 
 ### Install

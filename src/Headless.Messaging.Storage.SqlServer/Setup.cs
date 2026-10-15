@@ -207,6 +207,11 @@ public static class SetupMessagingSqlServer
                 exportOnly: true
             )
         );
+        SqlServerMessagingStorageHealthCheck.Add(
+            setup.Services,
+            SqlServerMessagingStorageHealthCheck.OutboxCheckName(optionsName),
+            serviceProvider => serviceProvider.GetRequiredService<IOptionsMonitor<SqlServerOptions>>().Get(optionsName)
+        );
 
         return setup;
     }
@@ -259,6 +264,11 @@ public static class SetupMessagingSqlServer
                     sp.GetRequiredService<IOptions<SqlServerOptions>>().Value,
                     sp.GetRequiredService<IOptions<MessagingStorageOptions>>().Value
                 )
+            );
+            SqlServerMessagingStorageHealthCheck.Add(
+                services,
+                SqlServerMessagingStorageHealthCheck.PrimaryCheckName,
+                sp => sp.GetRequiredService<IOptions<SqlServerOptions>>().Value
             );
         }
     }
