@@ -578,7 +578,7 @@ internal static partial class LoggerExtensions
     public static partial void PublishSucceededButStorageTerminal(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
-        EventId = 4118,
+        EventId = 4121,
         EventName = "PublishSucceededButLeaseLost",
         Level = LogLevel.Warning,
         Message = "Publish succeeded for message {StorageId} but its Succeeded state was not written: the dispatch lease was lost to another claimer or lapsed, or the cause could not be read. The row may be published again; consumers will observe at-least-once delivery. A DispatchTimeout shorter than the publish can cause this."
@@ -586,7 +586,7 @@ internal static partial class LoggerExtensions
     public static partial void PublishSucceededButLeaseLost(this ILogger logger, Exception? exception, Guid storageId);
 
     [LoggerMessage(
-        EventId = 4119,
+        EventId = 4122,
         EventName = "PublishSucceededButStorageRowMissing",
         Level = LogLevel.Warning,
         Message = "Publish succeeded for message {StorageId} but its Succeeded state was not written: the stored row no longer exists."

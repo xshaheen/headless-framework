@@ -1729,10 +1729,10 @@ public sealed class MessageSenderTests : TestBase
             // The row reached a terminal state before this success write: the existing terminal event.
             { "terminal", 69 },
             // Another claimer holds the row under a different lease.
-            { "lease-lost", 4118 },
+            { "lease-lost", 4121 },
             // A claimed delayed publish is live with no NextRetryAt, so only its status tells it is not terminal.
-            { "queued-lease-lost", 4118 },
-            { "missing", 4119 },
+            { "queued-lease-lost", 4121 },
+            { "missing", 4122 },
         };
 
     [Theory]
@@ -1759,7 +1759,7 @@ public sealed class MessageSenderTests : TestBase
         // then
         result.Succeeded.Should().BeTrue();
         await transport.Received(1).SendAsync(transportMessage, Arg.Any<CancellationToken>());
-        log.Entries.Select(e => e.EventId.Id).Where(id => id is 69 or 4118 or 4119).Should().Equal(expectedEventId);
+        log.Entries.Select(e => e.EventId.Id).Where(id => id is 69 or 4121 or 4122).Should().Equal(expectedEventId);
     }
 
     [Fact]
@@ -1782,8 +1782,8 @@ public sealed class MessageSenderTests : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
-        log.Entries.Should().ContainSingle(e => e.EventId.Id == 4118).Which.Exception.Should().BeSameAs(readFailure);
-        log.Entries.Should().NotContain(e => e.EventId.Id == 69 || e.EventId.Id == 4119);
+        log.Entries.Should().ContainSingle(e => e.EventId.Id == 4121).Which.Exception.Should().BeSameAs(readFailure);
+        log.Entries.Should().NotContain(e => e.EventId.Id == 69 || e.EventId.Id == 4122);
     }
 
     private static (
