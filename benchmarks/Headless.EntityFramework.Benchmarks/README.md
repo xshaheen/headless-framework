@@ -13,3 +13,16 @@ dotnet run -c Release --project benchmarks/Headless.EntityFramework.Benchmarks -
 
 `--save-pipeline-probe` prints the change-detection passes and database commands per save. The counts are exact, so
 they are not a BenchmarkDotNet metric.
+
+Three more probes print exact allocations and counts next to a plain `DbContext` that maps the same CLR types:
+
+- `--save-cost-probe [--filter <scenario>]`: bytes per save, change-detection passes, commands, and transactions for
+  plain, stamped, tenant-guarded, audited, and aggregate entities over no-op, update, and insert workloads.
+  `HEADLESS_PROBE_ITERS` sets the iteration count (default 3000).
+- `--context-probe`: context and options resolution per scope, generated Guid keys, tracked queries, the `File` and
+  `Image` column comparers, and query compilations for `CountPerMonthAsync`.
+- `--stamp-check` and `--audit-row-cost`: whether the stored concurrency stamp matches the entity after an update, and
+  the cost of one tracked audit row.
+
+Bytes are exact (`GC.GetTotalAllocatedBytes(precise: true)` or the current thread's counter, minimum of five batches);
+microseconds are noisy on a shared machine.
