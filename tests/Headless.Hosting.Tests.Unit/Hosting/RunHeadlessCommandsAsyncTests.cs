@@ -14,7 +14,7 @@ namespace Tests.Hosting;
 public sealed class RunHeadlessCommandsAsyncTests : TestBase
 {
     [Fact]
-    public async Task should_fail_before_any_contributor_runs_when_a_startup_validator_fails()
+    public async Task should_fail_before_any_section_runs_when_a_startup_validator_fails()
     {
         // given
         var section = new StubSection("jobs");
@@ -104,6 +104,37 @@ public sealed class RunHeadlessCommandsAsyncTests : TestBase
         using var document = run.ParseStandardOutput();
         document.RootElement.GetProperty("schemaVersion").GetInt32().Should().Be(1);
         run.StandardError.Should().Contain(LoggingValidator.Message);
+    }
+
+    [Fact]
+    public async Task should_warn_on_stderr_when_a_default_builder_host_cannot_move_console_logging_off_stdout()
+    {
+        // given a legacy generic host, whose console logger captured standard output when it was built
+        var originalOut = Console.Out;
+        var originalError = Console.Error;
+        await using var stdout = new StringWriter();
+        await using var stderr = new StringWriter();
+        Console.SetOut(stdout);
+        Console.SetError(stderr);
+
+        int exitCode;
+        try
+        {
+            var host = Host.CreateDefaultBuilder().Build();
+
+            // when
+            exitCode = await host.RunHeadlessCommandsAsync(["describe"], AbortToken);
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+            Console.SetError(originalError);
+        }
+
+        // then - the manifest is still written, and the operator is told why a piped parse may break
+        exitCode.Should().Be(0);
+        stderr.ToString().Should().Contain("cannot be moved off standard output");
+        stdout.ToString().Should().Contain("\"schemaVersion\"");
     }
 
     [Fact]

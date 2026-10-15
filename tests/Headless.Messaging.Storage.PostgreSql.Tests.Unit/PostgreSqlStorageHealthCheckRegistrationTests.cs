@@ -93,7 +93,7 @@ public sealed class PostgreSqlStorageHealthCheckRegistrationTests : TestBase
             .Should()
             .BeEquivalentTo("sql-postgresql", "messaging-storage-postgresql-outbox-1");
         registrations
-            .Single(static x => x.Name == "sql-postgresql")
+            .Single(static x => string.Equals(x.Name, "sql-postgresql", StringComparison.Ordinal))
             .Tags.Should()
             .Contain(HeadlessHealthCheckTags.Messaging);
     }

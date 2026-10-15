@@ -392,12 +392,12 @@ public sealed class TransportConnectivityTests : TestBase
             {
                 await OnMessageCallback!(message, arg2: null);
             }
-#pragma warning disable CA1031 // False positive: the test asserts the arrival's effect, not how the pipeline handles the probe.
+#pragma warning disable CA1031, ERP022 // False positive: the test asserts the arrival's effect, not how the pipeline handles the probe.
             catch (Exception)
-#pragma warning restore CA1031
             {
                 // The probe has no valid body; the pipeline's handling of it is not under test.
             }
+#pragma warning restore CA1031, ERP022
         }
 
         // Only a listening client subscribes, and it does so before the register reports the start complete.

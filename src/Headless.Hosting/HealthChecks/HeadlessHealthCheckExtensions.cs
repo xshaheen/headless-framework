@@ -158,6 +158,43 @@ public static class HeadlessHealthCheckExtensions
         }
 
         /// <summary>
+        /// Sets a provider package's default for the health check it contributes under <paramref name="name" />, such as
+        /// a <see cref="HealthStatus.Degraded" /> failure status for a check whose failure leaves the host able to work.
+        /// </summary>
+        /// <param name="name">The contributed check's name.</param>
+        /// <param name="configure">Changes the options.</param>
+        /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
+        /// <remarks>
+        /// A default is applied before the <c>Headless:HealthChecks:{name}</c> configuration section and every
+        /// <see cref="ConfigureHeadlessHealthCheck" /> call, whatever order they are registered in, so an application
+        /// always overrides it. Applications call <see cref="ConfigureHeadlessHealthCheck" /> instead.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
+        /// <exception cref="ArgumentException"><paramref name="name" /> is <see langword="null" />, empty, or whitespace.</exception>
+        public IServiceCollection ConfigureHeadlessHealthCheckDefault(
+            string name,
+            Action<HeadlessHealthCheckOptions> configure
+        )
+        {
+            Argument.IsNotNull(services);
+            Argument.IsNotNullOrWhiteSpace(name);
+            Argument.IsNotNull(configure);
+
+            // Registers the configuration source that applies defaults, even before any check is contributed.
+            _GetNames(services);
+            var defaults = _GetDefaults(services);
+
+            if (!defaults.TryGetValue(name, out var configureDefaults))
+            {
+                defaults[name] = configureDefaults = [];
+            }
+
+            configureDefaults.Add(configure);
+
+            return services;
+        }
+
+        /// <summary>
         /// Removes every health check registration that matches <paramref name="predicate" />, including checks that
         /// Headless provider packages contribute.
         /// </summary>
@@ -279,6 +316,22 @@ public static class HeadlessHealthCheckExtensions
         return services;
     }
 
+    private static HeadlessHealthCheckDefaults _GetDefaults(IServiceCollection services)
+    {
+        if (
+            services
+                .FirstOrDefault(static descriptor => descriptor.ServiceType == typeof(HeadlessHealthCheckDefaults))
+                ?.ImplementationInstance
+            is not HeadlessHealthCheckDefaults defaults
+        )
+        {
+            defaults = new HeadlessHealthCheckDefaults();
+            services.AddSingleton(defaults);
+        }
+
+        return defaults;
+    }
+
     private static HeadlessHealthCheckResources _GetResources(IServiceCollection services)
     {
         if (
@@ -322,7 +375,9 @@ public static class HeadlessHealthCheckExtensions
             }
         }
 
-        foreach (var group in keyed.GroupBy(static x => x.Key, StringComparer.Ordinal).Where(static x => x.Count() > 1))
+        foreach (
+            var group in keyed.GroupBy(static x => x.Key, StringComparer.Ordinal).Where(static x => x.Skip(1).Any())
+        )
         {
             var survivor = group.FirstOrDefault(static x => x.Owns).Registration ?? group.First().Registration;
 
@@ -367,10 +422,11 @@ public static class HeadlessHealthCheckExtensions
             services.AddSingleton(names);
 
             // First in the collection, so every ConfigureHeadlessHealthCheck call runs after it and wins.
+            var defaults = _GetDefaults(services);
             services.Insert(
                 0,
                 ServiceDescriptor.Singleton<IConfigureOptions<HeadlessHealthCheckOptions>>(
-                    provider => new HeadlessHealthCheckConfiguration(provider.GetService<IConfiguration>())
+                    provider => new HeadlessHealthCheckConfiguration(defaults, provider.GetService<IConfiguration>())
                 )
             );
         }

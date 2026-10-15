@@ -8,16 +8,20 @@ using Microsoft.Extensions.Options;
 namespace Headless.Hosting;
 
 /// <summary>
-/// Applies the <c>Headless:HealthChecks:{name}</c> configuration section to the options of the contributed check with
-/// that name, so a deployment can turn a check off or change its failure status without a code change.
+/// Applies, in order, the contributing package's defaults and the <c>Headless:HealthChecks:{name}</c> configuration
+/// section to the options of the contributed check with that name, so a deployment can turn a check off or change its
+/// failure status without a code change.
 /// </summary>
 /// <remarks>
 /// It is registered ahead of every other configuration of <see cref="HeadlessHealthCheckOptions" />, so a
-/// <c>ConfigureHeadlessHealthCheck</c> call in code wins over configuration whichever is registered first. The keys are
-/// read one by one instead of through the reflection binder, which keeps the package trimming-safe.
+/// <c>ConfigureHeadlessHealthCheck</c> call in code wins over configuration, and configuration over a package default,
+/// whichever is registered first. The keys are read one by one instead of through the reflection binder, which keeps
+/// the package trimming-safe.
 /// </remarks>
-internal sealed class HeadlessHealthCheckConfiguration(IConfiguration? configuration)
-    : IConfigureNamedOptions<HeadlessHealthCheckOptions>
+internal sealed class HeadlessHealthCheckConfiguration(
+    HeadlessHealthCheckDefaults defaults,
+    IConfiguration? configuration
+) : IConfigureNamedOptions<HeadlessHealthCheckOptions>
 {
     public const string SectionPrefix = "Headless:HealthChecks:";
 
@@ -28,7 +32,20 @@ internal sealed class HeadlessHealthCheckConfiguration(IConfiguration? configura
 
     public void Configure(string? name, HeadlessHealthCheckOptions options)
     {
-        if (configuration is null || string.IsNullOrEmpty(name))
+        if (string.IsNullOrEmpty(name))
+        {
+            return;
+        }
+
+        if (defaults.TryGetValue(name, out var configureDefaults))
+        {
+            foreach (var configureDefault in configureDefaults)
+            {
+                configureDefault(options);
+            }
+        }
+
+        if (configuration is null)
         {
             return;
         }
@@ -73,3 +90,7 @@ internal sealed class HeadlessHealthCheckConfiguration(IConfiguration? configura
     private static InvalidOperationException _Invalid(IConfigurationSection section, string key, string value) =>
         new($"Configuration value '{value}' at '{section.Path}:{key}' is not valid for a health check's {key}.");
 }
+
+/// <summary>The defaults each contributing package set for its checks, by check name, in registration order.</summary>
+internal sealed class HeadlessHealthCheckDefaults()
+    : Dictionary<string, List<Action<HeadlessHealthCheckOptions>>>(StringComparer.Ordinal);

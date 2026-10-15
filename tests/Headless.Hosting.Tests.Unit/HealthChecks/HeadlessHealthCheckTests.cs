@@ -303,6 +303,50 @@ public sealed class HeadlessHealthCheckTests : TestBase
     }
 
     [Fact]
+    public void should_apply_a_package_default_before_configuration_and_code_whatever_the_order()
+    {
+        // given - code and configuration are registered before the package's default, which comes before the check
+        var services = _CreateServices(("Headless:HealthChecks:db:Timeout", "00:00:05"));
+        services.ConfigureHeadlessHealthCheck("db", static options => options.Tags.Add("from-code"));
+        services.ConfigureHeadlessHealthCheckDefault(
+            "db",
+            static options =>
+            {
+                options.FailureStatus = HealthStatus.Degraded;
+                options.Timeout = TimeSpan.FromSeconds(1);
+            }
+        );
+
+        // when
+        services.AddHeadlessHealthCheck("db", (_, _) => Task.CompletedTask);
+        using var provider = services.BuildServiceProvider();
+
+        // then - the default stands where nothing overrides it, configuration overrides it, code adds on top
+        var registration = _Registrations(provider).Should().ContainSingle().Subject;
+        registration.FailureStatus.Should().Be(HealthStatus.Degraded);
+        registration.Timeout.Should().Be(TimeSpan.FromSeconds(5));
+        registration.Tags.Should().Contain("from-code");
+    }
+
+    [Fact]
+    public void should_let_configuration_override_a_package_default()
+    {
+        // given
+        var services = _CreateServices(("Headless:HealthChecks:db:FailureStatus", "Unhealthy"));
+
+        // when
+        services.AddHeadlessHealthCheck("db", (_, _) => Task.CompletedTask);
+        services.ConfigureHeadlessHealthCheckDefault(
+            "db",
+            static options => options.FailureStatus = HealthStatus.Degraded
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        _Registrations(provider).Should().ContainSingle().Which.FailureStatus.Should().Be(HealthStatus.Unhealthy);
+    }
+
+    [Fact]
     public void should_not_run_the_probe_at_registration()
     {
         // given

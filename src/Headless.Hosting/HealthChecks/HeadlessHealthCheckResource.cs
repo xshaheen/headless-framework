@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using System.Globalization;
 using Headless.Checks;
 
 namespace Headless.Hosting;
@@ -113,11 +112,9 @@ public sealed class HeadlessHealthCheckResource
 
         var database = _First(builder, "Database", "Initial Catalog") ?? string.Empty;
 
-        return string.Create(
-                CultureInfo.InvariantCulture,
-                $"{_Family(provider)}://{host}{(string.IsNullOrEmpty(port) ? string.Empty : ":" + port)}/{database}"
-            )
-            .ToLowerInvariant();
+        var portSuffix = string.IsNullOrEmpty(port) ? string.Empty : ":" + port;
+
+        return $"{_Family(provider)}://{host}{portSuffix}/{database}".ToLowerInvariant();
     }
 
     private static string _Family(string provider) =>

@@ -5,6 +5,7 @@ using Headless.Checks;
 using Headless.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Microsoft.Extensions.Hosting;
@@ -69,7 +70,18 @@ public static class HeadlessHostCommandExtensions
 
         try
         {
-            _RouteConsoleLoggerToStandardError(host.Services);
+            if (!_RouteConsoleLoggerToStandardError(host.Services))
+            {
+                // Said before anything is printed, so an operator piping the JSON to a parser learns why it may break.
+                await stderr
+                    .WriteLineAsync(
+                        "Warning: this host's console logger cannot be moved off standard output (a Host.CreateDefaultBuilder "
+                            + "host), so log lines may precede the manifest. Build the host with "
+                            + "Host.CreateApplicationBuilder or WebApplication.CreateBuilder, or turn console logging off "
+                            + "for describe."
+                    )
+                    .ConfigureAwait(false);
+            }
 
             string manifest;
 
@@ -115,7 +127,8 @@ public static class HeadlessHostCommandExtensions
         await runner.StartingAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static void _RouteConsoleLoggerToStandardError(IServiceProvider services)
+    // Returns false when a Microsoft console logger keeps writing to standard output.
+    private static bool _RouteConsoleLoggerToStandardError(IServiceProvider services)
     {
         // The Microsoft console logger's error threshold is the only switch that moves its lines off the stdout writer
         // it holds, and the logger reloads that threshold from configuration. Hosts from HostApplicationBuilder and
@@ -124,7 +137,20 @@ public static class HeadlessHostCommandExtensions
         if (services.GetService<IConfiguration>() is IConfigurationBuilder configuration)
         {
             configuration.AddInMemoryCollection([new("Logging:Console:LogToStandardErrorThreshold", "Trace")]);
+
+            return true;
         }
+
+        // Matched by name: Headless.Hosting does not reference the console logger package, and needs only to know it is there.
+        return !services
+            .GetServices<ILoggerProvider>()
+            .Any(static provider =>
+                string.Equals(
+                    provider.GetType().FullName,
+                    "Microsoft.Extensions.Logging.Console.ConsoleLoggerProvider",
+                    StringComparison.Ordinal
+                )
+            );
     }
 
     private static async Task _DisposeAsync(IHost host)

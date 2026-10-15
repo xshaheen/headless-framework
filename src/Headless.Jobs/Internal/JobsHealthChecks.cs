@@ -4,7 +4,6 @@ using Headless.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
 
 namespace Headless.Jobs.Internal;
 
@@ -55,16 +54,9 @@ internal static class JobsHealthChecks
             HeadlessHealthCheckTags.Jobs
         );
 
-        // Inserted first so it is only a default: an application's ConfigureHeadlessHealthCheck call for this check
-        // overrides it whether it runs before or after AddHeadlessJobs.
-        services.Insert(
-            0,
-            ServiceDescriptor.Singleton<IConfigureOptions<HeadlessHealthCheckOptions>>(
-                new ConfigureNamedOptions<HeadlessHealthCheckOptions>(
-                    SchedulerCheckName,
-                    static options => options.FailureStatus = HealthStatus.Degraded
-                )
-            )
+        services.ConfigureHeadlessHealthCheckDefault(
+            SchedulerCheckName,
+            static options => options.FailureStatus = HealthStatus.Degraded
         );
     }
 }

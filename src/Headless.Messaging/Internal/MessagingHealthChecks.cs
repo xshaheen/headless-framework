@@ -4,7 +4,6 @@ using Headless.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Internal;
 
@@ -98,26 +97,19 @@ internal static class MessagingHealthChecks
         }
 
         // Degraded rather than Unhealthy: a paused consumer or an unavailable additional outbox leaves the host able to
-        // do the rest of its work, so it stays in rotation. Inserted first so it is only a default: an application's
-        // ConfigureHeadlessHealthCheck call overrides it whether it runs before or after AddHeadlessMessaging.
-        _DefaultToDegraded(services, ConsumersCheckName);
+        // do the rest of its work, so it stays in rotation. A package default, so configuration and an application's
+        // ConfigureHeadlessHealthCheck call override it.
+        services.ConfigureHeadlessHealthCheckDefault(
+            ConsumersCheckName,
+            static options => options.FailureStatus = HealthStatus.Degraded
+        );
 
         if (hasAdditionalOutboxes)
         {
-            _DefaultToDegraded(services, OutboxesCheckName);
+            services.ConfigureHeadlessHealthCheckDefault(
+                OutboxesCheckName,
+                static options => options.FailureStatus = HealthStatus.Degraded
+            );
         }
-    }
-
-    private static void _DefaultToDegraded(IServiceCollection services, string name)
-    {
-        services.Insert(
-            0,
-            ServiceDescriptor.Singleton<IConfigureOptions<HeadlessHealthCheckOptions>>(
-                new ConfigureNamedOptions<HeadlessHealthCheckOptions>(
-                    name,
-                    static options => options.FailureStatus = HealthStatus.Degraded
-                )
-            )
-        );
     }
 }
