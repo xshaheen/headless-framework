@@ -379,6 +379,38 @@ public sealed class InMemoryConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_drop_a_rejected_message_when_pending_messages_are_drained_before_the_redelivery_delay_ends()
+    {
+        // given
+        var clock = new FakeTimeProvider();
+        await using var client = new InMemoryConsumerClient(_queue, "drained-group", 1, redeliveryClock: clock);
+        await client.SubscribeAsync(["drained-messageName"], AbortToken);
+
+        var deliveries = 0;
+        var rejected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = async (_, sender) =>
+        {
+            Interlocked.Increment(ref deliveries);
+            await client.RejectAsync(sender, AbortToken);
+            rejected.TrySetResult();
+        };
+
+        using var cts = new CancellationTokenSource();
+        _StartListening(client, cts.Token);
+        _queue.SendBus(_CreateTestMessage("msg-1", "drained-messageName"));
+        await rejected.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        client.DrainPendingMessages();
+        clock.Advance(ReconnectBackoff.Ceiling);
+        await Task.Delay(100, AbortToken);
+
+        // then
+        await cts.CancelAsync();
+        deliveries.Should().Be(1, "a drain discards pending work, including a redelivery still waiting on its delay");
+    }
+
+    [Fact]
     public async Task should_not_throw_or_redeliver_when_rejecting_after_the_client_stopped()
     {
         // given
