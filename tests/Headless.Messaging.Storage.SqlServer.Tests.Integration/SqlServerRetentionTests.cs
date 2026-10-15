@@ -69,9 +69,10 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
                     FROM sys.all_objects a CROSS JOIN sys.all_objects b
                 ), seed AS (SELECT i,CONVERT(uniqueidentifier,CONVERT(binary(16),i)) AS id FROM numbers)
                 INSERT INTO {{_table}} (Id,Version,Name,Content,Retries,Added,StatusName,MessageId,IntentType,
-                    IsInboxRecord,GenerationIncarnationId,LifecycleId,ContractIdentity,ContractVersion,ConsumerIdentity,InboxKeyHash,EffectiveExpiresAt,ExpiresAt)
+                    IsInboxRecord,GenerationIncarnationId,LifecycleId,ContractIdentity,ContractVersion,ConsumerIdentity,InboxKeyHash,ConsumerIdentityHash,EffectiveExpiresAt,ExpiresAt)
                 SELECT id,N'v1',N'retention.plan',N'{}',0,SYSDATETIMEOFFSET(),N'Succeeded',CONVERT(nvarchar(200),i),0,
                     CASE WHEN i%2=0 THEN 1 ELSE 0 END,id,id,N'retention.plan',N'v1',N'retention.plan',HASHBYTES('SHA2_256',CONVERT(varchar(20),i)),
+                    CASE WHEN i%2=0 THEN NULL ELSE HASHBYTES('SHA2_256',CONVERT(varchar(20),i)) END,
                     DATEADD(day,CASE WHEN i<=10 THEN -1 ELSE 1 END,SYSDATETIMEOFFSET()),
                     DATEADD(day,CASE WHEN i<=10 THEN -1 ELSE 1 END,SYSDATETIMEOFFSET())
                 FROM seed;
@@ -163,10 +164,11 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
             new CommandDefinition(
                 $"""
                 INSERT INTO {_table} (Id,Version,Name,Retries,Added,StatusName,MessageId,IntentType,IsInboxRecord,
-                    GenerationIncarnationId,LifecycleId,ContractIdentity,ContractVersion,ConsumerIdentity,InboxKeyHash,EffectiveExpiresAt,ExpiresAt)
+                    GenerationIncarnationId,LifecycleId,ContractIdentity,ContractVersion,ConsumerIdentity,InboxKeyHash,ConsumerIdentityHash,EffectiveExpiresAt,ExpiresAt)
                 SELECT CONVERT(uniqueidentifier,CONVERT(binary(16),i)),N'v1',N'cleanup.locked',0,SYSDATETIMEOFFSET(),N'Succeeded',CONVERT(nvarchar(200),i),0,@Inbox,
                     CONVERT(uniqueidentifier,CONVERT(binary(16),i)),CONVERT(uniqueidentifier,CONVERT(binary(16),i)),
                     N'cleanup.locked',N'v1',N'cleanup.locked',HASHBYTES('SHA2_256',CONVERT(varchar(20),i)),
+                    CASE WHEN @Inbox=1 THEN NULL ELSE HASHBYTES('SHA2_256',CONVERT(varchar(20),i)) END,
                     DATEADD(day,i-4,SYSDATETIMEOFFSET()),DATEADD(day,i-4,SYSDATETIMEOFFSET())
                 FROM (VALUES (1),(2),(3)) seed(i);
                 """,

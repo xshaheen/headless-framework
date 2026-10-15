@@ -1043,6 +1043,36 @@ public sealed class ConsumerRegisterTests : TestBase
         logs.Single(entry => entry.EventId.Id is 4114 or 4115).EventId.Id.Should().Be(4115);
     }
 
+    [Fact]
+    public async Task should_log_a_transport_settlement_failure_as_a_warning()
+    {
+        // given
+        var logs = new List<(LogLevel Level, EventId EventId, string Message)>();
+        await using var provider = _CreateProvider(
+            configureMessaging: setup => setup.AddConsumer<BootstrapReadyConsumer>(),
+            configureServices: services =>
+                services
+                    .ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"))
+                    .AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs))
+        );
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        await using var client = new InboxConsumerClient();
+        var serializer = provider.GetRequiredService<Headless.Messaging.IMessageSerializer>();
+        var dispatcher = provider.GetRequiredService<IDispatcher>();
+        _AttachInboxProcessor(provider, register, client, dispatcher, serializer);
+
+        // when
+        client.OnLogCallback!(
+            new LogMessageEventArgs { LogType = MqLogType.SettlementFailed, Reason = "ack lost: channel closed" }
+        );
+
+        // then: a lost ack is redelivered and deduplicated, so it is a warning for an operator, not an error
+        logs.Should()
+            .ContainSingle(entry => entry.Message.Contains("ack lost: channel closed", StringComparison.Ordinal))
+            .Which.Level.Should()
+            .Be(LogLevel.Warning);
+    }
+
     // --- Receive middleware ring (outcome table) ---------------------------------------------------------
 
     private sealed record ReceiveRingTestRun(
@@ -1086,6 +1116,11 @@ public sealed class ConsumerRegisterTests : TestBase
         )> Admissions { get; } = [];
 
         public List<Message> DispatchedOrigins { get; } = [];
+
+        /// <summary>When set, the admitted-inbox lookup fails with it instead of reaching the storage.</summary>
+        public Exception? AdmissionLookupFailure { get; set; }
+
+        public int AdmissionLookups { get; private set; }
 
         public static Headless.Messaging.Persistence.IDataStorage For(
             Headless.Messaging.Persistence.IDataStorage inner,
@@ -1136,6 +1171,29 @@ public sealed class ConsumerRegisterTests : TestBase
             )
             {
                 Admissions.Add(((string)args[0]!, (string)args[1]!, (string)args[2]!, (MediumMessage)args[3]!));
+            }
+
+            if (
+                string.Equals(
+                    name,
+                    nameof(Headless.Messaging.Persistence.IDataStorage.IsInboxMessageAdmittedAsync),
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                AdmissionLookups++;
+            }
+
+            if (
+                AdmissionLookupFailure is { } lookupFailure
+                && string.Equals(
+                    name,
+                    nameof(Headless.Messaging.Persistence.IDataStorage.IsInboxMessageAdmittedAsync),
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                return ValueTask.FromException<bool>(lookupFailure);
             }
 
             var result = targetMethod!.Invoke(Inner, args);
@@ -1583,7 +1641,7 @@ public sealed class ConsumerRegisterTests : TestBase
         outcomes.Should().Contain("skipped").And.NotContain("no_responder");
         await circuitBreaker
             .DidNotReceive()
-            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
         circuitBreaker.Received(1).ReleaseHalfOpenProbe(Arg.Any<string>(), Arg.Any<long>());
         await run
             .Dispatcher.DidNotReceive()
@@ -1959,7 +2017,7 @@ public sealed class ConsumerRegisterTests : TestBase
         exhausted.RetryCount.Should().Be(0);
         await circuitBreaker
             .DidNotReceive()
-            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
         circuitBreaker.Received(1).ReleaseHalfOpenProbe(Arg.Any<string>(), Arg.Any<long>());
     }
 
@@ -1972,7 +2030,7 @@ public sealed class ConsumerRegisterTests : TestBase
             Behavior = (_, _) => throw new InvalidOperationException("middleware fault"),
         };
         var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
-        circuitBreaker.TryAcquireHalfOpenProbe(Arg.Any<string>()).Returns(1L);
+        circuitBreaker.TryAcquireHalfOpenProbe(Arg.Any<string>()).Returns(61L);
 
         await using var run = await _RunReceiveDeliveryAsync(
             middleware,
@@ -1991,7 +2049,7 @@ public sealed class ConsumerRegisterTests : TestBase
         exhausted.Should().NotBeNull();
         await circuitBreaker
             .Received(1)
-            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+            .ReportFailureAsync(Arg.Any<string>(), 61L, Arg.Any<Exception>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -2294,6 +2352,212 @@ public sealed class ConsumerRegisterTests : TestBase
         // then — one copy in the dead-letter destination per poisoned message
         run.Client.DeadLetters.Should().ContainSingle();
         run.Client.CommitCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task receive_redelivery_of_an_admitted_message_failing_the_contract_check_is_committed_as_a_duplicate()
+    {
+        // given - the first delivery was admitted to the inbox; its acknowledgement was lost
+        FailedInfo? exhausted = null;
+        var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
+        circuitBreaker.TryAcquireHalfOpenProbe(Arg.Any<string>()).Returns(1L);
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "admitted-redelivery",
+            "{}"u8.ToArray(),
+            onExhausted: (info, _) =>
+            {
+                exhausted = info;
+                return Task.CompletedTask;
+            },
+            circuitBreaker: circuitBreaker,
+            nativeDeadLetter: true
+        );
+        run.Storage.Admissions.Should().ContainSingle();
+
+        // when - a node still on the previous contract version receives the redelivery
+        await run.Client.OnMessageCallback!(
+            new TransportMessage(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = "admitted-redelivery",
+                    [Headers.MessageName] = "ready-messageName",
+                    [Headers.ContractVersion] = "2",
+                },
+                "{}"u8.ToArray()
+            ),
+            null
+        );
+
+        // then - work that already ran is not poison
+        run.Client.CommitCount.Should().Be(2);
+        run.Client.RejectCount.Should().Be(0);
+        run.Client.DeadLetters.Should().BeEmpty();
+        run.Storage.ReceivedExceptionRows.Should().BeEmpty();
+        exhausted.Should().BeNull();
+        await circuitBreaker
+            .DidNotReceive()
+            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+        circuitBreaker.Received(1).ReleaseHalfOpenProbe(Arg.Any<string>(), 1L);
+    }
+
+    [Fact]
+    public async Task receive_redelivery_of_an_admitted_request_failing_the_contract_check_sends_no_fault()
+    {
+        // given - an admitted request whose acknowledgement was lost
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
+        var replies = new Tests.RequestReply.RecordingReplyTransport();
+        var headers = _RequestHeaders(clock.GetUtcNow().AddSeconds(30));
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "admitted-request-redelivery",
+            "{}"u8.ToArray(),
+            publisherHeaders: headers,
+            configureServices: services =>
+            {
+                services.AddSingleton<TimeProvider>(clock);
+                services.AddSingleton<IReplyTransport>(replies);
+            },
+            lane: MessageLane.Queue,
+            queueResponder: true
+        );
+        run.Storage.Admissions.Should().ContainSingle();
+
+        // when
+        var redelivered = new Dictionary<string, string?>(headers, StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "admitted-request-redelivery",
+            [Headers.MessageName] = "ready-messageName",
+            [Headers.ContractVersion] = "2",
+        };
+        await run.Client.OnMessageCallback!(new TransportMessage(redelivered, "{}"u8.ToArray()), null);
+
+        // then - the caller is answered by the admitted attempt, never by a fault for its redelivery
+        run.Client.CommitCount.Should().Be(2);
+        run.Storage.ReceivedExceptionRows.Should().BeEmpty();
+        replies.Sent.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task receive_contract_mismatch_without_an_admitted_inbox_row_is_still_poison()
+    {
+        // when - the first delivery of the message already fails the contract check
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "never-admitted",
+            "{}"u8.ToArray(),
+            publisherHeaders: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.ContractVersion] = "2",
+            },
+            nativeDeadLetter: true
+        );
+
+        // then
+        run.Storage.Admissions.Should().BeEmpty();
+        run.Storage.ReceivedExceptionRows.Should().ContainSingle();
+        run.Client.DeadLetters.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task receive_redelivery_takes_the_poison_path_when_the_admitted_inbox_lookup_fails()
+    {
+        // given - an admitted message, then a storage that cannot answer whether it was admitted
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "admitted-lookup-fails",
+            "{}"u8.ToArray(),
+            nativeDeadLetter: true
+        );
+        run.Storage.AdmissionLookupFailure = new InvalidOperationException("storage unavailable");
+
+        // when
+        await run.Client.OnMessageCallback!(
+            new TransportMessage(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = "admitted-lookup-fails",
+                    [Headers.MessageName] = "ready-messageName",
+                    [Headers.ContractVersion] = "2",
+                },
+                "{}"u8.ToArray()
+            ),
+            null
+        );
+
+        // then - an unanswered lookup keeps the delivery's evidence rather than dropping it
+        run.Storage.ReceivedExceptionRows.Should().ContainSingle();
+        run.Client.DeadLetters.Should().ContainSingle();
+        run.Client.RejectCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task receive_policy_reject_of_an_admitted_message_keeps_its_poison_evidence()
+    {
+        // given - the message was admitted; then a receive middleware rejects a copy with the same id
+        var middleware = new RecordingReceiveMiddleware();
+        await using var run = await _RunReceiveDeliveryAsync(
+            middleware,
+            "admitted-then-rejected",
+            "{}"u8.ToArray(),
+            nativeDeadLetter: true
+        );
+        run.Storage.Admissions.Should().ContainSingle();
+        middleware.Behavior = (context, _) =>
+        {
+            context.Reject("signature-invalid", new InvalidOperationException("signature mismatch"));
+            return ValueTask.CompletedTask;
+        };
+
+        // when
+        await run.Client.OnMessageCallback!(
+            new TransportMessage(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = "admitted-then-rejected",
+                    [Headers.MessageName] = "ready-messageName",
+                },
+                "{}"u8.ToArray()
+            ),
+            null
+        );
+
+        // then - the middleware's verdict leaves evidence even though the id matches admitted work
+        run.Storage.AdmissionLookups.Should().Be(0);
+        run.Storage.ReceivedExceptionRows.Should().ContainSingle();
+        run.Client.DeadLetters.Should().ContainSingle().Which.Reason.Should().Be("ReceiveRejected");
+    }
+
+    [Theory]
+    [InlineData("message-id")]
+    [InlineData("tenant")]
+    public async Task receive_redelivery_with_an_inadmissible_identity_header_skips_the_admitted_lookup(string header)
+    {
+        // given - a delivery whose message id or tenant header could never have been admitted
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.ContractVersion] = "2" };
+        var messageId = "inadmissible-header";
+        if (string.Equals(header, "message-id", StringComparison.Ordinal))
+        {
+            messageId = new string('m', MessageOptions.MessageIdMaxLength + 1);
+        }
+        else
+        {
+            headers[Headers.TenantId] = new string('t', MessageOptions.TenantIdMaxLength + 1);
+        }
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            messageId,
+            "{}"u8.ToArray(),
+            publisherHeaders: headers,
+            nativeDeadLetter: true
+        );
+
+        // then - no lookup runs, and the delivery keeps the poison path
+        run.Storage.AdmissionLookups.Should().Be(0);
+        run.Storage.ReceivedExceptionRows.Should().ContainSingle();
+        run.Client.DeadLetters.Should().ContainSingle();
     }
 
     [Fact]

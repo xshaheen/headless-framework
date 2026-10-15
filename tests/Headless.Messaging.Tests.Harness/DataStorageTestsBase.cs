@@ -3906,6 +3906,120 @@ public abstract partial class DataStorageTestsBase : TestBase
         second.Should().BeFalse();
     }
 
+    public virtual async Task should_keep_received_exception_rows_apart_when_message_ids_differ_by_trailing_space()
+    {
+        var messageId = $"padded-{Guid.NewGuid():N}";
+        const string consumerIdentity = "padded-group";
+
+        var bare = await _StorePoisonAsync(messageId, consumerIdentity);
+        var padded = await _StorePoisonAsync(messageId + " ", consumerIdentity);
+        var paddedAgain = await _StorePoisonAsync(messageId + " ", consumerIdentity);
+
+        bare.Should().BeTrue();
+        padded.Should().BeTrue("a message id that differs only by a trailing space names a different message");
+        paddedAgain.Should().BeFalse("a redelivery of the padded message still finds its own terminal row");
+    }
+
+    public virtual async Task should_keep_received_exception_rows_apart_when_consumer_identities_differ_by_trailing_space()
+    {
+        var messageId = $"padded-consumer-{Guid.NewGuid():N}";
+        const string consumerIdentity = "padded-group";
+
+        var bare = await _StorePoisonAsync(messageId, consumerIdentity);
+        var padded = await _StorePoisonAsync(messageId, consumerIdentity + " ");
+        var paddedAgain = await _StorePoisonAsync(messageId, consumerIdentity + " ");
+        var bareAgain = await _StorePoisonAsync(messageId, consumerIdentity);
+
+        bare.Should().BeTrue();
+        padded.Should().BeTrue("a consumer identity that differs only by a trailing space names a different consumer");
+        paddedAgain.Should().BeFalse("a redelivery to the padded consumer still finds its own terminal row");
+        bareAgain.Should().BeFalse("a redelivery to the bare consumer still finds its own terminal row");
+    }
+
+    public virtual async Task should_report_an_admitted_inbox_message_only_for_its_exact_identity()
+    {
+        var storage = GetStorage();
+        var messageId = $"admitted-{Guid.NewGuid():N}";
+        var origin = CreateMessage(messageId, "orders.created");
+        origin.Headers[Headers.TenantId] = "tenant-a";
+        await _AdmitInboxAsync(storage, origin, consumerIdentity: "orders.consumer-a", contractVersion: "v1");
+
+        Task<bool> admitted(string? tenantId, string id, string consumer, MessageLane lane) =>
+            storage.IsInboxMessageAdmittedAsync(tenantId, id, "orders.created", consumer, lane, AbortToken).AsTask();
+
+        (await admitted("tenant-a", messageId, "orders.consumer-a", MessageLane.Bus))
+            .Should()
+            .BeTrue("the lookup ignores the contract version a redelivery cannot supply");
+        (await admitted("tenant-a", messageId, "orders.consumer-b", MessageLane.Bus)).Should().BeFalse();
+        (await admitted("tenant-a", messageId, "orders.consumer-a", MessageLane.Queue)).Should().BeFalse();
+        (await admitted("tenant-b", messageId, "orders.consumer-a", MessageLane.Bus)).Should().BeFalse();
+        (await admitted(null, messageId, "orders.consumer-a", MessageLane.Bus)).Should().BeFalse();
+        (await admitted("tenant-a", messageId + " ", "orders.consumer-a", MessageLane.Bus))
+            .Should()
+            .BeFalse("an id that differs only by a trailing space is another message");
+        (await admitted("tenant-a", messageId, "orders.consumer-a ", MessageLane.Bus))
+            .Should()
+            .BeFalse("a consumer identity that differs only by a trailing space is another consumer");
+        (await admitted("tenant-a ", messageId, "orders.consumer-a", MessageLane.Bus)).Should().BeFalse();
+
+        // An untenanted admission, the common single-tenant case, matches only an untenanted lookup.
+        var untenantedId = $"admitted-untenanted-{Guid.NewGuid():N}";
+        await _AdmitInboxAsync(
+            storage,
+            CreateMessage(untenantedId, "orders.created"),
+            consumerIdentity: "orders.consumer-a",
+            contractVersion: "v1"
+        );
+        (await admitted(null, untenantedId, "orders.consumer-a", MessageLane.Bus))
+            .Should()
+            .BeTrue("an untenanted redelivery of untenanted work is a duplicate");
+        (await admitted("tenant-a", untenantedId, "orders.consumer-a", MessageLane.Bus)).Should().BeFalse();
+        (
+            await storage.IsInboxMessageAdmittedAsync(
+                "tenant-a",
+                messageId,
+                "orders.shipped",
+                "orders.consumer-a",
+                MessageLane.Bus,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse("a producer may reuse one id across message names, and another name is another message");
+    }
+
+    public virtual async Task should_not_report_a_non_inbox_received_row_as_admitted()
+    {
+        var storage = GetStorage();
+        var messageId = $"not-admitted-{Guid.NewGuid():N}";
+        (await _StorePoisonAsync(messageId, "orders.consumer-a")).Should().BeTrue();
+
+        (
+            await storage.IsInboxMessageAdmittedAsync(
+                null,
+                messageId,
+                "poisoned",
+                "orders.consumer-a",
+                MessageLane.Bus,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse("a poison row records a delivery that never reached the inbox");
+    }
+
+    private async Task<bool> _StorePoisonAsync(string messageId, string consumerIdentity)
+    {
+        return await GetStorage()
+            .StoreReceivedExceptionMessageAsync(
+                "poisoned",
+                consumerIdentity,
+                GetSerializer().Serialize(CreateMessage(messageId)),
+                "poison",
+                AbortToken
+            );
+    }
+
     public virtual async Task should_handle_concurrent_redelivery_storm_on_same_message_id()
     {
         // Fan-out concurrency test for StoreReceivedExceptionMessageAsync's upsert identity
@@ -4206,15 +4320,13 @@ public abstract partial class DataStorageTestsBase : TestBase
             );
     }
 
-    public virtual async Task should_cap_published_retry_pickup_at_max_persisted_retries_and_leave_received_uncapped()
+    public virtual async Task should_claim_published_rows_past_max_persisted_retries_and_leave_received_uncapped()
     {
-        // given — the fixtures set MaxPersistedRetries = 4, which caps published rows only: `Retries <= 4`.
-        // Retries == 4 is the LAST allowed publish pickup (where the helper returns Exhausted on
-        // budget consumption). Retries == 5 represents the terminal state past the budget
-        // and must NOT be picked up. Total dispatches = (MaxPersistedRetries + 1) = 5.
+        // given — the fixtures set MaxPersistedRetries = 4. A published row at the cap still gets its last attempt, and
+        // a row past it (the cap was lowered after the row was scheduled) must still be claimed: the sender ends it as
+        // exhausted, so a claim filter on Retries would strand it forever, never exhausted and never purged.
         var storage = GetStorage();
 
-        // Boundary case 1 (published): Retries == MaxPersistedRetries → picked up.
         var atLimit = await storage.StoreMessageAsync(
             "max-retries-test-pub",
             CreateMessage(),
@@ -4228,13 +4340,12 @@ public abstract partial class DataStorageTestsBase : TestBase
             cancellationToken: AbortToken
         );
 
-        // Boundary case 2 (published): Retries == MaxPersistedRetries + 1 → NOT picked up.
         var aboveLimit = await storage.StoreMessageAsync(
             "above-retries-test-pub",
             CreateMessage(),
             cancellationToken: AbortToken
         );
-        aboveLimit.Retries = 5;
+        aboveLimit.Retries = 6;
         await storage.ChangePublishStateAsync(
             aboveLimit,
             StatusName.Failed,
@@ -4247,7 +4358,12 @@ public abstract partial class DataStorageTestsBase : TestBase
 
         // then
         retriable.Should().Contain(m => m.StorageId == atLimit.StorageId);
-        retriable.Should().NotContain(m => m.StorageId == aboveLimit.StorageId);
+        retriable
+            .Should()
+            .Contain(
+                m => m.StorageId == aboveLimit.StorageId && m.Retries == 6,
+                "a published row past the cap is claimed so the sender can end it"
+            );
 
         // A received row's budget is its consumer's failure policy, which only the executor knows: the claim must not
         // clip it at the publish cap, so a consumer with 20 delayed retries is still picked up for retry 16 and beyond.
@@ -4279,6 +4395,43 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Select(m => m.StorageId)
             .Should()
             .Contain(aboveCapReceived.Select(m => m.StorageId), "received pickup carries no global retry cap");
+    }
+
+    public virtual async Task should_return_stored_status_when_monitoring_reads_a_published_message()
+    {
+        // given — the sender reads the status back to tell a terminal row from a live one whose lease it lost
+        var storage = GetStorage();
+        var live = await storage.StoreMessageAsync("status-live-pub", CreateMessage(), cancellationToken: AbortToken);
+        var terminal = await storage.StoreMessageAsync(
+            "status-terminal-pub",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        await storage.ChangePublishStateAsync(terminal, StatusName.Failed, cancellationToken: AbortToken);
+
+        // when
+        var monitoring = storage.GetMonitoringApi();
+        var liveRow = await monitoring.GetPublishedMessageAsync(live.StorageId, AbortToken);
+        var terminalRow = await monitoring.GetPublishedMessageAsync(terminal.StorageId, AbortToken);
+
+        // then
+        liveRow.Should().NotBeNull();
+        liveRow!.StatusName.Should().Be(StatusName.Scheduled);
+        terminalRow.Should().NotBeNull();
+        terminalRow!.StatusName.Should().Be(StatusName.Failed);
+        terminalRow.NextRetryAt.Should().BeNull();
+
+        // and the received-side read carries the status the same way
+        var received = await storage.StoreReceivedMessageAsync(
+            "status-received",
+            "status-group",
+            CreateMessage(),
+            AbortToken
+        );
+        await storage.ChangeReceiveStateAsync(received, StatusName.Succeeded, cancellationToken: AbortToken);
+        var receivedRow = await monitoring.GetReceivedMessageAsync(received.StorageId, AbortToken);
+        receivedRow.Should().NotBeNull();
+        receivedRow!.StatusName.Should().Be(StatusName.Succeeded);
     }
 
     private async Task<MediumMessage> _StoreFailedPublishedMessageAsync(string name)

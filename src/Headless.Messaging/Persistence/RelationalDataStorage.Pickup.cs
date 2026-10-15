@@ -84,10 +84,9 @@ internal sealed partial class RelationalDataStorage
             ? $", {_t.AttemptId} = CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN {_dialect.NewGuid()} ELSE NULL END"
             : string.Empty;
         string[] returning = received ? [.. _RetryClaimColumns(), .. _InboxClaimColumns()] : _RetryClaimColumns();
-        // A published row's budget is the host-wide MaxPersistedRetries, so the claim caps it. A received row's budget
-        // belongs to its consumer's failure policy, which the statement cannot see: the executor checks it after the
-        // claim and fails a row already past it, so a global cap never clips a consumer's larger budget.
-        var retriesFilter = received ? string.Empty : $"{_t.Retries} <= @Retries AND ";
+        // The claim carries no retry cap. A received row's budget belongs to its consumer's failure policy and a
+        // published row's to MaxPersistedRetries; the executor and the sender check it after the claim and end a row
+        // already past it. Capping the claim instead would strand a row past a lowered cap, never exhausted or purged.
 
         // One claim statement selects the due rows in the requested recognized lane, skipping rows another
         // replica holds, and leases them as it returns them, so no second replica can pass the same filter
@@ -100,7 +99,7 @@ internal sealed partial class RelationalDataStorage
             new SqlClaimNext(
                 table,
                 [_t.Id],
-                $"{retriesFilter}{_t.Version} = @Version AND {_t.IntentType} = @IntentType AND {_t.NextRetryAt} IS NOT NULL AND {_t.NextRetryAt} <= {SqlDialectTokens.Now} AND ({_t.LockedUntil} IS NULL OR {_t.LockedUntil} <= {SqlDialectTokens.Now}){orphanFilter}{consumerFilter} AND {_terminalGuard}",
+                $"{_t.Version} = @Version AND {_t.IntentType} = @IntentType AND {_t.NextRetryAt} IS NOT NULL AND {_t.NextRetryAt} <= {SqlDialectTokens.Now} AND ({_t.LockedUntil} IS NULL OR {_t.LockedUntil} <= {SqlDialectTokens.Now}){orphanFilter}{consumerFilter} AND {_terminalGuard}",
                 [_t.NextRetryAt, _t.Id],
                 $"{_t.LockedUntil} = {_dialect.ShiftByDuration(SqlDialectTokens.Now, "Lease")}, {_t.Owner} = @Owner{attemptAssignment}",
                 returning,
@@ -129,16 +128,6 @@ internal sealed partial class RelationalDataStorage
                                     SqlColumnType.Int32,
                                     orphaned ? Options.OrphanProbeBatchSize : Options.RetryBatchSize
                                 );
-                                if (!received)
-                                {
-                                    _dialect.AddParameter(
-                                        command,
-                                        "Retries",
-                                        SqlColumnType.Int32,
-                                        Options.RetryPolicy.MaxPersistedRetries
-                                    );
-                                }
-
                                 _BindVersion(command);
                                 _dialect.AddParameter(
                                     command,

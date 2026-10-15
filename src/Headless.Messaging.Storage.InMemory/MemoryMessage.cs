@@ -8,7 +8,12 @@ internal sealed class MemoryMessage : MediumMessage
 
     public string ConsumerIdentity { get; init; } = null!;
 
-    public StatusName StatusName { get; set; }
+    // Shares the base property's storage, so a row the monitoring API returns as a MediumMessage carries its status.
+    public new StatusName StatusName
+    {
+        get => base.StatusName ?? default;
+        set => base.StatusName = value;
+    }
 
     public bool IsCurrentGeneration { get; set; } = true;
 

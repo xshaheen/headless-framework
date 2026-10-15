@@ -6,6 +6,8 @@ using Headless.Messaging.Persistence;
 using Headless.MultiTenancy;
 using Headless.Reliability;
 using Headless.UnitOfWork;
+using Polly;
+using Polly.Retry;
 
 namespace Headless.Messaging;
 
@@ -607,6 +609,70 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .GreaterThan(0)
             .When(x => x.MaxPoisonEnvelopeBytes.HasValue)
             .WithMessage("MaxPoisonEnvelopeBytes must be greater than zero when set.");
+        // The dispatch lease must outlast one publish's whole inline burst, or another node reclaims a row that is
+        // still publishing and sends it twice. A null policy or strategy is reported by its own rule.
+        RuleFor(x => x)
+            .Must(options =>
+                options.RetryPolicy?.RetryStrategy is not { } strategy
+                || options.RetryPolicy.DispatchTimeout > _WorstCaseInlinePublishBurst(options, strategy)
+            )
+            .OverridePropertyName(
+                $"{nameof(MessagingOptions.RetryPolicy)}.{nameof(RetryPolicyOptions.DispatchTimeout)}"
+            )
+            .WithMessage(options =>
+                $"RetryPolicy.DispatchTimeout ({options.RetryPolicy.DispatchTimeout}) must exceed the worst-case inline publish burst ({_WorstCaseInlinePublishBurst(options, options.RetryPolicy.RetryStrategy)}): (RetryStrategy.MaxRetryAttempts + 1) × TransportPublishTimeout ({options.TransportPublishTimeout}) plus the nominal retry delays."
+            );
+    }
+
+    /// <summary>
+    /// The longest one publish's inline burst can hold its dispatch lease: every attempt may run the full
+    /// <see cref="MessagingOptions.TransportPublishTimeout"/>, and each retry first waits its nominal backoff capped
+    /// at <c>MaxDelay</c>. Jitter and a custom <c>DelayGenerator</c> are left out because neither has a static bound,
+    /// so the bound uses the configured nominal backoff only. Saturates at <see cref="TimeSpan.MaxValue"/>.
+    /// </summary>
+    private static TimeSpan _WorstCaseInlinePublishBurst(MessagingOptions options, RetryStrategyOptions strategy)
+    {
+        // Doubles absorb out-of-range inputs (their own rules reject them) without overflowing or looping per retry.
+        double retries = Math.Max(0, strategy.MaxRetryAttempts);
+        var ticks =
+            ((retries + 1) * options.TransportPublishTimeout.Ticks) + _NominalRetryDelayTicks(strategy, retries);
+
+        return double.IsNaN(ticks) || ticks >= TimeSpan.MaxValue.Ticks
+            ? TimeSpan.MaxValue
+            : TimeSpan.FromTicks((long)ticks);
+    }
+
+    private static double _NominalRetryDelayTicks(RetryStrategyOptions strategy, double retries)
+    {
+        double delay = Math.Max(0, strategy.Delay.Ticks);
+        var cap = strategy.MaxDelay is { } maxDelay ? Math.Max(0, maxDelay.Ticks) : double.PositiveInfinity;
+        if (retries == 0 || delay == 0)
+        {
+            return 0;
+        }
+
+        // Polly spaces retry i (zero-based) by Delay, Delay·(i+1), or Delay·2^i, each capped at MaxDelay. The terms
+        // only grow, so the first `uncapped` retries sum in closed form and every later one waits exactly the cap.
+        double uncapped;
+        double uncappedSum;
+        switch (strategy.BackoffType)
+        {
+            case DelayBackoffType.Linear:
+                uncapped = Math.Min(retries, Math.Floor(cap / delay));
+                uncappedSum = delay * uncapped * (uncapped + 1) / 2;
+                break;
+            case DelayBackoffType.Exponential:
+                uncapped = cap < delay ? 0 : Math.Min(retries, Math.Floor(Math.Log2(cap / delay)) + 1);
+                uncappedSum = delay * (Math.Pow(2, uncapped) - 1);
+                break;
+            default:
+                uncapped = cap < delay ? 0 : retries;
+                uncappedSum = delay * uncapped;
+                break;
+        }
+
+        var capped = retries - uncapped;
+        return capped > 0 ? uncappedSum + (capped * cap) : uncappedSum;
     }
 
     private static void _ValidateMiddlewareDescriptors(IMiddlewareDescriptorRegistry? registry)

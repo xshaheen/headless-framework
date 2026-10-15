@@ -3,6 +3,7 @@
 using System.Data.Common;
 using System.Security.Cryptography;
 using System.Text;
+using Headless.Checks;
 using Headless.Messaging.Internal;
 using Headless.Sql;
 
@@ -13,7 +14,7 @@ namespace Headless.Messaging.Persistence;
 internal sealed partial class RelationalDataStorage
 {
     private const int _ContractVersionMaxLength = 100;
-    private const int _InboxKeyHashLength = 32;
+    private const int _Sha256HashLength = 32;
 
     public async ValueTask<InboxAdmissionResult> AdmitReceivedMessageAsync(
         string name,
@@ -180,6 +181,81 @@ internal sealed partial class RelationalDataStorage
     /// <summary>The filter of the root-key unique index: inbox root generations, never replay children.</summary>
     private string InboxRootPredicate => $"{_t.IsInboxRecord} = {_t.True} AND {_t.ReplayParentIncarnationId} IS NULL";
 
+    public async ValueTask<bool> IsInboxMessageAdmittedAsync(
+        string? tenantId,
+        string messageId,
+        string messageName,
+        string consumerIdentity,
+        MessageLane lane,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(messageId);
+        Argument.IsNotNull(messageName);
+        Argument.IsNotNull(consumerIdentity);
+
+        // The inbox key hash covers the contract version, which a redelivery failing its contract check cannot supply,
+        // so the lookup seeks the identity columns instead. SQL Server's = pads trailing spaces, so the candidates are
+        // confirmed ordinally here: an id that differs only by a trailing space is another message.
+        var sql = $"""
+            SELECT {_t.MessageId},{_t.ConsumerIdentity},{_t.TenantPresent},{_t.TenantId},{_t.ContractIdentity}
+            FROM {_receivedTable}
+            WHERE {_t.MessageId}=@MessageId AND {_t.ContractIdentity}=@ContractIdentity
+              AND {_t.ConsumerIdentity}=@ConsumerIdentity AND {_t.IntentType}=@IntentType
+              AND {_t.IsInboxRecord} = {_t.True};
+            """;
+
+        await using var connection = _CreateConnection();
+
+        return await RelationalCommand
+            .ExecuteReaderAsync(
+                connection,
+                transaction: null,
+                sql,
+                CommandTimeoutSeconds,
+                command =>
+                {
+                    _dialect.AddParameter(command, "MessageId", _MessageIdType, messageId);
+                    _dialect.AddParameter(
+                        command,
+                        "ContractIdentity",
+                        SqlColumnType.KeyText(_NameMaxLength),
+                        messageName
+                    );
+                    _dialect.AddParameter(command, "ConsumerIdentity", _IdentityType, consumerIdentity);
+                    _dialect.AddParameter(
+                        command,
+                        "IntentType",
+                        SqlColumnType.Int16,
+                        MessageLaneCompatibility.ToPersistedValue(lane)
+                    );
+                },
+                async (reader, token) =>
+                {
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
+                    {
+                        var tenantPresent = reader.GetBoolean(2);
+                        if (
+                            string.Equals(reader.GetString(0), messageId, StringComparison.Ordinal)
+                            && string.Equals(reader.GetString(1), consumerIdentity, StringComparison.Ordinal)
+                            && string.Equals(reader.GetString(4), messageName, StringComparison.Ordinal)
+                            && tenantPresent == (tenantId is not null)
+                            && (
+                                !tenantPresent || string.Equals(reader.GetString(3), tenantId, StringComparison.Ordinal)
+                            )
+                        )
+                        {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
     /// <summary>An inbox root generation's logical identity, as the admission and its read-back match it.</summary>
     private sealed record InboxRootKey(
         bool TenantPresent,
@@ -194,7 +270,7 @@ internal sealed partial class RelationalDataStorage
 
     private void _BindInboxRootKey(DbCommand command, InboxRootKey key, byte[] keyHash)
     {
-        _dialect.AddParameter(command, "InboxKeyHash", SqlColumnType.FixedBinary(_InboxKeyHashLength), keyHash);
+        _dialect.AddParameter(command, "InboxKeyHash", SqlColumnType.FixedBinary(_Sha256HashLength), keyHash);
         _dialect.AddParameter(command, "TenantPresent", SqlColumnType.Boolean, key.TenantPresent);
         _dialect.AddParameter(command, "TenantId", SqlColumnType.KeyText(_NameMaxLength), key.TenantId);
         _dialect.AddParameter(command, "MessageId", _MessageIdType, key.MessageId);
@@ -225,6 +301,27 @@ internal sealed partial class RelationalDataStorage
         {
             canonical = $"replay:{lifecycle:N}:{canonical}";
         }
+
+        return SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
+    }
+
+    /// <summary>
+    /// The SHA-256 of a non-inbox received row's identity, which that row's unique index is built on. SQL Server pads
+    /// the shorter string before comparing text, under every collation, so a text key would treat ids that differ only
+    /// by trailing spaces as one row; the hash keeps every identity byte-exact on every engine. Each value is
+    /// length-prefixed, as in the inbox key hash, so no two identities share a canonical form.
+    /// </summary>
+    internal static byte[] CreateConsumerIdentityHash(
+        string version,
+        string messageId,
+        short intentType,
+        string consumerIdentity
+    )
+    {
+        var canonical = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{version.Length}:{version}{messageId.Length}:{messageId}{intentType}:{consumerIdentity.Length}:{consumerIdentity}"
+        );
 
         return SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
     }

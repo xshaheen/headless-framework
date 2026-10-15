@@ -65,6 +65,7 @@ internal sealed class MessagingTables
         HoldOperationId = column("HoldOperationId");
         InboxRetentionSeconds = column("InboxRetentionSeconds");
         InboxKeyHash = column("InboxKeyHash");
+        ConsumerIdentityHash = column("ConsumerIdentityHash");
 
         OperationId = column("OperationId");
         TargetKind = column("TargetKind");
@@ -180,6 +181,12 @@ internal sealed class MessagingTables
 
     /// <summary>The SHA-256 of an inbox root generation's identity, which its unique index is built on.</summary>
     public string InboxKeyHash { get; }
+
+    /// <summary>
+    /// The SHA-256 of a non-inbox received row's identity, which its unique index is built on so the key compares bytes
+    /// rather than padded text.
+    /// </summary>
+    public string ConsumerIdentityHash { get; }
 
     public string OperationId { get; }
 

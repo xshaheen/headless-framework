@@ -232,8 +232,8 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                INSERT INTO headless.messaging_received ("id","version","name","consumer_identity","content","intent_type","retries","added","expires_at","next_retry_at","status_name","message_id")
-                VALUES (@Id,'v1','test.topic','test.group',@Content,0,0,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
+                INSERT INTO headless.messaging_received ("id","version","name","consumer_identity","content","intent_type","retries","added","expires_at","next_retry_at","status_name","message_id","consumer_identity_hash")
+                VALUES (@Id,'v1','test.topic','test.group',@Content,0,0,@Added,NULL,@NextRetryAt,'Failed',@MessageId,@ConsumerIdentityHash)
                 """,
                 new
                 {
@@ -242,6 +242,12 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
                     Added = addedTime,
                     NextRetryAt = DateTimeOffset.UtcNow.AddSeconds(-1),
                     MessageId = msgId,
+                    ConsumerIdentityHash = RelationalDataStorage.CreateConsumerIdentityHash(
+                        "v1",
+                        msgId,
+                        0,
+                        "test.group"
+                    ),
                 },
                 cancellationToken: AbortToken
             )
@@ -256,9 +262,9 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     }
 
     [Fact]
-    public async Task should_not_get_messages_with_max_retries()
+    public async Task should_claim_published_messages_past_max_retries()
     {
-        // given - create a failed message with max retries
+        // given - a failed message past MaxPersistedRetries; the sender, not the claim, ends it as exhausted
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
@@ -285,7 +291,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var messages = await _storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
 
         // then
-        messages.Should().NotContain(m => m.StorageId == id);
+        messages.Should().Contain(m => m.StorageId == id && m.Retries == 10);
     }
 
     [Fact]

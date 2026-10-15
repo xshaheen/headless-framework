@@ -160,8 +160,8 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         );
 
         // when — 2 failures: still below threshold
-        await sut.ReportFailureAsync(group, new TimeoutException("transient-1"), AbortToken);
-        await sut.ReportFailureAsync(group, new TimeoutException("transient-2"), AbortToken);
+        await sut.ReportFailureAsync(group, 0, new TimeoutException("transient-1"), AbortToken);
+        await sut.ReportFailureAsync(group, 0, new TimeoutException("transient-2"), AbortToken);
 
         // then — circuit still closed
         sut.IsOpen(group).Should().BeFalse();
@@ -169,7 +169,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         pauseCalled.Should().BeFalse();
 
         // when — 3rd failure hits the threshold
-        await sut.ReportFailureAsync(group, new TimeoutException("transient-3"), AbortToken);
+        await sut.ReportFailureAsync(group, 0, new TimeoutException("transient-3"), AbortToken);
 
         // then — circuit opens, pause callback invoked
         sut.IsOpen(group).Should().BeTrue();
@@ -221,8 +221,8 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         );
 
         // when — trip the circuit
-        await sut.ReportFailureAsync(group, new TimeoutException("fail-1"), AbortToken);
-        await sut.ReportFailureAsync(group, new TimeoutException("fail-2"), AbortToken);
+        await sut.ReportFailureAsync(group, 0, new TimeoutException("fail-1"), AbortToken);
+        await sut.ReportFailureAsync(group, 0, new TimeoutException("fail-2"), AbortToken);
 
         // then — circuit is open, consumer paused
         sut.IsOpen(group).Should().BeTrue();
@@ -240,7 +240,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         // when — acquire probe and report success (simulating a successful message processing)
         var probeAcquired = sut.TryAcquireHalfOpenProbe(group);
         probeAcquired.Should().NotBeNull();
-        await sut.ReportSuccessAsync(group, AbortToken);
+        await sut.ReportSuccessAsync(group, probeAcquired!.Value, AbortToken);
 
         // then — circuit closes, consumer fully operational
         sut.IsOpen(group).Should().BeFalse();
@@ -248,7 +248,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
         // and — a second probe can't be acquired (already closed)
         // verify post-close behavior: new transient failure starts fresh counter
-        await sut.ReportFailureAsync(group, new TimeoutException("post-close-1"), AbortToken);
+        await sut.ReportFailureAsync(group, 0, new TimeoutException("post-close-1"), AbortToken);
         sut.IsOpen(group).Should().BeFalse(); // 1 failure < threshold of 2
     }
 
@@ -279,7 +279,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         );
 
         // trip circuit for openGroup
-        await stateManager.ReportFailureAsync(openCircuitGroup, new TimeoutException("infra down"), AbortToken);
+        await stateManager.ReportFailureAsync(openCircuitGroup, 0, new TimeoutException("infra down"), AbortToken);
         stateManager.IsOpen(openCircuitGroup).Should().BeTrue();
         stateManager.IsOpen(healthyCircuitGroup).Should().BeFalse();
 
@@ -360,8 +360,8 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         );
 
         // --- Phase 1: Trip the circuit ---
-        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException("fail-1"), AbortToken);
-        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException("fail-2"), AbortToken);
+        await stateManager.ReportFailureAsync(circuitGroup, 0, new TimeoutException("fail-1"), AbortToken);
+        await stateManager.ReportFailureAsync(circuitGroup, 0, new TimeoutException("fail-2"), AbortToken);
         stateManager.IsOpen(circuitGroup).Should().BeTrue("circuit should be open after threshold failures");
 
         // --- Phase 2: Retry processor should skip messages while circuit is open ---
@@ -396,6 +396,59 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         await retryProcessor.ProcessAsync(context2);
         await retryProcessor.WaitForQuadrantIdleForTestAsync(MessageType.Subscribe, MessageLane.Bus);
         await dispatcher.Received(1).EnqueueToExecute(msg2, null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task persisted_retry_probe_carries_its_epoch_so_its_success_closes_halfopen_circuit()
+    {
+        // given — an open circuit whose open window has elapsed, and one persisted retry waiting
+        const string group = "integration.group.retry-probe-epoch";
+        var timeProvider = new FakeTimeProvider();
+        var circuitGroup = _CircuitKey(group);
+        await using var stateManager = _CreateStateManager(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMinutes(1),
+            timeProvider: timeProvider
+        );
+        stateManager.RegisterConsumerCallbacks(
+            circuitGroup,
+            onPause: _ => ValueTask.CompletedTask,
+            onResume: _ => ValueTask.CompletedTask
+        );
+
+        var dispatcher = Substitute.For<IDispatcher>();
+        var dataStorage = Substitute.For<IDataStorage>();
+        var retryProcessor = new MessageNeedToRetryProcessor(
+            Options.Create(new MessagingOptions()),
+            Options.Create(new RetryProcessorOptions { BaseInterval = _TestRetryInterval }),
+            NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>(),
+            dispatcher,
+            Substitute.For<IDistributedLock>(),
+            stateManager,
+            stateManager
+        );
+
+        await stateManager.ReportFailureAsync(circuitGroup, 0, new TimeoutException("down"), AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+        var retried = _CreateMessage(group);
+        _SetupReceivedMessages(dataStorage, retried);
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
+
+        // when — the retry processor claims the row as the HalfOpen probe and dispatches it
+        await retryProcessor.ProcessAsync(context);
+        await retryProcessor.WaitForQuadrantIdleForTestAsync(MessageType.Subscribe, MessageLane.Bus);
+
+        // then — the dispatched probe carries a live epoch, and the executor's success report
+        // under that epoch is accepted as the probe's outcome
+        await dispatcher.Received(1).EnqueueToExecute(retried, null, Arg.Any<CancellationToken>());
+        stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.HalfOpen);
+        retried.ProbeEpoch.Should().NotBe(0);
+
+        await stateManager.ReportSuccessAsync(circuitGroup, retried.ProbeEpoch, AbortToken);
+        stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.Closed);
     }
 
     [Fact]
@@ -445,7 +498,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         );
 
         // when
-        await sut.ReportFailureAsync(busKey, new TimeoutException("bus unavailable"), AbortToken);
+        await sut.ReportFailureAsync(busKey, 0, new TimeoutException("bus unavailable"), AbortToken);
         timeProvider.Advance(TimeSpan.FromMilliseconds(30));
         await busResumed.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
@@ -457,8 +510,9 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         queueResumed.Should().BeFalse();
 
         // when
-        sut.TryAcquireHalfOpenProbe(busKey).Should().NotBeNull();
-        await sut.ReportSuccessAsync(busKey, AbortToken);
+        var busProbeEpoch = sut.TryAcquireHalfOpenProbe(busKey);
+        busProbeEpoch.Should().NotBeNull();
+        await sut.ReportSuccessAsync(busKey, busProbeEpoch!.Value, AbortToken);
 
         // then
         sut.GetState(busKey).Should().Be(CircuitBreakerState.Closed);
@@ -496,7 +550,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             }
         );
 
-        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException(), AbortToken);
+        await stateManager.ReportFailureAsync(circuitGroup, 0, new TimeoutException(), AbortToken);
         await client.Received(1).PauseAsync(Arg.Any<CancellationToken>());
 
         timeProvider.Advance(TimeSpan.FromMinutes(1));
@@ -542,7 +596,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             }
         );
 
-        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException(), AbortToken);
+        await stateManager.ReportFailureAsync(circuitGroup, 0, new TimeoutException(), AbortToken);
         timeProvider.Advance(TimeSpan.FromMinutes(1));
 
         var decision = stateManager.GetRetryDecision(MessageLane.Bus, group);
@@ -585,7 +639,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             }
         );
 
-        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException(), AbortToken);
+        await stateManager.ReportFailureAsync(circuitGroup, 0, new TimeoutException(), AbortToken);
         await stateManager.ResetAsync(circuitGroup, AbortToken);
         await resumeCompleted.Task.WaitAsync(AbortToken);
 
@@ -637,7 +691,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             }
         );
 
-        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException(), AbortToken);
+        await stateManager.ReportFailureAsync(circuitGroup, 0, new TimeoutException(), AbortToken);
         timeProvider.Advance(TimeSpan.FromMinutes(1));
         var staleDecision = stateManager.GetRetryDecision(MessageLane.Bus, group);
         staleDecision.Kind.Should().Be(CircuitRetryDecisionKind.ProbeAcquired);
@@ -692,7 +746,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             onResume: epoch => _ResumeHandleAsync(register, handle, epoch)
         );
 
-        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException(), AbortToken);
+        await stateManager.ReportFailureAsync(circuitGroup, 0, new TimeoutException(), AbortToken);
         timeProvider.Advance(TimeSpan.FromMinutes(1));
         await reopenPauseCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
@@ -723,7 +777,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             onResume: _ => ValueTask.CompletedTask
         );
 
-        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException(), AbortToken);
+        await stateManager.ReportFailureAsync(circuitGroup, 0, new TimeoutException(), AbortToken);
         var currentEpoch = stateManager.TryAcquireHalfOpenProbe(circuitGroup)!.Value;
         await stateManager.ForceOpenAsync(circuitGroup, AbortToken);
 
@@ -746,7 +800,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     {
         var probeAcquired = stateManager.TryAcquireHalfOpenProbe(group);
         probeAcquired.Should().NotBeNull("should be able to acquire probe in HalfOpen state");
-        await stateManager.ReportSuccessAsync(group);
+        await stateManager.ReportSuccessAsync(group, probeAcquired!.Value);
     }
 
     private static ServiceProvider _CreateRegisterProvider()
