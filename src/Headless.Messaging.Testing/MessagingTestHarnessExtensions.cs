@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.Testing.Internal;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Testing;
@@ -41,12 +42,17 @@ public static class MessagingTestHarnessExtensions
     /// and disposal — the harness resolved from DI will <strong>not</strong> dispose the container.
     /// </para>
     /// <para>
+    /// The harness records over the in-memory transport only. When the application registers a broker transport, call
+    /// <see cref="ReplaceMessagingTransportWithInMemory"/> first; otherwise this method throws rather than record over
+    /// a broker the test may not reach. Any storage is accepted, so the test can keep the application's database.
+    /// </para>
+    /// <para>
     /// <strong>Example with WebApplicationFactory:</strong>
     /// <code>
     /// var factory = new WebApplicationFactory&lt;Program&gt;()
     ///     .WithWebHostBuilder(b =&gt; b.ConfigureTestServices(services =&gt;
     ///     {
-    ///         services.AddMessagingTestHarness();
+    ///         services.ReplaceMessagingTransportWithInMemory().AddMessagingTestHarness();
     ///     }));
     ///
     /// var client = factory.CreateClient();
@@ -59,9 +65,52 @@ public static class MessagingTestHarnessExtensions
     /// </remarks>
     /// <param name="services">The service collection to decorate.</param>
     /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The host registers no transport or no storage, or its transport is not the in-memory one.
+    /// </exception>
     public static IServiceCollection AddMessagingTestHarness(this IServiceCollection services)
     {
         MessagingTestHarness.ConfigureServices(services);
+        return services;
+    }
+
+    /// <summary>
+    /// Replaces the broker transport the application registered through <c>AddHeadlessMessaging</c>, such as RabbitMQ,
+    /// Kafka, Amazon SQS, Azure Service Bus, NATS, Pulsar, or Redis, with the in-memory transport, so the application's
+    /// own registration runs in a test without a broker.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Call it after <c>AddHeadlessMessaging</c> and before <see cref="AddMessagingTestHarness"/>; in a
+    /// <c>WebApplicationFactory</c>, inside <c>ConfigureTestServices</c>, which runs after the application's
+    /// registrations: <c>services.ReplaceMessagingTransportWithInMemory().AddMessagingTestHarness()</c>.
+    /// </para>
+    /// <para>
+    /// It removes exactly what the transport's <c>setup.Use…()</c> call registered: its transports, consumer client
+    /// factory, connection pools, capability declaration, options with their start-time validators, processing servers,
+    /// and health checks. Then it registers what <c>setup.UseInMemory()</c> would. Storage, consumers, contracts, and
+    /// everything else the application registered stay, so the test keeps the application's database. A host that
+    /// already uses the in-memory transport is left unchanged, so calling it twice is harmless.
+    /// </para>
+    /// <para>
+    /// The in-memory transport has no routing affinity. A host whose messages require it, through
+    /// <c>RequireRoutingAffinity()</c>, fails at startup with a <see cref="MessagingConfigurationException"/> that names
+    /// those messages and the replaced transport; test them against the real broker instead.
+    /// </para>
+    /// </remarks>
+    /// <param name="services">The application's service collection.</param>
+    /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <c>AddHeadlessMessaging</c> has not run on <paramref name="services"/>, <see cref="AddMessagingTestHarness"/>
+    /// already ran, or a transport was registered directly on the collection instead of through its <c>setup.Use…()</c>
+    /// call.
+    /// </exception>
+    public static IServiceCollection ReplaceMessagingTransportWithInMemory(this IServiceCollection services)
+    {
+        Argument.IsNotNull(services);
+
+        InMemoryTransportReplacement.Apply(services);
         return services;
     }
 

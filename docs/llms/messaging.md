@@ -75,7 +75,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Library contract pattern**: install `Messaging.Abstractions`, `Messaging.Bus.Abstractions`, or `Messaging.Queue.Abstractions` directly when a library exposes envelopes or publisher interfaces, declares message contracts, or contributes consumers without bootstrapping Core. `ConfigureMessaging`, `Message<T>`, `AddModule<T>`, and `IMessagingModule` all live in `Messaging.Abstractions`; only `Tune` needs `Messaging`. A library that declares consumers still needs the Messaging source generator at build time (the `Messaging` package carries it; in this repository it is a `ProjectReference` with `OutputItemType="Analyzer"`), and the generated module ships compiled into the library. A library never calls `AddHeadlessMessaging`.
 - **Use `InMemory` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
 - **OpenTelemetry is native to `Messaging`** (no satellite package). Subscribe traces/metrics with `AddMessagingInstrumentation()` on the `TracerProviderBuilder`/`MeterProviderBuilder`, and configure enrichers/suppression via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`.
-- **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
+- **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), after `ReplaceMessagingTransportWithInMemory()` when that host registers a broker, or `MessagingTestHarness.CreateAsync()` for standalone harness.
 - **Add `Messaging.Dashboard`** when monitoring UI is needed; it exposes operational message actions and requires an explicit authentication choice (the host fails to start otherwise), so configure `WithBasicAuth`, `WithApiKey`, `WithHostAuthentication`, or `WithCustomAuth` — and `SetCorsOrigins` if the SPA is served cross-origin — before production exposure.
 - **Consumers declare themselves with one lane attribute**: put exactly one of `[BusConsumer("owner.name")]` or `[QueueConsumer("owner.name")]` on a class that implements `IConsume<T>`. The messages it handles are exactly the `IConsume<T>` interfaces it implements; one class may handle several. `[BusConsumer]` also takes `EveryInstance = true` (see [Every-instance Bus delivery](#every-instance-bus-delivery)). No fluent call declares a consumer, and nothing registers a consumer by scanning assemblies at runtime.
 - **The consumer identity is the consumer's durable name**: `owner.name` form, at most 200 characters, first segment naming the owning module. On the Bus lane it is the broker subscription name, so processes that register the same identity compete for each message wherever the module runs. It also keys the consumer's inbox rows, circuit breaker, metrics, `Tune`, configuration, and `ConsumeOnly`. Renaming it starts a new consumer with empty inbox history. Intentional reprocessing uses an explicit linked inbox generation; changing a schema version is not a dedupe-reset mechanism.
@@ -3264,11 +3264,20 @@ EF execution-strategy retries are allowed only before handler entry. After entry
 - `RunInUnitOfWorkAsync(...)` creates a service scope, begins a resource-less unit of work on it, and hands the delegate **both** that scope's `IServiceProvider` and the `IUnitOfWork` itself — `Func<IServiceProvider, IUnitOfWork, Task>`, plus a `Task<TResult>` overload. Publish through the unit's `Outbox` inside the delegate to exercise an enlisted publish against a live commit or rollback.
 - `ResetAsync()` drains in-flight publish and consume work before clearing a shared harness.
 - `IServiceProvider.ResetMessagingHarnessAsync()` resolves the registered harness and calls `ResetAsync()`, and does nothing when no harness is registered. A shared test host resets through it, for example `await server.Services.ResetMessagingHarnessAsync(cancellationToken)` on a `HeadlessTestServer`, which carries no messaging dependency of its own.
+- `IServiceCollection.ReplaceMessagingTransportWithInMemory()` swaps the broker transport an application registered through `AddHeadlessMessaging` (RabbitMQ, Kafka, Amazon SQS, Azure Service Bus, NATS, Pulsar, Redis, or a custom `IMessagesOptionsExtension`) for the in-memory transport, so the application's own registration runs in a test with no broker. Call it after `AddHeadlessMessaging` and before `AddMessagingTestHarness()`.
 - `TestConsumer<T>` captures consume contexts without custom handler logic. It is generic and carries no consumer attribute, so the generator cannot register it; attach it as a runtime subscription, for example `subscriber.SubscribeAsync<OrderPlaced>((context, _, ct) => testConsumer.ConsumeAsync(context, ct), new RuntimeSubscriptionOptions { HandlerId = "tests.order-placed" })`.
 
 ### Design constraints
 
 Use the testing package for application tests that need to assert published messages or consumed messages. Provider conformance still belongs in provider-specific or shared harness tests.
+
+The harness records over the in-memory transport only. `AddMessagingTestHarness()` and `MessagingTestHarness.CreateAsync(...)` throw `InvalidOperationException` naming the registered transport when it is any other transport, a broker or a custom one, so a test never silently depends on a reachable broker. Storage is not checked beyond being registered: a test keeps the application's database, for example in a Testcontainers fixture, or uses `setup.UseInMemoryStorage()`.
+
+`ReplaceMessagingTransportWithInMemory()` removes exactly what the transport's `setup.Use…()` call registered and nothing else. `AddHeadlessMessaging` records the descriptors each provider extension adds, so the replacement drops the transport's transports, consumer client factory, connection pools, capability declaration, options with their start-time validators, processing servers (such as the NATS stream warm-up), and health checks (such as `messaging-nats`). It keeps the shared options, startup-validation, and health-check infrastructure the provider may have added first. Then it registers what `setup.UseInMemory()` registers. Consumers, contracts, storage, and the rest of the application's registration are unchanged. A host already on the in-memory transport is left as is, so a second call does nothing. It throws `InvalidOperationException` when `AddHeadlessMessaging` has not run, when `AddMessagingTestHarness()` already ran (the harness wraps the transport present when it runs), or when a transport was added straight to the collection instead of through its `setup.Use…()` call.
+
+The in-memory transport maps no routing affinity. A host with a message that calls `RequireRoutingAffinity()`, as Kafka partition-keyed contracts do, fails at startup after the swap with a `MessagingConfigurationException` that names the message, its lane, and the replaced transport. Test such messages against the real broker.
+
+In a generic or web host, the messaging bootstrapper is a background service: the host's `StartAsync` returns before bootstrap finishes and does not surface a bootstrap failure. Before the first publish, join it with `await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(cancellationToken)`, which waits for the running bootstrap and rethrows its failure.
 
 The harness does not weaken delivery: `MessagingOptions.DefaultDeliveryMode` stays `Durable`, so `PublishAsync` returns once the row is in in-memory storage and the transport send, the `Published` observation, and consumption follow on dispatcher threads. Assert through `WaitFor*` rather than reading the collections right after a publish. `ResetAsync()` waits until no published row is `Scheduled`/`Queued` and no received row is `Scheduled` (those states bracket every send and consumer execution), drops transport messages no consumer picked up, and only then clears observations and storage; a publish delayed by more than a minute is not awaited and still fires when due. `RunInUnitOfWorkAsync` begins the unit of work with `IUnitOfWorkFactory.BeginAsync()` (resource-less) and hands it to the delegate; in-memory storage is the one storage that can join a resource-less unit (see [Delivery Modes](#delivery-modes)), so `unit.Outbox` publishes made inside the delegate are captured on the unit. Completion stores the captured rows and hands them to the dispatcher, so they surface through `WaitForPublishedAsync`/`WaitForConsumedAsync`; an exception from the delegate rolls the unit back, discards the rows, and records nothing. Every call opens an independent scope and unit — a nested call is a second unit, not a participant in the outer one. The recorded `ResolvedDeliveryMode` is `Durable` either way; enlistment shows up in `RecordedMessage.IsCoordinated`, not in the mode.
 
@@ -3305,6 +3314,19 @@ recorded.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
 recorded.IsCoordinated.Should().BeTrue();
 ```
 
+To test an application whose `Program` registers a broker, replace its transport in the test host. With `WebApplicationFactory<Program>`, register both calls inside `ConfigureTestServices`, which runs after the application's registrations:
+
+```csharp
+// Inside builder.ConfigureTestServices(services => { ... }) of a WebApplicationFactory<Program>:
+services.ReplaceMessagingTransportWithInMemory().AddMessagingTestHarness();
+
+// After the factory has started the host:
+await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(cancellationToken);
+
+var harness = provider.GetRequiredService<MessagingTestHarness>();
+await harness.WaitForConsumedAsync<OrderPlaced>(TimeSpan.FromSeconds(5), cancellationToken);
+```
+
 ### Configuration
 
 None. `MessagingTestHarness` has no configuration class or options object. The per-call `timeout` parameter controls how long `WaitFor*` methods and `ResetAsync` wait; when omitted it defaults to `MessagingTestHarness.DefaultTimeout`.
@@ -3312,6 +3334,6 @@ None. `MessagingTestHarness` has no configuration class or options object. The p
 ### Runtime behavior
 
 - `CreateAsync(...)` builds and owns a test `ServiceProvider`; dispose the harness after each test.
-- `AddMessagingTestHarness()` decorates the host's existing messaging registrations with recording wrappers; call it after `AddHeadlessMessaging(...)`.
-- Both entry points call `services.AddUnitOfWork()` (idempotent), so the host always resolves a real `IUnitOfWorkFactory`.
+- `AddMessagingTestHarness()` decorates the host's existing messaging registrations with recording wrappers; call it after `AddHeadlessMessaging(...)`, and after `ReplaceMessagingTransportWithInMemory()` when the host registers a broker.
+- Neither entry point registers the unit of work: `AddHeadlessMessaging(...)` calls `services.AddUnitOfWork()` (idempotent), so any host that registers messaging resolves a real `IUnitOfWorkFactory`.
 - Transport parallelism is disabled inside the harness for deterministic test execution.
