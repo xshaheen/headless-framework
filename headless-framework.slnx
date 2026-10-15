@@ -357,6 +357,7 @@
         <Project Path="tests\Headless.Domain.EventDispatcher.Tests.Unit\Headless.Domain.EventDispatcher.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Domain.Tests.Unit\Headless.Domain.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Extensions.Tests.Unit\Headless.Extensions.Tests.Unit.csproj" />
+        <Project Path="benchmarks\Headless.Threading.Benchmarks\Headless.Threading.Benchmarks.csproj" />
         <Project Path="tests\Headless.Hosting.Tests.Unit\Headless.Hosting.Tests.Unit.csproj" />
         <Project Path="tests\Headless.NetTopologySuite.Tests.Unit\Headless.NetTopologySuite.Tests.Unit.csproj" />
         <Project Path="tests\Headless.PhoneNumbers.Tests.Unit\Headless.PhoneNumbers.Tests.Unit.csproj" />

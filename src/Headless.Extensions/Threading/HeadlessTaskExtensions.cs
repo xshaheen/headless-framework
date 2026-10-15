@@ -281,7 +281,7 @@ public static class HeadlessTaskExtensions
 
     #endregion
 
-    #region Run Delayed
+    #region Run Delayed and When All Bounded
 
     extension(Task)
     {
@@ -326,6 +326,68 @@ public static class HeadlessTaskExtensions
                 cancellationToken.ThrowIfCancellationRequested();
 
                 await action(cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Starts every operation in <paramref name="operations"/> with at most <paramref name="maxConcurrency"/> in
+        /// flight and returns their results in input order. Unlike <see cref="Task.WhenAll(IEnumerable{Task})"/> over
+        /// pre-started tasks, a large batch does not put every call on the wire at once.
+        /// </summary>
+        /// <typeparam name="T">The result type of each operation.</typeparam>
+        /// <param name="operations">The operations to start; each is invoked exactly once, in order, as a slot frees.</param>
+        /// <param name="maxConcurrency">The maximum number of operations running at the same time.</param>
+        /// <returns>
+        /// A task whose result holds each operation's result at its input index. Every operation runs to completion
+        /// even when another fails, and the first failure surfaces afterwards, as <see cref="Task.WhenAll(Task[])"/> does.
+        /// </returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="operations"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="maxConcurrency"/> is not positive.</exception>
+        public static async Task<T[]> WhenAllBoundedAsync<T>(
+            IReadOnlyList<Func<Task<T>>> operations,
+            int maxConcurrency
+        )
+        {
+            Argument.IsNotNull(operations);
+            Argument.IsPositive(maxConcurrency);
+
+            if (operations.Count <= maxConcurrency)
+            {
+                // Nothing to throttle: start them all and skip the semaphore.
+                var all = new Task<T>[operations.Count];
+
+                for (var i = 0; i < all.Length; i++)
+                {
+                    all[i] = operations[i]();
+                }
+
+                return await Task.WhenAll(all).ConfigureAwait(false);
+            }
+
+            using var gate = new SemaphoreSlim(maxConcurrency);
+            var tasks = new Task<T>[operations.Count];
+
+            for (var i = 0; i < tasks.Length; i++)
+            {
+#pragma warning disable CA2025, AsyncFixer04 // False positive: Task.WhenAll below completes every task before gate is disposed.
+                tasks[i] = runAsync(operations[i], gate);
+#pragma warning restore CA2025, AsyncFixer04
+            }
+
+            return await Task.WhenAll(tasks).ConfigureAwait(false);
+
+            static async Task<T> runAsync(Func<Task<T>> operation, SemaphoreSlim gate)
+            {
+                await gate.WaitAsync().ConfigureAwait(false);
+
+                try
+                {
+                    return await operation().ConfigureAwait(false);
+                }
+                finally
+                {
+                    gate.Release();
+                }
             }
         }
     }
