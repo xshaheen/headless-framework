@@ -173,8 +173,8 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         var id = Guid.NewGuid();
         var content = _serializer!.Serialize(CreateMessage($"unsupported-lane-{id:N}"));
         var tableName = published ? "MessagingPublished" : "MessagingReceived";
-        var receivedColumns = published ? string.Empty : ", ConsumerIdentity, ExceptionInfo";
-        var receivedValues = published ? string.Empty : ", 'unsupported-lane-consumer', NULL";
+        var receivedColumns = published ? string.Empty : ", ConsumerIdentity, ExceptionInfo, ConsumerIdentityHash";
+        var receivedValues = published ? string.Empty : ", 'unsupported-lane-consumer', NULL, @ConsumerIdentityHash";
         var sql = $"""
             INSERT INTO headless.{tableName}
                 (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId{receivedColumns})
@@ -196,6 +196,12 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
                     NextRetryAt = nextRetryAt,
                     LockedUntil = nextRetryAt,
                     MessageId = $"unsupported-lane-{id:N}",
+                    ConsumerIdentityHash = RelationalDataStorage.CreateConsumerIdentityHash(
+                        "v1",
+                        $"unsupported-lane-{id:N}",
+                        rawLane,
+                        "unsupported-lane-consumer"
+                    ),
                 },
                 cancellationToken: cancellationToken
             )
@@ -926,6 +932,18 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     public override Task should_report_false_when_received_exception_message_is_already_terminal()
     {
         return base.should_report_false_when_received_exception_message_is_already_terminal();
+    }
+
+    [Fact]
+    public override Task should_keep_received_exception_rows_apart_when_message_ids_differ_by_trailing_space()
+    {
+        return base.should_keep_received_exception_rows_apart_when_message_ids_differ_by_trailing_space();
+    }
+
+    [Fact]
+    public override Task should_keep_received_exception_rows_apart_when_consumer_identities_differ_by_trailing_space()
+    {
+        return base.should_keep_received_exception_rows_apart_when_consumer_identities_differ_by_trailing_space();
     }
 
     [Fact]
@@ -1992,9 +2010,9 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         await connection.ExecuteAsync(
             """
             INSERT INTO headless.MessagingReceived
-                (Id, Version, Name, ConsumerIdentity, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId, ExceptionInfo)
+                (Id, Version, Name, ConsumerIdentity, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId, ExceptionInfo, ConsumerIdentityHash)
             VALUES
-                (@Id, 'v1', 'poison-received', 'poison-group', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
+                (@Id, 'v1', 'poison-received', 'poison-group', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL, @ConsumerIdentityHash);
             """,
             new
             {
@@ -2002,6 +2020,12 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
                 Now = now,
                 NextRetryAt = now.AddMinutes(-1),
                 MessageId = $"poison-{id:N}",
+                ConsumerIdentityHash = RelationalDataStorage.CreateConsumerIdentityHash(
+                    "v1",
+                    $"poison-{id:N}",
+                    0,
+                    "poison-group"
+                ),
             }
         );
     }
@@ -2070,9 +2094,9 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         return connection.ExecuteAsync(
             """
             INSERT INTO headless.MessagingReceived
-                (Id, Version, Name, ConsumerIdentity, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId, ExceptionInfo)
+                (Id, Version, Name, ConsumerIdentity, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId, ExceptionInfo, ConsumerIdentityHash)
             VALUES
-                (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, @IntentType, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
+                (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, @IntentType, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL, @ConsumerIdentityHash);
             """,
             new
             {
@@ -2082,6 +2106,12 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
                 NextRetryAt = nextRetryAt,
                 IntentType = rawLane,
                 MessageId = $"healthy-{id:N}",
+                ConsumerIdentityHash = RelationalDataStorage.CreateConsumerIdentityHash(
+                    "v1",
+                    $"healthy-{id:N}",
+                    rawLane,
+                    "healthy-group"
+                ),
             }
         );
     }

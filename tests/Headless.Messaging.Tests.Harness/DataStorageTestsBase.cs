@@ -3906,6 +3906,48 @@ public abstract partial class DataStorageTestsBase : TestBase
         second.Should().BeFalse();
     }
 
+    public virtual async Task should_keep_received_exception_rows_apart_when_message_ids_differ_by_trailing_space()
+    {
+        var messageId = $"padded-{Guid.NewGuid():N}";
+        const string consumerIdentity = "padded-group";
+
+        var bare = await _StorePoisonAsync(messageId, consumerIdentity);
+        var padded = await _StorePoisonAsync(messageId + " ", consumerIdentity);
+        var paddedAgain = await _StorePoisonAsync(messageId + " ", consumerIdentity);
+
+        bare.Should().BeTrue();
+        padded.Should().BeTrue("a message id that differs only by a trailing space names a different message");
+        paddedAgain.Should().BeFalse("a redelivery of the padded message still finds its own terminal row");
+    }
+
+    public virtual async Task should_keep_received_exception_rows_apart_when_consumer_identities_differ_by_trailing_space()
+    {
+        var messageId = $"padded-consumer-{Guid.NewGuid():N}";
+        const string consumerIdentity = "padded-group";
+
+        var bare = await _StorePoisonAsync(messageId, consumerIdentity);
+        var padded = await _StorePoisonAsync(messageId, consumerIdentity + " ");
+        var paddedAgain = await _StorePoisonAsync(messageId, consumerIdentity + " ");
+        var bareAgain = await _StorePoisonAsync(messageId, consumerIdentity);
+
+        bare.Should().BeTrue();
+        padded.Should().BeTrue("a consumer identity that differs only by a trailing space names a different consumer");
+        paddedAgain.Should().BeFalse("a redelivery to the padded consumer still finds its own terminal row");
+        bareAgain.Should().BeFalse("a redelivery to the bare consumer still finds its own terminal row");
+    }
+
+    private async Task<bool> _StorePoisonAsync(string messageId, string consumerIdentity)
+    {
+        return await GetStorage()
+            .StoreReceivedExceptionMessageAsync(
+                "poisoned",
+                consumerIdentity,
+                GetSerializer().Serialize(CreateMessage(messageId)),
+                "poison",
+                AbortToken
+            );
+    }
+
     public virtual async Task should_handle_concurrent_redelivery_storm_on_same_message_id()
     {
         // Fan-out concurrency test for StoreReceivedExceptionMessageAsync's upsert identity

@@ -1295,6 +1295,18 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
+    public override Task should_keep_received_exception_rows_apart_when_message_ids_differ_by_trailing_space()
+    {
+        return base.should_keep_received_exception_rows_apart_when_message_ids_differ_by_trailing_space();
+    }
+
+    [Fact]
+    public override Task should_keep_received_exception_rows_apart_when_consumer_identities_differ_by_trailing_space()
+    {
+        return base.should_keep_received_exception_rows_apart_when_consumer_identities_differ_by_trailing_space();
+    }
+
+    [Fact]
     public override Task should_handle_concurrent_redelivery_storm_on_same_message_id()
     {
         return base.should_handle_concurrent_redelivery_storm_on_same_message_id();

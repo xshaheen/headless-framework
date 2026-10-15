@@ -229,6 +229,27 @@ internal sealed partial class RelationalDataStorage
         return SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
     }
 
+    /// <summary>
+    /// The SHA-256 of a non-inbox received row's identity, which that row's unique index is built on. SQL Server pads
+    /// the shorter string before comparing text, under every collation, so a text key would treat ids that differ only
+    /// by trailing spaces as one row; the hash keeps every identity byte-exact on every engine. Each value is
+    /// length-prefixed, as in the inbox key hash, so no two identities share a canonical form.
+    /// </summary>
+    internal static byte[] CreateConsumerIdentityHash(
+        string version,
+        string messageId,
+        short intentType,
+        string consumerIdentity
+    )
+    {
+        var canonical = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{version.Length}:{version}{messageId.Length}:{messageId}{intentType}:{consumerIdentity.Length}:{consumerIdentity}"
+        );
+
+        return SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
+    }
+
     private static long _ValidateInboxRetention(TimeSpan? retention)
     {
         var value = retention ?? TimeSpan.FromDays(30);

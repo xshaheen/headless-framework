@@ -132,6 +132,10 @@ internal static class SqlServerMessagingSchemaContribution
                     -- SHA-256 of an inbox generation's identity: the identity's text columns together exceed an
                     -- index key, so the root-key index is built on this hash.
                     [InboxKeyHash] [binary](32) NULL,
+                    -- SHA-256 of a non-inbox row's identity: = and unique indexes pad the shorter string with
+                    -- trailing spaces under every collation, so a key on the text columns would merge two ids
+                    -- that differ only by trailing spaces; the hash compares bytes.
+                    [ConsumerIdentityHash] [binary](32) NULL,
                     CONSTRAINT [PK_{receivedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
                 );
             END;
@@ -147,6 +151,13 @@ internal static class SqlServerMessagingSchemaContribution
                         AND LEN([ConsumerIdentity]) BETWEEN 1 AND 200
                         AND (([TenantPresent]=0 AND DATALENGTH([TenantId])=0) OR ([TenantPresent]=1 AND LEN([TenantId]) BETWEEN 1 AND 200))
                     )
+                )');
+
+            -- A unique filtered index treats NULLs as equal, so one unhashed non-inbox row would block every other.
+            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_{receivedPrefix}_NonInboxIdentity'
+                AND parent_object_id = OBJECT_ID(N'{received}'))
+                EXEC(N'ALTER TABLE {received} ADD CONSTRAINT [CK_{receivedPrefix}_NonInboxIdentity] CHECK (
+                    [IsInboxRecord]=1 OR [ConsumerIdentityHash] IS NOT NULL
                 )');
 
             IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_{receivedPrefix}_InboxLifecycle'
@@ -165,7 +176,7 @@ internal static class SqlServerMessagingSchemaContribution
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_NonInboxConsumerIdentity' AND object_id = OBJECT_ID(N'{received}'))
                 EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_NonInboxConsumerIdentity]
-                    ON {received} ([Version],[MessageId],[ConsumerIdentity],[IntentType]) WHERE [IsInboxRecord]=0');
+                    ON {received} ([ConsumerIdentityHash]) WHERE [IsInboxRecord]=0');
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_GenerationIncarnationId' AND object_id = OBJECT_ID(N'{received}'))
                 EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_GenerationIncarnationId] ON {received} ([GenerationIncarnationId] ASC) WHERE [GenerationIncarnationId] IS NOT NULL');
@@ -245,6 +256,8 @@ internal static class SqlServerMessagingSchemaContribution
             -- constraint or column fails the step instead of the first inbox write.
             IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxIdentity' AND parent_object_id=OBJECT_ID(N'{received}'))
                OR COL_LENGTH(N'{received}',N'LifecycleId') IS NULL
+               OR COL_LENGTH(N'{received}',N'ConsumerIdentityHash') IS NULL
+               OR NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_NonInboxIdentity' AND parent_object_id=OBJECT_ID(N'{received}'))
                OR NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxLifecycle' AND parent_object_id=OBJECT_ID(N'{received}'))
                OR COL_LENGTH(N'{schema}.MessagingInboxOperationReceipts',N'ExpectedStatus') IS NULL
                OR COL_LENGTH(N'{schema}.MessagingInboxOperationReceipts',N'Outcome') IS NULL

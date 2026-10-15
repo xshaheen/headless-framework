@@ -175,8 +175,10 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         var id = Guid.NewGuid();
         var content = _serializer!.Serialize(CreateMessage($"unsupported-lane-{id:N}"));
         var tableName = published ? "messaging_published" : "messaging_received";
-        var receivedColumns = published ? string.Empty : ", \"consumer_identity\", \"exception_info\"";
-        var receivedValues = published ? string.Empty : ", 'unsupported-lane-consumer', NULL";
+        var receivedColumns = published
+            ? string.Empty
+            : ", \"consumer_identity\", \"exception_info\", \"consumer_identity_hash\"";
+        var receivedValues = published ? string.Empty : ", 'unsupported-lane-consumer', NULL, @ConsumerIdentityHash";
         var sql = $"""
             INSERT INTO headless.{tableName}
                 ("id", "version", "name", "content", "intent_type", "retries", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id"{receivedColumns})
@@ -198,6 +200,12 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
                     NextRetryAt = nextRetryAt,
                     LockedUntil = nextRetryAt,
                     MessageId = $"unsupported-lane-{id:N}",
+                    ConsumerIdentityHash = RelationalDataStorage.CreateConsumerIdentityHash(
+                        "v1",
+                        $"unsupported-lane-{id:N}",
+                        rawLane,
+                        "unsupported-lane-consumer"
+                    ),
                 },
                 cancellationToken: cancellationToken
             )
@@ -986,6 +994,18 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     public override Task should_report_false_when_received_exception_message_is_already_terminal()
     {
         return base.should_report_false_when_received_exception_message_is_already_terminal();
+    }
+
+    [Fact]
+    public override Task should_keep_received_exception_rows_apart_when_message_ids_differ_by_trailing_space()
+    {
+        return base.should_keep_received_exception_rows_apart_when_message_ids_differ_by_trailing_space();
+    }
+
+    [Fact]
+    public override Task should_keep_received_exception_rows_apart_when_consumer_identities_differ_by_trailing_space()
+    {
+        return base.should_keep_received_exception_rows_apart_when_consumer_identities_differ_by_trailing_space();
     }
 
     [Fact]
@@ -1897,10 +1917,10 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         var seedSql = tableSuffix switch
         {
             "messaging_received" => $$"""
-                INSERT INTO {{qualifiedTable}} ("id","version","name","consumer_identity","content","intent_type","retries","added","expires_at","next_retry_at","locked_until","status_name","message_id")
+                INSERT INTO {{qualifiedTable}} ("id","version","name","consumer_identity","content","intent_type","retries","added","expires_at","next_retry_at","locked_until","status_name","message_id","consumer_identity_hash")
                 SELECT gen_random_uuid(), 'v1', 'plan-test', 'plan-test-consumer', '{}', (g % 2)::smallint, 0, now(), NULL,
                        CASE WHEN g % 2 = 0 THEN now() - interval '1 minute' ELSE NULL END,
-                       NULL, 'Failed', 'plan-' || g
+                       NULL, 'Failed', 'plan-' || g, sha256(convert_to('plan-' || g, 'UTF8'))
                 FROM generate_series(1000, 1000 + {{seedRows - 1}}) g
                 ON CONFLICT DO NOTHING;
                 """,
@@ -2143,9 +2163,9 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await connection.ExecuteAsync(
             """
             INSERT INTO headless.messaging_received
-                ("id", "version", "name", "consumer_identity", "content", "intent_type", "retries", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id", "exception_info")
+                ("id", "version", "name", "consumer_identity", "content", "intent_type", "retries", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id", "exception_info", "consumer_identity_hash")
             VALUES
-                (@Id, 'v1', 'poison-received', 'poison-group', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
+                (@Id, 'v1', 'poison-received', 'poison-group', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL, @ConsumerIdentityHash);
             """,
             new
             {
@@ -2153,6 +2173,12 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
                 Now = now,
                 NextRetryAt = now.AddMinutes(-1),
                 MessageId = $"poison-{id:N}",
+                ConsumerIdentityHash = RelationalDataStorage.CreateConsumerIdentityHash(
+                    "v1",
+                    $"poison-{id:N}",
+                    0,
+                    "poison-group"
+                ),
             }
         );
     }
@@ -2188,9 +2214,9 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         return connection.ExecuteAsync(
             """
             INSERT INTO headless.messaging_received
-                ("id", "version", "name", "consumer_identity", "content", "intent_type", "retries", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id", "exception_info")
+                ("id", "version", "name", "consumer_identity", "content", "intent_type", "retries", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id", "exception_info", "consumer_identity_hash")
             VALUES
-                (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
+                (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL, @ConsumerIdentityHash);
             """,
             new
             {
@@ -2199,6 +2225,12 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
                 Now = now,
                 NextRetryAt = now.AddMinutes(-1),
                 MessageId = $"healthy-{id:N}",
+                ConsumerIdentityHash = RelationalDataStorage.CreateConsumerIdentityHash(
+                    "v1",
+                    $"healthy-{id:N}",
+                    0,
+                    "healthy-group"
+                ),
             }
         );
     }
@@ -2240,9 +2272,9 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         return connection.ExecuteAsync(
             """
             INSERT INTO headless.messaging_received
-                ("id", "version", "name", "consumer_identity", "content", "intent_type", "retries", "inline_attempts", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id", "exception_info")
+                ("id", "version", "name", "consumer_identity", "content", "intent_type", "retries", "inline_attempts", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id", "exception_info", "consumer_identity_hash")
             VALUES
-                (@Id, 'v1', 'lane-contract-received', 'lane-contract-group', @Content, @RawLane, 0, 0, @Added, @ExpiresAt, @NextRetryAt, NULL, NULL, @StatusName, @MessageId, NULL);
+                (@Id, 'v1', 'lane-contract-received', 'lane-contract-group', @Content, @RawLane, 0, 0, @Added, @ExpiresAt, @NextRetryAt, NULL, NULL, @StatusName, @MessageId, NULL, @ConsumerIdentityHash);
             """,
             new
             {
@@ -2254,6 +2286,12 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
                 NextRetryAt = nextRetryAt,
                 StatusName = statusName,
                 MessageId = $"lane-contract-{id:N}",
+                ConsumerIdentityHash = RelationalDataStorage.CreateConsumerIdentityHash(
+                    "v1",
+                    $"lane-contract-{id:N}",
+                    rawLane,
+                    "lane-contract-group"
+                ),
             }
         );
     }

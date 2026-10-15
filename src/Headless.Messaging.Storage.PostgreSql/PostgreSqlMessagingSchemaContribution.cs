@@ -134,7 +134,10 @@ internal static class PostgreSqlMessagingSchemaContribution
                 "inbox_retention_seconds" BIGINT NOT NULL DEFAULT 2592000,
                 -- SHA-256 of an inbox generation's identity: the identity's text columns together are too wide for
                 -- a portable index key, so the root-key index is built on this hash.
-                "inbox_key_hash" BYTEA NULL
+                "inbox_key_hash" BYTEA NULL,
+                -- SHA-256 of a non-inbox row's identity. The text columns compare exactly here, but SQL Server pads
+                -- trailing spaces, so both engines key the row on this hash to treat every identity the same way.
+                "consumer_identity_hash" BYTEA NULL
             );
 
             DO $headless$
@@ -154,6 +157,18 @@ internal static class PostgreSqlMessagingSchemaContribution
                             AND length("consumer_identity") BETWEEN 1 AND 200
                             AND ((NOT "tenant_present" AND "tenant_id" = '') OR ("tenant_present" AND length("tenant_id") BETWEEN 1 AND 200))
                         )
+                    );
+                END IF;
+            END
+            $headless$;
+
+            -- The non-inbox identity index skips NULL hashes, so an unhashed non-inbox row would escape it.
+            DO $headless$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_messaging_received_non_inbox_identity'
+                    AND conrelid = '{received}'::regclass) THEN
+                    ALTER TABLE {received} ADD CONSTRAINT "ck_messaging_received_non_inbox_identity" CHECK (
+                        "is_inbox_record" OR "consumer_identity_hash" IS NOT NULL
                     );
                 END IF;
             END
@@ -180,7 +195,7 @@ internal static class PostgreSqlMessagingSchemaContribution
             CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_generation_incarnation" ON {received} ("generation_incarnation_id")
                 WHERE "generation_incarnation_id" IS NOT NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_non_inbox_consumer_identity" ON {received}
-                ("version","message_id","consumer_identity","intent_type") WHERE "is_inbox_record" = FALSE;
+                ("consumer_identity_hash") WHERE "is_inbox_record" = FALSE;
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_inbox_retention" ON {received} ("effective_expires_at","id")
                 INCLUDE ("status_name","next_retry_at","intent_type") WHERE "is_inbox_record" AND NOT "is_held";
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_expires_at_status_name" ON {received} ("expires_at","status_name");
@@ -248,6 +263,10 @@ internal static class PostgreSqlMessagingSchemaContribution
                         AND conrelid = '{received}'::regclass)
                     AND EXISTS (SELECT 1 FROM information_schema.columns
                         WHERE table_schema='{schema}' AND table_name='messaging_received' AND column_name='lifecycle_id')
+                    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname='ck_messaging_received_non_inbox_identity'
+                        AND conrelid = '{received}'::regclass)
+                    AND EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_schema='{schema}' AND table_name='messaging_received' AND column_name='consumer_identity_hash')
                     AND EXISTS (SELECT 1 FROM information_schema.columns
                         WHERE table_schema='{schema}' AND table_name='messaging_inbox_operation_receipts' AND column_name='expected_status')
                     AND EXISTS (SELECT 1 FROM information_schema.columns

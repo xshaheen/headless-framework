@@ -232,8 +232,8 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                INSERT INTO headless.messaging_received ("id","version","name","consumer_identity","content","intent_type","retries","added","expires_at","next_retry_at","status_name","message_id")
-                VALUES (@Id,'v1','test.topic','test.group',@Content,0,0,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
+                INSERT INTO headless.messaging_received ("id","version","name","consumer_identity","content","intent_type","retries","added","expires_at","next_retry_at","status_name","message_id","consumer_identity_hash")
+                VALUES (@Id,'v1','test.topic','test.group',@Content,0,0,@Added,NULL,@NextRetryAt,'Failed',@MessageId,@ConsumerIdentityHash)
                 """,
                 new
                 {
@@ -242,6 +242,12 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
                     Added = addedTime,
                     NextRetryAt = DateTimeOffset.UtcNow.AddSeconds(-1),
                     MessageId = msgId,
+                    ConsumerIdentityHash = RelationalDataStorage.CreateConsumerIdentityHash(
+                        "v1",
+                        msgId,
+                        0,
+                        "test.group"
+                    ),
                 },
                 cancellationToken: AbortToken
             )
