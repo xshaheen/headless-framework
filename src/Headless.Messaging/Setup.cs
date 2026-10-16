@@ -269,7 +269,8 @@ public static class SetupMessaging
                 sp.GetService<MessagingTelemetry>(),
                 options.TransportPublishTimeout,
                 sp.GetRequiredService<IOptions<MessagingOptions>>().Value.DefaultDeliveryMode,
-                sp.GetRequiredService<ConsumerRegistry>().DeclaredRoutes
+                sp.GetRequiredService<ConsumerRegistry>().DeclaredRoutes,
+                sp.GetService<ILogger<MessagePublisher>>()
             );
         });
         // Singleton: these facades are autonomous, so they hold no scope-bound state and framework singletons

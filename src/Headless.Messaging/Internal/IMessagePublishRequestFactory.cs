@@ -91,6 +91,7 @@ internal sealed class MessagePublishRequestFactory(
         Headers.Type,
         Headers.SentTime,
         Headers.DelayTime,
+        Headers.DeliverBy,
         Headers.Intent,
         Headers.RequestedDeliveryMode,
         Headers.ResolvedDeliveryMode,
@@ -195,6 +196,10 @@ internal sealed class MessagePublishRequestFactory(
             Argument.IsPositive(requestedDelay);
         }
 
+        // The delivery deadline is measured from the publish call, not the schedule's due time, so the same
+        // DeliverWithin bounds immediate, delayed, and absolutely scheduled publishes alike.
+        var deliverBy = _ResolveDeliverBy(options, publishAt, delayTime);
+
         var messageName = _ResolveMessageName(declaredMessageType, lane, options?.MessageName);
         MessageMetadata? metadata = null;
         metadataRegistry?.TryGet(new MessageRouteKey(declaredMessageType, messageName, lane), out metadata);
@@ -210,6 +215,11 @@ internal sealed class MessagePublishRequestFactory(
             options?.SuppressAmbientBusinessContext == true ? null : consumeContextAccessor?.Current?.MessageId,
             request
         );
+        if (deliverBy is { } deadline)
+        {
+            headers[Headers.DeliverBy] = deadline.ToString("O", CultureInfo.InvariantCulture);
+        }
+
         if (options?.RoutingAffinityKey is { } affinityKey)
         {
             if (metadata is null || capabilityGate is null)
@@ -665,6 +675,38 @@ internal sealed class MessagePublishRequestFactory(
         }
 
         return publishAt;
+    }
+
+    /// <summary>
+    /// The absolute delivery deadline for a publish, or <see langword="null"/> when the caller set no
+    /// <see cref="MessageOptions.DeliverWithin"/>. Rejects a non-positive period before any side effect, and a
+    /// schedule whose due time (<paramref name="publishAt"/>) lands at or after the deadline: such a message could
+    /// never be delivered, so accepting it would only move the drop into the relay.
+    /// </summary>
+    private DateTimeOffset? _ResolveDeliverBy(MessageOptions? options, DateTimeOffset publishAt, TimeSpan? delayTime)
+    {
+        if (options?.DeliverWithin is not { } deliverWithin)
+        {
+            return null;
+        }
+
+        Argument.IsPositive(
+            deliverWithin,
+            "Options.DeliverWithin must be a positive period; the message is dropped once it passes."
+        );
+
+        var deliverBy = timeProvider.GetUtcNow().Add(deliverWithin);
+        if (publishAt >= deliverBy)
+        {
+            var dueIn = delayTime is { } delay ? $"delayed by {delay}" : $"scheduled at {publishAt:O}";
+            throw new ArgumentException(
+                $"Options.DeliverWithin ({deliverWithin}) ends at or after the message becomes deliverable ({dueIn}), "
+                    + "so it could never be delivered. Lengthen DeliverWithin or shorten the delay or schedule.",
+                nameof(options)
+            );
+        }
+
+        return deliverBy;
     }
 
     private string _ResolveMessageName(Type messageType, MessageLane lane, string? explicitMessageName)

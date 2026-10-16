@@ -83,6 +83,52 @@ public sealed class AzureServiceBusMessageBuilderExtensionsTests
         serviceBusMessage.PartitionKey.Should().Be("tenant-a");
     }
 
+    [Fact]
+    public void should_set_time_to_live_to_remaining_time_when_message_carries_delivery_deadline()
+    {
+        // given
+        var now = new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero);
+        var message = _TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.DeliverBy] = now.AddSeconds(90).ToString("O", CultureInfo.InvariantCulture),
+            }
+        );
+
+        // when
+        var serviceBusMessage = AzureServiceBusMessageBuilder.Build(message, enableSessions: false, now);
+
+        // then
+        serviceBusMessage.TimeToLive.Should().Be(TimeSpan.FromSeconds(90));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not-a-date")]
+    [InlineData("2026-10-15T11:59:00.0000000+00:00")]
+    public void should_leave_time_to_live_unset_when_deadline_is_absent_unreadable_or_passed(string? deliverBy)
+    {
+        // given
+        var now = new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero);
+        var extra = new Dictionary<string, string?>(StringComparer.Ordinal);
+        if (deliverBy is not null)
+        {
+            extra[Headers.DeliverBy] = deliverBy;
+        }
+
+        var baseline = new Azure.Messaging.ServiceBus.ServiceBusMessage().TimeToLive;
+
+        // when
+        var serviceBusMessage = AzureServiceBusMessageBuilder.Build(
+            _TransportMessage(extra),
+            enableSessions: false,
+            now
+        );
+
+        // then — the entity default applies
+        serviceBusMessage.TimeToLive.Should().Be(baseline);
+    }
+
     private static TransportMessage _TransportMessage(Dictionary<string, string?> extraHeaders)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
