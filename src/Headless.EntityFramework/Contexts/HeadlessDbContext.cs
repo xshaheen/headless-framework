@@ -24,6 +24,14 @@ namespace Headless.EntityFramework;
 /// singleton services, and must not keep per-request state in its own fields: EF resets only the state it knows
 /// about. The ambient tenant is read from <c>ICurrentTenant</c> on every access, so it is never captured.
 /// </para>
+/// <para>
+/// <b>The model is built in this constructor.</b> Attaching the change-tracker handlers reads the change tracker and
+/// the model, so <c>OnModelCreating</c> runs before a derived constructor's body, and EF Core caches the model per
+/// context type for the life of the process. State that shapes the model (a schema or table name, a feature flag, a
+/// tenant-specific mapping) must come from a primary-constructor parameter, a field initializer, an overridden
+/// property that returns a constant, or the options; a value assigned in a derived constructor body is not yet set
+/// when the model is built.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadlessDbContextRuntimeOwner

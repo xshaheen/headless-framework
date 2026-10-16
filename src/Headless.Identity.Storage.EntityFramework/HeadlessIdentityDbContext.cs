@@ -88,6 +88,14 @@ public abstract class HeadlessIdentityDbContext<
 /// <c>AddHeadlessDbContextPool&lt;TDbContext,...&gt;</c> (pooled) from <c>SetupIdentityEntityFramework</c>,
 /// not <c>AddDbContext</c> directly, which misses the Headless wiring (scope binding, interceptors, factory).
 /// </para>
+/// <para>
+/// <b>The model is built in this constructor.</b> Attaching the change-tracker handlers reads the change tracker and
+/// the model, so <c>OnModelCreating</c> runs before a derived constructor's body, and EF Core caches the model per
+/// context type for the life of the process. State that shapes the model (a schema or table name, a feature flag, a
+/// tenant-specific mapping) must come from a primary-constructor parameter, a field initializer, an overridden
+/// property that returns a constant, or the options; a value assigned in a derived constructor body is not yet set
+/// when the model is built.
+/// </para>
 /// </remarks>
 public abstract class HeadlessIdentityDbContext<
     TUser,
