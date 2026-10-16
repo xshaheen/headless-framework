@@ -297,7 +297,57 @@ public sealed class NatsFixture : HeadlessNatsFixture
         );
     }
 
-    private async ValueTask<TransportConsumerConformanceSession> _CreateConformanceSessionAsync(
+    /// <summary>
+    /// Opens a queue session on the NATS at <paramref name="connectionString"/>, for a test that runs its own server
+    /// rather than the collection's. The stream is file-backed so that it outlives a server restart, as a deployed
+    /// stream does.
+    /// </summary>
+    public static ValueTask<TransportConsumerConformanceSession> CreateDurableConformanceSessionAsync(
+        string connectionString,
+        CancellationToken cancellationToken
+    )
+    {
+        return _CreateConformanceSessionAsync(
+            connectionString,
+            StreamConfigStorage.File,
+            MessageLane.Queue,
+            streamName: null,
+            destination: null,
+            group: null,
+            createReplacement: false,
+            failEnvelopeBuild: false,
+            cancellationToken
+        );
+    }
+
+    private ValueTask<TransportConsumerConformanceSession> _CreateConformanceSessionAsync(
+        MessageLane lane,
+        string? streamName,
+        string? destination,
+        string? group,
+        bool createReplacement,
+        bool failEnvelopeBuild,
+        CancellationToken cancellationToken,
+        ConsumerClientRequest? request = null
+    )
+    {
+        return _CreateConformanceSessionAsync(
+            ConnectionString,
+            StreamConfigStorage.Memory,
+            lane,
+            streamName,
+            destination,
+            group,
+            createReplacement,
+            failEnvelopeBuild,
+            cancellationToken,
+            request
+        );
+    }
+
+    private static async ValueTask<TransportConsumerConformanceSession> _CreateConformanceSessionAsync(
+        string connectionString,
+        StreamConfigStorage storage,
         MessageLane lane,
         string? streamName,
         string? destination,
@@ -315,9 +365,9 @@ public sealed class NatsFixture : HeadlessNatsFixture
         var services = new ServiceCollection().BuildServiceProvider();
         var natsOptions = new NatsMessagingOptions
         {
-            Servers = ConnectionString,
+            Servers = connectionString,
             StreamProvisioning = NatsStreamProvisioning.Reconcile,
-            StreamOptions = config => config.Storage = StreamConfigStorage.Memory,
+            StreamOptions = config => config.Storage = storage,
             ConsumerOptions = config =>
             {
                 config.AckWait = TimeSpan.FromSeconds(1);
@@ -387,6 +437,8 @@ public sealed class NatsFixture : HeadlessNatsFixture
                 createReplacementSession: createReplacement
                     ? replacementToken =>
                         _CreateConformanceSessionAsync(
+                            connectionString,
+                            storage,
                             lane,
                             streamName,
                             destination,

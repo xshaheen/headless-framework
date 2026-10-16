@@ -65,6 +65,12 @@ public sealed class ProviderConformanceEvidenceTests(PulsarFixture fixture) : Te
                 nameof(PulsarBrokerFaultTests.should_resume_delivery_once_after_consumer_pause)
             ),
             _Bind(
+                TransportConformanceScenario.StaleSettlement,
+                nameof(
+                    PulsarConsumerClientHarnessTests.should_not_settle_another_delivery_when_a_settled_value_is_used_again
+                )
+            ),
+            _Bind(
                 TransportConformanceScenario.BoundedGracefulShutdown,
                 nameof(PulsarConsumerClientHarnessTests.should_shutdown_idle_consumer_within_bound)
             ),

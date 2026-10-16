@@ -91,6 +91,52 @@ public sealed class TransportConsumerConformanceSession(
         return producer.SendAsync(message, cancellationToken);
     }
 
+    /// <summary>
+    /// Publishes until the producer succeeds. The first publishes after a connection loss can fail while the client
+    /// reconnects, and the outbox retries them, so only a publish that never succeeds within the window is a defect.
+    /// </summary>
+    public async Task PublishUntilSucceededAsync(
+        TransportMessage message,
+        TimeSpan window,
+        CancellationToken cancellationToken = default
+    )
+    {
+        using var cts = window.ToCancellationTokenSource(cancellationToken);
+        Exception? lastFailure = null;
+
+        while (!cts.IsCancellationRequested)
+        {
+            try
+            {
+                var result = await producer.SendAsync(message, cts.Token).ConfigureAwait(false);
+                if (result.Succeeded)
+                {
+                    return;
+                }
+
+                lastFailure = result.Exception;
+            }
+#pragma warning disable CA1031 // Any publish failure during the reconnect window is retried; the window bounds it.
+            catch (Exception ex) when (ex is not OperationCanceledException)
+#pragma warning restore CA1031
+            {
+                lastFailure = ex;
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(500), cts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        throw new TimeoutException($"The producer did not recover within {window}.", lastFailure);
+    }
+
     public ValueTask<TransportConsumerConformanceSession> CreateReplacementAsync(
         CancellationToken cancellationToken = default
     )
@@ -386,6 +432,85 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
         redelivery.SettlementValue.Should().NotBeNull();
         ReferenceEquals(first.SettlementValue, redelivery.SettlementValue).Should().BeFalse();
         await session.Consumer.CommitAsync(redelivery.SettlementValue, AbortToken);
+    }
+
+    /// <summary>
+    /// A settlement value that was already used must not settle anything else. Brokers that settle by a running
+    /// delivery tag or offset can otherwise acknowledge a different in-flight delivery when the stale value is replayed.
+    /// </summary>
+    public virtual async Task should_not_settle_another_delivery_when_a_settled_value_is_used_again()
+    {
+        RequireSupport(TransportConformanceScenario.StaleSettlement);
+
+        await using var session = await CreateSessionAsync(AbortToken);
+        await session.StartAsync(cancellationToken: AbortToken);
+
+        var first = _CreateMessage(session.Destination, Guid.NewGuid().ToString("N"), "stale-first"u8.ToArray());
+        (await session.PublishAsync(first, AbortToken)).Succeeded.Should().BeTrue();
+        var firstDelivery = await session.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await session.Consumer.CommitAsync(firstDelivery.SettlementValue, AbortToken);
+
+        var second = _CreateMessage(session.Destination, Guid.NewGuid().ToString("N"), "stale-second"u8.ToArray());
+        (await session.PublishAsync(second, AbortToken)).Succeeded.Should().BeTrue();
+        var secondDelivery = await session.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        secondDelivery.Message.Id.Should().Be(second.Id);
+
+        try
+        {
+            await session.Consumer.CommitAsync(firstDelivery.SettlementValue, AbortToken);
+        }
+#pragma warning disable CA1031, ERP022 // A provider may refuse the stale value; the invariant under test is that nothing else settles.
+        catch (Exception)
+        {
+            // Refusing a stale value is as valid as ignoring it.
+        }
+#pragma warning restore CA1031, ERP022
+
+        await session.Consumer.RejectAsync(secondDelivery.SettlementValue, AbortToken);
+
+        var redelivery = await session.ReceiveAsync(TimeSpan.FromSeconds(15), AbortToken);
+        redelivery.Message.Id.Should().Be(second.Id, "the stale commit must not have settled the in-flight delivery");
+        await session.Consumer.CommitAsync(redelivery.SettlementValue, AbortToken);
+
+        (await session.RemainsEmptyAsync(session.NoRedeliveryWindow, AbortToken))
+            .Should()
+            .BeTrue("the stale commit must not replay the first delivery either");
+    }
+
+    /// <summary>
+    /// A callback that throws is how a dispatch failure reaches the client. The delivery must stay available and the
+    /// listener must keep consuming; a lost delivery or a dead receive loop shows only as silence.
+    /// </summary>
+    public virtual async Task should_keep_the_delivery_and_the_listener_when_the_callback_throws()
+    {
+        RequireSupport(TransportConformanceScenario.HandlerFailureRedelivery);
+
+        await using var session = await CreateSessionAsync(AbortToken);
+        var attempts = 0;
+        await session.StartAsync(
+            _ =>
+                Interlocked.Increment(ref attempts) == 1
+                    ? throw new InvalidOperationException("conformance callback failure")
+                    : Task.CompletedTask,
+            cancellationToken: AbortToken
+        );
+
+        var message = _CreateMessage(session.Destination, Guid.NewGuid().ToString("N"), "callback-fails"u8.ToArray());
+        (await session.PublishAsync(message, AbortToken)).Succeeded.Should().BeTrue();
+
+        var first = await session.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        first.Message.Id.Should().Be(message.Id);
+
+        // The failed delivery is never settled by the test: only the client may make it available again.
+        var again = await session.ReceiveAsync(TimeSpan.FromSeconds(30), AbortToken);
+        again.Message.Id.Should().Be(message.Id, "a delivery whose callback threw must not be lost");
+        await session.Consumer.CommitAsync(again.SettlementValue, AbortToken);
+
+        var probe = _CreateMessage(session.Destination, Guid.NewGuid().ToString("N"), "after-failure"u8.ToArray());
+        (await session.PublishAsync(probe, AbortToken)).Succeeded.Should().BeTrue();
+        var probeDelivery = await session.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        probeDelivery.Message.Id.Should().Be(probe.Id, "the listener must survive a callback failure");
+        await session.Consumer.CommitAsync(probeDelivery.SettlementValue, AbortToken);
     }
 
     public virtual async Task should_isolate_unique_destinations()

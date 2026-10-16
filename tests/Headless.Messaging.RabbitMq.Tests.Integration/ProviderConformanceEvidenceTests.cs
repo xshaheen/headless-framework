@@ -19,6 +19,11 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
         TransportConformanceTestBinding[] bindings =
         [
             new(
+                TransportConformanceScenario.ConnectionDropRecovery,
+                typeof(RabbitMqNetworkFaultTests),
+                nameof(RabbitMqNetworkFaultTests.should_resume_delivery_once_after_the_connection_is_dropped)
+            ),
+            new(
                 TransportConformanceScenario.RawPayloadConsumption,
                 typeof(RabbitMqRawPayloadTests),
                 nameof(RabbitMqRawPayloadTests.should_run_the_handler_once_when_a_raw_message_id_is_delivered_twice)

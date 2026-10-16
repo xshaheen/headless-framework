@@ -47,6 +47,18 @@ public sealed class KafkaConsumerClientConformanceTests(KafkaFixture fixture) : 
     }
 
     [Fact]
+    public override Task should_not_settle_another_delivery_when_a_settled_value_is_used_again()
+    {
+        return base.should_not_settle_another_delivery_when_a_settled_value_is_used_again();
+    }
+
+    [Fact]
+    public override Task should_keep_the_delivery_and_the_listener_when_the_callback_throws()
+    {
+        return base.should_keep_the_delivery_and_the_listener_when_the_callback_throws();
+    }
+
+    [Fact]
     public override Task should_isolate_unique_destinations()
     {
         return base.should_isolate_unique_destinations();

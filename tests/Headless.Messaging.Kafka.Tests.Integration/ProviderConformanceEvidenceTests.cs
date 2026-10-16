@@ -62,6 +62,17 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
                 typeof(KafkaBrokerFaultTests),
                 nameof(KafkaBrokerFaultTests.should_resume_delivery_once_after_consumer_pause)
             ),
+            new(
+                TransportConformanceScenario.BrokerInterruptionRecovery,
+                typeof(KafkaBrokerFaultTests),
+                nameof(KafkaBrokerFaultTests.should_resume_delivery_once_after_broker_restart)
+            ),
+            _Bind(
+                TransportConformanceScenario.StaleSettlement,
+                nameof(
+                    KafkaConsumerClientConformanceTests.should_not_settle_another_delivery_when_a_settled_value_is_used_again
+                )
+            ),
             _Bind(
                 TransportConformanceScenario.BoundedGracefulShutdown,
                 nameof(KafkaConsumerClientConformanceTests.should_shutdown_idle_consumer_within_bound)

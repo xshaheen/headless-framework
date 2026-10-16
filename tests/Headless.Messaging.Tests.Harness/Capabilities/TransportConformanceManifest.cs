@@ -17,6 +17,8 @@ public enum TransportConformanceScenario
     RejectRedelivery,
     ConsumerPauseRecovery,
     BrokerInterruptionRecovery,
+    ConnectionDropRecovery,
+    PublishDuringOutage,
     StaleSettlement,
     HandlerFailureRedelivery,
     BoundedGracefulShutdown,
@@ -136,7 +138,11 @@ public sealed record TransportConformanceProfile(
     TransportMalformedEnvelopeBound? MalformedEnvelopeBound
 )
 {
-    private const string _GapIssueUrl = "https://github.com/xshaheen/headless-framework/issues/359";
+    /// <summary>The umbrella issue a cell links while no run has proven it yet.</summary>
+    internal const string GapIssueUrl = "https://github.com/xshaheen/headless-framework/issues/359";
+
+    /// <summary>The open issue that tracks the network-fault scenarios no provider has proven yet.</summary>
+    internal const string NetworkFaultGapIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1247";
 
     public static TransportConformanceProfile CreateDisabled(string provider)
     {
@@ -146,7 +152,11 @@ public sealed record TransportConformanceProfile(
                 scenario =>
                     ConformanceSupport.Unsupported(
                         $"{provider} does not yet have executable evidence for {scenario}.",
-                        _GapIssueUrl
+                        scenario
+                            is TransportConformanceScenario.ConnectionDropRecovery
+                                or TransportConformanceScenario.PublishDuringOutage
+                            ? NetworkFaultGapIssueUrl
+                            : GapIssueUrl
                     )
             );
 
@@ -239,6 +249,8 @@ public static class TransportConformanceManifest
         {
             ["NATS"] = TransportConformanceProfile
                 .CreateDisabled("NATS")
+                .WithScenario(TransportConformanceScenario.ConnectionDropRecovery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.PublishDuringOutage, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.RoutingAffinityMappingOrRejection,
@@ -258,6 +270,9 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BrokerInterruptionRecovery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HandlerFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusConsumerIdentityFanOut, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
@@ -275,6 +290,14 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["RabbitMQ"] = TransportConformanceProfile
                 .CreateDisabled("RabbitMQ")
+                .WithScenario(TransportConformanceScenario.ConnectionDropRecovery, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.PublishDuringOutage,
+                    ConformanceSupport.Unsupported(
+                        "A publish while the client recovers from a dropped connection replaces the shared connection and cancels the recovery, so the consumer is cancelled and never registers again.",
+                        "https://github.com/xshaheen/headless-framework/issues/1243"
+                    )
+                )
                 .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.RoutingAffinityMappingOrRejection,
@@ -294,6 +317,27 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.BrokerInterruptionRecovery,
+                    ConformanceSupport.Unsupported(
+                        "A publish while the client recovers from a broker restart replaces the shared connection, and the consumer on it never receives again.",
+                        "https://github.com/xshaheen/headless-framework/issues/1243"
+                    )
+                )
+                .WithScenario(
+                    TransportConformanceScenario.StaleSettlement,
+                    ConformanceSupport.Unsupported(
+                        "Settling a delivery tag a second time closes the channel with PRECONDITION_FAILED, and the competing consumer stops receiving.",
+                        "https://github.com/xshaheen/headless-framework/issues/1267"
+                    )
+                )
+                .WithScenario(
+                    TransportConformanceScenario.HandlerFailureRedelivery,
+                    ConformanceSupport.Unsupported(
+                        "A delivery whose callback throws stays unacknowledged on the open channel, so it is never redelivered and the prefetch slot stays taken.",
+                        "https://github.com/xshaheen/headless-framework/issues/1268"
+                    )
+                )
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusConsumerIdentityFanOut, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
@@ -323,6 +367,9 @@ public static class TransportConformanceManifest
                     supportsIndependentLaneTopology: true
                 )
                 .WithMalformedEnvelopeBound("SQS deletion after terminal classification", 1, TimeSpan.FromSeconds(5))
+                .WithScenario(TransportConformanceScenario.BrokerInterruptionRecovery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HandlerFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
@@ -402,6 +449,15 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BrokerInterruptionRecovery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.HandlerFailureRedelivery,
+                    ConformanceSupport.Unsupported(
+                        "A record whose callback throws is neither committed nor sought back to, so it is never redelivered.",
+                        "https://github.com/xshaheen/headless-framework/issues/1268"
+                    )
+                )
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
                 .WithRequestReplyScenarios(
                     ConformanceSupport.NotApplicable(
@@ -424,6 +480,21 @@ public static class TransportConformanceManifest
                     supportsIndependentLaneTopology: true
                 )
                 .WithMalformedEnvelopeBound("Pulsar terminal acknowledgement", 1, TimeSpan.FromSeconds(10))
+                .WithScenario(
+                    TransportConformanceScenario.BrokerInterruptionRecovery,
+                    ConformanceSupport.Unsupported(
+                        "Delivery resumes after a broker restart, but stopping the consumer afterwards can overrun the shutdown timeout, so the scenario fails intermittently.",
+                        "https://github.com/xshaheen/headless-framework/issues/1269"
+                    )
+                )
+                .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.HandlerFailureRedelivery,
+                    ConformanceSupport.Unsupported(
+                        "A message whose callback throws is neither acknowledged nor negatively acknowledged, so the live subscription never redelivers it.",
+                        "https://github.com/xshaheen/headless-framework/issues/1268"
+                    )
+                )
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
@@ -472,6 +543,27 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.QueueOwnership, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.SameNameLaneIsolation, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.BrokerInterruptionRecovery,
+                    ConformanceSupport.Unsupported(
+                        "The suite runs against a managed Azure Service Bus namespace, which a test cannot restart.",
+                        TransportConformanceProfile.GapIssueUrl
+                    )
+                )
+                .WithScenario(
+                    TransportConformanceScenario.StaleSettlement,
+                    ConformanceSupport.Unsupported(
+                        "Needs the protected Azure workflow to execute; no run has proven it yet.",
+                        TransportConformanceProfile.GapIssueUrl
+                    )
+                )
+                .WithScenario(
+                    TransportConformanceScenario.HandlerFailureRedelivery,
+                    ConformanceSupport.Unsupported(
+                        "Needs the protected Azure workflow to execute; no run has proven it yet.",
+                        TransportConformanceProfile.GapIssueUrl
+                    )
+                )
                 .WithRequestReplyScenarios(
                     ConformanceSupport.Unsupported(
                         "The Azure Service Bus reply channel is not built yet, so the provider rejects request/reply at startup.",
@@ -523,6 +615,8 @@ public static class TransportConformanceManifest
                 ),
             ["Redis"] = TransportConformanceProfile
                 .CreateDisabled("Redis")
+                .WithScenario(TransportConformanceScenario.ConnectionDropRecovery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.PublishDuringOutage, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.RoutingAffinityMappingOrRejection,
@@ -541,6 +635,9 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.EmptyBodyDispatch, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BrokerInterruptionRecovery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HandlerFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusConsumerIdentityFanOut, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)

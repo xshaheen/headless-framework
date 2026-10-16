@@ -60,6 +60,23 @@ public sealed class ProviderConformanceEvidenceTests(LocalStackTestFixture fixtu
                 TransportConformanceScenario.RejectRedelivery,
                 nameof(AmazonSqsConsumerClientConformanceTests.should_reject_real_delivery_and_observe_redelivery)
             ),
+            new(
+                TransportConformanceScenario.BrokerInterruptionRecovery,
+                typeof(AmazonSqsBrokerFaultTests),
+                nameof(AmazonSqsBrokerFaultTests.should_resume_delivery_once_after_broker_restart)
+            ),
+            _Bind(
+                TransportConformanceScenario.StaleSettlement,
+                nameof(
+                    AmazonSqsConsumerClientConformanceTests.should_not_settle_another_delivery_when_a_settled_value_is_used_again
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.HandlerFailureRedelivery,
+                nameof(
+                    AmazonSqsConsumerClientConformanceTests.should_keep_the_delivery_and_the_listener_when_the_callback_throws
+                )
+            ),
             _Bind(
                 TransportConformanceScenario.BoundedGracefulShutdown,
                 nameof(AmazonSqsConsumerClientConformanceTests.should_shutdown_idle_consumer_within_bound)

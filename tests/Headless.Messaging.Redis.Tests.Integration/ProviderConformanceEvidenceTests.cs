@@ -19,6 +19,16 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
         TransportConformanceTestBinding[] bindings =
         [
             new(
+                TransportConformanceScenario.ConnectionDropRecovery,
+                typeof(RedisNetworkFaultTests),
+                nameof(RedisNetworkFaultTests.should_resume_delivery_once_after_the_connection_is_dropped)
+            ),
+            new(
+                TransportConformanceScenario.PublishDuringOutage,
+                typeof(RedisNetworkFaultTests),
+                nameof(RedisNetworkFaultTests.should_keep_consuming_after_publishes_during_an_outage)
+            ),
+            new(
                 TransportConformanceScenario.RawPayloadConsumption,
                 typeof(RedisRawPayloadTests),
                 nameof(RedisRawPayloadTests.should_consume_a_headerless_entry_once_and_poison_a_malformed_body)
@@ -53,6 +63,21 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
             _Bind(
                 TransportConformanceScenario.RejectRedelivery,
                 nameof(RedisConsumerConformanceTests.should_reject_real_delivery_and_observe_redelivery)
+            ),
+            new(
+                TransportConformanceScenario.BrokerInterruptionRecovery,
+                typeof(RedisBrokerFaultTests),
+                nameof(RedisBrokerFaultTests.should_resume_delivery_once_after_broker_restart)
+            ),
+            _Bind(
+                TransportConformanceScenario.StaleSettlement,
+                nameof(
+                    RedisConsumerConformanceTests.should_not_settle_another_delivery_when_a_settled_value_is_used_again
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.HandlerFailureRedelivery,
+                nameof(RedisConsumerConformanceTests.should_keep_the_delivery_and_the_listener_when_the_callback_throws)
             ),
             _Bind(
                 TransportConformanceScenario.BoundedGracefulShutdown,

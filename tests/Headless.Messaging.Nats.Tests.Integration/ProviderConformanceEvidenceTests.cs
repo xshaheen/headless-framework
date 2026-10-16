@@ -19,6 +19,16 @@ public sealed class ProviderConformanceEvidenceTests(NatsFixture fixture) : Test
         TransportConformanceTestBinding[] bindings =
         [
             new(
+                TransportConformanceScenario.ConnectionDropRecovery,
+                typeof(NatsNetworkFaultTests),
+                nameof(NatsNetworkFaultTests.should_resume_delivery_once_after_the_connection_is_dropped)
+            ),
+            new(
+                TransportConformanceScenario.PublishDuringOutage,
+                typeof(NatsNetworkFaultTests),
+                nameof(NatsNetworkFaultTests.should_keep_consuming_after_publishes_during_an_outage)
+            ),
+            new(
                 TransportConformanceScenario.RawPayloadConsumption,
                 typeof(NatsRawPayloadTests),
                 nameof(
@@ -58,6 +68,19 @@ public sealed class ProviderConformanceEvidenceTests(NatsFixture fixture) : Test
                 TransportConformanceScenario.ConsumerPauseRecovery,
                 typeof(NatsBrokerFaultTests),
                 nameof(NatsBrokerFaultTests.should_resume_delivery_once_after_consumer_pause)
+            ),
+            new(
+                TransportConformanceScenario.BrokerInterruptionRecovery,
+                typeof(NatsBrokerFaultTests),
+                nameof(NatsBrokerFaultTests.should_resume_delivery_once_after_broker_restart)
+            ),
+            _Bind(
+                TransportConformanceScenario.StaleSettlement,
+                nameof(NatsConsumerClientTests.should_not_settle_another_delivery_when_a_settled_value_is_used_again)
+            ),
+            _Bind(
+                TransportConformanceScenario.HandlerFailureRedelivery,
+                nameof(NatsConsumerClientTests.should_keep_the_delivery_and_the_listener_when_the_callback_throws)
             ),
             _Bind(
                 TransportConformanceScenario.BoundedGracefulShutdown,
