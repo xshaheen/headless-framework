@@ -51,7 +51,7 @@ internal static class SqlServerSequencesSchemaContribution
             createConnection: () => dialect.CreateConnection(options.ConnectionString),
             schema: options.Schema,
             steps: [new SchemaStep(StepVersion, "Create the counter table.", sql)],
-            applyOnStartup: options.InitializeOnStartup
+            objects: [SchemaObject.Table(options.TableName)]
         );
     }
 }

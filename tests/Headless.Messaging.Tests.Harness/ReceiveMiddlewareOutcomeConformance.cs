@@ -118,7 +118,7 @@ public static class ReceiveMiddlewareOutcomeConformance
         messagingBuilder.AddReceiveMiddleware<ConformanceAcceptReceiveMiddleware>();
 
         await using var provider = services.BuildServiceProvider();
-        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(cancellationToken);
+        await provider.SetupResourcesAndBootstrapAsync(cancellationToken);
 
         await using var scope = provider.CreateAsyncScope();
         var bus = scope.ServiceProvider.GetRequiredService<IBus>();
@@ -184,7 +184,7 @@ public static class ReceiveMiddlewareOutcomeConformance
         messagingBuilder.AddReceiveMiddleware<ConformanceSkipReceiveMiddleware>();
 
         await using var provider = services.BuildServiceProvider();
-        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(cancellationToken);
+        await provider.SetupResourcesAndBootstrapAsync(cancellationToken);
 
         await using var scope = provider.CreateAsyncScope();
         var bus = scope.ServiceProvider.GetRequiredService<IBus>();
@@ -244,7 +244,7 @@ public static class ReceiveMiddlewareOutcomeConformance
         messagingBuilder.AddReceiveMiddleware<ConformanceRejectReceiveMiddleware>();
 
         await using var provider = services.BuildServiceProvider();
-        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(cancellationToken);
+        await provider.SetupResourcesAndBootstrapAsync(cancellationToken);
 
         await using var scope = provider.CreateAsyncScope();
         var bus = scope.ServiceProvider.GetRequiredService<IBus>();
@@ -309,7 +309,7 @@ public static class ReceiveMiddlewareOutcomeConformance
         messagingBuilder.AddReceiveMiddleware<ConformanceCancelReceiveMiddleware>();
 
         await using var provider = services.BuildServiceProvider();
-        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(cancellationToken);
+        await provider.SetupResourcesAndBootstrapAsync(cancellationToken);
 
         await using var scope = provider.CreateAsyncScope();
         var bus = scope.ServiceProvider.GetRequiredService<IBus>();

@@ -33,8 +33,11 @@ public interface ISchemaRunnerFixture
     /// </summary>
     SchemaRunner CreateRunner(string schema);
 
-    /// <summary>Builds a host whose only hosted service is the runner of <see cref="CreateRunner"/>, in <paramref name="mode"/>.</summary>
-    IHost CreateHost(string schema, SchemaRunnerMode mode);
+    /// <summary>
+    /// Builds a host whose hosted services are the runner of <see cref="CreateRunner"/>, which verifies at start, and,
+    /// when <paramref name="setupResources"/> is set, the resource setup that applies the steps first.
+    /// </summary>
+    IHost CreateHost(string schema, bool setupResources);
 
     /// <summary>Drops <paramref name="schema"/> and everything in it, if it exists.</summary>
     Task DropSchemaAsync(string schema, CancellationToken cancellationToken);

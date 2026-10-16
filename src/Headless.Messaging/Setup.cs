@@ -168,6 +168,10 @@ public static class SetupMessaging
         services.TryAddSingleton<ISubscribeInvoker, SubscribeInvoker>();
         services.TryAddSingleton<MethodMatcherCache>();
 
+        // Each transport's ITransportTopologyProvisioner becomes one stateful resource, so the deployment's
+        // resources setup creates the broker topology the registered consumers and messages need.
+        services.AddHeadlessStatefulResourceSource<TransportTopologyResourceSource>();
+
         services.TryAddSingleton<IConsumerRegister, ConsumerRegister>();
 
         // One per host: consumer clients and the outbox sender both report into it, so a publish-only host still

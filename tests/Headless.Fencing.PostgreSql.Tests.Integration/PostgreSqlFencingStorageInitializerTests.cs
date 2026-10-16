@@ -25,7 +25,7 @@ public sealed class PostgreSqlFencingStorageInitializerTests(PostgreSqlFencingFi
         // Port 1 accepts no connections, so the TCP connect fails before any authentication is attempted.
         const string unreachable =
             "Host=127.0.0.1;Port=1;Database=missing;Username=postgres;Password=placeholder-never-used;Timeout=2";
-        using var host = _CreateHost(options => options.ConnectionString = unreachable);
+        using var host = _CreateHost(options => options.ConnectionString = unreachable, setupResources: false);
 
         await FluentActions
             .Awaiting(() => host.StartAsync(AbortToken))
@@ -71,20 +71,14 @@ public sealed class PostgreSqlFencingStorageInitializerTests(PostgreSqlFencingFi
     }
 
     [Fact]
-    public async Task should_create_each_object_once_when_the_initializer_runs_twice()
+    public async Task should_create_each_object_once_when_setup_runs_twice()
     {
         const string schema = "fencing_pg_rerun";
         await _DropSchemaAsync(schema);
         using var host = _CreateHost(schema);
-        var initializer = host
-            .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .OfType<HostedInitializer>()
-            .Single();
+        await host.Services.SetupResourcesAsync(AbortToken);
+        await host.Services.SetupResourcesAsync(AbortToken);
 
-        await initializer.StartingAsync(AbortToken);
-        await initializer.StartingAsync(AbortToken);
-
-        initializer.IsInitialized.Should().BeTrue();
         await _AssertObjectsAsync(schema);
     }
 
@@ -107,7 +101,7 @@ public sealed class PostgreSqlFencingStorageInitializerTests(PostgreSqlFencingFi
     }
 
     [Fact]
-    public async Task should_not_create_the_table_when_initialization_is_off()
+    public async Task should_fail_the_start_naming_resources_setup_when_the_table_is_missing()
     {
         const string schema = "fencing_pg_no_init";
         await _DropSchemaAsync(schema);
@@ -115,25 +109,18 @@ public sealed class PostgreSqlFencingStorageInitializerTests(PostgreSqlFencingFi
             options =>
             {
                 options.ConnectionString = fixture.ConnectionString;
-                options.InitializeOnStartup = false;
             },
-            schema
+            schema,
+            setupResources: false
         );
 
-        await host.StartAsync(AbortToken);
+        await FluentActions
+            .Awaiting(() => host.StartAsync(AbortToken))
+            .Should()
+            .ThrowAsync<SchemaRunnerException>()
+            .WithMessage("*resources setup*");
 
-        host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized.Should().BeTrue();
         (await _CountTablesAsync(schema)).Should().Be(0);
-
-        // The consumer owns the table in this mode, so a call before it exists fails instead of creating it.
-        var act = async () =>
-            await host
-                .Services.GetRequiredService<IFencedLeases>()
-                .GrantAsync("x", "y", TimeSpan.FromMinutes(1), AbortToken);
-
-        (await act.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be("42P01");
-        (await _CountTablesAsync(schema)).Should().Be(0);
-        await host.StopAsync(AbortToken);
     }
 
     [Fact]
@@ -169,9 +156,19 @@ public sealed class PostgreSqlFencingStorageInitializerTests(PostgreSqlFencingFi
         act.Should().Throw<ArgumentException>();
     }
 
-    private static IHost _CreateHost(Action<PostgreSqlFencingOptions> configure, string? schema = null)
+    private static IHost _CreateHost(
+        Action<PostgreSqlFencingOptions> configure,
+        string? schema = null,
+        bool setupResources = true
+    )
     {
         var builder = Host.CreateApplicationBuilder();
+
+        if (setupResources)
+        {
+            builder.Services.AddHeadlessResourceSetupOnStartup();
+        }
+
         builder.Services.AddHeadlessFencing(setup =>
         {
             setup.UsePostgreSql(configure);

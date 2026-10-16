@@ -42,12 +42,23 @@ namespace Headless.Testing.AspNetCore;
 /// <paramref name="configureWebHost"/>, just before the host is built.
 /// </param>
 /// <param name="initializerTimeout">How long each <see cref="IInitializer"/> may take. Defaults to 60 seconds.</param>
+/// <param name="setupResources">
+/// Whether the host sets up its stateful resources (tables, queues, containers) when it starts, as
+/// <c>AddHeadlessResourceSetupOnStartup</c> does. Defaults to <see langword="true"/>, because a host start otherwise
+/// only verifies them. Pass <see langword="false"/> for a test whose resources already exist or that tests the check.
+/// </param>
+/// <param name="seed">
+/// Whether the host runs its seeders when it starts, as <c>AddHeadlessSeedOnStartup</c> does, so definitions and
+/// scheduled jobs exist before the tests run. Defaults to <see langword="true"/>.
+/// </param>
 [PublicAPI]
 public sealed class HeadlessTestServer<TProgram>(
     Action<IServiceCollection>? configureTestServices = null,
     Action<IWebHostBuilder>? configureWebHost = null,
     Action<IHostBuilder>? configureHost = null,
-    TimeSpan? initializerTimeout = null
+    TimeSpan? initializerTimeout = null,
+    bool setupResources = true,
+    bool seed = true
 ) : IAsyncLifetime
     where TProgram : class
 {
@@ -246,7 +257,9 @@ public sealed class HeadlessTestServer<TProgram>(
                 baseConfigureHost?.Invoke(builder);
                 configureHost?.Invoke(builder);
             },
-            _initializerTimeout
+            _initializerTimeout,
+            setupResources,
+            seed
         )
         {
             _sharedClock = TimeProvider,
@@ -489,7 +502,14 @@ public sealed class HeadlessTestServer<TProgram>(
             }
 
 #pragma warning disable CA2000 // Ownership transferred to _factory on success; finally disposes on failure
-            factory = new ServerFactory(_configureTestServices, _configureWebHost, _configureHost, _sharedClock);
+            factory = new ServerFactory(
+                _configureTestServices,
+                _configureWebHost,
+                _configureHost,
+                _sharedClock,
+                setupResources,
+                seed
+            );
 #pragma warning restore CA2000
 
             // Force host startup — triggers ConfigureTestServices
@@ -608,7 +628,9 @@ public sealed class HeadlessTestServer<TProgram>(
         Action<IServiceCollection>? configureTestServices,
         Action<IWebHostBuilder>? configureWebHost,
         Action<IHostBuilder>? configureHost,
-        TimeProvider? sharedClock
+        TimeProvider? sharedClock,
+        bool setupResources,
+        bool seed
     ) : WebApplicationFactory<TProgram>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -619,6 +641,17 @@ public sealed class HeadlessTestServer<TProgram>(
                 if (sharedClock is null)
                 {
                     services.AddTestTimeProvider();
+                }
+
+                // Before configureTestServices, so a test that asks for another startup action replaces this one.
+                if (setupResources)
+                {
+                    services.AddHeadlessResourceSetupOnStartup();
+                }
+
+                if (seed)
+                {
+                    services.AddHeadlessSeedOnStartup();
                 }
 
                 configureTestServices?.Invoke(services);

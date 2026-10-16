@@ -165,7 +165,7 @@ public static class SetupSettings
         if (!serviceCollection.Any(static s => s.ServiceType == typeof(ISettingManager)))
         {
             serviceCollection.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(_ => { });
-            _AddCore(serviceCollection, setup.RegisterStartupInitializer);
+            _AddCore(serviceCollection);
         }
 
         serviceCollection.GuardSingleStorageProvider(
@@ -188,7 +188,7 @@ public static class SetupSettings
 
     /// <summary>Registers all core settings services. Guards against missing <c>IStringEncryptionService</c> and is idempotent when called multiple times via the <c>ISettingManager</c> guard in the caller.</summary>
     /// <exception cref="InvalidOperationException"><see cref="Headless.Security.IStringEncryptionService"/> is not registered in <paramref name="services"/>.</exception>
-    private static IServiceCollection _AddCore(IServiceCollection services, bool registerStartupInitializer)
+    private static IServiceCollection _AddCore(IServiceCollection services)
     {
         if (!services.Any(s => s.ServiceType == typeof(IStringEncryptionService)))
         {
@@ -201,15 +201,11 @@ public static class SetupSettings
 
         services._AddCoreValueProvider();
 
-        if (registerStartupInitializer)
-        {
-            // Registered first so the initializer below reuses this instance: its retry back-off runs on the system clock,
-            // never on a faked app TimeProvider that a test host does not advance.
-            services.TryAddSingleton(static sp =>
-                ActivatorUtilities.CreateInstance<SettingsInitializationBackgroundService>(sp, TimeProvider.System)
-            );
-            services.AddInitializerHostedService<SettingsInitializationBackgroundService>();
-        }
+        // The seeder's retry back-off runs on the system clock, never on a faked app TimeProvider that a test host
+        // does not advance.
+        services.AddSeeder(static sp =>
+            ActivatorUtilities.CreateInstance<SettingDefinitionsSeeder>(sp, TimeProvider.System)
+        );
 
         // The definition store keys its cross-instance lock on the application name and the manager stamps
         // its change announcements with the instance id; a host that never registered an identity gets one.

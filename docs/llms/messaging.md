@@ -314,8 +314,21 @@ Transports declare support with `MessagingProviderCapabilities.Transport(..., su
 | Kafka | Queue-only topics; one Kafka consumer group per message | Ownership, startup rejection, and bounded poison-offset advancement | A Bus consumer fails startup; configure partitions for the workload |
 | NATS | Lane-qualified subjects, streams, retention, and durables | Identity/replica isolation and malformed terminal acknowledgement (`AckTerminate`) | Grant stream and consumer provisioning permissions |
 | Pulsar | Lane-qualified topics and Bus subscriptions | Identity/replica isolation and malformed terminal ACK | Grant topic and subscription creation permissions |
-| RabbitMQ | Lane-qualified exchanges, routing keys, and owned queues; publishers declare the Queue-lane queue too | Identity/replica isolation, malformed terminal reject, publish before any consumer, and the shutdown drain | Grant exchange and queue provisioning permissions, or set `AutoProvision = false` and provision the topology yourself |
+| RabbitMQ | Lane-qualified exchanges, routing keys, and owned queues, created by `resources setup` | Identity/replica isolation, malformed terminal reject, publish before any consumer, and the shutdown drain | Run `resources setup` with `configure` permission on the shared topology; the running host needs it only for its per-process queues (see [Runtime create rights](#runtime-create-rights)) |
 | Redis | Lane-qualified Streams for both lanes | Routing, ownership, settlement, and poison handling | Size Redis memory for `StreamMaxAge` of traffic; the provider creates the Redis consumer groups and trims the streams |
+
+#### Runtime create rights
+
+**Which transports provision at deploy time today:** RabbitMQ only. AWS SNS/SQS, Azure Service Bus, Kafka, NATS, Pulsar, and Redis Streams still create their topology at runtime, as each provider section below describes, so `resources setup` creates nothing for them yet and their runtime identity keeps every create right those sections list.
+
+A host start never creates the shared topology of a transport that offers it as a [stateful resource](utilities.md#stateful-resources): the deployment creates it with `resources setup`, and the host only checks that it exists. A reachable broker that lacks it fails the host start with a `StatefulResourceException` that names `resources setup`; an unreachable broker is retried as before. Some objects belong to one process or to a subscription added while the host runs, so no deploy step can know them, and the running host keeps creating them:
+
+| Provider | Created by `resources setup` | Still created by the running host |
+| --- | --- | --- |
+| RabbitMQ | The Bus and Queue lane exchanges; one durable queue per competing Bus consumer identity and per Queue-lane message the host consumes or registers, with its bindings; the `.dlx` exchanges and `.dlq` queues when dead-lettering is on | An every-instance consumer's exclusive queue and its binding; the request/reply `headless.reply.*` queue; the queue and bindings of an `IRuntimeSubscriber` subscription. The runtime user needs `configure` on `headless.reply.*`, on the server-named every-instance queues, and on the runtime subscriptions' queues, plus `write` on the Bus exchange to bind them |
+| AWS, Azure Service Bus, Kafka, NATS, Pulsar, Redis | Not yet a stateful resource | Everything, as described for the provider below |
+
+`ConsumerClientRequest.ProvisionsTopology` tells a transport which case a client is: `false` for a consumer registered before the host was built, `true` when the subscription includes one an `IRuntimeSubscriber` added.
 
 #### AWS least-privilege handoff
 
@@ -447,13 +460,14 @@ services.AddHeadlessMessaging(setup =>
   resolve to the same database fail host startup with a `MessagingConfigurationException` naming both
   registrations. Mixing providers is allowed, for example a SQL Server primary with a PostgreSQL outbox.
 - **Schema.** Each additional outbox contributes only the published table and its indexes, in the same `MessagingStorageOptions.Schema` as the primary, as its own `MessagingOutbox` feature in that
-  database's `headless_schema_history`. It has no received table or inbox history. Its steps are applied by a schema
-  runner of its own, in the host runner's `SchemaRunnerMode`, after the host's runner has applied the primary's: the
-  host's runner fails startup on an unreachable database, which an additional outbox must not do. The host's runner
-  still carries each outbox's steps as an export-only contribution, so `SchemaRunner.ExportScript` includes them in
-  its schema's section of the dialect's script. The script is per dialect and schema, not per database: run it against
+  database's `headless_schema_history`. It has no received table or inbox history. Its steps are verified by a schema
+  runner of its own, lazily and without failing the start: the host's runner fails startup on an unreachable
+  database, which an additional outbox must not do. The host's runner carries each outbox's steps as an export-only
+  contribution, so `resources setup` creates the outbox's table (a database that is down fails that one resource
+  and the run goes on), and `SchemaRunner.ExportScript` includes them in its schema's section of the dialect's
+  script. The script is per dialect and schema, not per database: run it against
   the primary's database and every outbox database of that dialect. An outbox database then also holds the primary's
-  tables, which nothing reads there; in exchange a host in `Verify` mode can use additional outboxes.
+  tables, which nothing reads there; in exchange one script serves every database of the dialect.
 - **Availability at startup.** Only the primary storage must be reachable for the host to start. The additional
   outboxes are initialized concurrently, once each; one whose database is unreachable logs EventId 106 and the
   host starts without it. A background processor then retries it with jittered backoff from 1 second up to
@@ -680,6 +694,15 @@ On the Bus lane, derive the broker-legal subscription name from the identity wit
 - **`PauseAsync` and `ResumeAsync`** serve circuit-breaker backpressure. They must be idempotent, safe to call concurrently, and stop new message pulls once `PauseAsync` returns. In-flight deliveries may complete. Pause and resume keep the long-running listener alive; a provider may cancel an in-flight broker receive to reach its pause gate, but it must install fresh receive state before reopening the gate.
 - **`OnLogCallback`** emits `MqLogType` events for connection failures, broker shutdown, consumer registration and cancellation, and receive-loop errors. Core relies on them to keep transport health and restart behavior accurate. A client that retries a lost broker inside its own receive loop, instead of failing the loop, reports each failed receive as `MqLogType.BrokerUnreachable` and the first successful receive after one as `MqLogType.BrokerReachable`; Core counts these toward [broker reachability](#broker-reachability) without rebuilding the client. Emit `MqLogType.SettlementFailed` when an ack did not reach the broker (for example a failed ack call or a closed channel) and record `MessagingMetrics`' settlement-failure counter; Core logs it as a warning (EventId 4120 `TransportSettlementFailed`). Do not throw from the settlement: the broker redelivers and the inbox deduplicates.
 - **`DisposeAsync`** disposes only resources owned by that client instance, never shared pools or connections still used elsewhere in the package.
+
+### Provisioning: `ITransportTopologyProvisioner`
+
+A transport whose broker holds shared objects (exchanges, queues, topics, streams, subscriptions) implements `ITransportTopologyProvisioner` in `Headless.Messaging.Transport` and registers it from its `Use{Provider}` setup with `services.TryAddEnumerable(ServiceDescriptor.Singleton<ITransportTopologyProvisioner, TProvisioner>())`. Messaging turns each one into a [stateful resource](utilities.md#stateful-resources) of type `Broker`, named `topology`, so the deployment's `resources setup` creates the topology and a host start only checks it.
+
+- **Input.** Every operation receives a `MessagingTopology`, built from the registered consumers and messages each time the operation runs: `Subscriptions` (`TopologySubscription`: `SubscriptionName`, `Lane`, `Kind`, `MessageNames`, as a consumer client request carries them) and `Messages` (`TopologyMessage`: `MessageName`, `Lane`, for every registered message, consumed on this host or only published). Subscriptions an `IRuntimeSubscriber` adds while the host runs are never in it.
+- **Operations.** `SetupAsync` creates what is missing; `CheckAsync` creates nothing and throws `StatefulResourceException` naming `resources setup` when an object is missing; `ClearAsync` removes queued messages and keeps the objects; `TeardownAsync` deletes what setup created; `GetStatusAsync` returns ordered name and value pairs. Make each idempotent. Throw `StatefulResourceUnsupportedException` from an operation the broker cannot express; the resource reports it as unsupported.
+- **Skip per-process objects.** A `ConsumerSubscriptionKind.EveryInstance` subscription's objects belong to one process, which creates them when it subscribes.
+- **Consumer clients follow.** Once a transport provisions here, its clients create shared objects only when `ConsumerClientRequest.ProvisionsTopology` is `true` (a runtime subscription) and otherwise only check them, failing with `StatefulResourceException` so the host stops instead of retrying a reachable broker that lacks the topology.
 
 ### Header and payload rules
 
@@ -2962,12 +2985,13 @@ Registers Pulsar connection factory, transports, and consumer client factory.
 - Consumer hatch: `Tune(identity, c => c.UseRabbitMq(rabbit => rabbit.PrefetchCount(...)))`.
 - Consumer startup threads host cancellation through connection, channel, exchange, queue, and binding operations.
 - Request/reply over an exclusive `headless.reply.{32 hex}` queue that each calling process declares on a connection of its own; the address changes after a connection loss. See [Request/reply](#requestreply).
+- Shared topology as the `RabbitMQ topology` [stateful resource](utilities.md#stateful-resources) (an [`ITransportTopologyProvisioner`](#provisioning-itransporttopologyprovisioner)): both lane exchanges, and one queue per competing consumer subscription and per registered Queue-lane message. `setup` declares the exchanges, each queue with its consumers' arguments and its `.dlq` when dead-lettering is on, and the bindings; `check` passively declares each exchange and queue (AMQP cannot check a binding, so setup re-binds idempotently); `clear` purges each queue and its `.dlq`; `teardown` deletes the queues, then the exchanges and their `.dlx`; `statistics` reports each queue's message and consumer counts. Every consumer and publisher only checks this topology; see [Runtime create rights](#runtime-create-rights) for what the running host still declares.
 
 ### Design constraints
 
 RabbitMQ exposes consumer-side QoS through `PrefetchCount(...)` on `Tune`; it has no message hatch. For base exchange `myapp.events`, Bus uses the `myapp.events.bus` topic exchange, `bus.{logical-name}` routing keys, and `bus.{consumer-identity}` queues; Queue uses the `myapp.events.queue` direct exchange, `queue.{logical-name}` routing keys, and `queue.{logical-name}` queues. Malformed transport envelopes are terminally rejected without requeue while ordinary handler rejection remains retryable.
 
-- **A Queue-lane message is never dropped for want of a consumer.** Before its first send of a message name, each process declares and binds `queue.{logical-name}` with the same arguments its consumers use, once per process; a failed declare is forgotten, so the next publish tries again. Queue-lane publishes are `mandatory`, so a message the broker cannot route (an operator deleted the queue, or an operator-managed queue is unbound) comes back as `basic.return`; with `PublishConfirms` the publish then fails with a `PublishReturnException` inner exception, the outbox retries it, and the process declares the queue again on that retry. A Bus publish with no subscribed identity has nobody to reach and still succeeds.
+- **A Queue-lane message is never dropped for want of a consumer.** `resources setup` creates and binds `queue.{logical-name}` for every registered Queue-lane message, consumed on this host or not. Before its first send of a message name, each process checks that queue exists, once per process; a missing queue fails the publish with a message that names `resources setup`, and a failed check is forgotten, so the next publish tries again. Queue-lane publishes are `mandatory`, so a message the broker cannot route (an operator deleted the queue, or an operator-managed queue is unbound) comes back as `basic.return`; with `PublishConfirms` the publish then fails with a `PublishReturnException` inner exception, the outbox retries it, and the process declares the queue again on that retry. A Bus publish with no subscribed identity has nobody to reach and still succeeds.
 - **`PublishConfirms` defaults to `true`.** A publish completes only after the broker acknowledges it, and fails on a negative acknowledgement or an unroutable Queue-lane return. Set it to `false` to trade those guarantees for lower publish latency; a publish then succeeds once written to the socket, and the client discards a `basic.return`.
 - **Shutdown drains in-flight handlers.** `ShutdownAsync` stops dispatching, waits for the running handlers within the remaining `MessagingOptions.ShutdownTimeout` budget (30 seconds when the client is disposed directly), and only then closes the channel, so a handler that finishes in time gets its acknowledgement to the broker. A handler still running past the budget loses its acknowledgement and the message is redelivered; deliveries that arrive during the drain are not dispatched and return to the queue when the channel closes.
 
@@ -3003,7 +3027,6 @@ Configure host, credentials, exchange, queue arguments, QoS defaults, and custom
 | --- | --- | --- |
 | `PublishConfirms` | `true` | Publish waits for the broker acknowledgement; a negative acknowledgement or an unroutable Queue-lane return fails it |
 | `ChannelPoolSize` | `15` | The most AMQP channels the publish pool holds and hands out at once. A publish rents a channel for its duration, so this caps the publishes in flight on one connection: further publishes wait for a returned channel. Raise it for a high-volume publisher waiting on confirms; must be greater than 0 |
-| `AutoProvision` | `true` | `false` declares every exchange and shared queue passively (a missing one fails with `NOT_FOUND`) and creates no binding, for topology managed outside the application. An every-instance consumer's exclusive queue and the request/reply queue are per-process and are still declared and bound |
 | `QueueArguments.EnableDeadLettering` | `false` | Each shared queue dead-letters to the direct exchange `{lane exchange}.dlx` (for example `myapp.events.queue.dlx`) with the queue name as routing key, into a durable `{queue}.dlq` queue the transport declares and binds. Malformed envelopes, messages Core poisons on arrival, messages whose `MessageTTL` expires, and messages past `DeliveryLimit` land there instead of being dropped. AMQP's reject carries no reason, so a dead-lettered copy's `x-death` header records `rejected`; Core's reason code stays in its poison row. Nothing in the framework consumes a dead-letter queue: inspect, shovel, or purge it with broker tooling |
 | `QueueArguments.DeliveryLimit` | `null` | Sets `x-delivery-limit`: how many times a quorum queue redelivers a returned message before dropping it, or dead-lettering it with `EnableDeadLettering`. Requires `QueueType = "quorum"`; must be greater than 0. RabbitMQ 4.x quorum queues apply a broker default of 20 when it is unset |
 

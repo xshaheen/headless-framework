@@ -153,6 +153,8 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>
                 })
             );
         });
+        builder.Services.AddHeadlessResourceSetupOnStartup();
+        builder.Services.AddHeadlessSeedOnStartup();
         return builder.Build();
     }
 

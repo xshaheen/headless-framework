@@ -29,9 +29,16 @@ builder.Services.AddHeadlessJobs(options =>
     options.AddDashboard(dashboard => dashboard.WithNoAuth());
 });
 
+// The host start only verifies its tables and queues, so this demo creates them as it starts; a deployed app runs
+// `dotnet <app>.dll resources setup` instead.
+builder.Services.AddHeadlessResourceSetupOnStartup();
+
+// Nothing seeds on its own, so this demo seeds as it starts; a deployed app runs `dotnet <app>.dll seed` instead.
+builder.Services.AddHeadlessSeedOnStartup();
+
 var app = builder.Build();
 
-// Apply the Jobs operational store migrations. The coordination provider creates its own tables during host start.
+// Apply the Jobs operational store migrations. The coordination tables are set up as the host starts.
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<JobsDbContext>();

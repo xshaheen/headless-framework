@@ -128,5 +128,13 @@ internal sealed class SqliteSchemaDatabase : IDisposable
 
         public bool IsObjectNotFound(Exception exception) =>
             exception is SqliteException && exception.Message.Contains("no such table", StringComparison.Ordinal);
+
+        public string DeleteRowsSql(string schema, string table) => $"DELETE FROM {table}";
+
+        public string DropObjectSql(string schema, SchemaObject schemaObject) =>
+            $"DROP TABLE IF EXISTS {schemaObject.Name}";
+
+        public string DeleteFeatureHistorySql(string schema) =>
+            $"DELETE FROM {schema}_history WHERE feature = @Feature";
     }
 }

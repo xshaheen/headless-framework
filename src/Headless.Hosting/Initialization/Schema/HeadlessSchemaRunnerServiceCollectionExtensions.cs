@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
-/// <summary>Registers schema contributions and the one hosted runner that applies or verifies them at startup.</summary>
+/// <summary>Registers schema contributions and the one hosted runner that verifies them at startup.</summary>
 [PublicAPI]
 public static class HeadlessSchemaRunnerServiceCollectionExtensions
 {
@@ -36,11 +36,11 @@ public static class HeadlessSchemaRunnerServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Adds the schema runner and the hosted initializer that runs it at startup in the configured
-    /// <see cref="SchemaRunnerOptions.Mode"/>. Idempotent.
+    /// Adds the schema runner, the hosted initializer that verifies the schema at startup, and one stateful resource
+    /// per contribution, which <c>resources setup</c> or <c>AddHeadlessResourceSetupOnStartup</c> applies. Idempotent.
     /// </summary>
     /// <param name="services">The service collection.</param>
-    /// <param name="configure">Optionally configures the startup mode.</param>
+    /// <param name="configure">Optionally configures the runner's timeouts.</param>
     /// <returns>The same service collection.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="services"/> is null.</exception>
     public static IServiceCollection AddHeadlessSchemaRunner(
@@ -65,6 +65,7 @@ public static class HeadlessSchemaRunnerServiceCollectionExtensions
             sp.GetRequiredService<IOptions<SchemaRunnerOptions>>().Value.CommandTimeout
         ));
         services.AddInitializerHostedService<SchemaRunnerInitializer>();
+        services.AddHeadlessStatefulResourceSource<SchemaResourceSource>();
 
         return services;
     }

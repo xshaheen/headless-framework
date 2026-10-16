@@ -37,9 +37,8 @@ public static class SetupSequencesSqlServer
         /// <param name="connectionString">The SqlClient connection string.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The counter table is created at host startup unless
-        /// <see cref="RelationalSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
-        /// is accepted only on a unit whose SqlClient connection reaches this same database.
+        /// The counter table is created by <c>resources setup</c> and verified at host start.
+        /// A gap-free call is accepted only on a unit whose SqlClient connection reaches this same database.
         /// </remarks>
         /// <exception cref="ArgumentException"><paramref name="connectionString" /> is <see langword="null" /> or whitespace.</exception>
         public HeadlessSequencesSetupBuilder UseSqlServer(string connectionString)
@@ -56,9 +55,8 @@ public static class SetupSequencesSqlServer
         /// <param name="configuration">The configuration section bound to the provider options.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The counter table is created at host startup unless
-        /// <see cref="RelationalSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
-        /// is accepted only on a unit whose SqlClient connection reaches the configured database.
+        /// The counter table is created by <c>resources setup</c> and verified at host start.
+        /// A gap-free call is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configuration" /> is <see langword="null" />.</exception>
         public HeadlessSequencesSetupBuilder UseSqlServer(IConfiguration configuration)
@@ -74,9 +72,8 @@ public static class SetupSequencesSqlServer
         /// <param name="configure">Delegate that configures the provider options.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The counter table is created at host startup unless
-        /// <see cref="RelationalSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
-        /// is accepted only on a unit whose SqlClient connection reaches the configured database.
+        /// The counter table is created by <c>resources setup</c> and verified at host start.
+        /// A gap-free call is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
         public HeadlessSequencesSetupBuilder UseSqlServer(Action<SqlServerSequencesOptions> configure)
@@ -95,9 +92,8 @@ public static class SetupSequencesSqlServer
         /// <param name="configure">Delegate that configures the provider options with service resolution.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The counter table is created at host startup unless
-        /// <see cref="RelationalSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
-        /// is accepted only on a unit whose SqlClient connection reaches the configured database.
+        /// The counter table is created by <c>resources setup</c> and verified at host start.
+        /// A gap-free call is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
         public HeadlessSequencesSetupBuilder UseSqlServer(Action<SqlServerSequencesOptions, IServiceProvider> configure)
@@ -148,9 +144,7 @@ public static class SetupSequencesSqlServer
                 );
             }
 
-            // The contribution factory reads options at first resolution, so InitializeOnStartup keeps its
-            // contract: false means the runner never creates the table (a migration tool owns it), while the
-            // initializer promise still completes for dependents.
+            // The contribution factory reads options at first resolution, so configured names reach the steps.
             services.AddHeadlessSchemaContribution(sp =>
                 SqlServerSequencesSchemaContribution.Create(
                     sp.GetRequiredService<IOptions<SqlServerSequencesOptions>>().Value

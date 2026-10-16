@@ -25,7 +25,7 @@ public sealed class PostgreSqlSequencesStorageInitializerTests(PostgreSqlSequenc
         // Port 1 accepts no connections, so the TCP connect fails before any authentication is attempted.
         const string unreachable =
             "Host=127.0.0.1;Port=1;Database=missing;Username=postgres;Password=placeholder-never-used;Timeout=2";
-        using var host = _CreateHost(options => options.ConnectionString = unreachable);
+        using var host = _CreateHost(options => options.ConnectionString = unreachable, setupResources: false);
 
         await FluentActions
             .Awaiting(() => host.StartAsync(AbortToken))
@@ -72,20 +72,14 @@ public sealed class PostgreSqlSequencesStorageInitializerTests(PostgreSqlSequenc
     }
 
     [Fact]
-    public async Task should_leave_one_table_and_one_primary_key_when_the_initializer_runs_twice()
+    public async Task should_leave_one_table_and_one_primary_key_when_setup_runs_twice()
     {
         const string schema = "sequences_pg_rerun";
         await _DropSchemaAsync(schema);
         using var host = _CreateHost(schema: schema);
-        var initializer = host
-            .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .OfType<HostedInitializer>()
-            .Single();
+        await host.Services.SetupResourcesAsync(AbortToken);
+        await host.Services.SetupResourcesAsync(AbortToken);
 
-        await initializer.StartingAsync(AbortToken);
-        await initializer.StartingAsync(AbortToken);
-
-        initializer.IsInitialized.Should().BeTrue();
         (await _CountTablesAsync(schema)).Should().Be(1);
         (await _CountPrimaryKeysAsync(schema)).Should().Be(1);
     }
@@ -113,29 +107,26 @@ public sealed class PostgreSqlSequencesStorageInitializerTests(PostgreSqlSequenc
     }
 
     [Fact]
-    public async Task should_not_create_the_table_when_initialization_is_off()
+    public async Task should_fail_the_start_naming_resources_setup_when_the_table_is_missing()
     {
         const string schema = "sequences_pg_no_init";
         await _DropSchemaAsync(schema);
-        using var host = _CreateHost(options =>
-        {
-            options.ConnectionString = fixture.ConnectionString;
-            options.Schema = schema;
-            options.InitializeOnStartup = false;
-        });
+        using var host = _CreateHost(
+            options =>
+            {
+                options.ConnectionString = fixture.ConnectionString;
+                options.Schema = schema;
+            },
+            setupResources: false
+        );
 
-        await host.StartAsync(AbortToken);
+        await FluentActions
+            .Awaiting(() => host.StartAsync(AbortToken))
+            .Should()
+            .ThrowAsync<SchemaRunnerException>()
+            .WithMessage("*resources setup*");
 
-        host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized.Should().BeTrue();
         (await _CountTablesAsync(schema)).Should().Be(0);
-
-        // The consumer owns the table in this mode, so a call before it exists fails instead of creating it.
-        var act = async () =>
-            await host.Services.GetRequiredService<ISequenceGenerator>().NextAsync("x", cancellationToken: AbortToken);
-
-        (await act.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be("42P01");
-        (await _CountTablesAsync(schema)).Should().Be(0);
-        await host.StopAsync(AbortToken);
     }
 
     [Fact]
@@ -172,9 +163,15 @@ public sealed class PostgreSqlSequencesStorageInitializerTests(PostgreSqlSequenc
         act.Should().Throw<ArgumentException>();
     }
 
-    private IHost _CreateHost(Action<PostgreSqlSequencesOptions> configure)
+    private IHost _CreateHost(Action<PostgreSqlSequencesOptions> configure, bool setupResources = true)
     {
         var builder = Host.CreateApplicationBuilder();
+
+        if (setupResources)
+        {
+            builder.Services.AddHeadlessResourceSetupOnStartup();
+        }
+
         builder.Services.AddHeadlessSequences(setup => setup.UsePostgreSql(configure));
 
         return builder.Build();

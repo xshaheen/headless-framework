@@ -21,7 +21,7 @@ public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFi
         // Password is a placeholder; we never reach the auth handshake because the TCP connect fails first.
         const string unreachable =
             "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=true";
-        using var host = _CreateHost(unreachable);
+        using var host = _CreateHost(unreachable, setupResources: false);
 
         // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is SqlException
         await FluentActions
@@ -86,7 +86,11 @@ public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFi
         }
     }
 
-    private static IHost _CreateHost(string connectionString, string schema = "permissions_sql_failure")
+    private static IHost _CreateHost(
+        string connectionString,
+        string schema = "permissions_sql_failure",
+        bool setupResources = true
+    )
     {
         var builder = Host.CreateApplicationBuilder();
         // unify: management-core deps
@@ -98,6 +102,11 @@ public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFi
             setup.ConfigureStorage(options => options.Schema = schema);
             setup.UseSqlServer(connectionString);
         });
+
+        if (setupResources)
+        {
+            builder.Services.AddHeadlessResourceSetupOnStartup();
+        }
 
         return builder.Build();
     }

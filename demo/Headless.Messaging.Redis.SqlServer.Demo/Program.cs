@@ -28,6 +28,10 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.UseDashboard(d => d.WithNoAuth());
 });
 
+// The host start only verifies its tables and queues, so this demo creates them as it starts; a deployed app runs
+// `dotnet <app>.dll resources setup` instead.
+builder.Services.AddHeadlessResourceSetupOnStartup();
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())

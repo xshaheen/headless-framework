@@ -352,6 +352,7 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
             setup.UseSqlServer(fixture.ConnectionString);
         });
 
+        builder.Services.AddHeadlessResourceSetupOnStartup();
         return builder.Build();
     }
 

@@ -204,6 +204,8 @@ public abstract class JobsClaimRetryConformanceTests<TFixture>(TFixture fixture)
             });
         });
 
+        builder.Services.AddHeadlessResourceSetupOnStartup();
+        builder.Services.AddHeadlessSeedOnStartup();
         return builder.Build();
     }
 }

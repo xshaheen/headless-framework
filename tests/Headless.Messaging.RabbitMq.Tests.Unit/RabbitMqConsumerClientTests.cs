@@ -53,7 +53,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task should_have_correct_broker_address()
     {
         // given, When
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
 
         // then
         client.BrokerAddress.Name.Should().Be("rabbitmq");
@@ -64,7 +71,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task should_create_channel_on_connect()
     {
         // given
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
 
         // when
         await client.ConnectAsync(AbortToken);
@@ -98,6 +112,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
             _pool,
             _options,
             _serviceProvider,
+            provisionsTopology: true,
             new RabbitMqConsumerConfig(20)
         );
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
@@ -247,6 +262,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
             _pool,
             options,
             _serviceProvider,
+            provisionsTopology: true,
             lane: MessageLane.Bus,
             kind: ConsumerSubscriptionKind.EveryInstance
         );
@@ -350,6 +366,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
             _pool,
             _options,
             _serviceProvider,
+            provisionsTopology: true,
             lane: MessageLane.Queue
         );
 
@@ -421,6 +438,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
                 _pool,
                 _options,
                 _serviceProvider,
+                provisionsTopology: true,
                 lane: MessageLane.Queue,
                 kind: ConsumerSubscriptionKind.EveryInstance
             );
@@ -435,6 +453,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
             _pool,
             _options,
             _serviceProvider,
+            provisionsTopology: true,
             lane: MessageLane.Bus,
             kind: ConsumerSubscriptionKind.EveryInstance
         );
@@ -443,7 +462,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task should_declare_queue_with_default_options()
     {
         // given
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
 
         // when
         await client.ConnectAsync(AbortToken);
@@ -475,7 +501,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
                 QueueArguments = new RabbitMqMessagingOptions.QueueArgumentsOptions { MessageTTL = 3600000 },
             }
         );
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
 
         // when
         await client.ConnectAsync(AbortToken);
@@ -499,7 +532,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task should_bind_topics_on_subscribe()
     {
         // given
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
         var topics = new[] { "topic1", "topic2", "topic3" };
 
         // when
@@ -547,6 +587,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
             _pool,
             _options,
             _serviceProvider,
+            provisionsTopology: true,
             lane: MessageLane.Queue
         );
         using var cts = new CancellationTokenSource();
@@ -619,7 +660,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task should_reuse_existing_channel_on_multiple_connects()
     {
         // given
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
         _channel.IsClosed.Returns(false);
 
         // when
@@ -636,7 +684,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task should_create_new_channel_when_closed()
     {
         // given
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
 
         // when
         _channel.IsClosed.Returns(false);
@@ -655,7 +710,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     {
         // given
         var logInvoked = false;
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
 
         client.OnLogCallback = args =>
         {
@@ -707,7 +769,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
             )
             .Returns(_ => throw new InvalidOperationException("exchange declare failed"));
 
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
 
         // when
         await client.Invoking(x => x.ConnectAsync()).Should().ThrowAsync<InvalidOperationException>();
@@ -724,7 +793,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task should_throw_when_subscribing_with_null_topics()
     {
         // given
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
 
         // when
         var act = async () => await client.SubscribeAsync(null!);
@@ -747,7 +823,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
                 QueueArguments = new RabbitMqMessagingOptions.QueueArgumentsOptions { QueueMode = "lazy" },
             }
         );
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
 
         // when
         await client.ConnectAsync(AbortToken);
@@ -783,7 +866,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
                 QueueArguments = new RabbitMqMessagingOptions.QueueArgumentsOptions { QueueType = "quorum" },
             }
         );
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
 
         // when
         await client.ConnectAsync(AbortToken);
@@ -824,7 +914,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
                 },
             }
         );
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
 
         // when
         await client.ConnectAsync(AbortToken);
@@ -848,7 +945,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task should_dispose_channel_and_semaphore()
     {
         // given
-        var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
         await client.ConnectAsync(AbortToken);
 
         // when
@@ -866,7 +970,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task pause_async_is_noop_when_consumer_tag_is_null()
     {
         // _consumerTag is null before ListeningAsync — PauseAsync should be a no-op
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
         await client.ConnectAsync(AbortToken);
 
         await client.PauseAsync(AbortToken);
@@ -878,7 +989,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     [Fact]
     public async Task resume_async_is_noop_when_not_paused()
     {
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
 
         // not paused — ResumeAsync should be no-op, no BasicConsumeAsync call
         await client.ResumeAsync(AbortToken);
@@ -890,7 +1008,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task pause_async_is_idempotent_when_called_twice()
     {
         // given
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
         await client.ConnectAsync(AbortToken);
 
         // when
@@ -906,7 +1031,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task resume_async_is_idempotent_after_resume()
     {
         // given
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
 
         await client.PauseAsync(AbortToken);
         await client.ResumeAsync(AbortToken);
@@ -926,7 +1058,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task pause_async_is_noop_after_disposal()
     {
         // given
-        var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
         await client.DisposeAsync();
 
         // when — should not throw or interact with channel
@@ -940,7 +1079,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task resume_async_is_noop_after_disposal()
     {
         // given
-        var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
         await client.DisposeAsync();
 
         // when — should not throw or interact with channel
@@ -958,7 +1104,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     {
         // given — the register pre-pauses a client while the circuit is open, which lands before
         // ListeningAsync has built the consumer. ConnectAsync has already populated the queue list.
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
         await client.ConnectAsync(AbortToken);
         await client.PauseAsync(AbortToken);
 
@@ -977,7 +1130,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task should_re_register_consumers_when_resumed_after_listening_started()
     {
         // given
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
         _channel.IsClosed.Returns(false);
         using var cts = new CancellationTokenSource();
 
@@ -1010,7 +1170,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task should_wait_for_resume_when_listening_async_group_is_paused_before_startup()
     {
         // given
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
         _channel.IsClosed.Returns(false);
 
         using var cts = new CancellationTokenSource();
@@ -1062,6 +1229,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
             _pool,
             _options,
             _serviceProvider,
+            provisionsTopology: true,
             lifecycleCheckpointAsync: async checkpoint =>
             {
                 if (checkpoint == RabbitMqConsumerLifecycleCheckpoint.BeforeStartLock)
@@ -1110,7 +1278,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task should_finish_pause_after_gate_transition_when_caller_is_cancelled()
     {
         // given
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
         _channel.IsClosed.Returns(false);
         _ConfigureBasicConsume("consumer-tag");
 
@@ -1161,7 +1336,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task should_restore_resumed_state_when_broker_cancellation_fails()
     {
         // given
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
         _channel.IsClosed.Returns(false);
         _ConfigureBasicConsume("consumer-tag");
 
@@ -1194,7 +1376,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     public async Task should_remain_paused_when_broker_registration_fails_during_resume()
     {
         // given
-        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
         _channel.IsClosed.Returns(false);
         _ConfigureBasicConsume("consumer-tag");
 
@@ -1266,7 +1455,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         // given
         _channel.IsOpen.Returns(true);
         _channel.IsClosed.Returns(false);
-        await using var client = new RabbitMqConsumerClient("test-group", 2, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            2,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
         var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         client.AttachCallbacks(
@@ -1322,16 +1518,16 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_declare_queue_passively_and_skip_binding_when_auto_provision_is_off()
+    public async Task should_declare_queue_passively_and_skip_binding_for_a_registered_subscription()
     {
         // given
-        _options.Value.AutoProvision = false;
         await using var client = new RabbitMqConsumerClient(
             "test-group",
             1,
             _pool,
             _options,
             _serviceProvider,
+            provisionsTopology: false,
             lane: MessageLane.Queue
         );
 

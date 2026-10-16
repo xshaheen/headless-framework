@@ -15,7 +15,7 @@ using NSubstitute.ExceptionExtensions;
 namespace Tests;
 
 /// <summary>
-/// Behavior of the cron-seed migration guard (<see cref="JobsInitializationHostedService"/>) — skip-on-contention,
+/// Behavior of the cron-seed migration guard (<see cref="JobsSeeder"/>) — skip-on-contention,
 /// unchanged no-lock default, and lease release on the success and throw paths — plus the dead-node reclaim contract
 /// (<see cref="JobsDeadOwnerReclaimer"/>). The reclaim path is intentionally <em>not</em> lock-guarded (#267 review):
 /// the shared <c>DeadOwnerRecoveryBridge</c> marks owners reclaimed before the call and only retries on a thrown
@@ -69,14 +69,9 @@ public sealed class JobsDistributedLockGuardTests : TestBase
 
         // Drive the seed guard directly, without StartAsync, so the test controls the registry it seeds from. A rename
         // breaks the build, not at runtime.
-        var hostedService = new JobsInitializationHostedService(
-            sp,
-            functionRegistry ?? _EmptyRegistry,
-            new JobsActivationBarrier(),
-            NullLogger<JobsInitializationHostedService>.Instance
-        );
+        var seeder = new JobsSeeder(sp, functionRegistry ?? _EmptyRegistry, NullLogger<JobsSeeder>.Instance);
 
-        await hostedService.SeedDefinedCronJobsAsync(options, cancellationToken);
+        await seeder.SeedDefinedCronJobsAsync(options, cancellationToken);
     }
 
     [Fact]
@@ -444,15 +439,10 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         );
         await using var sp = services.BuildServiceProvider();
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
-        var hostedService = new JobsInitializationHostedService(
-            sp,
-            _EmptyRegistry,
-            new JobsActivationBarrier(),
-            NullLogger<JobsInitializationHostedService>.Instance
-        );
+        var seeder = new JobsSeeder(sp, _EmptyRegistry, NullLogger<JobsSeeder>.Instance);
 
         // Must not throw — the throwing factory is swallowed as a skip.
-        await hostedService.SeedDefinedCronJobsAsync(options, AbortToken);
+        await seeder.SeedDefinedCronJobsAsync(options, AbortToken);
 
         await manager
             .DidNotReceive()

@@ -211,5 +211,11 @@ public sealed class SchemaRunnerTests : TestBase
         public bool IsAlreadyCreatedRace(Exception exception) => false;
 
         public bool IsObjectNotFound(Exception exception) => false;
+
+        public string DeleteRowsSql(string schema, string table) => throw new NotSupportedException();
+
+        public string DropObjectSql(string schema, SchemaObject schemaObject) => throw new NotSupportedException();
+
+        public string DeleteFeatureHistorySql(string schema) => throw new NotSupportedException();
     }
 }

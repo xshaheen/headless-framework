@@ -38,14 +38,6 @@ public sealed class PermissionsStorageOptions
     /// </summary>
     public string? PermissionGroupDefinitionsTableName { get; set; }
 
-    /// <summary>
-    /// When false, the startup storage initializer is skipped (no-op) — use when the schema is
-    /// provisioned out-of-band (migrations job / DBA). The initializer still reports
-    /// IsInitialized=true so dependents that await WaitForInitializationAsync do not block. Only
-    /// affects raw-DDL self-initializing providers; EF-mode storage uses migrations.
-    /// </summary>
-    public bool InitializeOnStartup { get; set; } = true;
-
     /// <summary>Returns the permission grants table name to use on a database with <paramref name="style"/>.</summary>
     /// <param name="style">The naming style of the target database.</param>
     /// <returns>The configured name, or the conventional default for <paramref name="style"/>.</returns>
@@ -81,6 +73,5 @@ public sealed class PermissionsStorageOptions
         target.PermissionGrantsTableName = PermissionGrantsTableName;
         target.PermissionDefinitionsTableName = PermissionDefinitionsTableName;
         target.PermissionGroupDefinitionsTableName = PermissionGroupDefinitionsTableName;
-        target.InitializeOnStartup = InitializeOnStartup;
     }
 }

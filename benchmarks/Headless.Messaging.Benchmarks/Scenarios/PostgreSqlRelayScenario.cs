@@ -51,6 +51,7 @@ internal static class PostgreSqlRelayScenario
             setup.UsePostgreSql(connectionString);
         });
 
+        builder.Services.AddHeadlessResourceSetupOnStartup();
         using var host = builder.Build();
         await host.StartAsync();
 

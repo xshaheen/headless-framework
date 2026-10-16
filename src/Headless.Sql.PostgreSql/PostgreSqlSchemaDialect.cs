@@ -125,4 +125,31 @@ public sealed class PostgreSqlSchemaDialect : ISchemaDialect
     {
         return exception is PostgresException { SqlState: "42P01" };
     }
+
+    /// <inheritdoc />
+    public string DeleteRowsSql(string schema, string table)
+    {
+        return $"DELETE FROM \"{schema}\".\"{table}\";";
+    }
+
+    /// <inheritdoc />
+    public string DropObjectSql(string schema, SchemaObject schemaObject)
+    {
+        Argument.IsNotNull(schemaObject);
+
+        var kind = schemaObject.Kind switch
+        {
+            SchemaObjectKind.Table => "TABLE",
+            SchemaObjectKind.Sequence => "SEQUENCE",
+            _ => throw new ArgumentOutOfRangeException(nameof(schemaObject), schemaObject.Kind, message: null),
+        };
+
+        return $"DROP {kind} IF EXISTS \"{schema}\".\"{schemaObject.Name}\";";
+    }
+
+    /// <inheritdoc />
+    public string DeleteFeatureHistorySql(string schema)
+    {
+        return $"DELETE FROM \"{schema}\".\"{SchemaRunner.HistoryTableName}\" WHERE feature = @Feature;";
+    }
 }

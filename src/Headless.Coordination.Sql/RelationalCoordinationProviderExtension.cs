@@ -86,9 +86,7 @@ internal sealed class RelationalCoordinationProviderExtension<TOptions, TOptions
         });
         services.TryAddSingleton<IMembershipStore>(static sp => sp.GetRequiredService<RelationalMembershipStore>());
 
-        // The contribution factory reads options at first resolution, so InitializeOnStartup keeps its contract:
-        // false means the runner never creates the tables (a migration tool owns them), while the initializer
-        // promise still completes for dependents.
+        // The contribution factory reads options at first resolution, so configured names reach the steps.
         services.AddHeadlessSchemaContribution(sp =>
             provider.SchemaContribution(
                 sp.GetRequiredService<IOptions<TOptions>>().Value,

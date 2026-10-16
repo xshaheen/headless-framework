@@ -19,7 +19,7 @@ public sealed class PostgreSqlFeaturesFailureModesTests(PostgreSqlFeaturesFixtur
         // Credentials are placeholders; we never reach the auth handshake because the TCP connect fails first.
         const string unreachable =
             "Host=127.0.0.1;Port=1;Database=missing;Username=postgres;Password=placeholder-never-used;Timeout=2";
-        using var host = fixture.CreateHost("features_pg_failure", unreachable);
+        using var host = fixture.CreateHost("features_pg_failure", unreachable, setupResources: false);
 
         // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is NpgsqlException
         await FluentActions

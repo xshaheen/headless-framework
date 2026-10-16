@@ -5,6 +5,7 @@ using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
 
@@ -75,6 +76,7 @@ public sealed class PostgreSqlAuditLogModelParityTests(PostgreSqlAuditLogFixture
             setup.UsePostgreSql(fixture.ConnectionString);
         });
 
+        builder.Services.AddHeadlessResourceSetupOnStartup();
         return builder.Build();
     }
 

@@ -20,7 +20,7 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
         // Password is a placeholder; we never reach the auth handshake because the TCP connect fails first.
         const string unreachable =
             "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=true";
-        using var host = _CreateHost(unreachable);
+        using var host = _CreateHost(unreachable, setupResources: false);
 
         // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is SqlException
         await FluentActions
@@ -48,7 +48,7 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
         {
             Password = "wrong-password",
         }.ToString();
-        using var host = _CreateHost(badAuth);
+        using var host = _CreateHost(badAuth, setupResources: false);
 
         // when / then
         var startThrew = await FluentActions
@@ -98,7 +98,11 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
         }
     }
 
-    private static IHost _CreateHost(string connectionString, string schema = "audit_log_sql_failure")
+    private static IHost _CreateHost(
+        string connectionString,
+        string schema = "audit_log_sql_failure",
+        bool setupResources = true
+    )
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddHeadlessAuditLog(setup =>
@@ -106,6 +110,11 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
             setup.ConfigureStorage(options => options.Schema = schema);
             setup.UseSqlServer(connectionString);
         });
+
+        if (setupResources)
+        {
+            builder.Services.AddHeadlessResourceSetupOnStartup();
+        }
 
         return builder.Build();
     }

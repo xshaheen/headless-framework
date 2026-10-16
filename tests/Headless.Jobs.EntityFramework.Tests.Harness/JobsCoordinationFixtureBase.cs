@@ -362,6 +362,8 @@ public static partial class JobsCoordinationFixtureExtensions
             builder.Services.AddSingleton(timeProvider);
         }
 
+        builder.Services.AddHeadlessResourceSetupOnStartup();
+        builder.Services.AddHeadlessSeedOnStartup();
         return builder.Build();
     }
 
@@ -529,6 +531,8 @@ public static partial class JobsCoordinationFixtureExtensions
         }
 
         configureServices?.Invoke(builder.Services);
+        builder.Services.AddHeadlessResourceSetupOnStartup();
+        builder.Services.AddHeadlessSeedOnStartup();
         return builder.Build();
     }
 

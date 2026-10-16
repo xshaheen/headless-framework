@@ -46,8 +46,7 @@ internal static class RelationalAuditLogStorage
             );
         });
 
-        // The contribution factory reads options at first resolution, so InitializeOnStartup keeps its contract:
-        // false keeps the steps out of the runner's apply pass while verify and export still see them.
+        // The contribution factory reads options at first resolution, so configured names reach the steps.
         services.AddHeadlessSchemaContribution(sp =>
             createContribution(
                 sp.GetRequiredService<IOptions<TOptions>>().Value,

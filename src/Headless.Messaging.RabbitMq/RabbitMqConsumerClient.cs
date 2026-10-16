@@ -30,6 +30,10 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly Func<RabbitMqConsumerLifecycleCheckpoint, ValueTask>? _lifecycleCheckpointAsync;
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly ConsumerSubscriptionKind _kind;
+
+    // Shared topology is the deployment's (resources setup), so the client only proves it exists; a runtime subscription,
+    // which no deploy step knows, creates its own.
+    private readonly bool _provisionsTopology;
     private readonly TransportEnvelopeGate _envelopeGate;
 
     // Written only while subscribing, before the consumer starts, and read by every delivery afterwards.
@@ -53,6 +57,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         IConnectionChannelPool connectionChannelPool,
         IOptions<RabbitMqMessagingOptions> options,
         IServiceProvider serviceProvider,
+        bool provisionsTopology,
         RabbitMqConsumerConfig? consumerConfig = null,
         MessageLane lane = MessageLane.Bus,
         Func<RabbitMqConsumerLifecycleCheckpoint, ValueTask>? lifecycleCheckpointAsync = null,
@@ -75,6 +80,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         _lane = lane;
         _lifecycleCheckpointAsync = lifecycleCheckpointAsync;
         _kind = Argument.IsInEnum(kind);
+        _provisionsTopology = provisionsTopology;
 
         if (kind is ConsumerSubscriptionKind.EveryInstance && lane is not MessageLane.Bus)
         {
@@ -146,9 +152,13 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                 _queueNames.Add(queueName);
             }
 
-            await RabbitMqQueueTopology
-                .BindQueueAsync(_channel!, _rabbitMqOptions, _exchangeName, queueName, routingKey, cancellationToken)
-                .ConfigureAwait(false);
+            // A registered subscription's bindings are the deployment's, made by resources setup.
+            if (_provisionsTopology)
+            {
+                await RabbitMqQueueTopology
+                    .BindQueueAsync(_channel!, _exchangeName, queueName, routingKey, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
     }
 
@@ -448,15 +458,16 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
             try
             {
-                await RabbitMqQueueTopology
-                    .DeclareExchangeAsync(
-                        channel,
-                        _rabbitMqOptions,
-                        _exchangeName,
-                        RabbitMqPhysicalAddress.ExchangeType(_lane),
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
+                await (
+                    _provisionsTopology
+                        ? RabbitMqQueueTopology.EnsureExchangeAsync(
+                            channel,
+                            _exchangeName,
+                            RabbitMqPhysicalAddress.ExchangeType(_lane),
+                            cancellationToken
+                        )
+                        : RabbitMqQueueTopology.RequireExchangeAsync(channel, _exchangeName, cancellationToken)
+                ).ConfigureAwait(false);
 
                 _channel = channel;
 
@@ -735,14 +746,16 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     // Bindings go with SubscribeAsync, which knows the routing keys; the queue declare here only creates the queue.
     private Task _DeclareQueueAsync(string queueName, CancellationToken cancellationToken)
     {
-        return RabbitMqQueueTopology.DeclareQueueAsync(
-            _channel!,
-            _rabbitMqOptions,
-            _exchangeName,
-            queueName,
-            routingKey: null,
-            cancellationToken
-        );
+        return _provisionsTopology
+            ? RabbitMqQueueTopology.EnsureQueueAsync(
+                _channel!,
+                _rabbitMqOptions,
+                _exchangeName,
+                queueName,
+                routingKey: null,
+                cancellationToken
+            )
+            : RabbitMqQueueTopology.RequireQueueAsync(_channel!, queueName, cancellationToken);
     }
 }
 

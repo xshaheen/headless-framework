@@ -25,12 +25,12 @@ public sealed class DynamicPermissionDefinitionStore(
     IPermissionDefinitionSerializer serializer,
     ICache distributedCache,
     IDistributedLock distributedLockProvider,
-    IBus messagePublisher,
     IGuidGenerator guidGenerator,
     IHostIdentityAccessor application,
     IOptions<PermissionManagementOptions> optionsAccessor,
     IOptions<PermissionManagementProvidersOptions> providersAccessor,
-    TimeProvider timeProvider
+    TimeProvider timeProvider,
+    IBus? messagePublisher = null
 ) : IDynamicPermissionDefinitionStore, IDisposable
 {
     private readonly PermissionManagementOptions _options = optionsAccessor.Value;
@@ -381,7 +381,9 @@ public sealed class DynamicPermissionDefinitionStore(
             await _ChangeCommonStampAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        if (newPermissions.Count != 0 || updatedPermissions.Count != 0)
+        // Messaging is optional for Permissions, as it is for PermissionManager: without a bus, the common stamp changed
+        // above is how other instances learn of the change, at their next refresh.
+        if (messagePublisher is not null && (newPermissions.Count != 0 || updatedPermissions.Count != 0))
         {
             var message = new DynamicPermissionDefinitionsChanged
             {

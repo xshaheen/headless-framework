@@ -41,6 +41,14 @@ internal static class SqlServerMessagingSchemaContribution
                     "Create the inbox receipt and audit history-selection indexes.",
                     _HistoryIndexesSql(schema)
                 ),
+            ],
+            // Creation order: the audit table references the receipts table, so the reverse drops it first.
+            objects:
+            [
+                SchemaObject.Table(_TableName("MessagingReceived")),
+                SchemaObject.Table("MessagingInboxOperationReceipts"),
+                SchemaObject.Table("MessagingInboxAudit"),
+                SchemaObject.Table(_TableName("MessagingPublished")),
             ]
         );
     }
@@ -73,7 +81,8 @@ internal static class SqlServerMessagingSchemaContribution
                     _PublishedTableSql(schema, options.OwnerColumnMaxLength)
                 ),
             ],
-            exportOnly: exportOnly
+            exportOnly: exportOnly,
+            objects: [SchemaObject.Table(_TableName("MessagingPublished"))]
         );
     }
 
@@ -277,7 +286,12 @@ internal static class SqlServerMessagingSchemaContribution
 
     private static string _Table(string schema, string pascalName)
     {
-        return SqlServerDialect.Instance.Qualify(schema, SqlServerDialect.Instance.Name(pascalName));
+        return SqlServerDialect.Instance.Qualify(schema, _TableName(pascalName));
+    }
+
+    private static string _TableName(string pascalName)
+    {
+        return SqlServerDialect.Instance.Name(pascalName);
     }
 
     private static string _PublishedTableSql(string schema, int ownerColumnMaxLength)

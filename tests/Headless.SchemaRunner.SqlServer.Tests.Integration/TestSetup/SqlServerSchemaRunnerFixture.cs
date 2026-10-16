@@ -65,11 +65,20 @@ public sealed partial class SqlServerSchemaRunnerFixture
         return services.BuildServiceProvider().GetRequiredService<SchemaRunner>();
     }
 
-    public IHost CreateHost(string schema, SchemaRunnerMode mode)
+    public IHost CreateHost(string schema, bool setupResources)
     {
         var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddSingleton(CreateRunner(schema));
-        builder.Services.AddHeadlessSchemaRunner(options => options.Mode = mode);
+        // The pilot features' contributions alone, so the runner and the resource setup are the host's only hosted
+        // services, and the setup sees the contributions the runner verifies.
+        foreach (var contribution in CreateRunner(schema).Contributions)
+        {
+            builder.Services.AddHeadlessSchemaContribution(_ => contribution);
+        }
+
+        if (setupResources)
+        {
+            builder.Services.AddHeadlessResourceSetupOnStartup();
+        }
 
         return builder.Build();
     }

@@ -195,7 +195,7 @@ Registers `TimeProvider.System`, framework GUID generator defaults, `IHostIdenti
 ### API and behavior
 
 - The one relational membership store, written against the SQL dialect kit (`ISqlDialect`, see [sql.md § Store statement kit](sql.md#store-statement-kit-for-provider-authors)); the PostgreSQL and SQL Server packages supply only their dialect, options, and DDL.
-- `RelationalCoordinationOptions`, the options base both providers share: `ConnectionString`, `CommandTimeout` (positive, at most 10 minutes; default 30 seconds), and `InitializeOnStartup`.
+- `RelationalCoordinationOptions`, the options base both providers share: `ConnectionString` and `CommandTimeout` (positive, at most 10 minutes; default 30 seconds).
 - Allocation is one upsert of the node's generation row. Registration and heartbeats take that row's update-intent lock first, so neither interleaves with an allocation that supersedes the incarnation they write for.
 - A heartbeat is one fenced liveness update: current incarnation, not left, and beat younger than `DeadThreshold`, decided in its `WHERE`. It writes the later of the stored beat and the database clock, so a database clock that steps back never moves a beat backwards. Registering the current incarnation again revives its liveness the same way.
 - `UpsertDescriptorAsync` returns `false` when the incarnation is no longer current, and writes neither the descriptor nor liveness.
@@ -273,13 +273,13 @@ The parameterless overload and the shared `headless` schema are described in [sq
 
 ### Configuration
 
-Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `PostgreSqlCoordinationOptions.ConnectionString`, optional `DataSource`, `CommandTimeout`, and `InitializeOnStartup` with `setup.UsePostgreSql(...)`.
+Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `PostgreSqlCoordinationOptions.ConnectionString`, optional `DataSource`, and `CommandTimeout` with `setup.UsePostgreSql(...)`.
 
 The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")` (default `"headless"`). The schema runner creates that schema when absent and every statement names its tables as `"schema"."table"`, so the provider no longer depends on `search_path`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
 
 ### Runtime behavior
 
-Registers the core membership services, the PostgreSQL membership store, and the membership schema contribution; the one schema runner applies it at startup. Creates snake_case tables and columns. Requires PostgreSQL DDL permission when initialization runs on startup.
+Registers the core membership services, the PostgreSQL membership store, and the membership schema contribution; `resources setup` applies it, and a host start only verifies it (see [Stateful resources](utilities.md#stateful-resources)). Creates snake_case tables and columns. Requires PostgreSQL DDL permission for the identity that runs `resources setup`.
 
 ---
 
@@ -383,13 +383,13 @@ The parameterless overload and the shared `headless` schema are described in [sq
 
 ### Configuration
 
-Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `ConnectionString`, `CommandTimeout`, and `InitializeOnStartup` with `setup.UseSqlServer(...)`.
+Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `ConnectionString` and `CommandTimeout` with `setup.UseSqlServer(...)`.
 
 The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")`. The default is `"headless"`, not `dbo` — the schema runner creates the schema when absent. The provider validates the schema against SQL Server's regular-identifier rules at startup.
 
 ### Runtime behavior
 
-Registers the core membership services, the SQL Server membership store, and the membership schema contribution; the one schema runner applies it at startup. Creates PascalCase tables and columns. Requires SQL Server DDL permission when initialization runs on startup.
+Registers the core membership services, the SQL Server membership store, and the membership schema contribution; `resources setup` applies it, and a host start only verifies it. Creates PascalCase tables and columns. Requires SQL Server DDL permission for the identity that runs `resources setup`.
 
 ---
 
@@ -425,11 +425,11 @@ services.AddHeadlessCoordination(setup =>
 
 ### Configuration
 
-Configure `ConnectionString`, `CommandTimeout`, and `InitializeOnStartup` with `setup.UseSqlite(...)`. Use a database file; a private `:memory:` database vanishes between the store's connections.
+Configure `ConnectionString` and `CommandTimeout` with `setup.UseSqlite(...)`. Use a database file; a private `:memory:` database vanishes between the store's connections.
 
 The schema is set with `setup.ConfigureStorage(storage => storage.Schema = "…")` (default `"headless"`). SQLite has no schemas, so it becomes the tables' name prefix: `headless_coordination_liveness`. It is validated against PostgreSQL's identifier rules, the convention of the SQLite dialect's snake_case names.
 
 ### Runtime behavior
 
-Registers the core membership services, the SQLite membership store, and the membership schema contribution; the one schema runner applies it at startup. Creates snake_case tables and columns.
+Registers the core membership services, the SQLite membership store, and the membership schema contribution; `resources setup` applies it, and a host start only verifies it. Creates snake_case tables and columns.
 

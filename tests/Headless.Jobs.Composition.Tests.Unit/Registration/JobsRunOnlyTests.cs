@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
 using Headless.Testing.Tests;
@@ -131,10 +132,9 @@ public sealed class JobsRunOnlyTests : TestBase
         await using var provider = _Provider(options: options =>
             options.AddModule<BillingNightlyJobsModule>().RunOnly("orders.*")
         );
-        var initializer = provider.GetServices<IHostedService>().OfType<JobsInitializationHostedService>().Single();
 
         // when
-        await initializer.StartAsync(AbortToken);
+        await provider.SeedAsync(cancellationToken: AbortToken);
 
         // then
         var store = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();

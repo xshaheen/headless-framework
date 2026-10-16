@@ -20,8 +20,8 @@ public static class SetupFeatures
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Registers the Headless Features infrastructure (definitions, values, providers, cache invalidation, and hosted
-        /// initializer) and applies the storage provider selected via <paramref name="configure"/>.
+        /// Registers the Headless Features infrastructure (definitions, values, providers, cache invalidation, and the
+        /// <c>FeatureDefinitions</c> seeder) and applies the storage provider selected via <paramref name="configure"/>.
         /// </summary>
         /// <param name="configure">A delegate that configures the setup builder, including the storage provider.</param>
         /// <returns>A <see cref="HeadlessFeaturesBuilder"/> for further post-registration configuration.</returns>
@@ -106,7 +106,7 @@ public static class SetupFeatures
         if (!serviceCollection.Any(static s => s.ServiceType == typeof(IFeatureManager)))
         {
             serviceCollection.Configure<FeatureManagementOptions, FeatureManagementOptionsValidator>(_ => { });
-            _AddCore(serviceCollection, setup.RegisterStartupInitializer);
+            _AddCore(serviceCollection);
         }
 
         serviceCollection.GuardSingleStorageProvider(
@@ -129,19 +129,15 @@ public static class SetupFeatures
 
     private sealed record FeaturesStorageProviderRegistration(string Provider);
 
-    private static IServiceCollection _AddCore(IServiceCollection services, bool registerStartupInitializer)
+    private static IServiceCollection _AddCore(IServiceCollection services)
     {
         services._AddCoreValueProviders();
 
-        if (registerStartupInitializer)
-        {
-            // Registered first so the initializer below reuses this instance: its retry back-off runs on the system clock,
-            // never on a faked app TimeProvider that a test host does not advance.
-            services.TryAddSingleton(static sp =>
-                ActivatorUtilities.CreateInstance<FeaturesInitializationBackgroundService>(sp, TimeProvider.System)
-            );
-            services.AddInitializerHostedService<FeaturesInitializationBackgroundService>();
-        }
+        // The seeder's retry back-off runs on the system clock, never on a faked app TimeProvider that a test host
+        // does not advance.
+        services.AddSeeder(static sp =>
+            ActivatorUtilities.CreateInstance<FeatureDefinitionsSeeder>(sp, TimeProvider.System)
+        );
 
         // The definition store keys its cross-instance lock on the application name and the manager stamps
         // its change announcements with the instance id; a host that never registered an identity gets one.

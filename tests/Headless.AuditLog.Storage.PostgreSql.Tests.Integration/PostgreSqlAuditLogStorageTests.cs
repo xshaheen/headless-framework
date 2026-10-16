@@ -293,6 +293,7 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
             setup.UsePostgreSql(fixture.ConnectionString);
         });
 
+        builder.Services.AddHeadlessResourceSetupOnStartup();
         return builder.Build();
     }
 

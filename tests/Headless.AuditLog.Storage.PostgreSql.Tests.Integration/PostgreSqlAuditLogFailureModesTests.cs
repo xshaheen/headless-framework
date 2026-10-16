@@ -21,7 +21,7 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
         // Credentials are placeholders; we never reach the auth handshake because the TCP connect fails first.
         const string unreachable =
             "Host=127.0.0.1;Port=1;Database=missing;Username=postgres;Password=placeholder-never-used;Timeout=2";
-        using var host = _CreateHost(unreachable);
+        using var host = _CreateHost(unreachable, setupResources: false);
 
         // when & then — wrapped in HostFailedToStartException by the host pipeline; inner is NpgsqlException
         await FluentActions
@@ -49,7 +49,7 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
         {
             Password = "wrong-password",
         }.ToString();
-        using var host = _CreateHost(badAuth);
+        using var host = _CreateHost(badAuth, setupResources: false);
 
         // when & then
         var startThrew = await FluentActions
@@ -156,7 +156,8 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
     private static IHost _CreateHost(
         string connectionString,
         string schema = "audit_log_pg_failure",
-        string? tableName = null
+        string? tableName = null,
+        bool setupResources = true
     )
     {
         var builder = Host.CreateApplicationBuilder();
@@ -169,6 +170,11 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
             });
             setup.UsePostgreSql(connectionString);
         });
+
+        if (setupResources)
+        {
+            builder.Services.AddHeadlessResourceSetupOnStartup();
+        }
 
         return builder.Build();
     }

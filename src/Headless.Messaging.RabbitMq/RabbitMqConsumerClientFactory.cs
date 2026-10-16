@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Hosting;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Options;
@@ -39,6 +40,7 @@ internal sealed class RabbitMqConsumerClientFactory(
             channelPool,
             rabbitMqOptions,
             serviceProvider,
+            request.ProvisionsTopology,
             config,
             lane,
             kind: request.Kind
@@ -49,6 +51,12 @@ internal sealed class RabbitMqConsumerClientFactory(
             await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
 
             return client;
+        }
+        catch (StatefulResourceException)
+        {
+            // Reachable broker, missing topology: a deployment fault to fail on, not an outage to retry through.
+            await client.DisposeAsync().ConfigureAwait(false);
+            throw;
         }
         catch (Exception e)
         {

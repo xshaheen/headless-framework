@@ -39,7 +39,7 @@ Define settings via `ISettingDefinitionProvider.Define()`. Read via `ISettingMan
 - Provider names are constants on `SettingValueProviderNames`: `DefaultValue`, `Configuration`, `Global`, `Tenant`, `User`. Note: the default-value constant is `DefaultValue`, not `Default`.
 - Scoped extension members are available for each provider scope: `GetForTenantAsync` / `SetForTenantAsync`, `GetForUserAsync` / `SetForUserAsync`, `GetGlobalAsync` / `SetGlobalAsync`, `GetDefaultAsync`, `GetInConfigurationAsync`. The raw (non-generic) `Get*` scoped helpers return the unwrapped `string?` value; the generic `Get*<T>` helpers deserialize the JSON value to `T`. Use `IsTrueAsync` / `IsFalseAsync` / `GetAsync<T>` / `SetAsync<T>` on `ISettingManager` for typed or boolean reads.
 - For sensitive settings, set `isEncrypted: true` on `SettingDefinition` — Core handles encryption/decryption via `IStringEncryptionService` automatically. Only values persisted by a store-backed provider (`Global`, `Tenant`, `User`) are decrypted on read; a plaintext `DefaultValue` or `IConfiguration` value resolved through fallback is returned as-is, on every read path (`GetAsync`, both `GetAllAsync` overloads).
-- Core registers a `SettingsInitializationBackgroundService` hosted service — do not register your own init logic for settings. A host that must not touch the store at startup (a test host, a read-only replica) calls `setup.DisableStartupInitialization()`; static definitions stay available in memory and nothing else changes.
+- The `SettingDefinitions` seeder writes static definitions to the database, and only when the host seeds — do NOT call `IDynamicSettingDefinitionStore.SaveAsync` directly. Seeding is opt-in: see [Definition Seeding](#definition-seeding).
 - `AddHeadlessSettings(...)` is the single entry point — it registers the management core automatically alongside the storage provider. Only one storage provider (EF / PostgreSQL / SqlServer) may be registered; a second registration throws at startup.
 - To tune management options, call `setup.ConfigureManagement(options => ...)` inside the `AddHeadlessSettings` block. An `(options, IServiceProvider)` overload is available for late-bound configuration. `services.Configure<SettingManagementOptions>(...)` also works and composes regardless of call order.
 - To tune schema and table names, call `setup.ConfigureStorage(o => ...)` inside the same block. The `IConfiguration` overload binds the `Headless:Settings:Storage` section instead.
@@ -56,7 +56,7 @@ Define settings via `ISettingDefinitionProvider.Define()`. Read via `ISettingMan
 
 ### Setting Definitions vs. Setting Values
 
-A *setting definition* describes a setting's metadata: its name, default value, whether it is encrypted, whether it inherits from lower-priority providers (`IsInherited`), and whether clients may read it (`IsVisibleToClients`). Definitions are registered statically at startup via `ISettingDefinitionProvider` and optionally persisted to the database by `SettingsInitializationBackgroundService`. A *setting value* is the resolved runtime state of a setting for a specific subject (e.g., a specific tenant or user). Definitions live in `IStaticSettingDefinitionStore` / `IDynamicSettingDefinitionStore`; values live in the storage backend behind `ISettingValueStore` and `ISettingValueRecordRepository`.
+A *setting definition* describes a setting's metadata: its name, default value, whether it is encrypted, whether it inherits from lower-priority providers (`IsInherited`), and whether clients may read it (`IsVisibleToClients`). Definitions are registered statically at startup via `ISettingDefinitionProvider` and optionally persisted to the database by the `SettingDefinitions` seeder. A *setting value* is the resolved runtime state of a setting for a specific subject (e.g., a specific tenant or user). Definitions live in `IStaticSettingDefinitionStore` / `IDynamicSettingDefinitionStore`; values live in the storage backend behind `ISettingValueStore` and `ISettingValueRecordRepository`.
 
 ### Value Providers and Resolution Order
 
@@ -144,7 +144,7 @@ public sealed class RateLimitPartitioner(ISettingsSnapshot<RateLimitPolicy> poli
 - **Scope.** Values resolve at `Global` scope with the usual fallback to configuration and the definition default, so a tenant or user value never shadows them. A setting defined with `IsInherited = false` reads the `Global` value only. A per-tenant value is not a snapshot's job; write a consumer of your own.
 - **Bind.** `Bind` receives every tracked name mapped to its resolved string, `null` when the setting has no value and no default. It runs only when a value changed.
 - **Revision.** `Revision` is `1` after the first load and moves by one each time a resolved value changes. A reload that reads the same values keeps the same value instance and revision. The comparison is on the raw setting values, so it holds whatever equality `T` has, including a record holding a collection.
-- **Loading.** A snapshot never blocks host startup. Its hosted service starts the first load in the background as soon as the host runs, and retries a failed first load with jittered exponential backoff from one second up to the backstop interval, logging each failure as a warning. Names defined in the dynamic store can fail the first attempts until `SettingsInitializationBackgroundService` caches their definitions. `GetAsync` returns the value, waiting for (or starting) the first load when it has not finished, and completes synchronously afterwards; a failed first load throws to that caller, and the next call tries again. `TryGetCurrent(out value)` is the synchronous read for code that cannot await, such as a rate-limiter partition factory. It returns `false` until the first load completes, so the caller chooses what to do before then, typically a safe built-in default. It never throws. An undefined setting name makes every load throw, naming it.
+- **Loading.** A snapshot never blocks host startup. Its hosted service starts the first load in the background as soon as the host runs, and retries a failed first load with jittered exponential backoff from one second up to the backstop interval, logging each failure as a warning. Names defined only in the dynamic store fail until a seed run writes their definitions. `GetAsync` returns the value, waiting for (or starting) the first load when it has not finished, and completes synchronously afterwards; a failed first load throws to that caller, and the next call tries again. `TryGetCurrent(out value)` is the synchronous read for code that cannot await, such as a rate-limiter partition factory. It returns `false` until the first load completes, so the caller chooses what to do before then, typically a safe built-in default. It never throws. An undefined setting name makes every load throw, naming it.
 - **Bad values later.** A `Bind` exception after the first load is logged with the setting names, never their values, and the snapshot keeps its last good value and revision.
 - **Listeners.** `OnChange((value, revision) => ...)` runs after `TryGetCurrent` and `Revision` show the change. A listener exception is logged and does not stop the other listeners. Dispose the returned handle to unregister.
 - **Change announcements.** One framework consumer, identity `headless.settings.snapshot`, receives every `SettingChangedMessage` in every process and reloads the snapshots tracking an announced name at `Global` scope. It never filters on `OriginHostName`, so the writing process refreshes too. It reloads every loaded snapshot each time its subscription is established, first or after a gap, because delivery is at most once. Announcements and establishments skip a snapshot whose first load has not finished, so the subscription hook never makes host startup wait on the settings store; a write that lands between the first read and the subscription going live is picked up by the backstop. When a reload does not yet see the announced value, it re-reads a few times over the next few seconds, which closes the cache ordering window described above.
@@ -153,17 +153,24 @@ public sealed class RateLimitPartitioner(ISettingsSnapshot<RateLimitPolicy> poli
 - **Several replicas.** Convergence across processes needs a shared (Redis) or hybrid setting cache. With a process-local cache (`UseInMemory`), each process's cache learns only its own writes, so another replica reads its cached value until it expires, through announcement, re-read, and backstop alike.
 - **Tests.** Code that reads a snapshot takes a `TestSettingsSnapshot<T>` from [Headless.Settings.Testing](#headlesssettingstesting) in its tests, so the test sets the value instead of loading it from a store.
 
-### Startup Initialization
+### Definition Seeding
 
-`SettingsInitializationBackgroundService` runs after the application starts. It saves static setting definitions to the database (idempotent and guarded by a distributed lock), with up to 10 jittered exponential-back-off retries capped at 30 seconds, then pre-caches dynamic setting definitions when `IsDynamicSettingStoreEnabled` is true. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other terminal failures surface through `WaitForInitializationAsync()`. Both tasks are skipped when their governing option flags are disabled — in that case the service signals completion immediately. If the host is stopped before initialization finishes, the background task and waiters are cancelled. The back-off waits run on the system clock, not the registered `TimeProvider`, so a host that registers a `FakeTimeProvider` (a test host) still retries in real time; skip seeding entirely with `setup.DisableStartupInitialization()`.
+`AddHeadlessSettings` registers an `ISeeder` named `SettingDefinitions`. When `SaveStaticSettingsToDatabase` is true, it saves the static setting definitions through `IDynamicSettingDefinitionStore.SaveAsync` (idempotent and guarded by a distributed lock), with up to 10 jittered exponential-back-off retries capped at 30 seconds. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; any other failure surfaces from the seed run after the last retry. The back-off waits run on the system clock, not the registered `TimeProvider`, so a host that registers a `FakeTimeProvider` still retries in real time.
+
+Seeding is opt-in. In production, run the `seed` verb in the deployment (`dotnet app.dll seed`) and call `services.AddHeadlessSeedDuringDeploy()`. In development, call `services.AddHeadlessSeedOnStartup()`. `HeadlessTestServer` seeds by default. A host that registers the seeder and does neither logs a warning at startup. See [Database Seeders](utilities.md#database-seeders).
+
+A host that never seeds still serves its static definitions from memory, and the dynamic store loads on its first read. But:
+
+- Definitions listed in `DeletedSettings` are not removed from the database.
+- Other applications that share the database keep serving stale definitions, because the common stamp is not bumped.
 
 ## Choosing a Provider
 
 | Provider | Use when | Avoid when | Trade-off |
 |---|---|---|---|
 | `Headless.Settings.Storage.EntityFramework` | You already use EF Core and want schema managed via EF migrations | You need to avoid an EF dependency or want zero-overhead ADO.NET | Portable across any EF-supported DB; startup validates that all settings entities are in the EF model before hosted services start |
-| `Headless.Settings.Storage.PostgreSql` | You use PostgreSQL and want no EF Core dependency | You run SQL Server or need EF migrations for schema management | Creates schema idempotently at startup via raw DDL; identifier names are validated against PostgreSQL naming rules |
-| `Headless.Settings.Storage.SqlServer` | You use SQL Server and want no EF Core dependency | You run PostgreSQL or need EF migrations for schema management | Creates schema idempotently at startup via raw DDL; identifier names are validated against SQL Server naming rules |
+| `Headless.Settings.Storage.PostgreSql` | You use PostgreSQL and want no EF Core dependency | You run SQL Server or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources setup`; identifier names are validated against PostgreSQL naming rules |
+| `Headless.Settings.Storage.SqlServer` | You use SQL Server and want no EF Core dependency | You run PostgreSQL or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources setup`; identifier names are validated against SQL Server naming rules |
 
 ---
 
@@ -260,7 +267,7 @@ None.
 
 ## Headless.Settings
 
-Core implementation of dynamic settings management with hierarchical value providers, caching, encryption, and background initialization.
+Core implementation of dynamic settings management with hierarchical value providers, caching, encryption, and the definitions seeder.
 
 ### API and behavior
 
@@ -269,7 +276,7 @@ Core implementation of dynamic settings management with hierarchical value provi
 - Built-in value providers (lowest to highest priority): `DefaultValueSettingValueProvider`, `ConfigurationSettingValueProvider`, `GlobalSettingValueProvider`, `TenantSettingValueProvider`, `UserSettingValueProvider`
 - `IStaticSettingDefinitionStore` — builds the setting catalog lazily from all registered `ISettingDefinitionProvider` implementations
 - `IDynamicSettingDefinitionStore` — database-backed definition store with in-process caching and distributed-stamp cross-instance coordination
-- `SettingsInitializationBackgroundService` — seeds static definitions with up to 10 jittered exponential-back-off retries capped at 30 seconds; pre-caches dynamic definitions when enabled
+- `SettingDefinitions` seeder — saves static definitions when the host seeds, with up to 10 jittered exponential-back-off retries capped at 30 seconds
 - `SettingManagementOptions` — tuning options for lock keys, cache expiries, dynamic store toggle
 - `SettingsStorageOptions` — schema and table name configuration shared across all storage providers
 - `RelationalSettingsOptions` — base of `PostgreSqlSettingsOptions` and `SqlServerSettingsOptions` (`ConnectionString`, `CommandTimeout`). Core also holds the one relational value and definition repository both raw providers run, written over the `ISqlDialect` statement kit; each provider package supplies only its options, DDL, and registration
@@ -291,7 +298,7 @@ Encrypted settings (`isEncrypted: true`) are decrypted only when the resolving p
 
 `AddHeadlessSettings` is guarded on `ISettingManager` so it is safe to call more than once (only the first call registers the core). However, only one storage provider extension may be registered — a second call with a different provider throws at startup.
 
-`SettingsInitializationBackgroundService` implements `IInitializer` so anything that awaits `WaitForInitializationAsync()` blocks until the seed and pre-cache steps complete. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other failures retain 10 retries, and the terminal exception is surfaced to every waiter. If the host is stopped before initialization finishes, the background task and waiters are cancelled.
+Nothing writes definitions at startup unless the host opts in to seeding; see [Definition Seeding](#definition-seeding). A failed `SettingDefinitions` seed fails the `seed` verb, or the host start under `AddHeadlessSeedOnStartup()`.
 
 ### Install
 
@@ -426,7 +433,7 @@ services.AddHeadlessSettings(setup =>
         // Enable database-backed dynamic setting definition store (default: false)
         options.IsDynamicSettingStoreEnabled = false;
 
-        // Persist static definitions to the DB on startup (default: true)
+        // Persist static definitions to the DB when the host seeds (default: true)
         options.SaveStaticSettingsToDatabase = true;
 
         // How long dynamic definitions stay in-process before the distributed stamp is re-checked (default: 30 seconds)
@@ -450,7 +457,6 @@ services.AddHeadlessSettings(setup =>
         o.Schema = "headless"; // default, shared by every Headless feature
         o.SettingValuesTableName = null; // default: setting_values on PostgreSQL, SettingValues elsewhere
         o.SettingDefinitionsTableName = null; // default: setting_definitions / SettingDefinitions
-        o.InitializeOnStartup = true; // default; set false when schema is provisioned out-of-band
     });
     setup.UseEntityFramework<AppDbContext>();
 });
@@ -463,7 +469,7 @@ Every object follows its database's naming convention. On PostgreSQL the tables,
 - Registers `ISettingManager` and `IClientVisibleSettingsReader` as singletons
 - Registers `ISettingDefinitionManager`, `IStaticSettingDefinitionStore`, `IDynamicSettingDefinitionStore`, `ISettingValueStore`, `ISettingValueProviderManager` as singletons
 - Registers `DefaultValueSettingValueProvider`, `ConfigurationSettingValueProvider`, `GlobalSettingValueProvider`, `TenantSettingValueProvider`, `UserSettingValueProvider` as singletons
-- Registers `SettingsInitializationBackgroundService` as hosted service
+- Registers the `SettingDefinitions` seeder (`ISeeder`); it runs only when the host seeds
 - `AddSettingsSnapshot<T>` registers `ISettingsSnapshot<T>` as a singleton, one hosted service that loads and re-reads every snapshot, and, with messaging, the every-instance consumer `headless.settings.snapshot`
 
 ---
@@ -535,9 +541,8 @@ builder.Services.AddHeadlessSettings(setup =>
 - `Schema = "headless"`, the schema every Headless feature shares (see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features))
 - `SettingValuesTableName = null`: `setting_values` on PostgreSQL, `SettingValues` elsewhere
 - `SettingDefinitionsTableName = null`: `setting_definitions` on PostgreSQL, `SettingDefinitions` elsewhere
-- `InitializeOnStartup = true`
 
-The registration validates identifier names using cross-provider rules (SQL Server superset). The startup gate inspects the EF model before hosted services start and fails with an actionable message if any settings entity is missing. `InitializeOnStartup` is ignored by the EF provider — EF uses migrations, not startup DDL.
+The registration validates identifier names using cross-provider rules (SQL Server superset). The startup gate inspects the EF model before hosted services start and fails with an actionable message if any settings entity is missing. The EF provider writes no DDL; create its tables with EF migrations.
 
 ### Runtime behavior
 
@@ -559,10 +564,10 @@ PostgreSQL raw-DDL storage for settings management.
 - `setup.UsePostgreSql(Action<PostgreSqlSettingsOptions> configure)` — overload for full option control
 - `setup.UsePostgreSql(Action<PostgreSqlSettingsOptions, IServiceProvider> configure)` — overload for late-bound configuration
 - `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Table and index creation at host startup as schema steps (`Settings/1` tables, `Settings/2` indexes) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with snake_case tables, columns, keys, and indexes (`setting_values`, `provider_key`, `ix_setting_values_name_provider_name_provider_key`)
+- Table and index creation as schema steps (`Settings/1` tables, `Settings/2` indexes) that `resources setup` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with snake_case tables, columns, keys, and indexes (`setting_values`, `provider_key`, `ix_setting_values_name_provider_name_provider_key`)
 - Raw ADO.NET repositories for setting values and definitions
 - `PostgreSqlSettingsOptions` — connection string and command timeout, inherited from `RelationalSettingsOptions`
-- Shares `SettingsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
+- Shares `SettingsStorageOptions` with the EF provider (schema, table names)
 
 ### Install
 
@@ -615,11 +620,11 @@ builder.Services.AddHeadlessSettings(setup =>
 | `ConnectionString` | `""` | PostgreSQL connection string (required). |
 | `CommandTimeout` | 30 seconds | Timeout for DDL/DML commands. |
 
-Configure schema and table names through `SettingsStorageOptions` via `setup.ConfigureStorage(...)`. Set `InitializeOnStartup = false` when the schema is provisioned out-of-band (migrations job, DBA). The initializer becomes a no-op but still reports `IsInitialized = true` so dependents awaiting `WaitForInitializationAsync` do not block.
+Configure schema and table names through `SettingsStorageOptions` via `setup.ConfigureStorage(...)`.
 
 ### Runtime behavior
 
-- Registers the settings schema contribution; the one schema runner applies it at startup
+- Registers the settings schema contribution; `resources setup` applies it, and a host start only verifies it and fails fast when a step is missing (see [Stateful resources](utilities.md#stateful-resources))
 - Registers the shared relational repositories from `Headless.Settings`, over the PostgreSQL dialect, as `ISettingValueRecordRepository` and `ISettingDefinitionRecordRepository` (singletons)
 
 ---
@@ -635,10 +640,10 @@ SQL Server raw-DDL storage for settings management.
 - `setup.UseSqlServer(Action<SqlServerSettingsOptions> configure)` — overload for full option control
 - `setup.UseSqlServer(Action<SqlServerSettingsOptions, IServiceProvider> configure)` — overload for late-bound configuration
 - `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Table and index creation at host startup as schema steps (`Settings/1` tables, `Settings/2` indexes) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with PascalCase tables, columns, keys, and indexes (`SettingValues`, `ProviderKey`, `IX_SettingValues_Name_ProviderName_ProviderKey`)
+- Table and index creation as schema steps (`Settings/1` tables, `Settings/2` indexes) that `resources setup` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with PascalCase tables, columns, keys, and indexes (`SettingValues`, `ProviderKey`, `IX_SettingValues_Name_ProviderName_ProviderKey`)
 - Raw ADO.NET repositories for setting values and definitions
 - `SqlServerSettingsOptions` — connection string and command timeout, inherited from `RelationalSettingsOptions`
-- Shares `SettingsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
+- Shares `SettingsStorageOptions` with the EF provider (schema, table names)
 
 ### Install
 
@@ -691,11 +696,11 @@ builder.Services.AddHeadlessSettings(setup =>
 | `ConnectionString` | `""` | SQL Server connection string (required). |
 | `CommandTimeout` | 30 seconds | Timeout for DDL/DML commands. |
 
-Configure schema and table names through `SettingsStorageOptions` via `setup.ConfigureStorage(...)`. Set `InitializeOnStartup = false` when the schema is provisioned out-of-band (migrations job, DBA). The initializer becomes a no-op but still reports `IsInitialized = true` so dependents awaiting `WaitForInitializationAsync` do not block.
+Configure schema and table names through `SettingsStorageOptions` via `setup.ConfigureStorage(...)`.
 
 ### Runtime behavior
 
-- Registers the settings schema contribution; the one schema runner applies it at startup
+- Registers the settings schema contribution; `resources setup` applies it, and a host start only verifies it
 - Registers the shared relational repositories from `Headless.Settings`, over the SQL Server dialect, as `ISettingValueRecordRepository` and `ISettingDefinitionRecordRepository` (singletons)
 
 ---

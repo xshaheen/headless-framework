@@ -72,7 +72,7 @@ public sealed partial class SchemaRunner(
     public IReadOnlyList<SchemaContribution> Contributions { get; } = [.. Argument.IsNotNull(contributions)];
 
     /// <summary>
-    /// Applies every missing step of every contribution whose <see cref="SchemaContribution.ApplyOnStartup"/> is set.
+    /// Applies every missing step of every contribution that is not <see cref="SchemaContribution.ExportOnly"/>.
     /// Per database: one connection and one history read per schema; only when a step is missing does it take the
     /// lock, re-read, and run the missing steps' DDL. A warm database therefore costs no lock and no DDL, whatever the
     /// number of features.
@@ -101,7 +101,7 @@ public sealed partial class SchemaRunner(
         var mismatches = new List<SchemaMismatch>();
         var races = 0;
 
-        foreach (var group in await _GroupByDatabaseAsync(applyingOnly: true).ConfigureAwait(false))
+        foreach (var group in await _GroupByDatabaseAsync().ConfigureAwait(false))
         {
             races += await _ApplyGroupAsync(group, applied, mismatches, pass, cancellationToken).ConfigureAwait(false);
         }
@@ -163,7 +163,7 @@ public sealed partial class SchemaRunner(
         {
             throw new SchemaRunnerException(
                 $"Headless schema runner ({mode} mode): the database history disagrees with the registered steps: "
-                    + $"{string.Join("; ", failures)}. A missing step needs the exported deploy script or Apply mode; a "
+                    + $"{string.Join("; ", failures)}. A missing step needs 'resources setup' (dotnet <app>.dll resources setup), the exported deploy script, or AddHeadlessResourceSetupOnStartup() in development; a "
                     + "changed checksum means a released step was edited, so add a new step instead."
             )
             {
@@ -198,7 +198,7 @@ public sealed partial class SchemaRunner(
     {
         var mismatches = new List<SchemaMismatch>();
 
-        foreach (var group in await _GroupByDatabaseAsync(applyingOnly: false).ConfigureAwait(false))
+        foreach (var group in await _GroupByDatabaseAsync().ConfigureAwait(false))
         {
             await using var connection = await _OpenAsync(group, cancellationToken).ConfigureAwait(false);
 
@@ -658,20 +658,131 @@ public sealed partial class SchemaRunner(
         }
     }
 
-    private async Task<List<DatabaseGroup>> _GroupByDatabaseAsync(bool applyingOnly)
+    /// <summary>
+    /// Deletes the rows of every declared table of every contribution, in reverse creation order and one transaction
+    /// per database, keeping each contribution's <see cref="SchemaContribution.HostStateTables"/>, its sequences, and
+    /// the history.
+    /// </summary>
+    /// <exception cref="SchemaRunnerException">A connection could not be opened or a delete failed.</exception>
+    internal async Task ClearAsync(CancellationToken cancellationToken)
+    {
+        foreach (var group in await _GroupByDatabaseAsync(includeExportOnly: true).ConfigureAwait(false))
+        {
+            var statements = new List<(string Sql, string? Feature)>();
+
+            foreach (var contribution in Enumerable.Reverse(group.Contributions))
+            {
+                var kept = contribution.HostStateTables.ToHashSet(StringComparer.Ordinal);
+                statements.AddRange(
+                    contribution
+                        .Objects.Where(o => o.Kind == SchemaObjectKind.Table && !kept.Contains(o.Name))
+                        .Reverse()
+                        .Select(o => (group.Dialect.DeleteRowsSql(contribution.Schema, o.Name), (string?)null))
+                );
+            }
+
+            await using var connection = await _OpenAsync(group, cancellationToken).ConfigureAwait(false);
+            await _RunInTransactionAsync(connection, group, "clear", statements, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Drops every declared object of every contribution, in reverse creation order, and deletes the contributions'
+    /// history rows in the same transaction, so the next apply creates the objects again and a failure leaves the
+    /// objects and their history as they were. Runs under the database's schema lock, because it changes what an
+    /// applying runner reads.
+    /// </summary>
+    /// <exception cref="SchemaRunnerException">A connection or the lock could not be taken, or a statement failed.</exception>
+    internal async Task TeardownAsync(CancellationToken cancellationToken)
+    {
+        foreach (var group in await _GroupByDatabaseAsync(includeExportOnly: true).ConfigureAwait(false))
+        {
+            var dialect = group.Dialect;
+            var statements = new List<(string Sql, string? Feature)>();
+
+            // The guarded history DDL first: a history table that was never created would otherwise fail the delete,
+            // and on PostgreSQL that error aborts the whole transaction. On a never set up schema it leaves an empty
+            // history table behind, which is what a later setup creates anyway.
+            statements.AddRange(group.Schemas.Select(schema => (dialect.HistoryTableSql(schema), (string?)null)));
+
+            foreach (var contribution in Enumerable.Reverse(group.Contributions))
+            {
+                statements.AddRange(
+                    contribution
+                        .Objects.Reverse()
+                        .Select(o => (dialect.DropObjectSql(contribution.Schema, o), (string?)null))
+                );
+                statements.Add((dialect.DeleteFeatureHistorySql(contribution.Schema), contribution.Feature));
+            }
+
+            var lockResource = $"headless_schema_runner:{group.Identity}";
+
+            await using var connection = await _OpenAsync(group, cancellationToken).ConfigureAwait(false);
+            await _AcquireLockAsync(connection, dialect, lockResource, lockWait: null, cancellationToken)
+                .ConfigureAwait(false);
+
+            try
+            {
+                await _RunInTransactionAsync(connection, group, "teardown", statements, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                await _ReleaseLockAsync(connection, dialect, lockResource).ConfigureAwait(false);
+            }
+        }
+    }
+
+    // A statement with a feature binds it as @Feature.
+    private async Task _RunInTransactionAsync(
+        DbConnection connection,
+        DatabaseGroup group,
+        string operation,
+        List<(string Sql, string? Feature)> statements,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            foreach (var (sql, feature) in statements)
+            {
+                await using var command = _CreateCommand(connection);
+                command.Transaction = transaction;
+                command.CommandText = sql;
+
+                if (feature is not null)
+                {
+                    command.Parameters.Add(group.Dialect.CreateStringParameter("Feature", feature));
+                }
+
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbException ex)
+        {
+            throw new SchemaRunnerException(
+                $"Headless schema runner: {operation} of "
+                    + $"{string.Join(", ", group.Contributions.Select(c => $"{c.Schema}/{c.Feature}"))} failed on "
+                    + $"{group.Dialect.Name}; nothing was changed.",
+                ex
+            );
+        }
+    }
+
+    private async Task<List<DatabaseGroup>> _GroupByDatabaseAsync(bool includeExportOnly = false)
     {
         var groups = new List<DatabaseGroup>();
 
-        foreach (var contribution in Contributions.Where(c => !c.ExportOnly && (!applyingOnly || c.ApplyOnStartup)))
+        foreach (var contribution in Contributions.Where(c => includeExportOnly || !c.ExportOnly))
         {
             // Identity comes from the unopened connection's settings, so features that each build their own
             // connection to one database still share one group, one lock, and one pass.
-            string identity;
-
-            await using (var probe = contribution.CreateConnection())
-            {
-                identity = contribution.Dialect.DatabaseIdentity(probe);
-            }
+            var identity = await contribution.GetDatabaseIdentityAsync().ConfigureAwait(false);
 
             var group = groups.Find(g =>
                 string.Equals(g.Dialect.Name, contribution.Dialect.Name, StringComparison.Ordinal)

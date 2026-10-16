@@ -36,7 +36,7 @@ Inject `ISqlConnectionFactory` and call `CreateNewConnectionAsync()` to get an a
 - `IConnectionStringChecker` is for health checks and startup validation; `Add{Provider}Sql` registers the provider implementation, or register it yourself and inject `IConnectionStringChecker`. Note: `SqliteConnectionStringChecker` always returns `DatabaseExists = true` when connected (SQLite creates the file on open).
 - For in-process integration tests, call `AddSqliteSql("Data Source=:memory:")` — it needs no external server.
 - To give every Headless storage feature the same database, register the connection once with `AddPostgreSqlSql` or `AddSqlServerSql` and call the feature's parameterless `UsePostgreSql()` or `UseSqlServer()`. Do not repeat the connection string per feature. See [Shared connection and schema for storage features](#shared-connection-and-schema-for-storage-features).
-- Storage features create their tables through one schema runner that records applied steps in `headless_schema_history`. For hosts that must not run DDL, set `SchemaRunnerMode.Verify` and deploy the script from `SchemaRunner.ExportScript`. Never drop a feature table by hand without also deleting its history rows. See [Schema runner](#schema-runner-apply-verify-and-deploy-time-scripts).
+- Storage features create their tables through one schema runner that records applied steps in `headless_schema_history`. A host start only verifies the tables and fails fast when a step is missing; the deployment creates them with the host's `resources setup` verb or the script from `SchemaRunner.ExportScript`, and a development or test host calls `AddHeadlessResourceSetupOnStartup()`. Never drop a feature table by hand without also deleting its history rows. See [Schema runner](#schema-runner-apply-verify-and-deploy-time-scripts).
 - Each provider package ships `Add{Provider}Sql(string connectionString)` and `Add{Provider}Sql(Func<IServiceProvider, string>)` on `IServiceCollection` (e.g. `AddPostgreSqlSql`, `AddSqlServerSql`, `AddSqliteSql`). Each registers `ISqlConnectionFactory` (singleton), `IConnectionStringChecker` (singleton), and `ISqlCurrentConnection` → `DefaultSqlCurrentConnection` (scoped). The factory and checker use the same connection string.
 
 ## Core Concepts
@@ -107,22 +107,24 @@ The EF Core storage variants and Jobs take their connection from the `DbContext`
 
 ### Schema runner: apply, verify, and deploy-time scripts
 
-Every raw PostgreSQL, SQL Server, and SQLite storage feature contributes its DDL to one schema runner (`SchemaRunner`, namespace `Headless.Hosting.Initialization.Schema`) instead of running its own initializer. Registering a feature is enough; the feature adds its contribution and the runner's hosted initializer. The runner:
+Every raw PostgreSQL, SQL Server, and SQLite storage feature contributes its DDL to one schema runner (`SchemaRunner`, namespace `Headless.Hosting.Initialization.Schema`) instead of running its own initializer. Registering a feature adds its contribution, the runner's hosted initializer, and one `Schema` [stateful resource](utilities.md#stateful-resources) per contribution. The runner:
 
-- Applies every missing step of every feature that reaches one database in a single pass at host start, under one session lock per database (`pg_try_advisory_lock` or `sp_getapplock`, polled; on SQLite a leased row in `headless_schema_lock`), before any hosted service can use the tables.
+- Applies every missing step of every feature that reaches one database in a single pass, under one session lock per database (`pg_try_advisory_lock` or `sp_getapplock`, polled; on SQLite a leased row in `headless_schema_lock`), before any hosted service can use the tables.
 - Records each applied step, with a SHA-256 checksum of its SQL, in `headless_schema_history` in the feature's schema. A recorded step is never run again, so a warm start is one history read per schema and takes no lock.
 - Absorbs a creator outside the lock, such as your own EF migration committing the same schema or table first: the failed step is re-run once in a fresh transaction.
 
-Choose the startup mode with `services.AddHeadlessSchemaRunner(options => options.Mode = …)`:
+A host start never writes DDL. The hosted initializer verifies every registered contribution before any hosted service can use the tables, and fails the start when a step is missing or a recorded checksum no longer matches the code. The message names the fix: run `resources setup`, apply the exported script, or call `AddHeadlessResourceSetupOnStartup()` in development. That call sets up every resource before the check runs, even on a host that starts its services concurrently. `HeadlessTestServer` makes it by default.
 
-| Mode | Writes DDL | Fails startup when |
+| Who | Writes DDL | How |
 |---|---|---|
-| `SchemaRunnerMode.Apply` (default) | Yes, missing steps only | A recorded step's checksum no longer matches the code |
-| `SchemaRunnerMode.Verify` | Never | A step is missing, or a recorded checksum no longer matches |
+| A host start | Never | Verifies; fails on a missing step or a changed checksum |
+| `dotnet MyApp.dll resources setup` | Yes, missing steps only | Applies every contribution, export-only ones included, one line per feature |
+| `AddHeadlessResourceSetupOnStartup()` | Yes, missing steps only | The same setup, as the host starts, for development and test hosts |
+| The exported script | Yes, guarded | Applied with `psql` or `sqlcmd` by the deployment |
 
-The same options set `CommandTimeout` (default 10 minutes), which applies to every runner statement, DDL included, instead of each feature's OLTP `CommandTimeout`. They also set `LockTimeout` (default 2 minutes), how long a replica waits while another replica applies steps.
+`services.AddHeadlessSchemaRunner(options => …)` sets `CommandTimeout` (default 10 minutes), which applies to every runner statement, DDL included, instead of each feature's OLTP `CommandTimeout`. They also set `LockTimeout` (default 2 minutes), how long a replica waits while another replica applies steps.
 
-Use `Verify` when DDL may not run from the application. Generate the reviewable script from the same registrations the application uses, and apply it with `psql` or `sqlcmd` in the deployment:
+The deployment applies the steps in one of two ways. It can run the host's `resources` verb (`dotnet MyApp.dll resources setup -t Schema`), which applies every registered contribution with the deployment's credentials and reports one line per feature (see [Stateful resources](utilities.md#stateful-resources)). Each feature is its own resource, so the verb opens a connection and takes the schema lock once per feature rather than once per database; that is a deploy-time cost, not a startup one. A table a migration tool already created is fine: every step is idempotent, so setup only records its history. Or it can apply a reviewable script. Generate the reviewable script from the same registrations the application uses, and apply it with `psql` or `sqlcmd` in the deployment:
 
 ```csharp
 // For example in a small console entry point or a test that CI runs: register the features exactly as the
@@ -136,16 +138,16 @@ var script = provider.GetRequiredService<SchemaRunner>().ExportScript(PostgreSql
 await File.WriteAllTextAsync("headless-schema.postgresql.sql", script);
 ```
 
-The script is deterministic for a given set of registrations, so it can be committed and diffed. Every statement is guarded, so running it twice changes nothing. It inserts the same history rows the runner writes, so a host in `Verify` mode accepts the database afterwards. The SQL Server script separates batches with `GO`.
+The script is deterministic for a given set of registrations, so it can be committed and diffed. Every statement is guarded, so running it twice changes nothing. It inserts the same history rows the runner writes, so a host start verifies the database afterwards. The SQL Server script separates batches with `GO`.
 
 Rules that change how you operate a database:
 
-- **The runner trusts its history.** Dropping a feature's table by hand does not make the next start recreate it. Delete that feature's rows from `headless_schema_history` too, or drop the whole schema.
+- **The runner trusts its history.** Dropping a feature's table by hand does not make the next setup recreate it. Remove a feature with `resources teardown -n {dialect}/{schema}/{feature}`, which drops its objects and deletes its history rows together, so the next `resources setup` creates them again. After a hand drop, delete that feature's rows from `headless_schema_history` too, or drop the whole schema.
+- **Objects are declared** (`SchemaContribution.Objects`, `SchemaObject.Table` and `SchemaObject.Sequence`, in creation order, with the same configured names as the steps). `resources clear` deletes the rows of each declared table in reverse order, in one transaction, and keeps the host-state tables, the sequences, and the history. `resources teardown` drops the objects in reverse order under the schema lock, then deletes the feature's history rows. Every built-in feature declares its objects; a contribution that declares none reports both operations as unsupported. On SQLite a declared sequence is the one-row table that stands in for one.
 - **Never edit a released step.** A changed step fails startup with a checksum mismatch naming the feature and version. Features evolve a released schema by adding a new step. Until a release ships the step, change it in place: no database runs it, so an upgrade step would be migration code for a schema nobody has.
 - **Configuration that shapes DDL is part of the checksum.** Changing AuditLog's `JsonColumnType` after its table exists fails startup instead of being silently ignored.
 - **Features with configurable object names keep one history per name.** `Sequences` with the default table records `Sequences/1`; with `TableName = "counters"` it records `Sequences:counters/1`, so two hosts naming the table differently in one schema never collide.
-- **`InitializeOnStartup = false`** on a feature keeps its steps out of `Apply` mode. `Verify` mode and `ExportScript` still include them.
-- **An export-only contribution** (`SchemaContribution.ExportOnly`) is in `ExportScript` and nowhere else: the runner neither applies nor verifies it. A feature that applies a database's steps with a runner of its own, such as a Messaging additional outbox, registers one so the host's deploy script still creates those objects.
+- **An export-only contribution** (`SchemaContribution.ExportOnly`) is in `ExportScript` and in `resources setup`, and the host's runner never verifies it. A feature that applies a database's steps with a runner of its own, such as a Messaging additional outbox, registers one so the host's deploy script still creates those objects.
 - **Host-state tables** (`SchemaContribution.HostStateTables`) name the tables whose rows a feature writes at startup from code or keeps live while the host runs, rather than application data: the Features, Permissions, and Settings definition tables on PostgreSQL and SQL Server, and the Coordination membership tables on PostgreSQL, SQL Server, and SQLite. On SQLite, where the schema is a table-name prefix, the declared name carries the prefix. The runner ignores the list; test tooling reads it so a data reset between tests keeps those rows (see [testing.md](testing.md#tables-a-reset-preserves)). A feature contributing a table of that kind declares it.
 - **History table name** (`ISchemaDialect.HistoryTableName(schema)`) returns the unquoted name the dialect stores a schema's history under: `headless_schema_history` on PostgreSQL and SQL Server, `<schema>_headless_schema_history` on SQLite. Test tooling keeps that table by this name, because the runner trusts the history and never recreates a table whose step it records. A custom dialect implements it alongside `HistoryTableSql`.
 - History rows of features a host does not register are ignored, so hosts with different feature sets can share one schema. A row for a registered feature whose step this host does not know, such as a newer replica's step during a rolling deploy, is logged, not fatal.

@@ -59,9 +59,15 @@ public static class SettingsStorageFixtureExtensions
 {
     /// <summary>
     /// Builds an unstarted host that stores settings in <paramref name="schema" /> through the fixture's provider.
-    /// Pass <paramref name="connectionString" /> to point the provider somewhere other than the fixture's database.
+    /// Pass <paramref name="connectionString" /> to point the provider somewhere other than the fixture's database, and
+    /// <paramref name="setupResources" /> <see langword="false" /> for a host whose start must only verify the schema.
     /// </summary>
-    public static IHost CreateHost(this ISettingsStorageFixture fixture, string schema, string? connectionString = null)
+    public static IHost CreateHost(
+        this ISettingsStorageFixture fixture,
+        string schema,
+        string? connectionString = null,
+        bool setupResources = true
+    )
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddSingleton(TimeProvider.System);
@@ -81,6 +87,11 @@ public static class SettingsStorageFixtureExtensions
             setup.ConfigureStorage(options => options.Schema = schema);
             fixture.UseStorage(setup, connectionString ?? fixture.ConnectionString);
         });
+
+        if (setupResources)
+        {
+            builder.Services.AddHeadlessResourceSetupOnStartup();
+        }
 
         return builder.Build();
     }
