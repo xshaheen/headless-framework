@@ -95,14 +95,21 @@ internal static class HeadlessJsonValueEquality
             : JsonSerializer.Deserialize<object>(_Serialize(value), EfCoreJsonOptions.Instance);
     }
 
-    // Equality must match the stored JSON, which keeps a DateTimeOffset's offset and a DateTime's kind; their Equals
-    // compares only the instant, so a change of offset or kind alone would go unsaved.
+    // Equality must match the stored JSON, which keeps a DateTimeOffset's offset, a DateTime's kind, a decimal's scale
+    // (1.0 and 1.00), and the sign of a floating-point zero (0 and -0). Their Equals ignores each of these, so such a
+    // change alone would go unsaved.
     private static bool _SimpleEquals(object left, object right)
     {
         return left switch
         {
             DateTimeOffset offset => offset.EqualsExact((DateTimeOffset)right),
             DateTime date => date.Ticks == ((DateTime)right).Ticks && date.Kind == ((DateTime)right).Kind,
+            decimal number => number == (decimal)right
+                && number.Scale == ((decimal)right).Scale
+                && decimal.IsNegative(number) == decimal.IsNegative((decimal)right),
+            double number => number.Equals((double)right)
+                && double.IsNegative(number) == double.IsNegative((double)right),
+            float number => number.Equals((float)right) && float.IsNegative(number) == float.IsNegative((float)right),
             _ => left.Equals(right),
         };
     }

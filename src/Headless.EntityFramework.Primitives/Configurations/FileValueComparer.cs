@@ -71,7 +71,12 @@ internal static class HeadlessMediaComparison
     {
         return value is null
             ? 0
-            : HashCode.Combine(StringComparer.Ordinal.GetHashCode(value.Id), value.Length, value.UploadedAt);
+            // Id is required, but JSON can still bind an explicit null to it, and hashing must not throw.
+            : HashCode.Combine(
+                value.Id is null ? 0 : StringComparer.Ordinal.GetHashCode(value.Id),
+                value.Length,
+                value.UploadedAt
+            );
     }
 
     // The JSON comparer's snapshot was a round trip through the declared type, so a File snapshot is a File even when

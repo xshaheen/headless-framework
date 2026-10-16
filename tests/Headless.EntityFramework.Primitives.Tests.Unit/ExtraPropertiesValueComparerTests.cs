@@ -32,6 +32,24 @@ public sealed class ExtraPropertiesValueComparerTests : TestBase
         _comparer.Equals(left, right).Should().BeTrue();
     }
 
+    [Theory]
+    [MemberData(nameof(ValuesStoredAsDifferentJson))]
+    public void should_detect_a_change_the_stored_json_keeps(object before, object after)
+    {
+        ExtraProperties left = new() { ["value"] = before };
+        ExtraProperties right = new() { ["value"] = after };
+
+        _comparer.Equals(left, right).Should().BeFalse();
+    }
+
+    public static TheoryData<object, object> ValuesStoredAsDifferentJson =>
+        new()
+        {
+            { 1.0m, 1.00m },
+            { 0.0, -0.0 },
+            { 0f, -0f },
+        };
+
     [Fact]
     public void should_ignore_insertion_order()
     {

@@ -23,6 +23,20 @@ public sealed class MediaValueComparerTests : TestBase
         comparer.Equals(_File(), null).Should().BeFalse();
     }
 
+    [Fact]
+    public void file_comparer_should_hash_a_file_whose_id_was_read_as_null()
+    {
+        var comparer = _Comparer(nameof(MediaRow.Attachment));
+        // The column's JSON binds an explicit null to the required Id.
+        var json = JsonSerializer.Serialize(_File()).Replace("\"Id\":\"f1\"", "\"Id\":null", StringComparison.Ordinal);
+        var file = JsonSerializer.Deserialize<File>(json)!;
+        file.Id.Should().BeNull();
+
+        var hash = () => comparer.GetHashCode(file);
+
+        hash.Should().NotThrow();
+    }
+
     public static TheoryData<string> FileChanges =>
         [
             "Id",
