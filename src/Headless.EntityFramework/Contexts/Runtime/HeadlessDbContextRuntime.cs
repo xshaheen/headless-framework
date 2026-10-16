@@ -73,10 +73,35 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     public void AttachChangeTrackerHandlers()
     {
         // Attached in the constructor so EF's pool snapshot captures them and SetLease restores them on every lease;
-        // handlers attached later would be dropped by the next lease. The tenant stamp is always attached and checks
-        // the write-guard option when it fires, because the option is not known until a provider is bound.
+        // handlers attached later would be dropped by the next lease. That makes this the one place to decide, and
+        // the decision holds for the instance's life: its options, and so its model and guard setting, never change.
+        if (!_TenantStampCanApply())
+        {
+            return;
+        }
+
         _db.ChangeTracker.Tracking += _OnTracking;
         _db.ChangeTracker.StateChanging += _OnStateChanging;
+    }
+
+    /// <summary>
+    /// Whether the tenant stamp could ever stamp an entity of this context: its model has a tenant-owned type and the
+    /// write guard is on. Every tracked query row and accepted entry otherwise pays for handlers that do nothing.
+    /// </summary>
+    private bool _TenantStampCanApply()
+    {
+        // Reading the model builds it, which calls back into this runtime's ConfigureConventions.
+        if (!HeadlessTenantPlan.ModelHasTenantOwnedTypes(_db.Model))
+        {
+            return false;
+        }
+
+        // Without an application provider the guard setting cannot be read here; the stamp checks it when it fires.
+        var application = _db.GetService<IDbContextOptions>()
+            .FindExtension<CoreOptionsExtension>()
+            ?.ApplicationServiceProvider;
+
+        return application?.GetService<IOptions<TenantGuardOptions>>()?.Value.GuardWrites ?? true;
     }
 
     /// <summary>The ambient tenant, read on every access so a tenant change inside one lease is observed.</summary>
@@ -223,18 +248,26 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     private IHeadlessSaveChangesPipeline _GetPipeline() =>
         _pipeline ??= ServiceProvider.GetRequiredService<IHeadlessSaveChangesPipeline>();
 
-    private void _OnTracking(object? sender, EntityTrackingEventArgs e) => _StampTenantOnAdded(e.Entry, e.State);
-
-    private void _OnStateChanging(object? sender, EntityStateChangingEventArgs e) =>
-        _StampTenantOnAdded(e.Entry, e.NewState);
-
-    private void _StampTenantOnAdded(EntityEntry entry, EntityState targetState)
+    // The target state is checked before e.Entry, which allocates an EntityEntry: Tracking fires for every tracked
+    // query row and StateChanging for every accepted entry, almost never for an add.
+    private void _OnTracking(object? sender, EntityTrackingEventArgs e)
     {
-        if (targetState != EntityState.Added)
+        if (e.State == EntityState.Added)
         {
-            return;
+            _StampTenantOnAdded(e.Entry);
         }
+    }
 
+    private void _OnStateChanging(object? sender, EntityStateChangingEventArgs e)
+    {
+        if (e.NewState == EntityState.Added)
+        {
+            _StampTenantOnAdded(e.Entry);
+        }
+    }
+
+    private void _StampTenantOnAdded(EntityEntry entry)
+    {
         var plan = HeadlessTenantPlan.For(entry.Metadata);
 
         if (
