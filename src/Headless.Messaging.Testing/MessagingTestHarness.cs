@@ -121,14 +121,15 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     internal static void ConfigureServices(IServiceCollection services)
     {
         // Idempotency guard — safe to call multiple times (e.g., integration test setup)
-        if (services.Any(d => d.ServiceType == typeof(TestHarnessMarkerService)))
+        if (IsRegistered(services))
         {
             return;
         }
 
-        services.AddSingleton<TestHarnessMarkerService>();
-
+        // Checked before the marker goes in, so a rejected collection is not left looking already configured.
         _EnsureInMemoryInfrastructure(services);
+
+        services.AddSingleton<TestHarnessMarkerService>();
 
         // Disable parallelism for deterministic single-threaded test execution
         services.Configure<MessagingOptions>(opt =>
@@ -653,6 +654,10 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     // Private helpers
     // -------------------------------------------------------------------------
 
+    /// <summary>Whether <see cref="ConfigureServices"/> already ran on <paramref name="services"/>.</summary>
+    internal static bool IsRegistered(IServiceCollection services) =>
+        services.Any(static d => d.ServiceType == typeof(TestHarnessMarkerService));
+
     /// <summary>Marker service for idempotency guard in <see cref="ConfigureServices"/>.</summary>
     private sealed class TestHarnessMarkerService;
 
@@ -732,20 +737,25 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     }
 
     /// <summary>
-    /// Verifies that in-memory queue and storage providers are registered.
-    /// Throws <see cref="InvalidOperationException"/> if either marker is missing.
+    /// Verifies that the host sends through the in-memory transport and has a storage. Any storage passes, so a test can
+    /// keep the application's database; a broker transport does not, because recording over it would make every
+    /// assertion depend on a reachable broker.
     /// </summary>
+    /// <exception cref="InvalidOperationException">No transport or storage is registered, or the transport is not in-memory.</exception>
     private static void _EnsureInMemoryInfrastructure(IServiceCollection services)
     {
-        var hasQueueMarker = services.Any(d =>
-            d.ServiceType == typeof(MessageQueueMarkerService) && d.Lifetime == ServiceLifetime.Singleton
-        );
+        var transports = services
+            .Where(static d =>
+                d.ServiceType == typeof(MessageQueueMarkerService) && d.Lifetime == ServiceLifetime.Singleton
+            )
+            .Select(static d => (d.ImplementationInstance as MessageQueueMarkerService)?.Name)
+            .ToArray();
 
         var hasStorageMarker = services.Any(d =>
             d.ServiceType == typeof(MessageStorageMarkerService) && d.Lifetime == ServiceLifetime.Singleton
         );
 
-        if (!hasQueueMarker)
+        if (transports.Length == 0)
         {
             throw new InvalidOperationException(
                 "MessagingTestHarness requires an in-memory transport. "
@@ -753,11 +763,28 @@ public sealed class MessagingTestHarness : IAsyncDisposable
             );
         }
 
+        var brokers = transports
+            .Where(static name =>
+                !string.Equals(name, InMemoryTransportReplacement.InMemoryTransportName, StringComparison.Ordinal)
+            )
+            .Select(static name => $"'{name ?? "unnamed"}'")
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (brokers.Length != 0)
+        {
+            throw new InvalidOperationException(
+                $"MessagingTestHarness records over the in-memory transport, but the host registers the {string.Join(", ", brokers)} "
+                    + "transport. Call services.ReplaceMessagingTransportWithInMemory() before AddMessagingTestHarness() to "
+                    + "swap it for the in-memory transport, or call setup.UseInMemory() when the test builds its own host."
+            );
+        }
+
         if (!hasStorageMarker)
         {
             throw new InvalidOperationException(
-                "MessagingTestHarness requires an in-memory storage. "
-                    + "Call setup.UseInMemoryStorage() inside your AddHeadlessMessaging callback."
+                "MessagingTestHarness requires a messaging storage. "
+                    + "Call setup.UseInMemoryStorage() inside your AddHeadlessMessaging callback, or keep the application's storage."
             );
         }
     }
