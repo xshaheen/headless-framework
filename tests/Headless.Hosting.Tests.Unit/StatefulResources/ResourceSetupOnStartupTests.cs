@@ -33,7 +33,12 @@ public sealed class ResourceSetupOnStartupTests : TestBase
     public async Task should_clear_after_setup_on_reset_state_and_keep_only_the_last_action_when_called_twice()
     {
         // given
-        var builder = Host.CreateApplicationBuilder();
+        var builder = Host.CreateApplicationBuilder(
+            new HostApplicationBuilderSettings
+            {
+                EnvironmentName = Microsoft.Extensions.Hosting.Environments.Development,
+            }
+        );
         builder.Services.AddHeadlessStatefulResource(_ => new RecordingResource("RabbitMQ", "orders", _log));
         builder.Services.AddHeadlessResourceSetupOnStartup();
         builder.Services.AddHeadlessResourceSetupOnStartup(StatefulResourceStartupAction.ResetState);
@@ -45,6 +50,30 @@ public sealed class ResourceSetupOnStartupTests : TestBase
 
         // then
         _log.Should().Equal("setup orders", "clear orders");
+    }
+
+    [Fact]
+    public async Task should_fail_the_host_start_and_touch_no_resource_on_reset_state_in_production()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder(
+            new HostApplicationBuilderSettings
+            {
+                EnvironmentName = Microsoft.Extensions.Hosting.Environments.Production,
+            }
+        );
+        builder.Services.AddHeadlessStatefulResource(_ => new RecordingResource("RabbitMQ", "orders", _log));
+        builder.Services.AddHeadlessResourceSetupOnStartup(StatefulResourceStartupAction.ResetState);
+        using var host = builder.Build();
+
+        // when
+        var act = () => host.StartAsync(AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*ResetState*refuses to run in the Production environment*");
+        _log.Should().BeEmpty();
     }
 
     [Fact]

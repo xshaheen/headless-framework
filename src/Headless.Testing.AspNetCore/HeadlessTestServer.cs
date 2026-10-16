@@ -45,7 +45,8 @@ namespace Headless.Testing.AspNetCore;
 /// <param name="setupResources">
 /// Whether the host sets up its stateful resources (tables, queues, containers) when it starts, as
 /// <c>AddHeadlessResourceSetupOnStartup</c> does. Defaults to <see langword="true"/>, because a host start otherwise
-/// only verifies them. Pass <see langword="false"/> for a test whose resources already exist or that tests the check.
+/// only verifies them. An application that registers startup setup itself keeps its own action. Pass
+/// <see langword="false"/> for a test whose resources already exist or that tests the check.
 /// </param>
 /// <param name="seed">
 /// Whether the host runs its seeders when it starts, as <c>AddHeadlessSeedOnStartup</c> does, so definitions and
@@ -643,10 +644,11 @@ public sealed class HeadlessTestServer<TProgram>(
                     services.AddTestTimeProvider();
                 }
 
-                // Before configureTestServices, so a test that asks for another startup action replaces this one.
+                // A TryAdd, so the startup action the application registered (ResetState, say) stays; and before
+                // configureTestServices, so a test that asks for another action replaces this one.
                 if (setupResources)
                 {
-                    services.AddHeadlessResourceSetupOnStartup();
+                    services.TryAddHeadlessResourceSetupOnStartup();
                 }
 
                 if (seed)

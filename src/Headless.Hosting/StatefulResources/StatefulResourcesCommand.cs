@@ -1,5 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+
 namespace Headless.Hosting;
 
 /// <summary>The <c>resources</c> verb of <c>RunHeadlessAsync</c>: parses its arguments, runs one operation, prints a report.</summary>
@@ -9,9 +12,9 @@ internal static class StatefulResourcesCommand
 
     private const string _Usage =
         "Usage: resources [setup|check|clear|teardown|statistics|list] [-t|--type <type>]... [-n|--name <name>]... "
-        + "[--timeout <seconds>]";
+        + "[--timeout <seconds>] [--force]";
 
-    private static readonly TimeSpan _DefaultTimeout = TimeSpan.FromSeconds(60);
+    private const string _Force = "--force";
 
     private static readonly Dictionary<string, StatefulResourceOperation?> _Subcommands = new(StringComparer.Ordinal)
     {
@@ -42,7 +45,17 @@ internal static class StatefulResourcesCommand
         CancellationToken cancellationToken
     )
     {
-        if (!HostCommandLine.TryParse(Name, args, _Subcommands.Keys, _Options, out var parsed, out var error))
+        if (
+            !HostCommandLine.TryParse(
+                Name,
+                args,
+                _Subcommands.Keys,
+                _Options,
+                out var parsed,
+                out var error,
+                switches: [_Force]
+            )
+        )
         {
             return await HostCommandLine
                 .UsageErrorAsync(stderr, error, _Usage, cancellationToken)
@@ -57,6 +70,26 @@ internal static class StatefulResourcesCommand
         }
 
         var operation = _Subcommands[parsed.Subcommand ?? "setup"];
+
+        // Clear and teardown delete data; in Production they run only when the operator says so explicitly.
+        if (
+            operation is StatefulResourceOperation.Clear or StatefulResourceOperation.Teardown
+            && !parsed.Switches.Contains(_Force)
+            && services.GetService<IHostEnvironment>()?.IsProduction() == true
+        )
+        {
+            await HostCommandLine
+                .WriteAsync(
+                    stderr,
+                    $"Refusing to run 'resources {parsed.Subcommand}' in the Production environment: it deletes "
+                        + "data. Pass --force to run it anyway.\n",
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return HostCommandLine.ExitUsage;
+        }
+
         var types = parsed.ValuesOf("type");
         var names = parsed.ValuesOf("name");
         IReadOnlyList<IStatefulResource> selected;
@@ -95,10 +128,12 @@ internal static class StatefulResourcesCommand
                 return noFilters ? HostCommandLine.ExitSuccess : HostCommandLine.ExitUsage;
             }
 
+            // No default budget: a resource's own timeouts (the schema runner's lock wait and DDL timeout) govern
+            // unless the operator bounds the whole run.
             if (operation is { } run)
             {
                 outcomes = await StatefulResourceRunner
-                    .RunAsync(selected, run, parsed.Timeout ?? _DefaultTimeout, cancellationToken)
+                    .RunAsync(selected, run, parsed.Timeout, cancellationToken)
                     .ConfigureAwait(false);
             }
         }

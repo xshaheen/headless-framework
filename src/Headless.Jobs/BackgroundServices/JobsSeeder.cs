@@ -99,8 +99,7 @@ internal sealed class JobsSeeder(
         {
             // Resolve the keyed lock lazily INSIDE the try (not via constructor injection) so a consumer factory that
             // throws at resolution — e.g. UseDistributedLock(sp => sp.GetRequiredService<IDistributedLock>()) when no
-            // provider is registered — is treated as an acquire fault and skipped, rather than crashing host startup
-            // when DI constructs this hosted service.
+            // provider is registered — is logged as an acquire fault like any other.
             var lockProvider = scopedProvider.GetRequiredKeyedService<IDistributedLock>(JobsKeys.LockProvider);
             lease = await lockProvider
                 .TryAcquireAsync(JobsKeys.CronSeedMigrationResource, JobsKeys.GuardAcquireOptions, cancellationToken)
@@ -113,11 +112,12 @@ internal sealed class JobsSeeder(
         }
         catch (Exception ex)
         {
-            // Lock-store hiccup — including a provider that surfaces an internal timeout as a
-            // (Task)OperationCanceledException while our token is NOT cancelled: another node seeds, or the next boot
-            // retries. Skip rather than fail startup instead of letting a provider-internal cancel crash host start.
+            // A lock-store fault, including a provider that surfaces an internal timeout as an
+            // OperationCanceledException while our token is not cancelled, fails the seed. The seed runs once per
+            // deployment (the seed verb) or per opted-in start, so nothing retries a skipped seed: reporting success
+            // would leave the cron rows stale with no failed step to show for it.
             logger.CronSeedMigrationLockAcquireFailed(ex);
-            return;
+            throw;
         }
 
         if (lease is null)

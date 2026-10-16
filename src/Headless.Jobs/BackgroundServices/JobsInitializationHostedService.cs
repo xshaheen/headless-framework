@@ -230,13 +230,12 @@ internal static partial class JobsInitializationLog
     [LoggerMessage(
         EventId = 3,
         EventName = "CronSeedMigrationLockAcquireFailed",
-        // Warning, not Debug: a contention skip (lease == null) is normal on every rolling deploy, but an acquire
-        // *fault* signals a lock-store problem. If the store is down for all nodes at first boot, every node hits
-        // this path and the seed is skipped until the next restart — that must be operator-visible.
-        Level = LogLevel.Warning,
-        Message = "Skipped cron-seed migration: acquiring the '"
+        // Error: a contention skip (lease == null) is normal, but an acquire fault signals a lock-store problem and
+        // fails the seed.
+        Level = LogLevel.Error,
+        Message = "Cron-seed migration failed: acquiring the '"
             + JobsKeys.CronSeedMigrationResource
-            + "' lock failed. Another node will seed or the next boot will retry."
+            + "' lock failed, so the seed fails. Fix the lock store, then run the seed again."
     )]
     public static partial void CronSeedMigrationLockAcquireFailed(this ILogger logger, Exception exception);
 }

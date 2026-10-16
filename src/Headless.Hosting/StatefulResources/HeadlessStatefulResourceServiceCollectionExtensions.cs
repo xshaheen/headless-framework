@@ -64,6 +64,7 @@ public static class HeadlessStatefulResourceServiceCollectionExtensions
     /// A failed setup fails the host start and names every failed resource. An operation a resource does not support is
     /// skipped. Guard the call on the environment to keep it out of production, for example
     /// <c>if (builder.Environment.IsDevelopment())</c>, where the deployment runs <c>resources setup</c> instead.
+    /// <see cref="StatefulResourceStartupAction.ResetState" /> fails the host start in the Production environment.
     /// </remarks>
     public static IServiceCollection AddHeadlessResourceSetupOnStartup(
         this IServiceCollection services,
@@ -74,7 +75,7 @@ public static class HeadlessStatefulResourceServiceCollectionExtensions
 
         services.Configure<StatefulResourceStartupOptions>(options => options.Action = action);
 
-        if (!services.Any(static descriptor => descriptor.ServiceType == typeof(StatefulResourceStartupService)))
+        if (!_IsSetupOnStartupRegistered(services))
         {
             services.AddSingleton<StatefulResourceStartupService>();
 
@@ -90,4 +91,25 @@ public static class HeadlessStatefulResourceServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Calls <see cref="AddHeadlessResourceSetupOnStartup" /> only when nothing registered startup setup yet, so a test
+    /// host's default never replaces the action the application chose.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="action">The action to register when none is.</param>
+    /// <returns>The same service collection.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services" /> is null.</exception>
+    public static IServiceCollection TryAddHeadlessResourceSetupOnStartup(
+        this IServiceCollection services,
+        StatefulResourceStartupAction action = StatefulResourceStartupAction.SetupOnly
+    )
+    {
+        Argument.IsNotNull(services);
+
+        return _IsSetupOnStartupRegistered(services) ? services : services.AddHeadlessResourceSetupOnStartup(action);
+    }
+
+    private static bool _IsSetupOnStartupRegistered(IServiceCollection services) =>
+        services.Any(static descriptor => descriptor.ServiceType == typeof(StatefulResourceStartupService));
 }

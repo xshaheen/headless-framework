@@ -610,10 +610,11 @@ dotnet MyApp.dll resources statistics -n PostgreSql/headless/Sequences
 ```
 
 - **Subcommands.** `setup` (default) creates whatever is missing; `check` verifies without writing; `clear` removes data and keeps the structure; `teardown` deletes what setup created, in reverse order; `statistics` prints each resource's status values; `list` prints the resources and runs nothing.
-- **Filters.** `-t|--type <type>` and `-n|--name <name>` match exactly, ignoring case. Repeat a flag to match any of its values; both flags must match. `--timeout <seconds>` bounds the whole run (default 60): the resource running when it elapses and every resource not yet reached report `TimedOut`.
+- **Filters.** `-t|--type <type>` and `-n|--name <name>` match exactly, ignoring case. Repeat a flag to match any of its values; both flags must match. `--timeout <seconds>` bounds the whole run: the resource running when it elapses and every resource not yet reached report `TimedOut`. Without it the run has no budget of its own, so each resource's own timeouts govern, such as the schema runner's 2-minute lock wait and 10-minute DDL command timeout.
 - **Validates like a start.** The verb first runs options marked `ValidateOnStart` and every `IHeadlessStartupValidator`, then runs the resources. It starts no hosted service.
 - **Output.** One aligned line per resource on standard output: type, name, status (`Ok`, `Failed`, `Unsupported`, `TimedOut`), duration, and the failure message. `statistics` indents each status value under its resource. Console logging goes to standard error, as for `describe`.
-- **Exit codes.** `0` when every resource is `Ok` or `Unsupported`, or none is registered; `1` when any resource fails or times out, or startup validation fails; `2` for an unknown subcommand or option, a missing or invalid value, or filters that match no resource.
+- **Production guard.** In the Production environment (`IHostEnvironment.IsProduction()`), `clear` and `teardown` delete data, so they refuse to run and exit `2` unless `--force` is passed: `dotnet MyApp.dll resources teardown --force`. Other environments and the other subcommands need no flag.
+- **Exit codes.** `0` when every resource is `Ok` or `Unsupported`, or none is registered; `1` when any resource fails or times out, or startup validation fails; `2` for an unknown subcommand or option, a missing or invalid value, filters that match no resource, or `clear` or `teardown` in Production without `--force`.
 - **Every resource runs.** A failure does not stop the run, so the report names every resource. Resources run one at a time, in dependency order.
 
 Which resources a host has follows from what it registers:
@@ -621,7 +622,7 @@ Which resources a host has follows from what it registers:
 | Type | Registered by | Name | Setup | Check | Clear | Teardown |
 | --- | --- | --- | --- | --- | --- | --- |
 | `Schema` | every relational storage feature, one per `SchemaContribution` | `{dialect}/{schema}/{feature}` | applies the missing steps, export-only contributions included | fails on a missing step or a changed checksum | deletes the rows of its tables, keeping host-state tables, sequences, and history | drops its tables and sequences and deletes its history rows, so the next setup recreates them |
-| `RabbitMQ` (any transport with an `ITransportTopologyProvisioner`) | `UseRabbitMq` | `topology` | declares the lane exchanges, one queue per competing consumer subscription and registered Queue-lane message with its `.dlq`, and the bindings | passively declares each exchange and queue | purges each queue and its `.dlq` | deletes the queues, then the exchanges and their `.dlx` |
+| `RabbitMQ` (any transport with an `ITransportTopologyProvisioner`) | `UseRabbitMq` | `topology` | declares the lane exchanges, one queue per competing consumer subscription and registered Queue-lane message with its `.dlq`, and the bindings | passively declares each exchange and queue | purges each queue this host consumes and its `.dlq`, never a queue it only publishes to | deletes the queues this host consumes and their `.dlq`; leaves the lane exchanges and their `.dlx` in place, because every service on the broker shares them and a publisher binds nothing, so no check can prove them unused (see [RabbitMQ](messaging.md#headlessmessagingrabbitmq)) |
 
 Implement `IStatefulResource` for a feature's own external state, and register it with `services.AddHeadlessStatefulResource(sp => ...)`. When the set depends on other registrations, such as one queue per consumer, implement `IStatefulResourceSource` and register it with `services.AddHeadlessStatefulResourceSource<TSource>()`, which adds a source type once however often a feature's setup runs. A resource that implements `IStatefulResourceWithDependencies` names the resources it must follow; two resources that depend on each other fail every operation with the cycle in the message.
 
@@ -639,7 +640,7 @@ if (builder.Environment.IsDevelopment())
 }
 ```
 
-`AddHeadlessResourceSetupOnStartup(StatefulResourceStartupAction.ResetState)` also clears each resource's data after setup. The startup action runs before every other hosted service, wherever the call sits, and a failure fails the host start, naming each failed resource. A second call replaces the action.
+`AddHeadlessResourceSetupOnStartup(StatefulResourceStartupAction.ResetState)` also clears each resource's data after setup; in the Production environment it fails the host start instead of clearing anything. The startup action runs before every other hosted service, wherever the call sits, and a failure fails the host start, naming each failed resource. A second call replaces the action. `TryAddHeadlessResourceSetupOnStartup()` registers startup setup only when nothing registered it yet; `HeadlessTestServer` uses it, so an application that registers `ResetState` keeps it under the test server.
 
 Tests and tools reach the same runner on a built host's services: `await host.Services.SetupResourcesAsync()`, `ResetResourceStateAsync()`, and `TeardownResourcesAsync()`. Each one runs every resource, skips unsupported operations, and then throws one `StatefulResourceException` whose `Failures` holds each failed resource's error.
 

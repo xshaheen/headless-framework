@@ -14,8 +14,9 @@ internal static class HostCommandLine
 
     /// <summary>
     /// Parses <paramref name="args"/>: an optional leading subcommand from <paramref name="subcommands"/>, then options
-    /// from <paramref name="options"/> (alias to canonical name), each followed by one value; <c>--timeout</c> takes a
-    /// whole number of seconds above zero, and <c>-h</c>/<c>--help</c> asks for the usage.
+    /// from <paramref name="options"/> (alias to canonical name), each followed by one value, and switches from
+    /// <paramref name="switches"/>, which take none; <c>--timeout</c> takes a whole number of seconds above zero, and
+    /// <c>-h</c>/<c>--help</c> asks for the usage.
     /// </summary>
     public static bool TryParse(
         string verb,
@@ -23,7 +24,8 @@ internal static class HostCommandLine
         IReadOnlyCollection<string> subcommands,
         IReadOnlyDictionary<string, string> options,
         out HostCommandArguments parsed,
-        out string error
+        out string error,
+        IReadOnlyCollection<string>? switches = null
     )
     {
         parsed = new HostCommandArguments();
@@ -50,6 +52,13 @@ internal static class HostCommandLine
             if (flag is "-h" or "--help")
             {
                 parsed.Help = true;
+
+                continue;
+            }
+
+            if (switches?.Contains(flag, StringComparer.Ordinal) == true)
+            {
+                parsed.Switches.Add(flag);
 
                 continue;
             }
@@ -201,6 +210,8 @@ internal sealed class HostCommandArguments
     public TimeSpan? Timeout { get; set; }
 
     public Dictionary<string, List<string>> Values { get; } = new(StringComparer.Ordinal);
+
+    public HashSet<string> Switches { get; } = new(StringComparer.Ordinal);
 
     public IReadOnlyList<string> ValuesOf(string name) => Values.TryGetValue(name, out var values) ? values : [];
 }

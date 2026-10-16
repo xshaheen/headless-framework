@@ -136,6 +136,23 @@ public sealed class SchemaStatefulResourceTests : TestBase, IDisposable
     }
 
     [Fact]
+    public async Task should_clear_only_under_the_schema_lock()
+    {
+        // given — another runner holds the database's schema lock
+        var runner = new SchemaRunner([_Declared()], timeProvider: _db.Clock, lockTimeout: TimeSpan.Zero);
+        await runner.ApplyAsync(AbortToken);
+        _db.Execute("INSERT INTO s_widgets (id) VALUES (1)");
+        _db.LockUnavailable = true;
+
+        // when
+        var act = () => runner.ClearAsync(AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<SchemaRunnerException>().WithMessage("*timed out*schema lock*");
+        _Count("s_widgets").Should().Be(1, "a clear that cannot take the lock deletes nothing");
+    }
+
+    [Fact]
     public async Task should_drop_the_objects_and_forget_the_history_so_setup_recreates_them()
     {
         // given

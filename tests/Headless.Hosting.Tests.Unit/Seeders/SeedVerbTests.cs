@@ -110,6 +110,25 @@ public sealed class SeedOnStartupTests : TestBase
     }
 
     [Fact]
+    public async Task should_fail_the_start_naming_the_seeder_and_start_no_later_service_when_a_seeder_fails()
+    {
+        // given
+        var log = new List<string>();
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSeeder<FailingSeeder>();
+        builder.Services.AddHeadlessSeedOnStartup();
+        builder.Services.AddHostedService(_ => new StartLogger(log));
+        using var host = builder.Build();
+
+        // when
+        var act = () => host.StartAsync(AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Seeder Failing failed*locked*");
+        log.Should().BeEmpty("a hosted service registered after the seeding must not start on unseeded data");
+    }
+
+    [Fact]
     public async Task should_warn_once_when_seeders_are_registered_and_nothing_runs_them()
     {
         // given

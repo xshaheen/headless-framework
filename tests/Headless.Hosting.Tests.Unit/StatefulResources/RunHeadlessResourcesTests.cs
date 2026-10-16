@@ -3,6 +3,7 @@
 using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Tests.Hosting;
 
 namespace Tests.StatefulResources;
@@ -147,7 +148,7 @@ public sealed class RunHeadlessResourcesTests : TestBase
 
     [Theory]
     [InlineData("migrate")]
-    [InlineData("setup", "--force")]
+    [InlineData("setup", "--dry-run")]
     [InlineData("setup", "--type")]
     [InlineData("setup", "--timeout", "0")]
     [InlineData("setup", "--timeout", "soon")]
@@ -243,6 +244,56 @@ public sealed class RunHeadlessResourcesTests : TestBase
         lines[1].Should().Contain("TimedOut").And.Contain("Not run");
     }
 
+    [Theory]
+    [InlineData("clear")]
+    [InlineData("teardown")]
+    public async Task should_refuse_a_destructive_subcommand_in_production_without_force(string subcommand)
+    {
+        // when
+        var run = await _RunInAsync(
+            Microsoft.Extensions.Hosting.Environments.Production,
+            services => services.AddHeadlessStatefulResource(_ => new RecordingResource("Schema", "orders", _log)),
+            "resources",
+            subcommand
+        );
+
+        // then
+        run.ExitCode.Should().Be(2);
+        run.StandardError.Should().Contain($"Refusing to run 'resources {subcommand}' in the Production environment");
+        run.StandardError.Should().Contain("--force");
+        _log.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_run_a_destructive_subcommand_in_production_with_force()
+    {
+        // when
+        var run = await _RunInAsync(
+            Microsoft.Extensions.Hosting.Environments.Production,
+            services => services.AddHeadlessStatefulResource(_ => new RecordingResource("Schema", "orders", _log)),
+            "resources",
+            "teardown",
+            "--force"
+        );
+
+        // then
+        run.ExitCode.Should().Be(0);
+        _log.Should().Equal("teardown orders");
+    }
+
+    [Fact]
+    public async Task should_run_setup_in_production_without_force()
+    {
+        var run = await _RunInAsync(
+            Microsoft.Extensions.Hosting.Environments.Production,
+            services => services.AddHeadlessStatefulResource(_ => new RecordingResource("Schema", "orders", _log)),
+            "resources"
+        );
+
+        run.ExitCode.Should().Be(0);
+        _log.Should().Equal("setup orders");
+    }
+
     [Fact]
     public async Task should_touch_no_resource_and_exit_1_when_startup_validation_fails()
     {
@@ -263,9 +314,27 @@ public sealed class RunHeadlessResourcesTests : TestBase
         _log.Should().BeEmpty();
     }
 
+    // Development, so clear and teardown run without --force; the Production guard has tests of its own.
     private Task<HostConsoleRun> _RunAsync(Action<IServiceCollection> configure, params string[] args)
     {
-        return HostConsoleRun.RunAsync(builder => configure(builder.Services), args, AbortToken);
+        return _RunInAsync(Microsoft.Extensions.Hosting.Environments.Development, configure, args);
+    }
+
+    private Task<HostConsoleRun> _RunInAsync(
+        string environment,
+        Action<IServiceCollection> configure,
+        params string[] args
+    )
+    {
+        return HostConsoleRun.RunAsync(
+            builder =>
+            {
+                builder.Environment.EnvironmentName = environment;
+                configure(builder.Services);
+            },
+            args,
+            AbortToken
+        );
     }
 
     private sealed class FailingValidator(string message) : IHeadlessStartupValidator

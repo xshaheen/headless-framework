@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
@@ -19,6 +20,19 @@ internal sealed class StatefulResourceStartupService(
 {
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
+        // Checked when the host starts, not at registration: the environment is only known once the host is built.
+        if (
+            options.Value.Action == StatefulResourceStartupAction.ResetState
+            && services.GetService<IHostEnvironment>()?.IsProduction() == true
+        )
+        {
+            throw new InvalidOperationException(
+                "AddHeadlessResourceSetupOnStartup(StatefulResourceStartupAction.ResetState) clears the data of every "
+                    + "stateful resource, so it refuses to run in the Production environment. Register it only outside "
+                    + "Production, or use StatefulResourceStartupAction.SetupOnly."
+            );
+        }
+
         var resources = await StatefulResourceRunner
             .GetResourcesAsync(services, cancellationToken)
             .ConfigureAwait(false);
