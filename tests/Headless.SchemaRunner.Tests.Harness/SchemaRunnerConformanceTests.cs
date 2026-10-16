@@ -245,6 +245,39 @@ public abstract class SchemaRunnerConformanceTests(ISchemaRunnerFixture fixture)
     }
 
     [Fact]
+    public async Task should_clear_and_tear_down_only_the_features_own_state_and_objects()
+    {
+        // given — another application's table and history row share the schema
+        var schema = _Schema("foreign");
+        await fixture.DropSchemaAsync(schema, AbortToken);
+        using var host = fixture.CreateHost(schema, setupResources: false);
+        await host.Services.SetupResourcesAsync(AbortToken);
+        await fixture.AddForeignStateAsync(schema, AbortToken);
+
+        // when
+        await host.Services.ResetResourceStateAsync(AbortToken);
+
+        // then
+        (await fixture.CountForeignRowsAsync(schema, AbortToken))
+            .Should()
+            .Be(1);
+        (await fixture.CountHistoryRowsAsync(schema, ISchemaRunnerFixture.ForeignFeature, AbortToken)).Should().Be(1);
+        (await fixture.CountHistoryRowsAsync(schema, AbortToken)).Should().Be(fixture.ExpectedStepCount + 1);
+
+        // and when
+        await host.Services.TeardownResourcesAsync(AbortToken);
+
+        // then — the catalog, not the declared objects, proves nothing the features created is left
+        (await fixture.ListObjectsAsync(schema, AbortToken))
+            .Should()
+            .BeEquivalentTo(SchemaRunner.HistoryTableName, ISchemaRunnerFixture.ForeignTable);
+        (await fixture.CountForeignRowsAsync(schema, AbortToken)).Should().Be(1);
+        (await fixture.CountHistoryRowsAsync(schema, ISchemaRunnerFixture.ForeignFeature, AbortToken)).Should().Be(1);
+        (await fixture.CountHistoryRowsAsync(schema, AbortToken)).Should().Be(1);
+        await fixture.DropSchemaAsync(schema, AbortToken);
+    }
+
+    [Fact]
     public async Task should_refuse_to_start_naming_resources_setup_when_a_step_is_missing()
     {
         var schema = _Schema("host_verify");

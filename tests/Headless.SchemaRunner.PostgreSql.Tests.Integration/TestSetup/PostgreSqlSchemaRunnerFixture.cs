@@ -165,6 +165,57 @@ public sealed class PostgreSqlSchemaRunnerFixture
         );
     }
 
+    public async Task<IReadOnlyList<string>> ListObjectsAsync(string schema, CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            $"""
+            SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = '{schema}' AND c.relkind IN ('r', 'p', 'S');
+            """,
+            connection
+        );
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var names = new List<string>();
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            names.Add(reader.GetString(0));
+        }
+
+        return names;
+    }
+
+    public Task AddForeignStateAsync(string schema, CancellationToken cancellationToken)
+    {
+        return _ExecuteAsync(
+            $"""
+            CREATE TABLE "{schema}"."{ISchemaRunnerFixture.ForeignTable}" (id int PRIMARY KEY);
+            INSERT INTO "{schema}"."{ISchemaRunnerFixture.ForeignTable}" (id) VALUES (1);
+            INSERT INTO "{schema}".headless_schema_history (feature, step_version, description, checksum)
+            VALUES ('{ISchemaRunnerFixture.ForeignFeature}', '1', 'foreign', '{new string('0', 64)}');
+            """,
+            cancellationToken
+        );
+    }
+
+    public Task<int> CountForeignRowsAsync(string schema, CancellationToken cancellationToken)
+    {
+        return _ScalarAsync(
+            $"""SELECT count(*) FROM "{schema}"."{ISchemaRunnerFixture.ForeignTable}";""",
+            cancellationToken
+        );
+    }
+
+    public Task<int> CountHistoryRowsAsync(string schema, string feature, CancellationToken cancellationToken)
+    {
+        return _ScalarAsync(
+            $"""SELECT count(*) FROM "{schema}".headless_schema_history WHERE feature = '{feature}';""",
+            cancellationToken
+        );
+    }
+
     public async Task RunLegacyInitializerProtocolAsync(string schema, CancellationToken cancellationToken)
     {
         // The deleted initializers, one after another as the host ran them: each opened its own connection, took its

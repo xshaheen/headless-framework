@@ -64,6 +64,30 @@ public interface ISchemaRunnerFixture
     Task<int> CountTablesAsync(string schema, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Lists every table and sequence the catalog holds in <paramref name="schema"/>, by unqualified name (on SQLite, the
+    /// name after the schema prefix). It reads the catalog, so an object a feature creates without declaring it shows.
+    /// </summary>
+    Task<IReadOnlyList<string>> ListObjectsAsync(string schema, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Adds state another application owns to <paramref name="schema"/>: the table <see cref="ForeignTable"/> with one
+    /// row, and one history row for <see cref="ForeignFeature"/>. The history table must already exist.
+    /// </summary>
+    Task AddForeignStateAsync(string schema, CancellationToken cancellationToken);
+
+    /// <summary>Counts the rows of <see cref="ForeignTable"/>.</summary>
+    Task<int> CountForeignRowsAsync(string schema, CancellationToken cancellationToken);
+
+    /// <summary>Counts the history rows of one feature.</summary>
+    Task<int> CountHistoryRowsAsync(string schema, string feature, CancellationToken cancellationToken);
+
+    /// <summary>A table no registered feature declares.</summary>
+    const string ForeignTable = "foreign_data";
+
+    /// <summary>A feature no runner in the suite registers.</summary>
+    const string ForeignFeature = "ForeignFeature";
+
+    /// <summary>
     /// Runs the protocol of the deleted hand-written initializers for every pilot contribution in
     /// <paramref name="schema"/>: per feature, its own connection, its own feature lock plus the schema lock, and its
     /// whole DDL batch in one transaction. Used only to measure the old startup cost against the runner's.

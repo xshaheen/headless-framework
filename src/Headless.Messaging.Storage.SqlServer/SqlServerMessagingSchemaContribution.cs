@@ -46,8 +46,8 @@ internal static class SqlServerMessagingSchemaContribution
             objects:
             [
                 SchemaObject.Table(_TableName("MessagingReceived")),
-                SchemaObject.Table("MessagingInboxOperationReceipts"),
-                SchemaObject.Table("MessagingInboxAudit"),
+                SchemaObject.Table(_ReceiptsTable),
+                SchemaObject.Table(_AuditTable),
                 SchemaObject.Table(_TableName("MessagingPublished")),
             ]
         );
@@ -220,9 +220,9 @@ internal static class SqlServerMessagingSchemaContribution
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Owner_NotNull' AND object_id = OBJECT_ID(N'{received}'))
                 CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Owner_NotNull] ON {received} ([Owner] ASC) WHERE [Owner] IS NOT NULL;
 
-            IF OBJECT_ID(N'{schema}.MessagingInboxOperationReceipts',N'U') IS NULL
+            IF OBJECT_ID(N'{schema}.{_ReceiptsTable}',N'U') IS NULL
             BEGIN
-                CREATE TABLE [{schema}].[MessagingInboxOperationReceipts](
+                CREATE TABLE [{schema}].[{_ReceiptsTable}](
                     [OperationId] [uniqueidentifier] NOT NULL,
                     [TargetKind] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_MessagingInboxOperationReceipts_TargetKind] DEFAULT N'Inbox',
                     [GenerationIncarnationId] [uniqueidentifier] NULL,
@@ -244,9 +244,9 @@ internal static class SqlServerMessagingSchemaContribution
                 );
             END;
 
-            IF OBJECT_ID(N'{schema}.MessagingInboxAudit',N'U') IS NULL
+            IF OBJECT_ID(N'{schema}.{_AuditTable}',N'U') IS NULL
             BEGIN
-                CREATE TABLE [{schema}].[MessagingInboxAudit](
+                CREATE TABLE [{schema}].[{_AuditTable}](
                     [AuditId] [uniqueidentifier] NOT NULL,
                     [OperationId] [uniqueidentifier] NOT NULL,
                     [TargetKind] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_MessagingInboxAudit_TargetKind] DEFAULT N'Inbox',
@@ -258,13 +258,13 @@ internal static class SqlServerMessagingSchemaContribution
                     [CreatedAt] [datetimeoffset](7) NOT NULL,
                     CONSTRAINT [PK_MessagingInboxAudit] PRIMARY KEY CLUSTERED ([AuditId]),
                     CONSTRAINT [FK_MessagingInboxAudit_Operation] FOREIGN KEY ([OperationId])
-                        REFERENCES [{schema}].[MessagingInboxOperationReceipts]([OperationId]) ON DELETE NO ACTION
+                        REFERENCES [{schema}].[{_ReceiptsTable}]([OperationId]) ON DELETE NO ACTION
                 );
             END;
 
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_MessagingInboxAudit_Incarnation_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.MessagingInboxAudit'))
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_MessagingInboxAudit_Incarnation_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.{_AuditTable}'))
                 CREATE NONCLUSTERED INDEX [IX_MessagingInboxAudit_Incarnation_CreatedAt]
-                    ON [{schema}].[MessagingInboxAudit] ([GenerationIncarnationId],[CreatedAt]);
+                    ON [{schema}].[{_AuditTable}] ([GenerationIncarnationId],[CreatedAt]);
 
             -- The IF OBJECT_ID guards skip a table that already exists in another shape (created by an older
             -- binary or by hand), so the inbox contract the runtime depends on is asserted here: a missing
@@ -274,15 +274,19 @@ internal static class SqlServerMessagingSchemaContribution
                OR COL_LENGTH(N'{received}',N'ConsumerIdentityHash') IS NULL
                OR NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_NonInboxIdentity' AND parent_object_id=OBJECT_ID(N'{received}'))
                OR NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxLifecycle' AND parent_object_id=OBJECT_ID(N'{received}'))
-               OR COL_LENGTH(N'{schema}.MessagingInboxOperationReceipts',N'ExpectedStatus') IS NULL
-               OR COL_LENGTH(N'{schema}.MessagingInboxOperationReceipts',N'Outcome') IS NULL
-               OR COL_LENGTH(N'{schema}.MessagingInboxOperationReceipts',N'TargetKind') IS NULL
-               OR COL_LENGTH(N'{schema}.MessagingInboxOperationReceipts',N'ExpectedDueAt') IS NULL
-               OR COL_LENGTH(N'{schema}.MessagingInboxAudit',N'TargetKind') IS NULL
+               OR COL_LENGTH(N'{schema}.{_ReceiptsTable}',N'ExpectedStatus') IS NULL
+               OR COL_LENGTH(N'{schema}.{_ReceiptsTable}',N'Outcome') IS NULL
+               OR COL_LENGTH(N'{schema}.{_ReceiptsTable}',N'TargetKind') IS NULL
+               OR COL_LENGTH(N'{schema}.{_ReceiptsTable}',N'ExpectedDueAt') IS NULL
+               OR COL_LENGTH(N'{schema}.{_AuditTable}',N'TargetKind') IS NULL
                 THROW 50004, N'Headless.Messaging inbox schema is incomplete: the lifecycle, retention or operation receipt contract is missing.', 1;
             """
         );
     }
+
+    // One name for the DDL and for the declared objects, so clear and teardown act on the tables the steps create.
+    private static readonly string _ReceiptsTable = _TableName("MessagingInboxOperationReceipts");
+    private static readonly string _AuditTable = _TableName("MessagingInboxAudit");
 
     private static string _Table(string schema, string pascalName)
     {
@@ -349,14 +353,14 @@ internal static class SqlServerMessagingSchemaContribution
         // rather than part of the table batch. The runner applies the step once, while the tables are still fresh.
         // ONLINE = ON is edition-dependent, so the builds stay offline.
         return $"""
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_MessagingInboxOperationReceipts_Type_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.MessagingInboxOperationReceipts'))
-                CREATE NONCLUSTERED INDEX [IX_MessagingInboxOperationReceipts_Type_CreatedAt] ON [{schema}].[MessagingInboxOperationReceipts] ([OperationType],[CreatedAt]);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_MessagingInboxOperationReceipts_Type_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.{_ReceiptsTable}'))
+                CREATE NONCLUSTERED INDEX [IX_MessagingInboxOperationReceipts_Type_CreatedAt] ON [{schema}].[{_ReceiptsTable}] ([OperationType],[CreatedAt]);
 
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_MessagingInboxAudit_Type_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.MessagingInboxAudit'))
-                CREATE NONCLUSTERED INDEX [IX_MessagingInboxAudit_Type_CreatedAt] ON [{schema}].[MessagingInboxAudit] ([OperationType],[CreatedAt]);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_MessagingInboxAudit_Type_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.{_AuditTable}'))
+                CREATE NONCLUSTERED INDEX [IX_MessagingInboxAudit_Type_CreatedAt] ON [{schema}].[{_AuditTable}] ([OperationType],[CreatedAt]);
 
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_MessagingInboxAudit_Operation' AND object_id=OBJECT_ID(N'{schema}.MessagingInboxAudit'))
-                CREATE NONCLUSTERED INDEX [IX_MessagingInboxAudit_Operation] ON [{schema}].[MessagingInboxAudit] ([OperationId]);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_MessagingInboxAudit_Operation' AND object_id=OBJECT_ID(N'{schema}.{_AuditTable}'))
+                CREATE NONCLUSTERED INDEX [IX_MessagingInboxAudit_Operation] ON [{schema}].[{_AuditTable}] ([OperationId]);
             """;
     }
 }

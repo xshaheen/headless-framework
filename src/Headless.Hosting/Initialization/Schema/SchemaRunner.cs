@@ -661,9 +661,9 @@ public sealed partial class SchemaRunner(
     /// <summary>
     /// Deletes the rows of every declared table of every contribution, in reverse creation order and one transaction
     /// per database, keeping each contribution's <see cref="SchemaContribution.HostStateTables"/>, its sequences, and
-    /// the history.
+    /// the history. Runs under the database's schema lock, so it never interleaves with a runner applying steps.
     /// </summary>
-    /// <exception cref="SchemaRunnerException">A connection could not be opened or a delete failed.</exception>
+    /// <exception cref="SchemaRunnerException">A connection or the lock could not be taken, or a delete failed.</exception>
     internal async Task ClearAsync(CancellationToken cancellationToken)
     {
         foreach (var group in await _GroupByDatabaseAsync(includeExportOnly: true).ConfigureAwait(false))
@@ -681,9 +681,7 @@ public sealed partial class SchemaRunner(
                 );
             }
 
-            await using var connection = await _OpenAsync(group, cancellationToken).ConfigureAwait(false);
-            await _RunInTransactionAsync(connection, group, "clear", statements, cancellationToken)
-                .ConfigureAwait(false);
+            await _RunLockedAsync(group, "clear", statements, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -716,21 +714,32 @@ public sealed partial class SchemaRunner(
                 statements.Add((dialect.DeleteFeatureHistorySql(contribution.Schema), contribution.Feature));
             }
 
-            var lockResource = $"headless_schema_runner:{group.Identity}";
+            await _RunLockedAsync(group, "teardown", statements, cancellationToken).ConfigureAwait(false);
+        }
+    }
 
-            await using var connection = await _OpenAsync(group, cancellationToken).ConfigureAwait(false);
-            await _AcquireLockAsync(connection, dialect, lockResource, lockWait: null, cancellationToken)
+    // Under the database's schema lock, so a clear or teardown never interleaves with a runner applying steps there.
+    private async Task _RunLockedAsync(
+        DatabaseGroup group,
+        string operation,
+        List<(string Sql, string? Feature)> statements,
+        CancellationToken cancellationToken
+    )
+    {
+        var lockResource = $"headless_schema_runner:{group.Identity}";
+
+        await using var connection = await _OpenAsync(group, cancellationToken).ConfigureAwait(false);
+        await _AcquireLockAsync(connection, group.Dialect, lockResource, lockWait: null, cancellationToken)
+            .ConfigureAwait(false);
+
+        try
+        {
+            await _RunInTransactionAsync(connection, group, operation, statements, cancellationToken)
                 .ConfigureAwait(false);
-
-            try
-            {
-                await _RunInTransactionAsync(connection, group, "teardown", statements, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            finally
-            {
-                await _ReleaseLockAsync(connection, dialect, lockResource).ConfigureAwait(false);
-            }
+        }
+        finally
+        {
+            await _ReleaseLockAsync(connection, group.Dialect, lockResource).ConfigureAwait(false);
         }
     }
 
