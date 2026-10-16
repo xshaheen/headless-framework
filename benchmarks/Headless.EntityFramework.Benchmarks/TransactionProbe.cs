@@ -43,16 +43,18 @@ internal static class TransactionProbe
 
     public static async Task RunAsync()
     {
+#pragma warning disable CA1303 // Benchmark console output, not user-facing text to localize.
         Console.WriteLine(_Pg is null ? "provider: SQLite in memory" : "provider: PostgreSQL");
+#pragma warning restore CA1303
 
         foreach (var workload in new[] { "insert-1", "update-1" })
         {
-            var plain = await _CountPlainAsync(workload).ConfigureAwait(false);
-            var headless = await _CountHeadlessAsync(workload).ConfigureAwait(false);
+            var (plainCommands, plainTxBegin) = await _CountPlainAsync(workload).ConfigureAwait(false);
+            var (headlessCommands, headlessTxBegin) = await _CountHeadlessAsync(workload).ConfigureAwait(false);
             Console.WriteLine(
                 string.Create(
                     CultureInfo.InvariantCulture,
-                    $"  {workload, -9} plain EF (entity + audit row): cmds={plain.Commands} txBegin={plain.TxBegin} | headless audited: cmds={headless.Commands} txBegin={headless.TxBegin}"
+                    $"  {workload, -9} plain EF (entity + audit row): cmds={plainCommands} txBegin={plainTxBegin} | headless audited: cmds={headlessCommands} txBegin={headlessTxBegin}"
                 )
             );
         }

@@ -97,7 +97,7 @@ internal sealed class HeadlessEntityModelConvention : IEntityTypeAddedConvention
 
         const string name = nameof(IHasConcurrencyStamp.ConcurrencyStamp);
         var property = _Property(builder, name);
-        property?.IsConcurrencyToken(true);
+        property?.IsConcurrencyToken(concurrencyToken: true);
         property?.HasMaxLength(DomainConstants.ConcurrencyStampMaxLength);
         property?.HasColumnName(name);
     }
@@ -290,7 +290,7 @@ internal sealed class HeadlessEntityModelConvention : IEntityTypeAddedConvention
         }
 
         relationship = relationship.HasForeignKey([foreignKeyName], fromDataAnnotation: true) ?? relationship;
-        relationship.IsRequired(false, fromDataAnnotation: true);
+        relationship.IsRequired(required: false, fromDataAnnotation: true);
         relationship.OnDelete(DeleteBehavior.Restrict, fromDataAnnotation: true);
     }
 
