@@ -114,6 +114,10 @@ public sealed class HeadlessEntitySaveEntryProcessor(
         // Navigation references can be stale or caller-supplied; only tracked ownership keys identify the row owner.
         // The pipeline's snapshot is reused: enumerating the tracker per owned entry reruns change detection each time.
         var tracked = context.TrackedEntries ?? context.DbContext.ChangeTracker.Entries().ToArray();
+        var owners =
+            context.OwnerIndex is { } cached && ReferenceEquals(cached.Tracked, tracked)
+                ? cached
+                : context.OwnerIndex = new HeadlessOwnerIndex(tracked);
         var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
         var current = entry;
         while (current.Metadata.FindOwnership() is { } ownership)
@@ -123,12 +127,12 @@ public sealed class HeadlessEntitySaveEntryProcessor(
                 throw new CrossTenantWriteException(_GetEntityTypeName(entry), entry.State.ToString());
             }
 
-            var principal = _FindPrincipal(current, ownership, tracked, original: false);
+            var principal = owners.FindPrincipal(current, ownership, original: false);
             if (
                 principal is null
                 || (
                     current.State != EntityState.Added
-                    && _FindPrincipal(current, ownership, tracked, original: true)?.Entity != principal.Entity
+                    && owners.FindPrincipal(current, ownership, original: true)?.Entity != principal.Entity
                 )
             )
             {
@@ -139,68 +143,6 @@ public sealed class HeadlessEntitySaveEntryProcessor(
         }
 
         return current;
-    }
-
-    private static EntityEntry? _FindPrincipal(
-        EntityEntry dependent,
-        IForeignKey ownership,
-        IReadOnlyList<EntityEntry> tracked,
-        bool original
-    )
-    {
-        EntityEntry? match = null;
-        foreach (var candidate in tracked)
-        {
-            if (!ownership.PrincipalEntityType.IsAssignableFrom(candidate.Metadata))
-            {
-                continue;
-            }
-
-            var matches = true;
-            for (var i = 0; i < ownership.Properties.Count; i++)
-            {
-                var foreignKey = (original ? dependent.OriginalValues : dependent.CurrentValues)[
-                    ownership.Properties[i]
-                ];
-                var keyProperty = ownership.PrincipalKey.Properties[i];
-                var principalKey = (original ? candidate.OriginalValues : candidate.CurrentValues)[keyProperty];
-                var comparer = keyProperty.GetKeyValueComparer();
-                if (
-                    foreignKey is null
-                    || principalKey is null
-                    || !comparer.Equals(foreignKey, principalKey)
-                    || (
-                        dependent.State != EntityState.Added
-                        && !comparer.Equals(
-                            dependent.OriginalValues[ownership.Properties[i]],
-                            dependent.CurrentValues[ownership.Properties[i]]
-                        )
-                    )
-                    || (
-                        candidate.State != EntityState.Added
-                        && !comparer.Equals(candidate.OriginalValues[keyProperty], candidate.CurrentValues[keyProperty])
-                    )
-                )
-                {
-                    matches = false;
-                    break;
-                }
-            }
-
-            if (!matches)
-            {
-                continue;
-            }
-
-            if (match is not null)
-            {
-                return null;
-            }
-
-            match = candidate;
-        }
-
-        return match;
     }
 
     private static string? _ReadTenantId(object? value)

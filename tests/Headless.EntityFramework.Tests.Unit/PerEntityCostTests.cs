@@ -123,6 +123,46 @@ public sealed class PerEntityCostTests : TestBase
         counter.Calls.Should().BeEquivalentTo(new Dictionary<Type, int> { [typeof(Folder)] = 1, [typeof(Note)] = 1 });
     }
 
+    [Fact]
+    public async Task should_resolve_the_owners_of_owned_tenant_entries_in_linear_time()
+    {
+        // given
+        var tenant = Substitute.For<ICurrentTenant>();
+        tenant.Id.Returns("tenant-1");
+        await using var harness = await Harness.CreateAsync(services =>
+        {
+            services.AddSingleton(tenant);
+            services.PostConfigure<TenantGuardOptions>(options => options.GuardWrites = true);
+        });
+
+        // when
+        var small = _AllocatedSavingOwnedLedgers(harness, 100);
+        var large = _AllocatedSavingOwnedLedgers(harness, 400);
+
+        // then: four times the rows cost about four times the bytes, where a tracker scan per owned entry costs sixteen
+        ((double)large / small)
+            .Should()
+            .BeLessThan(6);
+    }
+
+    private static long _AllocatedSavingOwnedLedgers(Harness harness, int count)
+    {
+        var db = harness.CreateContext();
+        db.AddRange(
+            Enumerable
+                .Range(0, count)
+                .Select(_ => new Ledger
+                {
+                    Id = Guid.CreateVersion7(),
+                    Totals = new LedgerTotals { Balance = 1 },
+                })
+        );
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        db.SaveChanges();
+
+        return GC.GetAllocatedBytesForCurrentThread() - before;
+    }
+
     private static int _Reads(object substitute, string property) =>
         substitute
             .ReceivedCalls()
@@ -145,7 +185,15 @@ public sealed class PerEntityCostTests : TestBase
     }
 
     /// <summary>A root whose tenant column is required because the type does not implement IMultiTenant.</summary>
-    public sealed class Ledger : Entity<Guid>;
+    public sealed class Ledger : Entity<Guid>
+    {
+        public LedgerTotals? Totals { get; set; }
+    }
+
+    public sealed class LedgerTotals
+    {
+        public decimal Balance { get; set; }
+    }
 
     private sealed class NoteFiledHandler(LedgerDbContext db) : IDomainEventHandler<NoteFiled>
     {
@@ -236,7 +284,7 @@ public sealed class PerEntityCostTests : TestBase
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.Entity<Ledger>().IsTenantOwned();
+            modelBuilder.Entity<Ledger>().IsTenantOwned().OwnsOne(x => x.Totals);
         }
     }
 }

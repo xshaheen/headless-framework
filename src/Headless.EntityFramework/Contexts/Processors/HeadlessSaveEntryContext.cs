@@ -55,6 +55,9 @@ public sealed class HeadlessSaveEntryContext(DbContext dbContext, string? tenant
     /// </summary>
     internal IReadOnlyList<EntityEntry>? TrackedEntries { get; set; }
 
+    /// <summary>The owners in <see cref="TrackedEntries"/> indexed by key, built when an owned entry is first guarded.</summary>
+    internal HeadlessOwnerIndex? OwnerIndex { get; set; }
+
     internal ExceptionDispatchInfo? NonRetryableFailure { get; set; }
 
     /// <summary>
