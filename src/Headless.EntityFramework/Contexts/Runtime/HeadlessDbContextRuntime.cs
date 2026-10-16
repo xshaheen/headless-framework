@@ -230,10 +230,16 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
 
     private void _StampTenantOnAdded(EntityEntry entry, EntityState targetState)
     {
+        if (targetState != EntityState.Added)
+        {
+            return;
+        }
+
+        var plan = HeadlessTenantPlan.For(entry.Metadata);
+
         if (
-            targetState != EntityState.Added
-            || entry.Metadata.IsOwned()
-            || !entry.Metadata.IsTenantOwned()
+            plan.IsOwnedType
+            || !plan.IsTenantOwned
             || !_GetGuardOptions().GuardWrites
             || _SingletonServices().GetRequiredService<ITenantWriteGuardBypass>().IsActive
         )
@@ -241,7 +247,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
             return;
         }
 
-        var property = entry.Property(entry.Metadata.GetTenantPropertyName()!);
+        var property = entry.Property(plan.TenantProperty!);
         var suppliedTenantId = (string?)property.CurrentValue;
         if (!string.IsNullOrWhiteSpace(suppliedTenantId))
         {

@@ -18,7 +18,10 @@ internal interface IHeadlessAuditPersistence
     /// <summary>
     /// Captures audit entries from the pre-materialized change-tracker snapshot before <c>SaveChanges</c>.
     /// </summary>
-    IReadOnlyList<AuditLogEntryData>? CaptureEntries(IReadOnlyList<EntityEntry> entries);
+    IReadOnlyList<AuditLogEntryData>? CaptureEntries(
+        IReadOnlyList<EntityEntry> entries,
+        HeadlessSaveEntryContext saveContext
+    );
 
     /// <summary>Cleans up stale audit entries from a prior failed attempt before an execution strategy retry.</summary>
     void PrepareForRetry(DbContext context);

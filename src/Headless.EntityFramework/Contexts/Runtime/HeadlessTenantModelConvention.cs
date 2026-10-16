@@ -247,14 +247,10 @@ internal sealed class HeadlessTenantModelConvention(DbContext db) : IModelFinali
             parameter,
             Expression.Constant(property.Name)
         );
-        Expression predicate = Expression.Equal(value, tenant);
-        if (!property.IsNullable)
-        {
-            predicate = Expression.AndAlso(
-                Expression.NotEqual(tenant, Expression.Constant(null, typeof(string))),
-                predicate
-            );
-        }
+        // One tenant read per execution: EF Core evaluates each tenant access as its own query parameter, and a
+        // separate null guard would read the ambient tenant a second time. Comparing a required column to a null
+        // tenant already matches no row.
+        var predicate = Expression.Equal(value, tenant);
 
         entity.SetQueryFilter(HeadlessQueryFilters.MultiTenancyFilter, Expression.Lambda(predicate, parameter));
     }

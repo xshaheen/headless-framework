@@ -105,7 +105,7 @@ public sealed class HeadlessDbContextOptions
             || x.ImplementationType == typeof(HeadlessMessageCollectorSaveEntryProcessor)
         );
 
-    internal IReadOnlyList<IHeadlessSaveEntryProcessor> ResolveSaveEntryProcessors(IServiceProvider serviceProvider)
+    internal IHeadlessSaveEntryProcessor[] ResolveSaveEntryProcessors(IServiceProvider serviceProvider)
     {
         return _saveEntryProcessors
             .Select(x => (IHeadlessSaveEntryProcessor)serviceProvider.GetRequiredService(x.ImplementationType))

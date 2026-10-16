@@ -58,29 +58,24 @@ public sealed class HeadlessEntitySaveEntryProcessor(
 
     private void _EnsureTenantWriteAllowed(EntityEntry entry, HeadlessSaveEntryContext context)
     {
-        if (
-            !entry.Metadata.IsTenantOwned()
-            || entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted)
-        )
+        // The state is checked first: it is a field read, while the tenant policy is a metadata lookup, and most
+        // tracked entries are Unchanged.
+        if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
         {
             return;
         }
 
-        var guarded = tenantGuardOptions.Value.GuardWrites && !tenantWriteGuardBypass.IsActive;
+        var plan = HeadlessTenantPlan.For(entry.Metadata);
+        if (!plan.IsTenantOwned || !tenantGuardOptions.Value.GuardWrites || tenantWriteGuardBypass.IsActive)
+        {
+            return;
+        }
+
         var currentTenantId = _ReadTenantId(context.TenantId);
-        if (!guarded && entry.Metadata.IsOwned())
-        {
-            return;
-        }
-
-        var root = entry.Metadata.IsOwned() ? _ResolveOwner(entry, context) : entry;
-        var tenantProperty = root.Property(root.Metadata.GetTenantPropertyName()!);
+        var root = plan.IsOwnedType ? _ResolveOwner(entry, context) : entry;
+        var tenantProperty = root.Property(HeadlessTenantPlan.For(root.Metadata).TenantProperty!);
         var entityTenantId = _ReadTenantId(tenantProperty.CurrentValue);
         var originalTenantId = root.State == EntityState.Added ? null : _ReadTenantId(tenantProperty.OriginalValue);
-        if (!guarded)
-        {
-            return;
-        }
 
         if (currentTenantId is null)
         {
@@ -221,9 +216,9 @@ public sealed class HeadlessEntitySaveEntryProcessor(
     private static void _TrySetMultiTenantId(EntityEntry entry, string? tenantId)
     {
         if (
-            !entry.Metadata.IsTenantOwned()
-            || entry.Entity is not IMultiTenant entity
+            entry.Entity is not IMultiTenant entity
             || !string.IsNullOrEmpty(entity.TenantId)
+            || !HeadlessTenantPlan.For(entry.Metadata).IsTenantOwned
         )
         {
             return;

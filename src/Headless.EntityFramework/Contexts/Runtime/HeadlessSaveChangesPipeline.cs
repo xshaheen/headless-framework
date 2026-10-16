@@ -67,7 +67,8 @@ internal sealed class HeadlessSaveChangesPipeline(
         + "Reference the Headless.EntityFramework.Messaging package and call "
         + "AddHeadlessDbContextServices(...).AddIntegrationEventOutbox().";
 
-    private readonly IReadOnlyList<IHeadlessSaveEntryProcessor> _entryProcessors = options.ResolveSaveEntryProcessors(
+    // An array, so the per-entry processor loop enumerates without allocating.
+    private readonly IHeadlessSaveEntryProcessor[] _entryProcessors = options.ResolveSaveEntryProcessors(
         serviceProvider
     );
 
@@ -94,7 +95,7 @@ internal sealed class HeadlessSaveChangesPipeline(
         // _ProcessEntries, so a single snapshot is correct for the audit capture too.
         var trackedEntries = _SnapshotEntries(context);
         var saveContext = _ProcessEntries(context, trackedEntries);
-        var auditEntries = auditPersistence.CaptureEntries(trackedEntries);
+        var auditEntries = auditPersistence.CaptureEntries(trackedEntries, saveContext);
 
         var state = new AsyncSaveState(
             context,
@@ -137,7 +138,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     {
         var trackedEntries = _SnapshotEntries(context);
         var saveContext = _ProcessEntries(context, trackedEntries);
-        var auditEntries = auditPersistence.CaptureEntries(trackedEntries);
+        var auditEntries = auditPersistence.CaptureEntries(trackedEntries, saveContext);
 
         var state = new SaveState(
             context,
@@ -234,7 +235,6 @@ internal sealed class HeadlessSaveChangesPipeline(
 
         foreach (var entry in entries)
         {
-            saveContext.ProcessedEntities.Add(entry.Entity);
             foreach (var processor in _entryProcessors)
             {
                 processor.Process(entry, saveContext);
@@ -643,7 +643,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     {
         if (!_hasOnlyBuiltInProcessors)
         {
-            auditEntries.Value = auditPersistence.CaptureEntries(_SnapshotEntries(context));
+            auditEntries.Value = auditPersistence.CaptureEntries(_SnapshotEntries(context), saveContext);
 
             return;
         }
@@ -651,9 +651,25 @@ internal sealed class HeadlessSaveChangesPipeline(
         if (saveContext.HandlerMayHaveChangedGraph)
         {
             auditEntries.Value = auditPersistence.CaptureEntries(
-                saveContext.TrackedEntries ?? _SnapshotEntries(context)
+                saveContext.TrackedEntries ?? _SnapshotEntries(context),
+                saveContext
             );
         }
+    }
+
+    private static HashSet<object> _CollectEntities(IReadOnlyList<EntityEntry>? entries)
+    {
+        var entities = new HashSet<object>(entries?.Count ?? 0, ReferenceEqualityComparer.Instance);
+
+        if (entries is not null)
+        {
+            foreach (var entry in entries)
+            {
+                entities.Add(entry.Entity);
+            }
+        }
+
+        return entities;
     }
 
     // The finite budget also covers lifecycle events and new emitters, so recursive handlers fail before saving.
@@ -671,11 +687,13 @@ internal sealed class HeadlessSaveChangesPipeline(
         {
             var collector = _ResolveMessageCollector();
             saveContext.GraphChangedSinceSnapshot = false;
+            // Every entry of the snapshot being replaced has been processed, by the first pass or a recollection.
+            var processed = saveContext.ProcessedEntities ??= _CollectEntities(saveContext.TrackedEntries);
             var snapshot = _SnapshotEntries(context);
             saveContext.TrackedEntries = snapshot;
             foreach (var entry in snapshot)
             {
-                if (saveContext.ProcessedEntities.Add(entry.Entity))
+                if (processed.Add(entry.Entity))
                 {
                     foreach (var processor in _entryProcessors)
                     {

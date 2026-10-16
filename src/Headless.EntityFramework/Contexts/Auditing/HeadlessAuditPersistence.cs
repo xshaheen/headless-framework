@@ -33,21 +33,33 @@ internal sealed class HeadlessAuditPersistence(
     /// <see cref="CaptureErrorStrategy.Continue"/>). Rethrows when configured for
     /// <see cref="CaptureErrorStrategy.Throw"/>.
     /// </summary>
-    public IReadOnlyList<AuditLogEntryData>? CaptureEntries(IReadOnlyList<EntityEntry> entries)
+    public IReadOnlyList<AuditLogEntryData>? CaptureEntries(
+        IReadOnlyList<EntityEntry> entries,
+        HeadlessSaveEntryContext saveContext
+    )
     {
         if (_auditCapture is null)
         {
             return null;
         }
 
+        // A save that changes nothing has nothing to capture, so it reads no actor.
+        if (!_HasChanges(entries))
+        {
+            return [];
+        }
+
         var timestamp = _timeProvider.GetUtcNow();
+
+        // The actor is read once per save and shared with the audit-field stampers.
+        var (userId, accountId) = _currentUser is null ? default : saveContext.GetActor(_currentUser);
 
         try
         {
             return _auditCapture.CaptureChanges(
                 entries,
-                _currentUser?.UserId?.ToString(),
-                _currentUser?.AccountId?.ToString(),
+                userId?.ToString(),
+                accountId?.ToString(),
                 _currentTenant?.Id,
                 _correlationIdProvider?.CorrelationId,
                 timestamp
@@ -68,6 +80,19 @@ internal sealed class HeadlessAuditPersistence(
 
             return null;
         }
+    }
+
+    private static bool _HasChanges(IReadOnlyList<EntityEntry> entries)
+    {
+        foreach (var entry in entries)
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

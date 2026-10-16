@@ -35,26 +35,25 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
         switch (entry.State)
         {
             case EntityState.Added:
-                _TrySetCreateAudit(entry);
+                _TrySetCreateAudit(entry, context);
                 break;
             case EntityState.Modified:
-                // ICurrentUser implementations re-scan and re-parse claims on every UserId/AccountId read, so the
-                // stampers share one at-most-once resolution instead of paying for up to two. Resolution stays
-                // lazy inside the id stampers: an audited entity whose branches do not fire (an IDeleteAudit
-                // modified on an unrelated property, a non-generic IUpdateAudit) performs zero claim scans.
+                // ICurrentUser implementations re-scan and re-parse claims on every UserId/AccountId read, so every
+                // stamper of the save shares one resolution, cached on the save context. Resolution stays lazy inside
+                // the id stampers: a save whose stampers all bail out performs zero claim scans.
                 if (entry.Entity is IUpdateAudit or IDeleteAudit)
                 {
-                    var actor = new ActorPair(currentUser);
+                    var actor = new ActorPair(context, currentUser);
 
-                    _TrySetUpdateAudit(entry, ref actor);
-                    _TrySetDeleteAudit(entry, ref actor);
+                    _TrySetUpdateAudit(entry, actor);
+                    _TrySetDeleteAudit(entry, actor);
                 }
 
                 break;
         }
     }
 
-    private void _TrySetCreateAudit(EntityEntry entry)
+    private void _TrySetCreateAudit(EntityEntry entry, HeadlessSaveEntryContext context)
     {
         if (entry.Entity is not ICreateAudit entity)
         {
@@ -66,16 +65,11 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
             HeadlessEntryStamping.SetValue(entry, nameof(ICreateAudit.CreatedAt), timeProvider.GetUtcNow());
         }
 
-        _TrySetCreateAuditId(entry, currentUser.UserId, currentUser.AccountId);
+        _TrySetCreateAuditId(entry, new ActorPair(context, currentUser));
     }
 
-    private static void _TrySetCreateAuditId(EntityEntry entry, UserId? currentUserId, AccountId? currentAccountId)
+    private static void _TrySetCreateAuditId(EntityEntry entry, ActorPair actor)
     {
-        if (currentUserId is null && currentAccountId is null)
-        {
-            return;
-        }
-
         var byUser = entry.Entity as ICreateAudit<UserId>;
         var byAccount = entry.Entity as ICreateAudit<AccountId>;
 
@@ -97,20 +91,20 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
             return;
         }
 
-        if (byUser is not null && byUser.CreatedById == null && currentUserId is not null)
+        if (byUser is not null && byUser.CreatedById == null && actor.Resolve().UserId is { } currentUserId)
         {
             HeadlessEntryStamping.SetValue(entry, nameof(ICreateAudit<>.CreatedById), currentUserId);
 
             return;
         }
 
-        if (byAccount is not null && byAccount.CreatedById == null && currentAccountId is not null)
+        if (byAccount is not null && byAccount.CreatedById == null && actor.Resolve().AccountId is { } currentAccountId)
         {
             HeadlessEntryStamping.SetValue(entry, nameof(ICreateAudit<>.CreatedById), currentAccountId);
         }
     }
 
-    private void _TrySetUpdateAudit(EntityEntry entry, ref ActorPair actor)
+    private void _TrySetUpdateAudit(EntityEntry entry, ActorPair actor)
     {
         if (entry.Entity is not IUpdateAudit)
         {
@@ -125,11 +119,11 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
             nameof(IUpdateAudit<>.UpdatedById),
             new ActorKind(entry.Entity is IUpdateAudit<UserId>, entry.Entity is IUpdateAudit<AccountId>),
             StampMode.Transition,
-            ref actor
+            actor
         );
     }
 
-    private void _TrySetDeleteAudit(EntityEntry entry, ref ActorPair actor)
+    private void _TrySetDeleteAudit(EntityEntry entry, ActorPair actor)
     {
         if (entry.Entity is not IDeleteAudit)
         {
@@ -147,7 +141,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
                     nameof(IDeleteAudit<>.DeletedById),
                     kind,
                     StampMode.Transition,
-                    ref actor
+                    actor
                 );
                 break;
             case FlagTransition.Lowered:
@@ -157,7 +151,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
                     nameof(IDeleteAudit<>.RestoredById),
                     kind,
                     StampMode.Transition,
-                    ref actor
+                    actor
                 );
                 break;
             case FlagTransition.MarkedWhileRaised:
@@ -167,7 +161,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
                     nameof(IDeleteAudit<>.DeletedById),
                     kind,
                     StampMode.FillMissing,
-                    ref actor
+                    actor
                 );
                 break;
         }
@@ -204,7 +198,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
         string actorIdName,
         ActorKind kind,
         StampMode mode,
-        ref ActorPair actor
+        ActorPair actor
     )
     {
         var timestamp = entry.Property(timestampName);
@@ -260,27 +254,13 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
     }
 
     /// <summary>
-    /// Stack-only at-most-once resolution of the current actor's identifier pair, shared by ref across the
-    /// modified-entry stampers. Resolution happens on the first <see cref="Resolve"/> call — an entry whose id
-    /// stampers all bail out before consuming the pair never touches <see cref="ICurrentUser"/> at all.
+    /// Lazy access to the current actor's identifier pair, resolved at most once per save through the save context.
+    /// An entry whose id stampers all bail out before calling <see cref="Resolve"/> never touches
+    /// <see cref="ICurrentUser"/>.
     /// </summary>
-    private struct ActorPair(ICurrentUser currentUser)
+    private readonly struct ActorPair(HeadlessSaveEntryContext context, ICurrentUser currentUser)
     {
-        private ICurrentUser? _pending = currentUser;
-        private UserId? _userId;
-        private AccountId? _accountId;
-
-        public (UserId? UserId, AccountId? AccountId) Resolve()
-        {
-            if (_pending is { } user)
-            {
-                _userId = user.UserId;
-                _accountId = user.AccountId;
-                _pending = null;
-            }
-
-            return (_userId, _accountId);
-        }
+        public (UserId? UserId, AccountId? AccountId) Resolve() => context.GetActor(currentUser);
     }
 
     private readonly record struct ActorKind(bool IsUser, bool IsAccount);
