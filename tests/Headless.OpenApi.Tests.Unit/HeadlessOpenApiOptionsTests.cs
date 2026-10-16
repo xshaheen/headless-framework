@@ -199,6 +199,11 @@ public sealed class HeadlessOpenApiOptionsTests : TestBase
             AbortToken
         );
 
+        foreach (var (name, surfaceDocument) in documents)
+        {
+            surfaceDocument.ShouldBeValidOpenApi($"the {name} surface document");
+        }
+
         var portal = documents["portal"];
         ((string?)portal["info"]!["title"]).Should().Be("Portal API");
         ((string?)portal["info"]!["description"]).Should().Be("portal description");

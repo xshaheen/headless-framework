@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json.Serialization;
 using Asp.Versioning;
 using FluentValidation;
 using Headless.Api;
@@ -61,6 +62,7 @@ internal static class SampleApi
             .RequireAuthorization("orders.read");
 
         app.MapGet("/unnamed/items/{id}", (string id) => TypedResults.Ok(id));
+        app.MapGet("/v{version}/things", (string version) => TypedResults.Ok(version));
 
         app.MapGet("/legacy", () => TypedResults.Ok("legacy")).WithMetadata(new ObsoleteAttribute());
 
@@ -107,6 +109,16 @@ public sealed class OrderView
     public OrderStatus Status { get; init; }
 
     public List<int> Items { get; init; } = [];
+
+    public Address? ShippingAddress { get; init; }
+
+    [JsonNumberHandling(JsonNumberHandling.WriteAsString)]
+    public long ExternalId { get; init; }
+}
+
+public sealed class Address
+{
+    public required string Street { get; init; }
 }
 
 public sealed class OrderQuery
@@ -116,6 +128,8 @@ public sealed class OrderQuery
     public int PageSize { get; init; }
 
     public string? SortBy { get; init; }
+
+    public string[] Tags { get; init; } = [];
 }
 
 public sealed class OrderQueryValidator : AbstractValidator<OrderQuery>
@@ -123,6 +137,8 @@ public sealed class OrderQueryValidator : AbstractValidator<OrderQuery>
     public OrderQueryValidator()
     {
         RuleFor(x => x.PageSize).InclusiveBetween(1, 100);
+        RuleFor(x => x.Tags).NotEmpty();
+        RuleForEach(x => x.Tags).MaximumLength(20);
     }
 }
 

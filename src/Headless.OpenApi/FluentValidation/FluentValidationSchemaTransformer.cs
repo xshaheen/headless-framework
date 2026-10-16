@@ -59,9 +59,13 @@ internal sealed class FluentValidationSchemaTransformer : IOpenApiSchemaTransfor
             return Task.CompletedTask;
         }
 
+        // The native generator also walks a parameter's item schemas with the same parameter description, so only the
+        // parameter's own (root) schema takes the property's rules; RuleForEach reaches the items through RuleContext.
         if (
             context.JsonPropertyInfo is null
-            && _GetBoundProperty(context.ParameterDescription) is var (declaringType, propertyName)
+            && context.ParameterDescription is { } parameter
+            && context.JsonTypeInfo.Type == parameter.Type
+            && _GetBoundProperty(parameter) is var (declaringType, propertyName)
             && _GetValidator(services, declaringType) is { } declaringValidator
         )
         {

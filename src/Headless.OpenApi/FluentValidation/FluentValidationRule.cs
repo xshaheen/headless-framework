@@ -2,6 +2,7 @@
 
 using FluentValidation.Validators;
 using Headless.Reflection;
+using Microsoft.OpenApi;
 
 namespace Headless.OpenApi;
 
@@ -60,7 +61,8 @@ public sealed class FluentValidationRule
     };
 
     /// <summary>
-    /// Removes nullability and sets <c>minLength = 1</c> when a <c>NotEmpty</c> validator is present.
+    /// Removes nullability and sets <c>minLength = 1</c> (<c>minItems = 1</c> on an array) when a <c>NotEmpty</c>
+    /// validator is present.
     /// </summary>
     public static readonly FluentValidationRule NotEmptyRule = new()
     {
@@ -70,7 +72,17 @@ public sealed class FluentValidationRule
         {
             context.RemovePropertyNullability();
 
-            if (context.PropertySchema is { } propertySchema)
+            if (context.PropertySchema is not { } propertySchema)
+            {
+                return;
+            }
+
+            // JSON Schema bounds a string with minLength and an array with minItems.
+            if (propertySchema.Type?.HasFlag(JsonSchemaType.Array) == true)
+            {
+                propertySchema.MinItems = 1;
+            }
+            else
             {
                 propertySchema.MinLength = 1;
             }

@@ -52,6 +52,63 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
     }
 
     [Fact]
+    public async Task should_be_valid_openapi()
+    {
+        var document = await _GetDocumentAsync();
+
+        document.ShouldBeValidOpenApi("the sample document");
+    }
+
+    [Fact]
+    public async Task should_keep_the_string_alternative_of_numbers_written_as_strings()
+    {
+        var document = await _GetDocumentAsync();
+
+        var externalId = document.Schema("OrderView")["properties"]!["externalId"]!;
+        externalId.Types().Should().BeEquivalentTo(["integer", "string"]);
+    }
+
+    [Fact]
+    public async Task should_describe_a_nullable_component_property_as_an_optional_null_alternative()
+    {
+        var document = await _GetDocumentAsync();
+        var order = document.Schema("OrderView");
+
+        order.Required().Should().NotContain("shippingAddress");
+        var alternatives = order["properties"]!["shippingAddress"]!["oneOf"]!.AsArray();
+        alternatives.Should().HaveCount(2);
+        ((string?)alternatives[0]!["type"]).Should().Be("null");
+        ((string?)alternatives[1]!["$ref"]).Should().Be("#/components/schemas/Address");
+        document.Schema("Address").Required().Should().Equal("street");
+    }
+
+    [Fact]
+    public async Task should_share_one_schema_between_nullable_and_non_nullable_generic_arguments()
+    {
+        var document = await _GetDocumentAsync();
+
+        // DataEnvelope<string> and DataEnvelope<string?> are one runtime type, so they share one component, and the
+        // native generator describes an unconstrained T as nullable for both.
+        string?[] references =
+        [
+            (string?)
+                document.Operation("/envelopes/nullable", "get")["responses"]!["200"]!["content"]!["application/json"]![
+                    "schema"
+                ]!["$ref"],
+            (string?)
+                document.Operation("/envelopes/plain", "get")["responses"]!["200"]!["content"]!["application/json"]![
+                    "schema"
+                ]!["$ref"],
+        ];
+        references.Should().AllBe("#/components/schemas/DataEnvelopeOfstring");
+
+        var envelope = document.Schema("DataEnvelopeOfstring");
+        envelope["properties"]!["data"]!.Types().Should().BeEquivalentTo(["null", "string"]);
+        // The constructor parameter keeps the member required even though it may be null.
+        envelope.Required().Should().Equal("data");
+    }
+
+    [Fact]
     public async Task should_require_every_non_nullable_property()
     {
         var document = await _GetDocumentAsync();
@@ -60,7 +117,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
             .Schema("OrderView")
             .Required()
             .Should()
-            .BeEquivalentTo(["count", "total", "plain", "price", "month", "account", "status", "items"]);
+            .BeEquivalentTo(["count", "total", "plain", "price", "month", "account", "status", "items", "externalId"]);
         document.Schema("ProductView").Required().Should().BeEquivalentTo(["name"]);
     }
 
@@ -92,6 +149,10 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         ((string?)document.Operation("/api/products/{id}", "delete")["operationId"]).Should().Be("Products_Delete");
         ((string?)document.Operation("/orders/{id}", "get")["operationId"]).Should().Be("GetOrder");
         ((string?)document.Operation("/unnamed/items/{id}", "get")["operationId"]).Should().Be("GetUnnamedItems");
+        // A parameter sharing a segment with literal text contributes nothing, so no brace reaches the id.
+        ((string?)document.Operation("/v{version}/things", "get")["operationId"])
+            .Should()
+            .Be("GetVThings");
     }
 
     [Fact]
@@ -114,7 +175,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         var document = await _GetDocumentAsync();
 
         var minimal = document.Operation("/orders", "get")["parameters"]!.AsArray().Select(x => (string?)x!["name"]);
-        minimal.Should().BeEquivalentTo(["pageIndex", "pageSize", "sortBy"]);
+        minimal.Should().BeEquivalentTo(["pageIndex", "pageSize", "sortBy", "tags"]);
 
         var mvc = document.Operation("/api/products", "get")["parameters"]!.AsArray().Select(x => (string?)x!["name"]);
         mvc.Should().BeEquivalentTo(["pageIndex", "pageSize"]);
@@ -296,6 +357,15 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         var pageSize = document.Operation("/orders", "get").Parameter("pageSize")["schema"]!;
         ((decimal?)pageSize["minimum"]).Should().Be(1);
         ((decimal?)pageSize["maximum"]).Should().Be(100);
+
+        // The parameter's own schema takes the property rules; RuleForEach reaches the items, and nothing else does.
+        var tags = document.Operation("/orders", "get").Parameter("tags")["schema"]!;
+        tags.Types().Should().Equal("array");
+        ((int?)tags["minItems"]).Should().Be(1);
+        tags["minLength"].Should().BeNull();
+        ((int?)tags["items"]!["maxLength"]).Should().Be(20);
+        tags["items"]!["minLength"].Should().BeNull();
+        tags["items"]!["minItems"].Should().BeNull();
 
         var productPageSize = document.Operation("/api/products", "get").Parameter("pageSize")["schema"]!;
         ((decimal?)productPageSize["maximum"]).Should().Be(50);

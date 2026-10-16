@@ -13,12 +13,14 @@ namespace Headless.OpenApi;
 /// <remarks>
 /// The native generator sets an id only from a route or endpoint name. This fills the rest: an MVC action gets the
 /// name of its HTTP method attribute when one is set, else <c>{Controller}_{Action}</c> without an <c>Async</c>
-/// suffix; an unnamed Minimal API endpoint gets its HTTP method followed by its literal path segments
-/// (<c>GET /orders/{id}/items</c> becomes <c>GetOrdersItems</c>). Duplicates are numbered once the document is
-/// complete.
+/// suffix; an unnamed Minimal API endpoint gets its HTTP method followed by the literal text of its path segments
+/// (<c>GET /orders/{id}/items</c> becomes <c>GetOrdersItems</c>, <c>GET /v{version}/things</c> becomes
+/// <c>GetVThings</c>). Duplicates are numbered once the document is complete.
 /// </remarks>
 internal sealed class OperationIdTransformer : IOpenApiOperationTransformer
 {
+    private static readonly char[] _WordSeparators = ['-', '_', '.', '~'];
+
     public Task TransformAsync(
         OpenApiOperation operation,
         OpenApiOperationTransformerContext context,
@@ -62,21 +64,31 @@ internal sealed class OperationIdTransformer : IOpenApiOperationTransformer
         var builder = new StringBuilder();
         _AppendPascal(builder, (httpMethod ?? "Get").ToLowerInvariant());
 
-        foreach (var segment in (relativePath ?? string.Empty).Split(['/', '\\', '}', ']', '-', '_']))
+        foreach (var segment in (relativePath ?? string.Empty).Split(['/', '\\']))
         {
-            if (segment.Length == 0 || segment[0] is '{' or '[')
-            {
-                continue;
-            }
+            // A parameter can share a segment with literal text (v{version:apiVersion}); only the literal names it.
+            var parameterStart = segment.IndexOfAny(['{', '[']);
+            var literal = parameterStart < 0 ? segment : segment[..parameterStart];
 
-            _AppendPascal(builder, segment);
+            foreach (var word in literal.Split(_WordSeparators, StringSplitOptions.RemoveEmptyEntries))
+            {
+                _AppendPascal(builder, word);
+            }
         }
 
         return builder.ToString();
     }
 
-    private static void _AppendPascal(StringBuilder builder, string segment)
+    private static void _AppendPascal(StringBuilder builder, string word)
     {
-        builder.Append(char.ToUpperInvariant(segment[0])).Append(segment, 1, segment.Length - 1);
+        var start = builder.Length;
+
+        foreach (var character in word)
+        {
+            if (char.IsAsciiLetterOrDigit(character))
+            {
+                builder.Append(builder.Length == start ? char.ToUpperInvariant(character) : character);
+            }
+        }
     }
 }
