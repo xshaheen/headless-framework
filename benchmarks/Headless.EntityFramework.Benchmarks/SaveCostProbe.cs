@@ -274,7 +274,7 @@ internal sealed class Env : IDisposable
         _provider = services.BuildServiceProvider();
 
         using var scope = _provider.CreateScope();
-        scope.ServiceProvider.GetRequiredService(dbType).As<DbContext>().Database.EnsureCreated();
+        ((DbContext)scope.ServiceProvider.GetRequiredService(dbType)).Database.EnsureCreated();
     }
 
     private static void _AddHeadless<TDb>(IServiceCollection services, Action<DbContextOptionsBuilder> options)
@@ -304,11 +304,6 @@ internal sealed class Env : IDisposable
         _provider.Dispose();
         _sqlite?.Dispose();
     }
-}
-
-internal static class ObjectExt
-{
-    public static T As<T>(this object o) => (T)o;
 }
 
 internal static class SaveCostProbe

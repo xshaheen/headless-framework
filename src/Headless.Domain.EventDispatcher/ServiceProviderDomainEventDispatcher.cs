@@ -92,15 +92,23 @@ internal sealed class ServiceProviderDomainEventDispatcher(IServiceProvider serv
     /// </remarks>
     internal bool HasHandler(Type payloadType)
     {
-        if (services.GetService<IServiceProviderIsService>() is not { } isService)
+        // Resolved once per dispatcher: the save pipeline asks for every pending occurrence. A racing first call
+        // resolves the same answer twice at most.
+        if (!_handlerQueryResolved)
         {
-            return true;
+            _handlerQuery = services.GetService<IServiceProviderIsService>() is { } isService
+                ? new HandlerQuery(isService, _HandlerPresence.GetValue(isService, _CreateHandlerPresence))
+                : null;
+            _handlerQueryResolved = true;
         }
 
-        return _HandlerPresence
-            .GetValue(isService, _CreateHandlerPresence)
-            .GetOrAdd(payloadType, _IsHandled, isService);
+        return _handlerQuery is not { } query || query.Answers.GetOrAdd(payloadType, _IsHandled, query.IsService);
     }
+
+    private HandlerQuery? _handlerQuery;
+    private bool _handlerQueryResolved;
+
+    private sealed record HandlerQuery(IServiceProviderIsService IsService, ConcurrentDictionary<Type, bool> Answers);
 
     private static readonly ConditionalWeakTable<
         IServiceProviderIsService,

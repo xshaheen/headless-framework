@@ -45,8 +45,6 @@ public static partial class HeadlessQueryableExtensions
         var propertyAccessor = Expression.Property(typeParameter, selectedPropertyInfo);
 
         // Greater than start Predicate
-        // The bounds are read from a captured object so EF Core extracts them as query parameters: inline constants
-        // would compile and cache a separate query for every date range.
         var bounds = Expression.Constant(new DateBounds<DateTimeOffset>(start.AddMonths(-1), last.AddMonths(1)));
         var startBound = Expression.Property(bounds, nameof(DateBounds<>.After));
         var greaterThanStartExpression = Expression.GreaterThan(left: propertyAccessor, right: startBound);

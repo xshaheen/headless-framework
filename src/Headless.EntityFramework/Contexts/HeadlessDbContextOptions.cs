@@ -27,6 +27,16 @@ public sealed class HeadlessDbContextOptions
         typeof(HeadlessMessageCollectorSaveEntryProcessor),
     ];
 
+    // The processors the constructor registers. A type added there must be added here too, or saves using it are
+    // treated as having a consumer processor and keep a change-detection pass they do not need.
+    private static readonly Type[] _BuiltInProcessorTypes =
+    [
+        typeof(HeadlessEntitySaveEntryProcessor),
+        typeof(HeadlessAuditSaveEntryProcessor),
+        typeof(HeadlessLocalEventSaveEntryProcessor),
+        typeof(HeadlessMessageCollectorSaveEntryProcessor),
+    ];
+
     private readonly List<SaveEntryProcessorRegistration> _saveEntryProcessors = [];
 
     /// <summary>
@@ -98,12 +108,7 @@ public sealed class HeadlessDbContextOptions
     /// A consumer processor may write CLR members that only a change-detection pass reveals.
     /// </summary>
     internal bool HasOnlyBuiltInSaveEntryProcessors =>
-        _saveEntryProcessors.TrueForAll(static x =>
-            x.ImplementationType == typeof(HeadlessEntitySaveEntryProcessor)
-            || x.ImplementationType == typeof(HeadlessAuditSaveEntryProcessor)
-            || x.ImplementationType == typeof(HeadlessLocalEventSaveEntryProcessor)
-            || x.ImplementationType == typeof(HeadlessMessageCollectorSaveEntryProcessor)
-        );
+        _saveEntryProcessors.TrueForAll(static x => Array.IndexOf(_BuiltInProcessorTypes, x.ImplementationType) >= 0);
 
     internal IHeadlessSaveEntryProcessor[] ResolveSaveEntryProcessors(IServiceProvider serviceProvider)
     {

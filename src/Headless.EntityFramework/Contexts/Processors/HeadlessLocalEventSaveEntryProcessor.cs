@@ -80,15 +80,14 @@ public sealed class HeadlessLocalEventSaveEntryProcessor : IHeadlessSaveEntryPro
                 _Publish(emitter, context, _CreatedFactories, _CreatedFactory, static types => types.Created);
                 break;
             case EntityState.Modified:
-                if (_HasDomainModifiedProperties(entry))
-                {
-                    _Publish(emitter, context, _UpdatedFactories, _UpdatedFactory, static types => types.Updated);
-                }
-                else
+                // The property scan allocates a PropertyEntry per property, so it runs only when an update or change
+                // event could reach a handler.
+                if (!_HasUpdateHandler(emitter, context) || !_HasDomainModifiedProperties(entry))
                 {
                     return;
                 }
 
+                _Publish(emitter, context, _UpdatedFactories, _UpdatedFactory, static types => types.Updated);
                 break;
             case EntityState.Deleted:
                 _Publish(emitter, context, _DeletedFactories, _DeletedFactory, static types => types.Deleted);
@@ -98,6 +97,18 @@ public sealed class HeadlessLocalEventSaveEntryProcessor : IHeadlessSaveEntryPro
         }
 
         _Publish(emitter, context, _ChangedFactories, _ChangedFactory, static types => types.Changed);
+    }
+
+    private static bool _HasUpdateHandler(IDomainEventEmitter entity, HeadlessSaveEntryContext context)
+    {
+        if (context.DomainEventHandlerFilter is null)
+        {
+            return true;
+        }
+
+        var types = _EventTypes.GetValue(entity.GetType(), _CreateEventTypes);
+
+        return context.HasDomainEventHandler(types.Updated) || context.HasDomainEventHandler(types.Changed);
     }
 
     private static void _Publish(

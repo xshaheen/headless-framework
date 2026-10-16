@@ -97,11 +97,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
         }
 
         // Without an application provider the guard setting cannot be read here; the stamp checks it when it fires.
-        var application = _db.GetService<IDbContextOptions>()
-            .FindExtension<CoreOptionsExtension>()
-            ?.ApplicationServiceProvider;
-
-        return application?.GetService<IOptions<TenantGuardOptions>>()?.Value.GuardWrites ?? true;
+        return _db.GetApplicationServices()?.GetService<IOptions<TenantGuardOptions>>()?.Value.GuardWrites ?? true;
     }
 
     /// <summary>The ambient tenant, read on every access so a tenant change inside one lease is observed.</summary>

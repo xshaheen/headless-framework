@@ -773,9 +773,11 @@ internal sealed class HeadlessSaveChangesPipeline(
     // save either way.
     private static bool _HasHandledDomainEvent(HeadlessSaveEntryContext saveContext)
     {
-        foreach (var occurrence in saveContext.PendingDomainEvents)
+        var pending = saveContext.PendingDomainEvents;
+
+        for (var i = 0; i < pending.Count; i++)
         {
-            if (saveContext.HasDomainEventHandler(occurrence.Payload.GetType()))
+            if (saveContext.HasDomainEventHandler(pending[i].Payload.GetType()))
             {
                 return true;
             }

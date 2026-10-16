@@ -73,7 +73,8 @@ public sealed class HeadlessEntitySaveEntryProcessor(
 
         var currentTenantId = _ReadTenantId(context.TenantId);
         var root = plan.IsOwnedType ? _ResolveOwner(entry, context) : entry;
-        var tenantProperty = root.Property(HeadlessTenantPlan.For(root.Metadata).TenantProperty!);
+        // The plan's tenant property is on the owning hierarchy's root, so it belongs to the resolved owner's type.
+        var tenantProperty = root.Property(plan.TenantProperty!);
         var entityTenantId = _ReadTenantId(tenantProperty.CurrentValue);
         var originalTenantId = root.State == EntityState.Added ? null : _ReadTenantId(tenantProperty.OriginalValue);
 
