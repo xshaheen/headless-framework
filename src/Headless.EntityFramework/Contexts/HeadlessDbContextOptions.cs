@@ -27,8 +27,9 @@ public sealed class HeadlessDbContextOptions
         typeof(HeadlessMessageCollectorSaveEntryProcessor),
     ];
 
-    // The processors the constructor registers. A type added there must be added here too, or saves using it are
-    // treated as having a consumer processor and keep a change-detection pass they do not need.
+    // The default chain, in order. The constructor registers exactly these, so the chain and the built-in check
+    // cannot disagree: a type registered but not listed would keep a change-detection pass it does not need, and a
+    // listed type that writes CLR members behind the tracker's back would let a save skip the audit recapture.
     private static readonly Type[] _BuiltInProcessorTypes =
     [
         typeof(HeadlessEntitySaveEntryProcessor),
@@ -45,10 +46,10 @@ public sealed class HeadlessDbContextOptions
     /// </summary>
     public HeadlessDbContextOptions()
     {
-        AddSaveEntryProcessor<HeadlessEntitySaveEntryProcessor>(ServiceLifetime.Singleton);
-        AddSaveEntryProcessor<HeadlessAuditSaveEntryProcessor>(ServiceLifetime.Singleton);
-        AddSaveEntryProcessor<HeadlessLocalEventSaveEntryProcessor>(ServiceLifetime.Singleton);
-        AddSaveEntryProcessor<HeadlessMessageCollectorSaveEntryProcessor>(ServiceLifetime.Singleton);
+        foreach (var type in _BuiltInProcessorTypes)
+        {
+            _InsertSaveEntryProcessor(new(type, ServiceLifetime.Singleton));
+        }
     }
 
     /// <summary>
