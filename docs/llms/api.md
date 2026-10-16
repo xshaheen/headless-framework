@@ -1055,6 +1055,7 @@ Framework integration for ASP.NET Core Minimal APIs: JSON configuration, mediato
 - **The `Map*Request` helpers bind the whole request from one source.** GET and DELETE use `[AsParameters]` (route values and the query string); POST, PUT, and PATCH use the JSON body. A request whose body also needs a route value, such as `PUT /orders/{id}`, needs its own handler that binds both and calls `DispatchAsync`.
 - **A result's `Value` is `null` for a failure.** The problem body exists only once the result executes against a request. Assert a failure's body by executing the result, or call `ApiResultError.ToHttpResult(creator)`.
 - **`ValidateArguments()` decides once per endpoint, at build time.** It closes `IValidator<T>` over each handler parameter type and keeps the parameters with a registration. An endpoint with none gets no filter. A validator registered after the endpoints are built is not seen. Do not also apply `.Validate<T>()` for the same argument, or its validators run twice.
+- **Validate a mediator request in one place.** With `AddMediatorValidationRequestBehavior()` registered (see [mediator.md](mediator.md)), the validators of a request type that a `Map*Request` route or `DispatchAsync` sends run twice: once in the `ValidateArguments()` endpoint filter, which answers 422, and again in the mediator's `ValidationRequestPreProcessor`, which throws `ValidationException`. An async validator that queries a database doubles its I/O. Pick one: leave `ValidateArguments()` off groups that only dispatch through the mediator, or leave the mediator pre-processor unregistered and let the endpoint filter validate. The framework does not detect the overlap at run time, because detecting it would couple `Headless.Api.MinimalApi` to `Headless.Mediator` internals.
 
 ### Install
 
@@ -1075,6 +1076,8 @@ var app = builder.Build();
 app.UseHeadless();
 app.MapHeadlessEndpoints();
 
+// This app validates at the endpoint and does not register AddMediatorValidationRequestBehavior(); an app that
+// does should drop ValidateArguments() here, or each request's validators run twice.
 var orders = app.MapGroup("/orders").WithTags("Orders").ProducesStandardProblems().ValidateArguments();
 
 // Bind, dispatch, respond: GetOrder binds {id} with [AsParameters]; CreateOrder binds from the body.
@@ -1118,7 +1121,7 @@ public sealed record RenameOrder(Guid Id, string Name) : IRequest<ApiResult>;
 
 #### API surfaces
 
-After `AddHeadlessApiSurface(...)`, `app.MapApiSurface("portal")` returns a native `RouteGroupBuilder` with the configured prefix and named authorization policy. The optional callback and returned builder support ordinary ASP.NET Core endpoint conventions, including `ProducesStandardProblems()` and `ValidateArguments()` for the whole surface.
+After `AddHeadlessApiSurface(...)`, `app.MapApiSurface("portal")` returns a native `RouteGroupBuilder` with the configured prefix and named authorization policy. The optional callback and returned builder support ordinary ASP.NET Core endpoint conventions, including `ProducesStandardProblems()` and `ValidateArguments()` for the whole surface. The example assumes the app does not register `AddMediatorValidationRequestBehavior()`; see "Validate a mediator request in one place" under Design constraints above.
 
 ```csharp
 var portal = app.MapApiSurface("portal").ProducesStandardProblems().ValidateArguments();
