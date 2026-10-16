@@ -10,7 +10,7 @@ namespace Headless.UnitOfWork.Internal;
 
 /// <summary>
 /// The SQL Server half of <see cref="RelationalTransientFaults" />. SqlClient's <c>SqlException</c> overrides
-/// neither <see cref="DbException.IsTransient" /> nor <see cref="DbException.SqlState" />, so its faults are
+/// neither <c>DbException.IsTransient</c> nor <see cref="DbException.SqlState" />, so its faults are
 /// matched on the error numbers, read by reflection because this package references no driver, over every error
 /// the exception carries: <c>Number</c> alone is the first error, and a deadlock or a connection fault is not
 /// always reported first. The exception is recognized by its type name, because a SQL Server number means nothing

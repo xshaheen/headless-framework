@@ -1,0 +1,1 @@
+P:System.Data.Common.DbException.IsTransient;SqlClient's SqlException does not override it, so every SQL Server fault reads false. Classify a database fault with Headless.UnitOfWork.RelationalTransientFaults.IsTransient, which also reads SQL Server error numbers, PostgreSQL SQLSTATEs, and SQLite result codes.
