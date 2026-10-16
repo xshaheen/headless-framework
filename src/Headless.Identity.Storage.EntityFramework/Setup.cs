@@ -37,7 +37,15 @@ public static class SetupIdentityEntityFramework
         /// An optional action to configure Headless-specific context options such as audit behaviour.
         /// </param>
         /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/> (default: Scoped).</param>
-        /// <param name="optionsLifetime">The DI lifetime for the EF Core options object (default: Scoped).</param>
+        /// <param name="optionsLifetime">
+        /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. When <see langword="null"/> (the default), every scope
+        /// shares one options instance, built once from the root provider, as long as every registered
+        /// <c>IInterceptor</c> is a singleton, nothing else configures the context's options, and
+        /// <paramref name="optionsAction"/> creates no connection or interceptor of its own; otherwise the options are
+        /// built per scope. The decision is made at the first resolution, after all registrations. Pass
+        /// <see cref="ServiceLifetime.Scoped"/> when <paramref name="optionsAction"/> reads per-request state, since a
+        /// shared instance runs it once.
+        /// </param>
         /// <returns>
         /// An <see cref="IHeadlessDbContextBuilder"/> so optional event tiers (domain events, integration
         /// outbox) can be chained, matching the canonical <c>SetupEntityFramework.AddHeadlessDbContext</c>.
@@ -56,7 +64,7 @@ public static class SetupIdentityEntityFramework
             Action<DbContextOptionsBuilder>? optionsAction,
             Action<HeadlessDbContextOptions>? configureHeadlessOptions = null,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
-            ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
+            ServiceLifetime? optionsLifetime = null
         )
             where TDbContext : HeadlessIdentityDbContext<
                     TUser,
@@ -88,7 +96,7 @@ public static class SetupIdentityEntityFramework
                 TRoleClaim,
                 TUserToken,
                 IdentityUserPasskey<TKey>
-            >((_, ob) => optionsAction?.Invoke(ob), configureHeadlessOptions, contextLifetime, optionsLifetime);
+            >(optionsAction, configureHeadlessOptions, contextLifetime, optionsLifetime);
         }
 
         /// <summary>
@@ -190,7 +198,15 @@ public static class SetupIdentityEntityFramework
         /// An optional action to configure Headless-specific context options such as audit behaviour.
         /// </param>
         /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/> (default: Scoped).</param>
-        /// <param name="optionsLifetime">The DI lifetime for the EF Core options object (default: Scoped).</param>
+        /// <param name="optionsLifetime">
+        /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. When <see langword="null"/> (the default), every scope
+        /// shares one options instance, built once from the root provider, as long as every registered
+        /// <c>IInterceptor</c> is a singleton, nothing else configures the context's options, and
+        /// <paramref name="optionsAction"/> creates no connection or interceptor of its own; otherwise the options are
+        /// built per scope. The decision is made at the first resolution, after all registrations. Pass
+        /// <see cref="ServiceLifetime.Scoped"/> when <paramref name="optionsAction"/> reads per-request state, since a
+        /// shared instance runs it once.
+        /// </param>
         /// <returns>
         /// An <see cref="IHeadlessDbContextBuilder"/> so optional event tiers (domain events, integration
         /// outbox) can be chained, matching the canonical <c>SetupEntityFramework.AddHeadlessDbContext</c>.
@@ -210,7 +226,7 @@ public static class SetupIdentityEntityFramework
             Action<DbContextOptionsBuilder>? optionsAction,
             Action<HeadlessDbContextOptions>? configureHeadlessOptions = null,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
-            ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
+            ServiceLifetime? optionsLifetime = null
         )
             where TDbContext : HeadlessIdentityDbContext<
                     TUser,
@@ -233,7 +249,7 @@ public static class SetupIdentityEntityFramework
             where TUserToken : IdentityUserToken<TKey>
             where TUserPasskey : IdentityUserPasskey<TKey>
         {
-            return services.AddHeadlessDbContext<
+            return services._AddHeadlessIdentityDbContext<
                 TDbContext,
                 TUser,
                 TRole,
@@ -293,6 +309,60 @@ public static class SetupIdentityEntityFramework
             Action<HeadlessDbContextOptions>? configureHeadlessOptions = null,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
             ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
+        )
+            where TDbContext : HeadlessIdentityDbContext<
+                    TUser,
+                    TRole,
+                    TKey,
+                    TUserClaim,
+                    TUserRole,
+                    TUserLogin,
+                    TRoleClaim,
+                    TUserToken,
+                    TUserPasskey
+                >
+            where TUser : IdentityUser<TKey>
+            where TRole : IdentityRole<TKey>
+            where TKey : IEquatable<TKey>
+            where TUserClaim : IdentityUserClaim<TKey>
+            where TUserRole : IdentityUserRole<TKey>
+            where TUserLogin : IdentityUserLogin<TKey>
+            where TRoleClaim : IdentityRoleClaim<TKey>
+            where TUserToken : IdentityUserToken<TKey>
+            where TUserPasskey : IdentityUserPasskey<TKey>
+        {
+            return services._AddHeadlessIdentityDbContext<
+                TDbContext,
+                TUser,
+                TRole,
+                TKey,
+                TUserClaim,
+                TUserRole,
+                TUserLogin,
+                TRoleClaim,
+                TUserToken,
+                TUserPasskey
+            >(optionsAction, configureHeadlessOptions, contextLifetime, optionsLifetime);
+        }
+
+        // A null options lifetime selects the shared-options default; the IServiceProvider overloads always pass one,
+        // because an action that receives the provider may resolve scoped services.
+        private IHeadlessDbContextBuilder _AddHeadlessIdentityDbContext<
+            TDbContext,
+            TUser,
+            TRole,
+            TKey,
+            TUserClaim,
+            TUserRole,
+            TUserLogin,
+            TRoleClaim,
+            TUserToken,
+            TUserPasskey
+        >(
+            Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
+            Action<HeadlessDbContextOptions>? configureHeadlessOptions,
+            ServiceLifetime contextLifetime,
+            ServiceLifetime? optionsLifetime
         )
             where TDbContext : HeadlessIdentityDbContext<
                     TUser,
