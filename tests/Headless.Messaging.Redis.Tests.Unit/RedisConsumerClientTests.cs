@@ -329,6 +329,24 @@ public sealed class RedisConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_release_a_delayed_reject_at_once_because_the_claim_pass_already_waits()
+    {
+        // given
+        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
+        await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
+        var sender = new RedisConsumerDelivery("test-stream", "test-group", "1234567-0");
+
+        // when
+        await client
+            .RejectAsync(sender, TimeSpan.FromMinutes(5), AbortToken)
+            .AsTask()
+            .WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then: the entry stays pending for PendingClaimMinIdleTime
+        _mockStreamManager.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_read_under_the_leased_name_and_claim_after_the_configured_min_idle_time()
     {
         // given

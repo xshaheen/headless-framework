@@ -160,6 +160,36 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
         await _sqs.Received(1).ChangeMessageVisibilityAsync(_QueueUrl, "receipt-1", 3, Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData(0, 3)]
+    [InlineData(1200, 3)]
+    [InlineData(20_500, 21)]
+    [InlineData(13 * 3600 * 1000, 43_200)]
+    public async Task should_hide_a_delayed_reject_for_its_redelivery_delay(int delayMs, int hiddenSeconds)
+    {
+        // given
+        _ReceiveOnce(_Message("receipt-1"));
+        var rejected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var client = _CreateClient(concurrency: 1);
+        client.OnMessageCallback = async (_, sender) =>
+        {
+            // SQS holds the message back itself, so the delivery is released at once rather than held for the delay.
+            await client.RejectAsync(sender, TimeSpan.FromMilliseconds(delayMs), AbortToken);
+            rejected.TrySetResult();
+        };
+        using var cts = new CancellationTokenSource();
+        var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
+
+        // when
+        await rejected.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await cts.CancelAsync();
+        await _IgnoreCancellationAsync(listening);
+
+        // then: rounded up to whole seconds, never under the plain reject's 3 s nor over SQS's 12 h limit
+        await _sqs.Received(1)
+            .ChangeMessageVisibilityAsync(_QueueUrl, "receipt-1", hiddenSeconds, Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task should_send_a_reject_only_after_a_concurrent_extension_of_the_same_message_returned()
     {
