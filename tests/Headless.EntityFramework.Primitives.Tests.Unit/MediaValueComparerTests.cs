@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
+using System.Text.Json.Serialization;
 using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -104,6 +106,48 @@ public sealed class MediaValueComparerTests : TestBase
         comparer.Snapshot(image).Should().BeOfType<Image>().Which.Width.Should().Be(64);
     }
 
+    // Every settable member of File and Image, inherited ones included: a member the type gains later joins this list
+    // on its own, so the test fails until the comparer compares it and the snapshot copies it.
+    public static TheoryData<string, string> SettableMediaMembers
+    {
+        get
+        {
+            var data = new TheoryData<string, string>();
+
+            foreach (var type in new[] { typeof(File), typeof(Image) })
+            {
+                foreach (var property in _SettableMembers(type))
+                {
+                    data.Add(type.Name, property.Name);
+                }
+            }
+
+            return data;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(SettableMediaMembers))]
+    public void media_comparer_should_compare_and_snapshot_every_settable_member(string typeName, string member)
+    {
+        // given
+        var isImage = string.Equals(typeName, nameof(Image), StringComparison.Ordinal);
+        var comparer = _Comparer(isImage ? nameof(MediaRow.Picture) : nameof(MediaRow.Attachment));
+        File original = isImage ? _Image() : _File();
+        var property = original.GetType().GetProperty(member)!;
+        var changed = _CopyWith(original, property, _ChangedValue(property.PropertyType, property.GetValue(original)));
+
+        // when
+        var snapshot = comparer.Snapshot(changed);
+
+        // then
+        comparer.Equals(original, changed).Should().BeFalse($"the comparer must compare {typeName}.{member}");
+        property
+            .GetValue(snapshot)
+            .Should()
+            .BeEquivalentTo(property.GetValue(changed), $"the snapshot must copy {typeName}.{member}");
+    }
+
     [Fact]
     public void file_comparer_should_not_serialize_when_comparing_or_snapshotting()
     {
@@ -171,6 +215,47 @@ public sealed class MediaValueComparerTests : TestBase
         }
 
         return (GC.GetAllocatedBytesForCurrentThread() - before) / 1000;
+    }
+
+    private static IEnumerable<PropertyInfo> _SettableMembers(Type type) =>
+        type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.SetMethod is { IsPublic: true } && p.GetCustomAttribute<JsonIgnoreAttribute>() is null);
+
+    private static File _CopyWith(File source, PropertyInfo changedProperty, object? changedValue)
+    {
+        var copy = (File)Activator.CreateInstance(source.GetType())!;
+
+        foreach (var property in _SettableMembers(source.GetType()))
+        {
+            property.SetValue(copy, property == changedProperty ? changedValue : property.GetValue(source));
+        }
+
+        return copy;
+    }
+
+    private static object? _ChangedValue(Type type, object? current)
+    {
+        var valueType = Nullable.GetUnderlyingType(type) ?? type;
+
+        return current switch
+        {
+            _ when valueType == typeof(string) => (current as string) + "-changed",
+            _ when valueType == typeof(string[]) => (string[])[.. (string[]?)current ?? [], "changed"],
+            _ when valueType == typeof(DateTimeOffset) => ((DateTimeOffset)current!).AddDays(1),
+            _ when valueType == typeof(long) => (long)current! + 1,
+            _ when valueType == typeof(int) => ((int?)current ?? 0) + 1,
+            _ when valueType == typeof(bool) => !(bool)current!,
+            _ when valueType == typeof(Dictionary<string, object?>) => new Dictionary<string, object?>(
+                (Dictionary<string, object?>?)current ?? [],
+                StringComparer.Ordinal
+            )
+            {
+                ["changed"] = 1,
+            },
+            _ => throw new InvalidOperationException(
+                $"Give {type} a changed value here so the comparer test covers the new member."
+            ),
+        };
     }
 
     private static bool _Is(string? changed, string member) => string.Equals(changed, member, StringComparison.Ordinal);
