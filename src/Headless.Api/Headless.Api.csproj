@@ -7,7 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Api.ServiceDefaults" />
-    <InternalsVisibleTo Include="Headless.OpenApi.Nswag" />
+    <InternalsVisibleTo Include="Headless.OpenApi" />
     <InternalsVisibleTo Include="Headless.Api.Mvc" />
     <InternalsVisibleTo Include="Headless.Idempotency.ResponseReplay" />
     <InternalsVisibleTo Include="Headless.Api.MinimalApi" />

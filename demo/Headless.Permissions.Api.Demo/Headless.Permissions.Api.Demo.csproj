@@ -9,7 +9,7 @@
     <ProjectReference Include="..\..\src\Headless.Permissions\Headless.Permissions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Permissions.Storage.EntityFramework\Headless.Permissions.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />
-    <ProjectReference Include="..\..\src\Headless.OpenApi.Nswag\Headless.OpenApi.Nswag.csproj" />
+    <ProjectReference Include="..\..\src\Headless.OpenApi\Headless.OpenApi.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />

@@ -377,6 +377,7 @@
           "Headless.Api": "[1.0.0, )",
           "Headless.Context": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.OpenApi": "[1.0.0, )",
           "Headless.Security": "[1.0.0, )",
           "Microsoft.AspNetCore.OpenApi": "[10.0.13, )",
           "Microsoft.Extensions.Http.Resilience": "[10.11.0, )",
@@ -639,6 +640,13 @@
         "dependencies": {
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )"
+        }
+      },
+      "headless.openapi": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Api": "[1.0.0, )",
+          "Microsoft.AspNetCore.OpenApi": "[10.0.13, )"
         }
       },
       "headless.permissions": {

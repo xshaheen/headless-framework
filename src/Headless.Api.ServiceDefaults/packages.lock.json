@@ -423,6 +423,13 @@
           "Headless.Primitives": "[1.0.0, )"
         }
       },
+      "headless.openapi": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Api": "[1.0.0, )",
+          "Microsoft.AspNetCore.OpenApi": "[10.0.13, )"
+        }
+      },
       "headless.primitives": {
         "type": "Project",
         "dependencies": {
