@@ -217,7 +217,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     private HeadlessSaveEntryContext _ProcessEntries(DbContext context, IReadOnlyList<EntityEntry> entries)
     {
         var tenantId = context is IHeadlessDbContext headlessContext ? headlessContext.TenantId : null;
-        var saveContext = new HeadlessSaveEntryContext(context, tenantId);
+        var saveContext = new HeadlessSaveEntryContext(context, tenantId) { TrackedEntries = entries };
 
         foreach (var entry in entries)
         {
@@ -368,6 +368,13 @@ internal sealed class HeadlessSaveChangesPipeline(
                 state.DomainEventsPublished.Value = true;
             }
 
+            // Audit rows that are complete as captured join the entity save as one batch; the rest wait for
+            // store-generated keys. Assigned before the save so a failure discards the rows already added.
+            var split = await auditPersistence
+                .AddReadyEntriesAsync(state.Context, state.AuditEntries.Value, state.CancellationToken)
+                .ConfigureAwait(false);
+            auditSave = split.Added;
+
             var deferAcceptAllChanges = commitTransaction || _HasAuditEntries(state.AuditEntries.Value);
             var result = await state
                 .BaseSaveChangesAsync(
@@ -376,14 +383,19 @@ internal sealed class HeadlessSaveChangesPipeline(
                 )
                 .ConfigureAwait(false);
 
-            auditSave = await auditPersistence
-                .ResolveAndPersistAsync(
-                    state.Context,
-                    state.AuditEntries.Value,
-                    state.BaseSaveChangesAsync,
-                    state.CancellationToken
-                )
-                .ConfigureAwait(false);
+            // The audit rows are not the caller's changes, so they stay out of the returned count.
+            result = Math.Max(0, result - split.Added.Count);
+
+            auditSave = auditSave.Merge(
+                await auditPersistence
+                    .ResolveAndPersistAsync(
+                        state.Context,
+                        split.Deferred,
+                        state.BaseSaveChangesAsync,
+                        state.CancellationToken
+                    )
+                    .ConfigureAwait(false)
+            );
 
             if (state.SaveContext.IntegrationEventEmitters.Count > 0)
             {
@@ -412,6 +424,9 @@ internal sealed class HeadlessSaveChangesPipeline(
                 await transaction.CommitAsync(state.CancellationToken).ConfigureAwait(false);
                 if (state.AcceptAllChangesOnSuccess)
                 {
+                    // Detach the audit rows first: accepting them would snapshot their JSON columns for a row that
+                    // is about to leave the tracker.
+                    auditPersistence.ReleaseEntries(auditSave);
                     state.Context.ChangeTracker.AcceptAllChanges();
                 }
             }
@@ -431,7 +446,13 @@ internal sealed class HeadlessSaveChangesPipeline(
                 unitOfWork!.PreventRetry();
             }
 
-            _CompleteSuccessfulSave(state.Context, state.SaveContext, auditSave, state.AcceptAllChangesOnSuccess);
+            _CompleteSuccessfulSave(
+                state.Context,
+                state.SaveContext,
+                auditSave,
+                // The commit branch above already accepted; accepting again would walk the tracker twice.
+                state.AcceptAllChangesOnSuccess && !commitTransaction
+            );
 
             return result;
         }
@@ -485,12 +506,16 @@ internal sealed class HeadlessSaveChangesPipeline(
                 state.DomainEventsPublished.Value = true;
             }
 
+            // Same split as the async twin: complete audit rows join the entity save, the rest wait for generated keys.
+            var split = auditPersistence.AddReadyEntries(state.Context, state.AuditEntries.Value);
+            auditSave = split.Added;
+
             var deferAcceptAllChanges = commitTransaction || _HasAuditEntries(state.AuditEntries.Value);
             var result = state.BaseSaveChanges(!deferAcceptAllChanges && state.AcceptAllChangesOnSuccess);
-            auditSave = auditPersistence.ResolveAndPersist(
-                state.Context,
-                state.AuditEntries.Value,
-                state.BaseSaveChanges
+            result = Math.Max(0, result - split.Added.Count);
+
+            auditSave = auditSave.Merge(
+                auditPersistence.ResolveAndPersist(state.Context, split.Deferred, state.BaseSaveChanges)
             );
 
             if (state.SaveContext.IntegrationEventEmitters.Count > 0)
@@ -518,6 +543,9 @@ internal sealed class HeadlessSaveChangesPipeline(
                 transaction.Commit();
                 if (state.AcceptAllChangesOnSuccess)
                 {
+                    // Detach the audit rows first: accepting them would snapshot their JSON columns for a row that
+                    // is about to leave the tracker.
+                    auditPersistence.ReleaseEntries(auditSave);
                     state.Context.ChangeTracker.AcceptAllChanges();
                 }
             }
@@ -534,7 +562,13 @@ internal sealed class HeadlessSaveChangesPipeline(
                 unitOfWork!.PreventRetry();
             }
 
-            _CompleteSuccessfulSave(state.Context, state.SaveContext, auditSave, state.AcceptAllChangesOnSuccess);
+            _CompleteSuccessfulSave(
+                state.Context,
+                state.SaveContext,
+                auditSave,
+                // The commit branch above already accepted; accepting again would walk the tracker twice.
+                state.AcceptAllChangesOnSuccess && !commitTransaction
+            );
 
             return result;
         }
@@ -560,10 +594,18 @@ internal sealed class HeadlessSaveChangesPipeline(
     private EventContext<object>? _TryTakeDomainOccurrence(DbContext context, HeadlessSaveEntryContext saveContext)
     {
         // Recollect after each completed pass, without synthesizing lifecycle events again for existing entries.
-        if (saveContext.DomainEventCursor == saveContext.PendingDomainEvents.Count)
+        // The snapshot _ProcessEntries just processed is still current until a handler has run, so the first pass of
+        // a save with no occurrences, or with all of them still pending, skips a full tracker traversal.
+        if (
+            saveContext.DomainEventCursor == saveContext.PendingDomainEvents.Count
+            && saveContext.SnapshotCursor != saveContext.DomainEventCursor
+        )
         {
             var collector = _ResolveMessageCollector();
-            foreach (var entry in _SnapshotEntries(context))
+            saveContext.SnapshotCursor = saveContext.DomainEventCursor;
+            var snapshot = _SnapshotEntries(context);
+            saveContext.TrackedEntries = snapshot;
+            foreach (var entry in snapshot)
             {
                 if (saveContext.ProcessedEntities.Add(entry.Entity))
                 {

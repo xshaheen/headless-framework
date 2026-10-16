@@ -2,7 +2,6 @@
 
 using System.Reflection;
 using Headless.Domain;
-using Headless.EntityFramework.ChangeTrackers;
 using Headless.EntityFramework.Contexts;
 using Headless.MultiTenancy;
 using Headless.UnitOfWork;
@@ -19,7 +18,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.EntityFramework;
 
 /// <summary>
-/// Per-<see cref="DbContext"/> runtime that wires the navigation-change tracker and the tenant stamp, runs
+/// Per-<see cref="DbContext"/> runtime that wires the tenant stamp, runs
 /// framework conventions in <c>OnModelCreating</c>, and forwards <c>SaveChanges</c> to the
 /// <see cref="IHeadlessSaveChangesPipeline"/> of the context's current service binding.
 /// </summary>
@@ -51,7 +50,6 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     private static readonly Type _NullableDateTimeType = typeof(DateTime?);
 
     private readonly DbContext _db = db;
-    private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker = new();
 
     // Fixed for the instance's life: the options, and so the application provider, never change across leases.
     private IServiceProvider? _applicationServices;
@@ -77,8 +75,6 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
         // Attached in the constructor so EF's pool snapshot captures them and SetLease restores them on every lease;
         // handlers attached later would be dropped by the next lease. The tenant stamp is always attached and checks
         // the write-guard option when it fires, because the option is not known until a provider is bound.
-        _db.ChangeTracker.Tracked += _navigationModifiedTracker.ChangeTrackerTracked;
-        _db.ChangeTracker.StateChanged += _navigationModifiedTracker.ChangeTrackerStateChanged;
         _db.ChangeTracker.Tracking += _OnTracking;
         _db.ChangeTracker.StateChanging += _OnStateChanging;
     }
@@ -184,7 +180,6 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
         _pipeline = null;
         _currentTenant = null;
         _guardOptions = null;
-        _navigationModifiedTracker.Clear();
 
         return ownedScope;
     }
@@ -275,30 +270,14 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
         CancellationToken cancellationToken
     )
     {
-        try
-        {
-            return await _GetPipeline()
-                .SaveChangesAsync(_db, baseSaveChangesAsync, acceptAllChangesOnSuccess, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            // Run cleanup on both success and failure paths so a thrown CrossTenantWriteException
-            // (or any other pipeline failure) does not leak stale modified-entry tracking state.
-            _navigationModifiedTracker.RemoveModifiedEntityEntries();
-        }
+        return await _GetPipeline()
+            .SaveChangesAsync(_db, baseSaveChangesAsync, acceptAllChangesOnSuccess, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public int SaveChanges(Func<bool, int> baseSaveChanges, bool acceptAllChangesOnSuccess)
     {
-        try
-        {
-            return _GetPipeline().SaveChanges(_db, baseSaveChanges, acceptAllChangesOnSuccess);
-        }
-        finally
-        {
-            _navigationModifiedTracker.RemoveModifiedEntityEntries();
-        }
+        return _GetPipeline().SaveChanges(_db, baseSaveChanges, acceptAllChangesOnSuccess);
     }
 
     /// <summary>
