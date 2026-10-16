@@ -29,6 +29,12 @@ if (args.Contains("--audit-row-cost", StringComparer.Ordinal))
     return;
 }
 
+if (args.Contains("--transaction-probe", StringComparer.Ordinal))
+{
+    await TransactionProbe.RunAsync().ConfigureAwait(false);
+    return;
+}
+
 if (args.Contains("--context-probe", StringComparer.Ordinal))
 {
     await ContextCostProbe.RunAsync().ConfigureAwait(false);

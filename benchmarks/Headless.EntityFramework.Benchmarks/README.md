@@ -21,6 +21,9 @@ Three more probes print exact allocations and counts next to a plain `DbContext`
   `HEADLESS_PROBE_ITERS` sets the iteration count (default 3000).
 - `--context-probe`: context and options resolution per scope, generated Guid keys, tracked queries, the `File` and
   `Image` column comparers, and query compilations for `CountPerMonthAsync`.
+- `--transaction-probe`: commands and transactions of one audited insert and update next to plain EF Core saving the
+  same entity row and audit row in one `SaveChanges`. Set `HEADLESS_BENCH_POSTGRES` to a PostgreSQL connection string
+  to run it there instead of in-memory SQLite.
 - `--stamp-check` and `--audit-row-cost`: whether the stored concurrency stamp matches the entity after an update, and
   the cost per audit row of the tracked write next to one raw multi-row `INSERT` of the same rows.
 
