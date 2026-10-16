@@ -6,6 +6,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.DependencyInjection;
 using File = Headless.Primitives.File;
@@ -104,6 +105,24 @@ internal static class ContextCostProbe
                     _sink = scope.ServiceProvider.GetRequiredService<DbContextOptions<HeadlessKeyedDb>>();
                 },
                 2000
+            )
+        );
+
+        // Each scope's options carry that scope as the application provider; EF Core must still reuse one internal
+        // service provider for all of them, or every scope would build its own.
+        var internalProviders = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        for (var i = 0; i < 100; i++)
+        {
+            using var scope = headless.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<HeadlessKeyedDb>();
+            // IModelSource is a singleton of the internal provider, so one instance means one internal provider.
+            internalProviders.Add(db.GetService<IModelSource>());
+        }
+
+        Console.WriteLine(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"internal service providers across 100 scopes: {internalProviders.Count}"
             )
         );
 

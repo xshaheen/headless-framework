@@ -216,6 +216,21 @@ public sealed class HeadlessDbContextOptionsLifetimeTests : TestBase
     }
 
     [Fact]
+    public async Task should_reuse_one_internal_service_provider_across_scopes_with_shared_options()
+    {
+        // given
+        await using var harness = Harness.Create();
+
+        // when: each scope's options carry that scope as the application provider
+        var first = harness.CreateScope().ServiceProvider.GetRequiredService<OptionsDbContext>();
+        var second = harness.CreateScope().ServiceProvider.GetRequiredService<OptionsDbContext>();
+
+        // then: EF Core keys its internal provider without the application provider, so both reuse one
+        // IModelSource is a singleton of EF Core's internal provider, so one instance means one internal provider.
+        first.GetService<IModelSource>().Should().BeSameAs(second.GetService<IModelSource>());
+    }
+
+    [Fact]
     public async Task should_create_and_save_through_the_factory_with_shared_options_under_scope_validation()
     {
         // given
