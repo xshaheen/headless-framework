@@ -22,7 +22,7 @@ Three more probes print exact allocations and counts next to a plain `DbContext`
 - `--context-probe`: context and options resolution per scope, generated Guid keys, tracked queries, the `File` and
   `Image` column comparers, and query compilations for `CountPerMonthAsync`.
 - `--stamp-check` and `--audit-row-cost`: whether the stored concurrency stamp matches the entity after an update, and
-  the cost of one tracked audit row.
+  the cost per audit row of the tracked write next to one raw multi-row `INSERT` of the same rows.
 
 Bytes are exact (`GC.GetTotalAllocatedBytes(precise: true)` or the current thread's counter, minimum of five batches);
 microseconds are noisy on a shared machine.

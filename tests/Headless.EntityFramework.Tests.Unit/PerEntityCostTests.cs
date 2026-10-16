@@ -132,7 +132,7 @@ public sealed class PerEntityCostTests : TestBase
 
     public sealed class Note : Entity<Guid>, ICreateAudit<UserId>
     {
-        public DateTimeOffset CreatedAt { get; private set; }
+        public DateTimeOffset CreatedAt { get; }
 
         public UserId? CreatedById { get; private set; }
 

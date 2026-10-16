@@ -33,7 +33,7 @@ public sealed class TrackerHandlerAttachmentTests : TestBase
         db.Add(row);
 
         // then
-        _TrackingHandlerCount(db).Should().BeGreaterThan(0);
+        _TrackingHandlerCount(db).Should().BePositive();
         row.TenantId.Should().Be("tenant-1");
     }
 
@@ -74,7 +74,7 @@ public sealed class TrackerHandlerAttachmentTests : TestBase
         await using var db = new TenantDbContext(options);
 
         // then
-        _TrackingHandlerCount(db).Should().BeGreaterThan(0);
+        _TrackingHandlerCount(db).Should().BePositive();
     }
 
     [Fact]
@@ -102,9 +102,12 @@ public sealed class TrackerHandlerAttachmentTests : TestBase
     private static int _TrackingHandlerCount(DbContext db)
     {
         var stateManager = ((IInfrastructure<IServiceProvider>)db).GetService<IStateManager>();
-        var field = stateManager
-            .GetType()
-            .GetField(nameof(IStateManager.Tracking), BindingFlags.Instance | BindingFlags.NonPublic);
+#pragma warning disable REFL005, REFL008, REFL017 // False positive: the field-like event's compiler-generated backing field is private and shares the event's name.
+        var field = typeof(StateManager).GetField(
+            nameof(StateManager.Tracking),
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly
+        );
+#pragma warning restore REFL005, REFL008, REFL017
 
         return (field!.GetValue(stateManager) as Delegate)?.GetInvocationList().Length ?? 0;
     }
@@ -172,7 +175,7 @@ public sealed class TrackerHandlerAttachmentTests : TestBase
 
     public sealed class TenantRow : Entity<Guid>, IMultiTenant
     {
-        public string? TenantId { get; private set; }
+        public string? TenantId { get; }
     }
 
     public sealed class PlainRow : Entity<Guid>;

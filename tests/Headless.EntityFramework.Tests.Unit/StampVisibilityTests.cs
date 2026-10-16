@@ -191,9 +191,9 @@ public sealed class StampVisibilityTests : TestBase
     {
         public string Name { get; set; } = "";
 
-        public string? ConcurrencyStamp { get; private set; }
+        public string? ConcurrencyStamp { get; }
 
-        public DateTimeOffset CreatedAt { get; private set; }
+        public DateTimeOffset CreatedAt { get; }
 
         public UserId? CreatedById { get; private set; }
 
@@ -202,7 +202,7 @@ public sealed class StampVisibilityTests : TestBase
 
     public sealed class TenantRow : Entity<Guid>, IMultiTenant
     {
-        public string? TenantId { get; private set; }
+        public string? TenantId { get; }
     }
 
     public sealed class StampDbContext(DbContextOptions options) : HeadlessDbContext(options)

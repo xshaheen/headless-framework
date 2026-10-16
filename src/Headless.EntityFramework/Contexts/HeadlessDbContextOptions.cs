@@ -107,9 +107,12 @@ public sealed class HeadlessDbContextOptions
 
     internal IHeadlessSaveEntryProcessor[] ResolveSaveEntryProcessors(IServiceProvider serviceProvider)
     {
-        return _saveEntryProcessors
-            .Select(x => (IHeadlessSaveEntryProcessor)serviceProvider.GetRequiredService(x.ImplementationType))
-            .ToArray();
+        return
+        [
+            .. _saveEntryProcessors.Select(x =>
+                (IHeadlessSaveEntryProcessor)serviceProvider.GetRequiredService(x.ImplementationType)
+            ),
+        ];
     }
 
     private void _InsertSaveEntryProcessor(SaveEntryProcessorRegistration registration)

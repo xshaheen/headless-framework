@@ -29,7 +29,7 @@ public sealed class GuidKeyGenerationTests : TestBase
 
         // then
         generator.Calls.Should().Be(100);
-        rows.Select(r => r.Id).Should().OnlyHaveUniqueItems().And.NotContain(Guid.Empty);
+        rows.Should().OnlyHaveUniqueItems(r => r.Id).And.NotContain(r => r.Id == Guid.Empty);
     }
 
     [Fact]

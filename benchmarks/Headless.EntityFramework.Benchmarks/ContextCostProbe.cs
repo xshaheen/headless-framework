@@ -62,8 +62,8 @@ internal static class ContextCostProbe
 
     public static async Task RunAsync()
     {
-        using var plainConnection = new SqliteConnection("Data Source=:memory:");
-        using var headlessConnection = new SqliteConnection("Data Source=:memory:");
+        await using var plainConnection = new SqliteConnection("Data Source=:memory:");
+        await using var headlessConnection = new SqliteConnection("Data Source=:memory:");
         await plainConnection.OpenAsync().ConfigureAwait(false);
         await headlessConnection.OpenAsync().ConfigureAwait(false);
 

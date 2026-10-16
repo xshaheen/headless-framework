@@ -138,10 +138,17 @@ public sealed class CountPerMonthExtensionsTests : TestBase
     private sealed class MonthCountFixture : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;
+        private readonly CompilationCounter _compilations;
 
-        private MonthCountFixture(SqliteConnection connection, MonthCountDbContext context, CommandLog commandLog)
+        private MonthCountFixture(
+            SqliteConnection connection,
+            MonthCountDbContext context,
+            CommandLog commandLog,
+            CompilationCounter compilations
+        )
         {
             _connection = connection;
+            _compilations = compilations;
             Context = context;
             CommandLog = commandLog;
         }
@@ -150,7 +157,11 @@ public sealed class CountPerMonthExtensionsTests : TestBase
 
         public CommandLog CommandLog { get; }
 
-        public int Compilations { get; set; }
+        public int Compilations
+        {
+            get => _compilations.Count;
+            set => _compilations.Count = value;
+        }
 
         public static async Task<MonthCountFixture> CreateAsync(CancellationToken cancellationToken)
         {
@@ -158,12 +169,12 @@ public sealed class CountPerMonthExtensionsTests : TestBase
             await connection.OpenAsync(cancellationToken);
 
             var commandLog = new CommandLog();
-            MonthCountFixture? fixture = null;
+            var compilations = new CompilationCounter();
             var options = new DbContextOptionsBuilder<MonthCountDbContext>()
                 .UseSqlite(connection)
                 .AddInterceptors(commandLog)
                 .LogTo(
-                    _ => fixture!.Compilations++,
+                    _ => compilations.Count++,
                     (id, _) => id == CoreEventId.QueryCompilationStarting,
                     DbContextLoggerOptions.None
                 )
@@ -202,9 +213,7 @@ public sealed class CountPerMonthExtensionsTests : TestBase
 
                 await context.SaveChangesAsync(cancellationToken);
 
-                fixture = new(connection, context, commandLog);
-
-                return fixture;
+                return new(connection, context, commandLog, compilations);
             }
             catch
             {
@@ -242,6 +251,11 @@ public sealed class CountPerMonthExtensionsTests : TestBase
         public DateOnly DateOnlyValue { get; init; }
 
         public DateTimeOffset DateTimeOffsetValue { get; init; }
+    }
+
+    private sealed class CompilationCounter
+    {
+        public int Count { get; set; }
     }
 
     private sealed class CommandLog : DbCommandInterceptor

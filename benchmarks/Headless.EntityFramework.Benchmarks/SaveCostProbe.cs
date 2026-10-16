@@ -87,7 +87,8 @@ internal static class ProbeModel
 
 public sealed class PlainDb(DbContextOptions<PlainDb> options) : DbContext(options)
 {
-    protected override void OnModelCreating(ModelBuilder modelBuilder) => ProbeModel.Configure(modelBuilder, false);
+    protected override void OnModelCreating(ModelBuilder modelBuilder) =>
+        ProbeModel.Configure(modelBuilder, headless: false);
 }
 
 public abstract class ProbeHeadlessDb(DbContextOptions options) : HeadlessDbContext(options)
@@ -97,7 +98,7 @@ public abstract class ProbeHeadlessDb(DbContextOptions options) : HeadlessDbCont
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        ProbeModel.Configure(modelBuilder, true);
+        ProbeModel.Configure(modelBuilder, headless: true);
     }
 }
 
@@ -320,7 +321,9 @@ internal static class SaveCostProbe
             Environment.GetEnvironmentVariable("HEADLESS_PROBE_ITERS") ?? "3000",
             CultureInfo.InvariantCulture
         );
-        var filter = args.SkipWhile(a => a != "--filter").Skip(1).FirstOrDefault();
+        var filter = args.SkipWhile(a => !string.Equals(a, "--filter", StringComparison.Ordinal))
+            .Skip(1)
+            .FirstOrDefault();
 
         // Counts first (LogTo attached), then clean allocation/time runs (no logger attached).
         var envs = new (string Scenario, Kind Kind, Func<bool, Env> Plain, Func<bool, Env> Headless)[]
@@ -423,7 +426,9 @@ internal static class SaveCostProbe
         }
 
         // Per-scope: scope + context + one insert + dispose. Includes pipeline/processor resolution on first save.
+#pragma warning disable CA1303 // Benchmark console output, not user-facing text to localize.
         Console.WriteLine("== per-scope end-to-end (scope, resolve ctx, insert 1, save, dispose)");
+#pragma warning restore CA1303
         foreach (
             var (label, make) in new (string, Func<bool, Env>)[]
             {
@@ -463,7 +468,7 @@ internal static class SaveCostProbe
                         | System.Reflection.BindingFlags.Instance
                         | System.Reflection.BindingFlags.DeclaredOnly
                 )!
-                .SetValue(o, true)
+                .SetValue(o, value: true)
         );
     }
 
@@ -603,12 +608,12 @@ internal static class SaveCostProbe
         public ValueTask DisposeAsync() => Scope.DisposeAsync();
     }
 
-    private static async Task<Run> _PrepareAsync(Env env, Kind kind, string workload)
+    private static async Task<Run> _PrepareAsync(Env env, Kind kind)
     {
         var scope = env.CreateScope();
         var db = env.Resolve(scope.ServiceProvider);
         var tracked = new List<object>();
-        var headless = env.Name != "plain";
+        var headless = !string.Equals(env.Name, "plain", StringComparison.Ordinal);
 
         for (var i = 0; i < _Tracked; i++)
         {
@@ -637,7 +642,7 @@ internal static class SaveCostProbe
     private static async Task _OpAsync(Run run, Env env, Kind kind, string workload, int i)
     {
         var db = run.Db;
-        var headless = env.Name != "plain";
+        var headless = !string.Equals(env.Name, "plain", StringComparison.Ordinal);
 
         switch (workload)
         {
@@ -676,7 +681,7 @@ internal static class SaveCostProbe
     {
         // AsyncLocal tenant must be set in this frame, not inside an awaited helper, to flow to the save.
         using var tenant = _EnterTenant(env, kind);
-        await using var run = await _PrepareAsync(env, kind, workload).ConfigureAwait(false);
+        await using var run = await _PrepareAsync(env, kind).ConfigureAwait(false);
         // warm
         for (var i = 0; i < 5; i++)
         {
@@ -693,12 +698,12 @@ internal static class SaveCostProbe
     {
         using var tenant = _EnterTenant(env, kind);
 
-        if (workload == "insert-100")
+        if (string.Equals(workload, "insert-100", StringComparison.Ordinal))
         {
             iters /= 10;
         }
 
-        await using var run = await _PrepareAsync(env, kind, workload).ConfigureAwait(false);
+        await using var run = await _PrepareAsync(env, kind).ConfigureAwait(false);
 
         for (var i = 0; i < Math.Max(200, iters / 4); i++)
         {
@@ -780,7 +785,7 @@ internal static class StampCheck
 {
     public static async Task RunAsync()
     {
-        using var env = new Env("headless-bare", typeof(BareDb), false);
+        using var env = new Env("headless-bare", typeof(BareDb), counted: false);
         await using var scope = env.CreateScope();
         var db = env.Resolve(scope.ServiceProvider);
         var row = new StampedRow
@@ -802,7 +807,7 @@ internal static class StampCheck
             .FirstOrDefaultAsync()
             .ConfigureAwait(false);
         Console.WriteLine(
-            $"stampAfterInsert={s1} stampAfterUpdate(entity)={s2} stored={stored} storedEqualsEntity={stored == s2}"
+            $"stampAfterInsert={s1} stampAfterUpdate(entity)={s2} stored={stored} storedEqualsEntity={string.Equals(stored, s2, StringComparison.Ordinal)}"
         );
     }
 }
@@ -814,7 +819,7 @@ internal static class AuditRowCost
         using var env = new Env(
             "headless-audit",
             typeof(AuditDb),
-            false,
+            counted: false,
             s => s.AddHeadlessAuditLog(x => x.UseEntityFramework<AuditDb>())
         );
         await using var scope = env.CreateScope();
@@ -849,12 +854,13 @@ internal static class AuditRowCost
                 {
                     db.Add(NewRow(k));
                 }
+
                 await db.SaveChangesAsync().ConfigureAwait(false);
             }
 
             GC.Collect();
             var iters = rows == 1 ? 2000 : 100;
-            var before = GC.GetTotalAllocatedBytes(true);
+            var before = GC.GetTotalAllocatedBytes(precise: true);
             var sw = Stopwatch.StartNew();
             for (var i = 0; i < iters; i++)
             {
@@ -863,11 +869,12 @@ internal static class AuditRowCost
                 {
                     db.Add(NewRow(k));
                 }
+
                 await db.SaveChangesAsync().ConfigureAwait(false);
             }
 
             sw.Stop();
-            var b = (GC.GetTotalAllocatedBytes(true) - before) / (double)iters;
+            var b = (GC.GetTotalAllocatedBytes(precise: true) - before) / (double)iters;
             Console.WriteLine(
                 string.Create(
                     CultureInfo.InvariantCulture,
@@ -920,7 +927,9 @@ internal static class AuditRowCost
                 sql.Append(')');
             }
 
+#pragma warning disable CA2100 // False positive: identifiers come from the EF model and every value is a parameter.
             command.CommandText = sql.ToString();
+#pragma warning restore CA2100
             await command.ExecuteNonQueryAsync().ConfigureAwait(false);
         }
 
@@ -933,7 +942,7 @@ internal static class AuditRowCost
 
             GC.Collect();
             var iters = rows == 1 ? 2000 : 100;
-            var before = GC.GetTotalAllocatedBytes(true);
+            var before = GC.GetTotalAllocatedBytes(precise: true);
             var sw = Stopwatch.StartNew();
             for (var i = 0; i < iters; i++)
             {
@@ -941,7 +950,7 @@ internal static class AuditRowCost
             }
 
             sw.Stop();
-            var b = (GC.GetTotalAllocatedBytes(true) - before) / (double)iters;
+            var b = (GC.GetTotalAllocatedBytes(precise: true) - before) / (double)iters;
             Console.WriteLine(
                 string.Create(
                     CultureInfo.InvariantCulture,
