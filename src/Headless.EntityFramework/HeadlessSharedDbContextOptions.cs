@@ -17,10 +17,15 @@ namespace Headless.EntityFramework;
 /// Building options costs about 15 KB per scope, and most applications configure a context the same way in every
 /// scope. Sharing is safe only when every input is the same for every scope: the options action registered with the
 /// context takes no provider, every DI-registered <see cref="IInterceptor"/> (which the options pick up) is a
-/// singleton, and no options configuration for the context (such as a <c>ConfigureDbContext</c> call) is scoped or
-/// registered after the context, since one could resolve a per-request connection string or service. The options
-/// action must also not create a connection or interceptor of its own: two builds that hold different instances keep
-/// the options per scope.
+/// singleton, and the only options configurations for the context are the two the framework registers. Any other
+/// configuration (such as a <c>ConfigureDbContext</c> call), whatever its lifetime, keeps the options per scope: it
+/// receives the provider that builds the options and may resolve a per-request connection string or service from it,
+/// which a shared build would resolve once from the root. The options action must also not create a connection or
+/// interceptor of its own: two builds that hold different instances keep the options per scope.
+/// </para>
+/// <para>
+/// Only registrations in the <see cref="IServiceCollection"/> are inspected. A scoped interceptor registered directly
+/// in a third-party container is not seen, so such an application passes an explicit options lifetime.
 /// </para>
 /// <para>
 /// The decision is made at the first resolution from the registrations as they stand once the container is built,
@@ -31,7 +36,7 @@ namespace Headless.EntityFramework;
 /// </remarks>
 internal sealed class HeadlessSharedDbContextOptions<TContext>(
     IServiceCollection services,
-    int configurationCount,
+    ServiceDescriptor actionConfiguration,
     IServiceProvider rootServices
 )
     where TContext : DbContext
@@ -52,13 +57,14 @@ internal sealed class HeadlessSharedDbContextOptions<TContext>(
             ServiceLifetime.Singleton
         );
 
-        var configurationCount = services.Count(static descriptor =>
+        // ConfigureDbContext appends its descriptor, so the last one is the action's.
+        var actionConfiguration = services.Last(static descriptor =>
             descriptor.ServiceType == typeof(IDbContextOptionsConfiguration<TContext>)
         );
 
         services.TryAddSingleton(rootServices => new HeadlessSharedDbContextOptions<TContext>(
             services,
-            configurationCount,
+            actionConfiguration,
             rootServices
         ));
         services.TryAdd(
@@ -121,9 +127,6 @@ internal sealed class HeadlessSharedDbContextOptions<TContext>(
 
     private bool _RegistrationsAllowSharing()
     {
-        var canShare = true;
-        var configurations = 0;
-
         foreach (var descriptor in services)
         {
             if (descriptor.IsKeyedService)
@@ -133,16 +136,22 @@ internal sealed class HeadlessSharedDbContextOptions<TContext>(
 
             if (descriptor.ServiceType == typeof(IInterceptor) && descriptor.Lifetime != ServiceLifetime.Singleton)
             {
-                canShare = false;
+                return false;
             }
-            else if (descriptor.ServiceType == typeof(IDbContextOptionsConfiguration<TContext>))
+
+            // A registration's lifetime says nothing about what its Configure resolves from the provider it is handed,
+            // so only the framework's own two configurations are known to read nothing per scope.
+            if (
+                descriptor.ServiceType == typeof(IDbContextOptionsConfiguration<TContext>)
+                && !ReferenceEquals(descriptor, actionConfiguration)
+                && descriptor.ImplementationType != typeof(DiRegisteredInterceptorsOptionsConfiguration<TContext>)
+            )
             {
-                configurations++;
-                canShare &= descriptor.Lifetime == ServiceLifetime.Singleton;
+                return false;
             }
         }
 
-        return canShare && configurations == configurationCount;
+        return true;
     }
 
     private static bool _HoldSameInstances(DbContextOptions<TContext> first, DbContextOptions<TContext> second)

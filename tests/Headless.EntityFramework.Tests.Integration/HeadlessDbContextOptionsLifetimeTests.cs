@@ -76,6 +76,26 @@ public sealed class HeadlessDbContextOptionsLifetimeTests : TestBase
     }
 
     [Fact]
+    public async Task should_build_options_per_scope_when_a_singleton_options_configuration_precedes_the_context()
+    {
+        // given: a singleton configuration that may read scoped state from the provider it is handed
+        await using var harness = Harness.Create(before: services =>
+            services.ConfigureDbContext<OptionsDbContext>(
+                (_, options) => options.EnableDetailedErrors(),
+                ServiceLifetime.Singleton
+            )
+        );
+
+        // when
+        var first = harness.ResolveOptions();
+        var second = harness.ResolveOptions();
+
+        // then
+        first.Should().NotBeSameAs(second);
+        first.FindExtension<CoreOptionsExtension>()!.DetailedErrorsEnabled.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_build_options_per_scope_when_the_action_creates_its_connection()
     {
         // given
