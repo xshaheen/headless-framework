@@ -56,8 +56,10 @@ public static class HeadlessHostRunExtensions
         /// </para>
         /// <para>
         /// <c>resources</c> takes a subcommand (<c>setup</c>, the default, <c>check</c>, <c>clear</c>, <c>teardown</c>,
-        /// <c>statistics</c>, or <c>list</c>), <c>--type</c> and <c>--name</c> filters, and a <c>--timeout</c> in
-        /// seconds for the whole run (default 60). See <see cref="IStatefulResource" />.
+        /// <c>statistics</c>, or <c>list</c>), <c>--type</c> and <c>--name</c> filters, an optional <c>--timeout</c> in
+        /// seconds for the whole run (none by default, so each resource's own timeouts govern), and <c>--force</c>,
+        /// which <c>clear</c> and <c>teardown</c> need in the Production environment. See
+        /// <see cref="IStatefulResource" />.
         /// </para>
         /// <para>
         /// <c>seed</c> runs every seeder in priority order, or <c>list</c>s them, with <c>--name</c> filters and a
