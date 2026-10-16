@@ -43,6 +43,7 @@ internal static class MessagingMetrics
     internal const string RequestReplyDroppedRepliesName = "headless.messaging.request_reply.dropped_replies";
     internal const string RequestReplyRequestsName = "headless.messaging.request_reply.requests";
     internal const string RequestReplyDurationName = "headless.messaging.request_reply.duration";
+    internal const string SettlementFailuresName = "headless.messaging.settlement.failures";
 
     // --- Attribute (tag) names --------------------------------------------------------------------------------
 
@@ -78,9 +79,17 @@ internal static class MessagingMetrics
     internal const string OperationTypeReceive = "receive";
     internal const string OperationTypeProcess = "process";
 
+    // A broker acknowledgement that settles a handled delivery. The conventions name no settlement operation, so this is
+    // the framework's own verb, like the ones above.
+    internal const string OperationNameAck = "ack";
+
     // A send that may or may not have reached the broker: a timeout or shutdown raced it, or the broker accepted it
     // and recording that failed. Not an exception type, so it gets a convention-style snake_case value.
     internal const string ErrorTypeAmbiguousDelivery = "ambiguous_delivery";
+
+    // A settlement the transport could not send because the broker channel it belongs to had already closed. Not an
+    // exception type, so it gets a convention-style snake_case value.
+    internal const string ErrorTypeChannelClosed = "channel_closed";
 
     // --- Receive outcomes ------------------------------------------------------------------------------------
 
@@ -236,6 +245,12 @@ internal static class MessagingMetrics
         "Duration of request calls, from send to reply or failure."
     );
 
+    private static readonly Counter<long> _SettlementFailures = MessagingDiagnostics.Meter.CreateCounter<long>(
+        SettlementFailuresName,
+        unit: "{failure}",
+        description: "Number of broker settlements, such as acknowledgements, that did not reach the broker; the broker redelivers the message."
+    );
+
     /// <summary>Whether any messaging instrument currently has a subscribed listener.</summary>
     internal static bool AnyEnabled =>
         _ClientSentMessages.Enabled
@@ -256,7 +271,8 @@ internal static class MessagingMetrics
         || _EveryInstanceDeliveries.Enabled
         || _RequestReplyDroppedReplies.Enabled
         || _RequestReplyRequests.Enabled
-        || _RequestReplyDuration.Enabled;
+        || _RequestReplyDuration.Enabled
+        || _SettlementFailures.Enabled;
 
     internal static void RecordInbox(
         InboxMetricKind kind,
@@ -559,6 +575,29 @@ internal static class MessagingMetrics
         {
             _RequestReplyDuration.Record(elapsed.TotalSeconds, tag);
         }
+    }
+
+    /// <summary>
+    /// Records one settlement that did not reach the broker, tagged with the transport, the settlement operation, and
+    /// why it failed. The transport does not throw for it: the broker redelivers the message and the inbox deduplicates
+    /// the redelivery, so this count is how an operator sees that settlement is failing.
+    /// </summary>
+    internal static void RecordSettlementFailure(string system, string operationName, string errorType)
+    {
+        if (!_SettlementFailures.Enabled)
+        {
+            return;
+        }
+
+        _SettlementFailures.Add(
+            1,
+            new TagList
+            {
+                { TagSystem, system },
+                { TagOperationName, operationName },
+                { TagErrorType, errorType },
+            }
+        );
     }
 
     private static Histogram<double> _CreateDurationHistogram(string name, string description)

@@ -117,6 +117,10 @@ Bypasses emit a `[SECURITY AUDIT]` trace through `Debug.WriteLine` with the call
 
 Custom processors registered via `options.AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` are inserted **before** the terminal lifecycle and message-collector processors, so app-specific mutations and queued messages are visible to the framework collectors. The same type can be re-registered — the prior entry is replaced, not duplicated. Use `options.RemoveSaveEntryProcessor<TProcessor>()` to opt out of a built-in processor entirely.
 
+An audited save issues one database save when every audit row's entity id is known at capture: inserts with client-assigned keys (such as the Guid keys the value generators produce at `Add`), updates, and deletes. Audit rows for inserts whose key the store generates (identity, sequence, database default) follow in a second save once the key exists. `SaveChanges` returns the count of the caller's rows only; audit rows are never counted. This applies only to a store that adds rows to the saving context (`IAuditLogStore.AddsToSavingContext`, true for the EF store); the raw ADO.NET stores still write after the entity save succeeds.
+
+EF Core leaves a principal `Unchanged` when only its navigations change (a child added to or removed from a collection); the framework does not track that case, so no update stamp, audit row, or `EntityUpdated` event is raised for the principal itself. The child rows carry their own.
+
 The full save-transaction order within a `HeadlessDbContext` pipeline-owned transaction is:
 
 1. Captured Domain occurrences drained via `IDomainEventDispatcher` to quiescence, followed by final audit capture (before business save)

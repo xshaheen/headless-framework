@@ -34,18 +34,37 @@ namespace Headless.DistributedLocks.SqlServer;
 /// resolved <see cref="SqlServerDistributedLockOptions"/> and the supplied <see cref="TimeProvider"/>.
 /// </remarks>
 /// <param name="options">Resolved options; validated on startup.</param>
+/// <param name="storageOptions">Supplies the schema that holds the fence sequence.</param>
 /// <param name="timeProvider">Time provider used for liveness-probe timer scheduling.</param>
 internal sealed class SqlServerConnectionScopedLockStorage(
     IOptions<SqlServerDistributedLockOptions> options,
+    IOptions<DistributedLocksStorageOptions> storageOptions,
     TimeProvider timeProvider
 ) : IConnectionScopedLockStorage, IAsyncDisposable
 {
     private readonly SqlServerDistributedLockOptions _options = options.Value;
+
+    // Exclusive acquires draw their fencing token in the grant batch, on the session that holds the lock.
+    private readonly string? _fenceSequence = options.Value.EnableFencing
+        ? SqlServerDistributedLocksSchemaContribution.QualifiedSequence(
+            storageOptions.Value.Schema,
+            options.Value.KeyPrefix
+        )
+        : null;
+
     private readonly ConcurrentDictionary<string, HeldLock> _heldByLeaseId = new(StringComparer.Ordinal);
 
     // Deterministic concurrency seam for proving that release serializes behind an active probe. Production
     // leaves this unset; tests can pause a probe after it owns the connection gate without relying on timing.
     internal Func<ValueTask>? ProbeGateAcquiredAsync { get; init; }
+
+    // Failure-injection seam for proving a session whose release failed is never pooled. Production leaves this
+    // unset; tests make it throw just before the release command runs.
+    internal Func<ValueTask>? BeforeReleaseAsync { get; init; }
+
+    // Failure-injection seam for proving a session whose acquire cleanup failed is never pooled. Production leaves this
+    // unset; tests make it throw LockCleanupFailedException after the server granted the lock.
+    internal Func<ValueTask>? AfterAcquireSessionAsync { get; init; }
 
     // Set at the top of DisposeAsync so an acquire racing teardown does not register a lock the teardown snapshot of
     // _heldByLeaseId already iterated past (which would leak its connection and applock).
@@ -81,6 +100,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         var encodedResource = _CreateResource(resource);
         HeldLock? held = null;
         var ownershipTransferred = false;
+        var cleanupFailed = false;
 
         try
         {
@@ -103,16 +123,35 @@ internal sealed class SqlServerConnectionScopedLockStorage(
 
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-            var acquired = await SqlServerApplicationLock
-                .TryAcquireSessionAsync(
-                    connection,
-                    encodedResource,
-                    isShared,
-                    TimeSpan.Zero,
-                    _options.CommandTimeout,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            bool acquired;
+            LockFencingToken? fencingToken;
+
+            try
+            {
+                (acquired, fencingToken) = await SqlServerApplicationLock
+                    .TryAcquireSessionAsync(
+                        connection,
+                        encodedResource,
+                        isShared,
+                        TimeSpan.Zero,
+                        _options.CommandTimeout,
+                        isShared ? null : _fenceSequence,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (AfterAcquireSessionAsync is not null)
+                {
+                    await AfterAcquireSessionAsync().ConfigureAwait(false);
+                }
+            }
+            catch (LockCleanupFailedException)
+            {
+                // The server may have granted the lock and releasing it failed, so the session must not be pooled.
+                cleanupFailed = true;
+
+                throw;
+            }
 
             if (!acquired)
             {
@@ -145,14 +184,14 @@ internal sealed class SqlServerConnectionScopedLockStorage(
                 observeLoss ? held.ConnectionLostToken : CancellationToken.None
             )
             {
-                HeldConnection = held.Connection,
+                FencingToken = fencingToken,
             };
         }
         finally
         {
             if (!ownershipTransferred && held is not null)
             {
-                await held.DisposeAsync().ConfigureAwait(false);
+                await held.DisposeAsync(broken: cleanupFailed).ConfigureAwait(false);
             }
         }
     }
@@ -173,12 +212,15 @@ internal sealed class SqlServerConnectionScopedLockStorage(
     /// release command never races the active liveness probe on the same <see cref="SqlConnection"/>.
     /// A no-op when no lock is registered for <paramref name="leaseId"/>.
     /// </remarks>
+#pragma warning disable CA2000 // False positive: the finally always disposes held; the analyzer does not recognize the DisposeAsync(bool) overload as a dispose.
     public async ValueTask ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
         if (!_heldByLeaseId.TryRemove(leaseId, out var held))
         {
             return;
         }
+
+        var releaseFailed = true;
 
         try
         {
@@ -187,12 +229,19 @@ internal sealed class SqlServerConnectionScopedLockStorage(
 
             try
             {
+                if (BeforeReleaseAsync is not null)
+                {
+                    await BeforeReleaseAsync().ConfigureAwait(false);
+                }
+
                 if (held.Connection.State == ConnectionState.Open)
                 {
                     await SqlServerApplicationLock
                         .ReleaseSessionAsync(held.Connection, held.EncodedResource, CancellationToken.None)
                         .ConfigureAwait(false);
                 }
+
+                releaseFailed = false;
             }
             finally
             {
@@ -201,12 +250,14 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         }
         finally
         {
-            // Clean release: the caller asked for it, so the lock was not lost and DisposeAsync leaves
-            // ConnectionLostToken uncancelled. Cancelling here would fire every consumer's LostToken
-            // registration on the success path of an ordinary `await using`.
-            await held.DisposeAsync().ConfigureAwait(false);
+            // The caller asked for the release, so the lock was not lost and neither path cancels
+            // ConnectionLostToken; cancelling here would fire every consumer's LostToken registration on the
+            // success path of an ordinary `await using`. A failed release may have left the application lock held
+            // on this session, so that session is ended instead of returned to the pool, where it would keep it.
+            await held.DisposeAsync(broken: releaseFailed).ConfigureAwait(false);
         }
     }
+#pragma warning restore CA2000
 
     /// <inheritdoc/>
     /// <remarks>
@@ -628,7 +679,18 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         /// </summary>
         public ValueTask DisposeAsync()
         {
-            return _DisposeAsync(signalLost: false);
+            return DisposeAsync(broken: false);
+        }
+
+        /// <summary>
+        /// The clean teardown of <see cref="DisposeAsync()"/>, or, when <paramref name="broken"/> is set, the teardown of
+        /// a connection whose session may still hold the application lock after a failed release or acquire cleanup.
+        /// A broken connection's pool is cleared first so the driver closes the session instead of reusing it; that also
+        /// drops every idle connection in the pool, an accepted cost on this failure-only path.
+        /// </summary>
+        public ValueTask DisposeAsync(bool broken)
+        {
+            return _DisposeAsync(signalLost: false, clearPool: broken);
         }
 
         /// <summary>
@@ -642,7 +704,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
             return _DisposeAsync(signalLost: true);
         }
 
-        private async ValueTask _DisposeAsync(bool signalLost)
+        private async ValueTask _DisposeAsync(bool signalLost, bool clearPool = false)
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0)
             {
@@ -665,6 +727,13 @@ internal sealed class SqlServerConnectionScopedLockStorage(
 
             _lostTokenSource.Dispose();
             _connectionGate.Dispose();
+
+            // A closed or broken connection's session is already gone, so it holds no lock and is not pooled.
+            if (clearPool && Connection.State is not (ConnectionState.Closed or ConnectionState.Broken))
+            {
+                SqlConnection.ClearPool(Connection);
+            }
+
             await Connection.DisposeAsync().ConfigureAwait(false);
         }
     }

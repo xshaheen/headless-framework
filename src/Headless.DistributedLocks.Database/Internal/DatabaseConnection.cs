@@ -184,6 +184,38 @@ internal abstract class DatabaseConnection : IAsyncDisposable
         return _DisposeOrCloseAsync(isDispose: true);
     }
 
+    /// <summary>
+    /// Disposes an internally-owned connection so its physical session ends instead of returning to the driver's
+    /// pool. Used when an unlock or an acquire cleanup failed: the session may still hold that lock, and a pooled
+    /// session keeps it held until the pool reuses or evicts it. Clearing marks the in-use connection to be closed on
+    /// return, which also drops every idle connection in that pool — an accepted cost on this failure-only path. A
+    /// connection that is already closed or broken skips the clear: its session is gone, so it holds no lock, and the
+    /// driver does not pool a broken connection.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when called on an externally-owned connection.</exception>
+    public async ValueTask DestroyAsync()
+    {
+        Ensure.False(IsExternallyOwned, "Cannot destroy an externally-owned connection.");
+
+        try
+        {
+            if (InnerConnection.State is not (ConnectionState.Closed or ConnectionState.Broken))
+            {
+                ClearPool();
+            }
+        }
+        finally
+        {
+            await DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Flags this connection's driver pool so the connection is physically closed when it is returned instead of being
+    /// reused.
+    /// </summary>
+    protected abstract void ClearPool();
+
     private async ValueTask _DisposeOrCloseAsync(bool isDispose)
     {
         Ensure.True(isDispose || !IsExternallyOwned, "Cannot close an externally-owned connection.");

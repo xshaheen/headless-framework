@@ -16,6 +16,10 @@ internal sealed class PostgresDatabaseConnection : DatabaseConnection
     /// <summary>The PostgreSQL <c>query_canceled</c> SqlState (https://www.postgresql.org/docs/current/errcodes-appendix.html).</summary>
     private const string _QueryCanceledSqlState = "57014";
 
+    // Kept so a destroy can clear the pool the connection came from: NpgsqlConnection.ClearPool looks pools up by
+    // connection string and never finds a data source's own pool.
+    private readonly NpgsqlDataSource? _dataSource;
+
     /// <summary>Constructs an instance over an externally-owned <see cref="NpgsqlConnection"/>.</summary>
     /// <param name="connection">The caller-owned connection. Not disposed by this instance.</param>
     /// <param name="timeProvider">Time source used by the base class for monitoring sleeps.</param>
@@ -56,7 +60,10 @@ internal sealed class PostgresDatabaseConnection : DatabaseConnection
             isExternallyOwned: false,
             timeProvider,
             monitoringCommandTimeoutSeconds
-        ) { }
+        )
+    {
+        _dataSource = dataSource;
+    }
 
     /// <summary>Constructs an internally-owned instance from <paramref name="connectionString"/>.</summary>
     /// <param name="connectionString">
@@ -81,6 +88,18 @@ internal sealed class PostgresDatabaseConnection : DatabaseConnection
 
     // See https://www.npgsql.org/doc/prepare.html
     public override bool ShouldPrepareCommands => true;
+
+    protected override void ClearPool()
+    {
+        if (_dataSource is not null)
+        {
+            _dataSource.Clear();
+
+            return;
+        }
+
+        NpgsqlConnection.ClearPool((NpgsqlConnection)InnerConnection);
+    }
 
     public override bool IsCommandCancellationException(Exception exception)
     {

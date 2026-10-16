@@ -77,6 +77,8 @@ A strategy passed to `IsAuditSensitive(SensitiveDataStrategy.Exclude)` overrides
 
 For EF storage, audit entries are added to the **same `DbContext` instance** and commit in the **same database transaction** as the entity changes — no separate round-trip and no data loss on rollback. The `IAuditLogStore` receives the `savingContext` parameter on every `Save`/`SaveAsync` call to enforce this in multi-context applications.
 
+When every audit row's entity id is known at capture (client-assigned keys, updates, deletes), the audit rows commit in the same `SaveChanges` call as the entity changes. Rows for store-generated keys are saved in a second call after the key exists, and the caller's `SaveChanges` return value never counts audit rows.
+
 For raw ADO.NET providers, atomicity is conditional: the store enrolls in the caller's `DbConnection` / `DbTransaction` through `IAmbientDbTransactionAccessor`, and `AuditLogOptions.MissingTransactionStrategy` decides what happens when it cannot. See [Transaction enrollment on raw storage](#transaction-enrollment-on-raw-storage).
 
 ### Transaction enrollment on raw storage
@@ -202,10 +204,10 @@ Defines the property-level audit log contracts for tracking entity mutations and
 - `AuditLogQuery` — implements `IContinuationPageRequest`: filters (`Action`, `EntityType`, `EntityId`, `UserId`, `AccountId`, `TenantId`, `CorrelationId`, `From`, `To`), `Direction`, `Size` (default 100), and `ContinuationToken`.
 - `AuditLogSortDirection` — `NewestFirst` (default) or `OldestFirst`.
 - `AuditLogEntryData` — immutable record capturing all fields; `OldValues`/`NewValues` are `Dictionary<string, object?>`.
-- `IAuditLogStore` — storage abstraction called by the change-tracking pipeline; `Save`/`SaveAsync` take the saving `DbContext` and return `IAuditLogStoreEntry` handles.
+- `IAuditLogStore` — storage abstraction called by the change-tracking pipeline; `Save`/`SaveAsync` take the saving `DbContext` and return `IAuditLogStoreEntry` handles. `AddsToSavingContext` (default `false`) must be `true` only for a store whose `Save` merely adds rows to the context without writing; only then may the pipeline call it before the entity save.
 - `IAuditLogStoreEntry` — provider handle; orchestrator calls `DiscardPendingChanges()` on failure and `ReleaseAfterCommit()` after success. Both must be idempotent.
 - `IAuditChangeCapture` — scans ChangeTracker entries and produces `AuditLogEntryData` records.
-- `IAuditEntityIdResolver` — patches deferred entity IDs and temporary property values (store-generated keys, FKs to just-added principals) after `SaveChanges` assigns real keys.
+- `IAuditEntityIdResolver` — patches deferred entity IDs and temporary property values (store-generated keys, FKs to just-added principals) after `SaveChanges` assigns real keys. `RequiresDeferredResolution(entry)` (default `true`) lets a capture mark an entry complete so it can be saved with the entity change.
 - `IAmbientDbTransactionAccessor` — allows raw ADO.NET stores to enroll in the consumer's active `DbConnection`/`DbTransaction` without taking an EF dependency.
 
 ### Install

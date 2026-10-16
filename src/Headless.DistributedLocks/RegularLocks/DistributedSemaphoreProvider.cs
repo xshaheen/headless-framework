@@ -158,6 +158,7 @@ internal sealed class DistributedSemaphoreProvider(
             var attemptToken = linkedCts?.Token ?? safetyCts.Token;
             DistributedLockAcquireResult singleResult;
             var safetyDeadlineFired = false;
+            var singleAcquireTimestamp = timeProvider.GetTimestamp();
 
             try
             {
@@ -214,6 +215,7 @@ internal sealed class DistributedSemaphoreProvider(
                     singleResult.FencingToken,
                     leaseDuration,
                     singleWait,
+                    singleAcquireTimestamp,
                     acquireOptions.ReleaseOnDispose,
                     monitorLease,
                     autoExtend
@@ -228,6 +230,10 @@ internal sealed class DistributedSemaphoreProvider(
         var isFirstAttempt = true;
         DistributedLockAcquireResult result;
 
+        // Taken before each attempt; after the loop it is the send time of the attempt that won, which is the
+        // earliest moment the store can have started the slot's TTL.
+        long acquireTimestamp = 0;
+
         try
         {
             do
@@ -240,6 +246,7 @@ internal sealed class DistributedSemaphoreProvider(
                 var attemptToken = isFirstAttempt && timeoutCts.IsCancellationRequested ? cancellationToken : cts.Token;
                 isFirstAttempt = false;
 
+                acquireTimestamp = timeProvider.GetTimestamp();
                 result = await _TryAcquireStorageAsync(
                         resource,
                         leaseId,
@@ -313,6 +320,7 @@ internal sealed class DistributedSemaphoreProvider(
             result.FencingToken,
             leaseDuration,
             timeWaitedForLock,
+            acquireTimestamp,
             acquireOptions.ReleaseOnDispose,
             monitorLease,
             autoExtend
@@ -459,6 +467,7 @@ internal sealed class DistributedSemaphoreProvider(
         LockFencingToken? fencingToken,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
+        long acquireTimestamp,
         bool releaseOnDispose,
         bool monitorLease,
         bool autoExtend
@@ -470,6 +479,7 @@ internal sealed class DistributedSemaphoreProvider(
             fencingToken,
             leaseDuration,
             timeWaitedForLock,
+            acquireTimestamp,
             this,
             releaseOnDispose,
             autoExtend,

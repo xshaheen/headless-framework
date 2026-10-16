@@ -464,6 +464,16 @@ internal static partial class LoggerExtensions
     [LoggerMessage(EventId = 55, Level = LogLevel.Warning, Message = "Transport configuration warning. --> {Reason}")]
     public static partial void TransportConfigurationWarning(this ILogger logger, string reason);
 
+    // Warning, not Error: the broker redelivers an unsettled message and the inbox deduplicates the redelivery, so no
+    // message is lost, but repeated failures mean duplicate work and a broker connection worth checking.
+    [LoggerMessage(
+        EventId = 4120,
+        EventName = "TransportSettlementFailed",
+        Level = LogLevel.Warning,
+        Message = "Transport could not settle a delivery with the broker; the broker will redeliver it. --> {Reason}"
+    )]
+    public static partial void TransportSettlementFailed(this ILogger logger, string reason);
+
     [LoggerMessage(
         EventId = 122,
         EventName = "TransportBrokerUnreachable",
@@ -594,6 +604,22 @@ internal static partial class LoggerExtensions
         Message = "Publish succeeded after a terminal-Failed write for message {StorageId}; storage state will not be updated. Consumers will observe at-least-once delivery."
     )]
     public static partial void PublishSucceededButStorageTerminal(this ILogger logger, Guid storageId);
+
+    [LoggerMessage(
+        EventId = 4121,
+        EventName = "PublishSucceededButLeaseLost",
+        Level = LogLevel.Warning,
+        Message = "Publish succeeded for message {StorageId} but its Succeeded state was not written: the dispatch lease was lost to another claimer or lapsed, or the cause could not be read. The row may be published again; consumers will observe at-least-once delivery. A DispatchTimeout shorter than the publish can cause this."
+    )]
+    public static partial void PublishSucceededButLeaseLost(this ILogger logger, Exception? exception, Guid storageId);
+
+    [LoggerMessage(
+        EventId = 4122,
+        EventName = "PublishSucceededButStorageRowMissing",
+        Level = LogLevel.Warning,
+        Message = "Publish succeeded for message {StorageId} but its Succeeded state was not written: the stored row no longer exists."
+    )]
+    public static partial void PublishSucceededButStorageRowMissing(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 70,
@@ -1096,5 +1122,32 @@ internal static partial class LoggerExtensions
         this ILogger logger,
         Exception exception,
         Guid storageId
+    );
+
+    [LoggerMessage(
+        EventId = 4123,
+        EventName = "AdmittedRedeliveryCommitted",
+        Level = LogLevel.Information,
+        Message = "Message {MessageId} (name '{MessageName}', consumer '{Consumer}', lane '{Lane}') failed before admission, but the inbox already admitted it; the redelivery is committed as a duplicate instead of being stored as poison."
+    )]
+    public static partial void AdmittedRedeliveryCommitted(
+        this ILogger logger,
+        string messageId,
+        string messageName,
+        string consumer,
+        string lane
+    );
+
+    [LoggerMessage(
+        EventId = 4124,
+        EventName = "AdmittedInboxLookupFailed",
+        Level = LogLevel.Warning,
+        Message = "Could not check whether the inbox already admitted message {MessageId} (consumer '{Consumer}'), which failed before admission; it is stored as poison."
+    )]
+    public static partial void AdmittedInboxLookupFailed(
+        this ILogger logger,
+        Exception exception,
+        string messageId,
+        string consumer
     );
 }

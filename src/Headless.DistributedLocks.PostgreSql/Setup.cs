@@ -181,9 +181,9 @@ public static class SetupDistributedLocksPostgreSql
         services.TryAddSingleton(TimeProvider.System);
         services.AddHeadlessGuidGenerator();
 
-        // Build the data source once and share it across all three consumers (storage, release
-        // signal, fencing) so a connection-string configuration produces a single pool rather than
-        // three. The owner wrapper centralizes disposal: an injected DataSource is consumer-owned and
+        // Build the data source once and share it across its consumers (storage, release signal,
+        // schema runner) so a connection-string configuration produces a single pool rather than
+        // one each. The owner wrapper centralizes disposal: an injected DataSource is consumer-owned and
         // never disposed, while a connection-string-built one is owned and disposed on container
         // teardown. Consumers inject the NpgsqlDataSource directly and must not dispose it.
         services.TryAddSingleton<PostgresLockDataSource>();
@@ -194,9 +194,8 @@ public static class SetupDistributedLocksPostgreSql
             sp.GetRequiredService<PostgresConnectionScopedLockStorage>()
         );
         services.TryAddSingleton<IReleaseSignal, PostgresReleaseSignal>();
-        services.TryAddSingleton<IFencingTokenSource, PostgresFencingTokenSource>();
-        // The runner creates the fence sequence at startup on the same data source the token source reads, so verify
-        // mode and the exported deploy script cover it like every other feature's objects.
+        // The runner creates the fence sequence at startup on the same data source the exclusive acquires draw from, so
+        // verify mode and the exported deploy script cover it like every other feature's objects.
         services.AddHeadlessSchemaContribution(sp =>
             PostgreSqlDistributedLocksSchemaContribution.Create(
                 sp.GetRequiredService<IOptions<DistributedLocksStorageOptions>>().Value,
@@ -218,7 +217,6 @@ public static class SetupDistributedLocksPostgreSql
             sp.GetRequiredService<IGuidGenerator>(),
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<ILogger<ConnectionScopedDistributedLock>>(),
-            sp.GetService<IFencingTokenSource>(),
             pollingFallback: sp.GetRequiredService<IOptions<PostgreSqlDistributedLockOptions>>().Value.PollingFallback
         ));
         services.TryAddSingleton<IDistributedLock>(sp => sp.GetRequiredService<ConnectionScopedDistributedLock>());

@@ -40,6 +40,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     /// advisory-lock engines, multiplexed connection pool, and keepalive cadence from the resolved options.
     /// </summary>
     /// <param name="options">Resolved provider options (polling fallback, command timeout, keepalive, key prefix).</param>
+    /// <param name="storageOptions">Supplies the schema that holds the fence sequence.</param>
     /// <param name="dataSource">
     /// The shared <see cref="NpgsqlDataSource"/> injected by <see cref="PostgresLockDataSource"/>. Not
     /// disposed by this instance; disposal is owned by the DI registration.
@@ -47,6 +48,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     /// <param name="timeProvider">Time source used for monitoring sleeps and keepalive cadence.</param>
     public PostgresConnectionScopedLockStorage(
         IOptions<PostgreSqlDistributedLockOptions> options,
+        IOptions<DistributedLocksStorageOptions> storageOptions,
         NpgsqlDataSource dataSource,
         TimeProvider timeProvider
     )
@@ -54,11 +56,16 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         _options = options.Value;
         _timeProvider = timeProvider;
         // The data source is owned and disposed by the DI registration (a single shared instance across the
-        // three Postgres consumers), so this storage never disposes it.
+        // Postgres consumers), so this storage never disposes it.
         _dataSource = dataSource;
         _connectionString = _dataSource.ConnectionString;
         _commandTimeoutSeconds = (int)_options.CommandTimeout.TotalSeconds;
-        _exclusiveLock = new PostgresAdvisoryLock(isShared: false, timeProvider);
+        // Exclusive acquires draw their fencing token in the grant statement, on the session that holds the lock.
+        _exclusiveLock = new PostgresAdvisoryLock(
+            isShared: false,
+            timeProvider,
+            fenceSequence: PostgreSqlDistributedLocksSchemaContribution.QualifiedSequence(storageOptions.Value.Schema)
+        );
         _sharedLock = new PostgresAdvisoryLock(isShared: true, timeProvider);
 
         // The ConnectionMonitor's keepalive probe is complementary to TCP keepalive (configured on the data source):
@@ -129,7 +136,10 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
             _heldByLockId[leaseId] = held;
             ownershipTransferred = true;
 
-            return new ConnectionScopedLockHandle(resource, leaseId, ReleaseAsync, connectionLostToken);
+            return new ConnectionScopedLockHandle(resource, leaseId, ReleaseAsync, connectionLostToken)
+            {
+                FencingToken = engineHandle.FencingToken,
+            };
         }
         finally
         {

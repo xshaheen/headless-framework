@@ -596,6 +596,12 @@ public sealed class PostgresTransactionLockTests(PostgreSqlDistributedLockFixtur
     {
         public override bool ShouldPrepareCommands => false;
 
+        // Externally owned, so the engine never destroys it.
+        protected override void ClearPool()
+        {
+            throw new NotSupportedException();
+        }
+
         public override bool IsCommandCancellationException(Exception exception)
         {
             return false;

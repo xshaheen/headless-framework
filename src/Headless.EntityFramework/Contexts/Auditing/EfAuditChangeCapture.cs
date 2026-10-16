@@ -171,6 +171,46 @@ internal sealed class EfAuditChangeCapture(
         }
     }
 
+    /// <inheritdoc />
+    public bool RequiresDeferredResolution(AuditLogEntryData entry)
+    {
+        return _deferredResolutions.TryGetValue(entry, out _);
+    }
+
+    // The identity is final when every property it is built from already holds its real value. A key the store
+    // generates is temporary, or still the CLR default when a database default (not an EF generator) fills it.
+    private static bool _IdentityNeedsStoreValue(EntityEntry entry)
+    {
+        var properties = entry.Metadata.IsOwned()
+            ? entry.Metadata.FindOwnership()!.Properties
+            : entry.Metadata.FindPrimaryKey()?.Properties;
+
+        if (properties is null)
+        {
+            return false;
+        }
+
+        foreach (var metadata in properties)
+        {
+            var property = entry.Property(metadata.Name);
+
+            if (property.IsTemporary)
+            {
+                return true;
+            }
+
+            if (
+                metadata.ValueGenerated.HasFlag(ValueGenerated.OnAdd)
+                && (property.CurrentValue is null || Equals(property.CurrentValue, metadata.ClrType.GetDefaultValue()))
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private void _LogDisabledWarningOnce()
     {
         if (_hasLoggedDisabledWarning)
@@ -407,14 +447,14 @@ internal sealed class EfAuditChangeCapture(
             CreatedAt = timestamp,
         };
 
-        // Created entries need EntityId re-resolution once store-generated keys are assigned;
-        // any entry may additionally carry temporary property values that need patching post-save.
-        if (changeType is AuditChangeType.Created || temporaryValuePatches is not null)
+        // Created entries whose key the store assigns need EntityId re-resolution once it does; a Created entry with a
+        // client-assigned key is already complete. Any entry may additionally carry temporary property values that
+        // need patching post-save.
+        var resolveEntityId = changeType is AuditChangeType.Created && _IdentityNeedsStoreValue(entry);
+
+        if (resolveEntityId || temporaryValuePatches is not null)
         {
-            _deferredResolutions.Add(
-                data,
-                new DeferredEntryResolution(entry, changeType is AuditChangeType.Created, temporaryValuePatches)
-            );
+            _deferredResolutions.Add(data, new DeferredEntryResolution(entry, resolveEntityId, temporaryValuePatches));
         }
 
         return data;

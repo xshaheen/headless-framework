@@ -1297,6 +1297,30 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
+    public override Task should_keep_received_exception_rows_apart_when_message_ids_differ_by_trailing_space()
+    {
+        return base.should_keep_received_exception_rows_apart_when_message_ids_differ_by_trailing_space();
+    }
+
+    [Fact]
+    public override Task should_keep_received_exception_rows_apart_when_consumer_identities_differ_by_trailing_space()
+    {
+        return base.should_keep_received_exception_rows_apart_when_consumer_identities_differ_by_trailing_space();
+    }
+
+    [Fact]
+    public override Task should_report_an_admitted_inbox_message_only_for_its_exact_identity()
+    {
+        return base.should_report_an_admitted_inbox_message_only_for_its_exact_identity();
+    }
+
+    [Fact]
+    public override Task should_not_report_a_non_inbox_received_row_as_admitted()
+    {
+        return base.should_not_report_a_non_inbox_received_row_as_admitted();
+    }
+
+    [Fact]
     public override Task should_handle_concurrent_redelivery_storm_on_same_message_id()
     {
         return base.should_handle_concurrent_redelivery_storm_on_same_message_id();
@@ -1321,9 +1345,15 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
-    public override Task should_cap_published_retry_pickup_at_max_persisted_retries_and_leave_received_uncapped()
+    public override Task should_claim_published_rows_past_max_persisted_retries_and_leave_received_uncapped()
     {
-        return base.should_cap_published_retry_pickup_at_max_persisted_retries_and_leave_received_uncapped();
+        return base.should_claim_published_rows_past_max_persisted_retries_and_leave_received_uncapped();
+    }
+
+    [Fact]
+    public override Task should_return_stored_status_when_monitoring_reads_a_published_message()
+    {
+        return base.should_return_stored_status_when_monitoring_reads_a_published_message();
     }
 
     [Fact]

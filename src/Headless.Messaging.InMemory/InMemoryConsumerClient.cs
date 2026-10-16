@@ -2,6 +2,7 @@
 
 using System.Threading.Channels;
 using Headless.Checks;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 
 namespace Headless.Messaging.InMemory;
@@ -22,14 +23,23 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     private readonly byte _groupConcurrent;
 
     // Bounded with the default Wait mode so TryWrite reports a full queue; DropWrite would discard silently.
-    private readonly Channel<TransportMessage> _messageQueue = Channel.CreateBounded<TransportMessage>(
+    private readonly Channel<Delivery> _messageQueue = Channel.CreateBounded<Delivery>(
         new BoundedChannelOptions(_MaxPendingMessages) { FullMode = BoundedChannelFullMode.Wait }
     );
+
+    // A redelivery delay waits real time, as a broker's would; a test passes a clock to step through it.
+    private readonly TimeProvider _redeliveryClock;
+
+    // Cancels the redelivery delays still pending when the client is disposed, so their timers do not outlive it.
+    private readonly CancellationTokenSource _disposeCts = new();
 
     private readonly SemaphoreSlim _semaphore;
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _disposed;
+
+    // Bumped by every drain, so a rejected message whose delay was pending when the queue was drained is dropped too.
+    private int _drainGeneration;
 
     /// <summary>
     /// Initializes a new instance of the InMemoryConsumerClient class.
@@ -37,13 +47,19 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <param name="queue">The in-memory queue instance</param>
     /// <param name="groupId">The consumer group ID</param>
     /// <param name="groupConcurrent">The concurrency level for the group</param>
+    /// <param name="lane">The lane the group consumes</param>
+    /// <param name="redeliveryClock">
+    /// The clock a rejected message's redelivery delay runs on; <see cref="TimeProvider.System"/> when omitted.
+    /// </param>
     public InMemoryConsumerClient(
         MemoryQueue queue,
         string groupId,
         byte groupConcurrent,
-        MessageLane lane = MessageLane.Bus
+        MessageLane lane = MessageLane.Bus,
+        TimeProvider? redeliveryClock = null
     )
     {
+        _redeliveryClock = redeliveryClock ?? TimeProvider.System;
         _queue = queue;
         _groupId = groupId;
         _lane = lane;
@@ -104,6 +120,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
             return;
         }
 
+        Interlocked.Increment(ref _drainGeneration);
         while (_messageQueue.Reader.TryRead(out _)) { }
     }
 
@@ -114,7 +131,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <param name="message">The transport message to add</param>
     public void AddSubscribeMessage(TransportMessage message)
     {
-        if (!_messageQueue.Writer.TryWrite(message))
+        if (!_messageQueue.Writer.TryWrite(new Delivery(message, DeliveryCount: 1)))
         {
             OnLogCallback?.Invoke(
                 new LogMessageEventArgs
@@ -137,10 +154,10 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     {
         while (!cancellationToken.IsCancellationRequested && Volatile.Read(ref _disposed) == 0)
         {
-            TransportMessage message;
+            Delivery delivery;
             try
             {
-                message = await _messageQueue.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+                delivery = await _messageQueue.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -162,9 +179,10 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
                         {
                             try
                             {
-                                await (OnMessageCallback?.Invoke(message, null) ?? Task.CompletedTask).ConfigureAwait(
-                                    false
-                                );
+                                // The delivery is the settlement token: a reject requeues it from there.
+                                await (
+                                    OnMessageCallback?.Invoke(delivery.Message, delivery) ?? Task.CompletedTask
+                                ).ConfigureAwait(false);
                             }
                             finally
                             {
@@ -181,7 +199,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
                 {
                     try
                     {
-                        await OnMessageCallback.Invoke(message, null).ConfigureAwait(false);
+                        await OnMessageCallback.Invoke(delivery.Message, delivery).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
@@ -218,14 +236,75 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     }
 
     /// <summary>
-    /// Rejects the processing of a message.
+    /// Rejects the processing of a message, which comes back to this client after a delay, as a broker redelivers a
+    /// rejected message to its consumer group. The delay starts at about a second and doubles with each redelivery up
+    /// to 30 seconds, so a consumer whose circuit rejects every delivery does not spin on them. A message whose delay
+    /// is still pending when the client stops or its queue is drained is dropped.
     /// </summary>
-    /// <param name="sender">The sender object</param>
-    /// <param name="cancellationToken">Unused; the in-memory transport settles synchronously.</param>
+    /// <param name="sender">The settlement token the delivery was handed to the callback with</param>
+    /// <param name="cancellationToken">Unused; the redelivery is scheduled, not awaited.</param>
     /// <returns>A completed task</returns>
     public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
+        return RejectAsync(sender, TimeSpan.Zero, CancellationToken.None);
+    }
+
+    // The redelivery is already scheduled rather than awaited, so the delivery is released at once instead of being
+    // held for the core's delay and then delayed again.
+    public ValueTask RejectAsync(object? sender, TimeSpan redeliveryDelay, CancellationToken cancellationToken)
+    {
+        // The listening loop already releases the delivery's concurrency slot when the callback returns; releasing it
+        // here as well would grow the group's concurrency on every reject.
+        if (sender is Delivery delivery && Volatile.Read(ref _disposed) == 0)
+        {
+            _ = _RedeliverAfterDelayAsync(delivery, redeliveryDelay, Volatile.Read(ref _drainGeneration));
+        }
+
         return ValueTask.CompletedTask;
+    }
+
+    private async Task _RedeliverAfterDelayAsync(Delivery delivery, TimeSpan minimumDelay, int drainGeneration)
+    {
+        try
+        {
+            // The core's own delay wins when it is longer.
+            var delay = RedeliveryBackoff.RedeliveryDelay(delivery.DeliveryCount, Random.Shared);
+            if (minimumDelay > delay)
+            {
+                delay = minimumDelay;
+            }
+
+            await Task.Delay(delay, _redeliveryClock, _disposeCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (ObjectDisposedException)
+        {
+            // Disposal raced the delay's start; the message goes with the client.
+            return;
+        }
+
+        if (Volatile.Read(ref _drainGeneration) != drainGeneration)
+        {
+            return;
+        }
+
+        var redelivery = delivery with { DeliveryCount = delivery.DeliveryCount + 1 };
+
+        // A completed channel (the client was disposed) refuses the write as well, so a late redelivery is dropped.
+        if (!_messageQueue.Writer.TryWrite(redelivery) && Volatile.Read(ref _disposed) == 0)
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason =
+                        $"Pending message queue for group '{_groupId}' is full ({_MaxPendingMessages}); rejected message '{delivery.Message.Name}' dropped instead of redelivered.",
+                }
+            );
+        }
     }
 
     private void _ReleaseSemaphore()
@@ -282,11 +361,11 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// Disposes the consumer client and unsubscribes from the queue.
     /// </summary>
     /// <returns>A value task representing the disposal</returns>
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
-            return ValueTask.CompletedTask;
+            return;
         }
 
         _pauseGate.Release();
@@ -294,6 +373,12 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
         _semaphore.Dispose();
         _messageQueue.Writer.TryComplete();
         _queue.Unsubscribe(_lane, _groupId, this);
-        return ValueTask.CompletedTask;
+        await _disposeCts.CancelAsync().ConfigureAwait(false);
+        _disposeCts.Dispose();
     }
+
+    /// <summary>A message handed to the consumer callback, and the settlement token that callback passes back.</summary>
+    /// <param name="Message">The delivered message.</param>
+    /// <param name="DeliveryCount">How many times the message has been delivered, this delivery included.</param>
+    private sealed record Delivery(TransportMessage Message, long DeliveryCount);
 }

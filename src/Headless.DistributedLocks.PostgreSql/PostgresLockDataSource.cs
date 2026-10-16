@@ -7,7 +7,7 @@ namespace Headless.DistributedLocks.PostgreSql;
 
 /// <summary>
 /// Single shared <see cref="NpgsqlDataSource"/> owner for the Postgres distributed-lock consumers
-/// (storage, release signal, fencing). Registering one of these as a DI singleton guarantees a
+/// (storage, release signal, schema runner). Registering one of these as a DI singleton guarantees a
 /// connection-string configuration produces a single pool instead of one per consumer.
 /// </summary>
 /// <remarks>
@@ -32,8 +32,8 @@ internal sealed class PostgresLockDataSource(IOptions<PostgreSqlDistributedLockO
     private readonly bool _owned = options.Value.DataSource is null;
 
     /// <summary>
-    /// Gets the shared <see cref="NpgsqlDataSource"/> consumed by the storage, release-signal, and
-    /// fencing-token services. Consumers must not dispose this instance.
+    /// Gets the shared <see cref="NpgsqlDataSource"/> consumed by the storage, the release signal, and the schema
+    /// runner. Consumers must not dispose this instance.
     /// </summary>
     public NpgsqlDataSource DataSource { get; } = PostgresDataSourceFactory.CreateDataSource(options.Value);
 

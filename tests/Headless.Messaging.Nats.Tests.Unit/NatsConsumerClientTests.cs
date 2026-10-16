@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Headless.Messaging;
@@ -575,16 +576,31 @@ public sealed class NatsConsumerClientTests : TestBase
         await using var client = _CreateClient("test-group");
         LogMessageEventArgs? loggedArgs = null;
         client.OnLogCallback = args => loggedArgs = args;
+        using var failures = new SettlementFailureRecorder();
 
         var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
         msg.AckAsync(Arg.Any<AckOpts?>(), Arg.Any<CancellationToken>())
             .Returns(x => throw new InvalidOperationException("ack failed"));
 
-        await client.CommitAsync(msg, AbortToken);
+        var act = async () => await client.CommitAsync(msg, AbortToken);
 
+        // A lost ack only means JetStream redelivers, which the inbox deduplicates, so the commit must not fail.
+        await act.Should().NotThrowAsync();
         loggedArgs.Should().NotBeNull();
-        loggedArgs!.LogType.Should().Be(MqLogType.AsyncErrorEvent);
+        loggedArgs!.LogType.Should().Be(MqLogType.SettlementFailed);
         loggedArgs.Reason.Should().Contain("ack failed");
+        failures
+            .Measurements.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeEquivalentTo(
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["messaging.system"] = "nats",
+                    ["messaging.operation.name"] = "ack",
+                    ["error.type"] = "System.InvalidOperationException",
+                }
+            );
     }
 
     [Fact]
@@ -1894,4 +1910,63 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     private sealed record ShardedOrder(string TenantId);
+
+    /// <summary>
+    /// Captures settlement-failure measurements recorded on the creating test's async flow only, so failures that
+    /// tests running in parallel record on the shared meter do not leak into the assertion.
+    /// </summary>
+    private sealed class SettlementFailureRecorder : IDisposable
+    {
+        private static readonly AsyncLocal<SettlementFailureRecorder?> _Current = new();
+        private readonly MeterListener _listener = new();
+        private readonly ConcurrentQueue<Dictionary<string, object?>> _measurements = new();
+
+        public SettlementFailureRecorder()
+        {
+            _Current.Value = this;
+            _listener.InstrumentPublished = (instrument, listener) =>
+            {
+                if (
+                    string.Equals(instrument.Meter.Name, "Headless.Messaging", StringComparison.Ordinal)
+                    && string.Equals(
+                        instrument.Name,
+                        "headless.messaging.settlement.failures",
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    listener.EnableMeasurementEvents(instrument);
+                }
+            };
+            _listener.SetMeasurementEventCallback<long>(
+                (_, value, tags, _) =>
+                {
+                    if (!ReferenceEquals(_Current.Value, this))
+                    {
+                        return;
+                    }
+
+                    var tagMap = new Dictionary<string, object?>(StringComparer.Ordinal);
+                    foreach (var tag in tags)
+                    {
+                        tagMap[tag.Key] = tag.Value;
+                    }
+
+                    for (var i = 0; i < value; i++)
+                    {
+                        _measurements.Enqueue(tagMap);
+                    }
+                }
+            );
+            _listener.Start();
+        }
+
+        public IReadOnlyCollection<Dictionary<string, object?>> Measurements => [.. _measurements];
+
+        public void Dispose()
+        {
+            _listener.Dispose();
+            _Current.Value = null;
+        }
+    }
 }

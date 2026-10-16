@@ -38,11 +38,19 @@ internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
     /// Reports a failure for the specified consumer. If the exception is transient and
     /// the failure threshold is reached, the circuit will open and <c>onPause</c> will be invoked.
     /// </summary>
+    /// <remarks>
+    /// A report made while the circuit is HalfOpen moves it only when <paramref name="admissionEpoch"/>
+    /// equals the circuit's current epoch, so only the in-flight probe decides the HalfOpen outcome.
+    /// A message admitted under an earlier epoch can finish after the circuit opened and moved on;
+    /// its failure would otherwise reopen and escalate the circuit, or close it, on stale evidence.
+    /// </remarks>
     /// <param name="consumerKey">The consumer name.</param>
+    /// <param name="admissionEpoch">The epoch under which the message was admitted for processing.</param>
     /// <param name="exception">The exception that caused the failure.</param>
     /// <param name="cancellationToken">Token to cancel the operation (e.g. transport pause callback).</param>
     ValueTask ReportFailureAsync(
         string consumerKey,
+        long admissionEpoch,
         Exception exception,
         CancellationToken cancellationToken = default
     );
@@ -83,11 +91,17 @@ internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
 
     /// <summary>
     /// Reports a successful message processing for the specified consumer.
-    /// Resets the consecutive failure counter and, if in half-open state, closes the circuit.
+    /// Resets the consecutive failure counter and, if in half-open state and
+    /// <paramref name="admissionEpoch"/> is the current epoch, closes the circuit.
     /// </summary>
     /// <param name="consumerKey">The consumer name.</param>
+    /// <param name="admissionEpoch">The epoch under which the message was admitted for processing.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
-    ValueTask ReportSuccessAsync(string consumerKey, CancellationToken cancellationToken = default);
+    ValueTask ReportSuccessAsync(
+        string consumerKey,
+        long admissionEpoch,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Removes all tracked state for the specified consumer, including timers and callbacks.

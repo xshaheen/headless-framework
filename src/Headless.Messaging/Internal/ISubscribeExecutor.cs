@@ -648,7 +648,7 @@ internal sealed class SubscribeExecutor(
         if (circuitBreakerStateManager is not null)
         {
             var circuitKey = CircuitBreakerKeys.For(message);
-            await circuitBreakerStateManager.ReportSuccessAsync(circuitKey).ConfigureAwait(false);
+            await circuitBreakerStateManager.ReportSuccessAsync(circuitKey, message.ProbeEpoch).ConfigureAwait(false);
         }
     }
 
@@ -957,7 +957,7 @@ internal sealed class SubscribeExecutor(
 
             var circuitKey = CircuitBreakerKeys.For(message);
             await circuitBreakerStateManager
-                .ReportFailureAsync(circuitKey, reportedException, cancellationToken)
+                .ReportFailureAsync(circuitKey, message.ProbeEpoch, reportedException, cancellationToken)
                 .ConfigureAwait(false);
         }
 

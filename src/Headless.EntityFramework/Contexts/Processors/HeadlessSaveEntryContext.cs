@@ -4,6 +4,7 @@ using System.Runtime.ExceptionServices;
 using Headless.Domain;
 using Headless.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Headless.EntityFramework;
 
@@ -36,6 +37,12 @@ public sealed class HeadlessSaveEntryContext(DbContext dbContext, string? tenant
 
     internal bool CommitStarted { get; set; }
 
+    /// <summary>
+    /// The tracker snapshot the pipeline is processing right now. Processors that must look up other tracked entries
+    /// read it instead of enumerating the tracker, whose every enumeration runs change detection.
+    /// </summary>
+    internal IReadOnlyList<EntityEntry>? TrackedEntries { get; set; }
+
     internal ExceptionDispatchInfo? NonRetryableFailure { get; set; }
 
     internal HashSet<object> ProcessedEntities { get; } = new(ReferenceEqualityComparer.Instance);
@@ -51,6 +58,12 @@ public sealed class HeadlessSaveEntryContext(DbContext dbContext, string? tenant
     internal List<EventContext<object>> PendingDomainEvents { get; } = [];
 
     internal int DomainEventCursor { get; set; }
+
+    /// <summary>
+    /// The <see cref="DomainEventCursor"/> value when <see cref="TrackedEntries"/> was last taken. Handlers run only
+    /// between cursor advances, so while the two match nothing could have changed the graph since the snapshot.
+    /// </summary>
+    internal int SnapshotCursor { get; set; }
 
     /// <summary>Clears the event buffers on each captured emitter once they have been dispatched.</summary>
     internal void ClearEmitterMessages()

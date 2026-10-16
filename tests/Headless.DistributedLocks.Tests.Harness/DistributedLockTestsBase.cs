@@ -734,6 +734,51 @@ public abstract class DistributedLockTestsBase : TestBase
         countAfterAcquire.Should().BeGreaterThan(initialCount);
     }
 
+    /// <summary>
+    /// Released locks must leave no trace that reads as held. The check is scoped to this test's resource
+    /// because shared stores may carry other tests' locks, so the global count is not a stable signal here.
+    /// </summary>
+    public virtual async Task should_drop_released_lock_from_active_locks()
+    {
+        var locker = GetLockProvider();
+        var resource = $"released-{Faker.Random.String2(3, 10)}";
+
+        var handle = await locker.TryAcquireAsync(resource, cancellationToken: AbortToken);
+        handle.Should().NotBeNull();
+        await handle!.ReleaseAsync();
+
+        (await locker.GetLockInfoAsync(resource, AbortToken)).Should().BeNull();
+        (await locker.GetExpirationAsync(resource, AbortToken)).Should().BeNull();
+        (await locker.ListActiveLocksAsync(AbortToken)).Should().NotContain(l => l.Resource == resource);
+    }
+
+    #endregion
+
+    #region Fencing Tests
+
+    /// <summary>
+    /// A fencing token protects downstream writes only if every later grant outranks every earlier one,
+    /// including grants made after the resource was released and its storage entry possibly dropped.
+    /// </summary>
+    public virtual async Task should_issue_greater_fencing_token_after_release_than_any_before()
+    {
+        var locker = GetLockProvider();
+        var resource = Faker.Random.String2(3, 20);
+        var tokens = new List<LockFencingToken>();
+
+        for (var i = 0; i < 3; i++)
+        {
+            var handle = await locker.TryAcquireAsync(resource, cancellationToken: AbortToken);
+            handle.Should().NotBeNull();
+            handle!.FencingToken.Should().NotBeNull();
+            tokens.Add(handle.FencingToken!.Value);
+            await handle.ReleaseAsync();
+        }
+
+        tokens[1].Should().BeGreaterThan(tokens[0]);
+        tokens[2].Should().BeGreaterThan(tokens[1]);
+    }
+
     #endregion
 
     #region Lease Monitoring Tests

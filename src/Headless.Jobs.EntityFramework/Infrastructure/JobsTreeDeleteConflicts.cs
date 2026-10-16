@@ -41,10 +41,12 @@ internal static class JobsTreeDeleteConflicts
             return false;
         }
 
+#pragma warning disable RS0030 // False positive: the SQL Server branch below reads its error numbers; this catches drivers that override it.
         if (databaseException.IsTransient)
         {
             return true;
         }
+#pragma warning restore RS0030
 
         if (string.Equals(providerName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
         {

@@ -61,9 +61,9 @@ public abstract class DistributedSemaphoreStorageTestsBase : TestBase
         var released = await SemaphoreStorage.ReleaseAsync(resource, "lock-1", AbortToken);
         var second = await SemaphoreStorage.TryAcquireAsync(resource, "lock-2", 1, TimeSpan.FromMinutes(5), AbortToken);
 
-        first.FencingToken.Should().Be(new LockFencingToken(1));
+        first.FencingToken.Should().NotBeNull();
         released.Should().BeTrue();
-        second.FencingToken.Should().Be(new LockFencingToken(2));
+        second.FencingToken!.Value.Should().BeGreaterThan(first.FencingToken!.Value);
     }
 
     public virtual async Task should_not_advance_fencing_token_on_capacity_rejected_acquire()
@@ -82,10 +82,30 @@ public abstract class DistributedSemaphoreStorageTestsBase : TestBase
         await SemaphoreStorage.ReleaseAsync(resource, "lock-1", AbortToken);
         var second = await SemaphoreStorage.TryAcquireAsync(resource, "lock-3", 1, TimeSpan.FromMinutes(5), AbortToken);
 
-        first.FencingToken.Should().Be(new LockFencingToken(1));
         rejected.Acquired.Should().BeFalse();
         rejected.FencingToken.Should().BeNull();
-        second.FencingToken.Should().Be(new LockFencingToken(2));
+        // Tokens may be gappy per resource when a provider shares one counter across resources, but nothing
+        // else grants on this storage during the test, so a rejection that consumed a token shows up as a gap.
+        second.FencingToken!.Value.Value.Should().Be(first.FencingToken!.Value.Value + 1);
+    }
+
+    public virtual async Task should_issue_greater_fencing_token_after_all_slots_released()
+    {
+        var resource = Faker.Random.AlphaNumeric(10);
+        var first = await SemaphoreStorage.TryAcquireAsync(resource, "lock-1", 2, TimeSpan.FromMinutes(5), AbortToken);
+        var second = await SemaphoreStorage.TryAcquireAsync(resource, "lock-2", 2, TimeSpan.FromMinutes(5), AbortToken);
+
+        await SemaphoreStorage.ReleaseAsync(resource, "lock-1", AbortToken);
+        await SemaphoreStorage.ReleaseAsync(resource, "lock-2", AbortToken);
+        var countAfterRelease = await SemaphoreStorage.GetCountAsync(resource, AbortToken);
+        var third = await SemaphoreStorage.TryAcquireAsync(resource, "lock-3", 2, TimeSpan.FromMinutes(5), AbortToken);
+
+        countAfterRelease.Should().Be(0);
+        third.Acquired.Should().BeTrue();
+        third
+            .FencingToken!.Value.Should()
+            .BeGreaterThan(first.FencingToken!.Value)
+            .And.BeGreaterThan(second.FencingToken!.Value);
     }
 
     public virtual async Task should_reacquire_after_slot_expiry()

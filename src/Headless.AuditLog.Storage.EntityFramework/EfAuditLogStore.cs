@@ -24,6 +24,8 @@ internal sealed class EfAuditLogStore : IAuditLogStore
     private readonly Lock _gate = new();
 
     /// <inheritdoc />
+    public bool AddsToSavingContext => true;
+
     public IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext)
     {
         return _AddEntries(entries, _AsDbContext(savingContext));

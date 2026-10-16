@@ -444,8 +444,13 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         var ids = Enumerable.Range(0, 205).Select(_ => Guid.NewGuid()).ToArray();
         var now = TimeProvider.System.GetUtcNow();
         var receivedColumns =
-            messageType == MessageType.Subscribe ? ", \"consumer_identity\", \"exception_info\"" : string.Empty;
-        var receivedValues = messageType == MessageType.Subscribe ? ", 'unknown-lane-consumer', NULL" : string.Empty;
+            messageType == MessageType.Subscribe
+                ? ", \"consumer_identity\", \"exception_info\", \"consumer_identity_hash\""
+                : string.Empty;
+        var receivedValues =
+            messageType == MessageType.Subscribe
+                ? ", 'unknown-lane-consumer', NULL, sha256(convert_to(id::text, 'UTF8'))"
+                : string.Empty;
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
@@ -519,8 +524,13 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         var id = Guid.NewGuid();
         var now = TimeProvider.System.GetUtcNow();
         var receivedColumns =
-            messageType == MessageType.Subscribe ? ", \"consumer_identity\", \"exception_info\"" : string.Empty;
-        var receivedValues = messageType == MessageType.Subscribe ? ", 'unknown-lane-consumer', NULL" : string.Empty;
+            messageType == MessageType.Subscribe
+                ? ", \"consumer_identity\", \"exception_info\", \"consumer_identity_hash\""
+                : string.Empty;
+        var receivedValues =
+            messageType == MessageType.Subscribe
+                ? ", 'unknown-lane-consumer', NULL, @ConsumerIdentityHash"
+                : string.Empty;
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
@@ -535,6 +545,12 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
                 Id = id,
                 Added = now,
                 MessageId = $"unknown-lane-{id:N}",
+                ConsumerIdentityHash = RelationalDataStorage.CreateConsumerIdentityHash(
+                    "v1",
+                    $"unknown-lane-{id:N}",
+                    77,
+                    "unknown-lane-consumer"
+                ),
             }
         );
 

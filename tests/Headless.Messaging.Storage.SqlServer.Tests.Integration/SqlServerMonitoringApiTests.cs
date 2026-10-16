@@ -704,10 +704,10 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
     )
     {
         var receivedColumns = string.Equals(tableName, "MessagingReceived", StringComparison.Ordinal)
-            ? ", ConsumerIdentity, ExceptionInfo"
+            ? ", ConsumerIdentity, ExceptionInfo, ConsumerIdentityHash"
             : string.Empty;
         var receivedValues = string.Equals(tableName, "MessagingReceived", StringComparison.Ordinal)
-            ? ", 'diagnostic-consumer', NULL"
+            ? ", 'diagnostic-consumer', NULL, @ConsumerIdentityHash"
             : string.Empty;
         return connection.ExecuteAsync(
             $"""
@@ -725,6 +725,12 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
                 Added = added,
                 NextRetryAt = added,
                 MessageId = $"diagnostic-{id:N}",
+                ConsumerIdentityHash = RelationalDataStorage.CreateConsumerIdentityHash(
+                    "v1",
+                    $"diagnostic-{id:N}",
+                    rawLane,
+                    "diagnostic-consumer"
+                ),
             }
         );
     }

@@ -171,7 +171,6 @@ public static class SetupDistributedLocksSqlServer
         services.TryAddSingleton<IConnectionScopedLockStorage>(sp =>
             sp.GetRequiredService<SqlServerConnectionScopedLockStorage>()
         );
-        services.TryAddSingleton<IFencingTokenSource, SqlServerFencingTokenSource>();
         // The unit-of-work feature behind unit.TransactionLocks; resolved by GetFeature on a host that also registered
         // a unit-of-work provider, inert otherwise.
         services.TryAddSingleton<IUnitOfWorkTransactionLocks, SqlServerUnitOfWorkTransactionLocks>();
@@ -199,10 +198,7 @@ public static class SetupDistributedLocksSqlServer
             sp.GetRequiredService<DistributedLockOptions>(),
             sp.GetRequiredService<IGuidGenerator>(),
             sp.GetRequiredService<TimeProvider>(),
-            sp.GetRequiredService<ILogger<ConnectionScopedDistributedLock>>(),
-            sp.GetRequiredService<IOptions<SqlServerDistributedLockOptions>>().Value.EnableFencing
-                ? sp.GetRequiredService<IFencingTokenSource>()
-                : null
+            sp.GetRequiredService<ILogger<ConnectionScopedDistributedLock>>()
         ));
 
         services.TryAddSingleton<IDistributedLock>(sp => sp.GetRequiredService<ConnectionScopedDistributedLock>());

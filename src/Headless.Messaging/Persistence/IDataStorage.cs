@@ -60,6 +60,34 @@ public interface IDataStorage
         return new InboxAdmissionResult(InboxAdmissionDisposition.Winner, stored);
     }
 
+    /// <summary>
+    /// Reports whether an inbox generation of this message was already admitted for the consumer, whatever its contract
+    /// version, so a redelivery that fails before admission can be recognized as a duplicate of work that already ran
+    /// rather than stored as poison.
+    /// </summary>
+    /// <param name="tenantId">The tenant the delivery names, or <see langword="null"/> for none.</param>
+    /// <param name="messageId">The message id, matched exactly, trailing whitespace included.</param>
+    /// <param name="messageName">
+    /// The message name, matched exactly. Admission keys a generation on it, and a producer may reuse one explicit id
+    /// across message names, so another name under the same id is a different message, not a redelivery.
+    /// </param>
+    /// <param name="consumerIdentity">The identity of the consumer the message was delivered to, matched exactly.</param>
+    /// <param name="lane">The lane the message was delivered on.</param>
+    /// <param name="cancellationToken">A token to cancel the lookup.</param>
+    /// <returns>
+    /// <see langword="true"/> when an inbox row for this tenant, message id, message name, consumer identity, and lane
+    /// exists. A
+    /// provider without an inbox admits nothing and answers <see langword="false"/>.
+    /// </returns>
+    ValueTask<bool> IsInboxMessageAdmittedAsync(
+        string? tenantId,
+        string messageId,
+        string messageName,
+        string consumerIdentity,
+        MessageLane lane,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Defers a missing registration by the configured orphan probe interval and releases ownership atomically under the complete attempt fence. Does not consume failure retries.</summary>
     ValueTask<bool> DeferReceivedInboxOrphanAsync(MediumMessage message, CancellationToken cancellationToken = default);
 

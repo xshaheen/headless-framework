@@ -1065,11 +1065,18 @@ internal sealed class NatsConsumerClient(
         }
         catch (Exception ex)
         {
+            // Not rethrown: the message is already handled, and JetStream redelivers an unacknowledged one after its
+            // ack wait, which the inbox deduplicates. The operator still needs to see that settlement is failing.
+            MessagingMetrics.RecordSettlementFailure(
+                "nats",
+                MessagingMetrics.OperationNameAck,
+                MessagingTelemetry.ErrorTypeOf(ex)
+            );
             OnLogCallback?.Invoke(
                 new LogMessageEventArgs
                 {
-                    LogType = MqLogType.AsyncErrorEvent,
-                    Reason = $"NATS message ACK failed: {ex}",
+                    LogType = MqLogType.SettlementFailed,
+                    Reason = $"NATS message ACK failed; JetStream will redeliver it: {ex}",
                 }
             );
         }

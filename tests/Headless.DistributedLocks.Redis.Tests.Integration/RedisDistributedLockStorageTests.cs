@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.Redis;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace Tests;
@@ -441,6 +443,49 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
 
         // then
         count.Should().Be(3);
+    }
+
+    #endregion
+
+    #region Lease-loss deadline
+
+    [Fact]
+    public async Task should_signal_lease_loss_while_redis_key_still_has_ttl_when_monitored_lease_is_not_renewed()
+    {
+        // given - a monitor-mode lease of 3s that nothing renews. Redis expires the key 3s after the acquire was
+        // sent; the handle must report loss before that, while the key is still there.
+        var provider = new DistributedLock(
+            fixture.LockStorage,
+            bus: null,
+            new DistributedLockOptions(),
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
+            TimeProvider.System,
+            LoggerFactory.CreateLogger<DistributedLock>()
+        );
+        await using var handle = await provider.TryAcquireAsync(
+            Faker.Random.AlphaNumeric(10),
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(3),
+                Monitoring = LockMonitoringMode.Monitor,
+            },
+            AbortToken
+        );
+        handle.Should().NotBeNull();
+        var lockKey = await _GetSingleKeyAsync("{hflock:*}:value");
+        var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var registration = handle!.LostToken.Register(
+            static state => ((TaskCompletionSource)state!).TrySetResult(),
+            lostSignal
+        );
+
+        // when
+        await lostSignal.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        var remainingTtl = await fixture.ConnectionMultiplexer.GetDatabase().KeyTimeToLiveAsync(lockKey);
+
+        // then
+        remainingTtl.Should().NotBeNull("the key must still exist when the handle reports loss");
+        remainingTtl!.Value.Should().BePositive();
     }
 
     #endregion
