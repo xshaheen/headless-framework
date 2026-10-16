@@ -29,7 +29,9 @@ internal static class HeadlessDbContextRegistration
 
     /// <summary>
     /// One context instance per scope (or per resolution, for <see cref="ServiceLifetime.Transient"/>), built with
-    /// options of <paramref name="optionsLifetime"/>. A derived constructor may take scoped services.
+    /// options of <paramref name="optionsLifetime"/>, or with options shared across scopes when nothing scoped feeds
+    /// them if it is <see langword="null"/> (see <see cref="HeadlessSharedDbContextOptions{TContext}"/>). A derived
+    /// constructor may take scoped services.
     /// </summary>
     public static void AddPerScope<
         [DynamicallyAccessedMembers(
@@ -42,7 +44,7 @@ internal static class HeadlessDbContextRegistration
         IServiceCollection services,
         Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
         ServiceLifetime contextLifetime,
-        ServiceLifetime optionsLifetime
+        ServiceLifetime? optionsLifetime
     )
         where TDbContext : DbContext, IHeadlessDbContext
     {
@@ -62,14 +64,27 @@ internal static class HeadlessDbContextRegistration
             )
         );
 
-        services.AddDbContext<TDbContext>(
-            (serviceProvider, optionsBuilder) =>
-            {
-                optionsAction?.Invoke(serviceProvider, optionsBuilder);
-            },
-            contextLifetime,
-            optionsLifetime
-        );
+        if (optionsLifetime is { } lifetime)
+        {
+            services.AddDbContext<TDbContext>(
+                (serviceProvider, optionsBuilder) =>
+                {
+                    optionsAction?.Invoke(serviceProvider, optionsBuilder);
+                },
+                contextLifetime,
+                lifetime
+            );
+        }
+        else
+        {
+            HeadlessSharedDbContextOptions<TDbContext>.Register(services, optionsAction);
+            // The options are registered above, so EF Core keeps them; with no action it adds no configuration of its own.
+            services.AddDbContext<TDbContext>(
+                optionsAction: (Action<IServiceProvider, DbContextOptionsBuilder>?)null,
+                contextLifetime,
+                ServiceLifetime.Scoped
+            );
+        }
 
         // Detached contexts (background work, initializers, singleton stores) come from a factory that opens a scope
         // per context, so a derived constructor's scoped services still resolve.

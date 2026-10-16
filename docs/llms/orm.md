@@ -76,10 +76,11 @@ A `HeadlessDbContext` splits its state in two. The model, EF configuration, and 
 
 | Registration | Instance per scope | Factory (`IDbContextFactory<TDbContext>`) | Constructor may take |
 | --- | --- | --- | --- |
-| `AddHeadlessDbContext<TDbContext>(optionsAction, [configureHeadlessOptions], contextLifetime = Scoped, optionsLifetime = Scoped)` | New instance per scope | Creates a DI scope per context and disposes it with the context | Its options plus scoped or singleton services |
+| `AddHeadlessDbContext<TDbContext>(optionsAction, [configureHeadlessOptions], contextLifetime = Scoped, optionsLifetime)` | New instance per scope | Creates a DI scope per context and disposes it with the context | Its options plus scoped or singleton services |
 | `AddHeadlessDbContextPool<TDbContext>(optionsAction, [configureHeadlessOptions], poolSize = 1024)` | Leased from the pool, returned when the scope is disposed | EF's `PooledDbContextFactory` | Exactly one public constructor: its options plus, optionally, singleton services |
 
 - `contextLifetime` may not be `Singleton`; the registration throws.
+- **Options lifetime of the per-scope registration.** The overloads taking `Action<DbContextOptionsBuilder>` default `optionsLifetime` to `null`: every scope, and every `IDbContextFactory<TDbContext>` context, then shares one `DbContextOptions<TDbContext>` built once from the root provider, which saves rebuilding the options (about 15 KB) per scope. Sharing applies only while nothing scoped can feed the options: every registered `IInterceptor` is a singleton and nothing else (such as `ConfigureDbContext<TDbContext>`) adds an options configuration for the context. Otherwise the options are built per scope, as before. The check runs at the first resolution, so registrations made after `AddHeadlessDbContext` count. A shared options action runs once per application, so an action that reads per-request or per-tenant state (a connection string from an `AsyncLocal`, for example) must pass `optionsLifetime: ServiceLifetime.Scoped`. An explicit `optionsLifetime` is always used as given. The overloads taking `Action<IServiceProvider, DbContextOptionsBuilder>` keep `optionsLifetime = Scoped`, because their action may resolve scoped services.
 - The pooled overloads take `Action<DbContextOptionsBuilder>` or `Action<IServiceProvider, DbContextOptionsBuilder>`. The provider is the root provider: pooled options are built once and are singletons, so the callback must not resolve scoped services.
 
 How a context gets its scope:
