@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using System.Text;
 using Headless.Checks;
 using Headless.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -17,24 +19,26 @@ public static class HeadlessHostRunExtensions
     private const string _DescribeCommand = "describe";
     private const string _ResourcesCommand = StatefulResourcesCommand.Name;
     private const string _SeedCommand = SeedCommand.Name;
+    private const string _CheckCommand = "check";
 
     extension(IHost host)
     {
         /// <summary>
         /// Runs the host until shutdown, or answers a command about it without starting it: when the first argument is
-        /// <c>describe</c>, prints the host manifest as JSON to standard output; when it is <c>resources</c>, sets up,
-        /// checks, clears, tears down, or lists the host's stateful resources and prints one line per resource; when it
-        /// is <c>seed</c>, runs or lists the host's seeders and prints one line per seeder.
+        /// <c>describe</c>, prints the host manifest as JSON to standard output; when it is <c>check</c>, runs the
+        /// host's health checks once and prints one line per check; when it is <c>resources</c>, sets up, checks,
+        /// clears, tears down, or lists the host's stateful resources and prints one line per resource; when it is
+        /// <c>seed</c>, runs or lists the host's seeders and prints one line per seeder.
         /// </summary>
         /// <param name="args">
-        /// The process arguments. Any first argument other than <c>describe</c>, <c>resources</c>, or <c>seed</c> runs
-        /// the host.
+        /// The process arguments. Any first argument other than <c>describe</c>, <c>check</c>, <c>resources</c>, or
+        /// <c>seed</c> runs the host.
         /// </param>
         /// <param name="cancellationToken">Stops the host, or abandons the command.</param>
         /// <returns>
-        /// The process exit code: 0 on success; 1 when the manifest fails, when startup validation fails, or when a
-        /// resource or a seeder fails or times out; 2 when the <c>resources</c> or <c>seed</c> arguments are invalid or
-        /// match nothing.
+        /// The process exit code: 0 on success; 1 when the manifest fails, when startup validation fails, when a
+        /// health check reports <see cref="HealthStatus.Unhealthy" />, or when a resource or a seeder fails or times
+        /// out; 2 when the <c>resources</c> or <c>seed</c> arguments are invalid or match nothing.
         /// </returns>
         /// <remarks>
         /// <para>
@@ -58,6 +62,11 @@ public static class HeadlessHostRunExtensions
         /// <para>
         /// <c>seed</c> runs every seeder in priority order, or <c>list</c>s them, with <c>--name</c> filters and a
         /// <c>--timeout</c> in seconds (default 300); a failed seeder stops the run. See <see cref="ISeeder" />.
+        /// </para>
+        /// <para>
+        /// <c>check</c> skips every check tagged <see cref="HeadlessHealthCheckTags.HostState" />, because those report
+        /// the state of a running host and a host that was never started always fails them. A
+        /// <see cref="HealthStatus.Degraded" /> check does not fail the command.
         /// </para>
         /// <para>Like <c>RunAsync</c>, it disposes the host in every mode.</para>
         /// </remarks>
@@ -99,6 +108,11 @@ public static class HeadlessHostRunExtensions
                         cancellationToken
                     )
                     .ConfigureAwait(false);
+            }
+
+            if (args.Length > 0 && string.Equals(args[0], _CheckCommand, StringComparison.Ordinal))
+            {
+                return await _RunCommandAsync(host, _CheckAsync, cancellationToken).ConfigureAwait(false);
             }
 
             await host.RunAsync(cancellationToken).ConfigureAwait(false);
@@ -181,6 +195,109 @@ public static class HeadlessHostRunExtensions
         return 0;
     }
 
+    private static async Task<int> _CheckAsync(
+        IServiceProvider services,
+        TextWriter stdout,
+        TextWriter stderr,
+        CancellationToken cancellationToken
+    )
+    {
+        HealthReport? report;
+        IReadOnlyList<string> skipped;
+
+        try
+        {
+            await _ValidateStartupAsync(services, cancellationToken).ConfigureAwait(false);
+
+            var registrations = services.GetService<IOptions<HealthCheckServiceOptions>>()?.Value.Registrations ?? [];
+            skipped =
+            [
+                .. registrations
+                    .Where(static x => x.Tags.Contains(HeadlessHealthCheckTags.HostState))
+                    .Select(static x => x.Name)
+                    .Order(StringComparer.Ordinal),
+            ];
+
+            // Absent when nothing called AddHealthChecks, so there is nothing to run.
+            var healthChecks = services.GetService<HealthCheckService>();
+            report = healthChecks is null
+                ? null
+                : await healthChecks
+                    .CheckHealthAsync(
+                        static x => !x.Tags.Contains(HeadlessHealthCheckTags.HostState),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+        }
+#pragma warning disable CA1031, EPC12 // False positive: the command's process boundary reports any failure as its message and an exit code, by design.
+        catch (Exception exception)
+        {
+            await stderr.WriteLineAsync($"Host check failed: {exception.Message}").ConfigureAwait(false);
+            await stderr.FlushAsync(cancellationToken).ConfigureAwait(false);
+
+            return 1;
+        }
+#pragma warning restore CA1031, EPC12
+
+        var lines = new List<HostCheckLine>();
+
+        if (report is not null)
+        {
+            foreach (var (name, entry) in report.Entries.OrderBy(static x => x.Key, StringComparer.Ordinal))
+            {
+                lines.Add(new(name, _Status(entry.Status), _Duration(entry.Duration), _Description(entry)));
+            }
+        }
+
+        foreach (var name in skipped)
+        {
+            lines.Add(new(name, "Skipped", "-", "Reports the state of a running host; not run before start."));
+        }
+
+        if (lines.Count == 0)
+        {
+            await stderr.WriteLineAsync("No health checks are registered.").ConfigureAwait(false);
+        }
+
+        await stdout.WriteAsync(HostCheckLine.Format(lines)).ConfigureAwait(false);
+        await stdout.FlushAsync(cancellationToken).ConfigureAwait(false);
+
+        return report?.Entries.Values.Any(static x => x.Status == HealthStatus.Unhealthy) == true ? 1 : 0;
+    }
+
+    private static string _Status(HealthStatus status) =>
+        status switch
+        {
+            HealthStatus.Unhealthy => "Unhealthy",
+            HealthStatus.Degraded => "Degraded",
+            HealthStatus.Healthy => "Healthy",
+            _ => ((int)status).ToString(CultureInfo.InvariantCulture),
+        };
+
+    private static string _Duration(TimeSpan duration) =>
+        string.Create(CultureInfo.InvariantCulture, $"{duration.TotalMilliseconds:0}ms");
+
+    private static string _Description(HealthReportEntry entry)
+    {
+        // Health endpoints keep the driver's message out of the description because they are often anonymous. This
+        // command runs in the operator's own terminal or deploy log, where that message is what explains the failure.
+        var description = entry.Description;
+        var error = entry.Exception?.GetBaseException().Message;
+
+        if (string.IsNullOrWhiteSpace(error) || string.Equals(error, description, StringComparison.Ordinal))
+        {
+            return _SingleLine(description ?? "");
+        }
+
+        return _SingleLine(string.IsNullOrWhiteSpace(description) ? error : $"{description} {error}");
+    }
+
+    // One check per line, so a deploy log or a grep reads each check whole.
+    private static string _SingleLine(string text) =>
+        text.Contains('\n', StringComparison.Ordinal) || text.Contains('\r', StringComparison.Ordinal)
+            ? string.Join(' ', text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+            : text;
+
     private static async Task _ValidateStartupAsync(IServiceProvider services, CancellationToken cancellationToken)
     {
         // The same order as a real start: the host validates ValidateOnStart options before any lifecycle service.
@@ -225,6 +342,42 @@ public static class HeadlessHostRunExtensions
         else
         {
             host.Dispose();
+        }
+    }
+
+    private sealed record HostCheckLine(string Name, string Status, string Duration, string Description)
+    {
+        // Aligned columns: name, status, duration, description, each line ending the same way on every platform.
+        public static string Format(List<HostCheckLine> lines)
+        {
+            if (lines.Count == 0)
+            {
+                return "";
+            }
+
+            var nameWidth = lines.Max(static x => x.Name.Length);
+            var statusWidth = lines.Max(static x => x.Status.Length);
+            var durationWidth = lines.Max(static x => x.Duration.Length);
+            var builder = new StringBuilder();
+
+            foreach (var line in lines)
+            {
+                builder
+                    .Append(line.Name.PadRight(nameWidth))
+                    .Append("  ")
+                    .Append(line.Status.PadRight(statusWidth))
+                    .Append("  ")
+                    .Append(line.Duration.PadLeft(durationWidth));
+
+                if (line.Description.Length > 0)
+                {
+                    builder.Append("  ").Append(line.Description);
+                }
+
+                builder.Append('\n');
+            }
+
+            return builder.ToString();
         }
     }
 }

@@ -1036,6 +1036,40 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         return base.should_stamp_owner_on_claim();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_restamp_the_lease_when_an_attempt_is_reserved_late_in_a_claimed_batch(bool published)
+    {
+        return base.should_restamp_the_lease_when_an_attempt_is_reserved_late_in_a_claimed_batch(published);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_renew_only_the_live_lease_generation_the_caller_holds(bool published)
+    {
+        return base.should_renew_only_the_live_lease_generation_the_caller_holds(published);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_not_renew_a_lease_that_lapsed_and_another_node_took(bool published)
+    {
+        return base.should_not_renew_a_lease_that_lapsed_and_another_node_took(published);
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public override Task should_stamp_reserved_and_renewed_leases_from_the_database_clock(bool published, bool renew)
+    {
+        return base.should_stamp_reserved_and_renewed_leases_from_the_database_clock(published, renew);
+    }
+
     [Fact]
     public override Task should_release_only_exact_published_retry_lease_generation()
     {

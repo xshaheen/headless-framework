@@ -1487,7 +1487,7 @@ Emits `JobsModule.g.cs` at compile time. The generated file:
 
 ### Health checks
 
-Jobs contributes readiness checks automatically; there is no `AddJobsHealthChecks()` call. Each carries the `ready`, `headless`, and `jobs` (`HeadlessHealthCheckTags.Jobs`) tags, follows the rules in [Health checks](utilities.md#health-checks), and is removed with `RemoveHealthChecks`.
+Jobs contributes readiness checks automatically; there is no `AddJobsHealthChecks()` call. Each carries the `ready`, `headless`, and `jobs` (`HeadlessHealthCheckTags.Jobs`) tags; `jobs` and `jobs-scheduler` also carry `host-state` (`HeadlessHealthCheckTags.HostState`), so the [`check` command](utilities.md#health-check-command) skips them before the host starts. Each follows the rules in [Health checks](utilities.md#health-checks), and is removed with `RemoveHealthChecks`.
 
 | Check | Registered when | Failure status | Fails when |
 | --- | --- | --- | --- |

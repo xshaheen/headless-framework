@@ -13,6 +13,7 @@ internal sealed partial class InMemoryDataStorage
         ConcurrentDictionary<Guid, MemoryMessage> messages,
         MediumMessage message,
         int originalInlineAttempts,
+        TimeSpan leaseDuration,
         TimeProvider timeProvider,
         CancellationToken cancellationToken
     )
@@ -46,7 +47,67 @@ internal sealed partial class InMemoryDataStorage
             }
 
             current.InlineAttempts = message.InlineAttempts;
+
+            // The claim leased a whole batch at once and its rows run one after another, so the reservation re-stamps
+            // the lease: a row reserved late in the batch starts its attempt with a full lease.
+            _SlideLease(current, message, timeProvider.GetUtcNow().Add(leaseDuration));
             return ValueTask.FromResult(true);
+        }
+    }
+
+    /// <summary>
+    /// Slides a held lease forward while its attempt runs: only the exact lease generation the caller holds, and only
+    /// while it is still live.
+    /// </summary>
+    private static ValueTask<bool> _RenewLeaseAsync(
+        ConcurrentDictionary<Guid, MemoryMessage> messages,
+        MediumMessage message,
+        TimeSpan leaseDuration,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!messages.TryGetValue(message.StorageId, out var current))
+        {
+            return ValueTask.FromResult(false);
+        }
+
+        lock (current)
+        {
+            if (!messages.TryGetValue(message.StorageId, out var stored) || !ReferenceEquals(stored, current))
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            var now = timeProvider.GetUtcNow();
+            if (
+                ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
+                || (current.InboxGeneration is not null && !_MatchesInboxFence(current, message.InboxAttemptFence))
+                || current.LockedUntil is null
+                || current.LockedUntil != message.LockedUntil
+                || !string.Equals(current.Owner, message.Owner, StringComparison.Ordinal)
+                || current.LockedUntil <= now
+            )
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            _SlideLease(current, message, now.Add(leaseDuration));
+            return ValueTask.FromResult(true);
+        }
+    }
+
+    /// <summary>Moves the row's lease, and the caller's copy of it, to <paramref name="lockedUntil"/>.</summary>
+    private static void _SlideLease(MemoryMessage current, MediumMessage message, DateTimeOffset lockedUntil)
+    {
+        current.LockedUntil = lockedUntil;
+        message.LockedUntil = lockedUntil;
+        message.Owner = current.Owner;
+        if (current.InboxAttemptFence is { } fence)
+        {
+            current.InboxAttemptFence = fence with { LockedUntil = lockedUntil };
+            message.InboxAttemptFence = current.InboxAttemptFence;
         }
     }
 
