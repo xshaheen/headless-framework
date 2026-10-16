@@ -15,6 +15,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Internal;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -871,6 +872,80 @@ internal static class AuditRowCost
                 string.Create(
                     CultureInfo.InvariantCulture,
                     $"AuditLogEntry x{rows} saved by Headless context directly (no capture/pipeline extras beyond bare, no tx): {b:N0} B/op = {b / rows:N0} B/row, {sw.Elapsed.TotalMilliseconds * 1000 / iters:N1} us/op"
+                )
+            );
+        }
+
+        // The same rows written with one parameterized multi-row INSERT on the context's connection, bypassing the
+        // change tracker: the alternative to adding audit rows to the saving context.
+        var entityType = db.Model.FindEntityType(typeof(AuditLogEntry))!;
+        var table = StoreObjectIdentifier.Table(entityType.GetTableName()!, entityType.GetSchema());
+        var columns = entityType
+            .GetProperties()
+            .Where(p => p.ValueGenerated == ValueGenerated.Never && p.GetColumnName(table) is not null)
+            .ToArray();
+        var connection = db.Database.GetDbConnection();
+
+        if (connection.State != System.Data.ConnectionState.Open)
+        {
+            await connection.OpenAsync().ConfigureAwait(false);
+        }
+
+        async Task WriteRawAsync(int rows)
+        {
+            await using var command = connection.CreateCommand();
+            var sql = new System.Text.StringBuilder()
+                .Append("INSERT INTO \"")
+                .Append(table.Name)
+                .Append("\" (")
+                .AppendJoin(", ", columns.Select(c => "\"" + c.GetColumnName(table) + "\""))
+                .Append(") VALUES ");
+
+            for (var r = 0; r < rows; r++)
+            {
+                var row = NewRow(r);
+                sql.Append(r == 0 ? "(" : ", (");
+
+                for (var c = 0; c < columns.Length; c++)
+                {
+                    var parameter = command.CreateParameter();
+                    parameter.ParameterName = string.Create(CultureInfo.InvariantCulture, $"@p{r}_{c}");
+                    var value = columns[c].GetGetter().GetClrValueUsingContainingEntity(row);
+                    var converter = columns[c].GetTypeMapping().Converter;
+                    parameter.Value = (converter is null ? value : converter.ConvertToProvider(value)) ?? DBNull.Value;
+                    command.Parameters.Add(parameter);
+                    sql.Append(c == 0 ? "" : ", ").Append(parameter.ParameterName);
+                }
+
+                sql.Append(')');
+            }
+
+            command.CommandText = sql.ToString();
+            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+        }
+
+        foreach (var rows in new[] { 1, 100 })
+        {
+            for (var w = 0; w < 100; w++)
+            {
+                await WriteRawAsync(rows).ConfigureAwait(false);
+            }
+
+            GC.Collect();
+            var iters = rows == 1 ? 2000 : 100;
+            var before = GC.GetTotalAllocatedBytes(true);
+            var sw = Stopwatch.StartNew();
+            for (var i = 0; i < iters; i++)
+            {
+                await WriteRawAsync(rows).ConfigureAwait(false);
+            }
+
+            sw.Stop();
+            var b = (GC.GetTotalAllocatedBytes(true) - before) / (double)iters;
+            Console.WriteLine(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"AuditLogEntry x{rows} written by one raw multi-row INSERT (1 command): {b:N0} B/op = {b / rows:N0} B/row, {sw.Elapsed.TotalMilliseconds * 1000 / iters:N1} us/op"
                 )
             );
         }
