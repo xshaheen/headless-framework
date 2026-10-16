@@ -9,8 +9,9 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.EntityFramework;
 
 /// <summary>
-/// The options of a non-pooled context registered without an explicit options lifetime: one instance shared by every
-/// scope when nothing scoped can feed them, otherwise a new instance per scope, as EF Core builds scoped options.
+/// The options of a non-pooled context registered without an explicit options lifetime: extensions built once and
+/// shared by every scope when nothing scoped can feed them, each scope getting a copy that carries it as the application
+/// provider; otherwise a new build per scope, as EF Core builds scoped options.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -41,6 +42,8 @@ internal sealed class HeadlessSharedDbContextOptions<TContext>(
 )
     where TContext : DbContext
 {
+    // Read once, by the decision; released after it so the descriptor list is not kept for the host's lifetime.
+    private IServiceCollection? _services = services;
     private readonly Lock _lock = new();
     private volatile DbContextOptions<TContext>? _shared;
     private volatile Decision _decision;
@@ -78,7 +81,7 @@ internal sealed class HeadlessSharedDbContextOptions<TContext>(
     {
         if (_shared is { } shared)
         {
-            return shared;
+            return _ForScope(shared, scopedServices);
         }
 
         if (_decision != Decision.PerScope)
@@ -92,7 +95,7 @@ internal sealed class HeadlessSharedDbContextOptions<TContext>(
 
                 if (_shared is { } decided)
                 {
-                    return decided;
+                    return _ForScope(decided, scopedServices);
                 }
             }
         }
@@ -100,11 +103,23 @@ internal sealed class HeadlessSharedDbContextOptions<TContext>(
         return _Build(scopedServices);
     }
 
+    // The extensions are built once and shared; only the application provider is the scope's. A context created by
+    // hand over these options (new AppDb(options)) therefore adopts the request scope, and its services resolve from
+    // that scope, exactly as with options built per scope. EF Core keys its internal service provider on the
+    // extensions without the application provider, so every scope still shares one internal provider.
+    private static DbContextOptions<TContext> _ForScope(DbContextOptions<TContext> shared, IServiceProvider scope)
+    {
+        var core = shared.FindExtension<CoreOptionsExtension>()!;
+
+        return (DbContextOptions<TContext>)shared.WithExtension(core.WithApplicationServiceProvider(scope));
+    }
+
     private void _Decide()
     {
         if (!_RegistrationsAllowSharing())
         {
             _decision = Decision.PerScope;
+            _services = null;
 
             return;
         }
@@ -114,7 +129,10 @@ internal sealed class HeadlessSharedDbContextOptions<TContext>(
         // action captured, which is the same object in both.
         var candidate = _Build(rootServices);
 
-        if (!_HoldSameInstances(candidate, _Build(rootServices)))
+        var same = _HoldSameInstances(candidate, _Build(rootServices));
+        _services = null;
+
+        if (!same)
         {
             _decision = Decision.PerScope;
 
@@ -127,7 +145,7 @@ internal sealed class HeadlessSharedDbContextOptions<TContext>(
 
     private bool _RegistrationsAllowSharing()
     {
-        foreach (var descriptor in services)
+        foreach (var descriptor in _services!)
         {
             if (descriptor.IsKeyedService)
             {

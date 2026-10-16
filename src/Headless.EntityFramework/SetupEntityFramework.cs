@@ -38,7 +38,7 @@ public static class SetupEntityFramework
         /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: <see cref="ServiceLifetime.Scoped"/> (the default) or <see cref="ServiceLifetime.Transient"/>; <see cref="ServiceLifetime.Singleton"/> throws <see cref="ArgumentException"/>.</param>
         /// <param name="optionsLifetime">
         /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. When <see langword="null"/> (the default), every scope
-        /// shares one options instance, built once from the root provider, as long as every registered
+        /// shares options built once from the root provider (each scope gets a copy carrying that scope), as long as every registered
         /// <c>IInterceptor</c> is a singleton, nothing else configures the context's options, and
         /// <paramref name="optionsAction"/> creates no connection or interceptor of its own; otherwise the options are
         /// built per scope. The decision is made at the first resolution, after all registrations. Pass
@@ -74,7 +74,7 @@ public static class SetupEntityFramework
         /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: <see cref="ServiceLifetime.Scoped"/> (the default) or <see cref="ServiceLifetime.Transient"/>; <see cref="ServiceLifetime.Singleton"/> throws <see cref="ArgumentException"/>.</param>
         /// <param name="optionsLifetime">
         /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. When <see langword="null"/> (the default), every scope
-        /// shares one options instance, built once from the root provider, as long as every registered
+        /// shares options built once from the root provider (each scope gets a copy carrying that scope), as long as every registered
         /// <c>IInterceptor</c> is a singleton, nothing else configures the context's options, and
         /// <paramref name="optionsAction"/> creates no connection or interceptor of its own; otherwise the options are
         /// built per scope. The decision is made at the first resolution, after all registrations. Pass

@@ -17,6 +17,11 @@ namespace Tests;
 /// </summary>
 public sealed class HeadlessDbContextOptionsLifetimeTests : TestBase
 {
+    // Shared options give each scope a copy that differs only in its application provider, so sharing shows in the
+    // provider extension: one instance across scopes, where options built per scope build a new one each time.
+    private static bool _ShareExtensions(DbContextOptions first, DbContextOptions second) =>
+        ReferenceEquals(RelationalOptionsExtension.Extract(first), RelationalOptionsExtension.Extract(second));
+
     [Fact]
     public async Task should_share_options_across_scopes_when_only_singleton_interceptors_are_registered()
     {
@@ -30,7 +35,7 @@ public sealed class HeadlessDbContextOptionsLifetimeTests : TestBase
         var second = harness.ResolveOptions();
 
         // then
-        first.Should().BeSameAs(second);
+        _ShareExtensions(first, second).Should().BeTrue();
         first.FindExtension<CoreOptionsExtension>()!.Interceptors.Should().ContainSingle();
     }
 
@@ -49,7 +54,7 @@ public sealed class HeadlessDbContextOptionsLifetimeTests : TestBase
         var second = secondScope.ServiceProvider.GetRequiredService<DbContextOptions<OptionsDbContext>>();
 
         // then
-        first.Should().NotBeSameAs(second);
+        _ShareExtensions(first, second).Should().BeFalse();
         first
             .FindExtension<CoreOptionsExtension>()!
             .Interceptors.Should()
@@ -71,7 +76,7 @@ public sealed class HeadlessDbContextOptionsLifetimeTests : TestBase
         var second = harness.ResolveOptions();
 
         // then
-        first.Should().NotBeSameAs(second);
+        _ShareExtensions(first, second).Should().BeFalse();
         first.FindExtension<CoreOptionsExtension>()!.DetailedErrorsEnabled.Should().BeTrue();
     }
 
@@ -91,7 +96,7 @@ public sealed class HeadlessDbContextOptionsLifetimeTests : TestBase
         var second = harness.ResolveOptions();
 
         // then
-        first.Should().NotBeSameAs(second);
+        _ShareExtensions(first, second).Should().BeFalse();
         first.FindExtension<CoreOptionsExtension>()!.DetailedErrorsEnabled.Should().BeTrue();
     }
 
@@ -108,7 +113,7 @@ public sealed class HeadlessDbContextOptionsLifetimeTests : TestBase
         var second = harness.ResolveOptions();
 
         // then
-        first.Should().NotBeSameAs(second);
+        _ShareExtensions(first, second).Should().BeFalse();
         RelationalOptionsExtension
             .Extract(first)
             .Connection.Should()
@@ -129,7 +134,7 @@ public sealed class HeadlessDbContextOptionsLifetimeTests : TestBase
         var second = harness.ResolveOptions();
 
         // then
-        first.Should().NotBeSameAs(second);
+        _ShareExtensions(first, second).Should().BeFalse();
     }
 
     [Fact]
@@ -146,7 +151,7 @@ public sealed class HeadlessDbContextOptionsLifetimeTests : TestBase
         var second = harness.ResolveOptions();
 
         // then
-        first.Should().BeSameAs(second);
+        _ShareExtensions(first, second).Should().BeTrue();
     }
 
     [Theory]
@@ -194,6 +199,23 @@ public sealed class HeadlessDbContextOptionsLifetimeTests : TestBase
     }
 
     [Fact]
+    public async Task should_adopt_the_request_scope_when_a_context_is_created_by_hand_over_shared_options()
+    {
+        // given
+        await using var harness = Harness.Create();
+        var scope = harness.CreateScope();
+        var options = scope.ServiceProvider.GetRequiredService<DbContextOptions<OptionsDbContext>>();
+
+        // when
+        await using var db = new OptionsDbContext(options);
+
+        // then: the context resolves its collaborators from the request scope, not from a private one
+        ((IHeadlessDbContext)db)
+            .ServiceProvider.Should()
+            .BeSameAs(scope.ServiceProvider);
+    }
+
+    [Fact]
     public async Task should_create_and_save_through_the_factory_with_shared_options_under_scope_validation()
     {
         // given
@@ -211,7 +233,7 @@ public sealed class HeadlessDbContextOptionsLifetimeTests : TestBase
         // then
         await using var reader = await factory.CreateDbContextAsync(AbortToken);
         (await reader.Set<OptionsRow>().CountAsync(AbortToken)).Should().Be(1);
-        harness.ResolveOptions().Should().BeSameAs(harness.ResolveOptions());
+        _ShareExtensions(harness.ResolveOptions(), harness.ResolveOptions()).Should().BeTrue();
     }
 
     private sealed class NoopCommandInterceptor : DbCommandInterceptor;
