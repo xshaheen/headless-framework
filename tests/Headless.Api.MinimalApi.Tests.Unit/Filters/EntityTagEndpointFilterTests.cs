@@ -135,10 +135,9 @@ public sealed class EntityTagEndpointFilterTests : TestBase
     [Fact]
     public async Task should_emit_an_entity_tag_for_a_successful_api_result()
     {
-        var creator = _CreateProblemDetailsCreator();
-        var (context, _) = _CreateContext(creator: creator);
+        var (context, _) = _CreateContext();
         var expected = EntityTag.FromUInt32(0x01020304);
-        var result = ApiResult<EntityTaggedResource>.Ok(new EntityTaggedResource(expected)).ToHttpResult(creator);
+        var result = ApiResult<EntityTaggedResource>.Ok(new EntityTaggedResource(expected)).ToHttpResult();
 
         _ = await new EntityTagResponseEndpointFilter().InvokeAsync(
             context,

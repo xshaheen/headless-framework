@@ -6,33 +6,59 @@ using Headless.Primitives;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
-using Microsoft.AspNetCore.Mvc;
 
 #pragma warning disable CA1000 // IEndpointMetadataProvider requires a static member on the returned generic type.
 namespace Headless.Api;
 
 /// <summary>
-/// Executes a valued <see cref="ApiResult{T}"/> and publishes its success and ProblemDetails response
-/// types to endpoint metadata.
+/// Executes a valued <see cref="ApiResult{T}"/> as 200 OK, or as the error's problem-details response, and
+/// publishes both response types to endpoint metadata.
 /// </summary>
 /// <typeparam name="T">The success value type.</typeparam>
+/// <remarks>
+/// The problem body is built when the result executes, from the request's <see cref="IProblemDetailsCreator"/>, so
+/// endpoints never inject the creator. The status is known up front; <see cref="IValueHttpResult.Value"/> is the success
+/// value, and <see langword="null"/> for a failure.
+/// </remarks>
 [PublicAPI]
 public sealed class ApiResultHttpResult<T> : IResult, IEndpointMetadataProvider, IStatusCodeHttpResult, IValueHttpResult
 {
-    private readonly IResult _result;
+    private readonly T? _value;
+    private readonly ApiResultError? _error;
 
-    internal ApiResultHttpResult(ApiResult<T> result, IProblemDetailsCreator creator)
+    internal ApiResultHttpResult(ApiResult<T> result)
     {
-        Argument.IsNotNull(creator);
-        _result = result.IsSuccess ? TypedResults.Ok(result.Value) : result.Error.ToHttpResult(creator);
+        if (result.TryGetValue(out var value))
+        {
+            _value = value;
+        }
+        else
+        {
+            // Error throws for a default(ApiResult<T>), so a result that was never assigned fails here, not mid-response.
+            _error = result.Error;
+        }
     }
 
-    int? IStatusCodeHttpResult.StatusCode => (_result as IStatusCodeHttpResult)?.StatusCode;
+    internal ApiResultHttpResult(ApiResultError error)
+    {
+        _error = error;
+    }
 
-    object? IValueHttpResult.Value => (_result as IValueHttpResult)?.Value;
+    int? IStatusCodeHttpResult.StatusCode =>
+        _error is null ? StatusCodes.Status200OK : ApiResultProblemResponse.GetStatusCode(_error);
+
+    object? IValueHttpResult.Value => _value;
 
     /// <inheritdoc/>
-    public Task ExecuteAsync(HttpContext httpContext) => _result.ExecuteAsync(httpContext);
+    /// <exception cref="InvalidOperationException">The result is a failure and no <see cref="IProblemDetailsCreator"/> is registered.</exception>
+    public Task ExecuteAsync(HttpContext httpContext)
+    {
+        Argument.IsNotNull(httpContext);
+
+        return _error is null
+            ? TypedResults.Ok(_value).ExecuteAsync(httpContext)
+            : ApiResultProblemResponse.ExecuteAsync(httpContext, _error);
+    }
 
     /// <summary>Publishes the complete HTTP response contract for Minimal API OpenAPI discovery.</summary>
     /// <param name="method">The endpoint method that returns this result.</param>
@@ -41,29 +67,67 @@ public sealed class ApiResultHttpResult<T> : IResult, IEndpointMetadataProvider,
     {
         Argument.IsNotNull(method);
         Argument.IsNotNull(builder);
-        ApiResultHttpResultMetadata.Populate(builder, StatusCodes.Status200OK, typeof(T));
+        ApiResultProblemResponse.PopulateMetadata(builder, StatusCodes.Status200OK, typeof(T));
     }
 }
 
 /// <summary>
-/// Executes a unit <see cref="ApiResult"/> and publishes its success and ProblemDetails response types
-/// to endpoint metadata.
+/// Executes a valued <see cref="ApiResult{T}"/> as 201 Created with a <c>Location</c> field, or as the error's
+/// problem-details response, and publishes both response types to endpoint metadata.
 /// </summary>
+/// <typeparam name="T">The created resource type.</typeparam>
+/// <remarks>
+/// The problem body is built when the result executes, from the request's <see cref="IProblemDetailsCreator"/>.
+/// <see cref="IValueHttpResult.Value"/> is the created value, and <see langword="null"/> for a failure.
+/// </remarks>
 [PublicAPI]
-public sealed class ApiResultHttpResult : IResult, IEndpointMetadataProvider, IStatusCodeHttpResult
+public sealed class ApiResultCreatedHttpResult<T>
+    : IResult,
+        IEndpointMetadataProvider,
+        IStatusCodeHttpResult,
+        IValueHttpResult
 {
-    private readonly IResult _result;
+    private readonly T? _value;
+    private readonly ApiResultError? _error;
 
-    internal ApiResultHttpResult(ApiResult result, IProblemDetailsCreator creator)
+    internal ApiResultCreatedHttpResult(ApiResult<T> result, Func<T, string> location)
     {
-        Argument.IsNotNull(creator);
-        _result = result.IsSuccess ? TypedResults.NoContent() : result.Error.ToHttpResult(creator);
+        Argument.IsNotNull(location);
+
+        if (result.TryGetValue(out var value))
+        {
+            _value = value;
+            Location = location(value);
+        }
+        else
+        {
+            _error = result.Error;
+        }
     }
 
-    int? IStatusCodeHttpResult.StatusCode => (_result as IStatusCodeHttpResult)?.StatusCode;
+    internal ApiResultCreatedHttpResult(ApiResultError error)
+    {
+        _error = error;
+    }
+
+    /// <summary>The <c>Location</c> of the created resource, or <see langword="null"/> for a failure.</summary>
+    public string? Location { get; }
+
+    int? IStatusCodeHttpResult.StatusCode =>
+        _error is null ? StatusCodes.Status201Created : ApiResultProblemResponse.GetStatusCode(_error);
+
+    object? IValueHttpResult.Value => _value;
 
     /// <inheritdoc/>
-    public Task ExecuteAsync(HttpContext httpContext) => _result.ExecuteAsync(httpContext);
+    /// <exception cref="InvalidOperationException">The result is a failure and no <see cref="IProblemDetailsCreator"/> is registered.</exception>
+    public Task ExecuteAsync(HttpContext httpContext)
+    {
+        Argument.IsNotNull(httpContext);
+
+        return _error is null
+            ? TypedResults.Created(Location, _value).ExecuteAsync(httpContext)
+            : ApiResultProblemResponse.ExecuteAsync(httpContext, _error);
+    }
 
     /// <summary>Publishes the complete HTTP response contract for Minimal API OpenAPI discovery.</summary>
     /// <param name="method">The endpoint method that returns this result.</param>
@@ -72,36 +136,57 @@ public sealed class ApiResultHttpResult : IResult, IEndpointMetadataProvider, IS
     {
         Argument.IsNotNull(method);
         Argument.IsNotNull(builder);
-        ApiResultHttpResultMetadata.Populate(builder, StatusCodes.Status204NoContent, successType: null);
+        ApiResultProblemResponse.PopulateMetadata(builder, StatusCodes.Status201Created, typeof(T));
     }
 }
 
-file static class ApiResultHttpResultMetadata
+/// <summary>
+/// Executes a unit <see cref="ApiResult"/> as 204 No Content, or as the error's problem-details response, and
+/// publishes both response types to endpoint metadata.
+/// </summary>
+/// <remarks>
+/// The problem body is built when the result executes, from the request's <see cref="IProblemDetailsCreator"/>, so
+/// endpoints never inject the creator.
+/// </remarks>
+[PublicAPI]
+public sealed class ApiResultHttpResult : IResult, IEndpointMetadataProvider, IStatusCodeHttpResult
 {
-    private static readonly int[] _ProblemStatusCodes =
-    [
-        StatusCodes.Status401Unauthorized,
-        StatusCodes.Status403Forbidden,
-        StatusCodes.Status404NotFound,
-        StatusCodes.Status409Conflict,
-        StatusCodes.Status422UnprocessableEntity,
-    ];
+    private readonly ApiResultError? _error;
 
-    public static void Populate(EndpointBuilder builder, int successStatusCode, Type? successType)
+    internal ApiResultHttpResult(ApiResult result)
     {
-        builder.Metadata.Add(
-            new ProducesResponseTypeMetadata(
-                successStatusCode,
-                successType,
-                successType is null ? [] : ["application/json"]
-            )
-        );
-
-        foreach (var statusCode in _ProblemStatusCodes)
+        if (!result.IsSuccess)
         {
-            builder.Metadata.Add(
-                new ProducesResponseTypeMetadata(statusCode, typeof(ProblemDetails), ["application/problem+json"])
-            );
+            _error = result.Error;
         }
+    }
+
+    internal ApiResultHttpResult(ApiResultError error)
+    {
+        _error = error;
+    }
+
+    int? IStatusCodeHttpResult.StatusCode =>
+        _error is null ? StatusCodes.Status204NoContent : ApiResultProblemResponse.GetStatusCode(_error);
+
+    /// <inheritdoc/>
+    /// <exception cref="InvalidOperationException">The result is a failure and no <see cref="IProblemDetailsCreator"/> is registered.</exception>
+    public Task ExecuteAsync(HttpContext httpContext)
+    {
+        Argument.IsNotNull(httpContext);
+
+        return _error is null
+            ? TypedResults.NoContent().ExecuteAsync(httpContext)
+            : ApiResultProblemResponse.ExecuteAsync(httpContext, _error);
+    }
+
+    /// <summary>Publishes the complete HTTP response contract for Minimal API OpenAPI discovery.</summary>
+    /// <param name="method">The endpoint method that returns this result.</param>
+    /// <param name="builder">The endpoint builder receiving response metadata.</param>
+    public static void PopulateMetadata(MethodInfo method, EndpointBuilder builder)
+    {
+        Argument.IsNotNull(method);
+        Argument.IsNotNull(builder);
+        ApiResultProblemResponse.PopulateMetadata(builder, StatusCodes.Status204NoContent, successType: null);
     }
 }
