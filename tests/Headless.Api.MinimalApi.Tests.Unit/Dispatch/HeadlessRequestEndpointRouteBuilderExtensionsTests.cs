@@ -82,6 +82,36 @@ public sealed class HeadlessRequestEndpointRouteBuilderExtensionsTests : TestBas
         await _sender.DidNotReceiveWithAnyArgs().Send(default(CreateItem)!, AbortToken);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("null")]
+    public async Task should_answer_400_problem_for_an_empty_body_on_a_created_post_without_sending(string body)
+    {
+        // given
+        await using var services = _CreateServices();
+        var endpoints = new TestEndpointRouteBuilder(services);
+        var locationCalls = 0;
+
+        // when
+        endpoints.MapPostRequest<CreateItem, ItemView>(
+            "/items",
+            item =>
+            {
+                locationCalls++;
+                return $"/items/{item.Id}";
+            }
+        );
+        var httpContext = MinimalApiTestHost.CreatePostContext(services, body);
+        await MinimalApiTestHost.SingleEndpoint(endpoints).RequestDelegate!(httpContext);
+
+        // then
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        httpContext.Response.ContentType.Should().StartWith("application/problem+json");
+        httpContext.Response.Headers.Location.Should().BeEmpty();
+        locationCalls.Should().Be(0);
+        await _sender.DidNotReceiveWithAnyArgs().Send(default(CreateItem)!, AbortToken);
+    }
+
     [Fact]
     public async Task should_answer_201_with_location_for_a_created_post()
     {

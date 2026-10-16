@@ -115,6 +115,42 @@ public sealed class ArgumentValidationEndpointFilterTests : TestBase
     }
 
     [Fact]
+    public async Task should_report_the_failures_of_every_validator_of_every_argument_in_one_422()
+    {
+        // given: two validated arguments, the body one with two validators, and all three fail
+        await using var services = MinimalApiTestHost.CreateServices(collection =>
+            collection
+                .AddScoped<IValidator<ValidatorFilterTestRequest>, NameRequiredValidator>()
+                .AddScoped<IValidator<ValidatorFilterTestRequest>, EmailFormatValidator>()
+                .AddScoped<IValidator<PageQuery>, PageQueryValidator>()
+        );
+        var endpoints = new TestEndpointRouteBuilder(services);
+        var handlerCalls = 0;
+        endpoints
+            .MapGroup("/api")
+            .ValidateArguments()
+            .MapPost(
+                "/users",
+                (ValidatorFilterTestRequest request, [AsParameters] PageQuery page) =>
+                {
+                    handlerCalls++;
+                    return TypedResults.Ok(request.Name);
+                }
+            );
+        var httpContext = MinimalApiTestHost.CreatePostContext(services, """{"name":"","email":"not-an-email"}""");
+        httpContext.Request.QueryString = new QueryString("?size=500");
+
+        // when
+        await MinimalApiTestHost.SingleEndpoint(endpoints).RequestDelegate!(httpContext);
+
+        // then
+        handlerCalls.Should().Be(0);
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status422UnprocessableEntity);
+        var errors = (await MinimalApiTestHost.ReadJsonAsync(httpContext, AbortToken)).GetProperty("errors");
+        errors.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(["name", "email", "size"]);
+    }
+
+    [Fact]
     public async Task should_run_the_handler_when_every_argument_is_valid()
     {
         // given
@@ -283,5 +319,15 @@ public sealed class ArgumentValidationEndpointFilterTests : TestBase
         return MinimalApiTestHost.CreateServices(services =>
             services.AddScoped<IValidator<ValidatorFilterTestRequest>, ValidatorFilterTestRequestValidator>()
         );
+    }
+
+    public sealed record PageQuery(int Size);
+
+    public sealed class PageQueryValidator : AbstractValidator<PageQuery>
+    {
+        public PageQueryValidator()
+        {
+            RuleFor(x => x.Size).LessThanOrEqualTo(50);
+        }
     }
 }
