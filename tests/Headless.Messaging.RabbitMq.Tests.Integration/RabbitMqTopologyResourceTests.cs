@@ -57,7 +57,9 @@ public sealed class RabbitMqTopologyResourceTests(RabbitMqFixture fixture) : Tes
             .Should()
             .BeFalse();
         (await fixture.QueueExistsAsync(queue + ".dlq", AbortToken)).Should().BeFalse();
-        (await _ExchangeExistsAsync(RabbitMqPhysicalAddress.Exchange(exchange, MessageLane.Queue))).Should().BeFalse();
+        (await _ExchangeExistsAsync(RabbitMqPhysicalAddress.Exchange(exchange, MessageLane.Queue)))
+            .Should()
+            .BeTrue("the lane exchanges are shared by every service on the broker, so teardown keeps them");
         await FluentActions
             .Awaiting(() => topology.CheckAsync(AbortToken))
             .Should()
@@ -97,10 +99,95 @@ public sealed class RabbitMqTopologyResourceTests(RabbitMqFixture fixture) : Tes
             .Received.Task.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
     }
 
-    private (ServiceProvider Provider, string Name, string Exchange) _Build()
+    [Fact]
+    public async Task should_keep_another_services_queue_and_bindings_when_one_host_tears_down()
     {
-        var name = $"topology-{Guid.NewGuid():N}";
-        var exchange = $"topology-{Guid.NewGuid():N}";
+        // given — two services share the default exchange name and each consumes its own queue
+        var (first, firstName, exchange) = _Build();
+        await using var _ = first;
+        var (second, secondName, _) = _Build(exchange: exchange);
+        await using var __ = second;
+        await first.SetupResourcesAsync(AbortToken);
+        await second.SetupResourcesAsync(AbortToken);
+        var secondQueue = RabbitMqPhysicalAddress.Queue(MessageLane.Queue, secondName, secondName);
+
+        // when
+        await first.TeardownResourcesAsync(AbortToken);
+
+        // then — the first service's queues are gone; the shared exchanges, including the Bus lane's that nothing
+        // binds here but every host requires, and the second service's binding stay
+        (
+            await fixture.QueueExistsAsync(
+                RabbitMqPhysicalAddress.Queue(MessageLane.Queue, firstName, firstName),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse();
+        (await _ExchangeExistsAsync(RabbitMqPhysicalAddress.Exchange(exchange, MessageLane.Queue))).Should().BeTrue();
+        (
+            await _ExchangeExistsAsync(
+                RabbitMqQueueTopology.DeadLetterExchange(RabbitMqPhysicalAddress.Exchange(exchange, MessageLane.Queue))
+            )
+        )
+            .Should()
+            .BeTrue();
+        (await _ExchangeExistsAsync(RabbitMqPhysicalAddress.Exchange(exchange, MessageLane.Bus))).Should().BeTrue();
+        await (await _ResourcesAsync(second))
+            .Single(r => string.Equals(r.Type, "RabbitMQ", StringComparison.Ordinal))
+            .CheckAsync(AbortToken);
+        await _PublishAsync(exchange, secondName);
+        (await _MessageCountAsync(secondQueue)).Should().Be(1, "the second service's binding survived the teardown");
+
+        // and the second service still starts against the remaining topology and consumes what was published
+        await second.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        await second.GetRequiredService<OrderConsumer>().Received.Task.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+
+        // and when — the last service tears down
+        await second.TeardownResourcesAsync(AbortToken);
+
+        // then — its queue goes; the shared exchanges stay
+        (await fixture.QueueExistsAsync(secondQueue, AbortToken))
+            .Should()
+            .BeFalse();
+        (await _ExchangeExistsAsync(RabbitMqPhysicalAddress.Exchange(exchange, MessageLane.Queue))).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_leave_a_queue_this_host_only_publishes_to_untouched_by_clear_and_teardown()
+    {
+        // given — the consumer service owns the queue; the publisher only sends to it
+        var (consumer, name, exchange) = _Build();
+        await using var _ = consumer;
+        var (publisher, _, _) = _Build(name, exchange, consume: false);
+        await using var __ = publisher;
+        var queue = RabbitMqPhysicalAddress.Queue(MessageLane.Queue, name, name);
+        await consumer.SetupResourcesAsync(AbortToken);
+        await publisher.SetupResourcesAsync(AbortToken);
+        await _PublishAsync(exchange, name);
+
+        // when
+        await publisher.ResetResourceStateAsync(AbortToken);
+        await publisher.TeardownResourcesAsync(AbortToken);
+
+        // then
+        (await fixture.QueueExistsAsync(queue + ".dlq", AbortToken))
+            .Should()
+            .BeTrue();
+        (await _MessageCountAsync(queue))
+            .Should()
+            .Be(1, "the publisher neither purged nor deleted the consumer's queue");
+        (await _ExchangeExistsAsync(RabbitMqPhysicalAddress.Exchange(exchange, MessageLane.Queue))).Should().BeTrue();
+    }
+
+    private (ServiceProvider Provider, string Name, string Exchange) _Build(
+        string? name = null,
+        string? exchange = null,
+        bool consume = true
+    )
+    {
+        name ??= $"topology-{Guid.NewGuid():N}";
+        exchange ??= $"topology-{Guid.NewGuid():N}";
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<OrderConsumer>();
@@ -121,7 +208,11 @@ public sealed class RabbitMqTopologyResourceTests(RabbitMqFixture fixture) : Tes
         services.ConfigureMessaging(messaging =>
         {
             messaging.Message<Order>(name, "1").OnQueue(queue => queue.RawPayload());
-            messaging.AddModule<OrderModule>();
+
+            if (consume)
+            {
+                messaging.AddModule<OrderModule>();
+            }
         });
 
         return (services.BuildServiceProvider(), name, exchange);

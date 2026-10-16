@@ -95,7 +95,7 @@ internal sealed class RabbitMqTopologyProvisioner(
         _RunAsync(
             async channel =>
             {
-                foreach (var name in Queues(topology).SelectMany(_WithDeadLetter))
+                foreach (var name in _OwnedQueues(topology))
                 {
                     _ = await RabbitMqQueueTopology
                         .RequireAsync("queue", name, () => channel.QueuePurgeAsync(name, cancellationToken))
@@ -105,27 +105,18 @@ internal sealed class RabbitMqTopologyProvisioner(
             cancellationToken
         );
 
-    // Deleting a queue or an exchange that does not exist succeeds, so a half torn-down topology finishes cleanly.
+    // Deletes only the queues this host consumes, and their dead-letter queues; deleting one that does not exist
+    // succeeds, so a half torn-down topology finishes cleanly. The lane exchanges and their dead-letter exchanges stay:
+    // ExchangeName is shared by every service on the broker by default, every host requires both lane exchanges, and a
+    // publisher binds nothing, so no broker-side check (if-unused sees bindings only) can prove another service is not
+    // using one.
     public Task TeardownAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
         _RunAsync(
             async channel =>
             {
-                foreach (var name in Queues(topology).SelectMany(_WithDeadLetter))
+                foreach (var name in _OwnedQueues(topology))
                 {
                     await channel.QueueDeleteAsync(name, cancellationToken: cancellationToken).ConfigureAwait(false);
-                }
-
-                foreach (var lane in _Lanes)
-                {
-                    await channel
-                        .ExchangeDeleteAsync(
-                            RabbitMqQueueTopology.DeadLetterExchange(_Exchange(lane)),
-                            cancellationToken: cancellationToken
-                        )
-                        .ConfigureAwait(false);
-                    await channel
-                        .ExchangeDeleteAsync(_Exchange(lane), cancellationToken: cancellationToken)
-                        .ConfigureAwait(false);
                 }
             },
             cancellationToken
@@ -162,6 +153,8 @@ internal sealed class RabbitMqTopologyProvisioner(
     /// <summary>
     /// The shared queues, in a stable order: one per competing subscription (a Bus identity's queue binds every message
     /// it consumes) and one per registered Queue-lane message, which a publisher may send to before any consumer runs.
+    /// A queue is <see cref="RabbitMqTopologyQueue.Owned"/> only when this host consumes it; a queue it only publishes to
+    /// belongs to the consuming service.
     /// </summary>
     internal static List<RabbitMqTopologyQueue> Queues(MessagingTopology topology)
     {
@@ -180,7 +173,8 @@ internal sealed class RabbitMqTopologyProvisioner(
                     queues,
                     RabbitMqPhysicalAddress.Queue(subscription.Lane, subscription.SubscriptionName, messageName),
                     subscription.Lane,
-                    messageName
+                    messageName,
+                    owned: true
                 );
             }
         }
@@ -191,7 +185,8 @@ internal sealed class RabbitMqTopologyProvisioner(
                 queues,
                 RabbitMqPhysicalAddress.Queue(MessageLane.Queue, message.MessageName, message.MessageName),
                 MessageLane.Queue,
-                message.MessageName
+                message.MessageName,
+                owned: false
             );
         }
 
@@ -202,7 +197,8 @@ internal sealed class RabbitMqTopologyProvisioner(
         SortedDictionary<string, RabbitMqTopologyQueue> queues,
         string name,
         MessageLane lane,
-        string messageName
+        string messageName,
+        bool owned
     )
     {
         if (!queues.TryGetValue(name, out var queue))
@@ -211,8 +207,12 @@ internal sealed class RabbitMqTopologyProvisioner(
             queues[name] = queue;
         }
 
+        queue.Owned |= owned;
         queue.RoutingKeys.Add(RabbitMqPhysicalAddress.RoutingKey(lane, messageName));
     }
+
+    private IEnumerable<string> _OwnedQueues(MessagingTopology topology) =>
+        Queues(topology).Where(static queue => queue.Owned).SelectMany(_WithDeadLetter);
 
     private IEnumerable<string> _WithDeadLetter(RabbitMqTopologyQueue queue)
     {
@@ -241,4 +241,11 @@ internal sealed class RabbitMqTopologyProvisioner(
 }
 
 /// <summary>One shared queue the topology needs, with the routing keys that bind it to its lane exchange.</summary>
-internal sealed record RabbitMqTopologyQueue(string Name, MessageLane Lane, SortedSet<string> RoutingKeys);
+internal sealed record RabbitMqTopologyQueue(string Name, MessageLane Lane, SortedSet<string> RoutingKeys)
+{
+    /// <summary>
+    /// Whether this host consumes the queue. Clear and teardown act only on owned queues and their dead-letter queues;
+    /// a queue this host only publishes to is set up and checked, never purged or deleted.
+    /// </summary>
+    public bool Owned { get; set; }
+}
