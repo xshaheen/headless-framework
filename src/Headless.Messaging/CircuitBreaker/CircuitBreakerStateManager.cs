@@ -112,6 +112,7 @@ internal sealed class CircuitBreakerStateManager(
     /// <inheritdoc />
     public async ValueTask ReportFailureAsync(
         string consumerKey,
+        long admissionEpoch,
         Exception exception,
         CancellationToken cancellationToken = default
     )
@@ -155,6 +156,12 @@ internal sealed class CircuitBreakerStateManager(
         {
             switch (state.State)
             {
+                case CircuitBreakerState.HalfOpen when admissionEpoch != state.CurrentEpoch:
+                    // A message admitted before this HalfOpen generation finished late. Its outcome
+                    // says nothing about the probe, so it must not reopen, escalate, or close the
+                    // circuit, nor free the probe slot the in-flight probe still owns.
+                    break;
+
                 case CircuitBreakerState.HalfOpen when !isTransient:
                     // Non-transient failure during probe: the message is bad but the dependency is healthy.
                     // Close the circuit so normal processing resumes.
@@ -408,7 +415,11 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public async ValueTask ReportSuccessAsync(string consumerKey, CancellationToken cancellationToken = default)
+    public async ValueTask ReportSuccessAsync(
+        string consumerKey,
+        long admissionEpoch,
+        CancellationToken cancellationToken = default
+    )
     {
         if (!_circuits.TryGetValue(consumerKey, out var state))
         {
@@ -433,8 +444,10 @@ internal sealed class CircuitBreakerStateManager(
             {
                 state.ConsecutiveFailures = 0;
             }
-            else if (state.State is CircuitBreakerState.HalfOpen)
+            else if (state.State is CircuitBreakerState.HalfOpen && admissionEpoch == state.CurrentEpoch)
             {
+                // Only the probe's own generation may close the circuit; a late success from an
+                // earlier admission does not show the dependency recovered.
                 state.ProbeAcquired = false;
                 state.ProbeAcquiredEpoch = null;
                 (openDuration, closedTimerToDispose) = _TransitionToClosed(state, probeSucceeded: true);

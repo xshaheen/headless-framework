@@ -295,7 +295,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         await _AssertNoStateWriteAsync(storage);
         await circuitBreaker
             .DidNotReceive()
-            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -332,7 +332,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         await _AssertNoStateWriteAsync(storage);
         await circuitBreaker
             .DidNotReceive()
-            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

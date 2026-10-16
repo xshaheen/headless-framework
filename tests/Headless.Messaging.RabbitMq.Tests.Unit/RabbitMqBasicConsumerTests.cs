@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using Headless.Messaging;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
@@ -550,11 +552,12 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     {
         // given
         _channel.IsOpen.Returns(true);
+        using var failures = new SettlementFailureRecorder();
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             1,
             (_, _) => Task.CompletedTask,
-            _ => { },
+            _loggedEvents.Add,
             null,
             _serviceProvider
         );
@@ -564,27 +567,44 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
 
         // then
         await _channel.Received(1).BasicAckAsync(42UL, false, Arg.Any<CancellationToken>());
+        failures.Measurements.Should().BeEmpty();
+        _loggedEvents.Should().NotContain(e => e.LogType == MqLogType.SettlementFailed);
     }
 
     [Fact]
-    public async Task should_not_ack_when_channel_closed()
+    public async Task should_warn_and_count_a_settlement_failure_when_acking_on_a_closed_channel()
     {
         // given
         _channel.IsOpen.Returns(false);
+        using var failures = new SettlementFailureRecorder();
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             1,
             (_, _) => Task.CompletedTask,
-            _ => { },
+            _loggedEvents.Add,
             null,
             _serviceProvider
         );
 
         // when
-        await consumer.BasicAck(42UL, AbortToken);
+        var act = async () => await consumer.BasicAck(42UL, AbortToken);
 
-        // then
+        // then: the broker redelivers an unacked message once the channel is gone, so the ack is lost, not failed
+        await act.Should().NotThrowAsync();
         await _channel.DidNotReceive().BasicAckAsync(Arg.Any<ulong>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+        _loggedEvents.Should().ContainSingle(e => e.LogType == MqLogType.SettlementFailed);
+        failures
+            .Measurements.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeEquivalentTo(
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["messaging.system"] = "rabbitmq",
+                    ["messaging.operation.name"] = "ack",
+                    ["error.type"] = "channel_closed",
+                }
+            );
     }
 
     [Fact]
@@ -1134,5 +1154,64 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             .Select(call => call.GetMethodInfo().Name)
             .Should()
             .NotContain([nameof(IChannel.BasicAckAsync), nameof(IChannel.BasicRejectAsync)]);
+    }
+
+    /// <summary>
+    /// Captures settlement-failure measurements recorded on the creating test's async flow only, so failures that
+    /// tests running in parallel record on the shared meter do not leak into the assertion.
+    /// </summary>
+    private sealed class SettlementFailureRecorder : IDisposable
+    {
+        private static readonly AsyncLocal<SettlementFailureRecorder?> _Current = new();
+        private readonly MeterListener _listener = new();
+        private readonly ConcurrentQueue<Dictionary<string, object?>> _measurements = new();
+
+        public SettlementFailureRecorder()
+        {
+            _Current.Value = this;
+            _listener.InstrumentPublished = (instrument, listener) =>
+            {
+                if (
+                    string.Equals(instrument.Meter.Name, "Headless.Messaging", StringComparison.Ordinal)
+                    && string.Equals(
+                        instrument.Name,
+                        "headless.messaging.settlement.failures",
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    listener.EnableMeasurementEvents(instrument);
+                }
+            };
+            _listener.SetMeasurementEventCallback<long>(
+                (_, value, tags, _) =>
+                {
+                    if (!ReferenceEquals(_Current.Value, this))
+                    {
+                        return;
+                    }
+
+                    var tagMap = new Dictionary<string, object?>(StringComparer.Ordinal);
+                    foreach (var tag in tags)
+                    {
+                        tagMap[tag.Key] = tag.Value;
+                    }
+
+                    for (var i = 0; i < value; i++)
+                    {
+                        _measurements.Enqueue(tagMap);
+                    }
+                }
+            );
+            _listener.Start();
+        }
+
+        public IReadOnlyCollection<Dictionary<string, object?>> Measurements => [.. _measurements];
+
+        public void Dispose()
+        {
+            _listener.Dispose();
+            _Current.Value = null;
+        }
     }
 }

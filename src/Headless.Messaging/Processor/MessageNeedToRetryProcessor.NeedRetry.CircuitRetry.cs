@@ -31,6 +31,12 @@ internal sealed partial class MessageNeedToRetryProcessor
     private async ValueTask<bool> _DispatchProbeAsync(HalfOpenProbeHandle probe, CancellationToken cancellationToken)
     {
         var transferred = false;
+
+        // The executor reports the outcome, and releases an abandoned probe, under the message's
+        // admission epoch. A persisted row carries none of its own, so stamp the probe generation
+        // this claim reserved; without it the probe's own report would look stale to the breaker.
+        probe.Work.Message.ProbeEpoch = probe.Work.Decision.Epoch;
+
         try
         {
             transferred = _dispatcher is IRetryDispatcher retryDispatcher

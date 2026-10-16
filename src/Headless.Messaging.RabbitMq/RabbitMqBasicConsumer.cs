@@ -326,12 +326,32 @@ internal sealed class RabbitMqBasicConsumer(
         return new NativeEnvelopeFacts(producerMessageId, PositionId: null, storedAt);
     }
 
+    /// <summary>
+    /// Acknowledges a handled delivery. On a closed channel the acknowledgement cannot be sent and is not attempted:
+    /// a delivery tag belongs to its channel, so the broker already requeued the message when the channel closed and
+    /// redelivers it, which the inbox deduplicates. That lost acknowledgement is logged and counted, not thrown.
+    /// </summary>
     public async Task BasicAck(ulong deliveryTag, CancellationToken cancellationToken = default)
     {
         if (Channel.IsOpen)
         {
             await Channel.BasicAckAsync(deliveryTag, multiple: false, cancellationToken).ConfigureAwait(false);
+            return;
         }
+
+        MessagingMetrics.RecordSettlementFailure(
+            "rabbitmq",
+            MessagingMetrics.OperationNameAck,
+            MessagingMetrics.ErrorTypeChannelClosed
+        );
+        logCallback(
+            new LogMessageEventArgs
+            {
+                LogType = MqLogType.SettlementFailed,
+                Reason =
+                    $"RabbitMQ message ACK for delivery tag {deliveryTag} skipped: the channel is closed, so the broker will redeliver it.",
+            }
+        );
     }
 
     public async Task BasicReject(ulong deliveryTag, CancellationToken cancellationToken = default)

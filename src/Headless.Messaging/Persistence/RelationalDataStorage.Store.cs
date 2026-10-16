@@ -253,9 +253,9 @@ internal sealed partial class RelationalDataStorage
 
     /// <summary>
     /// Persists an inbound message to the received table. Concurrent broker redeliveries of the same message to one
-    /// consumer collapse to one row on <c>(Version, MessageId, ConsumerIdentity, IntentType)</c>, while each consumer
-    /// that receives the message keeps its own row; the terminal-row guard ensures already-completed rows are never
-    /// overwritten.
+    /// consumer collapse to one row on the byte-exact hash of <c>(Version, MessageId, IntentType, ConsumerIdentity)</c>,
+    /// while each consumer that receives the message keeps its own row; the terminal-row guard ensures already-completed
+    /// rows are never overwritten.
     /// </summary>
     /// <returns>The stored <c>MediumMessage</c> with its generated <c>StorageId</c> and timestamps populated.</returns>
     public async ValueTask<MediumMessage> StoreReceivedMessageAsync(
@@ -366,13 +366,7 @@ internal sealed partial class RelationalDataStorage
     {
         var expiresAt = hasExpiry ? _dialect.ShiftByDuration(SqlDialectTokens.Now, "ExpiresAfter") : "NULL";
         var nextRetryAt = hasDue ? _dialect.ShiftByDuration(SqlDialectTokens.Now, "DueAfter") : "NULL";
-        SqlKeyColumn[] identity =
-        [
-            new(_t.Version, "Version"),
-            new(_t.MessageId, "MessageId"),
-            new(_t.ConsumerIdentity, "ConsumerIdentity"),
-            new(_t.IntentType, "IntentType"),
-        ];
+        SqlKeyColumn[] identity = [new(_t.ConsumerIdentityHash, "ConsumerIdentityHash")];
         var nonInbox = $"{_t.IsInboxRecord} = {_t.False}";
 
         var insertSql = _dialect.Render(
@@ -380,6 +374,10 @@ internal sealed partial class RelationalDataStorage
                 _receivedTable,
                 identity,
                 [
+                    _t.Version,
+                    _t.MessageId,
+                    _t.ConsumerIdentity,
+                    _t.IntentType,
                     _t.Id,
                     _t.Name,
                     _t.Content,
@@ -394,6 +392,10 @@ internal sealed partial class RelationalDataStorage
                     _t.ExceptionInfo,
                 ],
                 [
+                    "@Version",
+                    "@MessageId",
+                    "@ConsumerIdentity",
+                    "@IntentType",
                     "@Id",
                     "@Name",
                     "@Content",
@@ -447,17 +449,25 @@ internal sealed partial class RelationalDataStorage
             (row.ExpiresAfter is null ? 0 : 2) | (row.DueAfter is null ? 0 : 1)
         ];
 
-        void bindIdentity(DbCommand command)
+        var intentType = MessageLaneCompatibility.ToPersistedValue(row.Lane);
+        var identityHash = CreateConsumerIdentityHash(Options.Version, row.MessageId, intentType, row.ConsumerIdentity);
+
+        void bindIdentityHash(DbCommand command)
+        {
+            _dialect.AddParameter(
+                command,
+                "ConsumerIdentityHash",
+                SqlColumnType.FixedBinary(_Sha256HashLength),
+                identityHash
+            );
+        }
+
+        void bindIdentityColumns(DbCommand command)
         {
             _BindVersion(command);
             _dialect.AddParameter(command, "MessageId", _MessageIdType, row.MessageId);
             _dialect.AddParameter(command, "ConsumerIdentity", _IdentityType, row.ConsumerIdentity);
-            _dialect.AddParameter(
-                command,
-                "IntentType",
-                SqlColumnType.Int16,
-                MessageLaneCompatibility.ToPersistedValue(row.Lane)
-            );
+            _dialect.AddParameter(command, "IntentType", SqlColumnType.Int16, intentType);
         }
 
         void bindValues(DbCommand command)
@@ -491,7 +501,8 @@ internal sealed partial class RelationalDataStorage
                         CommandTimeoutSeconds,
                         command =>
                         {
-                            bindIdentity(command);
+                            bindIdentityHash(command);
+                            bindIdentityColumns(command);
                             bindValues(command);
                             _dialect.AddParameter(command, "Id", SqlColumnType.Guid, row.Id);
                             _dialect.AddParameter(command, "Name", _NameType, row.Name);
@@ -523,7 +534,7 @@ internal sealed partial class RelationalDataStorage
                                 transaction,
                                 lockSql,
                                 CommandTimeoutSeconds,
-                                bindIdentity,
+                                bindIdentityHash,
                                 static async (reader, token) =>
                                     await reader.ReadAsync(token).ConfigureAwait(false)
                                         ? reader.GetGuid(0)

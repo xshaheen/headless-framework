@@ -91,6 +91,13 @@ public enum MqLogType
     /// again.
     /// </summary>
     BrokerReachable = 15,
+
+    /// <summary>
+    /// The transport could not settle a delivery with the broker: an acknowledgement failed or could not be sent because
+    /// the channel was closed (NATS, RabbitMQ). The broker redelivers the message, and the inbox deduplicates the
+    /// redelivery, so delivery stays at-least-once.
+    /// </summary>
+    SettlementFailed = 16,
 }
 
 /// <summary>

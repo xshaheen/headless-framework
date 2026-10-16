@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
@@ -10,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 #pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests;
@@ -122,7 +124,9 @@ public sealed class MessageSenderTests : TestBase
         ITransport transport,
         MessagingOptions options,
         IHostApplicationLifetime? lifetime = null,
-        TransportConnectivity? connectivity = null
+        TransportConnectivity? connectivity = null,
+        TimeProvider? timeProvider = null,
+        ILoggerProvider? loggerProvider = null
     )
     {
         storage
@@ -165,13 +169,19 @@ public sealed class MessageSenderTests : TestBase
             .Returns(ValueTask.FromResult(true));
 
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddLogging(logging =>
+        {
+            if (loggerProvider is not null)
+            {
+                logging.AddProvider(loggerProvider);
+            }
+        });
         services.AddSingleton(storage);
         services.AddSingleton(serializer);
         services.AddSingleton(transport);
         services.AddSingleton<IBusTransport>(_ => new TestBusTransportAdapter(transport));
         services.AddSingleton<IQueueTransport>(_ => new TestQueueTransportAdapter(transport));
-        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton(timeProvider ?? TimeProvider.System);
         services.AddSingleton(Options.Create(options));
         if (lifetime is not null)
         {
@@ -1510,5 +1520,364 @@ public sealed class MessageSenderTests : TestBase
             );
         await storage.DidNotReceiveWithAnyArgs().LeasePublishAsync(default!, default, AbortToken);
         await storage.DidNotReceiveWithAnyArgs().ReservePublishAttemptAsync(default!, default, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_end_over_cap_row_as_exhausted_without_sending_when_retries_exceed_max_persisted_retries()
+    {
+        // given — the cap was lowered after this row was scheduled, so it already used more retries than allowed
+        var storage = Substitute.For<IDataStorage>();
+        var serializer = Substitute.For<IMessageSerializer>();
+        var transport = Substitute.For<ITransport>();
+        var exhaustedCalls = 0;
+        var options = new MessagingOptions
+        {
+            RetryPolicy =
+            {
+                RetryStrategy = TestRetryStrategies.ZeroDelay(2),
+                MaxPersistedRetries = 1,
+                OnExhausted = (_, _) =>
+                {
+                    Interlocked.Increment(ref exhaustedCalls);
+                    return Task.CompletedTask;
+                },
+            },
+        };
+        var sender = _CreateSender(storage, serializer, transport, options);
+        var message = _CreateMediumMessage();
+        message.Retries = 3;
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        exhaustedCalls.Should().Be(1);
+        message.Retries.Should().Be(3, "an exhausted row does not consume another persisted retry");
+        await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, AbortToken);
+        await serializer.DidNotReceiveWithAnyArgs().SerializeToTransportMessageAsync(default!, AbortToken);
+        await storage
+            .Received(1)
+            .ChangePublishRetryStateAsync(
+                message,
+                StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
+                Arg.Is<RetryDelay?>(value => value == null),
+                Arg.Is<DateTimeOffset?>(value => value == null),
+                3,
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+        await storage
+            .DidNotReceiveWithAnyArgs()
+            .LeasePublishAndReserveAttemptAsync(default!, default, default, AbortToken);
+        await storage.DidNotReceiveWithAnyArgs().ReservePublishAttemptAsync(default!, default, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_write_terminal_state_without_inline_backoff_when_over_cap_row_has_inline_budget_left()
+    {
+        // given — two inline retries remain and each would wait an hour on a clock the test never advances, so the
+        // send can only finish if the over-cap row goes terminal without entering the inline burst
+        var storage = Substitute.For<IDataStorage>();
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            .Returns(OperateResult.Failed(new TimeoutException("transient")));
+        var options = new MessagingOptions
+        {
+            RetryPolicy =
+            {
+                RetryStrategy = TestRetryStrategies.FixedDelay(2, TimeSpan.FromHours(1)),
+                MaxPersistedRetries = 1,
+                DispatchTimeout = TimeSpan.FromHours(3),
+            },
+        };
+        var sender = _CreateSender(storage, serializer, transport, options, timeProvider: new FakeTimeProvider());
+        var message = _CreateMediumMessage();
+        message.Retries = 2;
+        message.InlineAttempts = 0;
+
+        // when
+        var result = await sender.SendAsync(message).WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, AbortToken);
+        await storage
+            .Received(1)
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+        await storage
+            .Received(1)
+            .ChangePublishRetryStateAsync(
+                message,
+                StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
+                Arg.Is<RetryDelay?>(value => value == null),
+                Arg.Any<DateTimeOffset?>(),
+                2,
+                0,
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_still_attempt_the_send_when_retries_equal_max_persisted_retries()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport.SendAsync(transportMessage, Arg.Any<CancellationToken>()).Returns(OperateResult.Success);
+        var options = new MessagingOptions
+        {
+            RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(2), MaxPersistedRetries = 1 },
+        };
+        var sender = _CreateSender(storage, serializer, transport, options);
+        var message = _CreateMediumMessage();
+        message.Retries = 1;
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await transport.Received(1).SendAsync(transportMessage, Arg.Any<CancellationToken>());
+        await storage
+            .Received(1)
+            .ChangePublishRetryStateAsync(
+                message,
+                StatusName.Succeeded,
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                1,
+                1,
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_not_invoke_on_exhausted_when_another_sender_already_ended_the_over_cap_row()
+    {
+        // given — a second sender raced the same over-cap row and its terminal write lost the compare-and-set
+        var storage = Substitute.For<IDataStorage>();
+        var serializer = Substitute.For<IMessageSerializer>();
+        var transport = Substitute.For<ITransport>();
+        var exhaustedCalls = 0;
+        var options = new MessagingOptions
+        {
+            RetryPolicy =
+            {
+                RetryStrategy = TestRetryStrategies.ZeroDelay(2),
+                MaxPersistedRetries = 1,
+                OnExhausted = (_, _) =>
+                {
+                    Interlocked.Increment(ref exhaustedCalls);
+                    return Task.CompletedTask;
+                },
+            },
+        };
+        var sender = _CreateSender(storage, serializer, transport, options);
+        storage
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(false));
+        var message = _CreateMediumMessage();
+        message.Retries = 3;
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        exhaustedCalls.Should().Be(0);
+        await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, AbortToken);
+    }
+
+    public static TheoryData<string, int> SuccessWriteMissCases =>
+        new()
+        {
+            // The row reached a terminal state before this success write: the existing terminal event.
+            { "terminal", 69 },
+            // Another claimer holds the row under a different lease.
+            { "lease-lost", 4121 },
+            // A claimed delayed publish is live with no NextRetryAt, so only its status tells it is not terminal.
+            { "queued-lease-lost", 4121 },
+            { "missing", 4122 },
+        };
+
+    [Theory]
+    [MemberData(nameof(SuccessWriteMissCases))]
+    public async Task should_log_success_write_miss_by_cause_when_the_fenced_success_write_misses(
+        string rowState,
+        int expectedEventId
+    )
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        var message = _CreateMediumMessage();
+        var monitoring = Substitute.For<IMonitoringApi>();
+        storage.GetMonitoringApi().Returns(monitoring);
+        monitoring
+            .GetPublishedMessageAsync(message.StorageId, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(_RowFor(message, rowState)));
+        using var log = new CapturingLoggerProvider();
+        var (sender, transportMessage, transport) = _CreateSucceedingSenderWithMissedWrite(storage, log);
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await transport.Received(1).SendAsync(transportMessage, Arg.Any<CancellationToken>());
+        log.Entries.Select(e => e.EventId.Id).Where(id => id is 69 or 4121 or 4122).Should().Equal(expectedEventId);
+    }
+
+    [Fact]
+    public async Task should_complete_publish_and_log_lease_lost_or_unknown_when_the_diagnostic_read_throws()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        var message = _CreateMediumMessage();
+        var monitoring = Substitute.For<IMonitoringApi>();
+        storage.GetMonitoringApi().Returns(monitoring);
+        var readFailure = new InvalidOperationException("database unavailable");
+        monitoring
+            .GetPublishedMessageAsync(message.StorageId, Arg.Any<CancellationToken>())
+            .Returns<ValueTask<MediumMessage?>>(_ => throw readFailure);
+        using var log = new CapturingLoggerProvider();
+        var (sender, _, _) = _CreateSucceedingSenderWithMissedWrite(storage, log);
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        log.Entries.Should().ContainSingle(e => e.EventId.Id == 4121).Which.Exception.Should().BeSameAs(readFailure);
+        log.Entries.Should().NotContain(e => e.EventId.Id == 69 || e.EventId.Id == 4122);
+    }
+
+    private static (
+        MessageSender Sender,
+        TransportMessage TransportMessage,
+        ITransport Transport
+    ) _CreateSucceedingSenderWithMissedWrite(IDataStorage storage, CapturingLoggerProvider log)
+    {
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport.SendAsync(transportMessage, Arg.Any<CancellationToken>()).Returns(OperateResult.Success);
+        var sender = _CreateSender(storage, serializer, transport, new MessagingOptions(), loggerProvider: log);
+        storage
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Succeeded,
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(false));
+        return (sender, transportMessage, transport);
+    }
+
+    private static MediumMessage? _RowFor(MediumMessage message, string rowState)
+    {
+        if (string.Equals(rowState, "missing", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var row = _CreateMediumMessage();
+        row.StorageId = message.StorageId;
+        switch (rowState)
+        {
+            case "terminal":
+                row.StatusName = StatusName.Failed;
+                row.NextRetryAt = null;
+                row.LockedUntil = null;
+                break;
+            case "lease-lost":
+                row.StatusName = StatusName.Scheduled;
+                row.NextRetryAt = DateTimeOffset.UtcNow.AddMinutes(1);
+                row.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+                break;
+            case "queued-lease-lost":
+                row.StatusName = StatusName.Queued;
+                row.NextRetryAt = null;
+                row.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(rowState), rowState, null);
+        }
+
+        return row;
+    }
+
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly ConcurrentQueue<(LogLevel Level, EventId EventId, Exception? Exception)> _entries = new();
+
+        public IReadOnlyList<(LogLevel Level, EventId EventId, Exception? Exception)> Entries => [.. _entries];
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(_entries);
+
+        public void Dispose() { }
+
+        private sealed class CapturingLogger(
+            ConcurrentQueue<(LogLevel Level, EventId EventId, Exception? Exception)> entries
+        ) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                entries.Enqueue((logLevel, eventId, exception));
+            }
+        }
     }
 }

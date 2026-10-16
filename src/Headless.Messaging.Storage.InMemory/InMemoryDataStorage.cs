@@ -141,9 +141,7 @@ internal sealed partial class InMemoryDataStorage(
                 if (
                     !_IsSupportedLane(message.Lane)
                     || message.Lane != expected.Lane
-                    || (
-                        (message.StatusName is StatusName.Succeeded or StatusName.Failed) && message.NextRetryAt is null
-                    )
+                    || MessageTerminalState.IsTerminal(message.StatusName, message.NextRetryAt)
                     // Only the lease the caller recorded may be handed back, mirroring the relational providers: an
                     // unleased hand-off copy must not reset a row another node has claimed and is sending since.
                     || !string.Equals(message.Owner, expected.Owner, StringComparison.Ordinal)
@@ -272,7 +270,7 @@ internal sealed partial class InMemoryDataStorage(
             // Mirror the SQL providers' terminal guard: only reject when status is terminal AND
             // NextRetryAt is null. A Succeeded row with non-null NextRetryAt is degenerate but
             // shouldn't be blocked by this guard — cross-storage parity per the at-least-once contract.
-            if ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
+            if (MessageTerminalState.IsTerminal(current.StatusName, current.NextRetryAt))
             {
                 return ValueTask.FromResult(false);
             }
@@ -438,7 +436,7 @@ internal sealed partial class InMemoryDataStorage(
             lock (current)
             {
                 // Mirror the SQL providers' terminal guard (see ChangePublishStateAsync above).
-                if ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
+                if (MessageTerminalState.IsTerminal(current.StatusName, current.NextRetryAt))
                 {
                     return ValueTask.FromResult(false);
                 }
@@ -621,6 +619,38 @@ internal sealed partial class InMemoryDataStorage(
                 new InboxAdmissionResult(InboxAdmissionDisposition.Winner, _ToSnapshot(stored))
             );
         }
+    }
+
+    public ValueTask<bool> IsInboxMessageAdmittedAsync(
+        string? tenantId,
+        string messageId,
+        string messageName,
+        string consumerIdentity,
+        MessageLane lane,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Every contract version and generation counts, replay children included, as on the relational providers: the
+        // caller cannot know which one was admitted. The identity index holds root generations only, so the rows are
+        // scanned without copying the dictionary; this runs only for a delivery that already failed before admission.
+        foreach (var (_, row) in ReceivedMessages)
+        {
+            if (
+                row.InboxKey is { } key
+                && key.Lane == lane
+                && string.Equals(key.MessageId, messageId, StringComparison.Ordinal)
+                && string.Equals(key.ContractIdentity, messageName, StringComparison.Ordinal)
+                && string.Equals(key.ConsumerIdentity, consumerIdentity, StringComparison.Ordinal)
+                && string.Equals(key.TenantId, tenantId, StringComparison.Ordinal)
+            )
+            {
+                return ValueTask.FromResult(true);
+            }
+        }
+
+        return ValueTask.FromResult(false);
     }
 
     public ValueTask<bool> DeferReceivedInboxOrphanAsync(
@@ -861,7 +891,7 @@ internal sealed partial class InMemoryDataStorage(
 
             if (existing is not null)
             {
-                if ((existing.StatusName is StatusName.Succeeded or StatusName.Failed) && existing.NextRetryAt is null)
+                if (MessageTerminalState.IsTerminal(existing.StatusName, existing.NextRetryAt))
                 {
                     // Terminal — leave it alone.
                     return ValueTask.FromResult(false);
@@ -973,7 +1003,7 @@ internal sealed partial class InMemoryDataStorage(
                 // scheduled retry is left alone so a redelivery cannot overwrite a previously-
                 // terminal row. Return a fresh unstored candidate whose synthetic id cannot lease
                 // or execute that terminal row.
-                if ((existing.StatusName is StatusName.Succeeded or StatusName.Failed) && existing.NextRetryAt is null)
+                if (MessageTerminalState.IsTerminal(existing.StatusName, existing.NextRetryAt))
                 {
                     return ValueTask.FromResult(
                         _CreateUnstoredReceivedMessage(message, serialized, added, initialNextRetryAt)
@@ -1324,7 +1354,7 @@ internal sealed partial class InMemoryDataStorage(
                     || current.LockedUntil != identity.LockedUntil
                     || (current.InboxGeneration is not null && !_MatchesInboxFence(current, identity.InboxAttemptFence))
                     || current.LockedUntil <= timeProvider.GetUtcNow()
-                    || (current.StatusName is StatusName.Succeeded or StatusName.Failed && current.NextRetryAt is null)
+                    || MessageTerminalState.IsTerminal(current.StatusName, current.NextRetryAt)
                 )
                 {
                     return ValueTask.FromResult(false);
@@ -1396,7 +1426,7 @@ internal sealed partial class InMemoryDataStorage(
                 || !string.Equals(current.Owner, identity.Owner, StringComparison.Ordinal)
                 || current.LockedUntil != identity.LockedUntil
                 || (current.InboxGeneration is not null && !_MatchesInboxFence(current, identity.InboxAttemptFence))
-                || (current.StatusName is StatusName.Succeeded or StatusName.Failed && current.NextRetryAt is null)
+                || MessageTerminalState.IsTerminal(current.StatusName, current.NextRetryAt)
             )
             {
                 return false;
@@ -1420,11 +1450,6 @@ internal sealed partial class InMemoryDataStorage(
         _ = MessageLaneCompatibility.ToPersistedValue(lane);
         var now = timeProvider.GetUtcNow();
         var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
-        // Only published rows are capped by the host-wide MaxPersistedRetries. A received row's budget belongs to its
-        // consumer's failure policy, which the executor checks after the claim, as the relational providers do.
-        int? maxPersistedRetries = ReferenceEquals(source, PublishedMessages)
-            ? messagingOptions.Value.RetryPolicy.MaxPersistedRetries
-            : null;
         var retryBatchSize = orphaned is true
             ? messagingOptions.Value.OrphanProbeBatchSize
             : messagingOptions.Value.RetryBatchSize;
@@ -1485,11 +1510,6 @@ internal sealed partial class InMemoryDataStorage(
                 }
 
                 if (candidate.Lane != lane)
-                {
-                    continue;
-                }
-
-                if (maxPersistedRetries is { } cap && candidate.Retries > cap)
                 {
                     continue;
                 }
@@ -1599,7 +1619,7 @@ internal sealed partial class InMemoryDataStorage(
 
         lock (current)
         {
-            if ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
+            if (MessageTerminalState.IsTerminal(current.StatusName, current.NextRetryAt))
             {
                 return ValueTask.FromResult(false);
             }
@@ -1655,7 +1675,7 @@ internal sealed partial class InMemoryDataStorage(
                     continue;
                 }
 
-                if ((message.StatusName is StatusName.Succeeded or StatusName.Failed) && message.NextRetryAt is null)
+                if (MessageTerminalState.IsTerminal(message.StatusName, message.NextRetryAt))
                 {
                     continue;
                 }

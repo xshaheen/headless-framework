@@ -738,4 +738,136 @@ public sealed class MessagingOptionsValidationTests : TestBase
             return ValueTask.CompletedTask;
         }
     }
+
+    [Fact]
+    public void should_accept_default_dispatch_timeout_against_the_inline_publish_burst()
+    {
+        var result = new MessagingOptionsValidator().Validate(new MessagingOptions());
+
+        result
+            .Errors.Should()
+            .NotContain(e => e.ErrorMessage.Contains("inline publish burst", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void should_reject_dispatch_timeout_shorter_than_the_inline_publish_burst()
+    {
+        // given — three attempts of up to 2 minutes each plus 1 s and 2 s of exponential backoff take 6:03
+        var options = new MessagingOptions
+        {
+            TransportPublishTimeout = TimeSpan.FromMinutes(2),
+            RetryPolicy =
+            {
+                DispatchTimeout = TimeSpan.FromMinutes(5),
+                RetryStrategy = new()
+                {
+                    MaxRetryAttempts = 2,
+                    Delay = TimeSpan.FromSeconds(1),
+                    BackoffType = DelayBackoffType.Exponential,
+                    MaxDelay = TimeSpan.FromMinutes(5),
+                },
+            },
+        };
+
+        // when
+        var result = new MessagingOptionsValidator().Validate(options);
+
+        // then
+        result
+            .Errors.Should()
+            .ContainSingle(e => e.ErrorMessage.Contains("inline publish burst", StringComparison.Ordinal))
+            .Which.ErrorMessage.Should()
+            .Contain("DispatchTimeout (00:05:00)")
+            .And.Contain("(00:06:03)")
+            .And.Contain("TransportPublishTimeout (00:02:00)");
+    }
+
+    [Theory]
+    // Exponential 10 s capped at 15 s: 10 + 15 + 15 + 15 = 55 s of delay, plus 5 × 1 s of publishing.
+    [InlineData(DelayBackoffType.Exponential, 10, 4, 15, 1, 60)]
+    // Linear 10 s capped at 25 s: 10 + 20 + 25 = 55 s of delay, plus 4 × 5 s of publishing.
+    [InlineData(DelayBackoffType.Linear, 10, 3, 25, 5, 75)]
+    // Constant 10 s capped at 4 s: 3 × 4 s of delay, plus 4 × 2 s of publishing.
+    [InlineData(DelayBackoffType.Constant, 10, 3, 4, 2, 20)]
+    // No retries: one attempt and no delay.
+    [InlineData(DelayBackoffType.Exponential, 10, 0, 15, 7, 7)]
+    public void should_require_dispatch_timeout_to_exceed_the_capped_nominal_burst(
+        DelayBackoffType backoffType,
+        int delaySeconds,
+        int maxRetryAttempts,
+        int maxDelaySeconds,
+        int publishTimeoutSeconds,
+        int expectedBurstSeconds
+    )
+    {
+        MessagingOptions create(TimeSpan dispatchTimeout) =>
+            new()
+            {
+                TransportPublishTimeout = TimeSpan.FromSeconds(publishTimeoutSeconds),
+                RetryPolicy =
+                {
+                    DispatchTimeout = dispatchTimeout,
+                    RetryStrategy = new()
+                    {
+                        MaxRetryAttempts = maxRetryAttempts,
+                        Delay = TimeSpan.FromSeconds(delaySeconds),
+                        BackoffType = backoffType,
+                        MaxDelay = TimeSpan.FromSeconds(maxDelaySeconds),
+                    },
+                },
+            };
+        var burst = TimeSpan.FromSeconds(expectedBurstSeconds);
+        var validator = new MessagingOptionsValidator();
+
+        // A lease exactly as long as the burst can still lapse before the last attempt's write, so it must exceed it.
+        validator
+            .Validate(create(burst))
+            .Errors.Should()
+            .Contain(e => e.ErrorMessage.Contains("inline publish burst", StringComparison.Ordinal));
+        validator
+            .Validate(create(burst + TimeSpan.FromTicks(1)))
+            .Errors.Should()
+            .NotContain(e => e.ErrorMessage.Contains("inline publish burst", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void should_saturate_the_inline_publish_burst_instead_of_overflowing()
+    {
+        // given — an out-of-range retry count with uncapped exponential backoff, which its own rule also rejects
+        var options = new MessagingOptions
+        {
+            RetryPolicy =
+            {
+                RetryStrategy = new()
+                {
+                    MaxRetryAttempts = int.MaxValue,
+                    Delay = TimeSpan.FromSeconds(1),
+                    BackoffType = DelayBackoffType.Exponential,
+                    MaxDelay = null,
+                },
+            },
+        };
+
+        // when
+        var act = () => new MessagingOptionsValidator().Validate(options);
+
+        // then
+        act.Should()
+            .NotThrow()
+            .Which.Errors.Should()
+            .Contain(e => e.ErrorMessage.Contains("inline publish burst", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void should_skip_the_inline_publish_burst_rule_when_retry_strategy_is_null()
+    {
+        var options = new MessagingOptions { RetryPolicy = { RetryStrategy = null! } };
+
+        var result = new MessagingOptionsValidator().Validate(options);
+
+        result.Errors.Should().Contain(e => e.ErrorMessage == "RetryStrategy must not be null.");
+        result
+            .Errors.Should()
+            .NotContain(e => e.ErrorMessage.Contains("inline publish burst", StringComparison.Ordinal));
+    }
 }

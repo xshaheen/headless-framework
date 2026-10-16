@@ -151,8 +151,16 @@ internal sealed class MessageSender : IMessageSender
         // state-write predicates validate the stored lease identity and activity.
         var needsLease = message.LockedUntil is null;
 
-        var inlineRetries = message.InlineAttempts;
-        if (RetryHelper.DetectCrashRecoveredReservation(inlineRetries, _retryPolicy) is { } recoveryAttempt)
+        // A crashed dispatch that already reserved its final attempt must not run another; a row already past
+        // MaxPersistedRetries (the cap was lowered since it was scheduled) must not be sent at all. Both end through
+        // the retry decision without a transport send, so a lowered cap ends the row instead of stranding it.
+        if (
+            (
+                RetryHelper.DetectCrashRecoveredReservation(message.InlineAttempts, _retryPolicy)
+                ?? RetryHelper.DetectBudgetOverrun(message.Retries, _retryPolicy.MaxPersistedRetries)
+            ) is
+            { } recoveryAttempt
+        )
         {
             // The recovery transition still writes CAS-guarded state, which requires an active
             // lease — take a plain lease (no fresh reservation; the crashed reservation is spent).
@@ -396,11 +404,44 @@ internal sealed class MessageSender : IMessageSender
 
         if (!updated)
         {
-            // Storage's terminal-row guard rejected the write — the row is already in a terminal
-            // state (typically Failed/NULL after a prior exhausted attempt). The broker DID accept
-            // the publish, so the consumer will observe the message; at-least-once delivery means
-            // duplicates are the user's responsibility to dedupe on the receive side.
+            // The broker DID accept the publish, so the consumer will observe the message; at-least-once delivery
+            // means duplicates are the user's responsibility to dedupe on the receive side. The fenced write cannot
+            // say why it missed, so read the row back on this rare path to tell the operator which cause it was.
+            await _LogSuccessWriteMissAsync(message, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task _LogSuccessWriteMissAsync(MediumMessage message, CancellationToken cancellationToken)
+    {
+        MediumMessage? row;
+        try
+        {
+            row = await _StorageOf(message)
+                .GetMonitoringApi()
+                .GetPublishedMessageAsync(message.StorageId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // The diagnostic read must never fail a publish the broker already accepted.
+            _logger.PublishSucceededButLeaseLost(ex, message.StorageId);
+            return;
+        }
+
+        if (row is null)
+        {
+            _logger.PublishSucceededButStorageRowMissing(message.StorageId);
+        }
+        else if (MessageTerminalState.IsTerminal(row.StatusName, row.NextRetryAt))
+        {
+            // The terminal guard's own predicate: the row ended (typically Failed after a prior exhausted attempt).
             _logger.PublishSucceededButStorageTerminal(message.StorageId);
+        }
+        else
+        {
+            // A live row the fence rejected: another claimer took the lease or it lapsed. A claimed delayed publish
+            // is live with no NextRetryAt, so the status, not NextRetryAt alone, tells it apart from a terminal row.
+            _logger.PublishSucceededButLeaseLost(exception: null, message.StorageId);
         }
     }
 
@@ -416,8 +457,11 @@ internal sealed class MessageSender : IMessageSender
     )
     {
         var inlineRetries = Math.Max(0, message.InlineAttempts - 1);
+        // A row past the cap is exhausted whatever inline budget remains: its attempt reserved no inline slot, so
+        // continuing would re-enter the burst and persist another retry instead of ending the row.
         var decision =
-            strategyFailed ? MessagingRetryDecision.Exhausted
+            strategyFailed || RetryHelper.IsOverPersistedBudget(message.Retries, _retryPolicy.MaxPersistedRetries)
+                ? MessagingRetryDecision.Exhausted
             : !_retryPolicy.HasMoreInlineAttempts(inlineRetries) && message.Retries >= _retryPolicy.MaxPersistedRetries
                 ? MessagingRetryDecision.Exhausted
             : MessagingRetryDecision.Continue(delay);
