@@ -29,9 +29,8 @@ internal static class HeadlessDbContextRegistration
 
     /// <summary>
     /// One context instance per scope (or per resolution, for <see cref="ServiceLifetime.Transient"/>), built with
-    /// options of <paramref name="optionsLifetime"/>, or with options shared across scopes when nothing scoped feeds
-    /// them if it is <see langword="null"/> (see <see cref="HeadlessSharedDbContextOptions{TContext}"/>). A derived
-    /// constructor may take scoped services.
+    /// options of <paramref name="optionsLifetime"/>; singleton options are built once and copied into each scope (see
+    /// <see cref="HeadlessSharedDbContextOptions{TContext}"/>). A derived constructor may take scoped services.
     /// </summary>
     public static void AddPerScope<
         [DynamicallyAccessedMembers(
@@ -44,7 +43,7 @@ internal static class HeadlessDbContextRegistration
         IServiceCollection services,
         Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
         ServiceLifetime contextLifetime,
-        ServiceLifetime? optionsLifetime
+        ServiceLifetime optionsLifetime
     )
         where TDbContext : DbContext, IHeadlessDbContext
     {
@@ -64,7 +63,7 @@ internal static class HeadlessDbContextRegistration
             )
         );
 
-        if (optionsLifetime is { } lifetime)
+        if (optionsLifetime != ServiceLifetime.Singleton)
         {
             services.AddDbContext<TDbContext>(
                 (serviceProvider, optionsBuilder) =>
@@ -72,7 +71,7 @@ internal static class HeadlessDbContextRegistration
                     optionsAction?.Invoke(serviceProvider, optionsBuilder);
                 },
                 contextLifetime,
-                lifetime
+                optionsLifetime
             );
         }
         else

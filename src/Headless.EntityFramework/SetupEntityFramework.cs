@@ -37,19 +37,19 @@ public static class SetupEntityFramework
         /// <param name="optionsAction">Optional EF Core options callback.</param>
         /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: <see cref="ServiceLifetime.Scoped"/> (the default) or <see cref="ServiceLifetime.Transient"/>; <see cref="ServiceLifetime.Singleton"/> throws <see cref="ArgumentException"/>.</param>
         /// <param name="optionsLifetime">
-        /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. When <see langword="null"/> (the default), every scope
-        /// shares options built once from the root provider (each scope gets a copy carrying that scope), as long as every registered
-        /// <c>IInterceptor</c> is a singleton, nothing else configures the context's options, and
-        /// <paramref name="optionsAction"/> creates no connection or interceptor of its own; otherwise the options are
-        /// built per scope. The decision is made at the first resolution, after all registrations. Pass
-        /// <see cref="ServiceLifetime.Scoped"/> when <paramref name="optionsAction"/> reads per-request state, since a
-        /// shared instance runs it once.
+        /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. <see cref="ServiceLifetime.Scoped"/> (the default)
+        /// builds the options in every scope. <see cref="ServiceLifetime.Singleton"/> builds them once, from the root
+        /// provider, and gives each scope a copy that carries that scope, which saves the per-scope build. Pass it only
+        /// when the options are the same for every request: an options action that reads ambient per-request or
+        /// per-tenant state (a static or <c>AsyncLocal</c> connection string, <c>IHttpContextAccessor</c>), or that
+        /// creates a connection, data source, or interceptor per call, would give every scope the values of the first
+        /// build, such as one tenant's connection string for all tenants.
         /// </param>
         /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
         public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
             Action<DbContextOptionsBuilder>? optionsAction,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
-            ServiceLifetime? optionsLifetime = null
+            ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
         )
             where TDbContext : HeadlessDbContext
         {
@@ -73,24 +73,24 @@ public static class SetupEntityFramework
         /// </param>
         /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: <see cref="ServiceLifetime.Scoped"/> (the default) or <see cref="ServiceLifetime.Transient"/>; <see cref="ServiceLifetime.Singleton"/> throws <see cref="ArgumentException"/>.</param>
         /// <param name="optionsLifetime">
-        /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. When <see langword="null"/> (the default), every scope
-        /// shares options built once from the root provider (each scope gets a copy carrying that scope), as long as every registered
-        /// <c>IInterceptor</c> is a singleton, nothing else configures the context's options, and
-        /// <paramref name="optionsAction"/> creates no connection or interceptor of its own; otherwise the options are
-        /// built per scope. The decision is made at the first resolution, after all registrations. Pass
-        /// <see cref="ServiceLifetime.Scoped"/> when <paramref name="optionsAction"/> reads per-request state, since a
-        /// shared instance runs it once.
+        /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. <see cref="ServiceLifetime.Scoped"/> (the default)
+        /// builds the options in every scope. <see cref="ServiceLifetime.Singleton"/> builds them once, from the root
+        /// provider, and gives each scope a copy that carries that scope, which saves the per-scope build. Pass it only
+        /// when the options are the same for every request: an options action that reads ambient per-request or
+        /// per-tenant state (a static or <c>AsyncLocal</c> connection string, <c>IHttpContextAccessor</c>), or that
+        /// creates a connection, data source, or interceptor per call, would give every scope the values of the first
+        /// build, such as one tenant's connection string for all tenants.
         /// </param>
         /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
         public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
             Action<DbContextOptionsBuilder>? optionsAction,
             Action<HeadlessDbContextOptions>? configureHeadlessOptions,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
-            ServiceLifetime? optionsLifetime = null
+            ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
         )
             where TDbContext : HeadlessDbContext
         {
-            return services._AddHeadlessDbContext<TDbContext>(
+            return services.AddHeadlessDbContext<TDbContext>(
                 (_, ob) => optionsAction?.Invoke(ob),
                 configureHeadlessOptions,
                 contextLifetime,
@@ -105,7 +105,15 @@ public static class SetupEntityFramework
         /// <typeparam name="TDbContext">The <see cref="HeadlessDbContext"/> subclass to register.</typeparam>
         /// <param name="optionsAction">Optional EF Core options callback that receives the scoped service provider.</param>
         /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: <see cref="ServiceLifetime.Scoped"/> (the default) or <see cref="ServiceLifetime.Transient"/>; <see cref="ServiceLifetime.Singleton"/> throws <see cref="ArgumentException"/>.</param>
-        /// <param name="optionsLifetime">DI lifetime for <see cref="DbContextOptions{TContext}"/>.</param>
+        /// <param name="optionsLifetime">
+        /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. <see cref="ServiceLifetime.Scoped"/> (the default)
+        /// builds the options in every scope. <see cref="ServiceLifetime.Singleton"/> builds them once, from the root
+        /// provider, and gives each scope a copy that carries that scope, which saves the per-scope build. Pass it only
+        /// when the options are the same for every request: an options action that reads ambient per-request or
+        /// per-tenant state (a static or <c>AsyncLocal</c> connection string, <c>IHttpContextAccessor</c>), or that
+        /// creates a connection, data source, or interceptor per call, would give every scope the values of the first
+        /// build, such as one tenant's connection string for all tenants.
+        /// </param>
         /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
         public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
             Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
@@ -133,31 +141,21 @@ public static class SetupEntityFramework
         /// Optional callback to customize <see cref="HeadlessDbContextOptions"/>.
         /// </param>
         /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: <see cref="ServiceLifetime.Scoped"/> (the default) or <see cref="ServiceLifetime.Transient"/>; <see cref="ServiceLifetime.Singleton"/> throws <see cref="ArgumentException"/>.</param>
-        /// <param name="optionsLifetime">DI lifetime for <see cref="DbContextOptions{TContext}"/>.</param>
+        /// <param name="optionsLifetime">
+        /// DI lifetime for <see cref="DbContextOptions{TContext}"/>. <see cref="ServiceLifetime.Scoped"/> (the default)
+        /// builds the options in every scope. <see cref="ServiceLifetime.Singleton"/> builds them once, from the root
+        /// provider, and gives each scope a copy that carries that scope, which saves the per-scope build. Pass it only
+        /// when the options are the same for every request: an options action that reads ambient per-request or
+        /// per-tenant state (a static or <c>AsyncLocal</c> connection string, <c>IHttpContextAccessor</c>), or that
+        /// creates a connection, data source, or interceptor per call, would give every scope the values of the first
+        /// build, such as one tenant's connection string for all tenants.
+        /// </param>
         /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
         public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
             Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
             Action<HeadlessDbContextOptions>? configureHeadlessOptions,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
             ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
-        )
-            where TDbContext : HeadlessDbContext
-        {
-            return services._AddHeadlessDbContext<TDbContext>(
-                optionsAction,
-                configureHeadlessOptions,
-                contextLifetime,
-                optionsLifetime
-            );
-        }
-
-        // A null options lifetime selects the shared-options default; the IServiceProvider overloads always pass one,
-        // because an action that receives the provider may resolve scoped services.
-        private IHeadlessDbContextBuilder _AddHeadlessDbContext<TDbContext>(
-            Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
-            Action<HeadlessDbContextOptions>? configureHeadlessOptions,
-            ServiceLifetime contextLifetime,
-            ServiceLifetime? optionsLifetime
         )
             where TDbContext : HeadlessDbContext
         {

@@ -76,37 +76,50 @@ internal static class ContextCostProbe
 
         var headlessServices = new ServiceCollection();
         headlessServices.AddLogging();
-        headlessServices.AddHeadlessDbContext<HeadlessKeyedDb>(o =>
-            o.UseSqlite(headlessConnection)
-                .LogTo(
-                    _ => compilations++,
-                    (id, _) => id == CoreEventId.QueryCompilationStarting,
-                    DbContextLoggerOptions.None
-                )
+        headlessServices.AddHeadlessDbContext<HeadlessKeyedDb>(
+            o =>
+                o.UseSqlite(headlessConnection)
+                    .LogTo(
+                        _ => compilations++,
+                        (id, _) => id == CoreEventId.QueryCompilationStarting,
+                        DbContextLoggerOptions.None
+                    ),
+            optionsLifetime: ServiceLifetime.Singleton
         );
         await using var headless = headlessServices.BuildServiceProvider();
+
+        // The default per-scope options, measured beside the opt-in singleton options the rest of the probe uses.
+        var scopedServices = new ServiceCollection();
+        scopedServices.AddLogging();
+        scopedServices.AddHeadlessDbContext<HeadlessKeyedDb>(o => o.UseSqlite(headlessConnection));
+        await using var headlessScoped = scopedServices.BuildServiceProvider();
 
         _Seed<PlainKeyedDb>(plain);
         _Seed<HeadlessKeyedDb>(headless);
 
         _Print("scope+resolve context", "plain", _Measure(() => _InScope<PlainKeyedDb>(plain, _ => { }), 2000));
-        _Print(
-            "scope+resolve context",
-            "headless",
-            _Measure(() => _InScope<HeadlessKeyedDb>(headless, _ => { }), 2000)
-        );
-        _Print(
-            "scope+resolve options",
-            "headless",
-            _Measure(
-                () =>
-                {
-                    using var scope = headless.CreateScope();
-                    _sink = scope.ServiceProvider.GetRequiredService<DbContextOptions<HeadlessKeyedDb>>();
-                },
-                2000
-            )
-        );
+        foreach (
+            var (variant, provider) in new[] { ("headless scoped", headlessScoped), ("headless singleton", headless) }
+        )
+        {
+            _Print(
+                "scope+resolve context",
+                variant,
+                _Measure(() => _InScope<HeadlessKeyedDb>(provider, _ => { }), 2000)
+            );
+            _Print(
+                "scope+resolve options",
+                variant,
+                _Measure(
+                    () =>
+                    {
+                        using var scope = provider.CreateScope();
+                        _sink = scope.ServiceProvider.GetRequiredService<DbContextOptions<HeadlessKeyedDb>>();
+                    },
+                    2000
+                )
+            );
+        }
 
         // Each scope's options carry that scope as the application provider; EF Core must still reuse one internal
         // service provider for all of them, or every scope would build its own.

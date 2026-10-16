@@ -206,7 +206,13 @@ internal sealed class Env : IDisposable
     private readonly ServiceProvider _provider;
     private readonly Type _dbType;
 
-    public Env(string name, Type dbType, bool counted, Action<IServiceCollection>? configure = null)
+    public Env(
+        string name,
+        Type dbType,
+        bool counted,
+        Action<IServiceCollection>? configure = null,
+        ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
+    )
     {
         Name = name;
         _dbType = dbType;
@@ -267,7 +273,7 @@ internal sealed class Env : IDisposable
                         | System.Reflection.BindingFlags.DeclaredOnly
                 )!
                 .MakeGenericMethod(dbType)
-                .Invoke(null, [services, (Action<DbContextOptionsBuilder>)Options]);
+                .Invoke(null, [services, (Action<DbContextOptionsBuilder>)Options, optionsLifetime]);
         }
 
         configure?.Invoke(services);
@@ -277,10 +283,14 @@ internal sealed class Env : IDisposable
         ((DbContext)scope.ServiceProvider.GetRequiredService(dbType)).Database.EnsureCreated();
     }
 
-    private static void _AddHeadless<TDb>(IServiceCollection services, Action<DbContextOptionsBuilder> options)
+    private static void _AddHeadless<TDb>(
+        IServiceCollection services,
+        Action<DbContextOptionsBuilder> options,
+        ServiceLifetime optionsLifetime
+    )
         where TDb : HeadlessDbContext
     {
-        services.AddHeadlessDbContext<TDb>(options);
+        services.AddHeadlessDbContext<TDb>(options, optionsLifetime: optionsLifetime);
     }
 
     public string Name { get; }
@@ -429,6 +439,15 @@ internal static class SaveCostProbe
             {
                 ("plain", c => new Env("plain", typeof(PlainDb), c)),
                 ("headless-bare", c => new Env("headless-bare", typeof(BareDb), c)),
+                (
+                    "headless-bare-singleton",
+                    c => new Env(
+                        "headless-bare-singleton",
+                        typeof(BareDb),
+                        c,
+                        optionsLifetime: ServiceLifetime.Singleton
+                    )
+                ),
                 (
                     "headless-audit-registered",
                     c => new Env("headless-audit-registered", typeof(AuditDb), c, _AuditOn<AuditDb>)

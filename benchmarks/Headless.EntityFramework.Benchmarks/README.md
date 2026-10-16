@@ -19,7 +19,7 @@ Three more probes print exact allocations and counts next to a plain `DbContext`
 - `--save-cost-probe [--filter <scenario>]`: bytes per save, change-detection passes, commands, and transactions for
   plain, stamped, tenant-guarded, audited, and aggregate entities over no-op, update, and insert workloads.
   `HEADLESS_PROBE_ITERS` sets the iteration count (default 3000).
-- `--context-probe`: context and options resolution per scope, generated Guid keys, tracked queries, the `File` and
+- `--context-probe`: context and options resolution per scope, with the default scoped options and with `optionsLifetime: ServiceLifetime.Singleton`, generated Guid keys, tracked queries, the `File` and
   `Image` column comparers, and query compilations for `CountPerMonthAsync`.
 - `--transaction-probe`: commands and transactions of one audited insert and update next to plain EF Core saving the
   same entity row and audit row in one `SaveChanges`. Set `HEADLESS_BENCH_POSTGRES` to a PostgreSQL connection string
