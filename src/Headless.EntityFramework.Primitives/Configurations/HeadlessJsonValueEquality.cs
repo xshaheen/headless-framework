@@ -34,7 +34,7 @@ internal static class HeadlessJsonValueEquality
 
         if (left.GetType() == right.GetType() && _IsSimple(left))
         {
-            return left.Equals(right);
+            return _SimpleEquals(left, right);
         }
 
         return string.Equals(_Serialize(left), _Serialize(right), StringComparison.Ordinal);
@@ -93,6 +93,18 @@ internal static class HeadlessJsonValueEquality
         return value is null or JsonElement || _IsSimple(value)
             ? value
             : JsonSerializer.Deserialize<object>(_Serialize(value), EfCoreJsonOptions.Instance);
+    }
+
+    // Equality must match the stored JSON, which keeps a DateTimeOffset's offset and a DateTime's kind; their Equals
+    // compares only the instant, so a change of offset or kind alone would go unsaved.
+    private static bool _SimpleEquals(object left, object right)
+    {
+        return left switch
+        {
+            DateTimeOffset offset => offset.EqualsExact((DateTimeOffset)right),
+            DateTime date => date.Ticks == ((DateTime)right).Ticks && date.Kind == ((DateTime)right).Kind,
+            _ => left.Equals(right),
+        };
     }
 
     private static bool _IsSimple(object value)

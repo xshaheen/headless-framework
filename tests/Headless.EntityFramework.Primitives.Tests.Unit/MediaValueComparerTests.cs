@@ -32,6 +32,7 @@ public sealed class MediaValueComparerTests : TestBase
             "Container",
             "ContentType",
             "UploadedAt",
+            "UploadedAtOffset",
             "Length",
             "Private",
             "Md5",
@@ -170,7 +171,11 @@ public sealed class MediaValueComparerTests : TestBase
             Url = _Is(changed, "Url") ? "https://cdn.example.com/other.pdf" : "https://cdn.example.com/9f8e7d.pdf",
             Container = _Is(changed, "Container") ? ["tenants", "t2"] : ["tenants", "t1"],
             ContentType = _Is(changed, "ContentType") ? "text/plain" : "application/pdf",
-            UploadedAt = _Is(changed, "UploadedAt") ? DateTimeOffset.UnixEpoch.AddDays(1) : DateTimeOffset.UnixEpoch,
+            UploadedAt =
+                _Is(changed, "UploadedAt") ? DateTimeOffset.UnixEpoch.AddDays(1)
+                // Same instant, different offset: the stored JSON differs, so the comparer must too.
+                : _Is(changed, "UploadedAtOffset") ? DateTimeOffset.UnixEpoch.ToOffset(TimeSpan.FromHours(3))
+                : DateTimeOffset.UnixEpoch,
             Length = _Is(changed, "Length") ? 2 : 1,
             Private = !_Is(changed, "Private"),
             Md5 = _Is(changed, "Md5") ? "b" : "a",

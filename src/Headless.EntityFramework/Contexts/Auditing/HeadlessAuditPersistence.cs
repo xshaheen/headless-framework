@@ -51,11 +51,12 @@ internal sealed class HeadlessAuditPersistence(
 
         var timestamp = _timeProvider.GetUtcNow();
 
-        // The actor is read once per save and shared with the audit-field stampers.
-        var (userId, accountId) = _currentUser is null ? default : saveContext.GetActor(_currentUser);
-
         try
         {
+            // The actor is read once per save and shared with the audit-field stampers. It is read inside the try so
+            // an ICurrentUser that throws is handled by the capture error strategy like any other capture failure.
+            var (userId, accountId) = _currentUser is null ? default : saveContext.GetActor(_currentUser);
+
             return _auditCapture.CaptureChanges(
                 entries,
                 userId?.ToString(),

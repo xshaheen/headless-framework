@@ -53,6 +53,28 @@ public sealed class ExtraPropertiesValueComparerTests : TestBase
     }
 
     [Fact]
+    public void should_detect_a_change_of_offset_or_kind_alone()
+    {
+        var instant = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var utc = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+        _comparer
+            .Equals(
+                new ExtraProperties { ["at"] = instant },
+                new ExtraProperties { ["at"] = instant.ToOffset(TimeSpan.FromHours(2)) }
+            )
+            .Should()
+            .BeFalse();
+        _comparer
+            .Equals(
+                new ExtraProperties { ["at"] = utc },
+                new ExtraProperties { ["at"] = DateTime.SpecifyKind(utc, DateTimeKind.Unspecified) }
+            )
+            .Should()
+            .BeFalse();
+    }
+
+    [Fact]
     public async Task should_not_update_when_loaded_value_is_reassigned_the_same_value()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

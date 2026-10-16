@@ -85,6 +85,88 @@ public sealed class DomainEventGatingTests : TestBase
         order.GetDomainEvents().Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_update_without_transaction_when_no_handler_is_registered(bool synchronous)
+    {
+        // given
+        await using var harness = await Harness.CreateAsync(_ => { });
+        var db = harness.CreateContext();
+        var order = new Order { Id = Guid.CreateVersion7(), Name = "a" };
+        db.Add(order);
+        await db.SaveChangesAsync(AbortToken);
+        harness.Transactions = 0;
+
+        // when
+        order.Name = "b";
+        _ = synchronous ? db.SaveChanges() : await db.SaveChangesAsync(AbortToken);
+
+        // then
+        harness.Transactions.Should().Be(0);
+        (await harness.CreateContext().Set<Order>().SingleAsync(AbortToken)).Name.Should().Be("b");
+    }
+
+    public static TheoryData<Type, Type> ModifiedHandlers =>
+        new()
+        {
+            { typeof(EntityUpdatedEventData<Order>), typeof(RecordingHandler<EntityUpdatedEventData<Order>>) },
+            { typeof(EntityChangedEventData<Order>), typeof(RecordingHandler<EntityChangedEventData<Order>>) },
+        };
+
+    [Theory]
+    [MemberData(nameof(ModifiedHandlers))]
+    public async Task should_dispatch_only_the_handled_update_event_inside_a_transaction(Type payload, Type handler)
+    {
+        // given
+        var recorder = new Recorder();
+        await using var harness = await Harness.CreateAsync(services =>
+        {
+            services.AddSingleton(recorder);
+            services.AddScoped(typeof(IDomainEventHandler<>).MakeGenericType(payload), handler);
+        });
+        var db = harness.CreateContext();
+        var order = new Order { Id = Guid.CreateVersion7(), Name = "a" };
+        db.Add(order);
+        await db.SaveChangesAsync(AbortToken);
+        recorder.Payloads.Clear();
+
+        // when
+        order.Name = "b";
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        recorder.Payloads.Should().Equal(payload);
+        recorder.SawTransaction.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_dispatch_a_handled_delete_event_inside_a_transaction()
+    {
+        // given
+        var recorder = new Recorder();
+        await using var harness = await Harness.CreateAsync(services =>
+        {
+            services.AddSingleton(recorder);
+            services.AddScoped<
+                IDomainEventHandler<EntityDeletedEventData<Order>>,
+                RecordingHandler<EntityDeletedEventData<Order>>
+            >();
+        });
+        var db = harness.CreateContext();
+        var order = new Order { Id = Guid.CreateVersion7(), Name = "a" };
+        db.Add(order);
+        await db.SaveChangesAsync(AbortToken);
+
+        // when
+        db.Remove(order);
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        recorder.Payloads.Should().Equal(typeof(EntityDeletedEventData<Order>));
+        recorder.SawTransaction.Should().BeTrue();
+    }
+
     [Fact]
     public async Task should_dispatch_lifecycle_events_to_open_generic_handler()
     {
@@ -146,6 +228,20 @@ public sealed class DomainEventGatingTests : TestBase
         public int Any { get; set; }
 
         public bool SawTransaction { get; set; }
+
+        public List<Type> Payloads { get; } = [];
+    }
+
+    private sealed class RecordingHandler<T>(Recorder recorder, OrdersDbContext db) : IDomainEventHandler<T>
+        where T : class
+    {
+        public ValueTask HandleAsync(EventContext<T> context, CancellationToken cancellationToken = default)
+        {
+            recorder.Payloads.Add(typeof(T));
+            recorder.SawTransaction = db.Database.CurrentTransaction is not null;
+
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class CreatedHandler(Recorder recorder, OrdersDbContext db)
@@ -207,7 +303,7 @@ public sealed class DomainEventGatingTests : TestBase
         private readonly List<AsyncServiceScope> _scopes = [];
         private ServiceProvider _provider = null!;
 
-        public int Transactions { get; private set; }
+        public int Transactions { get; set; }
 
         public int Detections { get; private set; }
 

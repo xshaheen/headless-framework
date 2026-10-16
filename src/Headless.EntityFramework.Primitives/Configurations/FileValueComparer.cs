@@ -45,7 +45,8 @@ internal static class HeadlessMediaComparison
             && string.Equals(left.SavedName, right.SavedName, StringComparison.Ordinal)
             && string.Equals(left.Url, right.Url, StringComparison.Ordinal)
             && string.Equals(left.ContentType, right.ContentType, StringComparison.Ordinal)
-            && left.UploadedAt.Equals(right.UploadedAt)
+            // EqualsExact, because the stored JSON keeps the offset and Equals compares only the instant.
+            && left.UploadedAt.EqualsExact(right.UploadedAt)
             && left.Length == right.Length
             && left.Private == right.Private
             && string.Equals(left.Md5, right.Md5, StringComparison.Ordinal)
@@ -125,20 +126,8 @@ internal static class HeadlessMediaComparison
             return true;
         }
 
-        if (left is null || right is null || left.Length != right.Length)
-        {
-            return false;
-        }
-
-        for (var i = 0; i < left.Length; i++)
-        {
-            if (!string.Equals(left[i], right[i], StringComparison.Ordinal))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        // String equality is ordinal, which is what the stored JSON compares.
+        return left is not null && right is not null && left.AsSpan().SequenceEqual(right);
     }
 
     private static string[] _Copy(string[]? values) => values is null ? null! : [.. values];

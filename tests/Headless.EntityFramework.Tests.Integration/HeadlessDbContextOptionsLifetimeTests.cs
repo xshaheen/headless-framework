@@ -75,6 +75,60 @@ public sealed class HeadlessDbContextOptionsLifetimeTests : TestBase
         first.FindExtension<CoreOptionsExtension>()!.DetailedErrorsEnabled.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task should_build_options_per_scope_when_the_action_creates_its_connection()
+    {
+        // given
+        await using var harness = Harness.Create(
+            configure: static (_, options) => options.UseSqlite(new SqliteConnection("Data Source=:memory:"))
+        );
+
+        // when
+        var first = harness.ResolveOptions();
+        var second = harness.ResolveOptions();
+
+        // then
+        first.Should().NotBeSameAs(second);
+        RelationalOptionsExtension
+            .Extract(first)
+            .Connection.Should()
+            .NotBeSameAs(RelationalOptionsExtension.Extract(second).Connection);
+    }
+
+    [Fact]
+    public async Task should_build_options_per_scope_when_the_action_creates_an_interceptor()
+    {
+        // given
+        await using var harness = Harness.Create(
+            configure: static (connection, options) =>
+                options.UseSqlite(connection).AddInterceptors(new NoopCommandInterceptor())
+        );
+
+        // when
+        var first = harness.ResolveOptions();
+        var second = harness.ResolveOptions();
+
+        // then
+        first.Should().NotBeSameAs(second);
+    }
+
+    [Fact]
+    public async Task should_share_options_when_the_action_adds_an_interceptor_it_captured()
+    {
+        // given
+        var interceptor = new NoopCommandInterceptor();
+        await using var harness = Harness.Create(
+            configure: (connection, options) => options.UseSqlite(connection).AddInterceptors(interceptor)
+        );
+
+        // when
+        var first = harness.ResolveOptions();
+        var second = harness.ResolveOptions();
+
+        // then
+        first.Should().BeSameAs(second);
+    }
+
     [Theory]
     [InlineData(ServiceLifetime.Scoped, false)]
     [InlineData(ServiceLifetime.Singleton, true)]
@@ -162,24 +216,26 @@ public sealed class HeadlessDbContextOptionsLifetimeTests : TestBase
             Action<IServiceCollection>? before = null,
             Action<IServiceCollection>? after = null,
             ServiceLifetime? optionsLifetime = null,
-            bool validateScopes = false
+            bool validateScopes = false,
+            Action<SqliteConnection, DbContextOptionsBuilder>? configure = null
         )
         {
             var harness = new Harness();
             harness._connection.Open();
+            configure ??= static (connection, options) => options.UseSqlite(connection);
             var services = new ServiceCollection();
             services.AddLogging();
             before?.Invoke(services);
             if (optionsLifetime is { } lifetime)
             {
                 services.AddHeadlessDbContext<OptionsDbContext>(
-                    options => options.UseSqlite(harness._connection),
+                    options => configure(harness._connection, options),
                     optionsLifetime: lifetime
                 );
             }
             else
             {
-                services.AddHeadlessDbContext<OptionsDbContext>(options => options.UseSqlite(harness._connection));
+                services.AddHeadlessDbContext<OptionsDbContext>(options => configure(harness._connection, options));
             }
 
             after?.Invoke(services);

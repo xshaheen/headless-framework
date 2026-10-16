@@ -17,8 +17,10 @@ namespace Headless.EntityFramework;
 /// Building options costs about 15 KB per scope, and most applications configure a context the same way in every
 /// scope. Sharing is safe only when every input is the same for every scope: the options action registered with the
 /// context takes no provider, every DI-registered <see cref="IInterceptor"/> (which the options pick up) is a
-/// singleton, and nothing else (such as a <c>ConfigureDbContext</c> call) adds an options configuration for the
-/// context, since one could resolve a per-request connection string or service.
+/// singleton, and no options configuration for the context (such as a <c>ConfigureDbContext</c> call) is scoped or
+/// registered after the context, since one could resolve a per-request connection string or service. The options
+/// action must also not create a connection or interceptor of its own: two builds that hold different instances keep
+/// the options per scope.
 /// </para>
 /// <para>
 /// The decision is made at the first resolution from the registrations as they stand once the container is built,
@@ -34,13 +36,9 @@ internal sealed class HeadlessSharedDbContextOptions<TContext>(
 )
     where TContext : DbContext
 {
-    private const int _Undecided = 0;
-    private const int _Shared = 1;
-    private const int _PerScope = 2;
-
     private readonly Lock _lock = new();
-    private DbContextOptions<TContext>? _shared;
-    private volatile int _decision;
+    private volatile DbContextOptions<TContext>? _shared;
+    private volatile Decision _decision;
 
     public static void Register(
         IServiceCollection services,
@@ -77,24 +75,52 @@ internal sealed class HeadlessSharedDbContextOptions<TContext>(
             return shared;
         }
 
-        if (!_CanShare())
+        if (_decision != Decision.PerScope)
         {
-            return _Build(scopedServices);
+            lock (_lock)
+            {
+                if (_decision == Decision.Undecided)
+                {
+                    _Decide();
+                }
+
+                if (_shared is { } decided)
+                {
+                    return decided;
+                }
+            }
         }
 
-        lock (_lock)
-        {
-            return _shared ??= _Build(rootServices);
-        }
+        return _Build(scopedServices);
     }
 
-    private bool _CanShare()
+    private void _Decide()
     {
-        if (_decision != _Undecided)
+        if (!_RegistrationsAllowSharing())
         {
-            return _decision == _Shared;
+            _decision = Decision.PerScope;
+
+            return;
         }
 
+        // An action that creates its connection or an interceptor inside the lambda expects one per scope, and
+        // sharing would hand that one instance to concurrent requests. Two builds tell it apart from an instance the
+        // action captured, which is the same object in both.
+        var candidate = _Build(rootServices);
+
+        if (!_HoldSameInstances(candidate, _Build(rootServices)))
+        {
+            _decision = Decision.PerScope;
+
+            return;
+        }
+
+        _shared = candidate;
+        _decision = Decision.Shared;
+    }
+
+    private bool _RegistrationsAllowSharing()
+    {
         var canShare = true;
         var configurations = 0;
 
@@ -116,10 +142,28 @@ internal sealed class HeadlessSharedDbContextOptions<TContext>(
             }
         }
 
-        // The registrations are fixed once the container is built, so every racing caller reaches the same answer.
-        _decision = canShare && configurations == configurationCount ? _Shared : _PerScope;
+        return canShare && configurations == configurationCount;
+    }
 
-        return _decision == _Shared;
+    private static bool _HoldSameInstances(DbContextOptions<TContext> first, DbContextOptions<TContext> second)
+    {
+        foreach (var extension in first.Extensions)
+        {
+            if (extension is RelationalOptionsExtension relational)
+            {
+                var other = second.Extensions.OfType<RelationalOptionsExtension>().FirstOrDefault();
+
+                if (!ReferenceEquals(relational.Connection, other?.Connection))
+                {
+                    return false;
+                }
+            }
+        }
+
+        var firstInterceptors = first.FindExtension<CoreOptionsExtension>()?.Interceptors ?? [];
+        var secondInterceptors = second.FindExtension<CoreOptionsExtension>()?.Interceptors ?? [];
+
+        return firstInterceptors.SequenceEqual(secondInterceptors, ReferenceEqualityComparer.Instance);
     }
 
     private static DbContextOptions<TContext> _Build(IServiceProvider applicationServices)
@@ -135,5 +179,12 @@ internal sealed class HeadlessSharedDbContextOptions<TContext>(
         }
 
         return builder.Options;
+    }
+
+    private enum Decision
+    {
+        Undecided = 0,
+        Shared = 1,
+        PerScope = 2,
     }
 }
