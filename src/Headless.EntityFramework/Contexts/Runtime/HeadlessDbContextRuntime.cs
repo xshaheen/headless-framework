@@ -1,16 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
-using Headless.Domain;
 using Headless.EntityFramework.Contexts;
 using Headless.MultiTenancy;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Metadata;
-using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -18,8 +13,8 @@ using Microsoft.Extensions.Options;
 namespace Headless.EntityFramework;
 
 /// <summary>
-/// Per-<see cref="DbContext"/> runtime that wires the tenant stamp, runs
-/// framework conventions in <c>OnModelCreating</c>, and forwards <c>SaveChanges</c> to the
+/// Per-<see cref="DbContext"/> runtime that wires the tenant stamp, registers the
+/// framework model conventions, and forwards <c>SaveChanges</c> to the
 /// <see cref="IHeadlessSaveChangesPipeline"/> of the context's current service binding.
 /// </summary>
 /// <remarks>
@@ -41,14 +36,6 @@ namespace Headless.EntityFramework;
 /// </remarks>
 internal sealed class HeadlessDbContextRuntime(DbContext db)
 {
-    private static readonly MethodInfo _ConfigureQueryFiltersMethod = typeof(HeadlessDbContextRuntime).GetMethod(
-        nameof(_ConfigureQueryFilters),
-        BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly
-    )!;
-
-    private static readonly Type _DateTimeType = typeof(DateTime);
-    private static readonly Type _NullableDateTimeType = typeof(DateTime?);
-
     private readonly DbContext _db = db;
 
     // Fixed for the instance's life: the options, and so the application provider, never change across leases.
@@ -370,104 +357,8 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     public void ConfigureConventions(ModelConfigurationBuilder builder)
     {
         builder.AddBuildingBlocksPrimitivesConvertersMappings();
+        // The entity mapping runs first: the tenant convention validates the finished mapping of each root.
+        builder.Conventions.Add(_ => new HeadlessEntityModelConvention());
         builder.Conventions.Add(_ => new HeadlessTenantModelConvention(_db));
-    }
-
-    public static void ProcessModelCreating(ModelBuilder builder)
-    {
-        _ConfigureEntityConventions(builder);
-        _ConfigureDateTimeValueConverters(builder);
-        _ConfigureQueryFiltersForModel(builder);
-    }
-
-    private static void _ConfigureEntityConventions(ModelBuilder modelBuilder)
-    {
-        foreach (var type in modelBuilder.Model.GetEntityTypes())
-        {
-            if (!type.IsOwned() && type.ClrType.IsAssignableTo<IEntity>())
-            {
-                modelBuilder.Entity(type.ClrType).ConfigureHeadlessConvention();
-                // Opt Guid keys into client-side generation: ValueGenerated.Never plus the framework's
-                // IGuidGenerator-backed value generator, which EF Core runs at add time. Only applied here, inside
-                // the HeadlessDbContext runtime, so it stays a deliberate framework choice — not in the general
-                // ConfigureHeadlessConvention bundle, which also runs in plain consumer DbContexts that may want
-                // store-generated keys.
-                type.ConfigureHeadlessValueGenerated();
-            }
-        }
-    }
-
-    private static void _ConfigureDateTimeValueConverters(ModelBuilder modelBuilder)
-    {
-        // Every type in a hierarchy, each with its declared properties only: a DateTime declared on a TPH-derived type
-        // is not among the root's properties, and visiting inherited ones again would configure them twice.
-        foreach (var type in modelBuilder.Model.GetEntityTypes())
-        {
-            if (!type.IsOwned())
-            {
-                _ConfigureDateTimeValueConverters(modelBuilder, type);
-            }
-        }
-    }
-
-    private static void _ConfigureDateTimeValueConverters(ModelBuilder modelBuilder, IMutableEntityType type)
-    {
-        var properties = type.GetDeclaredProperties()
-            .Where(property =>
-                property.PropertyInfo is { CanWrite: true }
-                && (
-                    property.PropertyInfo.PropertyType == _DateTimeType
-                    || property.PropertyInfo.PropertyType == _NullableDateTimeType
-                )
-            )
-            .ToList();
-
-        if (properties.Count == 0)
-        {
-            return;
-        }
-
-        var dateTimeConverter = new NormalizeDateTimeValueConverter();
-        var nullableDateTimeConverter = new NullableNormalizeDateTimeValueConverter();
-
-        foreach (var property in properties)
-        {
-            ValueConverter converter =
-                property.ClrType == _DateTimeType ? dateTimeConverter : nullableDateTimeConverter;
-            modelBuilder.Entity(type.ClrType).Property(property.Name).HasConversion(converter);
-        }
-    }
-
-    private static void _ConfigureQueryFiltersForModel(ModelBuilder modelBuilder)
-    {
-        foreach (var type in modelBuilder.Model.GetEntityTypes())
-        {
-            if (type.BaseType is null && !type.IsOwned() && type.ClrType.IsAssignableTo<IEntity>())
-            {
-                _ConfigureQueryFiltersMethod.MakeGenericMethod(type.ClrType).Invoke(null, [modelBuilder]);
-            }
-        }
-    }
-
-    private static void _ConfigureQueryFilters<TEntity>(ModelBuilder modelBuilder)
-        where TEntity : class
-    {
-        var entityType = typeof(TEntity);
-        var entityBuilder = modelBuilder.Entity<TEntity>();
-
-        if (entityType.IsAssignableTo<IDeleteAudit>())
-        {
-            var isDeletedName = _GetColumnName(entityBuilder.Metadata, nameof(IDeleteAudit.IsDeleted));
-
-            entityBuilder.HasQueryFilter(
-                HeadlessQueryFilters.NotDeletedFilter,
-                x => !EF.Property<bool>(x, isDeletedName)
-            );
-        }
-    }
-
-    private static string _GetColumnName(IMutableEntityType type, string name)
-    {
-        return type.FindProperty(name)?.GetColumnName() ?? name;
     }
 }

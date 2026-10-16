@@ -255,7 +255,7 @@ public abstract class HeadlessIdentityDbContext<
     }
 
     /// <summary>
-    /// Applies Headless-specific model conventions (for example, value-object conversions) in
+    /// Applies Headless-specific model conventions (value-object conversions, entity mappings, query filters) in
     /// addition to the Identity schema conventions supplied by the base class.
     /// </summary>
     /// <param name="configurationBuilder">The builder used to configure model conventions.</param>
@@ -296,9 +296,9 @@ public abstract class HeadlessIdentityDbContext<
     }
 
     /// <summary>
-    /// Configures the EF Core model for this context, applying <see cref="DefaultSchema"/> when set,
-    /// then delegating to the base Identity model builder and the Headless runtime for additional
-    /// configurations such as query filters and audit-entity mappings.
+    /// Configures the EF Core model for this context, applying <see cref="DefaultSchema"/> when set, then delegating to
+    /// the base Identity model builder. The Headless query filters and entity mappings are model conventions registered
+    /// by <see cref="ConfigureConventions"/>.
     /// </summary>
     /// <param name="builder">The builder used to construct the model for this context.</param>
     protected override void OnModelCreating(ModelBuilder builder)
@@ -309,6 +309,5 @@ public abstract class HeadlessIdentityDbContext<
         }
 
         base.OnModelCreating(builder);
-        HeadlessDbContextRuntime.ProcessModelCreating(builder);
     }
 }

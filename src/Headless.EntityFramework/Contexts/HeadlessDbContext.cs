@@ -170,8 +170,8 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
     }
 
     /// <summary>
-    /// Applies Headless primitive-type value converter mappings in addition to any conventions the
-    /// subclass registers. Always call <c>base.ConfigureConventions</c> when overriding.
+    /// Applies Headless primitive-type value converter mappings and registers the Headless model conventions in
+    /// addition to any conventions the subclass registers. Always call <c>base.ConfigureConventions</c> when overriding.
     /// </summary>
     /// <param name="configurationBuilder">The model configuration builder.</param>
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
@@ -181,9 +181,10 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
     }
 
     /// <summary>
-    /// Applies the <see cref="DefaultSchema"/> (if non-null), calls <c>base.OnModelCreating</c>, and then
-    /// lets the Headless runtime apply global query filters (multi-tenancy, soft-delete) and
-    /// entity conventions. Always call <c>base.OnModelCreating</c> when overriding.
+    /// Applies the <see cref="DefaultSchema"/> (if non-null) and calls <c>base.OnModelCreating</c>. The Headless entity
+    /// mapping and the global query filters (multi-tenancy, soft-delete) are model conventions registered by
+    /// <see cref="ConfigureConventions"/>, so they reach every entity type whenever it is introduced, and a facet
+    /// configured explicitly keeps its configured value.
     /// </summary>
     /// <param name="modelBuilder">The model builder for the current context.</param>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -194,7 +195,6 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
         }
 
         base.OnModelCreating(modelBuilder);
-        HeadlessDbContextRuntime.ProcessModelCreating(modelBuilder);
     }
 }
 

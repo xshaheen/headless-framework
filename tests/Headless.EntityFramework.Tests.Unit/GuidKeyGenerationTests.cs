@@ -187,7 +187,6 @@ public sealed class GuidKeyGenerationTests : TestBase
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            // Mapped before the base call: the framework's key conventions run over the types mapped at that point.
             modelBuilder.Entity<GuidRow>();
             modelBuilder.Entity<StringRow>().Property(e => e.Id).ValueGeneratedOnAdd();
             base.OnModelCreating(modelBuilder);
