@@ -24,6 +24,19 @@ public sealed class MessagingHealthCheckTests : TestBase
     private const string _OutboxesCheck = "messaging-outboxes";
 
     [Fact]
+    public async Task should_pass_the_check_command_of_a_host_that_was_never_started()
+    {
+        // given - the lifecycle checks are unhealthy before start, so check passes only because it skips them
+        var host = _BuildHost(_ => { });
+
+        // when
+        var exitCode = await host.RunHeadlessAsync(["check"], AbortToken);
+
+        // then
+        exitCode.Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_report_messaging_unhealthy_before_start_and_healthy_after()
     {
         // given
@@ -249,6 +262,7 @@ public sealed class MessagingHealthCheckTests : TestBase
                     HeadlessHealthCheckTags.Ready,
                     HeadlessHealthCheckTags.Headless,
                     HeadlessHealthCheckTags.Messaging,
+                    HeadlessHealthCheckTags.HostState,
                 ]);
         }
 

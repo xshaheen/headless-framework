@@ -22,6 +22,19 @@ public sealed class JobsHealthCheckTests : TestBase
     private static readonly string _StorageCheck = "jobs-storage-" + typeof(ProbeJobsDbContext).FullName;
 
     [Fact]
+    public async Task should_pass_the_check_command_of_a_host_that_was_never_started()
+    {
+        // given - the lifecycle checks are unhealthy before start, so check passes only because it skips them
+        var host = _BuildHost(_ => { });
+
+        // when
+        var exitCode = await host.RunHeadlessAsync(["check"], AbortToken);
+
+        // then
+        exitCode.Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_report_jobs_unhealthy_before_activation_and_healthy_after()
     {
         // given
@@ -147,6 +160,7 @@ public sealed class JobsHealthCheckTests : TestBase
                     HeadlessHealthCheckTags.Ready,
                     HeadlessHealthCheckTags.Headless,
                     HeadlessHealthCheckTags.Jobs,
+                    HeadlessHealthCheckTags.HostState,
                 ]);
         }
     }

@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using System.Text;
 using Headless.Checks;
 using Headless.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -15,32 +17,43 @@ namespace Microsoft.Extensions.Hosting;
 public static class HeadlessHostRunExtensions
 {
     private const string _DescribeCommand = "describe";
+    private const string _CheckCommand = "check";
 
     extension(IHost host)
     {
         /// <summary>
-        /// Runs the host until shutdown, or, when the first argument is <c>describe</c>, prints the host manifest as
-        /// JSON to standard output and returns without starting the host.
+        /// Runs the host until shutdown, or answers a command about it without starting it: when the first argument is
+        /// <c>describe</c>, prints the host manifest as JSON to standard output; when it is <c>check</c>, runs the
+        /// host's health checks once and prints one line per check.
         /// </summary>
-        /// <param name="args">The process arguments. Any first argument other than <c>describe</c> runs the host.</param>
-        /// <param name="cancellationToken">Stops the host, or abandons the manifest.</param>
-        /// <returns>The process exit code: 0 on success, 1 when the manifest fails.</returns>
+        /// <param name="args">
+        /// The process arguments. Any first argument other than <c>describe</c> or <c>check</c> runs the host.
+        /// </param>
+        /// <param name="cancellationToken">Stops the host, or abandons the command.</param>
+        /// <returns>
+        /// The process exit code: 0 on success; 1 when the manifest fails, when startup validation fails, or when a
+        /// health check reports <see cref="HealthStatus.Unhealthy" />.
+        /// </returns>
         /// <remarks>
         /// <para>
         /// Call it from <c>Program.cs</c> in place of <c>RunAsync</c>: <c>return await app.RunHeadlessAsync(args);</c>.
-        /// Only the host's own entry point sees its real configuration sources, so the manifest shows the tuning the
-        /// host would run with.
+        /// Only the host's own entry point sees its real configuration sources, so both commands see the configuration
+        /// the host would run with.
         /// </para>
         /// <para>
-        /// <c>describe</c> first runs the startup validation a real start runs: options marked
-        /// <c>ValidateOnStart</c>, then every <see cref="IHeadlessStartupValidator" />. It never starts a hosted service.
-        /// Standard output carries only the JSON document; console logging written meanwhile goes to standard error. That
-        /// redirect needs a host built with <c>HostApplicationBuilder</c> or <c>WebApplicationBuilder</c>: on a host built
-        /// with <c>Host.CreateDefaultBuilder</c>, the Microsoft console logger keeps the standard output it captured at
+        /// Both commands first run the startup validation a real start runs: options marked <c>ValidateOnStart</c>,
+        /// then every <see cref="IHeadlessStartupValidator" />. Neither starts a hosted service. Standard output carries
+        /// only the command's result; console logging written meanwhile goes to standard error. That redirect needs a
+        /// host built with <c>HostApplicationBuilder</c> or <c>WebApplicationBuilder</c>: on a host built with
+        /// <c>Host.CreateDefaultBuilder</c>, the Microsoft console logger keeps the standard output it captured at
         /// build time, so its log lines can still reach standard output.
-        /// On any failure, standard output stays empty, the error message goes to standard error, and the exit code is 1.
         /// </para>
-        /// <para>Like <c>RunAsync</c>, it disposes the host in both modes.</para>
+        /// <para>
+        /// <c>check</c> skips every check tagged <see cref="HeadlessHealthCheckTags.HostState" />, because those report
+        /// the state of a running host and a host that was never started always fails them. A
+        /// <see cref="HealthStatus.Degraded" /> check does not fail the command.
+        /// </para>
+        /// <para>Like <c>RunAsync</c>, it disposes the host in every mode.</para>
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="args" /> is <see langword="null" />.</exception>
         public async Task<int> RunHeadlessAsync(string[] args, CancellationToken cancellationToken = default)
@@ -50,7 +63,12 @@ public static class HeadlessHostRunExtensions
 
             if (args.Length > 0 && string.Equals(args[0], _DescribeCommand, StringComparison.Ordinal))
             {
-                return await _DescribeAsync(host, cancellationToken).ConfigureAwait(false);
+                return await _RunCommandAsync(host, _DescribeAsync, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (args.Length > 0 && string.Equals(args[0], _CheckCommand, StringComparison.Ordinal))
+            {
+                return await _RunCommandAsync(host, _CheckAsync, cancellationToken).ConfigureAwait(false);
             }
 
             await host.RunAsync(cancellationToken).ConfigureAwait(false);
@@ -59,7 +77,12 @@ public static class HeadlessHostRunExtensions
         }
     }
 
-    private static async Task<int> _DescribeAsync(IHost host, CancellationToken cancellationToken)
+    // Runs one command with standard output reserved for its result, then disposes the host.
+    private static async Task<int> _RunCommandAsync(
+        IHost host,
+        Func<IServiceProvider, TextWriter, TextWriter, CancellationToken, Task<int>> command,
+        CancellationToken cancellationToken
+    )
     {
         var stdout = Console.Out;
         var stderr = Console.Error;
@@ -72,43 +95,18 @@ public static class HeadlessHostRunExtensions
         {
             if (!_RouteConsoleLoggerToStandardError(host.Services))
             {
-                // Said before anything is printed, so an operator piping the JSON to a parser learns why it may break.
+                // Said before anything is printed, so an operator piping the output to a parser learns why it may break.
                 await stderr
                     .WriteLineAsync(
                         "Warning: this host's console logger cannot be moved off standard output (a Host.CreateDefaultBuilder "
-                            + "host), so log lines may precede the manifest. Build the host with "
+                            + "host), so log lines may precede the command's output. Build the host with "
                             + "Host.CreateApplicationBuilder or WebApplication.CreateBuilder, or turn console logging off "
-                            + "for describe."
+                            + "for the command."
                     )
                     .ConfigureAwait(false);
             }
 
-            string manifest;
-
-            try
-            {
-                await _ValidateStartupAsync(host.Services, cancellationToken).ConfigureAwait(false);
-#pragma warning disable RCS1261 // Fix makes the code worse: a MemoryStream releases nothing asynchronously, and await using would bring back the ConfigureAwait ceremony.
-                using var buffer = new MemoryStream();
-#pragma warning restore RCS1261
-                await HostManifest.WriteAsync(host.Services, buffer, cancellationToken).ConfigureAwait(false);
-                manifest = Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
-            }
-#pragma warning disable CA1031, EPC12 // False positive: the command's process boundary reports any failure as its message and an exit code, by design.
-            catch (Exception exception)
-            {
-                // The message only: validators write it for the operator, and a stack trace adds noise to a CLI error.
-                await stderr.WriteLineAsync($"Host manifest failed: {exception.Message}").ConfigureAwait(false);
-                await stderr.FlushAsync(cancellationToken).ConfigureAwait(false);
-
-                return 1;
-            }
-#pragma warning restore CA1031, EPC12
-
-            await stdout.WriteLineAsync(manifest).ConfigureAwait(false);
-            await stdout.FlushAsync(cancellationToken).ConfigureAwait(false);
-
-            return 0;
+            return await command(host.Services, stdout, stderr, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -117,6 +115,144 @@ public static class HeadlessHostRunExtensions
             Console.SetOut(stdout);
         }
     }
+
+    private static async Task<int> _DescribeAsync(
+        IServiceProvider services,
+        TextWriter stdout,
+        TextWriter stderr,
+        CancellationToken cancellationToken
+    )
+    {
+        string manifest;
+
+        try
+        {
+            await _ValidateStartupAsync(services, cancellationToken).ConfigureAwait(false);
+#pragma warning disable RCS1261 // Fix makes the code worse: a MemoryStream releases nothing asynchronously, and await using would bring back the ConfigureAwait ceremony.
+            using var buffer = new MemoryStream();
+#pragma warning restore RCS1261
+            await HostManifest.WriteAsync(services, buffer, cancellationToken).ConfigureAwait(false);
+            manifest = Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
+        }
+#pragma warning disable CA1031, EPC12 // False positive: the command's process boundary reports any failure as its message and an exit code, by design.
+        catch (Exception exception)
+        {
+            // The message only: validators write it for the operator, and a stack trace adds noise to a CLI error.
+            await stderr.WriteLineAsync($"Host manifest failed: {exception.Message}").ConfigureAwait(false);
+            await stderr.FlushAsync(cancellationToken).ConfigureAwait(false);
+
+            return 1;
+        }
+#pragma warning restore CA1031, EPC12
+
+        await stdout.WriteLineAsync(manifest).ConfigureAwait(false);
+        await stdout.FlushAsync(cancellationToken).ConfigureAwait(false);
+
+        return 0;
+    }
+
+    private static async Task<int> _CheckAsync(
+        IServiceProvider services,
+        TextWriter stdout,
+        TextWriter stderr,
+        CancellationToken cancellationToken
+    )
+    {
+        HealthReport? report;
+        IReadOnlyList<string> skipped;
+
+        try
+        {
+            await _ValidateStartupAsync(services, cancellationToken).ConfigureAwait(false);
+
+            var registrations = services.GetService<IOptions<HealthCheckServiceOptions>>()?.Value.Registrations ?? [];
+            skipped =
+            [
+                .. registrations
+                    .Where(static x => x.Tags.Contains(HeadlessHealthCheckTags.HostState))
+                    .Select(static x => x.Name)
+                    .Order(StringComparer.Ordinal),
+            ];
+
+            // Absent when nothing called AddHealthChecks, so there is nothing to run.
+            var healthChecks = services.GetService<HealthCheckService>();
+            report = healthChecks is null
+                ? null
+                : await healthChecks
+                    .CheckHealthAsync(
+                        static x => !x.Tags.Contains(HeadlessHealthCheckTags.HostState),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+        }
+#pragma warning disable CA1031, EPC12 // False positive: the command's process boundary reports any failure as its message and an exit code, by design.
+        catch (Exception exception)
+        {
+            await stderr.WriteLineAsync($"Host check failed: {exception.Message}").ConfigureAwait(false);
+            await stderr.FlushAsync(cancellationToken).ConfigureAwait(false);
+
+            return 1;
+        }
+#pragma warning restore CA1031, EPC12
+
+        var lines = new List<HostCheckLine>();
+
+        if (report is not null)
+        {
+            foreach (var (name, entry) in report.Entries.OrderBy(static x => x.Key, StringComparer.Ordinal))
+            {
+                lines.Add(new(name, _Status(entry.Status), _Duration(entry.Duration), _Description(entry)));
+            }
+        }
+
+        foreach (var name in skipped)
+        {
+            lines.Add(new(name, "Skipped", "-", "Reports the state of a running host; not run before start."));
+        }
+
+        if (lines.Count == 0)
+        {
+            await stderr.WriteLineAsync("No health checks are registered.").ConfigureAwait(false);
+        }
+
+        await stdout.WriteAsync(HostCheckLine.Format(lines)).ConfigureAwait(false);
+        await stdout.FlushAsync(cancellationToken).ConfigureAwait(false);
+
+        return report?.Entries.Values.Any(static x => x.Status == HealthStatus.Unhealthy) == true ? 1 : 0;
+    }
+
+    private static string _Status(HealthStatus status) =>
+        status switch
+        {
+            HealthStatus.Unhealthy => "Unhealthy",
+            HealthStatus.Degraded => "Degraded",
+            HealthStatus.Healthy => "Healthy",
+            _ => ((int)status).ToString(CultureInfo.InvariantCulture),
+        };
+
+    private static string _Duration(TimeSpan duration) =>
+        string.Create(CultureInfo.InvariantCulture, $"{duration.TotalMilliseconds:0}ms");
+
+    private static string _Description(HealthReportEntry entry)
+    {
+        // Health endpoints keep the driver's message out of the description because they are often anonymous. This
+        // command runs in the operator's own terminal or deploy log, where that message is what explains the failure.
+        var description = entry.Description;
+        var error = entry.Exception?.GetBaseException().Message;
+
+        if (string.IsNullOrWhiteSpace(error) || string.Equals(error, description, StringComparison.Ordinal))
+        {
+            return _SingleLine(description ?? "");
+        }
+
+        return _SingleLine(string.IsNullOrWhiteSpace(description) ? error : $"{description} {error}");
+    }
+
+    // One check per line, so a deploy log or a grep reads each check whole.
+    private static string _SingleLine(string text) =>
+        text.Contains('\n', StringComparison.Ordinal) || text.Contains('\r', StringComparison.Ordinal)
+            ? string.Join(' ', text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+            : text;
 
     private static async Task _ValidateStartupAsync(IServiceProvider services, CancellationToken cancellationToken)
     {
@@ -133,7 +269,7 @@ public static class HeadlessHostRunExtensions
         // The Microsoft console logger's error threshold is the only switch that moves its lines off the stdout writer
         // it holds, and the logger reloads that threshold from configuration. Hosts from HostApplicationBuilder and
         // WebApplicationBuilder expose a configuration that still accepts sources; the last source added wins, and the
-        // host never runs afterwards, so the override reaches nothing but the manifest run.
+        // host never runs afterwards, so the override reaches nothing but the command run.
         if (services.GetService<IConfiguration>() is IConfigurationBuilder configuration)
         {
             configuration.AddInMemoryCollection([new("Logging:Console:LogToStandardErrorThreshold", "Trace")]);
@@ -162,6 +298,42 @@ public static class HeadlessHostRunExtensions
         else
         {
             host.Dispose();
+        }
+    }
+
+    private sealed record HostCheckLine(string Name, string Status, string Duration, string Description)
+    {
+        // Aligned columns: name, status, duration, description, each line ending the same way on every platform.
+        public static string Format(List<HostCheckLine> lines)
+        {
+            if (lines.Count == 0)
+            {
+                return "";
+            }
+
+            var nameWidth = lines.Max(static x => x.Name.Length);
+            var statusWidth = lines.Max(static x => x.Status.Length);
+            var durationWidth = lines.Max(static x => x.Duration.Length);
+            var builder = new StringBuilder();
+
+            foreach (var line in lines)
+            {
+                builder
+                    .Append(line.Name.PadRight(nameWidth))
+                    .Append("  ")
+                    .Append(line.Status.PadRight(statusWidth))
+                    .Append("  ")
+                    .Append(line.Duration.PadLeft(durationWidth));
+
+                if (line.Description.Length > 0)
+                {
+                    builder.Append("  ").Append(line.Description);
+                }
+
+                builder.Append('\n');
+            }
+
+            return builder.ToString();
         }
     }
 }

@@ -292,6 +292,7 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 - Dependency health checks: provider packages contribute readiness checks through `AddHeadlessHealthCheck`, tagged with `HeadlessHealthCheckTags`; applications drop any of them with `RemoveHealthChecks`. See [Health checks](#health-checks)
 - Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
 - Host manifest: `RunHeadlessAsync(args)` prints, for the `describe` verb, the JSON each `IHostManifestSection` writes about what its feature registered, without starting the host. See [Host manifest](#host-manifest)
+- Pre-start health check: `RunHeadlessAsync(args)` runs the host's health checks once for the `check` verb, skipping `host-state` checks, and exits 1 when one is `Unhealthy`. See [Health check command](#health-check-command)
 - Options validation with FluentValidation
 - Configuration binding extensions
 - Environment detection extensions
@@ -425,15 +426,15 @@ A provider package that talks to an external dependency contributes a readiness 
 | Distributed locks `UseRedis` | `distributed-locks-redis` | `redis` | The same endpoint probe through the registered `IConnectionMultiplexer` |
 | Messaging `UseNats` | `messaging-nats` | `messaging` | NATS `PING` on a pooled connection |
 | Blobs `UseAzure` | `blobs-azure` (named: `blobs-azure-{name}`) | `blobs` | Reads one page of the account's container list, or the properties of `AzureStorageOptions.HealthCheckContainerName` when set |
-| `AddHeadlessMessaging` | `messaging` | `messaging` | Reads host state: `Unhealthy` before the Messaging host starts, once shutdown begins, and while the broker is unreachable, judged from receive and send outcomes ([Messaging](messaging.md#broker-reachability)) |
-| `AddHeadlessMessaging` | `messaging-consumers` | `messaging` | Reads circuit state: `Degraded` by default while any consumer circuit is `Open`, including an operator pause |
-| `AddHeadlessMessaging` with `AddOutbox()` | `messaging-outboxes` | `messaging` | Reads outbox state: `Degraded` by default while an additional outbox is not initialized |
+| `AddHeadlessMessaging` | `messaging` | `messaging`, `host-state` | Reads host state: `Unhealthy` before the Messaging host starts, once shutdown begins, and while the broker is unreachable, judged from receive and send outcomes ([Messaging](messaging.md#broker-reachability)) |
+| `AddHeadlessMessaging` | `messaging-consumers` | `messaging`, `host-state` | Reads circuit state: `Degraded` by default while any consumer circuit is `Open`, including an operator pause |
+| `AddHeadlessMessaging` with `AddOutbox()` | `messaging-outboxes` | `messaging`, `host-state` | Reads outbox state: `Degraded` by default while an additional outbox is not initialized |
 | Messaging PostgreSQL / SQL Server storage | `messaging-storage-postgresql-default`, `messaging-storage-sqlserver-default`; per additional outbox `messaging-storage-postgresql-outbox-{n}`, `messaging-storage-sqlserver-outbox-{n}` | `messaging`, `database` | `SELECT 1` on a new connection from that store's options |
-| `AddHeadlessJobs` with background services | `jobs` | `jobs` | Reads host state: `Unhealthy` until Jobs activation completes and once shutdown begins |
-| `AddHeadlessJobs` with background services | `jobs-scheduler` | `jobs` | Reads `IJobsHostScheduler.IsRunning`: `Degraded` by default while the scheduler is stopped by an operator or by manual start mode |
+| `AddHeadlessJobs` with background services | `jobs` | `jobs`, `host-state` | Reads host state: `Unhealthy` until Jobs activation completes and once shutdown begins |
+| `AddHeadlessJobs` with background services | `jobs-scheduler` | `jobs`, `host-state` | Reads `IJobsHostScheduler.IsRunning`: `Degraded` by default while the scheduler is stopped by an operator or by manual start mode |
 | Jobs `UseEntityFramework` | `jobs-storage-{DbContext full name}` | `jobs`, `database` | `Database.CanConnectAsync` on a context from the store's pooled factory |
 
-- **Tags.** Every contributed check carries `ready` (`HeadlessHealthCheckTags.Ready`), `headless` (`HeadlessHealthCheckTags.Headless`), and its dependency tag: `database`, `redis`, `messaging`, `blobs`, or `jobs` (`HeadlessHealthCheckTags.Jobs`, for the checks that report whether a Jobs host can run jobs). A storage check of Messaging or Jobs carries both its feature tag and `database`. None carries the liveness tag, so `MapHeadlessEndpoints()` shows them on `/health` and keeps them off `/alive`: a database outage never makes an orchestrator restart a healthy process. Map a readiness endpoint by tag when the platform probes readiness separately:
+- **Tags.** Every contributed check carries `ready` (`HeadlessHealthCheckTags.Ready`), `headless` (`HeadlessHealthCheckTags.Headless`), and its dependency tag: `database`, `redis`, `messaging`, `blobs`, or `jobs` (`HeadlessHealthCheckTags.Jobs`, for the checks that report whether a Jobs host can run jobs). A storage check of Messaging or Jobs carries both its feature tag and `database`. A check that reads the running host's own state rather than probing a dependency (the five `host-state` rows above) also carries `host-state` (`HeadlessHealthCheckTags.HostState`); the [`check` command](#health-check-command) skips those, because a host that was never started always fails them. None carries the liveness tag, so `MapHeadlessEndpoints()` shows them on `/health` and keeps them off `/alive`: a database outage never makes an orchestrator restart a healthy process. Map a readiness endpoint by tag when the platform probes readiness separately:
 
   ```csharp
   app.MapHealthChecks("/ready", new HealthCheckOptions
@@ -522,7 +523,7 @@ return await app.RunHeadlessAsync(args);
 dotnet MyApp.dll describe | jq '.sections.jobs.functions[].name'
 ```
 
-- **`describe` verb.** When the first argument is `describe`, `RunHeadlessAsync` (namespace `Microsoft.Extensions.Hosting`) builds the manifest instead of running the host and returns the exit code. Any other first argument runs the host as `RunAsync` does and returns 0. It disposes the host in both modes.
+- **`describe` verb.** When the first argument is `describe`, `RunHeadlessAsync` (namespace `Microsoft.Extensions.Hosting`) builds the manifest instead of running the host and returns the exit code. When it is `check`, it runs the health checks instead ([Health check command](#health-check-command)). Any other first argument runs the host as `RunAsync` does and returns 0. It disposes the host in both modes.
 - **Validates like a start, starts nothing.** It first runs options marked `ValidateOnStart`, then every `IHeadlessStartupValidator`, in the same order a real start does. It never starts a hosted service, so it opens no broker connection and claims no job. Only the entry point sees the host's real configuration sources, which is why the command runs there rather than in a separate tool.
 - **Needs no infrastructure.** Neither validation nor any section opens a connection, so `describe` succeeds when the broker and databases are unreachable or absent, for example in CI or on a laptop. Configuration still has to be valid: a missing RabbitMQ password, or two outboxes on one database, fails the command as it would fail a start.
 - **Output.** On success, standard output carries only the JSON document and the exit code is 0. On any failure (a validator, an options validation, or a section), standard output stays empty, `Host manifest failed: {message}` goes to standard error, and the exit code is 1.
@@ -585,6 +586,26 @@ services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostManifestSection, Sear
 - Read only state that exists once the host is built. Never start a hosted service, open a connection, or call a broker.
 - Write entries in a stable order, and omit a setting that does not apply to an entry instead of writing `null`, so two manifests of the same configuration diff cleanly.
 - Two sections with the same `Name` fail the manifest. A section that throws fails it too, with a message that names the section and carries the section's error text, so never show that message to an untrusted caller. The whole document is built in memory first, so a failure writes nothing to the destination stream.
+
+#### Health check command
+
+`RunHeadlessAsync(args)` also answers `check`: it runs the host's health checks once, prints one line per check, and exits non-zero when any check is `Unhealthy`, without starting the host. Run it as a deploy step or an init container to stop a rollout whose database, Redis, or broker the new configuration cannot reach.
+
+```bash
+dotnet MyApp.dll check
+```
+
+```text
+messaging-nats       Healthy     3ms
+sql-postgresql       Unhealthy  41ms  The 'sql-postgresql' dependency probe failed. Connection refused
+messaging            Skipped       -  Reports the state of a running host; not run before start.
+messaging-consumers  Skipped       -  Reports the state of a running host; not run before start.
+```
+
+- **Validates like a start, starts nothing.** Like `describe`, it first runs the options marked `ValidateOnStart` and every `IHeadlessStartupValidator`, and never starts a hosted service. A validation failure prints `Host check failed: {message}` to standard error, leaves standard output empty, runs no check, and exits 1.
+- **Which checks run.** Every registered check, through the host's `HealthCheckService` with each registration's timeout and failure status, except those tagged `host-state` (`HeadlessHealthCheckTags.HostState`). Those report a started host's state (the Messaging and Jobs lifecycle checks), so they are printed as `Skipped` and not run. Tag a check of your own with `host-state` when it reads state that only a started host has. A check removed with `RemoveHealthChecks` or turned off in configuration is absent, as it is from the health endpoints.
+- **Output.** One line per check on standard output, ordered by name, skipped checks last: name, status (`Healthy`, `Degraded`, `Unhealthy`, or `Skipped`), duration in milliseconds, and description. A failed probe's line adds the exception message after the description, which the health endpoints withhold because they are often anonymous; treat the command's output as operator-only. Console logging goes to standard error, with the same `Host.CreateDefaultBuilder` caveat as `describe`.
+- **Exit code.** 1 when any check is `Unhealthy` or validation fails; otherwise 0. `Degraded` does not fail the command, matching readiness. A host with no health checks prints `No health checks are registered.` to standard error and exits 0.
 
 #### Required Services
 
