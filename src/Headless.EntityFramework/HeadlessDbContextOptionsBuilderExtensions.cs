@@ -2,7 +2,7 @@
 
 using Headless;
 using Headless.Checks;
-using Headless.EntityFramework.Contexts;
+using Headless.EntityFramework;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.ValueGeneration;

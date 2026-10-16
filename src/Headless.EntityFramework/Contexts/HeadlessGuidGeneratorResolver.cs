@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.EntityFramework.Contexts;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Picks the <see cref="IGuidGenerator"/> that produces a key for a context: the application's generator keyed by the

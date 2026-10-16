@@ -3,7 +3,6 @@
 using System.Runtime.ExceptionServices;
 using Headless.Context;
 using Headless.Domain;
-using Headless.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using AccountId = Headless.Primitives.AccountId;

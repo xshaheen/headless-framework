@@ -2,7 +2,6 @@
 
 using System.Linq.Expressions;
 using Headless.Domain;
-using Headless.EntityFramework.Contexts;
 using Headless.Primitives;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;

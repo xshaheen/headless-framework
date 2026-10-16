@@ -3,7 +3,7 @@
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.ValueGeneration;
 
-namespace Headless.EntityFramework.Contexts;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// EF Core value generator that produces an application-owned <see cref="Guid"/> key from the host's registered
