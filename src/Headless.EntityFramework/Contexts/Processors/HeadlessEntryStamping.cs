@@ -2,7 +2,6 @@
 
 using Headless.Reflection;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 
 namespace Headless.EntityFramework;
 
@@ -18,9 +17,9 @@ internal static class HeadlessEntryStamping
     {
         if (entry.Metadata.FindProperty(propertyName) is { } property)
         {
-#pragma warning disable EF1001 // Internal EF Core API: the public PropertyEntry setter does the same write but allocates an entry per stamp.
-            entry.GetInfrastructure()[property] = value;
-#pragma warning restore EF1001
+            // The public entry, not InternalEntityEntry's indexer: that one saves a PropertyEntry per stamp, but EF Core
+            // may change it in any release, and EF Core is not versioned in lockstep with this package.
+            entry.Property(property).CurrentValue = value;
 
             return;
         }
