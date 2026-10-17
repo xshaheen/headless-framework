@@ -1,0 +1,572 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Checks;
+using Headless.Messaging;
+using Headless.Messaging.Transport;
+
+namespace Tests.Simulation;
+
+/// <summary>
+/// The settlement value of one delivery by the simulated broker. It settles that delivery only while the delivery is
+/// live: once the delivery is settled, or the connection or channel it came on is lost, the value is stale.
+/// </summary>
+[PublicAPI]
+public sealed class SimulatedDelivery
+{
+    internal SimulatedDelivery(SimulatedPending pending, TransportMessage message, SimulatedConsumerClient client)
+    {
+        Pending = pending;
+        Message = message;
+        Client = client;
+    }
+
+    /// <summary>Gets the message as the client handed it to its callback.</summary>
+    public TransportMessage Message { get; }
+
+    /// <summary>Gets how many times the message has been delivered, this delivery included.</summary>
+    public int DeliveryCount => Pending.DeliveryCount;
+
+    internal SimulatedPending Pending { get; }
+
+    internal SimulatedConsumerClient Client { get; }
+}
+
+/// <summary>
+/// A consumer client of the <see cref="SimulatedBroker"/>. It behaves as a broker client that retries a lost broker on
+/// its own: a failed receive is reported to the host's broker reachability and retried after the broker's
+/// <see cref="SimulatedBroker.RetryInterval"/> of simulated time, and the first receive that reaches the broker again
+/// reports the recovery. Only this client's own failures end in its recovery report, so another client's healthy receives
+/// never clear its failure run.
+/// </summary>
+[PublicAPI]
+public sealed class SimulatedConsumerClient : IConsumerClient
+{
+    private readonly SimulatedBroker _broker;
+    private readonly BrokerReachabilityReporter _reachability = new();
+    private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly SemaphoreSlim? _slots;
+
+    // Guarded by the broker gate.
+    private readonly HashSet<SimulatedDelivery> _inFlight = [];
+    private SimulatedGroup? _group;
+    private bool _paused;
+    private bool _channelClosed;
+    private bool _closed;
+
+    private Task? _closeTask;
+    private Func<CancellationToken, Task>? _onReestablished;
+
+    internal SimulatedConsumerClient(SimulatedBroker broker, ConsumerClientRequest request)
+    {
+        _broker = broker;
+        Request = request;
+        GroupId =
+            request.Kind is ConsumerSubscriptionKind.EveryInstance
+                ? $"{request.SubscriptionName}.{request.InstanceId:N}"
+                : request.SubscriptionName;
+        _slots = request.Concurrency > 0 ? new SemaphoreSlim(request.Concurrency) : null;
+    }
+
+    /// <summary>Gets the subscription the client was opened for.</summary>
+    public string Subscription => Request.SubscriptionName;
+
+    /// <summary>Gets the broker group the client competes in; an every-instance client has a group of its own.</summary>
+    public string GroupId { get; }
+
+    /// <summary>Gets how many deliveries the client holds unsettled.</summary>
+    public int InFlightCount
+    {
+        get
+        {
+            lock (_broker.Gate)
+            {
+                return _inFlight.Count;
+            }
+        }
+    }
+
+    public BrokerAddress BrokerAddress => _broker.Address;
+
+    public Func<TransportMessage, object?, Task>? OnMessageCallback { get; private set; }
+
+    public Action<LogMessageEventArgs>? OnLogCallback { get; private set; }
+
+    internal ConsumerClientRequest Request { get; }
+
+    public void AttachCallbacks(Func<TransportMessage, object?, Task>? onMessage, Action<LogMessageEventArgs>? onLog)
+    {
+        OnMessageCallback = onMessage;
+        OnLogCallback = onLog;
+    }
+
+    public void AttachReestablishedCallback(Func<CancellationToken, Task>? onReestablished)
+    {
+        _onReestablished = onReestablished;
+    }
+
+    public ValueTask<ICollection<string>> FetchMessageNamesAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(messageNames);
+        cancellationToken.ThrowIfCancellationRequested();
+        _broker.EnsureConnected();
+
+        return ValueTask.FromResult<ICollection<string>>([.. messageNames]);
+    }
+
+    public ValueTask SubscribeAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNull(messageNames);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var group = _broker.Subscribe(this, GroupId, messageNames);
+        lock (_broker.Gate)
+        {
+            _group = group;
+        }
+
+        _ready.TrySetResult();
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
+    {
+        return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
+    }
+
+    /// <summary>
+    /// Receives until the client closes, its channel closes, or <paramref name="cancellationToken"/> is canceled. It
+    /// never polls on a timer: it wakes when the broker changes, and backs off a failed receive on the simulation clock.
+    /// </summary>
+    /// <param name="timeout">Unused; the loop wakes on broker changes instead of polling.</param>
+    /// <param name="cancellationToken">Stops the loop.</param>
+    public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        DateTimeOffset? retryAt = null;
+        var lostConnection = false;
+        var slotHeld = false;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            if (_slots is not null && !slotHeld)
+            {
+                await _slots.WaitAsync(cancellationToken).ConfigureAwait(false);
+                slotHeld = true;
+            }
+
+            var step = _Poll(retryAt);
+
+            switch (step.Kind)
+            {
+                case PollKind.Stopped:
+                    _ReleaseSlot(ref slotHeld);
+                    return;
+                case PollKind.BackingOff:
+                    await _BackOffAsync(step.Changed, retryAt!.Value, cancellationToken).ConfigureAwait(false);
+                    continue;
+                case PollKind.Unreachable:
+                case PollKind.ReceiveFailed:
+                    lostConnection |= step.Kind is PollKind.Unreachable;
+                    _reachability.ReportFailure(OnLogCallback, step.Reason!);
+                    _broker.Record(BrokerEventKind.ReceiveFailed, Subscription, messageId: null, deliveryCount: 0);
+
+                    // Measured from the failure, not from when the loop waits, so a test that advances the clock as soon
+                    // as it sees the failure cannot leave the retry waiting for another advance.
+                    retryAt = step.Now + _broker.RetryInterval;
+                    continue;
+            }
+
+            // The receive reached the broker.
+            retryAt = null;
+            if (_reachability.HasPendingFailure)
+            {
+                _reachability.ReportSuccess(OnLogCallback);
+                _broker.Record(BrokerEventKind.ReceiveRecovered, Subscription, messageId: null, deliveryCount: 0);
+
+                if (lostConnection && _onReestablished is { } onReestablished)
+                {
+                    await onReestablished(cancellationToken).ConfigureAwait(false);
+                }
+
+                lostConnection = false;
+            }
+
+            if (step.Delivery is null)
+            {
+                await _WaitAsync(step.Changed, other: null, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            if (_slots is null)
+            {
+                await _InvokeAsync(step.Delivery).ConfigureAwait(false);
+                continue;
+            }
+
+            // The slot passes to the delivery and is released when its callback returns.
+            slotHeld = false;
+            var delivery = step.Delivery;
+            _ = Task.Run(
+                async () =>
+                {
+                    try
+                    {
+                        await _InvokeAsync(delivery).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        _slots.Release();
+                    }
+                },
+                CancellationToken.None
+            );
+        }
+
+        _ReleaseSlot(ref slotHeld);
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
+    {
+        _Settle(sender, BrokerEventKind.Committed, redeliveryDelay: null);
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+    {
+        _Settle(sender, BrokerEventKind.Rejected, TimeSpan.Zero);
+        return ValueTask.CompletedTask;
+    }
+
+    // The broker holds the delivery for the delay itself, on the simulation clock, so the core's own hold is not needed.
+    public ValueTask RejectAsync(object? sender, TimeSpan redeliveryDelay, CancellationToken cancellationToken)
+    {
+        _Settle(sender, BrokerEventKind.Rejected, redeliveryDelay);
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask DeadLetterAsync(
+        object? sender,
+        string reason,
+        string? description,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _Settle(sender, BrokerEventKind.DeadLettered, redeliveryDelay: null);
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask PauseAsync(CancellationToken cancellationToken = default)
+    {
+        _SetPaused(paused: true);
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+    {
+        _SetPaused(paused: false);
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        return new ValueTask(_CloseAsync());
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        return new ValueTask(_CloseAsync());
+    }
+
+    /// <summary>Returns every unsettled delivery to the group and makes its settlement value stale.</summary>
+    internal void RequeueInFlightLocked()
+    {
+        if (_group is null)
+        {
+            return;
+        }
+
+        foreach (var delivery in _inFlight)
+        {
+            _Requeue(_group, delivery.Pending);
+        }
+
+        _inFlight.Clear();
+    }
+
+    /// <summary>Closes the channel under the client; false when it was already closed.</summary>
+    internal bool CloseChannelLocked()
+    {
+        if (_closed || _channelClosed)
+        {
+            return false;
+        }
+
+        _channelClosed = true;
+        RequeueInFlightLocked();
+        _broker.RecordLocked(BrokerEventKind.ChannelClosed, Subscription, messageId: null, deliveryCount: 0);
+        return true;
+    }
+
+    internal void ReportChannelClosed()
+    {
+        OnLogCallback?.Invoke(
+            new LogMessageEventArgs
+            {
+                LogType = MqLogType.ConsumerShutdown,
+                Reason = $"The simulated channel of '{Subscription}' closed.",
+            }
+        );
+    }
+
+    private PollStep _Poll(DateTimeOffset? retryAt)
+    {
+        lock (_broker.Gate)
+        {
+            var now = _broker.Clock.GetUtcNow();
+            var changed = _broker.ChangedLocked;
+
+            if (_closed || _channelClosed)
+            {
+                return new PollStep(PollKind.Stopped, now, changed);
+            }
+
+            if (retryAt > now)
+            {
+                return new PollStep(PollKind.BackingOff, now, changed);
+            }
+
+            if (!_broker.IsConnectedLocked)
+            {
+                return new PollStep(PollKind.Unreachable, now, changed, Reason: "The simulated broker is unreachable.");
+            }
+
+            if (_broker.Faults.TryTakeReceiveFault(Subscription, out var reason))
+            {
+                return new PollStep(PollKind.ReceiveFailed, now, changed, Reason: reason);
+            }
+
+            if (_paused || _group is null || !_group.Pending.TryDequeue(out var pending))
+            {
+                return new PollStep(PollKind.Reached, now, changed);
+            }
+
+            var delivery = new SimulatedDelivery(pending, SimulatedBroker.Copy(pending.Message), this);
+            _inFlight.Add(delivery);
+            _broker.RecordLocked(
+                BrokerEventKind.Delivered,
+                Subscription,
+                SimulatedBroker.MessageIdOf(pending.Message),
+                pending.DeliveryCount
+            );
+
+            return new PollStep(PollKind.Reached, now, changed, Delivery: delivery);
+        }
+    }
+
+    private async Task _InvokeAsync(SimulatedDelivery delivery)
+    {
+        try
+        {
+            await (OnMessageCallback?.Invoke(delivery.Message, delivery) ?? Task.CompletedTask).ConfigureAwait(false);
+        }
+#pragma warning disable CA1031 // A callback failure is the client's to absorb: the delivery goes back, as an unacknowledged one does at a broker.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ExceptionReceived,
+                    Reason = $"The message callback failed: {ex}",
+                }
+            );
+
+            lock (_broker.Gate)
+            {
+                if (_group is not null && _inFlight.Remove(delivery))
+                {
+                    _Requeue(_group, delivery.Pending);
+                }
+            }
+        }
+    }
+
+    private void _Settle(object? sender, BrokerEventKind outcome, TimeSpan? redeliveryDelay)
+    {
+        lock (_broker.Gate)
+        {
+            var delivery = sender as SimulatedDelivery;
+            if (delivery is null || _group is null || !_inFlight.Contains(delivery))
+            {
+                _broker.RecordLocked(
+                    BrokerEventKind.SettlementRefused,
+                    Subscription,
+                    delivery is null ? null : SimulatedBroker.MessageIdOf(delivery.Pending.Message),
+                    delivery?.DeliveryCount ?? 0
+                );
+                return;
+            }
+
+            var messageId = SimulatedBroker.MessageIdOf(delivery.Pending.Message);
+            if (_broker.Faults.TryTakeSettlementFault())
+            {
+                _broker.RecordLocked(BrokerEventKind.SettlementFailed, Subscription, messageId, delivery.DeliveryCount);
+                throw new SimulatedBrokerException($"The simulated broker failed to settle message '{messageId}'.");
+            }
+
+            _inFlight.Remove(delivery);
+            _broker.RecordLocked(outcome, Subscription, messageId, delivery.DeliveryCount);
+
+            if (redeliveryDelay is not { } delay)
+            {
+                return;
+            }
+
+            if (delay <= TimeSpan.Zero)
+            {
+                _Requeue(_group, delivery.Pending);
+                return;
+            }
+
+            _ = _RequeueAtAsync(_group, delivery.Pending, _broker.Clock.GetUtcNow() + delay);
+        }
+    }
+
+    private async Task _RequeueAtAsync(SimulatedGroup group, SimulatedPending pending, DateTimeOffset at)
+    {
+        await _broker.Clock.WhenReachedAsync(at).ConfigureAwait(false);
+
+        lock (_broker.Gate)
+        {
+            _Requeue(group, pending);
+        }
+    }
+
+    private void _Requeue(SimulatedGroup group, SimulatedPending pending)
+    {
+        var redelivery = pending with { DeliveryCount = pending.DeliveryCount + 1 };
+        group.Pending.Enqueue(redelivery);
+        _broker.RecordLocked(
+            BrokerEventKind.Requeued,
+            group.Subscription,
+            SimulatedBroker.MessageIdOf(pending.Message),
+            pending.DeliveryCount
+        );
+    }
+
+    private void _SetPaused(bool paused)
+    {
+        lock (_broker.Gate)
+        {
+            _paused = paused;
+            _broker.SignalLocked();
+        }
+    }
+
+    private Task _CloseAsync()
+    {
+        lock (_broker.Gate)
+        {
+            return _closeTask ??= _CloseCoreAsync();
+        }
+    }
+
+    private async Task _CloseCoreAsync()
+    {
+        bool subscribed;
+        lock (_broker.Gate)
+        {
+            _closed = true;
+            subscribed = _group is not null;
+            _broker.SignalLocked();
+        }
+
+        _ready.TrySetCanceled();
+
+        // A close fault holds only a client that opened a subscription: the core's short-lived topology clients have no
+        // connection to tear down, so a fault armed before startup does not stall the bootstrap.
+        if (subscribed)
+        {
+            var (kind, duration, release) = _broker.Faults.TakeCloseFault();
+            if (kind is CloseFaultKind.Slow)
+            {
+                await _broker.Clock.DelayAsync(duration).ConfigureAwait(false);
+            }
+            else if (kind is CloseFaultKind.Hung)
+            {
+                await release.ConfigureAwait(false);
+            }
+        }
+
+        lock (_broker.Gate)
+        {
+            RequeueInFlightLocked();
+            if (_group is not null)
+            {
+                _broker.RemoveClientLocked(this, _group);
+            }
+
+            _broker.RecordLocked(BrokerEventKind.ClientClosed, Subscription, messageId: null, deliveryCount: 0);
+        }
+    }
+
+    private void _ReleaseSlot(ref bool slotHeld)
+    {
+        if (slotHeld)
+        {
+            _slots!.Release();
+            slotHeld = false;
+        }
+    }
+
+    /// <summary>Waits for the retry time or for a broker change, such as a close, whichever comes first.</summary>
+    private async Task _BackOffAsync(Task changed, DateTimeOffset retryAt, CancellationToken cancellationToken)
+    {
+        // The deadline is withdrawn when the change wins, so an abandoned retry never lingers as a pending clock wait.
+        using var withdraw = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var retry = _broker.Clock.WhenReachedAsync(retryAt, withdraw.Token);
+
+        try
+        {
+            await _WaitAsync(changed, retry, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await withdraw.CancelAsync().ConfigureAwait(false);
+        }
+    }
+
+    private static async Task _WaitAsync(Task changed, Task? other, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await (other is null ? changed : Task.WhenAny(changed, other))
+                .WaitAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The loop checks the token next and stops.
+        }
+    }
+
+    private enum PollKind
+    {
+        Stopped,
+        BackingOff,
+        Unreachable,
+        ReceiveFailed,
+        Reached,
+    }
+
+    private readonly record struct PollStep(
+        PollKind Kind,
+        DateTimeOffset Now,
+        Task Changed,
+        string? Reason = null,
+        SimulatedDelivery? Delivery = null
+    );
+}
