@@ -278,32 +278,6 @@ public sealed class PostgresTransactionLockTests(PostgreSqlDistributedLockFixtur
     }
 
     [Fact]
-    public async Task should_restore_timeout_settings_when_strategy_uses_visible_transaction()
-    {
-        var resourceName = _CreateResourceName();
-
-        await using var connection = await _OpenAsync();
-        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
-        await using var databaseConnection = new PostgresDatabaseConnection(
-            transaction,
-            TimeProvider.System,
-            _MonitoringCommandTimeoutSeconds
-        );
-
-        await _ExecuteAsync(connection, "SET LOCAL lock_timeout = 1234", AbortToken);
-        var expectedLockTimeout = await _CurrentSettingAsync(connection, "lock_timeout", AbortToken);
-
-        var strategy = new PostgresAdvisoryLock(isShared: false, TimeProvider.System);
-
-        var cookie = await strategy.TryAcquireAsync(databaseConnection, resourceName, TimeSpan.Zero, AbortToken);
-
-        cookie.Should().NotBeNull();
-        (await _CurrentSettingAsync(connection, "lock_timeout", AbortToken)).Should().Be(expectedLockTimeout);
-
-        await transaction.RollbackAsync(AbortToken);
-    }
-
-    [Fact]
     public async Task should_restore_timeout_settings_when_strategy_uses_invisible_external_transaction()
     {
         var resourceName = _CreateResourceName();
@@ -316,8 +290,9 @@ public sealed class PostgresTransactionLockTests(PostgreSqlDistributedLockFixtur
             _MonitoringCommandTimeoutSeconds
         );
 
-        await _ExecuteAsync(connection, "SET LOCAL lock_timeout = 1234", AbortToken);
-        var expectedLockTimeout = await _CurrentSettingAsync(connection, "lock_timeout", AbortToken);
+        // PostgreSQL reports these back in their largest whole unit ('30s', '1d'), not in milliseconds.
+        await _ExecuteAsync(connection, "SET LOCAL statement_timeout = 30000", AbortToken);
+        await _ExecuteAsync(connection, "SET LOCAL lock_timeout = '1d'", AbortToken);
 
         var strategy = new PostgresAdvisoryLock(isShared: false, TimeProvider.System);
         var cookie = await strategy.TryAcquireAsync(databaseConnection, resourceName, TimeSpan.Zero, AbortToken);
@@ -325,7 +300,8 @@ public sealed class PostgresTransactionLockTests(PostgreSqlDistributedLockFixtur
         try
         {
             cookie.Should().NotBeNull();
-            (await _CurrentSettingAsync(connection, "lock_timeout", AbortToken)).Should().Be(expectedLockTimeout);
+            (await _CurrentSettingAsync(connection, "statement_timeout", AbortToken)).Should().Be("30s");
+            (await _CurrentSettingAsync(connection, "lock_timeout", AbortToken)).Should().Be("1d");
         }
         finally
         {

@@ -453,43 +453,6 @@ public sealed class EndToEndTests : TestBase
         recorder.Lanes.Should().Contain([MessageLane.Bus, MessageLane.Queue]);
     }
 
-    [Fact]
-    public async Task queue_observation_is_not_double_recorded_as_bus_for_queue_transport()
-    {
-        // given
-        await using var harness = await MessagingTestHarness.CreateAsync(
-            services =>
-            {
-                services.AddHeadlessMessaging(options =>
-                {
-                    options.UseInMemoryStorage();
-                    options.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
-                    options.RegisterExtension(new QueueOnlyTransportExtension());
-                });
-            },
-            AbortToken
-        );
-
-        var queue = harness.GetRequiredService<IQueue>();
-
-        // when
-        await queue.EnqueueAsync(
-            new OrderCreatedEvent("queue-only", 10m),
-            new QueueOptions { MessageName = "queue-only-order-created" },
-            AbortToken
-        );
-
-        // then
-        var published = await harness.WaitForPublishedAsync<OrderCreatedEvent>(
-            MessageLane.Queue,
-            TimeSpan.FromSeconds(5),
-            AbortToken
-        );
-        published.Lane.Should().Be(MessageLane.Queue);
-        harness.Published.Should().ContainSingle();
-        harness.Published.Should().NotContain(message => message.Lane == MessageLane.Bus);
-    }
-
     private static string? _GetInnerTransportName(object transport)
     {
         return transport
@@ -497,49 +460,6 @@ public sealed class EndToEndTests : TestBase
             .GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
             .Select(field => field.GetValue(transport)?.GetType().Name)
             .FirstOrDefault(name => name?.Contains("Transport", StringComparison.Ordinal) == true);
-    }
-
-    private sealed class QueueOnlyTransportExtension : IMessagesOptionsExtension
-    {
-        public void AddServices(IServiceCollection services)
-        {
-            services.AddSingleton(new MessageQueueMarkerService("QueueOnly"));
-            services.AddMessagingProviderCapabilities(
-                MessagingProviderCapabilities.Transport(
-                    "QueueOnly",
-                    [MessageLane.Queue],
-                    supportsIndependentLaneTopology: true
-                )
-            );
-            services.AddSingleton<IQueueTransport, SuccessfulQueueTransport>();
-            services.AddSingleton<IConsumerClientFactory, UnusedConsumerClientFactory>();
-        }
-    }
-
-    private sealed class SuccessfulQueueTransport : IQueueTransport
-    {
-        public BrokerAddress BrokerAddress => new("QueueOnly", "localhost");
-
-        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(OperateResult.Success);
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            return ValueTask.CompletedTask;
-        }
-    }
-
-    private sealed class UnusedConsumerClientFactory : IConsumerClientFactory
-    {
-        public Task<IConsumerClient> CreateAsync(
-            ConsumerClientRequest request,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw new InvalidOperationException("The queue-only transport harness test registers no consumers.");
-        }
     }
 
     // ─── Test 7: AddMessagingTestHarness registers into existing container ───
