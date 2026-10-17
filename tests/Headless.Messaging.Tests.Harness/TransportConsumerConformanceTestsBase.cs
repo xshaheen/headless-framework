@@ -464,6 +464,7 @@ public abstract class TransportConsumerConformanceSessionTestsBase : TestBase
         var support = profile.Scenarios[scenario];
         if (support.Status == ConformanceStatus.Supported)
         {
+            ConformanceDriftDrill.FailIfDrilled(ProviderName, scenario);
             return;
         }
 

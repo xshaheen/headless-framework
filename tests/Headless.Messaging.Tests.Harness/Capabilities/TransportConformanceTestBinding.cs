@@ -73,7 +73,12 @@ public static class TransportConformanceTestBindings
     )
     {
         var errors = new List<string>();
-        var bindingsByScenario = bindings.ToLookup(binding => binding.Scenario);
+        var materialized = bindings.ToList();
+        var bindingsByScenario = materialized.ToLookup(binding => binding.Scenario);
+
+        // Every provider's evidence test passes its bindings through here, so this is the one place that sees which
+        // test backs which cell; the scheduled run exports them to tell simulator drift from a provider failure.
+        ConformanceEvidenceExport.RecordBindings(profile, materialized);
 
         foreach (var (scenario, support) in profile.Scenarios)
         {

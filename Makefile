@@ -40,6 +40,17 @@ NO_CHAOS_SOLUTION ?= $(ARTIFACTS_DIR)/solution-filters/headless-framework.no-cha
 WRITE_NO_CHAOS_SOLUTION = $(GRAPH) solution-filter --exclude-suffix "$(CHAOS_TEST_SUFFIX)" --out "$(NO_CHAOS_SOLUTION)" --solution "$(SOLUTION)"
 MESSAGING_CHAOS_PROJECT ?= tests/Headless.Messaging.Tests.Chaos/Headless.Messaging.Tests.Chaos.csproj
 MESSAGING_CHAOS_RESULTS_DIR ?= $(TEST_RESULTS_DIR)/messaging-chaos
+# The scheduled messaging tier (messaging-nightly.yml): every broker, broker-plus-database, and relational storage
+# integration suite. Azure Service Bus needs a real namespace credential, so its suites stay in their own
+# dispatch-only workflow and outside this list.
+MESSAGING_NIGHTLY_PROJECTS ?= $(foreach project,Aws AwsPostgreSql Kafka KafkaPostgreSql Nats NatsPostgreSql Pulsar PulsarPostgreSql RabbitMq RabbitMqPostgreSql RabbitMqSqlServer Redis RedisPostgreSql Storage.PostgreSql Storage.SqlServer,tests/Headless.Messaging.$(project).Tests.Integration/Headless.Messaging.$(project).Tests.Integration.csproj) tests/Headless.EntityFramework.Messaging.Tests.Integration/Headless.EntityFramework.Messaging.Tests.Integration.csproj
+MESSAGING_NIGHTLY_RESULTS_DIR ?= $(TEST_RESULTS_DIR)/messaging-nightly
+MESSAGING_NIGHTLY_REPORT ?= true
+MESSAGING_DRIFT_REPORT_ROOT ?= $(MESSAGING_NIGHTLY_RESULTS_DIR)
+# Providers whose real-broker leaves the nightly does not run; the drift report does not wait for their cells.
+MESSAGING_DRIFT_EXCLUDED_PROVIDERS ?= Azure Service Bus
+MESSAGING_QUARANTINE_DIR ?= $(TEST_RESULTS_DIR)/messaging-quarantine
+MESSAGING_UNIT_PROJECT ?= tests/Headless.Messaging.Tests.Unit/Headless.Messaging.Tests.Unit.csproj
 MESSAGING_CONFORMANCE_PROVIDERS ?= Aws Kafka Nats Pulsar RabbitMq Redis
 MESSAGING_CONFORMANCE_EVIDENCE_PROJECTS ?= $(foreach provider,$(MESSAGING_CONFORMANCE_PROVIDERS),tests/Headless.Messaging.$(provider).Tests.Integration/Headless.Messaging.$(provider).Tests.Integration.csproj)
 MESSAGING_CONFORMANCE_EVIDENCE_MODULES ?= $(foreach provider,$(MESSAGING_CONFORMANCE_PROVIDERS),tests/Headless.Messaging.$(provider).Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.$(provider).Tests.Integration.dll)
@@ -987,6 +998,35 @@ test-messaging-chaos: ## Run the messaging chaos and soak suite on PostgreSQL an
 	@rm -f "$(MESSAGING_CHAOS_RESULTS_DIR)/summary.md"
 	@$(ASSERT_RESTORED); assert_restored "$(MESSAGING_CHAOS_PROJECT)"
 	HEADLESS_CHAOS_SUMMARY_DIR="$(abspath $(MESSAGING_CHAOS_RESULTS_DIR))" $(DOTNET) test --project "$(MESSAGING_CHAOS_PROJECT)" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_CHAOS_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
+
+# The scheduled tier runs each suite once, with no --retry-failed-tests, so a flaky guarantee shows as a failure rather
+# than a pass on the second try. Every suite runs to completion, and the evidence tests export the manifest and their
+# scenario bindings beside the TRX files so the drift report can tell a simulator that drifted from the real brokers
+# apart from one provider failing. The results directory is cleared first: a stale TRX would be judged as this run's.
+.PHONY: test-messaging-nightly
+test-messaging-nightly: ## Run the scheduled messaging integration suites with no retries, then the drift report (needs Docker; long). MESSAGING_NIGHTLY_PROJECTS narrows the set; MESSAGING_NIGHTLY_REPORT=false skips the report.
+	@$(ASSERT_RESTORED); for project in $(MESSAGING_NIGHTLY_PROJECTS); do assert_restored "$$project"; done
+	@test -n "$(MESSAGING_NIGHTLY_RESULTS_DIR)" || { echo "MESSAGING_NIGHTLY_RESULTS_DIR is empty." >&2; exit 2; }; rm -rf "$(MESSAGING_NIGHTLY_RESULTS_DIR)"; mkdir -p "$(MESSAGING_NIGHTLY_RESULTS_DIR)"
+	@status=0; for project in $(MESSAGING_NIGHTLY_PROJECTS); do \
+		printf '\033[36m[nightly]\033[0m %s\n' "$$project"; \
+		HEADLESS_CONFORMANCE_EXPORT_DIR="$(abspath $(MESSAGING_NIGHTLY_RESULTS_DIR))/conformance" \
+			$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_NIGHTLY_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER) || status=1; \
+	done; \
+	if [ "$(MESSAGING_NIGHTLY_REPORT)" = "true" ]; then $(MAKE) --no-print-directory messaging-drift-report MESSAGING_DRIFT_REPORT_ROOT="$(MESSAGING_NIGHTLY_RESULTS_DIR)" || status=1; fi; \
+	exit $$status
+
+.PHONY: messaging-drift-report
+messaging-drift-report: ## Label simulator drift apart from provider failures in a nightly run's TRX files and conformance export under MESSAGING_DRIFT_REPORT_ROOT; writes summary.md there and exits 3 on drift.
+	@$(PYTHON) -I scripts/messaging-drift-report.py --results "$(MESSAGING_DRIFT_REPORT_ROOT)" --exclude-providers "$(MESSAGING_DRIFT_EXCLUDED_PROVIDERS)" --out "$(MESSAGING_DRIFT_REPORT_ROOT)/summary.md"
+
+# A quarantined cell skips its test until someone marks it Supported, and closing the linked issue does not do that,
+# so the scheduled run asks GitHub (read-only, through gh) whether each linked issue is still open.
+.PHONY: messaging-quarantine-check
+messaging-quarantine-check: ## Fail when a quarantined messaging manifest cell or guarantee links a closed issue (needs an authenticated gh; read-only).
+	@$(ASSERT_RESTORED); assert_restored "$(MESSAGING_UNIT_PROJECT)"
+	@test -n "$(MESSAGING_QUARANTINE_DIR)" || { echo "MESSAGING_QUARANTINE_DIR is empty." >&2; exit 2; }; rm -rf "$(MESSAGING_QUARANTINE_DIR)"; mkdir -p "$(MESSAGING_QUARANTINE_DIR)"
+	@HEADLESS_CONFORMANCE_EXPORT_DIR="$(abspath $(MESSAGING_QUARANTINE_DIR))" $(DOTNET) test --project "$(MESSAGING_UNIT_PROJECT)" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_QUARANTINE_DIR)" $(TEST_ARGS) --filter-class '*ConformanceEvidenceExportTests' > "$(MESSAGING_QUARANTINE_DIR)/snapshot-test.log" 2>&1 || { cat "$(MESSAGING_QUARANTINE_DIR)/snapshot-test.log" >&2; exit 1; }
+	@$(PYTHON) -I scripts/quarantine-check.py --snapshot "$(MESSAGING_QUARANTINE_DIR)/snapshot.json"
 
 .PHONY: coverage
 coverage: tools build ## Collect Cobertura coverage via MTP's in-process coverage extension, chaos tier excluded. TEST_MAX_PARALLEL caps concurrent modules (default 3).

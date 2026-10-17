@@ -1,0 +1,270 @@
+name: "Messaging nightly"
+
+# The messaging fast tier proves delivery guarantees against an in-process simulator; this run keeps that honest. Each
+# night it runs every broker, broker-plus-database, and relational storage integration suite, plus the chaos and soak
+# suite, against real containers, then reports two things a pull request never sees: a simulator cell that every real
+# broker backing it now fails (simulator drift), and a quarantined cell whose linked issue is already closed. Nothing
+# gates on it and it stays outside the required "CI status", so a red night never blocks a pull request.
+#
+# Retries are off: no step passes --retry-failed-tests, so the SDK's retry extension stays inactive and a guarantee that
+# fails once shows as a failure. Azure Service Bus needs a real namespace credential and keeps its own dispatch-only
+# workflow (messaging-azure-service-bus-conformance.yml); the drift report does not wait for its cells.
+on:
+  schedule:
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+    inputs:
+      chaos_profile:
+        description: "Chaos and soak sizes: full (the scheduled sizes) or smoke"
+        required: false
+        type: choice
+        default: full
+        options:
+          - full
+          - smoke
+      drift_drill:
+        description: "Drill only: a TransportConformanceScenario (e.g. EmptyBodyDispatch) whose real-broker leaves fail on purpose, to prove the report labels drift. Leave empty for a real run."
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  CONFIGURATION: Release
+
+jobs:
+  integration:
+    name: "Messaging nightly · ${{ matrix.leg.name }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Keep this list in step with MESSAGING_NIGHTLY_PROJECTS in the Makefile; tests/scripts/test-messaging-nightly.sh
+        # checks that every project there has a leg here.
+        leg:
+          - { name: aws, project: tests/Headless.Messaging.Aws.Tests.Integration/Headless.Messaging.Aws.Tests.Integration.csproj, tz: UTC }
+          - { name: aws-postgresql, project: tests/Headless.Messaging.AwsPostgreSql.Tests.Integration/Headless.Messaging.AwsPostgreSql.Tests.Integration.csproj, tz: UTC }
+          - { name: kafka, project: tests/Headless.Messaging.Kafka.Tests.Integration/Headless.Messaging.Kafka.Tests.Integration.csproj, tz: UTC }
+          - { name: kafka-postgresql, project: tests/Headless.Messaging.KafkaPostgreSql.Tests.Integration/Headless.Messaging.KafkaPostgreSql.Tests.Integration.csproj, tz: UTC }
+          - { name: nats, project: tests/Headless.Messaging.Nats.Tests.Integration/Headless.Messaging.Nats.Tests.Integration.csproj, tz: UTC }
+          - { name: nats-postgresql, project: tests/Headless.Messaging.NatsPostgreSql.Tests.Integration/Headless.Messaging.NatsPostgreSql.Tests.Integration.csproj, tz: UTC }
+          - { name: pulsar, project: tests/Headless.Messaging.Pulsar.Tests.Integration/Headless.Messaging.Pulsar.Tests.Integration.csproj, tz: UTC }
+          - { name: pulsar-postgresql, project: tests/Headless.Messaging.PulsarPostgreSql.Tests.Integration/Headless.Messaging.PulsarPostgreSql.Tests.Integration.csproj, tz: UTC }
+          - { name: rabbitmq, project: tests/Headless.Messaging.RabbitMq.Tests.Integration/Headless.Messaging.RabbitMq.Tests.Integration.csproj, tz: UTC }
+          - { name: rabbitmq-postgresql, project: tests/Headless.Messaging.RabbitMqPostgreSql.Tests.Integration/Headless.Messaging.RabbitMqPostgreSql.Tests.Integration.csproj, tz: UTC }
+          - { name: rabbitmq-sqlserver, project: tests/Headless.Messaging.RabbitMqSqlServer.Tests.Integration/Headless.Messaging.RabbitMqSqlServer.Tests.Integration.csproj, tz: UTC }
+          - { name: redis, project: tests/Headless.Messaging.Redis.Tests.Integration/Headless.Messaging.Redis.Tests.Integration.csproj, tz: UTC }
+          - { name: redis-postgresql, project: tests/Headless.Messaging.RedisPostgreSql.Tests.Integration/Headless.Messaging.RedisPostgreSql.Tests.Integration.csproj, tz: UTC }
+          - { name: storage-postgresql, project: tests/Headless.Messaging.Storage.PostgreSql.Tests.Integration/Headless.Messaging.Storage.PostgreSql.Tests.Integration.csproj, tz: UTC }
+          # Runners are UTC, which hides code that trusts DateTime.Kind or a local offset. Schedules, leases and
+          # retry times are stored here, so this suite runs a second time in a DST-observing zone east of UTC.
+          - { name: storage-postgresql-cairo, project: tests/Headless.Messaging.Storage.PostgreSql.Tests.Integration/Headless.Messaging.Storage.PostgreSql.Tests.Integration.csproj, tz: Africa/Cairo }
+          - { name: storage-sqlserver, project: tests/Headless.Messaging.Storage.SqlServer.Tests.Integration/Headless.Messaging.Storage.SqlServer.Tests.Integration.csproj, tz: UTC }
+          - { name: entityframework, project: tests/Headless.EntityFramework.Messaging.Tests.Integration/Headless.EntityFramework.Messaging.Tests.Integration.csproj, tz: UTC }
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          # MinVer derives the version from tags and commit height.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Set up .NET SDK"
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: "./global.json"
+
+      # CI's primary build leg owns the cache writes; this workflow only reads.
+      - name: "Restore NuGet cache"
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', 'global.json', 'dotnet-tools.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: "Restore the integration project"
+        env:
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROJECT: ${{ matrix.leg.project }}
+        run: make restore-project PROJECT="$PROJECT"
+
+      - name: "Run the integration suite"
+        env:
+          TZ: ${{ matrix.leg.tz }}
+          PROJECT: ${{ matrix.leg.project }}
+          LEG: ${{ matrix.leg.name }}
+          # Empty on every scheduled run, so the drill never fails a real night.
+          HEADLESS_CONFORMANCE_DRIFT_DRILL: ${{ inputs.drift_drill }}
+        run: >-
+          make test-messaging-nightly
+          MESSAGING_NIGHTLY_PROJECTS="$PROJECT"
+          MESSAGING_NIGHTLY_RESULTS_DIR="artifacts/test-results/messaging-nightly/$LEG"
+          MESSAGING_NIGHTLY_REPORT=false
+
+      - name: "Upload test results"
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: messaging-nightly-${{ matrix.leg.name }}
+          path: |
+            artifacts/test-results/messaging-nightly/**/*.trx
+            artifacts/test-results/messaging-nightly/**/*.json
+            artifacts/test-results/messaging-nightly/**/*.dmp
+            artifacts/test-results/messaging-nightly/**/*.crash.sequence.log
+          if-no-files-found: warn
+          retention-days: 30
+
+  chaos:
+    name: "Messaging nightly · chaos and soak"
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Set up .NET SDK"
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: "./global.json"
+
+      - name: "Restore NuGet cache"
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', 'global.json', 'dotnet-tools.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: "Restore the chaos project"
+        env:
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make restore-project PROJECT=tests/Headless.Messaging.Tests.Chaos/Headless.Messaging.Tests.Chaos.csproj
+
+      - name: "Run the chaos and soak suite"
+        env:
+          HEADLESS_CHAOS_PROFILE: ${{ inputs.chaos_profile || 'full' }}
+        run: make test-messaging-chaos
+
+      - name: "Publish the chaos summary"
+        if: always()
+        run: |
+          set -euo pipefail
+          summary=artifacts/test-results/messaging-chaos/summary.md
+          if [[ -f "$summary" ]]; then cat "$summary" >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: "Upload chaos results"
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: messaging-nightly-chaos
+          path: |
+            artifacts/test-results/messaging-chaos/**/*.trx
+            artifacts/test-results/messaging-chaos/**/*.md
+            artifacts/test-results/messaging-chaos/**/*.dmp
+          if-no-files-found: warn
+          retention-days: 30
+
+  quarantine:
+    name: "Messaging nightly · quarantine check"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+      # Reads each linked issue's state; the check never writes to an issue.
+      issues: read
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Set up .NET SDK"
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: "./global.json"
+
+      - name: "Restore NuGet cache"
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', 'global.json', 'dotnet-tools.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: "Restore the messaging unit-test project"
+        env:
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make restore-project PROJECT=tests/Headless.Messaging.Tests.Unit/Headless.Messaging.Tests.Unit.csproj
+
+      - name: "Check that every quarantine links an open issue"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          make messaging-quarantine-check | tee -a "$GITHUB_STEP_SUMMARY"
+
+  report:
+    name: "Messaging nightly · drift report"
+    needs: [integration, chaos]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          persist-credentials: false
+
+      - name: "Download every leg's results"
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: messaging-nightly-*
+          path: artifacts/test-results/messaging-nightly-all
+
+      - name: "Label simulator drift and provider failures"
+        run: |
+          set -euo pipefail
+          status=0
+          make messaging-drift-report MESSAGING_DRIFT_REPORT_ROOT=artifacts/test-results/messaging-nightly-all || status=$?
+          if [[ -f artifacts/test-results/messaging-nightly-all/summary.md ]]; then
+            cat artifacts/test-results/messaging-nightly-all/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
+
+      - name: "Upload the per-cell summary"
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: messaging-nightly-summary
+          path: artifacts/test-results/messaging-nightly-all/summary.md
+          if-no-files-found: warn
+          retention-days: 30
