@@ -18,7 +18,8 @@ This harness enables consistent integration testing across all messaging provide
 | `NetworkFaultTestsBase` | Cuts the network through a Toxiproxy route while the broker keeps running, and checks the client reconnects and keeps consuming |
 | `TransportConnectivityTestsBase` | Stops and restarts an isolated broker under a running host and checks the host's broker-reachability state follows |
 | `DataStorageTestsBase` | Tests for `IDataStorage` implementations (message persistence) |
-| `MessagingIntegrationTestsBase` | Full pub-sub cycle tests with DI setup |
+| `MessagingIntegrationTestsBase` | Full pub-sub cycle through a real broker and a real store, run by one broker-and-store pair project per broker |
+| `EntityFrameworkOutboxRelayTestsBase` | The EF Core outbox bridge relaying a committed integration event through a real broker |
 
 ## Capability Flags
 
@@ -305,42 +306,44 @@ public sealed class PostgreSqlStorageTests(PostgreSqlFixture fixture) : DataStor
 
 ## Full Integration Tests
 
-For complete pub-sub cycle tests with DI:
+`MessagingIntegrationTestsBase` runs the whole path, outbox to broker to consumer to inbox, through the real setup
+builder. Its leaves live in pair projects, `tests/Headless.Messaging.<Broker><Store>.Tests.Integration`, not in the
+provider integration projects: each broker pairs with PostgreSQL, and SQL Server pairs with RabbitMQ. A change to a
+storage package then selects only the pair projects, and a change to a broker selects its own pair and provider
+projects. Scenarios that carry `[Fact]` on the base, such as the unit-of-work, retry-to-terminal, duplicate-delivery,
+broker-outage, and host-restart ones, run on every leaf without an override; the older scenarios are opted into one by
+one. Each pair project's `ProviderConformanceEvidenceTests` checks that every guarantee it inherits runs there.
 
 ```csharp
-using Headless.Messaging;
-
-namespace Tests;
-
-[Collection<RabbitMqFixture>]
-public sealed class RabbitMqIntegrationTests(RabbitMqFixture fixture)
+[Collection("RabbitMqPostgreSql")]
+public sealed class RabbitMqPostgreSqlMessagingIntegrationTests(RabbitMqPostgreSqlFixture fixture)
     : MessagingIntegrationTestsBase
 {
-    protected override void ConfigureTransport(MessagingOptions options)
-    {
-        options.UseRabbitMq(r =>
-        {
-            r.HostName = fixture.HostName;
-            r.Port = fixture.Port;
-            r.UserName = fixture.UserName;
-            r.Password = fixture.Password;
-        });
-    }
+    protected override void ConfigureTransport(MessagingSetupBuilder setup) =>
+        setup.UseRabbitMq(r => { r.HostName = fixture.RabbitMqHostName; r.Port = fixture.RabbitMqPort; });
 
-    protected override void ConfigureStorage(MessagingOptions options)
-    {
-        options.UseInMemoryStorage(); // Or a real storage provider
-    }
+    protected override void ConfigureStorage(MessagingSetupBuilder setup) =>
+        setup.UsePostgreSql(fixture.StorageConnectionString);
+
+    // The unit-of-work scenarios begin a unit on the messaging database.
+    protected override DbConnection CreateStorageConnection() => new NpgsqlConnection(fixture.StorageConnectionString);
+
+    protected override ValueTask<IUnitOfWork> BeginUnitOfWorkAsync(
+        IUnitOfWorkFactory factory, DbConnection connection, CancellationToken cancellationToken
+    ) => factory.BeginAsync((NpgsqlConnection)connection, cancellationToken);
+
+    // The outage scenario makes the broker unreachable without losing its state: a paused container.
+    protected override Task InterruptBrokerAsync(CancellationToken cancellationToken) =>
+        fixture.PauseBrokerAsync(cancellationToken);
+
+    protected override Task RestoreBrokerAsync(CancellationToken cancellationToken) =>
+        fixture.UnpauseBrokerAsync(cancellationToken);
 
     [Fact]
     public override Task should_publish_and_consume_message_end_to_end()
         => base.should_publish_and_consume_message_end_to_end();
 
-    [Fact]
-    public override Task should_discover_consumers_from_di()
-        => base.should_discover_consumers_from_di();
-
-    // ... expose all relevant base tests
+    // ... opt into the remaining base scenarios that have no [Fact] of their own
 }
 ```
 

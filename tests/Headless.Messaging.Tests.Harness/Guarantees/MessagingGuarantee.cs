@@ -145,13 +145,13 @@ public static class MessagingGuarantees
             realSystem: false,
             "A committed row whose in-process dispatch signal is lost is still sent by relay pickup."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-PUB-09",
             GuaranteeArea.Publish,
             realSystem: true,
             "Outbox rows written by the EF Core bridge are relayed to the broker after commit."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-PUB-10",
             GuaranteeArea.Publish,
             realSystem: true,
@@ -280,7 +280,7 @@ public static class MessagingGuarantees
             realSystem: false,
             "Shutdown during an attempt writes no state and fires no OnExhausted, and the row is retried after restart."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-CONSUME-07",
             GuaranteeArea.Consume,
             realSystem: true,
@@ -366,7 +366,7 @@ public static class MessagingGuarantees
             realSystem: false,
             "A redelivery of an already-admitted message is committed as a duplicate: no poison row, dead-letter, OnExhausted, or breaker failure."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-INBOX-05",
             GuaranteeArea.Inbox,
             realSystem: true,
@@ -422,7 +422,7 @@ public static class MessagingGuarantees
             realSystem: true,
             "Every consumer client stops within a bound, whether idle or with a handler running."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-SHUT-04",
             GuaranteeArea.Shutdown,
             realSystem: false,
