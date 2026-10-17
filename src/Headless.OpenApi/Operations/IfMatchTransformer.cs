@@ -7,7 +7,7 @@ using Microsoft.OpenApi;
 namespace Headless.OpenApi;
 
 /// <summary>
-/// Documents the required <c>If-Match</c> header, and its 400 and 428 responses, on endpoints marked
+/// Documents the required <c>If-Match</c> header, and its 400, 409, and 428 responses, on endpoints marked
 /// <see cref="RequireIfMatchAttribute"/>.
 /// </summary>
 internal sealed class IfMatchTransformer : IOpenApiOperationTransformer
@@ -47,6 +47,14 @@ internal sealed class IfMatchTransformer : IOpenApiOperationTransformer
         responses.TryAdd(
             OpenApiStatusCodes.BadRequest,
             new OpenApiResponse { Description = "The supplied If-Match value was invalid." }
+        );
+        // A tag that no longer matches the stored version fails the write as a concurrency conflict.
+        responses.TryAdd(
+            OpenApiStatusCodes.Conflict,
+            new OpenApiResponse
+            {
+                Description = "The If-Match entity tag no longer matches the resource (g:concurrency_failure).",
+            }
         );
         responses.TryAdd(
             OpenApiStatusCodes.PreconditionRequired,

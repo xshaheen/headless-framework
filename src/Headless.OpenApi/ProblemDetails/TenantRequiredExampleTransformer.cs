@@ -10,15 +10,16 @@ using Microsoft.OpenApi;
 namespace Headless.OpenApi;
 
 /// <summary>
-/// Documents the missing-tenant 403 beside the permission-denied 403 on endpoints whose effective tenancy metadata is
-/// <see cref="RequireTenantAttribute"/>, so documentation and generated clients show both shapes
-/// <see cref="ForbiddenProblemDetails"/> allows.
+/// Documents the missing-tenant 403 beside the permission-denied 403 on endpoints that require a tenant, so
+/// documentation and generated clients show both shapes <see cref="ForbiddenProblemDetails"/> allows.
 /// </summary>
 /// <remarks>
 /// It runs after <see cref="ProblemDetailsTransformer"/> and derives the tenant example from the 403 example that
 /// transformer wrote, so the two differ only in <c>detail</c> and <c>error</c>. The single example moves into a named
 /// <c>forbidden</c> example beside <c>tenantRequired</c>, because OpenAPI forbids <c>example</c> and <c>examples</c>
-/// together. Optional-tenant and anonymous endpoints keep the single example.
+/// together. An endpoint requires a tenant when its effective tenancy metadata is <see cref="RequireTenantAttribute"/>, or
+/// when an applied default or fallback policy holds <see cref="TenantRequirement"/> and the endpoint does not allow a
+/// missing tenant. Optional-tenant and anonymous endpoints keep the single example.
 /// </remarks>
 internal sealed class TenantRequiredExampleTransformer : IOpenApiOperationTransformer
 {
@@ -38,11 +39,7 @@ internal sealed class TenantRequiredExampleTransformer : IOpenApiOperationTransf
         var description = context.Description;
 
         if (
-            EndpointAuthorization.AllowsAnonymous(description)
-            || description.ActionDescriptor.EndpointMetadata.LastOrDefault(x =>
-                x is RequireTenantAttribute or AllowMissingTenantAttribute
-            )
-                is not RequireTenantAttribute
+            !EndpointAuthorization.RequiresTenant(description, context.ApplicationServices)
             || operation.Responses is null
             || !operation.Responses.TryGetValue(OpenApiStatusCodes.Forbidden, out var forbidden)
             || forbidden.Content is not { } content

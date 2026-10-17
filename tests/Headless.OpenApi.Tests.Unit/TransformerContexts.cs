@@ -14,7 +14,10 @@ namespace Tests;
 /// </summary>
 internal static class TransformerContexts
 {
-    private static readonly IServiceProvider _EmptyServices = new ServiceCollection().BuildServiceProvider();
+    // Only the options infrastructure every host registers, so transformers read default options.
+    private static readonly IServiceProvider _EmptyServices = new ServiceCollection()
+        .AddOptions()
+        .BuildServiceProvider();
 
     public static ApiDescription Description(string? httpMethod, string? relativePath, params object[] metadata)
     {

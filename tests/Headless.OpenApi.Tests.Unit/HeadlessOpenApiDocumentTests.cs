@@ -283,7 +283,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
             }
         }
 
-        problems.Should().HaveCount(8);
+        problems.Should().HaveCount(14);
 
         foreach (var (name, schema) in problems)
         {
@@ -511,6 +511,144 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         var ping = document.Operation("/api/filter-secured/ping", "get");
         _ResponseCodes(ping).Should().NotContain(["401", "403"]);
         ping["security"].Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_add_403_and_the_tenant_example_where_a_tenant_is_required_under_the_default_policy()
+    {
+        var document = await _GetDocumentAsync();
+        var operation = document.Operation("/tenant/plain", "get");
+
+        _ResponseCodes(operation).Should().Equal("200", "401", "403");
+        operation["security"]!.ToJsonString().Should().Be("""[{"Bearer":[]}]""");
+        var forbidden = operation["responses"]!["403"]!["content"]!["application/problem+json"]!;
+        ((string?)forbidden["schema"]!["$ref"]).Should().Be("#/components/schemas/ForbiddenProblemDetails");
+        forbidden["examples"]!.AsObject().Select(x => x.Key).Should().Equal("forbidden", "tenantRequired");
+    }
+
+    [Fact]
+    public async Task should_add_the_rate_limiter_rejection_with_its_retry_after_header()
+    {
+        var document = await _GetDocumentAsync();
+        var limited = document.Operation("/limited", "get");
+
+        _ResponseCodes(limited).Should().Equal("200", "429");
+        var rejection = limited["responses"]!["429"]!;
+        ((string?)rejection["description"]).Should().Be("The request was rejected by a rate limiter. Retry later.");
+        _ProblemSchemaRef(rejection).Should().Be("#/components/schemas/TooManyRequestsProblemDetails");
+        rejection["headers"]!
+            .ToJsonString()
+            .Should()
+            .Be(
+                """{"Retry-After":{"description":"The number of seconds to wait before retrying the request.","required":true,"schema":{"type":"integer","format":"int32"}}}"""
+            );
+
+        _ResponseCodes(document.Operation("/limited/disabled", "get")).Should().Equal("200");
+        _ResponseCodes(document.Operation("/orders", "get")).Should().NotContain("429");
+    }
+
+    [Fact]
+    public async Task should_type_declared_timeout_size_server_and_availability_problems()
+    {
+        var document = await _GetDocumentAsync();
+        var responses = document.Operation("/errors", "get")["responses"]!;
+
+        _ProblemSchemaRef(responses["408"]!).Should().Be("#/components/schemas/RequestTimeoutProblemDetails");
+        _ProblemSchemaRef(responses["413"]!).Should().Be("#/components/schemas/PayloadTooLargeProblemDetails");
+        _ProblemSchemaRef(responses["500"]!).Should().Be("#/components/schemas/InternalServerErrorProblemDetails");
+        _ProblemSchemaRef(responses["501"]!).Should().Be("#/components/schemas/NotImplementedProblemDetails");
+        _ProblemSchemaRef(responses["503"]!).Should().Be("#/components/schemas/ServiceUnavailableProblemDetails");
+        responses["503"]!["headers"]!
+            .ToJsonString()
+            .Should()
+            .Be(
+                """{"Retry-After":{"description":"The number of seconds to wait before retrying the request.","schema":{"type":"integer","format":"int32"}}}"""
+            );
+        responses["500"]!["headers"].Should().BeNull();
+
+        var unavailable = document.Schema("ServiceUnavailableProblemDetails");
+        unavailable.Required().Should().NotContain(["retryAfter", "error"]).And.Contain(["detail", "traceId"]);
+        unavailable["properties"]!["retryAfter"]!.Types().Should().BeEquivalentTo(["null", "integer"]);
+        document.Schema("InternalServerErrorProblemDetails")["properties"]!["error"].Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_document_the_if_match_conflict_and_the_entity_tag_header()
+    {
+        var document = await _GetDocumentAsync();
+
+        var update = document.Operation("/orders/{id}", "put");
+        _ResponseCodes(update).Should().BeEquivalentTo(["204", "400", "401", "409", "428"]);
+        _ProblemSchemaRef(update["responses"]!["409"]!).Should().Be("#/components/schemas/ConflictProblemDetails");
+        ((string?)update["responses"]!["409"]!["description"])
+            .Should()
+            .Be("The If-Match entity tag no longer matches the resource (g:concurrency_failure).");
+        update["responses"]!["204"]!["headers"].Should().BeNull();
+
+        document.Operation("/orders/{id}", "get")["responses"]!["200"]!["headers"]!
+            .ToJsonString()
+            .Should()
+            .Be(
+                """{"ETag":{"description":"The strong entity tag of the returned representation. Send it back in If-Match to update it.","schema":{"type":"string"}}}"""
+            );
+        document.Operation("/orders", "get")["responses"]!["200"]!["headers"].Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_describe_a_declared_validation_problem_with_its_own_shape()
+    {
+        var document = await _GetDocumentAsync();
+        var badRequest = document.Operation("/validated", "post")["responses"]!["400"]!["content"]![
+            "application/problem+json"
+        ]!;
+
+        ((string?)badRequest["schema"]!["$ref"]).Should().Be("#/components/schemas/BadRequestValidationProblemDetails");
+        var expected = JsonNode.Parse(
+            """{"type":"https://tools.ietf.org/html/rfc9110#section-15.5.1","title":"One or more validation errors occurred.","status":400,"instance":"/public/some-endpoint","errors":{"name":["The name field is required."],"email":["The email field is not a valid e-mail address."]},"traceId":"<trace-id>","buildNumber":"<version>","commitNumber":"<commit>","timestamp":"2024-01-01T12:00:00+00:00"}"""
+        );
+        JsonNode.DeepEquals(badRequest["example"], expected).Should().BeTrue(badRequest["example"]?.ToJsonString());
+
+        var schema = document.Schema("BadRequestValidationProblemDetails");
+        schema
+            .Required()
+            .Should()
+            .BeEquivalentTo([
+                "type",
+                "title",
+                "status",
+                "instance",
+                "errors",
+                "traceId",
+                "buildNumber",
+                "commitNumber",
+                "timestamp",
+            ]);
+        schema["properties"]!["errors"]!
+            .ToJsonString()
+            .Should()
+            .Be(
+                """{"type":"object","additionalProperties":{"type":"array","items":{"type":"string"}},"description":"The validation messages keyed by the name of the member that failed."}"""
+            );
+
+        // The native component the declaration published is replaced, not left behind unreferenced.
+        document["components"]!["schemas"]!["HttpValidationProblemDetails"].Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_describe_primitive_route_and_query_parameters_as_their_underlying_type()
+    {
+        var document = await _GetDocumentAsync();
+        var operation = document.Operation("/accounts/{account}", "get");
+
+        // The primitive's XML summary may ride along as the schema description; the type is what matters.
+        var account = operation.Parameter("account")["schema"]!.AsObject();
+        account.Select(x => x.Key).Should().BeSubsetOf(["type", "description"]);
+        account.Types().Should().Equal("string");
+
+        var month = operation.Parameter("month")["schema"]!.AsObject();
+        month.Select(x => x.Key).Should().BeSubsetOf(["type", "format", "description"]);
+        month.Types().Should().Equal("integer");
+        ((string?)month["format"]).Should().Be("int32");
     }
 
     private static string[] _ResponseCodes(JsonNode operation) =>

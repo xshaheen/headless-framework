@@ -211,6 +211,8 @@ public static class SetupHeadlessOpenApi
         options.AddOperationTransformer(new UnauthorizedResponseTransformer());
         options.AddOperationTransformer(new ForbiddenResponseTransformer());
         options.AddOperationTransformer(new IfMatchTransformer());
+        options.AddOperationTransformer(new RateLimitingResponseTransformer());
+        options.AddOperationTransformer(new EntityTagResponseTransformer());
         options.AddOperationTransformer(new SecurityRequirementTransformer());
         options.AddOperationTransformer(new ProblemDetailsTransformer());
         options.AddOperationTransformer(new TenantRequiredExampleTransformer());
@@ -218,6 +220,7 @@ public static class SetupHeadlessOpenApi
         options.AddDocumentTransformer(new DocumentInfoTransformer());
         options.AddDocumentTransformer(new SecuritySchemesTransformer());
         options.AddDocumentTransformer(new OperationIdDeduplicationTransformer());
+        options.AddDocumentTransformer(new ProblemDetailsComponentsTransformer());
 
         return options;
     }

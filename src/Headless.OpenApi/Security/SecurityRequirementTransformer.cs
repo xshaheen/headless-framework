@@ -25,7 +25,7 @@ internal sealed class SecurityRequirementTransformer : IOpenApiOperationTransfor
     {
         var description = context.Description;
 
-        if (!EndpointAuthorization.RequiresAuthentication(description))
+        if (!EndpointAuthorization.RequiresAuthentication(description, context.ApplicationServices))
         {
             return Task.CompletedTask;
         }

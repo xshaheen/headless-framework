@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ApplicationModels;
 using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -30,6 +31,7 @@ internal static class SampleApi
         builder.Services.AddScoped<IValidator<CreateOrderRequest>, CreateOrderRequestValidator>();
         builder.Services.AddScoped<IValidator<OrderQuery>, OrderQueryValidator>();
         builder.Services.AddScoped<IValidator<ProductQuery>, ProductQueryValidator>();
+        builder.Services.AddRateLimiter(options => options.UseHeadlessProblemDetails());
     }
 
     public static void Map(WebApplication app)
@@ -64,6 +66,8 @@ internal static class SampleApi
             .WithMetadata(new RequireTenantAttribute())
             .RequireAuthorization("orders.read");
 
+        app.MapGet("/tenant/plain", () => TypedResults.Ok("plain")).RequireTenant().RequireAuthorization();
+
         app.MapGet("/tenant/optional", () => TypedResults.Ok("optional"))
             .WithMetadata(new RequireTenantAttribute(), new AllowMissingTenantAttribute())
             .RequireAuthorization("orders.read");
@@ -95,6 +99,27 @@ internal static class SampleApi
         app.MapGet("/versioned/current", () => TypedResults.Ok("current"))
             .WithMetadata(new ApiVersionMetadata(ApiVersionModel.Empty, new ApiVersionModel([v2], [])));
 
+        app.MapGet("/limited", () => TypedResults.Ok("limited")).RequireRateLimiting("fixed").AllowAnonymous();
+        app.MapGet("/limited/disabled", () => TypedResults.Ok("disabled"))
+            .RequireRateLimiting("fixed")
+            .DisableRateLimiting()
+            .AllowAnonymous();
+
+        app.MapGet("/errors", () => TypedResults.Ok("errors"))
+            .ProducesProblem(StatusCodes.Status408RequestTimeout)
+            .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status501NotImplemented)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .AllowAnonymous();
+
+        app.MapPost("/validated", (RegisterRequest request) => TypedResults.Ok(request.UserName))
+            .ProducesValidationProblem()
+            .AllowAnonymous();
+
+        app.MapGet("/accounts/{account}", (AccountId account, [FromQuery] Month month) => TypedResults.Ok(account))
+            .AllowAnonymous();
+
         app.MapGet("/envelopes/nullable", () => TypedResults.Ok(new DataEnvelope<string?>(null)));
         app.MapGet("/envelopes/plain", () => TypedResults.Ok(new DataEnvelope<string>("x")));
     }
@@ -106,7 +131,7 @@ public enum OrderStatus
     Shipped = 1,
 }
 
-public sealed class OrderView
+public sealed class OrderView : IHasEntityTag
 {
     public int Count { get; init; }
 
@@ -136,6 +161,8 @@ public sealed class OrderView
 
     [JsonNumberHandling(JsonNumberHandling.WriteAsString)]
     public long ExternalId { get; init; }
+
+    public EntityTag GetEntityTag() => EntityTag.FromUInt32((uint)Count);
 }
 
 public sealed class Address

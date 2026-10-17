@@ -18,7 +18,7 @@ internal sealed class UnauthorizedResponseTransformer : IOpenApiOperationTransfo
         CancellationToken cancellationToken
     )
     {
-        if (EndpointAuthorization.RequiresAuthentication(context.Description))
+        if (EndpointAuthorization.RequiresAuthentication(context.Description, context.ApplicationServices))
         {
             (operation.Responses ??= []).TryAdd(
                 OpenApiStatusCodes.Unauthorized,

@@ -6,8 +6,8 @@ using Microsoft.OpenApi;
 namespace Headless.OpenApi;
 
 /// <summary>
-/// Adds a 403 response to every operation whose authorization metadata can refuse an authenticated user: a named
-/// policy or roles, or a claims, name, operation, roles, or assertion requirement.
+/// Adds a 403 response to every operation whose authorization can refuse an authenticated user: a named policy or
+/// roles, a required tenant, or a claims, name, operation, roles, assertion, or tenant requirement in an applied policy.
 /// </summary>
 internal sealed class ForbiddenResponseTransformer : IOpenApiOperationTransformer
 {
@@ -17,7 +17,7 @@ internal sealed class ForbiddenResponseTransformer : IOpenApiOperationTransforme
         CancellationToken cancellationToken
     )
     {
-        if (EndpointAuthorization.CanForbid(context.Description))
+        if (EndpointAuthorization.CanForbid(context.Description, context.ApplicationServices))
         {
             (operation.Responses ??= []).TryAdd(
                 OpenApiStatusCodes.Forbidden,

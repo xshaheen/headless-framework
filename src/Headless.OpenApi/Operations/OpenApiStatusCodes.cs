@@ -8,8 +8,13 @@ internal static class OpenApiStatusCodes
     public const string Unauthorized = "401";
     public const string Forbidden = "403";
     public const string NotFound = "404";
+    public const string RequestTimeout = "408";
     public const string Conflict = "409";
+    public const string PayloadTooLarge = "413";
     public const string UnprocessableEntity = "422";
     public const string PreconditionRequired = "428";
     public const string TooManyRequests = "429";
+    public const string InternalServerError = "500";
+    public const string NotImplemented = "501";
+    public const string ServiceUnavailable = "503";
 }

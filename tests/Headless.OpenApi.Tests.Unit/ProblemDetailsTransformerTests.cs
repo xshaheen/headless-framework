@@ -150,6 +150,82 @@ public sealed class ProblemDetailsTransformerTests : TestBase
                     }
                     """
             },
+            {
+                "/errors",
+                "get",
+                "408",
+                $$"""
+                    {
+                      "type": "https://tools.ietf.org/html/rfc9110#section-15.5.9",
+                      "title": "request-timeout",
+                      "status": 408,
+                      "detail": "The request timed out.",
+                      "instance": "/public/some-endpoint",
+                      {{_Diagnostics}}
+                    }
+                    """
+            },
+            {
+                "/errors",
+                "get",
+                "413",
+                $$"""
+                    {
+                      "type": "https://tools.ietf.org/html/rfc9110#section-15.5.14",
+                      "title": "payload-too-large",
+                      "status": 413,
+                      "detail": "The request payload is too large to process.",
+                      "instance": "/public/some-endpoint",
+                      {{_Diagnostics}}
+                    }
+                    """
+            },
+            {
+                "/errors",
+                "get",
+                "500",
+                $$"""
+                    {
+                      "type": "https://tools.ietf.org/html/rfc9110#section-15.6.1",
+                      "title": "unhandled-exception",
+                      "status": 500,
+                      "detail": "An error occurred while processing your request.",
+                      "instance": "/public/some-endpoint",
+                      {{_Diagnostics}}
+                    }
+                    """
+            },
+            {
+                "/errors",
+                "get",
+                "501",
+                $$"""
+                    {
+                      "type": "https://tools.ietf.org/html/rfc9110#section-15.6.2",
+                      "title": "not-implemented",
+                      "status": 501,
+                      "detail": "This functionality is not implemented.",
+                      "instance": "/public/some-endpoint",
+                      {{_Diagnostics}}
+                    }
+                    """
+            },
+            {
+                "/errors",
+                "get",
+                "503",
+                $$"""
+                    {
+                      "type": "https://tools.ietf.org/html/rfc9110#section-15.6.4",
+                      "title": "service-unavailable",
+                      "status": 503,
+                      "detail": "The service is temporarily unavailable. Try again later.",
+                      "instance": "/public/some-endpoint",
+                      "retryAfter": 30,
+                      {{_Diagnostics}}
+                    }
+                    """
+            },
         };
 
     [Theory]
