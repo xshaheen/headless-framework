@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Asp.Versioning;
 using FluentValidation;
@@ -10,6 +11,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ApplicationModels;
+using Microsoft.AspNetCore.Mvc.Authorization;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -19,7 +23,10 @@ internal static class SampleApi
 {
     public static void AddServices(WebApplicationBuilder builder)
     {
-        builder.Services.AddControllers().AddApplicationPart(typeof(ProductsController).Assembly);
+        builder
+            .Services.AddControllers(options => options.Conventions.Add(new FilterSecuredConvention()))
+            .AddApplicationPart(typeof(ProductsController).Assembly);
+        builder.Services.AddScoped<IValidator<RegisterRequest>, RegisterRequestValidator>();
         builder.Services.AddScoped<IValidator<CreateOrderRequest>, CreateOrderRequestValidator>();
         builder.Services.AddScoped<IValidator<OrderQuery>, OrderQueryValidator>();
         builder.Services.AddScoped<IValidator<ProductQuery>, ProductQueryValidator>();
@@ -65,6 +72,21 @@ internal static class SampleApi
         app.MapGet("/v{version}/things", (string version) => TypedResults.Ok(version));
 
         app.MapGet("/legacy", () => TypedResults.Ok("legacy")).WithMetadata(new ObsoleteAttribute());
+
+        app.MapPost("/register", (RegisterRequest request) => TypedResults.Ok(request.UserName)).AllowAnonymous();
+
+        // Policies built inline reach the endpoint as AuthorizationPolicy metadata, with no named policy or roles.
+        app.MapGet("/policies/claims", () => TypedResults.Ok("claims"))
+            .RequireAuthorization(policy => policy.RequireClaim("scope", "orders.write"));
+        app.MapGet("/policies/name", () => TypedResults.Ok("name"))
+            .RequireAuthorization(policy => policy.RequireUserName("admin"));
+        app.MapGet("/policies/assertion", () => TypedResults.Ok("assertion"))
+            .RequireAuthorization(policy => policy.RequireAssertion(_ => true));
+        app.MapGet("/policies/authenticated", () => TypedResults.Ok("authenticated"))
+            .RequireAuthorization(policy => policy.RequireAuthenticatedUser());
+        // The authorization middleware also enforces a policy attached as bare metadata, with no IAuthorizeData beside it.
+        app.MapGet("/policies/metadata-only", () => TypedResults.Ok("metadata-only"))
+            .WithMetadata(new AuthorizationPolicyBuilder().RequireClaim("scope", "orders.audit").Build());
 
         var v1 = new ApiVersion(1, 0);
         var v2 = new ApiVersion(2, 0);
@@ -222,4 +244,114 @@ public sealed class ProductsController : ControllerBase
     [HttpGet("find/by-code")]
     [ActionName("Find")]
     public Ok<string> FindByCode(string code) => TypedResults.Ok(code);
+}
+
+public sealed class RegisterRequest
+{
+    public string UserName { get; init; } = "";
+
+    public string? Nickname { get; init; }
+
+    public bool HasNickname { get; init; }
+
+    public string Pin { get; init; } = "";
+
+    public string Password { get; init; } = "";
+
+    public string Code { get; init; } = "";
+}
+
+public sealed class RegisterRequestValidator : AbstractValidator<RegisterRequest>
+{
+    public RegisterRequestValidator()
+    {
+        Include(new RegisterAccountValidator());
+        When(x => x.HasNickname, () => Include(new RegisterNicknameValidator()));
+        RuleFor(x => x.Pin).Length(4);
+        RuleFor(x => x.Password).MinimumLength(8);
+        RuleFor(x => x.Code).NotEmpty().MinimumLength(4);
+    }
+}
+
+public sealed class RegisterAccountValidator : AbstractValidator<RegisterRequest>
+{
+    public RegisterAccountValidator()
+    {
+        RuleFor(x => x.UserName).MaximumLength(30);
+    }
+}
+
+public sealed class RegisterNicknameValidator : AbstractValidator<RegisterRequest>
+{
+    public RegisterNicknameValidator()
+    {
+        RuleFor(x => x.Nickname).MaximumLength(15);
+    }
+}
+
+public sealed class CatalogSearch
+{
+    [Display(Description = "Text to search for.")]
+    public string? Term { get; init; }
+
+    [BindRequired]
+    public int Page { get; init; }
+}
+
+[ApiController]
+[Route("api/catalog")]
+public sealed class CatalogController : ControllerBase
+{
+    [HttpGet("legacy")]
+    public Ok<string> Find2(string legacy) => TypedResults.Ok(legacy);
+
+    [HttpGet("by-name")]
+    public Ok<string> Find(string name) => TypedResults.Ok(name);
+
+    [HttpGet("by-code")]
+    [ActionName("Find")]
+    public Ok<string> FindByCode(string code) => TypedResults.Ok(code);
+
+    [HttpGet("search")]
+    public Ok<int> Search([FromQuery] CatalogSearch search) => TypedResults.Ok(search.Page);
+}
+
+/// <summary>Protected only by MVC authorization filters, which never reach the endpoint metadata.</summary>
+[ApiController]
+[Route("api/filter-secured")]
+public sealed class FilterSecuredController : ControllerBase
+{
+    [HttpGet("status")]
+    public Ok<string> Status() => TypedResults.Ok("status");
+
+    [HttpGet("manage")]
+    public Ok<string> Manage() => TypedResults.Ok("manage");
+
+    [HttpGet("ping")]
+    [AllowAnonymous]
+    public Ok<string> Ping() => TypedResults.Ok("ping");
+}
+
+internal sealed class FilterSecuredConvention : IControllerModelConvention
+{
+    public void Apply(ControllerModel controller)
+    {
+        if (controller.ControllerType != typeof(FilterSecuredController))
+        {
+            return;
+        }
+
+        controller.Filters.Add(
+            new AuthorizeFilter(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
+        );
+
+        foreach (
+            var action in controller.Actions.Where(action =>
+                string.Equals(action.ActionName, "Manage", StringComparison.Ordinal)
+            )
+        )
+        {
+            action.Filters.Add(new AuthorizeFilter(new AuthorizationPolicyBuilder().RequireRole("ops").Build()));
+        }
+    }
 }

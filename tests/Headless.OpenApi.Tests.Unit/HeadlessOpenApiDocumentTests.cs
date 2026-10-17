@@ -396,6 +396,123 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         document.Operation("/orders", "get")["security"].Should().BeNull();
     }
 
+    [Fact]
+    public async Task should_apply_unconditionally_included_validators_and_skip_conditional_ones()
+    {
+        var document = await _GetDocumentAsync();
+        var properties = document.Schema("RegisterRequest")["properties"]!;
+
+        ((int?)properties["userName"]!["maxLength"]).Should().Be(30);
+        properties["nickname"]!["maxLength"].Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_bound_exact_and_minimum_length_rules()
+    {
+        var document = await _GetDocumentAsync();
+        var properties = document.Schema("RegisterRequest")["properties"]!;
+
+        ((int?)properties["pin"]!["minLength"]).Should().Be(4);
+        ((int?)properties["pin"]!["maxLength"]).Should().Be(4);
+        ((int?)properties["password"]!["minLength"]).Should().Be(8);
+        properties["password"]!["maxLength"].Should().BeNull();
+        // A minimum-length rule overrides the minLength: 1 that NotEmpty wrote before it.
+        ((int?)properties["code"]!["minLength"])
+            .Should()
+            .Be(4);
+    }
+
+    [Fact]
+    public async Task should_copy_model_metadata_descriptions_and_bound_required_flags_onto_parameters()
+    {
+        var document = await _GetDocumentAsync();
+        var operation = document.Operation("/api/catalog/search", "get");
+
+        ((string?)operation.Parameter("term")["description"]).Should().Be("Text to search for.");
+        ((bool?)operation.Parameter("term")["required"]).Should().NotBe(true);
+        // [BindRequired] reaches the document through the native generator, which reads the same API Explorer flag.
+        ((bool?)operation.Parameter("page")["required"])
+            .Should()
+            .BeTrue();
+    }
+
+    [Fact]
+    public async Task should_skip_numbered_operation_ids_that_are_already_taken()
+    {
+        var first = await _GetDocumentAsync();
+        var second = await _GetDocumentAsync();
+
+        foreach (var document in new[] { first, second })
+        {
+            ((string?)document.Operation("/api/catalog/legacy", "get")["operationId"]).Should().Be("Catalog_Find2");
+
+            string?[] finds =
+            [
+                (string?)document.Operation("/api/catalog/by-name", "get")["operationId"],
+                (string?)document.Operation("/api/catalog/by-code", "get")["operationId"],
+            ];
+            finds.Should().BeEquivalentTo(["Catalog_Find", "Catalog_Find3"]);
+
+            var ids = document["paths"]!
+                .AsObject()
+                .SelectMany(path => path.Value!.AsObject())
+                .Select(operation => (string?)operation.Value!["operationId"])
+                .ToList();
+            ids.Should().OnlyHaveUniqueItems();
+        }
+
+        static string?[] Ids(JsonNode document) =>
+            [
+                (string?)document.Operation("/api/catalog/by-name", "get")["operationId"],
+                (string?)document.Operation("/api/catalog/by-code", "get")["operationId"],
+            ];
+
+        Ids(second).Should().Equal(Ids(first));
+    }
+
+    [Theory]
+    [InlineData("/policies/claims", true)]
+    [InlineData("/policies/name", true)]
+    [InlineData("/policies/assertion", true)]
+    [InlineData("/policies/authenticated", false)]
+    [InlineData("/policies/metadata-only", true)]
+    public async Task should_document_inline_policy_requirements(string path, bool canForbid)
+    {
+        var document = await _GetDocumentAsync();
+        var operation = document.Operation(path, "get");
+
+        _ResponseCodes(operation).Should().Contain("401");
+
+        if (canForbid)
+        {
+            _ResponseCodes(operation).Should().Contain("403");
+        }
+        else
+        {
+            _ResponseCodes(operation).Should().NotContain("403");
+        }
+
+        operation["security"]!.ToJsonString().Should().Be("""[{"Bearer":[]}]""");
+    }
+
+    [Fact]
+    public async Task should_document_mvc_authorization_filters()
+    {
+        var document = await _GetDocumentAsync();
+
+        var status = document.Operation("/api/filter-secured/status", "get");
+        _ResponseCodes(status).Should().Contain("401").And.NotContain("403");
+        status["security"]!.ToJsonString().Should().Be("""[{"Bearer":[]}]""");
+
+        var manage = document.Operation("/api/filter-secured/manage", "get");
+        _ResponseCodes(manage).Should().Contain(["401", "403"]);
+        manage["security"]!.ToJsonString().Should().Be("""[{"Bearer":[]}]""");
+
+        var ping = document.Operation("/api/filter-secured/ping", "get");
+        _ResponseCodes(ping).Should().NotContain(["401", "403"]);
+        ping["security"].Should().BeNull();
+    }
+
     private static string[] _ResponseCodes(JsonNode operation) =>
         [.. operation["responses"]!.AsObject().Select(x => x.Key)];
 

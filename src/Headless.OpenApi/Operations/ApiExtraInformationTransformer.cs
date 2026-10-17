@@ -14,7 +14,8 @@ namespace Headless.OpenApi;
 /// <remarks>
 /// An operation is deprecated when its endpoint carries <see cref="ObsoleteAttribute"/>, or when Asp.Versioning
 /// reports the described API version as deprecated. A parameter without a description takes the model-metadata
-/// description (<c>[Display(Description = ...)]</c>), and a parameter API Explorer marks required stays required.
+/// description (<c>[Display(Description = ...)]</c>). The native generator already marks a parameter required from the
+/// same API Explorer flag, so this transformer leaves the parameter's required flag alone.
 /// </remarks>
 internal sealed class ApiExtraInformationTransformer : IOpenApiOperationTransformer
 {
@@ -40,7 +41,6 @@ internal sealed class ApiExtraInformationTransformer : IOpenApiOperationTransfor
             }
 
             parameter.Description ??= parameterDescription.ModelMetadata?.Description;
-            parameter.Required |= parameterDescription.IsRequired;
         }
 
         return Task.CompletedTask;
