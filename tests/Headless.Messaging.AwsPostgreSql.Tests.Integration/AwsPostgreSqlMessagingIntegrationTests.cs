@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using System.Globalization;
+using System.Security.Cryptography;
 using Amazon.Runtime;
 using Headless.Messaging;
 using Headless.Messaging.Aws;
@@ -13,6 +15,15 @@ namespace Tests;
 public sealed class AwsPostgreSqlMessagingIntegrationTests(AwsPostgreSqlFixture fixture) : MessagingIntegrationTestsBase
 {
     private readonly string _prefix = $"stack-{Guid.NewGuid():N}"[..18];
+
+    // A Bus subscription queue is named after its consumer identity, which is the same in every test, so a message one
+    // test leaves on its queue, delivered late or still invisible when its host stopped, would reach the next test's
+    // host. LocalStack keeps a separate account, with its own queues and topics, for each 12-digit access key, so each
+    // test gets queues no other test reads.
+    private readonly string _accountId = string.Create(
+        CultureInfo.InvariantCulture,
+        $"{RandomNumberGenerator.GetInt32(100_000, 1_000_000)}{RandomNumberGenerator.GetInt32(0, 1_000_000):D6}"
+    );
 
     public override async ValueTask InitializeAsync()
     {
@@ -28,7 +39,7 @@ public sealed class AwsPostgreSqlMessagingIntegrationTests(AwsPostgreSqlFixture 
             aws.Region = Amazon.RegionEndpoint.USEast1;
             aws.SnsServiceUrl = fixture.LocalStackConnectionString;
             aws.SqsServiceUrl = fixture.LocalStackConnectionString;
-            aws.Credentials = new BasicAWSCredentials("test", "test");
+            aws.Credentials = new BasicAWSCredentials(_accountId, "test");
             aws.ReceiveWaitTime = TimeSpan.FromSeconds(1);
         });
     }

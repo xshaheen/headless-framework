@@ -81,10 +81,26 @@ public sealed class ToxiproxyServer : IAsyncDisposable
         return new ToxiproxyProxy(http, name, _container.Hostname, _container.GetMappedPublicPort(listenPort));
     }
 
+    /// <summary>
+    /// Removes every toxic and enables every proxy on this server. Deleting a single toxic can hang the Toxiproxy 2.12
+    /// API, so tests clear their faults with this instead.
+    /// </summary>
+    public Task ResetAsync(CancellationToken cancellationToken = default)
+    {
+        var http = _http ?? throw new InvalidOperationException("The Toxiproxy server has not started.");
+        return _ResetAsync(http, cancellationToken);
+    }
+
     public async ValueTask DisposeAsync()
     {
         _http?.Dispose();
         await _container.DisposeAsync().ConfigureAwait(false);
+    }
+
+    internal static async Task _ResetAsync(HttpClient http, CancellationToken cancellationToken)
+    {
+        using var response = await http.PostAsync("/reset", content: null, cancellationToken).ConfigureAwait(false);
+        await _EnsureSuccessAsync(response, "reset", cancellationToken).ConfigureAwait(false);
     }
 
     internal static async Task _EnsureSuccessAsync(
@@ -150,12 +166,12 @@ public sealed class ToxiproxyProxy(HttpClient http, string name, string host, in
         await ToxiproxyServer._EnsureSuccessAsync(response, "add toxic", cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task RemoveToxicAsync(string toxicName, CancellationToken cancellationToken = default)
-    {
-        using var response = await http.DeleteAsync($"/proxies/{name}/toxics/{toxicName}", cancellationToken)
-            .ConfigureAwait(false);
-        await ToxiproxyServer._EnsureSuccessAsync(response, "remove toxic", cancellationToken).ConfigureAwait(false);
-    }
+    /// <summary>
+    /// Removes every toxic and enables every proxy on this proxy's server, as <see cref="ToxiproxyServer.ResetAsync"/>
+    /// does. Deleting a single toxic can hang the Toxiproxy 2.12 API, so there is no per-toxic removal.
+    /// </summary>
+    public Task ResetServerAsync(CancellationToken cancellationToken = default) =>
+        ToxiproxyServer._ResetAsync(http, cancellationToken);
 
     private async Task _SetEnabledAsync(bool enabled, CancellationToken cancellationToken)
     {

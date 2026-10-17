@@ -600,8 +600,9 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
             {
                 Armed = false;
                 CommitFailures.Add(eventData.Exception);
-                // Only the commit's reply is lost: the runner's probe that follows must reach the database.
-                await proxy.RemoveToxicAsync(_ToxicName, CancellationToken.None);
+                // Only the commit's reply is lost: the runner's probe that follows must reach the database. The route
+                // has this one proxy, so resetting its server lifts the toxic and nothing else.
+                await proxy.ResetServerAsync(CancellationToken.None);
             }
         }
     }

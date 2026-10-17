@@ -35,6 +35,21 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
         TransportConformanceTestBinding[] bindings =
         [
             new(
+                TransportConformanceScenario.ConnectionDropRecovery,
+                typeof(KafkaNetworkFaultTests),
+                nameof(KafkaNetworkFaultTests.should_stop_consuming_while_the_proxy_is_cut_and_resume_once_after)
+            ),
+            new(
+                TransportConformanceScenario.ConnectionDropRecovery,
+                typeof(KafkaNetworkFaultTests),
+                nameof(KafkaNetworkFaultTests.should_resume_delivery_once_after_the_connection_is_dropped)
+            ),
+            new(
+                TransportConformanceScenario.PublishDuringOutage,
+                typeof(KafkaNetworkFaultTests),
+                nameof(KafkaNetworkFaultTests.should_keep_consuming_after_publishes_during_an_outage)
+            ),
+            new(
                 TransportConformanceScenario.RawPayloadConsumption,
                 typeof(KafkaRawPayloadTests),
                 nameof(

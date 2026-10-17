@@ -66,6 +66,9 @@ public sealed class NetworkFaultSession(
 [PublicAPI]
 public abstract class NetworkFaultTestsBase : TransportConsumerConformanceSessionTestsBase
 {
+    // Long enough for a client that routes around the link to fetch and deliver what was published past it.
+    private static readonly TimeSpan _CutObservationWindow = TimeSpan.FromSeconds(10);
+
     /// <summary>How long a client may take to reconnect and deliver again once the network is back.</summary>
     protected virtual TimeSpan RecoveryWindow => TimeSpan.FromSeconds(60);
 
@@ -158,6 +161,91 @@ public abstract class NetworkFaultTestsBase : TransportConsumerConformanceSessio
         await session.PublishUntilSucceededAsync(after, RecoveryWindow, AbortToken);
         var delivery = await _ReceiveUntilAsync(session, after.Id, RecoveryWindow);
         await session.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
+    }
+
+    /// <summary>
+    /// Proves the session's client reaches the broker only over its link. While the link is cut, a message published
+    /// past the link is not delivered and a publish through the session does not succeed; once the link is back, the
+    /// message is delivered once. A client that learns broker addresses from the broker can route around a proxy, and
+    /// then every network-fault scenario passes without cutting anything, so such a leaf runs this as its own test.
+    /// </summary>
+    /// <param name="publishPastTheLink">Publishes to the same broker without going through the link.</param>
+    protected async Task AssertTrafficStopsWhileTheLinkIsCutAsync(
+        Func<TransportMessage, CancellationToken, Task<OperateResult>> publishPastTheLink
+    )
+    {
+        await using var faulted = await CreateNetworkFaultSessionAsync(AbortToken);
+        var session = faulted.Session;
+        await session.StartAsync(cancellationToken: AbortToken);
+        await _ProveLiveAsync(session, "before-cut");
+
+        await faulted.Link.CutAsync(AbortToken);
+
+        var held = _CreateProbe(session.Destination, "past-the-link");
+        (await publishPastTheLink(held, AbortToken))
+            .Succeeded.Should()
+            .BeTrue("the broker stays reachable past the link");
+        (await session.RemainsEmptyAsync(_CutObservationWindow, AbortToken))
+            .Should()
+            .BeTrue(
+                "a consumer behind a cut link must not receive; a delivery means its client reaches the broker another way"
+            );
+
+        var blocked = _CreateProbe(session.Destination, "through-the-cut-link");
+        (await _TryPublishAsync(session, blocked))
+            .Should()
+            .BeFalse(
+                "a publish over a cut link must not succeed; a success means the producer reaches the broker another way"
+            );
+
+        await faulted.Link.RestoreAsync(AbortToken);
+
+        // The blocked publish may still reach the broker once the link is back, so it is settled like any other.
+        var delivery = await _ReceiveUntilAsync(session, held.Id, RecoveryWindow);
+        await session.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
+        await _AssertNotRedeliveredAsync(session, held.Id);
+    }
+
+    private async Task<bool> _TryPublishAsync(TransportConsumerConformanceSession session, TransportMessage message)
+    {
+        try
+        {
+            var result = await session
+                .PublishAsync(message, AbortToken)
+                .WaitAsync(TimeSpan.FromSeconds(5), session.TimeProvider, AbortToken);
+
+            return result.Succeeded;
+        }
+#pragma warning disable CA1031 // A publish over a cut link may fail, throw, or never finish; each one means it did not succeed.
+        catch (Exception ex) when (ex is not OperationCanceledException || !AbortToken.IsCancellationRequested)
+#pragma warning restore CA1031
+        {
+            return false;
+        }
+    }
+
+    private async Task _AssertNotRedeliveredAsync(TransportConsumerConformanceSession session, string messageId)
+    {
+        var clock = session.TimeProvider;
+        var started = clock.GetTimestamp();
+
+        while (session.NoRedeliveryWindow - clock.GetElapsedTime(started) is var remaining && remaining > TimeSpan.Zero)
+        {
+            TransportConformanceDelivery delivery;
+            try
+            {
+                delivery = await session.ReceiveAsync(remaining, AbortToken);
+            }
+            catch (TimeoutException)
+            {
+                return;
+            }
+
+            delivery
+                .Message.Id.Should()
+                .NotBe(messageId, "a cut link must not replay a delivery settled after it came back");
+            await session.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
+        }
     }
 
     private async Task _ProveLiveAsync(TransportConsumerConformanceSession session, string label)

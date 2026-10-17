@@ -412,6 +412,8 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["AWS/LocalStack"] = TransportConformanceProfile
                 .CreateDisabled("AWS/LocalStack")
+                .WithScenario(TransportConformanceScenario.ConnectionDropRecovery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.PublishDuringOutage, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.RoutingAffinityMappingOrRejection,
@@ -479,6 +481,8 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["Kafka"] = TransportConformanceProfile
                 .CreateDisabled("Kafka")
+                .WithScenario(TransportConformanceScenario.ConnectionDropRecovery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.PublishDuringOutage, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.RoutingAffinityMappingOrRejection,
@@ -571,6 +575,8 @@ public static class TransportConformanceManifest
                 .EnableRealBrokerLeaf(),
             ["Pulsar"] = TransportConformanceProfile
                 .CreateDisabled("Pulsar")
+                .WithScenario(TransportConformanceScenario.ConnectionDropRecovery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.PublishDuringOutage, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.RoutingAffinityMappingOrRejection,

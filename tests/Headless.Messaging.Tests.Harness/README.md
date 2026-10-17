@@ -115,8 +115,8 @@ That policy holds only while the real brokers keep passing, so `.github/workflow
 | `RejectRedelivery` | S | S | S | S | S | S† | S | S | S |
 | `ConsumerPauseRecovery` | S | S | U | S | S | S† | U | U | S |
 | `BrokerInterruptionRecovery` | S | U | S | S | U | U | U | S | S |
-| `ConnectionDropRecovery` | S | S | U | U | U | U | U | S | S |
-| `PublishDuringOutage` | S | U | U | U | U | U | U | S | S |
+| `ConnectionDropRecovery` | S | S | S | S | S | U | U | S | S |
+| `PublishDuringOutage` | S | U | S | S | S | U | U | S | S |
 | `StaleSettlement` | S | U | S | S | S | U | U | S | S |
 | `HandlerFailureRedelivery` | S | U | S | U | U | U | U | S | S |
 | `BoundedGracefulShutdown` | S | S | S | S | S | S† | S | S | S |
@@ -146,6 +146,7 @@ Evidence anchors:
 - Empty-body broker dispatch: `should_dispatch_empty_message_body` in the NATS and RabbitMQ consumer leaves.
 - Pause/resume: `BrokerFaultTestsBase.should_resume_delivery_once_after_consumer_pause` provider overrides.
 - Broker restart: `BrokerFaultTestsBase.should_resume_delivery_once_after_broker_restart` provider overrides, each on a broker of its own on fixed host ports (`CreateInterruptibleSessionAsync`) so the restart disturbs no other test. NATS uses a file-backed stream there, and the AWS leaf recreates LocalStack's in-memory queues after the restart.
+- Connection drop and publish during an outage: `NetworkFaultTestsBase` provider overrides, each through a Toxiproxy route the test cuts while the broker keeps running. A client that learns broker addresses from the broker can route around a proxy, so the Kafka, Pulsar, and AWS leaves also run `AssertTrafficStopsWhileTheLinkIsCutAsync`: a message published past the route must not reach the cut-off consumer until the route is back, and a publish over the cut route must not succeed. The Kafka leaf runs its own broker (`ProxiedKafkaContainer`) that advertises the route instead of its own port. Clear Toxiproxy faults with `ToxiproxyServer.ResetAsync` (`POST /reset`), because deleting a single toxic can hang the Toxiproxy 2.12 API.
 - Stale settlement and callback failure: `should_not_settle_another_delivery_when_a_settled_value_is_used_again` and `should_keep_the_delivery_and_the_listener_when_the_callback_throws` in each provider's `TransportConsumerConformanceTestsBase` leaf.
 - NATS, RabbitMQ, and AWS Bus fan-out: their `TransportConsumerConformanceTestsBase` provider leaves; Pulsar bus/queue intent: `PulsarTransportTests`; Azure topic/subscription fan-out: `AzureServiceBusTransportTests`.
 - AWS consumer-identity fan-out, replica competition, queue ownership, same-name lane isolation, and terminal malformed-envelope deletion: `AmazonSqsConsumerClientConformanceTests` and `MalformedMessageTests` against LocalStack.

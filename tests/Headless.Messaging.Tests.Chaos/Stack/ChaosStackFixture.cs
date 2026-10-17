@@ -94,7 +94,8 @@ public abstract class ChaosStackFixture : IAsyncLifetime
             return;
         }
 
-        await BrokerProxy.RemoveToxicAsync(_BlackholeToxic, cancellationToken).ConfigureAwait(false);
+        // A reset also enables the storage route; no scenario cuts storage while the broker is blackholed.
+        await BrokerProxy.ResetServerAsync(cancellationToken).ConfigureAwait(false);
         _blackholed = false;
     }
 

@@ -32,6 +32,21 @@ public sealed class ProviderConformanceEvidenceTests(PulsarFixture fixture) : Te
         TransportConformanceTestBinding[] bindings =
         [
             new(
+                TransportConformanceScenario.ConnectionDropRecovery,
+                typeof(PulsarNetworkFaultTests),
+                nameof(PulsarNetworkFaultTests.should_stop_consuming_while_the_proxy_is_cut_and_resume_once_after)
+            ),
+            new(
+                TransportConformanceScenario.ConnectionDropRecovery,
+                typeof(PulsarNetworkFaultTests),
+                nameof(PulsarNetworkFaultTests.should_resume_delivery_once_after_the_connection_is_dropped)
+            ),
+            new(
+                TransportConformanceScenario.PublishDuringOutage,
+                typeof(PulsarNetworkFaultTests),
+                nameof(PulsarNetworkFaultTests.should_keep_consuming_after_publishes_during_an_outage)
+            ),
+            new(
                 TransportConformanceScenario.RawPayloadConsumption,
                 typeof(PulsarRawPayloadTests),
                 nameof(
