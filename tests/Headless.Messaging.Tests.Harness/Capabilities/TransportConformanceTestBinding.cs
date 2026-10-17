@@ -118,51 +118,12 @@ public static class TransportConformanceTestBindings
             return;
         }
 
-        var testAttribute = method
-            .GetCustomAttributesData()
-            .SingleOrDefault(attribute => attribute.AttributeType.Name is "FactAttribute" or "TheoryAttribute");
-        if (testAttribute is null)
+        // Bound methods are invoked directly by ExecuteSupportedScenariosAsync, so a theory's data cannot be supplied.
+        foreach (var problem in TestMethodExecutability.GetProblems(method, allowTheoryData: false))
         {
             errors.Add(
                 $"{profile.Provider}: {binding.Scenario} evidence method "
-                    + $"{binding.TestClass.FullName}.{binding.TestMethod} is not an xUnit test."
-            );
-            return;
-        }
-
-        if (method.GetParameters().Length != 0)
-        {
-            errors.Add(
-                $"{profile.Provider}: {binding.Scenario} evidence method "
-                    + $"{binding.TestClass.FullName}.{binding.TestMethod} requires arguments and cannot be invoked."
-            );
-        }
-
-        var skipReason =
-            testAttribute
-                .NamedArguments.SingleOrDefault(argument =>
-                    string.Equals(argument.MemberName, "Skip", StringComparison.Ordinal)
-                )
-                .TypedValue.Value as string;
-        if (!string.IsNullOrWhiteSpace(skipReason))
-        {
-            errors.Add(
-                $"{profile.Provider}: {binding.Scenario} evidence method "
-                    + $"{binding.TestClass.FullName}.{binding.TestMethod} is unconditionally skipped."
-            );
-        }
-
-        var isExplicit =
-            testAttribute
-                .NamedArguments.SingleOrDefault(argument =>
-                    string.Equals(argument.MemberName, "Explicit", StringComparison.Ordinal)
-                )
-                .TypedValue.Value as bool?;
-        if (isExplicit == true)
-        {
-            errors.Add(
-                $"{profile.Provider}: {binding.Scenario} evidence method "
-                    + $"{binding.TestClass.FullName}.{binding.TestMethod} is explicit and will not run in CI."
+                    + $"{binding.TestClass.FullName}.{binding.TestMethod} {problem}."
             );
         }
     }

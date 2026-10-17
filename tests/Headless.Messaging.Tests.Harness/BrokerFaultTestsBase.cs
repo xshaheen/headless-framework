@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Tests.Capabilities;
+using Tests.Guarantees;
 
 namespace Tests;
 
@@ -76,6 +77,7 @@ public abstract class BrokerFaultTestsBase : TransportConsumerConformanceSession
     /// A consumer and a producer that outlive a broker restart must both keep working, without the host rebuilding
     /// either, and the first delivery must not be replayed.
     /// </summary>
+    [Guarantee("MSG-CONN-01")]
     public virtual async Task should_resume_delivery_once_after_broker_restart()
     {
         RequireSupport(TransportConformanceScenario.BrokerInterruptionRecovery);
