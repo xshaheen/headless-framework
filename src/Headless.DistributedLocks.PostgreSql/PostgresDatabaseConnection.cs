@@ -31,17 +31,6 @@ internal sealed class PostgresDatabaseConnection : DatabaseConnection
     )
         : base(connection, isExternallyOwned: true, timeProvider, monitoringCommandTimeoutSeconds) { }
 
-    /// <summary>Constructs an instance over an externally-owned <see cref="NpgsqlTransaction"/>.</summary>
-    /// <param name="transaction">The caller-owned transaction. Not disposed by this instance.</param>
-    /// <param name="timeProvider">Time source used by the base class for monitoring sleeps.</param>
-    /// <param name="monitoringCommandTimeoutSeconds">Timeout in seconds for monitoring probe commands.</param>
-    public PostgresDatabaseConnection(
-        NpgsqlTransaction transaction,
-        TimeProvider timeProvider,
-        int monitoringCommandTimeoutSeconds
-    )
-        : base(transaction, isExternallyOwned: true, timeProvider, monitoringCommandTimeoutSeconds) { }
-
     /// <summary>Constructs an internally-owned instance from <paramref name="dataSource"/>.</summary>
     /// <param name="dataSource">
     /// The data source used to create the connection. Must not be <see langword="null"/>. The created
