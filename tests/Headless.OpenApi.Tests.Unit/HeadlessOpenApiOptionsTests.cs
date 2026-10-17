@@ -277,6 +277,73 @@ public sealed class HeadlessOpenApiOptionsTests : TestBase
         options.ApiKeyHeaderName.Should().Be("X-API-Key");
     }
 
+    [Fact]
+    public void should_describe_the_built_in_security_schemes()
+    {
+        var options = new HeadlessOpenApiOptions { AddApiKeySecurity = true, ApiKeyHeaderName = "X-Workspace-Key" };
+
+        var schemes = options.GetSecuritySchemes();
+
+        var bearer = schemes[HeadlessOpenApiOptions.BearerSchemeName];
+        bearer.Type.Should().Be(SecuritySchemeType.Http);
+        bearer.Scheme.Should().Be("bearer");
+        bearer.BearerFormat.Should().Be("JWT");
+        bearer
+            .Description.Should()
+            .Be("JWT Authorization header using the Bearer scheme.\nEnter Token without any prefix.");
+        var apiKey = schemes[HeadlessOpenApiOptions.ApiKeySchemeName];
+        apiKey.Type.Should().Be(SecuritySchemeType.ApiKey);
+        apiKey.Name.Should().Be("X-Workspace-Key");
+        apiKey.In.Should().Be(ParameterLocation.Header);
+        apiKey.Description.Should().Be("API Key authentication using the X-Workspace-Key header.");
+    }
+
+    [Fact]
+    public void should_build_the_schemes_and_merged_rules_once()
+    {
+        var options = new HeadlessOpenApiOptions();
+        options.FluentValidationRules.Add(
+            new FluentValidationRule
+            {
+                RuleName = "Custom",
+                Matches = _ => false,
+                Apply = _ => { },
+            }
+        );
+
+        options.GetSecuritySchemes().Should().BeSameAs(options.GetSecuritySchemes());
+        options.GetFluentValidationRules().Should().BeSameAs(options.GetFluentValidationRules());
+        options.GetFluentValidationRules().Should().HaveCount(FluentValidationRule.DefaultRules.Length + 1);
+    }
+
+    [Fact]
+    public void should_use_the_default_rules_as_is_when_none_are_added()
+    {
+        new HeadlessOpenApiOptions().GetFluentValidationRules().Should().BeSameAs(FluentValidationRule.DefaultRules);
+    }
+
+    [Fact]
+    public void should_reject_a_custom_scheme_named_like_the_enabled_api_key_scheme()
+    {
+        var options = new HeadlessOpenApiOptions { AddApiKeySecurity = true };
+        options.SecuritySchemes[HeadlessOpenApiOptions.ApiKeySchemeName] = new OpenApiSecurityScheme();
+
+        var result = new HeadlessOpenApiOptionsValidator().Validate(options);
+
+        result.Errors.Should().ContainSingle().Which.ErrorMessage.Should().Contain("built-in API-key scheme");
+    }
+
+    [Fact]
+    public void should_reject_a_null_fluent_validation_rule()
+    {
+        var options = new HeadlessOpenApiOptions();
+        options.FluentValidationRules.Add(null!);
+
+        var result = new HeadlessOpenApiOptionsValidator().Validate(options);
+
+        result.Errors.Should().ContainSingle().Which.PropertyName.Should().Be("FluentValidationRules[0]");
+    }
+
     private static string[] _ResponseCodes(JsonNode operation) =>
         [.. operation["responses"]!.AsObject().Select(x => x.Key)];
 

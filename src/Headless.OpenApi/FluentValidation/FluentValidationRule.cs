@@ -35,7 +35,7 @@ public sealed class FluentValidationRule
 
     /// <summary>
     /// Adds the property to the object schema's <c>"required"</c> set when a <c>NotNull</c> or <c>NotEmpty</c>
-    /// validator is present.
+    /// validator is present, unless it was declared with <c>RuleForEach</c>.
     /// </summary>
     public static readonly FluentValidationRule RequiredRule = new()
     {
@@ -43,7 +43,8 @@ public sealed class FluentValidationRule
         Matches = propertyValidator => propertyValidator is INotNullValidator or INotEmptyValidator,
         Apply = context =>
         {
-            if (!context.IsObjectSchema)
+            // A RuleForEach validator checks the elements, and FluentValidation skips a null collection.
+            if (!context.IsObjectSchema || context.IsCollectionRule)
             {
                 return;
             }
