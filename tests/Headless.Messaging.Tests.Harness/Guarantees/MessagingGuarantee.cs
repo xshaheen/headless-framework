@@ -91,9 +91,6 @@ public static class MessagingGuarantees
     /// <summary>Tracks the guarantees that still need a test in the fast tier or against a real system.</summary>
     public const string FillIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1277";
 
-    /// <summary>Tracks the multi-host stress and chaos scenarios.</summary>
-    public const string MultiHostIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1247";
-
     public static IReadOnlyList<MessagingGuarantee> All { get; } =
     [
         // Publish and outbox
@@ -568,19 +565,17 @@ public static class MessagingGuarantees
             realSystem: true,
             "With a real coordination provider, a killed node's in-flight rows are redelivered by another node with no loss and no duplicate."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-COORD-05",
             GuaranteeArea.Coordination,
             realSystem: true,
-            "Several hosts draining one retry backlog on one database run each row exactly once.",
-            MultiHostIssueUrl
+            "Several hosts draining one retry backlog on one database run each row exactly once."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-COORD-06",
             GuaranteeArea.Coordination,
             realSystem: true,
-            "Delayed rows are sent exactly once while hosts restart one after another.",
-            MultiHostIssueUrl
+            "Delayed rows are sent exactly once while hosts restart one after another."
         ),
         // Dashboard operator actions
         _Bound(
