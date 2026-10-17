@@ -15,7 +15,7 @@ This harness enables consistent integration testing across all messaging provide
 | `TransportConsumerConformanceTestsBase` | Broker-observed round trip and real settlement invariants |
 | `TransportProviderConformanceDriver` | Provider-only broker operations consumed by shared routing, ownership, isolation, startup, poison, and migration assertions |
 | `BrokerFaultTestsBase` | Optional, manifest-driven recovery and fault invariants |
-| `NetworkFaultTestsBase` | Cuts the network through a Toxiproxy route while the broker keeps running, and checks the client reconnects and keeps consuming |
+| `NetworkFaultTestsBase` | Cuts the link between client and broker (`INetworkLink`) while the broker keeps running, and checks the client reconnects and keeps consuming; a Toxiproxy route is the link for a real broker |
 | `TransportConnectivityTestsBase` | Stops and restarts an isolated broker under a running host and checks the host's broker-reachability state follows |
 | `DataStorageTestsBase` | Tests for `IDataStorage` implementations (message persistence) |
 | `MessagingIntegrationTestsBase` | Full pub-sub cycle through a real broker and a real store, run by one broker-and-store pair project per broker |
@@ -71,6 +71,8 @@ Provider leaves create an isolated `TransportConsumerConformanceSession` with a 
 - bounds startup, receive, shutdown, and negative-observation windows;
 - includes consumer diagnostics when a delivery times out.
 
+The receive timeouts, no-redelivery windows, and publish retry pauses of a session, and the outage and reconnect windows of `NetworkFaultTestsBase`, run on the session's `TimeProvider`. It is the system clock unless the leaf passes one, so broker leaves keep real waits, while the simulator leaf passes a `SimulationWaitClock` that moves simulated time only while the test waits and the simulated broker has settled.
+
 NATS is a reference implementation. Its test leaf uses lane-qualified memory-backed JetStream streams and durables with a one-second `AckWait`, making ACK/NAK behavior deterministic without changing production defaults. Its provider leaf proves group fan-out, replica competition, queue ownership, same-name lane isolation, terminal malformed-envelope acknowledgement across restart, and a drained legacy stream followed by roll-forward-only publication. Consumer pause/recovery is tracked separately from broker interruption so the suite does not overstate what was fault-injected.
 
 RabbitMQ uses lane-qualified exchanges, routing keys, and owned queues; ACK absence is observed beyond the provider window, ordinary reject proves broker requeue, and malformed-envelope construction is terminally rejected without requeue. Its real-broker leaf also proves consumer-identity fan-out, replica competition, Queue ownership, same-name lane isolation, and a drained legacy exchange followed by roll-forward-only publication. AWS queue conformance is explicitly LocalStack-backed: commit proves SQS deletion, reject proves visibility-timeout redelivery with a fresh receipt context, and SNS empty-body dispatch is `NotApplicable` with its protocol rationale. AWS pause recovery remains an explicit linked gap. Its broker-restart evidence restarts LocalStack and recreates the queues LocalStack loses, as an SQS outage would leave them, so it proves the client resumes, not that SQS kept anything. RabbitMQ's broker-restart, stale-settlement, and callback-failure cells are linked defects rather than gaps in the suite.
@@ -81,34 +83,36 @@ Kafka is queue/consumer-group only in the current provider contract. Pulsar's Te
 
 `S` means the manifest cell is `Supported` and names an executable broker-backed assertion. `U` means `Unsupported` with the issue the manifest links for that cell. `N/A` means `NotApplicable` with a topology or protocol rationale. `S†` is executable real-service evidence that still requires the protected Azure credential; a local skip-only run is not completion evidence.
 
-| Manifest scenario | NATS | RabbitMQ | AWS/LocalStack | Kafka | Pulsar | Azure Service Bus | InMemory | Redis |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `RoutingAffinityMappingOrRejection` | S | S | S | S | S | S† | S | S |
-| `QueueRoundTrip` | S | S | S | S | S | S† | S | S |
-| `BusRoundTrip` | S | S | S | N/A | S | S† | S | S |
-| `HeaderRoundTrip` | S | S | S | S | S | S† | S | S |
-| `EmptyBodyDispatch` | S | S | N/A | U | U | U | S | S |
-| `CommitSettlement` | S | S | S | S | S | S† | S | S |
-| `RejectRedelivery` | S | S | S | S | S | S† | S | S |
-| `ConsumerPauseRecovery` | S | S | U | S | S | S† | U | U |
-| `BrokerInterruptionRecovery` | S | U | S | S | U | U | U | S |
-| `ConnectionDropRecovery` | S | S | U | U | U | U | U | S |
-| `PublishDuringOutage` | S | U | U | U | U | U | U | S |
-| `StaleSettlement` | S | U | S | S | S | U | U | S |
-| `HandlerFailureRedelivery` | S | U | S | U | U | U | U | S |
-| `BoundedGracefulShutdown` | S | S | S | S | S | S† | S | S |
-| `BusConsumerIdentityFanOut` | S | S | S | N/A | S | S† | S | S |
-| `BusReplicaCompetition` | S | S | S | N/A | S | S† | S | S |
-| `QueueOwnership` | S | S | S | S | S | S† | S | S |
-| `SameNameLaneIsolation` | S | S | S | N/A | S | S† | S | S |
-| `StartupRejectionBeforeSideEffects` | U | U | U | S | U | U | U | U |
-| `MalformedEnvelopeTerminalSettlement` | S | S | S | S | S | U | N/A | S |
-| `RequestReplyRoundTrip` | S | S | N/A | N/A | U | U | S | S |
-| `RequestReplyCallerIsolation` | S | S | N/A | N/A | U | U | S | S |
-| `RequestReplyForeignAddressRefusal` | S | S | N/A | N/A | U | U | S | S |
-| `RequestReplyCallerCleanup` | S | S | N/A | N/A | U | U | S | S |
-| `RequestReplyStartupRejection` | N/A | N/A | S | S | S | S† | N/A | N/A |
-| `RawPayloadConsumption` | S | S | S | S | S | S† | N/A | S |
+The `Simulator` column is the in-process simulated broker (`Simulation/SimulatedBroker`), run by the fast tier in `Headless.Messaging.Tests.Unit`. It is not a real broker, so `TransportConformanceManifestTests` fails when one of its `S` cells is `S` on no real broker leaf: a simulator pass must always have real-broker evidence behind it.
+
+| Manifest scenario | NATS | RabbitMQ | AWS/LocalStack | Kafka | Pulsar | Azure Service Bus | InMemory | Redis | Simulator |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `RoutingAffinityMappingOrRejection` | S | S | S | S | S | S† | S | S | S |
+| `QueueRoundTrip` | S | S | S | S | S | S† | S | S | S |
+| `BusRoundTrip` | S | S | S | N/A | S | S† | S | S | S |
+| `HeaderRoundTrip` | S | S | S | S | S | S† | S | S | S |
+| `EmptyBodyDispatch` | S | S | N/A | U | U | U | S | S | S |
+| `CommitSettlement` | S | S | S | S | S | S† | S | S | S |
+| `RejectRedelivery` | S | S | S | S | S | S† | S | S | S |
+| `ConsumerPauseRecovery` | S | S | U | S | S | S† | U | U | S |
+| `BrokerInterruptionRecovery` | S | U | S | S | U | U | U | S | S |
+| `ConnectionDropRecovery` | S | S | U | U | U | U | U | S | S |
+| `PublishDuringOutage` | S | U | U | U | U | U | U | S | S |
+| `StaleSettlement` | S | U | S | S | S | U | U | S | S |
+| `HandlerFailureRedelivery` | S | U | S | U | U | U | U | S | S |
+| `BoundedGracefulShutdown` | S | S | S | S | S | S† | S | S | S |
+| `BusConsumerIdentityFanOut` | S | S | S | N/A | S | S† | S | S | S |
+| `BusReplicaCompetition` | S | S | S | N/A | S | S† | S | S | S |
+| `QueueOwnership` | S | S | S | S | S | S† | S | S | S |
+| `SameNameLaneIsolation` | S | S | S | N/A | S | S† | S | S | S |
+| `StartupRejectionBeforeSideEffects` | U | U | U | S | U | U | U | U | N/A |
+| `MalformedEnvelopeTerminalSettlement` | S | S | S | S | S | U | N/A | S | N/A |
+| `RequestReplyRoundTrip` | S | S | N/A | N/A | U | U | S | S | S |
+| `RequestReplyCallerIsolation` | S | S | N/A | N/A | U | U | S | S | S |
+| `RequestReplyForeignAddressRefusal` | S | S | N/A | N/A | U | U | S | S | S |
+| `RequestReplyCallerCleanup` | S | S | N/A | N/A | U | U | S | S | S |
+| `RequestReplyStartupRejection` | N/A | N/A | S | S | S | S† | N/A | N/A | N/A |
+| `RawPayloadConsumption` | S | S | S | S | S | S† | N/A | S | N/A |
 
 Evidence anchors:
 
@@ -129,6 +133,7 @@ Evidence anchors:
 - InMemory request/reply round trip, caller isolation and restart, foreign reply-address refusal, and caller cleanup: `InMemoryProviderConformanceTests` running `TransportRequestReplyConformance`. RabbitMQ runs the same suite against Testcontainers RabbitMQ in `RabbitMqRequestReplyConformanceTests`, probing reply queues by passive declare; `RabbitMqReplyTransportTests` covers the exclusive reply queue's lifetime, sends to a deleted reply queue, refusal of `amq.gen-` and application queues, and re-declaration under a new address. NATS runs the suite in `NatsRequestReplyConformanceTests`, and again with stream provisioning disabled in `NatsRequestReplyWithoutStreamProvisioningTests`, probing reply subscriptions through the server's `connz` monitoring endpoint; `NatsReplyTransportTests` covers replies staying out of every JetStream stream, the reply subject surviving a server restart under the same address, immediate failure of a request no stream captures, and refusal of lane and inbox subjects. Redis runs the suite in `RedisRequestReplyConformanceTests`, probing reply channels with `PUBSUB NUMSUB` and checking by `SCAN` that no key is named after a reply address; `RedisReplyTransportTests` covers a round trip that leaves no key under the reply namespace, the reply channel surviving a dropped subscription connection under the same address, a listener opened while the server is down handing out its address once the server comes up, and refusal of lane stream keys and unrelated channels with no write. Kafka and AWS reject request/reply by design (`N/A`); Azure Service Bus and Pulsar reject it until their reply channels exist (`U`). All four prove the rejection itself: their `ProviderConformanceEvidenceTests` run `AssertRejectedAtStartupAsync` against the real transport wiring, so `RequestReplyStartupRejection` is `S` for them.
 - Raw payloads (a message published with the broker's native client, no Headless headers, to a `RawPayload()` contract): each provider's `*RawPayloadTests` leaf proves consumption with a broker-derived message id, one handler run across a second delivery of the same broker message, and poison handling of a malformed body. RabbitMQ also proves that a raw delivery without `message-id` is rejected. The Azure Service Bus leaf runs in the protected Azure workflow with the conformance evidence.
 - AWS evidence is LocalStack-backed, not managed AWS. Azure evidence is a real isolated namespace tier, not an emulator.
+- Simulator: the same suites run unchanged in `Headless.Messaging.Tests.Unit/Contracts` (`SimulatorConsumerConformanceTests`, `SimulatorBrokerFaultTests`, `SimulatorNetworkFaultTests`, `SimulatorRequestReplyConformanceTests`), bound in its `ProviderConformanceEvidenceTests`. Its network link and broker restart drop the simulated connection and hold it down until the client has seen a receive fail; its reply listeners register at the broker. The request/reply hosts run on the system clock, so that suite still waits real time for its timeout scenarios.
 
 ### DataStorageCapabilities
 
@@ -149,7 +154,7 @@ protected override DataStorageCapabilities Capabilities => new()
 
 | Driver member | Override when | Contract |
 |---|---|---|
-| `SupportsRequestReply` | The provider declares request/reply | `true` runs the suite; `false` runs `AssertRejectedAtStartupAsync` instead |
+| `SupportsRequestReply` | The provider declares request/reply | `true` runs the suite; `false` runs `AssertRejectedAtStartupAsync` instead | S |
 | `ConfigureRequestReplyTransport(MessagingSetupBuilder)` | Always, supported or not | Selects the provider for one host; called once per host, and every host must reach the same broker |
 | `ConfigureRequestReplyServices(IServiceCollection)` | Wiring must win over a provider default | Runs after `AddHeadlessMessaging` for each host |
 | `HasReplyObjectsAsync(string replyAddress, CancellationToken)` | The provider declares request/reply | Whether the broker still holds the queue, subscription, or channel behind a reply address; must be `true` while the caller runs |

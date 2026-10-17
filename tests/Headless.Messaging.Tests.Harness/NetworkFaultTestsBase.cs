@@ -3,35 +3,45 @@
 using Headless.Messaging;
 using Tests.Capabilities;
 using Tests.Guarantees;
-using Tests.Toxiproxy;
 
 namespace Tests;
 
 /// <summary>
-/// A conformance session whose client reaches the broker through a Toxiproxy route, so a test can cut the network
-/// while the broker keeps running.
+/// The network path between a client and its broker, which a test can cut while the broker keeps running. A Toxiproxy
+/// route implements it against a real broker, and the simulator by dropping its connection on cue.
 /// </summary>
 [PublicAPI]
-public sealed class ProxiedTransportSession(
+public interface INetworkLink
+{
+    /// <summary>Cuts every open connection and refuses new ones until <see cref="RestoreAsync"/>.</summary>
+    Task CutAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Accepts connections again.</summary>
+    Task RestoreAsync(CancellationToken cancellationToken = default);
+}
+
+/// <summary>A conformance session whose client reaches the broker over a link the test can cut.</summary>
+[PublicAPI]
+public sealed class NetworkFaultSession(
     TransportConsumerConformanceSession session,
-    ToxiproxyProxy proxy,
+    INetworkLink link,
     Func<ValueTask> disposeResources
 ) : IAsyncDisposable
 {
     public TransportConsumerConformanceSession Session { get; } = session;
 
-    public ToxiproxyProxy Proxy { get; } = proxy;
+    public INetworkLink Link { get; } = link;
 
     public async ValueTask DisposeAsync()
     {
         try
         {
-            await Proxy.EnableAsync().ConfigureAwait(false);
+            await Link.RestoreAsync().ConfigureAwait(false);
         }
-#pragma warning disable CA1031, ERP022 // Cleanup must reach the session and container disposal even when the proxy is gone.
+#pragma warning disable CA1031, ERP022 // Cleanup must reach the session and resource disposal even when the link is gone.
         catch (Exception)
         {
-            // The proxy may already be torn down with its container.
+            // The link may already be torn down with its container.
         }
 #pragma warning restore CA1031, ERP022
 
@@ -50,6 +60,9 @@ public sealed class ProxiedTransportSession(
 /// Network-fault invariants for broker-backed transports: the broker stays healthy and only the link fails, which
 /// is what a connection blip, a load balancer reset, or a cloud network event looks like to a client.
 /// </summary>
+/// <remarks>
+/// Every window and pause runs on the session's clock, so a simulator leaf runs the same body in simulated time.
+/// </remarks>
 [PublicAPI]
 public abstract class NetworkFaultTestsBase : TransportConsumerConformanceSessionTestsBase
 {
@@ -62,15 +75,15 @@ public abstract class NetworkFaultTestsBase : TransportConsumerConformanceSessio
     /// <summary>
     /// How long the client reconnects before the first publish. A publish during recovery can itself rebuild the
     /// connection, so the drop scenario stays quiet to tell a client that cannot reconnect from one a publish broke.
-    /// Reconnect back-off runs on real time, so this is a wait on the client, not on the test.
+    /// Reconnect back-off runs on the client's clock, so this is a wait on the client, not on the test.
     /// </summary>
     protected virtual TimeSpan QuietReconnectPeriod => TimeSpan.FromSeconds(20);
 
     /// <summary>
-    /// Starts a Toxiproxy server, routes it to a broker, and opens a session whose producer and consumer connect
-    /// through that route. The returned value owns the Toxiproxy server and any broker it started.
+    /// Opens a session whose producer and consumer reach the broker over a link the test can cut. The returned value
+    /// owns the link and any broker or proxy it started.
     /// </summary>
-    protected abstract ValueTask<ProxiedTransportSession> CreateProxiedSessionAsync(
+    protected abstract ValueTask<NetworkFaultSession> CreateNetworkFaultSessionAsync(
         CancellationToken cancellationToken
     );
 
@@ -83,14 +96,14 @@ public abstract class NetworkFaultTestsBase : TransportConsumerConformanceSessio
     {
         RequireSupport(TransportConformanceScenario.ConnectionDropRecovery);
 
-        await using var proxied = await CreateProxiedSessionAsync(AbortToken);
-        var session = proxied.Session;
+        await using var faulted = await CreateNetworkFaultSessionAsync(AbortToken);
+        var session = faulted.Session;
         await session.StartAsync(cancellationToken: AbortToken);
         await _ProveLiveAsync(session, "before-drop");
 
-        await proxied.Proxy.DisableAsync(AbortToken);
-        await proxied.Proxy.EnableAsync(AbortToken);
-        await Task.Delay(QuietReconnectPeriod, AbortToken);
+        await faulted.Link.CutAsync(AbortToken);
+        await faulted.Link.RestoreAsync(AbortToken);
+        await session.TimeProvider.Delay(QuietReconnectPeriod, AbortToken);
 
         var after = _CreateProbe(session.Destination, "after-drop");
         await session.PublishUntilSucceededAsync(after, RecoveryWindow, AbortToken);
@@ -111,22 +124,23 @@ public abstract class NetworkFaultTestsBase : TransportConsumerConformanceSessio
     {
         RequireSupport(TransportConformanceScenario.PublishDuringOutage);
 
-        await using var proxied = await CreateProxiedSessionAsync(AbortToken);
-        var session = proxied.Session;
+        await using var faulted = await CreateNetworkFaultSessionAsync(AbortToken);
+        var session = faulted.Session;
+        var clock = session.TimeProvider;
         await session.StartAsync(cancellationToken: AbortToken);
         await _ProveLiveAsync(session, "before-outage");
 
-        await proxied.Proxy.DisableAsync(AbortToken);
+        await faulted.Link.CutAsync(AbortToken);
 
         // Spans several client reconnect attempts, so a publish lands while the client is mid-recovery. The outage
         // stays short of the point where a client gives up and surfaces the fault for the host to rebuild it.
-        var outageStarted = TimeProvider.System.GetTimestamp();
-        for (var attempt = 0; TimeProvider.System.GetElapsedTime(outageStarted) < OutageDuration; attempt++)
+        var outageStarted = clock.GetTimestamp();
+        for (var attempt = 0; clock.GetElapsedTime(outageStarted) < OutageDuration; attempt++)
         {
             var during = _CreateProbe(session.Destination, $"during-outage-{attempt}");
             try
             {
-                await session.PublishAsync(during, AbortToken).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+                await session.PublishAsync(during, AbortToken).WaitAsync(TimeSpan.FromSeconds(5), clock, AbortToken);
             }
 #pragma warning disable CA1031 // A publish during an outage may fail or throw; only its effect on the consumer is asserted.
             catch (Exception ex) when (ex is not OperationCanceledException || !AbortToken.IsCancellationRequested)
@@ -135,10 +149,10 @@ public abstract class NetworkFaultTestsBase : TransportConsumerConformanceSessio
                 // Expected: the network is down.
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
+            await clock.Delay(TimeSpan.FromSeconds(1), AbortToken);
         }
 
-        await proxied.Proxy.EnableAsync(AbortToken);
+        await faulted.Link.RestoreAsync(AbortToken);
 
         var after = _CreateProbe(session.Destination, "after-outage");
         await session.PublishUntilSucceededAsync(after, RecoveryWindow, AbortToken);
@@ -162,11 +176,12 @@ public abstract class NetworkFaultTestsBase : TransportConsumerConformanceSessio
         TimeSpan window
     )
     {
-        var deadline = TimeProvider.System.GetTimestamp();
+        var clock = session.TimeProvider;
+        var started = clock.GetTimestamp();
 
         while (true)
         {
-            var remaining = window - TimeProvider.System.GetElapsedTime(deadline);
+            var remaining = window - clock.GetElapsedTime(started);
             var delivery = await session.ReceiveAsync(
                 remaining > TimeSpan.Zero ? remaining : TimeSpan.FromMilliseconds(1),
                 AbortToken

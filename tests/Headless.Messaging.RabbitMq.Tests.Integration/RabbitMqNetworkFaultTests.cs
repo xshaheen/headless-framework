@@ -9,7 +9,7 @@ public sealed class RabbitMqNetworkFaultTests(RabbitMqFixture fixture) : Network
 {
     protected override string ProviderName => "RabbitMQ";
 
-    protected override async ValueTask<ProxiedTransportSession> CreateProxiedSessionAsync(
+    protected override async ValueTask<NetworkFaultSession> CreateNetworkFaultSessionAsync(
         CancellationToken cancellationToken
     )
     {
@@ -27,7 +27,7 @@ public sealed class RabbitMqNetworkFaultTests(RabbitMqFixture fixture) : Network
                 cancellationToken
             );
 
-            return new ProxiedTransportSession(session, proxy, toxiproxy.DisposeAsync);
+            return new NetworkFaultSession(session, proxy, toxiproxy.DisposeAsync);
         }
         catch
         {

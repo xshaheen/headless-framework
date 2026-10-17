@@ -52,6 +52,12 @@ public sealed class SimulatedConsumerClient : IConsumerClient
     private bool _paused;
     private bool _channelClosed;
     private bool _closed;
+    private bool _listening;
+
+    // The broker generation the receive loop last saw before it went to wait, or -1 while it is working; with no
+    // callback running, a loop parked at the current generation has nothing to do until the broker or the clock moves.
+    private long _parkedGeneration = -1;
+    private int _callbacksInFlight;
 
     private Task? _closeTask;
     private Func<CancellationToken, Task>? _onReestablished;
@@ -122,15 +128,22 @@ public sealed class SimulatedConsumerClient : IConsumerClient
         cancellationToken.ThrowIfCancellationRequested();
 
         var group = _broker.Subscribe(this, GroupId, messageNames);
+        bool listening;
         lock (_broker.Gate)
         {
             _group = group;
+            listening = _listening;
         }
 
-        _ready.TrySetResult();
+        if (listening)
+        {
+            _ready.TrySetResult();
+        }
+
         return ValueTask.CompletedTask;
     }
 
+    /// <summary>Completes once the client is subscribed and its receive loop runs, so a publish after it is not missed.</summary>
     public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
     {
         return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
@@ -143,6 +156,37 @@ public sealed class SimulatedConsumerClient : IConsumerClient
     /// <param name="timeout">Unused; the loop wakes on broker changes instead of polling.</param>
     /// <param name="cancellationToken">Stops the loop.</param>
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        bool subscribed;
+        lock (_broker.Gate)
+        {
+            _listening = true;
+            subscribed = _group is not null;
+            _broker.StartListeningLocked(this);
+        }
+
+        // Ready only once the loop counts as listening: a broker waiting for quiescence must see it before a test can
+        // publish and start waiting.
+        if (subscribed)
+        {
+            _ready.TrySetResult();
+        }
+
+        try
+        {
+            await _ListenAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_broker.Gate)
+            {
+                _parkedGeneration = -1;
+                _broker.StopListeningLocked(this);
+            }
+        }
+    }
+
+    private async Task _ListenAsync(CancellationToken cancellationToken)
     {
         DateTimeOffset? retryAt = null;
         var lostConnection = false;
@@ -325,45 +369,71 @@ public sealed class SimulatedConsumerClient : IConsumerClient
     {
         lock (_broker.Gate)
         {
-            var now = _broker.Clock.GetUtcNow();
-            var changed = _broker.ChangedLocked;
+            var step = _PollLocked(retryAt);
 
-            if (_closed || _channelClosed)
+            // Read after the poll, whose own records move the generation: the loop waits next only on these two steps.
+            _parkedGeneration =
+                step.Kind is PollKind.BackingOff || (step.Kind is PollKind.Reached && step.Delivery is null)
+                    ? _broker.GenerationLocked
+                    : -1;
+
+            if (step.Delivery is not null)
             {
-                return new PollStep(PollKind.Stopped, now, changed);
+                _callbacksInFlight++;
             }
 
-            if (retryAt > now)
-            {
-                return new PollStep(PollKind.BackingOff, now, changed);
-            }
-
-            if (!_broker.IsConnectedLocked)
-            {
-                return new PollStep(PollKind.Unreachable, now, changed, Reason: "The simulated broker is unreachable.");
-            }
-
-            if (_broker.Faults.TryTakeReceiveFault(Subscription, out var reason))
-            {
-                return new PollStep(PollKind.ReceiveFailed, now, changed, Reason: reason);
-            }
-
-            if (_paused || _group is null || !_group.Pending.TryDequeue(out var pending))
-            {
-                return new PollStep(PollKind.Reached, now, changed);
-            }
-
-            var delivery = new SimulatedDelivery(pending, SimulatedBroker.Copy(pending.Message), this);
-            _inFlight.Add(delivery);
-            _broker.RecordLocked(
-                BrokerEventKind.Delivered,
-                Subscription,
-                SimulatedBroker.MessageIdOf(pending.Message),
-                pending.DeliveryCount
-            );
-
-            return new PollStep(PollKind.Reached, now, changed, Delivery: delivery);
+            // Parking can complete quiescence, which no broker change announces.
+            _broker.PulseActivityLocked();
+            return step;
         }
+    }
+
+    private PollStep _PollLocked(DateTimeOffset? retryAt)
+    {
+        var now = _broker.Clock.GetUtcNow();
+        var changed = _broker.ChangedLocked;
+
+        if (_closed || _channelClosed)
+        {
+            return new PollStep(PollKind.Stopped, now, changed);
+        }
+
+        if (retryAt > now)
+        {
+            return new PollStep(PollKind.BackingOff, now, changed);
+        }
+
+        if (!_broker.IsConnectedLocked)
+        {
+            return new PollStep(PollKind.Unreachable, now, changed, Reason: "The simulated broker is unreachable.");
+        }
+
+        if (_broker.Faults.TryTakeReceiveFault(Subscription, out var reason))
+        {
+            return new PollStep(PollKind.ReceiveFailed, now, changed, Reason: reason);
+        }
+
+        if (_paused || _group is null || !_group.Pending.TryDequeue(out var pending))
+        {
+            return new PollStep(PollKind.Reached, now, changed);
+        }
+
+        var delivery = new SimulatedDelivery(pending, SimulatedBroker.Copy(pending.Message), this);
+        _inFlight.Add(delivery);
+        _broker.RecordLocked(
+            BrokerEventKind.Delivered,
+            Subscription,
+            SimulatedBroker.MessageIdOf(pending.Message),
+            pending.DeliveryCount
+        );
+
+        return new PollStep(PollKind.Reached, now, changed, Delivery: delivery);
+    }
+
+    /// <summary>Whether the receive loop has nothing to do until the broker changes past <paramref name="generation"/>.</summary>
+    internal bool IsSettledLocked(long generation)
+    {
+        return _parkedGeneration == generation && _callbacksInFlight == 0;
     }
 
     private async Task _InvokeAsync(SimulatedDelivery delivery)
@@ -390,6 +460,14 @@ public sealed class SimulatedConsumerClient : IConsumerClient
                 {
                     _Requeue(_group, delivery.Pending);
                 }
+            }
+        }
+        finally
+        {
+            lock (_broker.Gate)
+            {
+                _callbacksInFlight--;
+                _broker.PulseActivityLocked();
             }
         }
     }
@@ -431,17 +509,24 @@ public sealed class SimulatedConsumerClient : IConsumerClient
                 return;
             }
 
-            _ = _RequeueAtAsync(_group, delivery.Pending, _broker.Clock.GetUtcNow() + delay);
+            var at = _broker.Clock.GetUtcNow() + delay;
+            _ = _RequeueAtAsync(_group, delivery.Pending, at, _broker.AddTimedWorkLocked(at));
         }
     }
 
-    private async Task _RequeueAtAsync(SimulatedGroup group, SimulatedPending pending, DateTimeOffset at)
+    private async Task _RequeueAtAsync(
+        SimulatedGroup group,
+        SimulatedPending pending,
+        DateTimeOffset at,
+        SimulatedTimedWork work
+    )
     {
         await _broker.Clock.WhenReachedAsync(at).ConfigureAwait(false);
 
         lock (_broker.Gate)
         {
             _Requeue(group, pending);
+            _broker.CompleteTimedWorkLocked(work);
         }
     }
 
@@ -488,12 +573,20 @@ public sealed class SimulatedConsumerClient : IConsumerClient
 
         // A close fault holds only a client that opened a subscription: the core's short-lived topology clients have no
         // connection to tear down, so a fault armed before startup does not stall the bootstrap.
+        SimulatedTimedWork? slowClose = null;
         if (subscribed)
         {
             var (kind, duration, release) = _broker.Faults.TakeCloseFault();
             if (kind is CloseFaultKind.Slow)
             {
-                await _broker.Clock.DelayAsync(duration).ConfigureAwait(false);
+                DateTimeOffset closesAt;
+                lock (_broker.Gate)
+                {
+                    closesAt = _broker.Clock.GetUtcNow() + duration;
+                    slowClose = _broker.AddTimedWorkLocked(closesAt);
+                }
+
+                await _broker.Clock.WhenReachedAsync(closesAt).ConfigureAwait(false);
             }
             else if (kind is CloseFaultKind.Hung)
             {
@@ -510,6 +603,11 @@ public sealed class SimulatedConsumerClient : IConsumerClient
             }
 
             _broker.RecordLocked(BrokerEventKind.ClientClosed, Subscription, messageId: null, deliveryCount: 0);
+
+            if (slowClose is not null)
+            {
+                _broker.CompleteTimedWorkLocked(slowClose);
+            }
         }
     }
 
