@@ -29,7 +29,8 @@ internal static class HeadlessDbContextRegistration
 
     /// <summary>
     /// One context instance per scope (or per resolution, for <see cref="ServiceLifetime.Transient"/>), built with
-    /// options of <paramref name="optionsLifetime"/>. A derived constructor may take scoped services.
+    /// options of <paramref name="optionsLifetime"/>; singleton options are built once and copied into each scope (see
+    /// <see cref="HeadlessSharedDbContextOptions{TContext}"/>). A derived constructor may take scoped services.
     /// </summary>
     public static void AddPerScope<
         [DynamicallyAccessedMembers(
@@ -62,14 +63,27 @@ internal static class HeadlessDbContextRegistration
             )
         );
 
-        services.AddDbContext<TDbContext>(
-            (serviceProvider, optionsBuilder) =>
-            {
-                optionsAction?.Invoke(serviceProvider, optionsBuilder);
-            },
-            contextLifetime,
-            optionsLifetime
-        );
+        if (optionsLifetime != ServiceLifetime.Singleton)
+        {
+            services.AddDbContext<TDbContext>(
+                (serviceProvider, optionsBuilder) =>
+                {
+                    optionsAction?.Invoke(serviceProvider, optionsBuilder);
+                },
+                contextLifetime,
+                optionsLifetime
+            );
+        }
+        else
+        {
+            HeadlessSharedDbContextOptions<TDbContext>.Register(services, optionsAction);
+            // The options are registered above, so EF Core keeps them; with no action it adds no configuration of its own.
+            services.AddDbContext<TDbContext>(
+                optionsAction: (Action<IServiceProvider, DbContextOptionsBuilder>?)null,
+                contextLifetime,
+                ServiceLifetime.Scoped
+            );
+        }
 
         // Detached contexts (background work, initializers, singleton stores) come from a factory that opens a scope
         // per context, so a derived constructor's scoped services still resolve.

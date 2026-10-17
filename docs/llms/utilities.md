@@ -356,7 +356,7 @@ public sealed class UserSeeder : ISeeder
 
 // Registration
 builder.Services.AddSeeder<UserSeeder>();
-builder.Services.AddDbMigrationSeeder<AppDbContext>(); // runs first (SeederPriority int.MinValue)
+builder.Services.AddDbMigrationSeeder<AppDbContext>(); // Headless.EntityFramework; runs first (SeederPriority int.MinValue)
 
 // In startup — runs all seeders in priority order
 await app.Services.SeedAsync();
