@@ -13,7 +13,8 @@ public sealed class MaxMindOptions
 
     /// <summary>
     /// The directory that holds the databases, one <c>&lt;EditionId&gt;.mmdb</c> file per edition. The updater
-    /// creates it when missing.
+    /// creates it when missing. A relative path resolves against the host's content root when an
+    /// <see cref="Microsoft.Extensions.Hosting.IHostEnvironment" /> is registered.
     /// </summary>
     public string DatabaseDirectory { get; set; } = "";
 
@@ -38,8 +39,12 @@ public sealed class MaxMindOptions
     /// </summary>
     public string? LicenseKey { get; set; }
 
-    /// <summary>The locales to read names in, in order of preference.</summary>
-    public IList<string> Locales { get; set; } = ["en"];
+    /// <summary>
+    /// The locales to read names in, in order of preference. Left empty, it becomes <c>["en"]</c>.
+    /// </summary>
+    // Empty rather than ["en"]: configuration binding appends to a collection that already holds items, so a
+    // non-empty default would survive every configured list (["ar", "en"] would bind as ["en", "ar", "en"]).
+    public IList<string> Locales { get; set; } = [];
 
     /// <summary>How often to ask MaxMind whether a newer database exists. Defaults to 12 hours.</summary>
     public TimeSpan UpdateCheckInterval { get; set; } = TimeSpan.FromHours(12);
