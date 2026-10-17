@@ -303,6 +303,14 @@ public sealed class PostgreSqlStorageTests(PostgreSqlFixture fixture) : DataStor
 }
 ```
 
+### 2. Opt in to the real-database scenarios
+
+Some storage scenarios carry `[Fact]` on the base method, so every leaf runs them and skips the ones its store cannot show:
+
+- Override `DatabaseHostPort` and `CreateStorageThrough(host, port)` to let a test put a Toxiproxy route (`ToxiproxyDatabaseRoute`) between the storage and a running database and cut it. `TransactionalInboxRetryConformanceTests` has the same pair, with `ConfigureContextThrough`, for its lost-commit-reply scenario.
+- Override `CoordinationProvider` on a `DeadOwnerReclaimConformanceTests` leaf to run the killed-node scenario on the provider's real membership store instead of `ControlledNodeMembership`.
+- An EF Core storage variant derives the ADO.NET leaf, reads its connection settings from a context registration, and returns `true` from `RegisteredFromEntityFrameworkContext`, so it runs the same suite.
+
 ## Full Integration Tests
 
 For complete pub-sub cycle tests with DI:

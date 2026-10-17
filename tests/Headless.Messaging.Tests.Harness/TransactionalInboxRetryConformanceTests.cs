@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Guarantees;
+using Tests.Toxiproxy;
 
 namespace Tests;
 
@@ -22,6 +23,19 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
     protected abstract void ConfigureStorage(MessagingSetupBuilder setup);
 
     protected abstract string CreateEffectsTableSql { get; }
+
+    /// <summary>
+    /// Gets the host port the database container publishes, so a test can put a Toxiproxy route in front of it, or
+    /// <see langword="null"/> when the leaf cannot route its database.
+    /// </summary>
+    protected virtual int? DatabaseHostPort => null;
+
+    /// <summary>
+    /// Configures the context like <see cref="ConfigureContext"/>, but connecting through <paramref name="host"/> and
+    /// <paramref name="port"/>. The EF-registered storage reads its connection from the context, so it follows.
+    /// </summary>
+    protected virtual void ConfigureContextThrough(DbContextOptionsBuilder options, string host, int port) =>
+        throw new NotSupportedException("This leaf cannot route its database through a proxy.");
 
     [Theory]
     [InlineData(FailurePoint.BeforeEntry)]
@@ -321,6 +335,126 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
         (await admit()).Disposition.Should().Be(InboxAdmissionDisposition.SucceededDuplicate);
     }
 
+    [Fact]
+    [Guarantee("MSG-INBOX-06")]
+    public async Task should_resolve_a_commit_whose_reply_is_lost_as_committed_without_running_the_handler_again()
+    {
+        if (DatabaseHostPort is not { } databaseHostPort)
+        {
+            Assert.Skip("This leaf cannot route its database through a proxy.");
+            return;
+        }
+
+        // given: the context, and the storage that reads its connection from it, reach the database through a route
+        // that can drop the database's replies
+        await using var route = await ToxiproxyDatabaseRoute.StartAsync(databaseHostPort, AbortToken);
+        var replyCut = new CommitReplyCut(route.Proxy);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDbContext<InboxRetryDbContext>(options =>
+        {
+            ConfigureContextThrough(options, route.Proxy.Host, route.Proxy.Port);
+            options.AddInterceptors(replyCut);
+        });
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            ConfigureStorage(setup);
+            setup.Options.CommandTimeout = TimeSpan.FromSeconds(5);
+        });
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        var storage = provider.GetRequiredService<IDataStorage>();
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
+        await using (var setupScope = provider.CreateAsyncScope())
+        {
+            var db = setupScope.ServiceProvider.GetRequiredService<InboxRetryDbContext>();
+            await db.Database.ExecuteSqlRawAsync(CreateEffectsTableSql, AbortToken);
+        }
+
+        var id = Guid.NewGuid();
+        var origin = new Message(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = id.ToString(),
+                [Headers.MessageName] = "tests.inbox-lost-reply",
+                [Headers.ConsumerIdentity] = "tests.inbox-lost-reply.consumer",
+            },
+            id
+        );
+        ValueTask<InboxAdmissionResult> admit() =>
+            storage.AdmitReceivedMessageAsync(
+                "tests.inbox-lost-reply",
+                "tests.inbox-lost-reply.consumer",
+                "v1",
+                new MediumMessage
+                {
+                    StorageId = Guid.Empty,
+                    Origin = origin,
+                    Content = string.Empty,
+                    Lane = MessageLane.Bus,
+                },
+                cancellationToken: AbortToken
+            );
+        var admission = await admit();
+        admission.Disposition.Should().Be(InboxAdmissionDisposition.Winner);
+        var message = admission.Message;
+        var originalInlineAttempts = message.InlineAttempts++;
+        (
+            await storage.LeaseReceiveAndReserveAttemptAsync(
+                message,
+                TimeSpan.FromMinutes(1),
+                originalInlineAttempts,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        // when: the attempt's commit reaches the database, but the database's reply to it never arrives
+        var handlerEntries = 0;
+        Exception? error;
+        replyCut.Armed = true;
+        await using (var attemptScope = provider.CreateAsyncScope())
+        {
+            var db = attemptScope.ServiceProvider.GetRequiredService<InboxRetryDbContext>();
+            error = await Record.ExceptionAsync(() =>
+                attemptScope
+                    .ServiceProvider.GetRequiredService<IInboxTransactionRunner>()
+                    .ExecuteAsync(
+                        message,
+                        async (_, ct) =>
+                        {
+                            handlerEntries++;
+                            await db.Effects.AddAsync(new InboxRetryEffect { Id = id }, ct);
+                        },
+                        AbortToken
+                    )
+            );
+        }
+
+        // then: the client saw its commit fail, and the attempt still resolved as the success it was
+        replyCut
+            .CommitFailures.Should()
+            .ContainSingle("the route must cut the commit's reply, or this test proves nothing");
+        error.Should().BeNull("the commit probe finds the durable commit, so the attempt reports success");
+        handlerEntries.Should().Be(1);
+        await using (var verificationScope = provider.CreateAsyncScope())
+        {
+            (
+                await verificationScope
+                    .ServiceProvider.GetRequiredService<InboxRetryDbContext>()
+                    .Effects.CountAsync(effect => effect.Id == id, AbortToken)
+            )
+                .Should()
+                .Be(1, "the handler's effect committed once and was not written again");
+        }
+
+        // and: a redelivery of the message is a duplicate of the succeeded attempt, not a second run
+        (await admit())
+            .Disposition.Should()
+            .Be(InboxAdmissionDisposition.SucceededDuplicate);
+    }
+
     public enum FailurePoint
     {
         BeforeEntry,
@@ -421,6 +555,54 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
         {
             fault.ThrowOnce(FailurePoint.Rollback);
             return ValueTask.FromResult(result);
+        }
+    }
+
+    /// <summary>
+    /// Drops the database's reply to the next commit. Requests still reach the database, so the commit lands; the reply
+    /// is discarded and the route closes the connection a second later, which is what the client sees fail.
+    /// </summary>
+    private sealed class CommitReplyCut(ToxiproxyProxy proxy) : DbTransactionInterceptor
+    {
+        private const string _ToxicName = "lost-commit-reply";
+
+        public bool Armed { get; set; }
+
+        public List<Exception> CommitFailures { get; } = [];
+
+        public override async ValueTask<InterceptionResult> TransactionCommittingAsync(
+            DbTransaction transaction,
+            TransactionEventData eventData,
+            InterceptionResult result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (Armed)
+            {
+                await proxy.AddToxicAsync(
+                    _ToxicName,
+                    "timeout",
+                    new Dictionary<string, object>(StringComparer.Ordinal) { ["timeout"] = 1000 },
+                    cancellationToken
+                );
+            }
+
+            return result;
+        }
+
+        public override async Task TransactionFailedAsync(
+            DbTransaction transaction,
+            TransactionErrorEventData eventData,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (Armed && string.Equals(eventData.Action, "Commit", StringComparison.Ordinal))
+            {
+                Armed = false;
+                CommitFailures.Add(eventData.Exception);
+                // Only the commit's reply is lost: the runner's probe that follows must reach the database.
+                await proxy.RemoveToxicAsync(_ToxicName, CancellationToken.None);
+            }
         }
     }
 

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Dapper;
+using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Microsoft.Data.SqlClient;
@@ -20,6 +21,9 @@ public sealed class SqlServerDeadOwnerReclaimConformanceTests(SqlServerTestFixtu
         setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
         setup.UseSqlServer(fixture.ConnectionString);
     }
+
+    protected override Action<HeadlessCoordinationSetupBuilder> CoordinationProvider =>
+        setup => setup.UseSqlServer(fixture.ConnectionString);
 
     protected override async Task ResetStorageAsync(IDataStorage storage)
     {

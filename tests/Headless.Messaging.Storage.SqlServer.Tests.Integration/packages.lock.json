@@ -765,6 +765,24 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
+      "headless.coordination.sql": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Coordination": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.coordination.sqlserver": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Coordination.Sql": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql.SqlServer": "[1.0.0, )"
+        }
+      },
       "headless.distributedlocks.abstractions": {
         "type": "Project",
         "dependencies": {

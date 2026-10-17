@@ -164,7 +164,7 @@ public static class MessagingGuarantees
             realSystem: true,
             "Retry pickup returns only due, unleased, non-terminal rows."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-RETRY-02",
             GuaranteeArea.DispatchRetry,
             realSystem: true,
@@ -237,7 +237,7 @@ public static class MessagingGuarantees
             realSystem: true,
             "Lease expiry and retry due times are decided on the database clock, so a skewed app clock cannot steal a lease or retry early."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-LEASE-04",
             GuaranteeArea.Lease,
             realSystem: false,
@@ -372,6 +372,12 @@ public static class MessagingGuarantees
             realSystem: true,
             "With a real broker and database, a duplicate broker delivery runs the handler once."
         ),
+        _Bound(
+            "MSG-INBOX-06",
+            GuaranteeArea.Inbox,
+            realSystem: true,
+            "A transactional inbox commit whose reply is lost is resolved as committed: the handler is not run again and a redelivery is a duplicate."
+        ),
         // Circuit breaker and consumer register
         _Bound(
             "MSG-CB-01",
@@ -403,6 +409,18 @@ public static class MessagingGuarantees
             "Pausing a consumer stops broker delivery, and resuming it delivers once with no duplicate.",
             TransportConformanceScenario.ConsumerPauseRecovery
         ),
+        _Bound(
+            "MSG-CB-06",
+            GuaranteeArea.CircuitBreaker,
+            realSystem: true,
+            "A message store that becomes unreachable fails admission with a fault the default classifier counts as transient, so the consumer's circuit opens at its threshold on every relational provider."
+        ) with
+        {
+            Status = GuaranteeStatus.Unsupported,
+            Rationale =
+                "SqlClient reports a dropped or refused connection as SqlException number 0, which the relational classifier does not count as transient, so a SQL Server outage never opens the circuit.",
+            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1278",
+        },
         // Shutdown and drain
         _Bound(
             "MSG-SHUT-01",
@@ -519,7 +537,7 @@ public static class MessagingGuarantees
             realSystem: true,
             "Schedules and revocations survive a storage restart and clock steps, and a revoked schedule is not resurrected at shutdown."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-STORE-05",
             GuaranteeArea.Storage,
             realSystem: true,
@@ -544,12 +562,11 @@ public static class MessagingGuarantees
             realSystem: true,
             "Rows of a live or restarted incarnation of a node are never reclaimed."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-COORD-04",
             GuaranteeArea.Coordination,
             realSystem: true,
-            "With a real coordination provider, a killed node's in-flight rows are redelivered by another node with no loss and no duplicate.",
-            MultiHostIssueUrl
+            "With a real coordination provider, a killed node's in-flight rows are redelivered by another node with no loss and no duplicate."
         ),
         _NoTestYet(
             "MSG-COORD-05",
