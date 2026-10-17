@@ -46,6 +46,9 @@ internal sealed class MessageSender : IMessageSender
     private readonly Lazy<IBusTransport?> _busTransport;
     private readonly Lazy<IQueueTransport?> _queueTransport;
     private readonly TimeProvider _timeProvider;
+
+    // The publish timeout and the lease-renewal timeout wait out a broker or store that stopped answering.
+    private readonly TimeProvider _backoffClock;
     private readonly MessagingTelemetry _telemetry;
     private readonly RetryPolicyOptions _retryPolicy;
     private readonly MessagingPublishRetryPipeline _retryPipeline;
@@ -61,6 +64,7 @@ internal sealed class MessageSender : IMessageSender
         _busTransport = new Lazy<IBusTransport?>(serviceProvider.GetService<IBusTransport>);
         _queueTransport = new Lazy<IQueueTransport?>(serviceProvider.GetService<IQueueTransport>);
         _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
+        _backoffClock = BackoffClock.Resolve(serviceProvider);
         _telemetry = serviceProvider.GetService<MessagingTelemetry>() ?? MessagingTelemetry.Default;
         var opts = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
         _options = opts;
@@ -199,12 +203,14 @@ internal sealed class MessageSender : IMessageSender
         var brokerAddress = transport.BrokerAddress;
         var traceHandle = _TracingBefore(transportMsg, message.Lane, brokerAddress);
 
-        // With no host lifetime to observe (test and non-hosted contexts) the shutdown token can never
-        // fire, so a linked source would only wrap a plain timeout source in extra registration state.
-        using var publishCts = _shutdownToken.CanBeCanceled
-            ? CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken)
-            : new CancellationTokenSource();
-        publishCts.CancelAfter(_options.TransportPublishTimeout);
+        // The publish timeout runs on the back-off clock, so a test steps through a broker that never answers. With no
+        // host lifetime to observe (test and non-hosted contexts) the shutdown token can never fire, so the timeout
+        // source alone bounds the send instead of a linked source wrapping it in extra registration state.
+        using var publishTimeoutCts = new CancellationTokenSource(_options.TransportPublishTimeout, _backoffClock);
+        using var linkedPublishCts = _shutdownToken.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken, publishTimeoutCts.Token)
+            : null;
+        var publishCts = linkedPublishCts ?? publishTimeoutCts;
         OperateResult result;
 
         // Slides the lease forward while the send runs, so a send that outlasts DispatchTimeout keeps its row.
@@ -345,6 +351,7 @@ internal sealed class MessageSender : IMessageSender
             _StorageOf(message).RenewPublishLeaseAsync,
             _retryPolicy,
             _timeProvider,
+            _backoffClock,
             _logger,
             cancellationToken
         );

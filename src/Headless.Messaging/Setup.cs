@@ -96,6 +96,9 @@ public static class SetupMessaging
         MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
         services.AddHeadlessGuidGenerator();
         services.TryAddSingleton(TimeProvider.System);
+        // Failure waits ride out an unresponsive store or broker, so they keep real time even under a faked app clock;
+        // keyed apart from it so a test can step through them without faking every schedule.
+        services.TryAddKeyedSingleton(MessagingOptions.BackoffClockServiceKey, TimeProvider.System);
         // Idempotent: registers the singleton IUnitOfWorkFactory exactly once regardless of registration order
         // with other consumer packages (Headless.EntityFramework, Headless.Jobs).
         services.AddUnitOfWork();

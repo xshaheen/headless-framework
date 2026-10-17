@@ -18,7 +18,9 @@ public sealed class MessageLeaseRenewalTests : TestBase
     private static readonly TimeSpan _Interval = TimeSpan.FromSeconds(10);
 
     private readonly FakeTimeProvider _clock = new();
+    private readonly FakeTimeProvider _backoffClock = new();
     private readonly ConcurrentQueue<Func<bool>> _outcomes = new();
+    private Func<CancellationToken, Task<bool>>? _hungRenewal;
     private int _calls;
 
     [Fact]
@@ -115,6 +117,36 @@ public sealed class MessageLeaseRenewalTests : TestBase
         Volatile.Read(ref _calls).Should().Be(1);
     }
 
+    [Fact]
+    public async Task should_time_out_a_hung_renewal_when_the_backoff_clock_passes_the_interval()
+    {
+        // given: a store call that answers only when its timeout cancels it
+        var renewalStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var renewalTimedOut = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _hungRenewal = async token =>
+        {
+            renewalStarted.TrySetResult();
+            var hung = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            await using var registration = token.Register(() =>
+            {
+                renewalTimedOut.TrySetResult();
+                hung.TrySetCanceled(token);
+            });
+
+            return await hung.Task;
+        };
+        await using var renewal = _Start();
+        _clock.Advance(_Interval);
+        await renewalStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when: the app clock already passed the interval, so only the back-off clock can end the call
+        renewalTimedOut.Task.IsCompleted.Should().BeFalse();
+        _backoffClock.Advance(_Interval);
+
+        // then
+        await renewalTimedOut.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+    }
+
     private void _Then(params Func<bool>[] outcomes)
     {
         foreach (var outcome in outcomes)
@@ -135,14 +167,20 @@ public sealed class MessageLeaseRenewalTests : TestBase
                 Content = "{}",
                 Lane = MessageLane.Bus,
             },
-            (_, _, _) =>
+            (_, _, token) =>
             {
                 Interlocked.Increment(ref _calls);
+                if (_hungRenewal is { } hung)
+                {
+                    return new ValueTask<bool>(hung(token));
+                }
+
                 // Once the scripted outcomes run out, every renewal confirms the lease.
                 return ValueTask.FromResult(!_outcomes.TryDequeue(out var outcome) || outcome());
             },
             policy,
             _clock,
+            _backoffClock,
             NullLogger.Instance,
             AbortToken
         );

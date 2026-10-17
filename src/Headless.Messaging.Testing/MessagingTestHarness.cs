@@ -692,7 +692,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
             }
 
             // The system clock on purpose: this waits for dispatcher threads to make real progress, and a host that
-            // registers a FakeTimeProvider would otherwise never advance the poll.
+            // fakes the app clock or the messaging back-off clock would otherwise never advance the poll.
             await Task.Delay(_ResetPollInterval, TimeProvider.System, cancellationToken).ConfigureAwait(false);
         }
     }
