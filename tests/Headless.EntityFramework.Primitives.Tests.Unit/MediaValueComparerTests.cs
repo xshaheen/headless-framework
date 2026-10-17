@@ -219,7 +219,7 @@ public sealed class MediaValueComparerTests : TestBase
 
     private static IEnumerable<PropertyInfo> _SettableMembers(Type type) =>
         type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(p => p.SetMethod is { IsPublic: true } && p.GetCustomAttribute<JsonIgnoreAttribute>() is null);
+            .Where(p => p.SetMethod is { IsPublic: true } && !Attribute.IsDefined(p, typeof(JsonIgnoreAttribute)));
 
     private static File _CopyWith(File source, PropertyInfo changedProperty, object? changedValue)
     {

@@ -59,11 +59,13 @@ public sealed class ModelBuildTimingTests : TestBase
 
         private readonly string? _table;
 
+#pragma warning disable IDE0290 // False positive: the assignment must stay in a constructor body, the case under test.
         public BodyTableDbContext(DbContextOptions<BodyTableDbContext> options)
             : base(options)
         {
             _table = "rows_from_body";
         }
+#pragma warning restore IDE0290
 
         public override string DefaultSchema => "";
 
