@@ -4,6 +4,7 @@ using Headless.Checks;
 using Headless.Messaging;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests.Simulation;
@@ -94,6 +95,10 @@ public sealed class SimulatedBrokerException(string message) : Exception(message
 /// <see cref="BrokerEventKind.SettlementRefused"/>, so it can never settle the delivery that replaced it.
 /// </para>
 /// <para>
+/// It also carries request/reply: each reply listener gets an address of its own, and a reply to an address nobody
+/// listens on any more is dropped. Replies do not follow <see cref="Disconnect"/>; no fault is scripted for them yet.
+/// </para>
+/// <para>
 /// Register it on a host with <c>setup.UseSimulatedBroker(broker)</c>, or drive it directly through
 /// <see cref="CreateTransport"/> and <see cref="CreateConsumerClient"/>.
 /// </para>
@@ -108,8 +113,13 @@ public sealed class SimulatedBroker
     private readonly Dictionary<(MessageLane Lane, string GroupId), SimulatedGroup> _groups = [];
     private readonly Dictionary<string, int> _nextQueueGroup = new(StringComparer.Ordinal);
     private readonly List<BrokerEvent> _events = [];
+    private readonly HashSet<SimulatedConsumerClient> _listening = [];
+    private readonly List<SimulatedTimedWork> _timedWork = [];
+    private readonly Dictionary<string, SimulatedReplyListener> _replyListeners = new(StringComparer.Ordinal);
     private TaskCompletionSource _changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private TaskCompletionSource _activity = new(TaskCreationOptions.RunContinuationsAsynchronously);
 #pragma warning disable IDE0032 // Read and written under the gate; an auto property would drop the lock.
+    private long _generation;
     private bool _connected = true;
 #pragma warning restore IDE0032
 
@@ -226,6 +236,45 @@ public sealed class SimulatedBroker
                         .Distinct(StringComparer.Ordinal),
                 ]
                 : [];
+        }
+    }
+
+    /// <summary>
+    /// Waits until nothing at the broker can happen before simulated time moves: every listening client has seen the
+    /// broker's latest change and waits for work or for its retry time, no message callback is running, and no
+    /// redelivery or close the clock already released is still pending. Only then can moving the clock not overtake
+    /// work that was already due.
+    /// </summary>
+    /// <remarks>
+    /// It covers the broker and its consumer clients only. A host's own pipeline, such as its dispatcher and store, runs
+    /// outside it, so a host test advances the clock itself.
+    /// </remarks>
+    /// <param name="cancellationToken">Abandons the wait.</param>
+    public async Task WhenQuiescentAsync(CancellationToken cancellationToken = default)
+    {
+        while (true)
+        {
+            Task activity;
+            lock (Gate)
+            {
+                if (_IsQuiescentLocked())
+                {
+                    return;
+                }
+
+                activity = _activity.Task;
+            }
+
+            await activity.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Gets whether a reply listener is open at <paramref name="address"/>.</summary>
+    public bool HasReplyListener(string address)
+    {
+        lock (Gate)
+        {
+            return _replyListeners.ContainsKey(address);
         }
     }
 
@@ -441,6 +490,78 @@ public sealed class SimulatedBroker
 
     internal Task ChangedLocked => _changed.Task;
 
+    /// <summary>Counts every broker change; a client that saw the current value has nothing new to react to.</summary>
+    internal long GenerationLocked => _generation;
+
+    internal void StartListeningLocked(SimulatedConsumerClient client)
+    {
+        _listening.Add(client);
+        PulseActivityLocked();
+    }
+
+    internal void StopListeningLocked(SimulatedConsumerClient client)
+    {
+        _listening.Remove(client);
+        PulseActivityLocked();
+    }
+
+    /// <summary>Registers work the clock releases at <paramref name="at"/>, so quiescence waits for it once it is due.</summary>
+    internal SimulatedTimedWork AddTimedWorkLocked(DateTimeOffset at)
+    {
+        var work = new SimulatedTimedWork(at);
+        _timedWork.Add(work);
+        return work;
+    }
+
+    internal void CompleteTimedWorkLocked(SimulatedTimedWork work)
+    {
+        _timedWork.Remove(work);
+        PulseActivityLocked();
+    }
+
+    /// <summary>Wakes a quiescence waiter to check again, without counting as a broker change.</summary>
+    internal void PulseActivityLocked()
+    {
+        var activity = _activity;
+        _activity = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        activity.TrySetResult();
+    }
+
+    internal void RegisterReplyListener(SimulatedReplyListener listener)
+    {
+        lock (Gate)
+        {
+            _replyListeners.Add(listener.Address, listener);
+        }
+    }
+
+    internal void UnregisterReplyListener(SimulatedReplyListener listener)
+    {
+        lock (Gate)
+        {
+            if (
+                _replyListeners.TryGetValue(listener.Address, out var registered)
+                && ReferenceEquals(registered, listener)
+            )
+            {
+                _replyListeners.Remove(listener.Address);
+            }
+        }
+    }
+
+    /// <summary>Hands a copy of <paramref name="reply"/> to the listener at <paramref name="address"/>, or drops it when none listens.</summary>
+    internal void SendReply(string address, TransportMessage reply)
+    {
+        SimulatedReplyListener? listener;
+        lock (Gate)
+        {
+            _replyListeners.TryGetValue(address, out listener);
+        }
+
+        // The listener queues the reply for its own pump, so the caller's handling never runs on the responder's stack.
+        listener?.Deliver(Copy(reply));
+    }
+
     internal void RecordLocked(BrokerEventKind kind, string? subscription, string? messageId, int deliveryCount)
     {
         _events.Add(new BrokerEvent(kind, subscription, messageId, deliveryCount, Clock.GetUtcNow()));
@@ -467,9 +588,31 @@ public sealed class SimulatedBroker
     internal void SignalLocked()
     {
         // Continuations run asynchronously, so completing the old signal never runs a waiter under the gate.
+        _generation++;
         var changed = _changed;
         _changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         changed.TrySetResult();
+        PulseActivityLocked();
+    }
+
+    private bool _IsQuiescentLocked()
+    {
+        var now = Clock.GetUtcNow();
+
+        if (_timedWork.Exists(work => work.At <= now))
+        {
+            return false;
+        }
+
+        foreach (var client in _listening)
+        {
+            if (!client.IsSettledLocked(_generation))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     internal static string? MessageIdOf(TransportMessage message)
@@ -489,6 +632,12 @@ public sealed class SimulatedBroker
 
 /// <summary>A message waiting in a group for a client to take it.</summary>
 internal sealed record SimulatedPending(TransportMessage Message, int DeliveryCount);
+
+/// <summary>Broker work waiting on the simulation clock, such as a delayed redelivery or a slow close.</summary>
+internal sealed class SimulatedTimedWork(DateTimeOffset at)
+{
+    public DateTimeOffset At { get; } = at;
+}
 
 /// <summary>A destination at the simulated broker: one consumer group on one lane.</summary>
 internal sealed class SimulatedGroup(MessageLane lane, string groupId, string subscription, bool everyInstance)
@@ -607,7 +756,8 @@ public static class SetupSimulatedBroker
                     SimulatedBroker.ProviderName,
                     [MessageLane.Bus, MessageLane.Queue],
                     supportsIndependentLaneTopology: true,
-                    supportsEveryInstance: true
+                    supportsEveryInstance: true,
+                    supportsRequestReply: true
                 )
             );
             services.AddSingleton(broker);
@@ -617,6 +767,10 @@ public static class SetupSimulatedBroker
             services.AddSingleton<ITransport>(sp => sp.GetRequiredService<SimulatedBusTransport>());
             services.AddSingleton(_ => new SimulatedQueueTransport(broker));
             services.AddSingleton<IQueueTransport>(sp => sp.GetRequiredService<SimulatedQueueTransport>());
+            services.AddSingleton<IReplyTransport>(sp => new SimulatedReplyTransport(
+                broker,
+                sp.GetRequiredService<ILogger<SimulatedReplyTransport>>()
+            ));
         }
     }
 }

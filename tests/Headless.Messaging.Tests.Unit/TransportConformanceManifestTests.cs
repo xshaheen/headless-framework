@@ -46,6 +46,7 @@ public sealed class TransportConformanceManifestTests : TestBase
             "Azure Service Bus",
             "InMemory",
             "Redis",
+            "Simulator",
         };
 
         TransportConformanceManifest.Providers.Keys.Should().BeEquivalentTo(expectedProviders);
@@ -54,6 +55,80 @@ public sealed class TransportConformanceManifestTests : TestBase
         {
             profile.Scenarios.Keys.Should().BeEquivalentTo(Enum.GetValues<TransportConformanceScenario>());
         }
+    }
+
+    [Fact]
+    public void should_keep_every_simulator_cell_a_subset_of_real_broker_cells()
+    {
+        var simulator = TransportConformanceManifest.Simulator;
+
+        simulator.IsRealBrokerLeafEnabled.Should().BeFalse("the simulator stands in for real brokers, it is not one");
+        TransportConformanceManifest
+            .GetSimulatorSubsetErrors(simulator, TransportConformanceManifest.Providers.Values)
+            .Should()
+            .BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(TransportConformanceScenario.ConsumerPauseRecovery)]
+    [InlineData(TransportConformanceScenario.BrokerInterruptionRecovery)]
+    [InlineData(TransportConformanceScenario.ConnectionDropRecovery)]
+    [InlineData(TransportConformanceScenario.PublishDuringOutage)]
+    [InlineData(TransportConformanceScenario.StaleSettlement)]
+    [InlineData(TransportConformanceScenario.HandlerFailureRedelivery)]
+    [InlineData(TransportConformanceScenario.BoundedGracefulShutdown)]
+    public void should_support_every_fault_scenario_on_the_simulator(TransportConformanceScenario scenario)
+    {
+        TransportConformanceManifest.Simulator.Scenarios[scenario].Status.Should().Be(ConformanceStatus.Supported);
+    }
+
+    [Fact]
+    public void should_reject_a_simulator_cell_that_no_real_broker_supports()
+    {
+        // given: only a profile without a real broker leaf supports stale settlement
+        var realBroker = TransportConformanceProfile
+            .CreateDisabled("Real")
+            .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
+            .EnableRealBrokerLeaf();
+        var inProcess = TransportConformanceProfile
+            .CreateDisabled("InProcess")
+            .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported);
+        var simulator = TransportConformanceProfile
+            .CreateDisabled("Simulator")
+            .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
+            .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported);
+
+        // when
+        var errors = TransportConformanceManifest.GetSimulatorSubsetErrors(
+            simulator,
+            [realBroker, inProcess, simulator]
+        );
+
+        // then
+        errors.Should().ContainSingle().Which.Should().Contain(nameof(TransportConformanceScenario.StaleSettlement));
+    }
+
+    [Fact]
+    public void should_allow_a_simulator_cell_that_one_real_broker_leaves_unsupported_and_others_support()
+    {
+        // given: RabbitMQ fails stale settlement (#1267) while NATS and Redis prove it
+        var providers = TransportConformanceManifest.Providers;
+        providers["RabbitMQ"]
+            .Scenarios[TransportConformanceScenario.StaleSettlement]
+            .Status.Should()
+            .Be(ConformanceStatus.Unsupported);
+        var simulator = TransportConformanceProfile
+            .CreateDisabled("Simulator")
+            .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported);
+
+        // when
+        var errors = TransportConformanceManifest.GetSimulatorSubsetErrors(
+            simulator,
+            [providers["RabbitMQ"], providers["NATS"], providers["Redis"], simulator]
+        );
+
+        // then
+        errors.Should().BeEmpty();
     }
 
     [Fact]

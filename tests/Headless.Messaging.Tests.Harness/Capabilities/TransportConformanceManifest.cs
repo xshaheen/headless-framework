@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Tests.Simulation;
 
 namespace Tests.Capabilities;
 
@@ -653,11 +654,52 @@ public static class TransportConformanceManifest
                     ConformanceSupport.NotApplicable("Redis supports request/reply, so startup accepts it.")
                 )
                 .EnableRealBrokerLeaf(),
+            [SimulatedBroker.ProviderName] = _CreateSimulatorProfile(),
         }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Gets the in-process simulator's profile. It is not a real broker: its cells stand in for real-broker evidence in
+    /// the fast tier, so each one it supports must also be supported by a real broker leaf.
+    /// </summary>
+    public static TransportConformanceProfile Simulator => Providers[SimulatedBroker.ProviderName];
 
     public static IReadOnlyList<string> GetValidationErrors()
     {
-        return Providers.Values.SelectMany(GetValidationErrors).ToList();
+        return Providers
+            .Values.SelectMany(GetValidationErrors)
+            .Concat(GetSimulatorSubsetErrors(Simulator, Providers.Values))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Returns an error for each scenario <paramref name="simulator"/> supports that no real broker leaf among
+    /// <paramref name="providers"/> supports. A fast-tier pass the real brokers cannot back would say the transports keep
+    /// a guarantee that only the simulator keeps.
+    /// </summary>
+    public static IReadOnlyList<string> GetSimulatorSubsetErrors(
+        TransportConformanceProfile simulator,
+        IEnumerable<TransportConformanceProfile> providers
+    )
+    {
+        var realBrokers = providers
+            .Where(profile => profile.IsRealBrokerLeafEnabled && !ReferenceEquals(profile, simulator))
+            .ToList();
+
+        return simulator
+            .Scenarios.Where(cell => cell.Value.Status == ConformanceStatus.Supported)
+            .Select(cell => cell.Key)
+            .Where(scenario =>
+                !realBrokers.Exists(profile =>
+                    profile.Scenarios.TryGetValue(scenario, out var support)
+                    && support.Status == ConformanceStatus.Supported
+                )
+            )
+            .Order()
+            .Select(scenario =>
+                $"{simulator.Provider}: {scenario} is Supported on the simulator but on no real broker leaf, so its "
+                + "evidence would stand alone."
+            )
+            .ToList();
     }
 
     public static IReadOnlyList<string> GetValidationErrors(TransportConformanceProfile profile)
@@ -729,6 +771,76 @@ public static class TransportConformanceManifest
         }
 
         return errors;
+    }
+
+    private static TransportConformanceProfile _CreateSimulatorProfile()
+    {
+        TransportConformanceScenario[] supported =
+        [
+            TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+            TransportConformanceScenario.QueueRoundTrip,
+            TransportConformanceScenario.BusRoundTrip,
+            TransportConformanceScenario.HeaderRoundTrip,
+            TransportConformanceScenario.EmptyBodyDispatch,
+            TransportConformanceScenario.CommitSettlement,
+            TransportConformanceScenario.RejectRedelivery,
+            TransportConformanceScenario.ConsumerPauseRecovery,
+            TransportConformanceScenario.BrokerInterruptionRecovery,
+            TransportConformanceScenario.ConnectionDropRecovery,
+            TransportConformanceScenario.PublishDuringOutage,
+            TransportConformanceScenario.StaleSettlement,
+            TransportConformanceScenario.HandlerFailureRedelivery,
+            TransportConformanceScenario.BoundedGracefulShutdown,
+            TransportConformanceScenario.BusConsumerIdentityFanOut,
+            TransportConformanceScenario.BusReplicaCompetition,
+            TransportConformanceScenario.QueueOwnership,
+            TransportConformanceScenario.SameNameLaneIsolation,
+        ];
+
+        var profile = TransportConformanceProfile
+            .CreateDisabled(SimulatedBroker.ProviderName)
+            .WithRuntimeCapabilities(
+                SimulatedBroker.ProviderName,
+                supportsBus: true,
+                supportsQueue: true,
+                supportsIndependentLaneTopology: true
+            )
+            // In-process, so a stray delivery shows within microseconds; a short window keeps the fast tier fast.
+            .WithMalformedEnvelopeBound(
+                "simulated delivery handed over without a transport envelope",
+                1,
+                TimeSpan.FromMilliseconds(250)
+            );
+
+        foreach (var scenario in supported)
+        {
+            profile = profile.WithScenario(scenario, ConformanceSupport.Supported);
+        }
+
+        return profile
+            .WithRequestReplyScenarios(ConformanceSupport.Supported)
+            .WithScenario(
+                TransportConformanceScenario.RequestReplyStartupRejection,
+                ConformanceSupport.NotApplicable("The simulator supports request/reply, so startup accepts it.")
+            )
+            .WithScenario(
+                TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                ConformanceSupport.NotApplicable(
+                    "The simulator accepts both lanes and every subscription kind, so startup has nothing to reject."
+                )
+            )
+            .WithScenario(
+                TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
+                ConformanceSupport.NotApplicable(
+                    "The simulator hands TransportMessage instances over directly and has no transport envelope to parse."
+                )
+            )
+            .WithScenario(
+                TransportConformanceScenario.RawPayloadConsumption,
+                ConformanceSupport.NotApplicable(
+                    "The simulator carries only messages Headless publishes; no foreign producer can reach it."
+                )
+            );
     }
 
     private static void _ValidateLaneRoundTrip(

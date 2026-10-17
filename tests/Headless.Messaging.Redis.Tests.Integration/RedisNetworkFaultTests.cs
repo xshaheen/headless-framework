@@ -11,7 +11,7 @@ public sealed class RedisNetworkFaultTests(RedisMessagingFixture fixture) : Netw
 {
     protected override string ProviderName => "Redis";
 
-    protected override async ValueTask<ProxiedTransportSession> CreateProxiedSessionAsync(
+    protected override async ValueTask<NetworkFaultSession> CreateNetworkFaultSessionAsync(
         CancellationToken cancellationToken
     )
     {
@@ -37,7 +37,7 @@ public sealed class RedisNetworkFaultTests(RedisMessagingFixture fixture) : Netw
                     options.Configuration = ConfigurationOptions.Parse($"{proxy.Host}:{proxy.Port},abortConnect=false")
             );
 
-            return new ProxiedTransportSession(session, proxy, toxiproxy.DisposeAsync);
+            return new NetworkFaultSession(session, proxy, toxiproxy.DisposeAsync);
         }
         catch
         {

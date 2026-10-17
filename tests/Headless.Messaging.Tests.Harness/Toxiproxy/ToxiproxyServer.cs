@@ -105,7 +105,7 @@ public sealed class ToxiproxyServer : IAsyncDisposable
 
 /// <summary>One proxied route. Disabling it closes every open connection and refuses new ones.</summary>
 [PublicAPI]
-public sealed class ToxiproxyProxy(HttpClient http, string name, string host, int port)
+public sealed class ToxiproxyProxy(HttpClient http, string name, string host, int port) : INetworkLink
 {
     /// <summary>Gets the address clients connect to instead of the broker.</summary>
     public string Host { get; } = host;
@@ -118,6 +118,10 @@ public sealed class ToxiproxyProxy(HttpClient http, string name, string host, in
 
     /// <summary>Accepts connections again.</summary>
     public Task EnableAsync(CancellationToken cancellationToken = default) => _SetEnabledAsync(true, cancellationToken);
+
+    Task INetworkLink.CutAsync(CancellationToken cancellationToken) => DisableAsync(cancellationToken);
+
+    Task INetworkLink.RestoreAsync(CancellationToken cancellationToken) => EnableAsync(cancellationToken);
 
     /// <summary>
     /// Adds a toxic, for example <c>latency</c> with <c>latency</c> and <c>jitter</c> attributes, <c>timeout</c> with

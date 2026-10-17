@@ -2,7 +2,6 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Threading.Channels;
 using Headless.Messaging;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -18,6 +17,11 @@ namespace Tests;
 public sealed record TransportConformanceDelivery(TransportMessage Message, object? SettlementValue);
 
 /// <summary>Owns one isolated producer/consumer pair used by broker-backed conformance tests.</summary>
+/// <remarks>
+/// Every receive timeout, no-redelivery window, and publish retry pause runs on <see cref="TimeProvider"/>: the system
+/// clock for a real broker, or a simulator's clock, which moves only while the test waits, so the same test body runs
+/// against both.
+/// </remarks>
 [PublicAPI]
 public sealed class TransportConsumerConformanceSession(
     string destination,
@@ -26,15 +30,12 @@ public sealed class TransportConsumerConformanceSession(
     TimeSpan noRedeliveryWindow,
     Func<ValueTask>? disposeProviderResources = null,
     TimeSpan? listeningTimeout = null,
-    Func<CancellationToken, ValueTask<TransportConsumerConformanceSession>>? createReplacementSession = null
+    Func<CancellationToken, ValueTask<TransportConsumerConformanceSession>>? createReplacementSession = null,
+    TimeProvider? timeProvider = null
 ) : IAsyncDisposable
 {
-    private readonly Channel<TransportConformanceDelivery> _deliveries =
-        Channel.CreateUnbounded<TransportConformanceDelivery>(
-            new UnboundedChannelOptions { SingleWriter = false, SingleReader = false }
-        );
-
     private readonly ConcurrentQueue<LogMessageEventArgs> _logs = new();
+    private readonly DeliveryInbox _inbox = new(timeProvider ?? TimeProvider.System);
 
     private readonly TimeSpan _listeningTimeout = listeningTimeout ?? TimeSpan.FromSeconds(2);
     private CancellationTokenSource? _listeningCts;
@@ -45,6 +46,9 @@ public sealed class TransportConsumerConformanceSession(
     public string Destination { get; } = destination;
 
     public TimeSpan NoRedeliveryWindow { get; } = noRedeliveryWindow;
+
+    /// <summary>Gets the clock the session's timeouts and windows run on; the system clock unless the session was given one.</summary>
+    public TimeProvider TimeProvider { get; } = timeProvider ?? TimeProvider.System;
 
     public IConsumerClient Consumer { get; } = consumer;
 
@@ -59,11 +63,12 @@ public sealed class TransportConsumerConformanceSession(
             throw new InvalidOperationException("The conformance session has already started.");
         }
 
+        var inbox = _inbox;
         Consumer.AttachCallbacks(
             onMessage: async (message, settlementValue) =>
             {
                 var delivery = new TransportConformanceDelivery(message, settlementValue);
-                await _deliveries.Writer.WriteAsync(delivery, CancellationToken.None).ConfigureAwait(false);
+                inbox.Add(delivery);
 
                 if (onDelivery is not null)
                 {
@@ -102,7 +107,7 @@ public sealed class TransportConsumerConformanceSession(
         CancellationToken cancellationToken = default
     )
     {
-        using var cts = window.ToCancellationTokenSource(cancellationToken);
+        using var cts = new SessionTimeout(TimeProvider, window, cancellationToken);
         Exception? lastFailure = null;
 
         while (!cts.IsCancellationRequested)
@@ -126,7 +131,7 @@ public sealed class TransportConsumerConformanceSession(
 
             try
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(500), cts.Token).ConfigureAwait(false);
+                await TimeProvider.Delay(TimeSpan.FromMilliseconds(500), cts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
@@ -152,36 +157,21 @@ public sealed class TransportConsumerConformanceSession(
         CancellationToken cancellationToken = default
     )
     {
-        using var cts = timeout.ToCancellationTokenSource(cancellationToken);
-        try
+        var delivery = await _inbox.TakeAsync(timeout, cancellationToken).ConfigureAwait(false);
+        if (delivery is not null)
         {
-            return await _deliveries.Reader.ReadAsync(cts.Token).ConfigureAwait(false);
+            return delivery;
         }
-        catch (OperationCanceledException ex)
-            when (cts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-        {
-            var diagnostics = string.Join(Environment.NewLine, _logs.Select(log => $"{log.LogType}: {log.Reason}"));
-            throw new TimeoutException(
-                $"No broker delivery arrived within {timeout}. Consumer diagnostics:{Environment.NewLine}{diagnostics}",
-                ex
-            );
-        }
+
+        var diagnostics = string.Join(Environment.NewLine, _logs.Select(log => $"{log.LogType}: {log.Reason}"));
+        throw new TimeoutException(
+            $"No broker delivery arrived within {timeout}. Consumer diagnostics:{Environment.NewLine}{diagnostics}"
+        );
     }
 
     public async Task<bool> RemainsEmptyAsync(TimeSpan window, CancellationToken cancellationToken = default)
     {
-        using var cts = window.ToCancellationTokenSource(cancellationToken);
-
-        try
-        {
-            _ = await _deliveries.Reader.ReadAsync(cts.Token).ConfigureAwait(false);
-            return false;
-        }
-        catch (OperationCanceledException)
-            when (cts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-        {
-            return true;
-        }
+        return await _inbox.TakeAsync(window, cancellationToken).ConfigureAwait(false) is null;
     }
 
     public async Task StopAsync(TimeSpan timeout)
@@ -262,6 +252,190 @@ public sealed class TransportConsumerConformanceSession(
                         _listeningCts?.Dispose();
                     }
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Cancels when a timeout on the session clock runs out or the caller cancels. A zero timeout is already over and a
+    /// negative one never runs out, as with <c>TimeSpan.ToCancellationTokenSource</c>.
+    /// </summary>
+    private sealed class SessionTimeout : IDisposable
+    {
+        private readonly CancellationTokenSource _timeout;
+        private readonly CancellationTokenSource _linked;
+
+        public SessionTimeout(TimeProvider clock, TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            _timeout =
+                timeout > TimeSpan.Zero ? clock.CreateCancellationTokenSource(timeout) : new CancellationTokenSource();
+            if (timeout == TimeSpan.Zero)
+            {
+                _timeout.Cancel();
+            }
+
+            _linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _timeout.Token);
+        }
+
+        public CancellationToken Token => _linked.Token;
+
+        public bool IsCancellationRequested => _linked.IsCancellationRequested;
+
+        public void Dispose()
+        {
+            _linked.Dispose();
+            _timeout.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Holds deliveries until the test takes them. A delivery that arrives while the test waits ends that wait on the
+    /// delivering thread, before the provider's callback returns, so the wait's timeout is gone by the time a simulated
+    /// clock could see the consumer idle and fire it.
+    /// </summary>
+    private sealed class DeliveryInbox(TimeProvider clock)
+    {
+        private readonly Lock _gate = new();
+        private readonly Queue<TransportConformanceDelivery> _queued = new();
+        private readonly List<Waiter> _waiters = [];
+
+        public void Add(TransportConformanceDelivery delivery)
+        {
+            Waiter waiter;
+            lock (_gate)
+            {
+                if (_waiters.Count == 0)
+                {
+                    _queued.Enqueue(delivery);
+                    return;
+                }
+
+                waiter = _waiters[0];
+                _waiters.RemoveAt(0);
+            }
+
+            waiter.End(delivery);
+        }
+
+        /// <summary>Takes the next delivery, or <see langword="null"/> when none arrives within <paramref name="timeout"/>.</summary>
+        /// <param name="timeout">How long to wait; zero does not wait, and a negative value waits until canceled.</param>
+        /// <param name="cancellationToken">Abandons the wait.</param>
+        public Task<TransportConformanceDelivery?> TakeAsync(TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            Waiter waiter;
+            lock (_gate)
+            {
+                if (_queued.TryDequeue(out var queued))
+                {
+                    return Task.FromResult<TransportConformanceDelivery?>(queued);
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                if (timeout == TimeSpan.Zero)
+                {
+                    return Task.FromResult<TransportConformanceDelivery?>(null);
+                }
+
+                waiter = new Waiter(this);
+                _waiters.Add(waiter);
+            }
+
+            waiter.Arm(clock, timeout, cancellationToken);
+            return waiter.Task;
+        }
+
+        private bool _TryWithdraw(Waiter waiter)
+        {
+            lock (_gate)
+            {
+                return _waiters.Remove(waiter);
+            }
+        }
+
+        private sealed class Waiter(DeliveryInbox inbox)
+        {
+            private readonly TaskCompletionSource<TransportConformanceDelivery?> _result = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            private readonly Lock _gate = new();
+            private ITimer? _timer;
+            private CancellationTokenRegistration _cancellation;
+            private bool _ended;
+
+            public Task<TransportConformanceDelivery?> Task => _result.Task;
+
+            public void Arm(TimeProvider clock, TimeSpan timeout, CancellationToken cancellationToken)
+            {
+                // Either may end the wait before Arm returns: a short timer can fire inside CreateTimer, and a canceled
+                // token runs its callback inside Register. _Release then finds nothing to release, so it is done here.
+                var timer =
+                    timeout > TimeSpan.Zero
+                        ? clock.CreateTimer(
+                            static self => ((Waiter)self!)._OnTimeout(),
+                            this,
+                            timeout,
+                            Timeout.InfiniteTimeSpan
+                        )
+                        : null;
+                var cancellation = cancellationToken.Register(
+                    static (self, token) => ((Waiter)self!)._OnCanceled(token),
+                    this
+                );
+
+                lock (_gate)
+                {
+                    if (!_ended)
+                    {
+                        _timer = timer;
+                        _cancellation = cancellation;
+                        return;
+                    }
+                }
+
+                timer?.Dispose();
+                cancellation.Dispose();
+            }
+
+            public void End(TransportConformanceDelivery delivery)
+            {
+                _Release();
+                _result.TrySetResult(delivery);
+            }
+
+            private void _OnTimeout()
+            {
+                if (inbox._TryWithdraw(this))
+                {
+                    _Release();
+                    _result.TrySetResult(null);
+                }
+            }
+
+            private void _OnCanceled(CancellationToken cancellationToken)
+            {
+                if (inbox._TryWithdraw(this))
+                {
+                    _Release();
+                    _result.TrySetCanceled(cancellationToken);
+                }
+            }
+
+            private void _Release()
+            {
+                ITimer? timer;
+                CancellationTokenRegistration cancellation;
+                lock (_gate)
+                {
+                    _ended = true;
+                    timer = _timer;
+                    cancellation = _cancellation;
+                    _timer = null;
+                    _cancellation = default;
+                }
+
+                timer?.Dispose();
+                cancellation.Dispose();
             }
         }
     }

@@ -9,7 +9,7 @@ public sealed class NatsNetworkFaultTests(NatsFixture fixture) : NetworkFaultTes
 {
     protected override string ProviderName => "NATS";
 
-    protected override async ValueTask<ProxiedTransportSession> CreateProxiedSessionAsync(
+    protected override async ValueTask<NetworkFaultSession> CreateNetworkFaultSessionAsync(
         CancellationToken cancellationToken
     )
     {
@@ -30,7 +30,7 @@ public sealed class NatsNetworkFaultTests(NatsFixture fixture) : NetworkFaultTes
                 cancellationToken
             );
 
-            return new ProxiedTransportSession(session, proxy, toxiproxy.DisposeAsync);
+            return new NetworkFaultSession(session, proxy, toxiproxy.DisposeAsync);
         }
         catch
         {
