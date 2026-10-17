@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Tests.Capabilities;
+using Tests.Guarantees;
 using Tests.Toxiproxy;
 
 namespace Tests;
@@ -77,6 +78,7 @@ public abstract class NetworkFaultTestsBase : TransportConsumerConformanceSessio
     /// Every open connection is cut once and nothing publishes while the client reconnects; it must then consume and
     /// publish again.
     /// </summary>
+    [Guarantee("MSG-CONN-02")]
     public virtual async Task should_resume_delivery_once_after_the_connection_is_dropped()
     {
         RequireSupport(TransportConformanceScenario.ConnectionDropRecovery);
@@ -104,6 +106,7 @@ public abstract class NetworkFaultTestsBase : TransportConsumerConformanceSessio
     /// Publishes keep failing for several reconnect attempts. They may fail, but they must not take the consumer
     /// down with them: once the network is back, the same consumer receives without being rebuilt.
     /// </summary>
+    [Guarantee("MSG-CONN-02")]
     public virtual async Task should_keep_consuming_after_publishes_during_an_outage()
     {
         RequireSupport(TransportConformanceScenario.PublishDuringOutage);

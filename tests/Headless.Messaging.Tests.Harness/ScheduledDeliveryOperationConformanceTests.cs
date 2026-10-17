@@ -6,6 +6,7 @@ using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Tests.Guarantees;
 
 namespace Tests;
 
@@ -410,6 +411,7 @@ public abstract class ScheduledDeliveryOperationConformanceTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-DASH-02")]
     public async Task should_allow_exactly_one_action_when_concurrent_revoke_and_dispatch_now_race()
     {
         await using var provider = _CreateProvider();

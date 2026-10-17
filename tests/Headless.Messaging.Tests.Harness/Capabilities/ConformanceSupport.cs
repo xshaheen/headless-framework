@@ -39,7 +39,7 @@ public sealed record ConformanceSupport(ConformanceStatus Status, string? Ration
             errors.Add($"{scenario} {Status} cells require a non-empty rationale.");
         }
 
-        if (Status == ConformanceStatus.Unsupported && !_IsValidIssueUrl(IssueUrl))
+        if (Status == ConformanceStatus.Unsupported && !IsValidIssueUrl(IssueUrl))
         {
             errors.Add($"{scenario} Unsupported cells require an absolute HTTP(S) issue URL.");
         }
@@ -47,7 +47,7 @@ public sealed record ConformanceSupport(ConformanceStatus Status, string? Ration
         return errors;
     }
 
-    private static bool _IsValidIssueUrl(string? value)
+    internal static bool IsValidIssueUrl(string? value)
     {
         return Uri.TryCreate(value, UriKind.Absolute, out var uri)
             && (

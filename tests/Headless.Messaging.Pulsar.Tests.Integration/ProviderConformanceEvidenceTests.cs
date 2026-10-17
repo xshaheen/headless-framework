@@ -2,6 +2,7 @@
 
 using Headless.Testing.Tests;
 using Tests.Capabilities;
+using Tests.Guarantees;
 using Tests.RequestReply;
 
 namespace Tests;
@@ -9,6 +10,10 @@ namespace Tests;
 [Collection("Pulsar")]
 public sealed class ProviderConformanceEvidenceTests(PulsarFixture fixture) : TestBase
 {
+    [Fact]
+    public void should_run_every_guarantee_this_provider_inherits() =>
+        GuaranteeBindings.GetLeafErrors(typeof(ProviderConformanceEvidenceTests).Assembly).Should().BeEmpty();
+
     [Fact]
     public Task should_prove_routing_affinity_mapping_or_rejection() =>
         TransportRoutingAffinityConformance.AssertAsync(new PulsarProviderConformanceDriver(fixture), AbortToken);

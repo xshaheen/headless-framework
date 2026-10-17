@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Testing.Tests;
+using Tests.Guarantees;
 
 namespace Tests.RequestReply;
 
@@ -23,6 +24,7 @@ public abstract class TransportRequestReplyConformanceTestsBase : TestBase
         await TransportRequestReplyConformance.AssertReplyHeadersRoundTripAsync(await CreateDriverAsync(), AbortToken);
 
     [Fact]
+    [Guarantee("MSG-RR-01")]
     public async Task should_give_each_caller_only_its_own_replies() =>
         await TransportRequestReplyConformance.AssertCallersReceiveOnlyTheirOwnRepliesAsync(
             await CreateDriverAsync(),
@@ -30,6 +32,7 @@ public abstract class TransportRequestReplyConformanceTestsBase : TestBase
         );
 
     [Fact]
+    [Guarantee("MSG-RR-04")]
     public async Task should_fault_a_request_whose_responder_fails() =>
         await TransportRequestReplyConformance.AssertResponderFailureFaultsTheCallAsync(
             await CreateDriverAsync(),
@@ -51,10 +54,12 @@ public abstract class TransportRequestReplyConformanceTestsBase : TestBase
         );
 
     [Fact]
+    [Guarantee("MSG-RR-04")]
     public async Task should_drop_a_reply_that_arrives_after_its_call_timed_out() =>
         await TransportRequestReplyConformance.AssertLateReplyIsDroppedAsync(await CreateDriverAsync(), AbortToken);
 
     [Fact]
+    [Guarantee("MSG-RR-02")]
     public async Task should_never_write_a_reply_to_a_foreign_reply_address() =>
         await TransportRequestReplyConformance.AssertForeignReplyAddressIsNeverWrittenAsync(
             await CreateDriverAsync(),
@@ -62,6 +67,7 @@ public abstract class TransportRequestReplyConformanceTestsBase : TestBase
         );
 
     [Fact]
+    [Guarantee("MSG-RR-03")]
     public async Task should_never_deliver_a_reply_to_a_restarted_caller() =>
         await TransportRequestReplyConformance.AssertRestartedCallerNeverReceivesOldRepliesAsync(
             await CreateDriverAsync(),

@@ -8,6 +8,7 @@ using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Capabilities;
+using Tests.Guarantees;
 using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
@@ -371,6 +372,7 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
         await session.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
     }
 
+    [Guarantee("MSG-SETTLE-03")]
     public virtual async Task should_commit_real_delivery_and_prevent_redelivery()
     {
         RequireSupport(TransportConformanceScenario.CommitSettlement);
@@ -411,6 +413,7 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
         await replacement.Consumer.CommitAsync(probeDelivery.SettlementValue, AbortToken);
     }
 
+    [Guarantee("MSG-SETTLE-03")]
     public virtual async Task should_reject_real_delivery_and_observe_redelivery()
     {
         RequireSupport(TransportConformanceScenario.RejectRedelivery);
@@ -438,6 +441,7 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
     /// A settlement value that was already used must not settle anything else. Brokers that settle by a running
     /// delivery tag or offset can otherwise acknowledge a different in-flight delivery when the stale value is replayed.
     /// </summary>
+    [Guarantee("MSG-SETTLE-04")]
     public virtual async Task should_not_settle_another_delivery_when_a_settled_value_is_used_again()
     {
         RequireSupport(TransportConformanceScenario.StaleSettlement);
@@ -481,6 +485,7 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
     /// A callback that throws is how a dispatch failure reaches the client. The delivery must stay available and the
     /// listener must keep consuming; a lost delivery or a dead receive loop shows only as silence.
     /// </summary>
+    [Guarantee("MSG-SETTLE-05")]
     public virtual async Task should_keep_the_delivery_and_the_listener_when_the_callback_throws()
     {
         RequireSupport(TransportConformanceScenario.HandlerFailureRedelivery);
@@ -537,6 +542,7 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
         secondStayedEmpty.Should().BeTrue("providers must isolate independently provisioned destinations");
     }
 
+    [Guarantee("MSG-SHUT-03")]
     public virtual async Task should_shutdown_idle_consumer_within_bound()
     {
         RequireSupport(TransportConformanceScenario.BoundedGracefulShutdown);
@@ -550,6 +556,7 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
         stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
     }
 
+    [Guarantee("MSG-SHUT-03")]
     public virtual async Task should_bound_shutdown_while_handler_is_active()
     {
         RequireSupport(TransportConformanceScenario.BoundedGracefulShutdown);

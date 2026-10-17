@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Tests.Guarantees;
 
 namespace Tests;
 
@@ -30,6 +31,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
     [InlineData(FailurePoint.AfterCommit)]
     [InlineData(FailurePoint.Rollback)]
     [InlineData(FailurePoint.Disposal)]
+    [Guarantee("MSG-CONSUME-08")]
     public async Task should_retry_only_before_handler_entry_and_recover_with_a_new_fence(FailurePoint failurePoint)
     {
         var fault = new FaultState(failurePoint);
@@ -210,6 +212,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-CONSUME-08")]
     public async Task should_report_success_when_the_drain_faults_after_a_durable_commit()
     {
         // A post-commit drain fault (an OnCompleted callback throwing once the unit is Completed) must not turn a
