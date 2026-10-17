@@ -7,6 +7,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using Tests.Guarantees;
 
 #pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests.CircuitBreaker;
@@ -93,6 +94,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-CB-01")]
     public async Task should_open_after_reaching_failure_threshold()
     {
         // given
@@ -145,6 +147,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-CB-01")]
     public async Task should_transition_from_open_to_halfopen_after_timer()
     {
         // given
@@ -227,6 +230,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-CB-01")]
     public async Task should_allow_only_one_halfopen_probe_at_a_time()
     {
         // given
@@ -520,6 +524,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-CB-01")]
     public async Task should_close_on_halfopen_success()
     {
         // given
@@ -548,6 +553,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-CB-01")]
     public async Task should_reopen_on_halfopen_transient_failure()
     {
         // given
@@ -656,6 +662,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-CB-02")]
     public async Task should_ignore_stale_transient_failure_when_halfopen_and_close_on_probe_success()
     {
         // given
@@ -677,6 +684,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-CB-02")]
     public async Task should_ignore_stale_non_transient_failure_when_halfopen_and_reopen_on_probe_transient_failure()
     {
         // given
@@ -695,6 +703,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-CB-02")]
     public async Task should_ignore_stale_success_when_halfopen()
     {
         // given

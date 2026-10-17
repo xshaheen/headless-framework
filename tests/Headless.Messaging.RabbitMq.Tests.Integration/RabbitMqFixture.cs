@@ -218,7 +218,57 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         );
     }
 
-    private async ValueTask<TransportConsumerConformanceSession> _CreateConformanceSessionAsync(
+    /// <summary>
+    /// Opens a queue session on the RabbitMQ at <paramref name="hostName"/>:<paramref name="port"/>, for a test that runs
+    /// its own broker rather than the collection's.
+    /// </summary>
+    public static ValueTask<TransportConsumerConformanceSession> CreateConformanceSessionAsync(
+        string hostName,
+        int port,
+        CancellationToken cancellationToken
+    )
+    {
+        return _CreateConformanceSessionAsync(
+            hostName,
+            port,
+            MessageLane.Queue,
+            destination: null,
+            group: null,
+            exchangeName: null,
+            createReplacement: false,
+            failEnvelopeBuild: false,
+            cancellationToken
+        );
+    }
+
+    private ValueTask<TransportConsumerConformanceSession> _CreateConformanceSessionAsync(
+        MessageLane lane,
+        string? destination,
+        string? group,
+        string? exchangeName,
+        bool createReplacement,
+        bool failEnvelopeBuild,
+        CancellationToken cancellationToken,
+        ConsumerClientRequest? request = null
+    )
+    {
+        return _CreateConformanceSessionAsync(
+            HostName,
+            Port,
+            lane,
+            destination,
+            group,
+            exchangeName,
+            createReplacement,
+            failEnvelopeBuild,
+            cancellationToken,
+            request
+        );
+    }
+
+    private static async ValueTask<TransportConsumerConformanceSession> _CreateConformanceSessionAsync(
+        string hostName,
+        int port,
         MessageLane lane,
         string? destination,
         string? group,
@@ -236,10 +286,10 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         var rabbitOptions = Options.Create(
             new RabbitMqMessagingOptions
             {
-                HostName = HostName,
-                Port = Port,
-                UserName = UserName,
-                Password = Password,
+                HostName = hostName,
+                Port = port,
+                UserName = RabbitMqBuilder.DefaultUsername,
+                Password = RabbitMqBuilder.DefaultPassword,
                 ExchangeName = exchangeName ?? $"conf-{Guid.NewGuid():N}",
             }
         );
@@ -284,6 +334,8 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
                 createReplacementSession: createReplacement
                     ? replacementToken =>
                         _CreateConformanceSessionAsync(
+                            hostName,
+                            port,
                             lane,
                             destination,
                             group,

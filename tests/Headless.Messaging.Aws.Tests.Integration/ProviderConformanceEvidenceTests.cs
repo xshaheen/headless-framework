@@ -2,6 +2,7 @@
 
 using Headless.Testing.Tests;
 using Tests.Capabilities;
+using Tests.Guarantees;
 using Tests.RequestReply;
 
 namespace Tests;
@@ -9,6 +10,10 @@ namespace Tests;
 [Collection<LocalStackTestFixture>]
 public sealed class ProviderConformanceEvidenceTests(LocalStackTestFixture fixture) : TestBase
 {
+    [Fact]
+    public void should_run_every_guarantee_this_provider_inherits() =>
+        GuaranteeBindings.GetLeafErrors(typeof(ProviderConformanceEvidenceTests).Assembly).Should().BeEmpty();
+
     [Fact]
     public Task should_prove_routing_affinity_mapping_or_rejection() =>
         TransportRoutingAffinityConformance.AssertAsync(new AwsProviderConformanceDriver(fixture), AbortToken);
@@ -59,6 +64,23 @@ public sealed class ProviderConformanceEvidenceTests(LocalStackTestFixture fixtu
             _Bind(
                 TransportConformanceScenario.RejectRedelivery,
                 nameof(AmazonSqsConsumerClientConformanceTests.should_reject_real_delivery_and_observe_redelivery)
+            ),
+            new(
+                TransportConformanceScenario.BrokerInterruptionRecovery,
+                typeof(AmazonSqsBrokerFaultTests),
+                nameof(AmazonSqsBrokerFaultTests.should_resume_delivery_once_after_broker_restart)
+            ),
+            _Bind(
+                TransportConformanceScenario.StaleSettlement,
+                nameof(
+                    AmazonSqsConsumerClientConformanceTests.should_not_settle_another_delivery_when_a_settled_value_is_used_again
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.HandlerFailureRedelivery,
+                nameof(
+                    AmazonSqsConsumerClientConformanceTests.should_keep_the_delivery_and_the_listener_when_the_callback_throws
+                )
             ),
             _Bind(
                 TransportConformanceScenario.BoundedGracefulShutdown,

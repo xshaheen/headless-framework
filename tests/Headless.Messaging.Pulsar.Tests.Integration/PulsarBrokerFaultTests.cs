@@ -4,7 +4,6 @@ using System.Diagnostics;
 using Headless.Messaging;
 using Headless.Testing.Testcontainers;
 using Headless.Testing.Tests;
-using Tests.Capabilities;
 
 namespace Tests;
 
@@ -20,6 +19,43 @@ public sealed class PulsarBrokerFaultTests(PulsarFixture fixture) : BrokerFaultT
         return fixture.CreateQueueSessionAsync(cancellationToken);
     }
 
+    protected override async ValueTask<InterruptibleTransportSession> CreateInterruptibleSessionAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        // A broker of its own on fixed host ports: a restart must not disturb the collection's broker, and the session
+        // must find the restarted broker at the address it already holds.
+#pragma warning disable CA2000 // Ownership moves to the returned session, or the catch disposes it.
+        var broker = new FixedPortPulsarFixture();
+#pragma warning restore CA2000
+
+        try
+        {
+            await broker.StartAsync();
+            var session = await PulsarFixture.CreateSessionAsync(
+                broker.ConnectionString,
+                MessageLane.Queue,
+                cancellationToken,
+                createReplacement: false
+            );
+
+            return new InterruptibleTransportSession(
+                session,
+                async token =>
+                {
+                    await broker.Container.StopAsync(token);
+                    await broker.Container.StartAsync(token);
+                },
+                () => ((IAsyncDisposable)broker).DisposeAsync()
+            );
+        }
+        catch
+        {
+            await ((IAsyncDisposable)broker).DisposeAsync();
+            throw;
+        }
+    }
+
     [Fact]
     public override Task should_resume_delivery_once_after_consumer_pause()
     {
@@ -27,36 +63,9 @@ public sealed class PulsarBrokerFaultTests(PulsarFixture fixture) : BrokerFaultT
     }
 
     [Fact]
-    public async Task should_resume_delivery_once_after_broker_restart()
+    public override Task should_resume_delivery_once_after_broker_restart()
     {
-        RequireSupport(TransportConformanceScenario.BrokerInterruptionRecovery);
-
-        await using var broker = new IsolatedPulsarFixture();
-        await broker.StartAsync();
-        await using var session = await PulsarFixture.CreateSessionAsync(
-            broker.ConnectionString,
-            MessageLane.Queue,
-            AbortToken
-        );
-        await session.StartAsync(cancellationToken: AbortToken);
-
-        var beforeRestart = CreateFaultProbe(session.Destination);
-        var beforeResult = await session.PublishAsync(beforeRestart, AbortToken);
-        beforeResult.Succeeded.Should().BeTrue();
-        var beforeDelivery = await session.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
-        await session.Consumer.CommitAsync(beforeDelivery.SettlementValue, AbortToken);
-
-        await broker.RestartAsync(AbortToken);
-
-        var afterRestart = CreateFaultProbe(session.Destination);
-        var afterResult = await session
-            .PublishAsync(afterRestart, AbortToken)
-            .WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
-        afterResult.Succeeded.Should().BeTrue();
-        var afterDelivery = await session.ReceiveAsync(TimeSpan.FromSeconds(30), AbortToken);
-        afterDelivery.Message.Id.Should().Be(afterRestart.Id);
-        await session.Consumer.CommitAsync(afterDelivery.SettlementValue, AbortToken);
-        (await session.RemainsEmptyAsync(session.NoRedeliveryWindow, AbortToken)).Should().BeTrue();
+        return base.should_resume_delivery_once_after_broker_restart();
     }
 }
 
@@ -96,11 +105,5 @@ internal sealed class IsolatedPulsarFixture : HeadlessPulsarFixture
     public Task StopAsync(CancellationToken cancellationToken)
     {
         return Container.StopAsync(cancellationToken);
-    }
-
-    public async Task RestartAsync(CancellationToken cancellationToken)
-    {
-        await Container.StopAsync(cancellationToken);
-        await Container.StartAsync(cancellationToken);
     }
 }

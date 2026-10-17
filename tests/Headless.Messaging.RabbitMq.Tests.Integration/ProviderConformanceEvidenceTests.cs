@@ -2,12 +2,17 @@
 
 using Headless.Testing.Tests;
 using Tests.Capabilities;
+using Tests.Guarantees;
 
 namespace Tests;
 
 [Collection<RabbitMqFixture>]
 public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : TestBase
 {
+    [Fact]
+    public void should_run_every_guarantee_this_provider_inherits() =>
+        GuaranteeBindings.GetLeafErrors(typeof(ProviderConformanceEvidenceTests).Assembly).Should().BeEmpty();
+
     [Fact]
     public Task should_prove_routing_affinity_mapping_or_rejection() =>
         TransportRoutingAffinityConformance.AssertAsync(new RabbitMqProviderConformanceDriver(fixture), AbortToken);
@@ -18,6 +23,11 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
         var profile = TransportConformanceManifest.Providers["RabbitMQ"];
         TransportConformanceTestBinding[] bindings =
         [
+            new(
+                TransportConformanceScenario.ConnectionDropRecovery,
+                typeof(RabbitMqNetworkFaultTests),
+                nameof(RabbitMqNetworkFaultTests.should_resume_delivery_once_after_the_connection_is_dropped)
+            ),
             new(
                 TransportConformanceScenario.RawPayloadConsumption,
                 typeof(RabbitMqRawPayloadTests),

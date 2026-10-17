@@ -5,6 +5,7 @@ using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Capabilities;
+using Tests.Guarantees;
 using Tests.RequestReply;
 
 namespace Tests;
@@ -12,6 +13,10 @@ namespace Tests;
 [Collection("Kafka")]
 public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : TestBase
 {
+    [Fact]
+    public void should_run_every_guarantee_this_provider_inherits() =>
+        GuaranteeBindings.GetLeafErrors(typeof(ProviderConformanceEvidenceTests).Assembly).Should().BeEmpty();
+
     [Fact]
     public Task should_prove_routing_affinity_mapping_or_rejection() =>
         TransportRoutingAffinityConformance.AssertAsync(new KafkaProviderConformanceDriver(fixture), AbortToken);
@@ -61,6 +66,17 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
                 TransportConformanceScenario.ConsumerPauseRecovery,
                 typeof(KafkaBrokerFaultTests),
                 nameof(KafkaBrokerFaultTests.should_resume_delivery_once_after_consumer_pause)
+            ),
+            new(
+                TransportConformanceScenario.BrokerInterruptionRecovery,
+                typeof(KafkaBrokerFaultTests),
+                nameof(KafkaBrokerFaultTests.should_resume_delivery_once_after_broker_restart)
+            ),
+            _Bind(
+                TransportConformanceScenario.StaleSettlement,
+                nameof(
+                    KafkaConsumerClientConformanceTests.should_not_settle_another_delivery_when_a_settled_value_is_used_again
+                )
             ),
             _Bind(
                 TransportConformanceScenario.BoundedGracefulShutdown,

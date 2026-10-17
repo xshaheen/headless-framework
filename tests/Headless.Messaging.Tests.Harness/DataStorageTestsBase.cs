@@ -7,6 +7,7 @@ using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Tests.Capabilities;
+using Tests.Guarantees;
 using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
@@ -346,6 +347,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .BeTrue();
     }
 
+    [Guarantee("MSG-INBOX-01")]
     public virtual async Task should_converge_n_way_inbox_admission_on_one_generation()
     {
         var storage = GetStorage();
@@ -364,6 +366,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         admissions.Select(result => result.Message.InboxGeneration).Distinct().Should().ContainSingle();
     }
 
+    [Guarantee("MSG-INBOX-01")]
     public virtual async Task should_admit_exactly_one_of_many_admissions_of_one_key_released_together()
     {
         // given — every admission waits on one gate, so they reach the database as close together as the pool allows
@@ -401,6 +404,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         (await CountReceivedMessagesByIdentityAsync(messageId, "orders.consumer-a", AbortToken)).Should().Be(1);
     }
 
+    [Guarantee("MSG-INBOX-03")]
     public virtual async Task should_isolate_every_persisted_inbox_key_component()
     {
         var storage = GetStorage();
@@ -489,6 +493,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         tenantlessDuplicate.Disposition.Should().Be(InboxAdmissionDisposition.InFlightDuplicate);
     }
 
+    [Guarantee("MSG-INBOX-03")]
     public virtual async Task should_enforce_inbox_key_length_boundaries_without_truncation()
     {
         var storage = GetStorage();
@@ -533,6 +538,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await oversizedTenantAct.Should().ThrowAsync<ArgumentException>();
     }
 
+    [Guarantee("MSG-INBOX-02")]
     public virtual async Task should_suppress_terminal_inbox_redelivery()
     {
         var storage = GetStorage();
@@ -571,6 +577,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         redelivery.Message.StorageId.Should().Be(admitted.Message.StorageId);
     }
 
+    [Guarantee("MSG-DASH-01")]
     public virtual async Task should_apply_audited_inbox_operations_once_and_reject_operation_identity_reuse()
     {
         var storage = GetStorage();
@@ -937,6 +944,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         result.Origin.Should().BeSameAs(message);
     }
 
+    [Guarantee("MSG-PUB-02")]
     public virtual async Task should_store_scheduled_message_with_atomic_not_before_state()
     {
         if (!Capabilities.SupportsDelayedScheduling || !Capabilities.SupportsMonitoringApi)
@@ -1503,6 +1511,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await act.Should().NotThrowAsync();
     }
 
+    [Guarantee("MSG-STORE-01")]
     public virtual async Task should_not_flip_terminal_published_row_back_to_delayed()
     {
         if (!Capabilities.SupportsDelayedScheduling)
@@ -1612,6 +1621,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         return _ShouldPreserveUnsupportedLaneWithoutStarvingRetryAsync(published: false);
     }
 
+    [Guarantee("MSG-STORE-03")]
     public virtual async Task should_delete_expired_messages()
     {
         // Skip if storage doesn't support expiration
@@ -1633,6 +1643,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         deletedCount.Should().BeGreaterThanOrEqualTo(0);
     }
 
+    [Guarantee("MSG-STORE-03")]
     public virtual async Task should_not_delete_expired_failed_messages_with_pending_retry()
     {
         if (!Capabilities.SupportsExpiration || !Capabilities.SupportsMonitoringApi)
@@ -1817,6 +1828,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         scheduledMessages.Should().NotBeNull();
     }
 
+    [Guarantee("MSG-RETRY-08")]
     public virtual async Task should_claim_delayed_messages_atomically_when_capability_supported()
     {
         var storage = GetStorage();
@@ -1967,6 +1979,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Be(stored.StorageId);
     }
 
+    [Guarantee("MSG-RETRY-08")]
     public virtual async Task should_return_disjoint_winners_to_concurrent_delayed_claimers()
     {
         var storage = GetStorage();
@@ -2067,6 +2080,7 @@ public abstract partial class DataStorageTestsBase : TestBase
     // unless NextRetryAt is in the past. Mirrors the partial-index predicates.
     // -------------------------------------------------------------------------
 
+    [Guarantee("MSG-RETRY-01")]
     public virtual async Task should_not_return_published_message_with_failed_status_and_null_next_retry_at()
     {
         // given — a Failed message with NextRetryAt = NULL represents a permanent failure
@@ -2092,6 +2106,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
 
+    [Guarantee("MSG-STORE-01")]
     public virtual async Task should_seal_succeeded_published_message_against_state_change_and_retry_pickup()
     {
         // given — Succeeded with NextRetryAt = NULL is the terminal fingerprint written after a
@@ -2129,6 +2144,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
 
+    [Guarantee("MSG-RETRY-01")]
     public virtual async Task should_not_return_published_message_with_future_next_retry_at()
     {
         // given — a Failed message scheduled for the future must NOT be returned until its
@@ -2154,6 +2170,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
 
+    [Guarantee("MSG-RETRY-01")]
     public virtual async Task should_not_return_received_message_with_failed_status_and_null_next_retry_at()
     {
         // given — a Failed received message with NextRetryAt = NULL must NOT be returned.
@@ -2205,6 +2222,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
 
+    [Guarantee("MSG-RETRY-01")]
     public virtual async Task should_not_return_leased_published_message_until_lease_expires()
     {
         // Verifies the lease/pickup contract:
@@ -2278,6 +2296,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Contain(m => m.StorageId == storedMessage.StorageId);
     }
 
+    [Guarantee("MSG-LEASE-03")]
     public virtual async Task should_use_database_clock_when_reclaiming_published_retry_lease()
     {
         var fastClockStorage = _CreateRelationalClockSkewStorage();
@@ -2418,6 +2437,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Contain(m => m.StorageId == storedMessage.StorageId);
     }
 
+    [Guarantee("MSG-LEASE-03")]
     public virtual async Task should_stamp_retry_lease_from_database_clock()
     {
         var fastClockStorage = _CreateRelationalClockSkewStorage();
@@ -2442,6 +2462,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         claimed.LockedUntil.Should().BeAfter(DateTimeOffset.UtcNow).And.BeBefore(DateTimeOffset.UtcNow.AddMinutes(10));
     }
 
+    [Guarantee("MSG-LEASE-03")]
     public virtual async Task should_decide_published_retry_due_on_database_clock()
     {
         // The application clocks are an hour off the database's in both directions; only the database clock decides.
@@ -2483,6 +2504,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             );
     }
 
+    [Guarantee("MSG-LEASE-03")]
     public virtual async Task should_decide_received_retry_due_on_database_clock()
     {
         var lateClockStorage = _CreateRelationalSchedulingClockStorage().Storage;
@@ -2716,6 +2738,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         return new DateTimeOffset(DateTime.SpecifyKind(databaseTime.Value, DateTimeKind.Utc), TimeSpan.Zero);
     }
 
+    [Guarantee("MSG-RETRY-07")]
     public virtual async Task should_stamp_initial_dispatch_grace_from_database_clock(bool published)
     {
         var lateClockStorage = _CreateRelationalSchedulingClockStorage().Storage;
@@ -2740,6 +2763,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         pickedUp.Should().NotContain(m => m.StorageId == stored.StorageId, "the grace has not elapsed on the database");
     }
 
+    [Guarantee("MSG-RETRY-08")]
     public virtual async Task should_decide_delayed_message_due_on_database_clock()
     {
         var lateClockStorage = _CreateRelationalSchedulingClockStorage().Storage;
@@ -2919,6 +2943,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         claimedReceived.LockedUntil.Should().NotBeNull();
     }
 
+    [Guarantee("MSG-SHUT-01")]
     public virtual async Task should_release_only_exact_published_retry_lease_generation()
     {
         var storage = GetStorage();
@@ -2960,6 +2985,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .ContainSingle(message => message.StorageId == stored.StorageId);
     }
 
+    [Guarantee("MSG-SHUT-01")]
     public virtual async Task should_keep_another_owners_lease_when_flushing_an_unleased_copy_to_delayed()
     {
         if (!Capabilities.SupportsDelayedScheduling)
@@ -3042,6 +3068,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .BeTrue("the flush releases the lease this node held");
     }
 
+    [Guarantee("MSG-SHUT-01")]
     public virtual async Task should_release_only_exact_received_retry_lease_generation()
     {
         var storage = GetStorage();
@@ -3083,6 +3110,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .ContainSingle(message => message.StorageId == stored.StorageId);
     }
 
+    [Guarantee("MSG-CB-04")]
     public virtual async Task should_atomically_defer_only_exact_live_received_retry_lease_generation()
     {
         var storage = GetStorage();
@@ -3203,6 +3231,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .BeTrue();
     }
 
+    [Guarantee("MSG-CB-04")]
     public virtual async Task should_not_defer_expired_received_retry_lease()
     {
         var storage = GetStorage();
@@ -3222,6 +3251,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .BeFalse();
     }
 
+    [Guarantee("MSG-CB-04")]
     public virtual async Task should_not_defer_terminal_received_retry_lease()
     {
         var storage = GetStorage();
@@ -3520,6 +3550,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .And.Contain(message => message.StorageId == second.StorageId);
     }
 
+    [Guarantee("MSG-COORD-03")]
     public virtual async Task should_not_reclaim_rows_of_live_or_restarted_incarnation()
     {
         var storage = GetStorage();
@@ -3649,6 +3680,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .NotContain(m => m.StorageId == received.StorageId);
     }
 
+    [Guarantee("MSG-COORD-02")]
     public virtual async Task should_reclaim_dead_owner_rows_idempotently()
     {
         var storage = GetStorage();
@@ -3699,6 +3731,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Contain(m => m.StorageId == received.StorageId);
     }
 
+    [Guarantee("MSG-STORE-02")]
     public virtual async Task should_handle_concurrent_state_updates_to_same_row()
     {
         // Concurrent CAS / optimistic-concurrency contract: exactly one of N parallel
@@ -3787,6 +3820,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         second.Should().BeFalse();
     }
 
+    [Guarantee("MSG-LEASE-01")]
     public virtual async Task should_lease_and_reserve_publish_attempt_in_single_step()
     {
         var storage = GetStorage();
@@ -3819,6 +3853,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         midBurst.Should().BeTrue("the lease owner must still be able to reserve the next inline attempt");
     }
 
+    [Guarantee("MSG-LEASE-01")]
     public virtual async Task should_reject_lease_and_reserve_with_stale_inline_attempts_token()
     {
         var storage = GetStorage();
@@ -3860,11 +3895,13 @@ public abstract partial class DataStorageTestsBase : TestBase
         current.Should().BeTrue();
     }
 
+    [Guarantee("MSG-LEASE-01")]
     public virtual Task should_reject_stale_published_lease_generation_writes()
     {
         return _ShouldRejectStaleLeaseGenerationWritesAsync(received: false);
     }
 
+    [Guarantee("MSG-LEASE-01")]
     public virtual Task should_reject_stale_received_lease_generation_writes()
     {
         return _ShouldRejectStaleLeaseGenerationWritesAsync(received: true);
@@ -3880,6 +3917,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         return _ShouldAllowFencedWritesWithFastApplicationClockAsync(received: true);
     }
 
+    [Guarantee("MSG-STORE-01")]
     public virtual async Task should_report_false_when_received_exception_message_is_already_terminal()
     {
         var storage = GetStorage();
@@ -4275,6 +4313,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         }
     }
 
+    [Guarantee("MSG-RETRY-07")]
     public virtual async Task should_respect_initial_dispatch_grace()
     {
         // #10 — parity test for the InitialDispatchGrace exclusion contract. Providers that
@@ -4320,6 +4359,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             );
     }
 
+    [Guarantee("MSG-RETRY-03")]
     public virtual async Task should_claim_published_rows_past_max_persisted_retries_and_leave_received_uncapped()
     {
         // given — the fixtures set MaxPersistedRetries = 4. A published row at the cap still gets its last attempt, and

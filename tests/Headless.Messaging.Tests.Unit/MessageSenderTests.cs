@@ -126,7 +126,8 @@ public sealed class MessageSenderTests : TestBase
         IHostApplicationLifetime? lifetime = null,
         TransportConnectivity? connectivity = null,
         TimeProvider? timeProvider = null,
-        ILoggerProvider? loggerProvider = null
+        ILoggerProvider? loggerProvider = null,
+        TimeProvider? backoffClock = null
     )
     {
         storage
@@ -182,6 +183,11 @@ public sealed class MessageSenderTests : TestBase
         services.AddSingleton<IBusTransport>(_ => new TestBusTransportAdapter(transport));
         services.AddSingleton<IQueueTransport>(_ => new TestQueueTransportAdapter(transport));
         services.AddSingleton(timeProvider ?? TimeProvider.System);
+        if (backoffClock is not null)
+        {
+            services.AddKeyedSingleton(MessagingOptions.BackoffClockServiceKey, backoffClock);
+        }
+
         services.AddSingleton(Options.Create(options));
         if (lifetime is not null)
         {
@@ -694,34 +700,42 @@ public sealed class MessageSenderTests : TestBase
             .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(transportMessage));
 
+        var sendStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
         transport
             .SendAsync(transportMessage, Arg.Any<CancellationToken>())
             .Returns(async call =>
             {
+                sendStarted.TrySetResult();
                 await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
                 return OperateResult.Success;
             });
 
+        var options = new MessagingOptions
+        {
+            RetryPolicy =
+            {
+                RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.FromSeconds(5)),
+                MaxPersistedRetries = 1,
+            },
+        };
+        var backoffClock = new FakeTimeProvider();
         var sender = _CreateSender(
             storage,
             serializer,
             transport,
-            new MessagingOptions
-            {
-                TransportPublishTimeout = TimeSpan.FromMilliseconds(50),
-                RetryPolicy =
-                {
-                    RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.FromSeconds(5)),
-                    MaxPersistedRetries = 1,
-                },
-            },
-            new FakeHostApplicationLifetime(AbortToken)
+            options,
+            new FakeHostApplicationLifetime(AbortToken),
+            backoffClock: backoffClock
         );
 
-        // when
-        var result = await sender.SendAsync(_CreateMediumMessage());
+        // when: the send waits for the broker until the back-off clock passes the publish timeout
+        var send = sender.SendAsync(_CreateMediumMessage());
+        await sendStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        send.IsCompleted.Should().BeFalse();
+        backoffClock.Advance(options.TransportPublishTimeout);
+        var result = await send.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — a transient failure: the row is scheduled for a later attempt with back-off, not left on its lease.
         result.Succeeded.Should().BeFalse();

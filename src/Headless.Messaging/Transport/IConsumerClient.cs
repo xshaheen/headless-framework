@@ -132,6 +132,8 @@ public interface IConsumerClient : IAsyncDisposable
     /// <returns>A task that represents the asynchronous reject operation.</returns>
     ValueTask RejectAsync(object? sender, TimeSpan redeliveryDelay, CancellationToken cancellationToken)
     {
+        // A default member cannot resolve the messaging back-off clock, so the hold waits real time; a test transport
+        // that steps through the delay overrides this member, as the in-memory transport does.
         return RedeliveryBackoff.DelayThenRejectAsync(
             this,
             sender,

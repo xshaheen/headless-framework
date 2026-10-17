@@ -2,12 +2,17 @@
 
 using Headless.Testing.Tests;
 using Tests.Capabilities;
+using Tests.Guarantees;
 
 namespace Tests;
 
 [Collection<RedisMessagingFixture>]
 public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixture) : TestBase
 {
+    [Fact]
+    public void should_run_every_guarantee_this_provider_inherits() =>
+        GuaranteeBindings.GetLeafErrors(typeof(ProviderConformanceEvidenceTests).Assembly).Should().BeEmpty();
+
     [Fact]
     public Task should_prove_routing_affinity_mapping_or_rejection() =>
         TransportRoutingAffinityConformance.AssertAsync(new RedisProviderConformanceDriver(fixture), AbortToken);
@@ -18,6 +23,16 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
         var profile = TransportConformanceManifest.Providers["Redis"];
         TransportConformanceTestBinding[] bindings =
         [
+            new(
+                TransportConformanceScenario.ConnectionDropRecovery,
+                typeof(RedisNetworkFaultTests),
+                nameof(RedisNetworkFaultTests.should_resume_delivery_once_after_the_connection_is_dropped)
+            ),
+            new(
+                TransportConformanceScenario.PublishDuringOutage,
+                typeof(RedisNetworkFaultTests),
+                nameof(RedisNetworkFaultTests.should_keep_consuming_after_publishes_during_an_outage)
+            ),
             new(
                 TransportConformanceScenario.RawPayloadConsumption,
                 typeof(RedisRawPayloadTests),
@@ -53,6 +68,21 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
             _Bind(
                 TransportConformanceScenario.RejectRedelivery,
                 nameof(RedisConsumerConformanceTests.should_reject_real_delivery_and_observe_redelivery)
+            ),
+            new(
+                TransportConformanceScenario.BrokerInterruptionRecovery,
+                typeof(RedisBrokerFaultTests),
+                nameof(RedisBrokerFaultTests.should_resume_delivery_once_after_broker_restart)
+            ),
+            _Bind(
+                TransportConformanceScenario.StaleSettlement,
+                nameof(
+                    RedisConsumerConformanceTests.should_not_settle_another_delivery_when_a_settled_value_is_used_again
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.HandlerFailureRedelivery,
+                nameof(RedisConsumerConformanceTests.should_keep_the_delivery_and_the_listener_when_the_callback_throws)
             ),
             _Bind(
                 TransportConformanceScenario.BoundedGracefulShutdown,

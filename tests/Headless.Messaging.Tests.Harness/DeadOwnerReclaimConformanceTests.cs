@@ -7,6 +7,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Tests.Guarantees;
 using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
@@ -75,6 +76,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
         await base.DisposeAsyncCore();
     }
 
+    [Guarantee("MSG-COORD-01")]
     public virtual async Task should_reclaim_dead_owner_published_and_received_rows()
     {
         // A Dead owner's in-flight rows are re-dispatched, not skipped.
@@ -96,6 +98,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
             .BeTrue("the dead owner's received row must be reclaimed and re-dispatched");
     }
 
+    [Guarantee("MSG-COORD-01")]
     public virtual async Task should_not_reclaim_suspected_owner_rows()
     {
         // A Suspected owner is never reclaimed through watch or reconcile.
@@ -120,6 +123,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
             .BeFalse("a suspected owner's received row stays leased");
     }
 
+    [Guarantee("MSG-COORD-02")]
     public virtual async Task should_reclaim_once_when_surfaced_by_both_event_and_reconcile()
     {
         // A Dead owner surfaced by both a NodeLeft event and the reconcile is reclaimed (dedup, no thrash).
@@ -138,6 +142,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
         (await _BecomesRetriableAsync(storage, dead.Received, published: false)).Should().BeTrue();
     }
 
+    [Guarantee("MSG-COORD-03")]
     public virtual async Task should_fence_a_restarted_incarnation()
     {
         // node@N dead, node@N+1 live (restart) → only the dead incarnation's rows are reclaimed.
@@ -182,6 +187,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
             .BeTrue("an expired lease is recovered by the per-row floor even with no bridge reclaim");
     }
 
+    [Guarantee("MSG-COORD-02")]
     public virtual async Task should_reclaim_once_under_two_concurrent_bridges()
     {
         // Concurrency: two bridge hosts reclaiming the same Dead owner → rows reclaimed, no duplicate-thrash error
