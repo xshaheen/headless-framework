@@ -31,6 +31,30 @@ public sealed class RabbitMqConsumerClientConformanceTests(RabbitMqFixture fixtu
         return fixture.CreateConformanceSessionAsync(cancellationToken);
     }
 
+    protected override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
+        TransportConformanceSessionOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        return fixture.CreateConformanceSessionAsync(cancellationToken, options: options);
+    }
+
+    protected override bool HasDeadLetterDestination => true;
+
+    protected override ValueTask<IReadOnlyList<string>> TakeDeadLetteredMessageIdsAsync(
+        TransportConsumerConformanceSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        return fixture.TakeDeadLetteredMessageIdsAsync(session, cancellationToken);
+    }
+
+    /// <summary>
+    /// The largest body a consumer can receive: the client's default inbound limit of 64 MiB, below the broker's 128 MiB
+    /// <c>max_message_size</c>.
+    /// </summary>
+    protected override int MaximumBodySize => 64 * 1024 * 1024;
+
     [Fact]
     public override Task should_round_trip_queue_message_body_and_headers()
     {

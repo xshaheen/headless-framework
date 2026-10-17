@@ -1220,7 +1220,10 @@ public abstract class MessagingIntegrationTestsBase : MessagingIntegrationHostTe
         (await subscriber.WaitForCountAsync(3, _NoDuplicateWindow, AbortToken))
             .Should()
             .BeFalse("the inbox admits one of the two deliveries");
-        subscriber.ReceivedMessages.Count(received => received.Id == duplicateId).Should().Be(1);
+        subscriber
+            .ReceivedMessages.Count(received => string.Equals(received.Id, duplicateId, StringComparison.Ordinal))
+            .Should()
+            .Be(1);
         subscriber.ReceivedMessages.Should().ContainSingle(received => received.Id == sentinel.Id);
     }
 

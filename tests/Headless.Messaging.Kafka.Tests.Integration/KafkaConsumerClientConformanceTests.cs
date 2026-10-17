@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text;
 using Confluent.Kafka;
 using Headless.Messaging;
 
@@ -21,6 +22,47 @@ public sealed class KafkaConsumerClientConformanceTests(KafkaFixture fixture) : 
     {
         return fixture.CreateConformanceSessionAsync(cancellationToken);
     }
+
+    protected override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
+        TransportConformanceSessionOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        return fixture.CreateConformanceSessionAsync(
+            cancellationToken,
+            configure: kafka =>
+            {
+                // One partition would order every message whatever its key; several make the key decide.
+                if (options.RoutingAffinity)
+                {
+                    kafka.TopicOptions.NumPartitions = 3;
+                }
+
+                if (options.HeaderBuilder is { } headerBuilder)
+                {
+                    kafka.CustomHeadersBuilder = (result, _) =>
+                    {
+                        headerBuilder(
+                            result.Message.Headers.TryGetLastBytes(
+                                Headless.Messaging.Headers.MessageId,
+                                out var messageId
+                            )
+                                ? Encoding.UTF8.GetString(messageId)
+                                : null
+                        );
+                        return [];
+                    };
+                }
+            },
+            concurrency: options.Concurrency
+        );
+    }
+
+    /// <summary>
+    /// The producer's <c>message.max.bytes</c> of 1,000,000, which bounds a record's wire size: the conformance envelope's
+    /// key, headers, and record framing take 229 bytes of it, and the client refuses a larger record before sending it.
+    /// </summary>
+    protected override int MaximumBodySize => 1_000_000 - 229;
 
     [Fact]
     public override Task should_round_trip_queue_message_body_and_headers()

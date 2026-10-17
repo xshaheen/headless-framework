@@ -131,6 +131,28 @@ public sealed class ProviderConformanceEvidenceTests(NatsFixture fixture) : Test
                 TransportConformanceScenario.RequestReplyCallerCleanup,
                 nameof(NatsRequestReplyConformanceTests.should_leave_no_reply_objects_after_the_caller_stops)
             ),
+            _Bind(
+                TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+                nameof(NatsConsumerClientTests.should_redeliver_then_give_up_when_the_header_builder_fails_transiently)
+            ),
+            _Bind(
+                TransportConformanceScenario.StandardHeaderRoundTrip,
+                nameof(NatsConsumerClientTests.should_round_trip_every_standard_header_unchanged)
+            ),
+            _Bind(
+                TransportConformanceScenario.HandlerConcurrencyCap,
+                nameof(
+                    NatsConsumerClientTests.should_never_hand_over_more_deliveries_at_once_than_the_requested_concurrency
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.BodySizeLimit,
+                nameof(NatsConsumerClientTests.should_round_trip_a_body_at_the_size_limit_and_refuse_one_byte_more)
+            ),
+            _Bind(
+                TransportConformanceScenario.MessageExpiry,
+                nameof(NatsConsumerClientTests.should_not_deliver_a_message_that_expired_before_it_was_consumed)
+            ),
         ];
 
         TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();

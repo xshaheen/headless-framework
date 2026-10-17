@@ -130,7 +130,8 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         string? destination = null,
         string? group = null,
         bool createReplacement = true,
-        string? exchangeName = null
+        string? exchangeName = null,
+        TransportConformanceSessionOptions? options = null
     )
     {
         return _CreateConformanceSessionAsync(
@@ -140,7 +141,8 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
             exchangeName,
             createReplacement,
             failEnvelopeBuild: false,
-            cancellationToken
+            cancellationToken,
+            options: options
         );
     }
 
@@ -249,7 +251,8 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         bool createReplacement,
         bool failEnvelopeBuild,
         CancellationToken cancellationToken,
-        ConsumerClientRequest? request = null
+        ConsumerClientRequest? request = null,
+        TransportConformanceSessionOptions? options = null
     )
     {
         return _CreateConformanceSessionAsync(
@@ -262,7 +265,8 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
             createReplacement,
             failEnvelopeBuild,
             cancellationToken,
-            request
+            request,
+            options
         );
     }
 
@@ -276,9 +280,11 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         bool createReplacement,
         bool failEnvelopeBuild,
         CancellationToken cancellationToken,
-        ConsumerClientRequest? request = null
+        ConsumerClientRequest? request = null,
+        TransportConformanceSessionOptions? options = null
     )
     {
+        options ??= new TransportConformanceSessionOptions();
         destination ??= $"conf-{Guid.NewGuid():N}";
         group ??= $"group-{Guid.NewGuid():N}";
         var services = new ServiceCollection().BuildServiceProvider();
@@ -299,6 +305,8 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
                 [new KeyValuePair<string, string>(Headless.Messaging.Headers.MessageId, string.Empty)];
         }
 
+        _Apply(options, rabbitOptions.Value);
+
 #pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.
         var pool = new ConnectionChannelPool(
             NullLogger<ConnectionChannelPool>.Instance,
@@ -313,7 +321,14 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         {
 #pragma warning disable CA2000 // False positive: consumer transfers to the returned session or the catch disposes it.
             consumer = request is null
-                ? new RabbitMqConsumerClient(group, 1, pool, rabbitOptions, services, lane: _ToMessageLane(lane))
+                ? new RabbitMqConsumerClient(
+                    group,
+                    options.Concurrency,
+                    pool,
+                    rabbitOptions,
+                    services,
+                    lane: _ToMessageLane(lane)
+                )
                 : await new RabbitMqConsumerClientFactory(rabbitOptions, pool, services).CreateAsync(
                     request,
                     cancellationToken
@@ -342,7 +357,8 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
                             rabbitOptions.Value.ExchangeName,
                             createReplacement: false,
                             failEnvelopeBuild,
-                            replacementToken
+                            replacementToken,
+                            options: options
                         )
                     : null
             );
@@ -358,6 +374,64 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
             await services.DisposeAsync();
             throw;
         }
+    }
+
+    /// <summary>Maps what a conformance scenario asks of a session onto the RabbitMQ options that provide it.</summary>
+    private static void _Apply(TransportConformanceSessionOptions options, RabbitMqMessagingOptions rabbitOptions)
+    {
+        if (options.HeaderBuilder is { } headerBuilder)
+        {
+            rabbitOptions.CustomHeadersBuilder = (delivery, _) =>
+            {
+                headerBuilder(delivery.BasicProperties.MessageId);
+                return [];
+            };
+        }
+
+        var queueArguments = rabbitOptions.QueueArguments;
+        queueArguments.EnableDeadLettering = options.DeadLettering;
+
+        if (options.DeliveryLimit is { } deliveryLimit)
+        {
+            // Only a quorum queue counts deliveries. Its limit counts the deliveries that came back, so the one that
+            // finally gives up is not part of it.
+            queueArguments.QueueType = "quorum";
+            queueArguments.DeliveryLimit = deliveryLimit - 1;
+        }
+
+        if (options.TimeToLive is { } timeToLive)
+        {
+            queueArguments.MessageTTL = (int)timeToLive.TotalMilliseconds;
+        }
+    }
+
+    /// <summary>
+    /// Takes every message the dead-letter queue of <paramref name="session"/> holds, as an operator draining it would,
+    /// and returns their message ids.
+    /// </summary>
+    public async ValueTask<IReadOnlyList<string>> TakeDeadLetteredMessageIdsAsync(
+        TransportConsumerConformanceSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        var queueName = ((RabbitMqConsumerClient)session.Consumer).QueueNames.Should().ContainSingle().Subject;
+        var connection = await GetConnectionAsync();
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
+        var taken = new List<string>();
+
+        while (
+            await channel.BasicGetAsync(
+                RabbitMqQueueTopology.DeadLetterQueue(queueName),
+                autoAck: true,
+                cancellationToken
+            )
+                is { } deadLettered
+        )
+        {
+            taken.Add(deadLettered.BasicProperties.MessageId ?? string.Empty);
+        }
+
+        return taken;
     }
 
     private static MessageLane _ToMessageLane(MessageLane lane) =>

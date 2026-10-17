@@ -110,6 +110,26 @@ public sealed class ProviderConformanceEvidenceTests(PulsarFixture fixture) : Te
                 typeof(ProviderConformanceEvidenceTests),
                 nameof(should_reject_requests_and_responders_at_startup_on_a_transport_without_request_reply)
             ),
+            _Bind(
+                TransportConformanceScenario.StandardHeaderRoundTrip,
+                nameof(PulsarConsumerClientHarnessTests.should_round_trip_every_standard_header_unchanged)
+            ),
+            _Bind(
+                TransportConformanceScenario.HandlerConcurrencyCap,
+                nameof(
+                    PulsarConsumerClientHarnessTests.should_never_hand_over_more_deliveries_at_once_than_the_requested_concurrency
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.PerKeyOrdering,
+                nameof(PulsarConsumerClientHarnessTests.should_deliver_the_messages_of_one_key_in_publish_order)
+            ),
+            _Bind(
+                TransportConformanceScenario.BodySizeLimit,
+                nameof(
+                    PulsarConsumerClientHarnessTests.should_round_trip_a_body_at_the_size_limit_and_refuse_one_byte_more
+                )
+            ),
         ];
 
         TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();

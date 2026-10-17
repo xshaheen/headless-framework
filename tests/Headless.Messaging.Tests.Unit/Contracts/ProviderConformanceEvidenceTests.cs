@@ -98,6 +98,20 @@ public sealed class ProviderConformanceEvidenceTests : TestBase
                 TransportConformanceScenario.SameNameLaneIsolation,
                 nameof(SimulatorConsumerConformanceTests.should_isolate_same_logical_name_between_bus_and_queue)
             ),
+            _Consumer(
+                TransportConformanceScenario.DeadLetterSingleCopy,
+                nameof(SimulatorConsumerConformanceTests.should_keep_one_dead_letter_copy_and_settle_the_original_once)
+            ),
+            _Consumer(
+                TransportConformanceScenario.StandardHeaderRoundTrip,
+                nameof(SimulatorConsumerConformanceTests.should_round_trip_every_standard_header_unchanged)
+            ),
+            _Consumer(
+                TransportConformanceScenario.HandlerConcurrencyCap,
+                nameof(
+                    SimulatorConsumerConformanceTests.should_never_hand_over_more_deliveries_at_once_than_the_requested_concurrency
+                )
+            ),
             _RequestReply(
                 TransportConformanceScenario.RequestReplyRoundTrip,
                 nameof(SimulatorRequestReplyConformanceTests.should_return_the_typed_response_of_a_request)

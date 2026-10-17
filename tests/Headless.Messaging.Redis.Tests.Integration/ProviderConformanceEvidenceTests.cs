@@ -132,6 +132,16 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
                 TransportConformanceScenario.RequestReplyCallerCleanup,
                 nameof(RedisRequestReplyConformanceTests.should_leave_no_reply_objects_after_the_caller_stops)
             ),
+            _Bind(
+                TransportConformanceScenario.StandardHeaderRoundTrip,
+                nameof(RedisConsumerConformanceTests.should_round_trip_every_standard_header_unchanged)
+            ),
+            _Bind(
+                TransportConformanceScenario.HandlerConcurrencyCap,
+                nameof(
+                    RedisConsumerConformanceTests.should_never_hand_over_more_deliveries_at_once_than_the_requested_concurrency
+                )
+            ),
         ];
 
         TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();

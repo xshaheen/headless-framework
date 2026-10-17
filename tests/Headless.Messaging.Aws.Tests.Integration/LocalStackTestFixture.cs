@@ -23,7 +23,8 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
         CancellationToken cancellationToken,
         string? destination = null,
         string? group = null,
-        bool ownsQueue = true
+        bool ownsQueue = true,
+        TransportConformanceSessionOptions? options = null
     )
     {
         return _CreateConformanceSessionAsync(
@@ -32,7 +33,8 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
             group,
             ownsQueue,
             createReplacement: ownsQueue,
-            cancellationToken
+            cancellationToken,
+            options
         );
     }
 
@@ -79,7 +81,8 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
         string? group,
         bool ownsQueue,
         bool createReplacement,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        TransportConformanceSessionOptions? options = null
     )
     {
         return _CreateConformanceSessionAsync(
@@ -89,7 +92,8 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
             group,
             ownsQueue,
             createReplacement,
-            cancellationToken
+            cancellationToken,
+            options
         );
     }
 
@@ -100,11 +104,16 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
         string? group,
         bool ownsQueue,
         bool createReplacement,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        TransportConformanceSessionOptions? sessionOptions = null
     )
     {
-        destination ??= $"conf-{Guid.NewGuid():N}";
-        group ??= $"group-{Guid.NewGuid():N}";
+        sessionOptions ??= new TransportConformanceSessionOptions();
+
+        // Only a FIFO queue orders by key, and SQS makes one of a name that ends in ".fifo".
+        var suffix = sessionOptions.RoutingAffinity ? ".fifo" : string.Empty;
+        destination ??= $"conf-{Guid.NewGuid():N}{suffix}";
+        group ??= $"group-{Guid.NewGuid():N}{suffix}";
         var options = Options.Create(
             new AmazonSqsMessagingOptions
             {
@@ -118,6 +127,15 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
             }
         );
 
+        if (sessionOptions.HeaderBuilder is { } headerBuilder)
+        {
+            options.Value.CustomHeadersBuilder = (message, _) =>
+            {
+                headerBuilder(SqsHeaderCodec.Decode(message.MessageAttributes).GetValueOrDefault(Headers.MessageId));
+                return [];
+            };
+        }
+
 #pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.
         ITransport producer = lane switch
         {
@@ -127,7 +145,7 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
         };
         var consumer = new AmazonSqsConsumerClient(
             group,
-            1,
+            sessionOptions.Concurrency,
             options,
             NullLogger<AmazonSqsConsumerClient>.Instance,
             lane switch
@@ -190,7 +208,8 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
                             group,
                             ownsQueue: false,
                             createReplacement: false,
-                            replacementToken
+                            replacementToken,
+                            sessionOptions
                         )
                     : null
             );

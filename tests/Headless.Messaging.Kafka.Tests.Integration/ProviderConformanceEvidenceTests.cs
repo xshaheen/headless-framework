@@ -102,6 +102,26 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
                     KafkaConsumerClientConformanceTests.should_terminally_commit_missing_required_headers_across_consumer_restart
                 )
             ),
+            _Bind(
+                TransportConformanceScenario.StandardHeaderRoundTrip,
+                nameof(KafkaConsumerClientConformanceTests.should_round_trip_every_standard_header_unchanged)
+            ),
+            _Bind(
+                TransportConformanceScenario.HandlerConcurrencyCap,
+                nameof(
+                    KafkaConsumerClientConformanceTests.should_never_hand_over_more_deliveries_at_once_than_the_requested_concurrency
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.PerKeyOrdering,
+                nameof(KafkaConsumerClientConformanceTests.should_deliver_the_messages_of_one_key_in_publish_order)
+            ),
+            _Bind(
+                TransportConformanceScenario.BodySizeLimit,
+                nameof(
+                    KafkaConsumerClientConformanceTests.should_round_trip_a_body_at_the_size_limit_and_refuse_one_byte_more
+                )
+            ),
         ];
 
         TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();

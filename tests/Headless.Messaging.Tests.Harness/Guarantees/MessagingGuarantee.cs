@@ -17,6 +17,7 @@ public enum GuaranteeArea
     CircuitBreaker,
     Shutdown,
     Lanes,
+    Envelope,
     Connectivity,
     RequestReply,
     Storage,
@@ -292,6 +293,12 @@ public static class MessagingGuarantees
             realSystem: true,
             "In a transactional inbox attempt, handler state, inbox completion, and outbox rows commit or roll back together."
         ),
+        _Bound(
+            "MSG-CONSUME-09",
+            GuaranteeArea.Consume,
+            realSystem: true,
+            "A consumer client never runs more deliveries at once than the concurrency it was asked for."
+        ),
         // Settlement
         _NoTestYet(
             "MSG-SETTLE-01",
@@ -329,13 +336,13 @@ public static class MessagingGuarantees
             "A malformed envelope is settled terminally without running a handler and is not redelivered across a consumer restart.",
             TransportConformanceScenario.MalformedEnvelopeTerminalSettlement
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-SETTLE-07",
             GuaranteeArea.Settlement,
             realSystem: true,
             "A poisoned delivery produces exactly one dead-letter copy and settles the original once."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-SETTLE-08",
             GuaranteeArea.Settlement,
             realSystem: false,
@@ -466,6 +473,31 @@ public static class MessagingGuarantees
             "A queue message reaches one owner across replicas, and a name used on both lanes is delivered only on its own lane.",
             TransportConformanceScenario.QueueOwnership,
             TransportConformanceScenario.SameNameLaneIsolation
+        ),
+        _Bound(
+            "MSG-LANE-03",
+            GuaranteeArea.Lanes,
+            realSystem: true,
+            "On a broker that orders by key, messages that share a routing affinity key arrive in publish order."
+        ),
+        // Envelope
+        _Bound(
+            "MSG-ENV-01",
+            GuaranteeArea.Envelope,
+            realSystem: true,
+            "The type, correlation, sent-time, tenant, and trace-parent headers reach the consumer unchanged."
+        ),
+        _Bound(
+            "MSG-ENV-02",
+            GuaranteeArea.Envelope,
+            realSystem: true,
+            "A body at the broker's documented size limit arrives intact, and one byte more fails at publish instead of being lost."
+        ),
+        _Bound(
+            "MSG-ENV-03",
+            GuaranteeArea.Envelope,
+            realSystem: true,
+            "A message left unconsumed past its time-to-live is never delivered."
         ),
         // Connectivity
         _Bound(
