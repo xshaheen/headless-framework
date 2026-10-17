@@ -20,6 +20,7 @@ This harness enables consistent integration testing across all messaging provide
 | `DataStorageTestsBase` | Tests for `IDataStorage` implementations (message persistence) |
 | `MessagingIntegrationTestsBase` | Full pub-sub cycle through a real broker and a real store, run by one broker-and-store pair project per broker |
 | `EntityFrameworkOutboxRelayTestsBase` | The EF Core outbox bridge relaying a committed integration event through a real broker |
+| `MultiHostGuaranteeSuiteBase` | Multi-host coordination guarantees, declared here for the guarantee catalogue and implemented per database by the scheduled chaos project, `Headless.Messaging.Tests.Chaos` (`make test-messaging-chaos`) |
 
 ## Capability Flags
 

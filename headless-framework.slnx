@@ -443,6 +443,7 @@
         <Project Path="tests/Headless.Messaging.Storage.SqlServer.EntityFramework.Tests.Unit/Headless.Messaging.Storage.SqlServer.EntityFramework.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.AzureServiceBus.Tests.Unit/Headless.Messaging.AzureServiceBus.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Tests.Harness/Headless.Messaging.Tests.Harness.csproj" />
+        <Project Path="tests/Headless.Messaging.Tests.Chaos/Headless.Messaging.Tests.Chaos.csproj" />
         <Project Path="tests/Headless.Messaging.Tests.Unit/Headless.Messaging.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.SourceGenerator.Tests.Unit/Headless.Messaging.SourceGenerator.Tests.Unit.csproj" />
         <Project Path="test-assets/Headless.Messaging.GeneratedModuleFixture/Headless.Messaging.GeneratedModuleFixture.csproj" />

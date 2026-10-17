@@ -29,9 +29,17 @@ TEST_PROJECT ?=
 TEST_FILTER ?=
 TEST_ARGS ?= --no-progress
 COVERAGE_SETTINGS_PROJECT ?= tests/Headless.Domain.Tests.Unit/Headless.Domain.Tests.Unit.csproj
-TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.*.dll
+TEST_MODULES ?= $(UNIT_TEST_MODULES) $(INTEGRATION_TEST_MODULES)
 UNIT_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Unit.dll
 INTEGRATION_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Integration.dll
+# The chaos and soak tier (*.Tests.Chaos) runs for minutes against real containers, so it runs only on purpose:
+# through test-messaging-chaos or the scheduled run. The whole-solution test targets run this solution filter
+# instead of the bare solution, so they build that tier with everything else but never execute it.
+CHAOS_TEST_SUFFIX ?= .Tests.Chaos
+NO_CHAOS_SOLUTION ?= $(ARTIFACTS_DIR)/solution-filters/headless-framework.no-chaos.slnf
+WRITE_NO_CHAOS_SOLUTION = $(GRAPH) solution-filter --exclude-suffix "$(CHAOS_TEST_SUFFIX)" --out "$(NO_CHAOS_SOLUTION)" --solution "$(SOLUTION)"
+MESSAGING_CHAOS_PROJECT ?= tests/Headless.Messaging.Tests.Chaos/Headless.Messaging.Tests.Chaos.csproj
+MESSAGING_CHAOS_RESULTS_DIR ?= $(TEST_RESULTS_DIR)/messaging-chaos
 MESSAGING_CONFORMANCE_PROVIDERS ?= Aws Kafka Nats Pulsar RabbitMq Redis
 MESSAGING_CONFORMANCE_EVIDENCE_PROJECTS ?= $(foreach provider,$(MESSAGING_CONFORMANCE_PROVIDERS),tests/Headless.Messaging.$(provider).Tests.Integration/Headless.Messaging.$(provider).Tests.Integration.csproj)
 MESSAGING_CONFORMANCE_EVIDENCE_MODULES ?= $(foreach provider,$(MESSAGING_CONFORMANCE_PROVIDERS),tests/Headless.Messaging.$(provider).Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.$(provider).Tests.Integration.dll)
@@ -805,14 +813,16 @@ format-check: tools ## Check C# formatting without writing changes.
 	$(DOTNET) csharpier check .
 
 .PHONY: test
-test: build ## Build, then run all tests. Use TEST_FILTER='--filter-class X' for MTP filters.
+test: build ## Build, then run all tests except the chaos tier. Use TEST_FILTER='--filter-class X' for MTP filters.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
-	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
+	@$(WRITE_NO_CHAOS_SOLUTION)
+	$(DOTNET) test --solution "$(NO_CHAOS_SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
 
 .PHONY: test-fast
-test-fast: ## Run all tests without restore/build. Requires existing $(CONFIGURATION) build outputs.
+test-fast: ## Run all tests except the chaos tier without restore/build. Requires existing $(CONFIGURATION) build outputs.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
-	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
+	@$(WRITE_NO_CHAOS_SOLUTION)
+	$(DOTNET) test --solution "$(NO_CHAOS_SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
 
 .PHONY: ci-test
 ci-test: ## Run prebuilt unit tests with TRX and Cobertura coverage (CI_COVERAGE=false skips coverage; CI_TEST_SOLUTION=<slnf> limits the modules). Requires existing $(CONFIGURATION) build outputs.
@@ -851,9 +861,11 @@ build-messaging-conformance-evidence: ## Restore and build only the messaging co
 	done
 
 .PHONY: test-modules
-test-modules: build ## Run prebuilt test DLLs via MTP --test-modules. Override TEST_MODULES if needed.
+test-modules: build ## Run prebuilt unit and integration test DLLs via MTP --test-modules, one run per glob. Override TEST_MODULES (space-separated globs) if needed.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
-	$(DOTNET) test --test-modules "$(TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
+	@set -f; status=0; for modules in $(TEST_MODULES); do \
+		$(DOTNET) test --test-modules "$$modules" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) || status=1; \
+	done; exit $$status
 
 .PHONY: test-project
 test-project: ## Run one test project (builds it, asserts restore instead of restoring): make test-project TEST_PROJECT=tests/.../*.csproj
@@ -967,10 +979,20 @@ test-integration: build ## Run every *.Tests.Integration module (honors TEST_MAX
 	@mkdir -p "$(TEST_RESULTS_DIR)/integration"
 	$(DOTNET) test --test-modules "$(INTEGRATION_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)/integration" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
 
+# The chaos tier is the one place multi-host delivery guarantees meet real faults, so no other target runs it: the
+# affected targets never select a *.Tests.Chaos project to execute, and the whole-solution targets filter it out.
+.PHONY: test-messaging-chaos
+test-messaging-chaos: ## Run the messaging chaos and soak suite on PostgreSQL and SQL Server (needs Docker; minutes). HEADLESS_CHAOS_PROFILE=full runs the full sizes; HEADLESS_CHAOS_SEED=<n> replays a soak; writes summary.md to MESSAGING_CHAOS_RESULTS_DIR.
+	@mkdir -p "$(MESSAGING_CHAOS_RESULTS_DIR)"
+	@rm -f "$(MESSAGING_CHAOS_RESULTS_DIR)/summary.md"
+	@$(ASSERT_RESTORED); assert_restored "$(MESSAGING_CHAOS_PROJECT)"
+	HEADLESS_CHAOS_SUMMARY_DIR="$(abspath $(MESSAGING_CHAOS_RESULTS_DIR))" $(DOTNET) test --project "$(MESSAGING_CHAOS_PROJECT)" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_CHAOS_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
+
 .PHONY: coverage
-coverage: tools build ## Collect Cobertura coverage via MTP's in-process coverage extension. TEST_MAX_PARALLEL caps concurrent modules (default 3).
+coverage: tools build ## Collect Cobertura coverage via MTP's in-process coverage extension, chaos tier excluded. TEST_MAX_PARALLEL caps concurrent modules (default 3).
 	@mkdir -p "$(COVERAGE_DIR)" "$(TEST_RESULTS_DIR)"
-	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build \
+	@$(WRITE_NO_CHAOS_SOLUTION)
+	$(DOTNET) test --solution "$(NO_CHAOS_SOLUTION)" --configuration "$(CONFIGURATION)" --no-build \
 		--results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) \
 		$(TEST_ARGS) $(TEST_FILTER) $(COVERAGE_ARGS)
 
