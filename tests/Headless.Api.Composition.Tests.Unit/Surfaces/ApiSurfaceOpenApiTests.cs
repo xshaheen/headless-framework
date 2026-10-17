@@ -4,6 +4,7 @@ using System.Net;
 using System.Text.Json;
 using Headless.Api;
 using Headless.Api.ServiceDefaults;
+using Headless.OpenApi;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -65,7 +66,7 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         }
         else
         {
-            builder.Services.AddHeadlessApiSurfaceDocuments(configure: Configure);
+            builder.Services.AddHeadlessApiSurfaceDocuments(configure: (options, _) => Configure(options));
         }
 
         builder.Services.AddOpenApi(
@@ -199,6 +200,13 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
             using var document = JsonDocument.Parse(await client.GetStringAsync($"/openapi/{name}.json", AbortToken));
             var paths = document.RootElement.GetProperty("paths").EnumerateObject().Select(path => path.Name);
             paths.Should().BeEquivalentTo(selectPortal ? ["/portal"] : ["/portal", "/console"]);
+            // AddHeadless() registers its documents with the Headless transformers.
+            document
+                .RootElement.GetProperty("components")
+                .GetProperty("securitySchemes")
+                .TryGetProperty("Bearer", out _)
+                .Should()
+                .BeTrue();
             using var console = await client.GetAsync("/openapi/console.json", AbortToken);
             console.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }

@@ -145,7 +145,6 @@ app.UseHeadlessTenantCatalogResolution(); // only with catalog tenancy: after ro
 app.UseAuthentication();
 app.UseRateLimiter();
 app.UseHeadlessSerilogEnrichers(); // after authentication, so the user is known
-app.UseNswagOpenApi(); // path-matched middleware: must run before UseAuthorization
 app.UseHeadlessTenancy();
 app.UseAuthorization();
 app.UseHeadlessHttpIdempotency();
@@ -655,9 +654,11 @@ app.MapHeadlessEndpoints();
 
 `SurfaceDocumentNames` defaults to `null`, which publishes every registered surface document. Without surfaces, the ordinary `v1` document remains. Set a nonempty list only to select specific documents; each name must match a configured `OpenApi.DocumentName`. An explicit empty list selects the ordinary, unfiltered `v1` document. Set `OpenApi.Enabled = false` to disable registration. `MapHeadlessEndpoints()` serves documents at the configured route. Adding surfaces after inference throws; unknown explicit document names fail startup.
 
-For hosts using individual registrations, call `builder.Services.AddHeadlessApiSurfaceDocuments()` after surface registration and pair it with native `app.MapOpenApi()`. An optional document list selects a subset; no surfaces or an empty list registers no documents on this standalone path. Use it without the default `AddHeadless()` OpenAPI registration, or disable that registration with `OpenApi.Enabled = false` and map documents yourself. Native `AddOpenApi(...)` can register additional documents.
+For hosts using individual registrations, call `builder.Services.AddHeadlessApiSurfaceDocuments()` from `Headless.OpenApi` after surface registration and pair it with native `app.MapOpenApi()`. An optional document list selects a subset; no surfaces or an empty list registers no documents on this standalone path. Use it without the default `AddHeadless()` OpenAPI registration, or disable that registration with `OpenApi.Enabled = false` and map documents yourself. Native `AddOpenApi(...)` can register additional documents.
 
-Surface filtering runs before schema generation and is independent of API Explorer version groups. `ConfigureOpenApi` can narrow the selected endpoints with `ShouldInclude` and append document transformers, including a title override. The standalone method accepts the same callback. This adapter uses ASP.NET Core OpenAPI generation; NSwag-specific security, schema mappings, and tenant-error examples remain in `Headless.OpenApi.Nswag`.
+Surface filtering runs before schema generation and is independent of API Explorer version groups. `ConfigureOpenApi` can narrow the selected endpoints with `ShouldInclude` and append document transformers, including a title override. The standalone method takes a per-surface callback, `Action<OpenApiOptions, ApiSurfaceDescriptor>`, for the same purpose. Every document these registrations create carries the Headless transformers (security schemes, typed problem details, operation ids, FluentValidation constraints); configure them with `builder.Services.ConfigureHeadlessOpenApi(...)`. See [OpenAPI](openapi.md).
+
+`MapHeadlessEndpoints()` maps the documents as ordinary endpoints, so authorization applies to them: under a fallback authorization policy they answer 401. To publish them anonymously, set `OpenApi.Enabled = false`, register the documents yourself, and map them with `app.MapOpenApi("/openapi/{documentName}.json").AllowAnonymous()`.
 
 #### String Encryption
 

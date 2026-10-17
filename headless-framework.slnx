@@ -1,12 +1,11 @@
 <Solution>
     <Folder Name="/Api.OpenApi/">
-        <Project Path="demo\Headless.OpenApi.Nswag.Demo\Headless.OpenApi.Nswag.Demo.csproj" />
-        <Project Path="src\Headless.OpenApi.Nswag.OData\Headless.OpenApi.Nswag.OData.csproj" />
-        <Project Path="src\Headless.OpenApi.Nswag\Headless.OpenApi.Nswag.csproj" />
+        <Project Path="demo\Headless.OpenApi.Demo\Headless.OpenApi.Demo.csproj" />
         <Project Path="src\Headless.OpenApi.Scalar\Headless.OpenApi.Scalar.csproj" />
+        <Project Path="src\Headless.OpenApi\Headless.OpenApi.csproj" />
     </Folder>
     <Folder Name="/Api.OpenApi/Tests/">
-        <Project Path="tests\Headless.OpenApi.Nswag.Tests.Unit\Headless.OpenApi.Nswag.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.OpenApi.Tests.Unit\Headless.OpenApi.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Api/">
         <Project Path="demo\Headless.Api.Demo\Headless.Api.Demo.csproj" />

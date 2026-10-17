@@ -10,7 +10,6 @@
     <PackageVersion Include="Asp.Versioning.Abstractions" Version="10.2.1" />
     <PackageVersion Include="Asp.Versioning.Http" Version="10.2.3" />
     <PackageVersion Include="Asp.Versioning.Mvc" Version="10.2.1" />
-    <PackageVersion Include="Asp.Versioning.Mvc.ApiExplorer" Version="10.2.1" />
     <PackageVersion Include="AwesomeAssertions" Version="9.6.0" />
     <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.102.4" />
     <PackageVersion Include="AWSSDK.S3" Version="4.0.104.4" />
@@ -86,7 +85,6 @@
     <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.13" />
     <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.13" />
-    <PackageVersion Include="Microsoft.AspNetCore.OData" Version="9.5.0" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.13" />
@@ -112,10 +110,10 @@
     <PackageVersion Include="NetTopologySuite" Version="2.6.0" />
     <PackageVersion Include="NetTopologySuite.IO.GeoJSON4STJ" Version="4.0.0" />
     <PackageVersion Include="NetVips" Version="3.2.0" />
-    <!-- Transitive-only pin: never referenced directly (the SDK bans it in our code); Consul, NSwag, and test packages pull it. Pinned to clear GHSA-5crp-9r3c-p9vr (Newtonsoft.Json < 13.0.1). -->
+    <!-- Transitive-only pin: never referenced directly (the SDK bans it in our code); Consul and test packages pull it. Pinned to clear GHSA-5crp-9r3c-p9vr (Newtonsoft.Json < 13.0.1). -->
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageVersion Include="Nito.Disposables" Version="2.5.0" />
-    <!-- Transitive-only pin: never referenced directly; sets the version under NSwag. -->
+    <!-- Transitive-only pin: never referenced directly; sets the version under WireMock.Net. -->
     <PackageVersion Include="NJsonSchema" Version="11.6.1" />
     <PackageVersion Include="Npgsql" Version="10.0.3" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
@@ -124,10 +122,8 @@
          Pulsar.Client's NSec 22.4.0 dependency here; Pulsar.Client calls only the span-based AES-256-GCM and
          Key.Import members, whose signatures are unchanged in 26.x. -->
     <PackageVersion Include="NSec.Cryptography" Version="26.4.0" />
-    <PackageVersion Include="NSwag.Annotations" Version="14.7.1" />
-    <PackageVersion Include="NSwag.AspNetCore" Version="14.7.1" />
     <PackageVersion Include="Nito.AsyncEx" Version="5.1.2" />
-    <!-- Transitive override (NSwag -> SkiaSharp dependency chain): pinned to clear GHSA-jxpf-xq2m-q525 (OpenMcdf < 3.1.3 DoS). -->
+    <!-- Transitive override (FileSignatures dependency): pinned to clear GHSA-jxpf-xq2m-q525 (OpenMcdf < 3.1.3 DoS). -->
     <PackageVersion Include="OpenMcdf" Version="3.3.0" />
     <PackageVersion Include="OpenTelemetry.Api" Version="1.19.1" />
     <!-- Transitive override: pinned to clear GHSA-4625-4j76-fww9, GHSA-mr8r-92fq-pj8p, GHSA-q834-8qmm-v933 in OpenTelemetry OTLP exporter < 1.15.3. -->
