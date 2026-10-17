@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using FluentValidation.Results;
 using Headless.Api.Resources;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Http;
@@ -18,7 +17,7 @@ namespace Headless.Api;
 /// <para>
 /// If no validators are registered the request is passed through unchanged.
 /// Multiple validators run one after another, each with its own validation context, so validators that share scoped
-/// services never run concurrently and each failure is reported once; a single validator uses a fast path.
+/// services never run concurrently and each failure is reported once.
 /// </para>
 /// <para>
 /// Validation failures are returned as a 422 Unprocessable Entity problem-details response —
@@ -83,52 +82,12 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
             return TypedResults.Problem(creator.BadRequest(detail: error.Description, error: error));
         }
 
-        ValidationResult[] validationResults;
+        var failures = await EndpointValidation
+            .CollectFailuresAsync(validatorList, request, failures: null, context.HttpContext.RequestAborted)
+            .ConfigureAwait(false);
 
-        if (validatorList.Count == 1)
-        {
-            // Fast path for a single validator: the common IsValid case returns without allocating the results
-            // array at all.
-            var result = await validatorList[0]
-                .ValidateAsync(new ValidationContext<TRequest>(request), context.HttpContext.RequestAborted)
-                .ConfigureAwait(false);
-
-            if (result.IsValid)
-            {
-                return await next(context).ConfigureAwait(false);
-            }
-
-            validationResults = [result];
-        }
-        else
-        {
-            // Sequential, one context per validator: a FluentValidation result wraps its context's failure list, so a
-            // shared context would hand every validator's failures to every result (and race when run concurrently),
-            // and validators commonly share scoped services such as a DbContext that are not safe for concurrent use.
-            validationResults = new ValidationResult[validatorList.Count];
-
-            for (var i = 0; i < validatorList.Count; i++)
-            {
-                validationResults[i] = await validatorList[i]
-                    .ValidateAsync(new ValidationContext<TRequest>(request), context.HttpContext.RequestAborted)
-                    .ConfigureAwait(false);
-            }
-        }
-
-        // Early exit if all valid - avoids the failure-projection LINQ chain below
-        if (validationResults.All(x => x.IsValid))
-        {
-            return await next(context).ConfigureAwait(false);
-        }
-
-        var failures = validationResults
-            .Where(x => !x.IsValid)
-            .SelectMany(result => result.Errors)
-            .Where(failure => failure is not null)
-            .ToErrorDescriptors();
-
-        var problemDetailsCreator = context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsCreator>();
-
-        return TypedResults.Problem(problemDetailsCreator.UnprocessableEntity(failures));
+        return failures is null
+            ? await next(context).ConfigureAwait(false)
+            : EndpointValidation.UnprocessableEntity(context.HttpContext, failures);
     }
 }

@@ -303,7 +303,8 @@
       "headless.api.minimalapi": {
         "type": "Project",
         "dependencies": {
-          "Headless.Api": "[1.0.0, )"
+          "Headless.Api": "[1.0.0, )",
+          "Mediator.Abstractions": "[3.0.2, )"
         }
       },
       "headless.api.mvc": {

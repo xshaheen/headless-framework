@@ -30,7 +30,7 @@ public sealed class ApiResultExtensionsTests : TestBase
 
         // then
         var responses = builder.Metadata.OfType<IProducesResponseTypeMetadata>().ToList();
-        responses.Select(response => response.StatusCode).Should().BeEquivalentTo([200, 401, 403, 404, 409, 422]);
+        responses.Select(response => response.StatusCode).Should().BeEquivalentTo([200, 400, 401, 403, 404, 409, 422]);
         var success = responses.Single(response => response.StatusCode == 200);
         success.Type.Should().Be<string>();
         success.ContentTypes.Should().Equal("application/json");
@@ -58,7 +58,7 @@ public sealed class ApiResultExtensionsTests : TestBase
 
         // then
         var responses = builder.Metadata.OfType<IProducesResponseTypeMetadata>().ToList();
-        responses.Select(response => response.StatusCode).Should().BeEquivalentTo([204, 401, 403, 404, 409, 422]);
+        responses.Select(response => response.StatusCode).Should().BeEquivalentTo([204, 400, 401, 403, 404, 409, 422]);
         responses.Single(response => response.StatusCode == 204).ContentTypes.Should().BeEmpty();
     }
 
@@ -79,7 +79,7 @@ public sealed class ApiResultExtensionsTests : TestBase
             .Metadata.OfType<IProducesResponseTypeMetadata>()
             .Select(response => response.StatusCode)
             .Should()
-            .BeEquivalentTo([200, 401, 403, 404, 409, 422]);
+            .BeEquivalentTo([200, 400, 401, 403, 404, 409, 422]);
     }
 
     #region Error description localization
@@ -89,17 +89,16 @@ public sealed class ApiResultExtensionsTests : TestBase
     {
         // given
         var creator = _CreateLocalizingCreator(new OutOfStockLocalizer());
-        var conflict = ApiResult<string>.Fail(new ConflictError("app:out_of_stock", "Out of stock."));
+        var conflict = new ConflictError("app:out_of_stock", "Out of stock.");
         var forbidden = new ForbiddenError(new ErrorDescriptor("app:no_access", "No access."));
 
         // when
-        var conflictResult = (IValueHttpResult)conflict.ToHttpResult(creator);
+        var conflictResult = conflict.ToHttpResult(creator);
         var forbiddenResult = forbidden.ToHttpResult(creator);
 
         // then
-        var conflictBody = conflictResult.Value.Should().BeOfType<ProblemDetails>().Subject;
-        conflictBody
-            .Extensions["errors"]
+        conflictResult
+            .ProblemDetails.Extensions["errors"]
             .Should()
             .BeAssignableTo<IReadOnlyCollection<ErrorDescriptor>>()
             .Which.Should()
@@ -124,12 +123,11 @@ public sealed class ApiResultExtensionsTests : TestBase
     public void should_return_ok_with_value_when_success()
     {
         // given
-        var creator = _CreateProblemDetailsCreator();
         const string expectedValue = "test-value";
         var result = ApiResult<string>.Ok(expectedValue);
 
         // when
-        var httpResult = result.ToHttpResult(creator);
+        var httpResult = result.ToHttpResult();
 
         // then
         httpResult.Should().BeOfType<ApiResultHttpResult<string>>();
@@ -141,11 +139,10 @@ public sealed class ApiResultExtensionsTests : TestBase
     public void should_return_problem_when_error_for_generic_result()
     {
         // given
-        var creator = _CreateProblemDetailsCreator();
         var result = ApiResult<string>.Fail(new ConflictError("test:error", "Test error message"));
 
         // when
-        var httpResult = result.ToHttpResult(creator);
+        var httpResult = result.ToHttpResult();
 
         // then
         httpResult.Should().BeOfType<ApiResultHttpResult<string>>();
@@ -160,11 +157,10 @@ public sealed class ApiResultExtensionsTests : TestBase
     public void should_return_no_content_when_success()
     {
         // given
-        var creator = _CreateProblemDetailsCreator();
         var result = ApiResult.Ok();
 
         // when
-        var httpResult = result.ToHttpResult(creator);
+        var httpResult = result.ToHttpResult();
 
         // then
         httpResult.Should().BeOfType<ApiResultHttpResult>();
@@ -175,11 +171,10 @@ public sealed class ApiResultExtensionsTests : TestBase
     public void should_return_problem_when_error_for_void_result()
     {
         // given
-        var creator = _CreateProblemDetailsCreator();
         var result = ApiResult.Fail(new ConflictError("test:error", "Test error message"));
 
         // when
-        var httpResult = result.ToHttpResult(creator);
+        var httpResult = result.ToHttpResult();
 
         // then
         httpResult.Should().BeOfType<ApiResultHttpResult>();
@@ -440,10 +435,8 @@ public sealed class ApiResultExtensionsTests : TestBase
     public void should_throw_clear_error_when_mapping_default_result()
     {
         // given
-        var creator = _CreateProblemDetailsCreator();
-
         // when
-        var action = () => default(ApiResult).ToHttpResult(creator);
+        var action = () => default(ApiResult).ToHttpResult();
 
         // then
         action.Should().Throw<InvalidOperationException>();
@@ -453,10 +446,8 @@ public sealed class ApiResultExtensionsTests : TestBase
     public void should_throw_clear_error_when_mapping_default_generic_result()
     {
         // given
-        var creator = _CreateProblemDetailsCreator();
-
         // when
-        var action = () => default(ApiResult<string>).ToHttpResult(creator);
+        var action = () => default(ApiResult<string>).ToHttpResult();
 
         // then
         action.Should().Throw<InvalidOperationException>();

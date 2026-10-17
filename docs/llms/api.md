@@ -16,7 +16,7 @@ The package split:
 
 Choose an endpoint style:
 
-- **Minimal API** (recommended for new projects): Add `Headless.Api.MinimalApi` and call `ConfigureHeadlessMinimalApi()` for JSON config, validation filters, and exception handling.
+- **Minimal API** (recommended for new projects): Add `Headless.Api.MinimalApi` and call `ConfigureHeadlessMinimalApi()` for the JSON conventions. The package adds mediator dispatch (`MapPostRequest<TRequest, TResponse>`, `sender.DispatchAsync(request, ct)`), `ApiResult` results with complete OpenAPI metadata, and group-level validation and problem-response conventions. Exception handling comes from `AddHeadlessProblemDetails()`, which `AddHeadless()` registers.
 - **MVC/Controllers**: Add `Headless.Api.Mvc` and call `ConfigureHeadlessMvc()` for base controllers, exception filters, and URL canonicalization.
 
 Use `Headless.Api.Abstractions` when you only need interfaces (`IRequestContext`, `IWebClientInfoProvider`) without pulling in the full API stack.
@@ -48,7 +48,7 @@ Additional packages:
 - CORS governs browsers only. A native mobile client (React Native on iOS or Android, Flutter, a native SDK) sends no `Origin` header, so no policy applies and its requests pass unchanged; authenticate it like any client and never treat CORS as protection against non-browser callers. Its browser-hosted variants do need origins: an Expo or React Native Web dev server (`http://localhost:8081`, `http://localhost:19006`), the deployed web build, and Capacitor or Ionic webviews (`capacitor://localhost`, `ionic://localhost`).
 - `Headless.Api.ServiceDefaults` validates by default that `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` were applied at startup. For custom/manual pipelines, disable via `options.Validation.RequireUseHeadless = false`, `options.Validation.RequireStatusCodesRewriter = false`, and `options.Validation.RequireMapHeadlessEndpoints = false`.
 - `AddHeadless()` invokes `SetupApi.ConfigureGlobalSettings()` automatically (idempotent) to set the regex timeout and FluentValidation defaults. It no longer changes the `JsonWebTokenHandler` statics: the Headless token factory and bearer scheme turn off inbound claim mapping on their own handlers. Call it manually only if you need those defaults applied before `AddHeadless()` runs.
-- Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.Validate<T>()` on endpoints for FluentValidation integration.
+- Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Call `.ValidateArguments()` on a route group (or a surface) to validate every argument that has a registered `IValidator<T>`; use `.Validate<T>()` on a single endpoint only when the group convention does not fit, and never both for the same argument. Return `ApiResult` through `ToHttpResult()`, `sender.DispatchAsync(...)`, or the `Map*Request` helpers, not a hand-written bridge.
 - For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureHeadlessMvc()` not manual `MvcOptions` configuration.
 - Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`, `PhoneNumber()`, `GeoCoordinate()`, `PageMetadata()`) for API-boundary validation — do not write manual file or request-contract validation logic.
 - Use `PersistKeysToBlobStorage()` from `Headless.DataProtection.Blobs` to persist Data Protection keys in distributed/containerized environments.
@@ -1034,16 +1034,28 @@ Inherits Serilog configuration from `Headless.Logging.Serilog`. See that package
 
 ## Headless.Api.MinimalApi
 
-Framework integration for ASP.NET Core Minimal APIs with JSON configuration, validation filters, and exception handling.
+Framework integration for ASP.NET Core Minimal APIs: JSON configuration, mediator dispatch, `ApiResult` responses with complete OpenAPI metadata, FluentValidation filters, and entity-tag concurrency.
 
 ### API and behavior
 
-- Pre-configured JSON serialization options
-- `MinimalApiValidatorFilter` — FluentValidation integration via `.Validate<T>()` on endpoint builders
-- Entity-tag concurrency via `.WithEntityTag()` and `.RequireIfMatch()` endpoint filters
-- `ApiResult<T>.ToHttpResult(...)` / `ApiResult.ToHttpResult(...)` — exception-equivalent ProblemDetails mapping with automatic 200/204 and 401/403/404/409/422 OpenAPI metadata. The extensions (`ApiResultExtensions`) and the returned `ApiResultHttpResult<T>` / `ApiResultHttpResult` live in `Headless.Api`, the namespace the rest of the package's endpoint API uses, so a file that imports `Headless.Api` and `Headless.Primitives` (for `ApiResult`) sees them; do not write a local bridge
-- API versioning integration
-- Endpoint discovery extensions
+- `ConfigureHeadlessMinimalApi()` — applies the Headless JSON conventions to Minimal API `JsonOptions`, indented in Development and Test. It registers nothing else: exception handling comes from `AddHeadlessProblemDetails()` in `Headless.Api`, and validation is per endpoint or per group (below).
+- `ApiResult<T>.ToHttpResult()`, `ApiResult.ToHttpResult()`, and `ApiResult<T>.ToCreatedHttpResult(value => location)` — 200 with the value, 204, or 201 with a `Location` field on success, and the error's problem-details response on failure. They return `ApiResultHttpResult<T>`, `ApiResultHttpResult`, and `ApiResultCreatedHttpResult<T>`, which publish the success type and the 400/401/403/404/409/422 problem responses to OpenAPI. The problem body is built when the result executes, from the request's `IProblemDetailsCreator`, so the endpoint never injects the creator. `ApiResultError.ToHttpResult(creator)` returns a plain `ProblemHttpResult` for composing your own `Results<...>` union.
+- `ISender.DispatchAsync(request, ct)` and `ISender.DispatchCreatedAsync(request, value => location, ct)` (`HeadlessSenderExtensions`) — send a `Mediator` request whose handler returns `ApiResult` or `ApiResult<T>`, and return the matching result type above. A `null` request answers 400 without reaching the mediator, as the MVC `ApiControllerBase` helpers do.
+- `MapGetRequest`, `MapDeleteRequest`, `MapPostRequest`, `MapPutRequest`, `MapPatchRequest` (`HeadlessRequestEndpointRouteBuilderExtensions`) — map a route whose whole handler is bind, dispatch, respond. `<TRequest, TResponse>` returns 200 with the value; `<TRequest>` returns 204. `MapPostRequest<TRequest, TResponse>(pattern, value => location)` returns 201.
+- `.ValidateArguments()` on a route group or endpoint — validates each handler argument that has a registered `IValidator<T>`. `.Validate<T>()` on one endpoint — validates one argument type with `MinimalApiValidatorFilter<T>`. Both answer 422 and document it.
+- `.ProducesStandardProblems()` on a route group or endpoint — documents the 400/401/403/404/409/422/429 problem responses.
+- `app.MapApiSurface(name)` — maps a surface's route group with its prefix, authorization, tenancy, and OpenAPI tag defaults.
+- Entity-tag concurrency via `.WithEntityTag()` and `.RequireIfMatch()` endpoint filters.
+- The extensions and result types live in `Headless.Api`, the namespace the rest of the package's endpoint API uses, so a file that imports `Headless.Api` and `Headless.Primitives` (for `ApiResult`) sees them; do not write a local bridge.
+
+### Design constraints
+
+- **The dispatch helpers take `IRequest<T>` only.** They mirror the `Headless.Mediator` pipeline behaviors, which constrain on `IRequest<TResponse>`. A `Mediator` `ICommand<T>` or `IQuery<T>` goes through `sender.Send(...)` and `ToHttpResult()`.
+- **No envelope-specific dispatch.** A handler that returns `ApiResult<DataEnvelope<T>>`, `ApiResult<CollectionEnvelope<T>>`, or `ApiResult<MessageEnvelope>` gets that envelope as the 200 body and as the OpenAPI schema.
+- **The `Map*Request` helpers bind the whole request from one source.** GET and DELETE use `[AsParameters]` (route values and the query string); POST, PUT, and PATCH use the JSON body. A request whose body also needs a route value, such as `PUT /orders/{id}`, needs its own handler that binds both and calls `DispatchAsync`.
+- **A result's `Value` is `null` for a failure.** The problem body exists only once the result executes against a request. Assert a failure's body by executing the result, or call `ApiResultError.ToHttpResult(creator)`.
+- **`ValidateArguments()` decides once per endpoint, at build time.** It closes `IValidator<T>` over each handler parameter type and keeps the parameters with a registration. An endpoint with none gets no filter. A validator registered after the endpoints are built is not seen. Do not also apply `.Validate<T>()` for the same argument, or its validators run twice.
+- **Validate a mediator request in one place.** With `AddMediatorValidationRequestBehavior()` registered (see [mediator.md](mediator.md)), the validators of a request type that a `Map*Request` route or `DispatchAsync` sends run twice: once in the `ValidateArguments()` endpoint filter, which answers 422, and again in the mediator's `ValidationRequestPreProcessor`, which throws `ValidationException`. An async validator that queries a database doubles its I/O. Pick one: leave `ValidateArguments()` off groups that only dispatch through the mediator, or leave the mediator pre-processor unregistered and let the endpoint filter validate. The framework does not detect the overlap at run time, because detecting it would couple `Headless.Api.MinimalApi` to `Headless.Mediator` internals.
 
 ### Install
 
@@ -1064,35 +1076,62 @@ var app = builder.Build();
 app.UseHeadless();
 app.MapHeadlessEndpoints();
 
-app.MapGet(
-    "/orders/{id:guid}",
-    async (Guid id, IOrderService service, IProblemDetailsCreator problems, CancellationToken ct) =>
-        (await service.GetAsync(id, ct)).ToHttpResult(problems)
-).WithEntityTag();
+// This app validates at the endpoint and does not register AddMediatorValidationRequestBehavior(); an app that
+// does should drop ValidateArguments() here, or each request's validators run twice.
+var orders = app.MapGroup("/orders").WithTags("Orders").ProducesStandardProblems().ValidateArguments();
+
+// Bind, dispatch, respond: GetOrder binds {id} with [AsParameters]; CreateOrder binds from the body.
+orders.MapGetRequest<GetOrder, OrderView>("/{id:guid}").WithEntityTag();
+orders.MapPostRequest<CreateOrder, OrderView>("/", order => $"/orders/{order.Id}");
+orders.MapDeleteRequest<DeleteOrder>("/{id:guid}");
+
+// A handler that binds from two sources dispatches itself.
+orders.MapPut(
+    "/{id:guid}",
+    (Guid id, RenameOrderBody body, ISender sender, CancellationToken ct) =>
+        sender.DispatchAsync(new RenameOrder(id, body.Name), ct)
+);
+
+// Without the mediator, return the ApiResult directly.
+orders.MapGet(
+    "/{id:guid}/summary",
+    async (Guid id, IOrderService service, CancellationToken ct) => (await service.GetSummaryAsync(id, ct)).ToHttpResult()
+);
 
 app.MapPut(
-    "/orders/{id:guid}",
+    "/orders/{id:guid}/lines",
     async (Guid id, UpdateOrder request, IIfMatchContext ifMatch, IOrderService service, CancellationToken ct) =>
         await service.UpdateAsync(id, request, ifMatch.EntityTag!, ct)
 ).RequireIfMatch();
 
 app.Run();
+
+public sealed record GetOrder(Guid Id) : IRequest<ApiResult<OrderView>>;
+
+public sealed record CreateOrder(string Name) : IRequest<ApiResult<OrderView>>;
+
+public sealed record DeleteOrder(Guid Id) : IRequest<ApiResult>;
+
+public sealed record RenameOrderBody(string Name);
+
+public sealed record RenameOrder(Guid Id, string Name) : IRequest<ApiResult>;
 ```
 
 ### Configuration
 
 #### API surfaces
 
-After `AddHeadlessApiSurface(...)`, `app.MapApiSurface("portal")` returns a native `RouteGroupBuilder` with the configured prefix and named authorization policy. The optional callback and returned builder support ordinary ASP.NET Core endpoint conventions.
+After `AddHeadlessApiSurface(...)`, `app.MapApiSurface("portal")` returns a native `RouteGroupBuilder` with the configured prefix and named authorization policy. The optional callback and returned builder support ordinary ASP.NET Core endpoint conventions, including `ProducesStandardProblems()` and `ValidateArguments()` for the whole surface. The example assumes the app does not register `AddMediatorValidationRequestBehavior()`; see "Validate a mediator request in one place" under Design constraints above.
 
 ```csharp
-var portal = app.MapApiSurface("portal");
+var portal = app.MapApiSurface("portal").ProducesStandardProblems().ValidateArguments();
 portal.MapGet("profile", () => "profile");
 portal.MapGet("bootstrap", () => "bootstrap").AllowMissingTenant();
 portal.MapGet("status", () => "ready").AllowAnonymous();
+portal.MapGroup("orders").WithTags("Orders").MapGetRequest<ListOrders, CollectionEnvelope<OrderView>>("/");
 ```
 
-Endpoint tenancy choices override surface defaults. Native authorization policies remain additive, and `AllowAnonymous` bypasses them. `RequireTenant` metadata needs the policy and services described in `Headless.Api`. Unknown surface names throw during mapping; nested groups with conflicting surface identities throw when endpoints are built. API Explorer version groups remain independent.
+Endpoint tenancy choices override surface defaults. Native authorization policies remain additive, and `AllowAnonymous` bypasses them. `RequireTenant` metadata needs the policy and services described in `Headless.Api`. An endpoint with no OpenAPI tag of its own, from the endpoint or a nested group, is tagged with the surface's `OpenApi.Title` (default `"{SurfaceName} API"`). Unknown surface names throw during mapping; nested groups with conflicting surface identities throw when endpoints are built. API Explorer version groups remain independent.
 
 Representation validation is optional. The default accepts any strong entity tag. Configure the shared MVC and Minimal API validator when every conditional write uses a specific representation format:
 
@@ -1104,10 +1143,13 @@ builder.Services.AddHeadlessMinimalApiEntityTagConcurrency(options =>
 
 ### Runtime behavior
 
-- `MapApiSurface` adds group route, authorization, and tenancy conventions using the shared surface registry.
-- Configures `JsonOptions` for Minimal APIs
-- Returning `ToHttpResult(...)` makes the full ApiResult response set discoverable by OpenAPI without manual `.Produces(...)` calls
-- When opted in, endpoint filters emit ETags for successful `IHasEntityTag` results and reject missing or invalid `If-Match` preconditions before invoking the handler
+- `MapApiSurface` adds group route, authorization, tenancy, and default-tag conventions using the shared surface registry.
+- `ConfigureHeadlessMinimalApi` configures `JsonOptions` for Minimal APIs and nothing else.
+- Returning an `ApiResult` result type makes the full response set discoverable by OpenAPI without manual `.Produces(...)` calls. `ProducesStandardProblems()`, `ValidateArguments()`, and `.Validate<T>()` add a problem status only when the endpoint does not already document it, so no status is listed twice.
+- A `ForbiddenError` writes its descriptor's description, after `IErrorDescriptionLocalizer`, as the problem `detail`; so does an `UnauthorizedError` that carries a descriptor. MVC `ToActionResult` shares the mapping. An error's `Metadata` stays on the wire as the descriptor's `params` in the `errors` extension; it is not copied to top-level problem fields.
+- An empty body on a `Map{Post,Put,Patch}Request` route, or a JSON `null`, answers a problem-details 400 before the mediator runs. A body that is not valid JSON gets the framework's bare 400, which `UseStatusCodesRewriter()` turns into problem details.
+- `ValidateArguments()` runs every validator of every validated argument one after another, each with its own validation context, and returns all failures as one 422. An optional argument the request omitted is skipped.
+- When opted in, endpoint filters emit ETags for successful `IHasEntityTag` results and reject missing or invalid `If-Match` preconditions before invoking the handler.
 
 ---
 

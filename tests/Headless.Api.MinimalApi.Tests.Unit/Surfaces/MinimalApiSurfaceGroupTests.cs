@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api;
+using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -95,6 +97,66 @@ public sealed class MinimalApiSurfaceGroupTests : TestBase
         app.MapApiSurface("portal").MapApiSurface("console").MapGet("/test", () => "test");
         var conflicting = () => app.DataSources.Single().Endpoints;
         conflicting.Should().Throw<InvalidOperationException>().WithMessage("*conflicting*");
+    }
+
+    [Fact]
+    public void should_tag_untagged_endpoints_with_the_surface_title_and_keep_their_own_tags()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddHeadlessApiSurface("portal", surface => surface.OpenApi.Title = "Portal API");
+        using var provider = services.BuildServiceProvider();
+        var app = new DefaultEndpointRouteBuilder(provider);
+        var portal = app.MapApiSurface("portal");
+        portal.MapGet("/untagged", () => "untagged");
+        portal.MapGet("/tagged", () => "tagged").WithTags("Orders");
+        portal.MapGroup("/users").WithTags("Users").MapGet("/", () => "users");
+
+        // when
+        var endpoints = app.DataSources.Single().Endpoints;
+
+        // then
+        string[] _Tags(string route) =>
+            [
+                .. endpoints
+                    .Single(endpoint => endpoint.DisplayName!.Contains(route, StringComparison.Ordinal))
+                    .Metadata.OfType<ITagsMetadata>()
+                    .SelectMany(metadata => metadata.Tags),
+            ];
+
+        _Tags("untagged").Should().Equal("Portal API");
+        _Tags("/tagged").Should().Equal("Orders");
+        _Tags("users").Should().Equal("Users");
+    }
+
+    [Fact]
+    public void should_document_the_standard_problems_once_per_status_across_a_surface()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddHeadlessApiSurface("portal");
+        using var provider = services.BuildServiceProvider();
+        var app = new DefaultEndpointRouteBuilder(provider);
+        var portal = app.MapApiSurface("portal").ProducesStandardProblems();
+        portal.MapGet("/plain", () => "plain");
+        portal.MapGet("/result", () => ApiResult.Ok().ToHttpResult());
+
+        // when
+        var endpoints = app.DataSources.Single().Endpoints;
+
+        // then
+        foreach (var endpoint in endpoints)
+        {
+            var problems = endpoint
+                .Metadata.OfType<IProducesResponseTypeMetadata>()
+                .Where(response => response.StatusCode >= 400)
+                .ToList();
+            problems
+                .Select(response => response.StatusCode)
+                .Should()
+                .BeEquivalentTo([400, 401, 403, 404, 409, 422, 429], endpoint.DisplayName);
+            problems.Should().AllSatisfy(response => response.ContentTypes.Should().Equal("application/problem+json"));
+        }
     }
 
     private sealed class DefaultEndpointRouteBuilder(IServiceProvider sp) : IEndpointRouteBuilder
