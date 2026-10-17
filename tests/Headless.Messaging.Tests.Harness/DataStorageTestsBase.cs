@@ -73,6 +73,27 @@ public abstract partial class DataStorageTestsBase : TestBase
         return false;
     }
 
+    /// <summary>
+    /// Gets the host port the database container publishes, so a test can put a Toxiproxy route in front of it, or
+    /// <see langword="null"/> for a store with no network connection.
+    /// </summary>
+    protected virtual int? DatabaseHostPort => null;
+
+    /// <summary>
+    /// Creates another storage over the same database that connects through <paramref name="host"/> and
+    /// <paramref name="port"/> instead of directly. Called only when <see cref="DatabaseHostPort"/> is set.
+    /// </summary>
+    protected virtual IDataStorage CreateStorageThrough(string host, int port)
+    {
+        throw new NotSupportedException("This storage has no network connection to route through a proxy.");
+    }
+
+    /// <summary>
+    /// Gets whether the storage under test was registered from an EF Core context (<c>UsePostgreSqlEntityFramework</c>,
+    /// <c>UseSqlServerEntityFramework</c>) rather than from its own connection settings.
+    /// </summary>
+    protected virtual bool RegisteredFromEntityFrameworkContext => false;
+
     /// <summary>Reads the provider's current database UTC time for relational clock conformance.</summary>
     protected virtual Task<DateTime?> GetDatabaseUtcNowAsync(CancellationToken cancellationToken)
     {
