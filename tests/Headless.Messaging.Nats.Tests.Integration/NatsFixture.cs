@@ -173,7 +173,8 @@ public sealed class NatsFixture : HeadlessNatsFixture
         string? streamName = null,
         string? destination = null,
         string? group = null,
-        bool createReplacement = true
+        bool createReplacement = true,
+        TransportConformanceSessionOptions? options = null
     )
     {
         return _CreateConformanceSessionAsync(
@@ -183,7 +184,8 @@ public sealed class NatsFixture : HeadlessNatsFixture
             group,
             createReplacement,
             failEnvelopeBuild: false,
-            cancellationToken
+            cancellationToken,
+            options: options
         );
     }
 
@@ -328,7 +330,8 @@ public sealed class NatsFixture : HeadlessNatsFixture
         bool createReplacement,
         bool failEnvelopeBuild,
         CancellationToken cancellationToken,
-        ConsumerClientRequest? request = null
+        ConsumerClientRequest? request = null,
+        TransportConformanceSessionOptions? options = null
     )
     {
         return _CreateConformanceSessionAsync(
@@ -341,7 +344,8 @@ public sealed class NatsFixture : HeadlessNatsFixture
             createReplacement,
             failEnvelopeBuild,
             cancellationToken,
-            request
+            request,
+            options
         );
     }
 
@@ -355,9 +359,11 @@ public sealed class NatsFixture : HeadlessNatsFixture
         bool createReplacement,
         bool failEnvelopeBuild,
         CancellationToken cancellationToken,
-        ConsumerClientRequest? request = null
+        ConsumerClientRequest? request = null,
+        TransportConformanceSessionOptions? sessionOptions = null
     )
     {
+        sessionOptions ??= new TransportConformanceSessionOptions();
         streamName ??= $"conf-{Guid.NewGuid():N}"[..29];
         destination ??= $"{streamName}.probe";
         group ??= $"group-{Guid.NewGuid():N}"[..30];
@@ -367,11 +373,22 @@ public sealed class NatsFixture : HeadlessNatsFixture
         {
             Servers = connectionString,
             StreamProvisioning = NatsStreamProvisioning.Reconcile,
-            StreamOptions = config => config.Storage = storage,
+            StreamOptions = config =>
+            {
+                config.Storage = storage;
+
+                // A stream's maximum age is how JetStream expires a message nobody consumed in time; the server refuses a
+                // duplicate window longer than it.
+                if (sessionOptions.TimeToLive is { } timeToLive)
+                {
+                    config.MaxAge = timeToLive;
+                    config.DuplicateWindow = timeToLive;
+                }
+            },
             ConsumerOptions = config =>
             {
                 config.AckWait = TimeSpan.FromSeconds(1);
-                config.MaxDeliver = 5;
+                config.MaxDeliver = sessionOptions.DeliveryLimit ?? 5;
             },
         };
 
@@ -388,6 +405,18 @@ public sealed class NatsFixture : HeadlessNatsFixture
         {
             options.Value.CustomHeadersBuilder = static (_, _, _) =>
                 [new KeyValuePair<string, string>(Headers.MessageId, string.Empty)];
+        }
+        else if (sessionOptions.HeaderBuilder is { } headerBuilder)
+        {
+            options.Value.CustomHeadersBuilder = (_, natsHeaders, _) =>
+            {
+                headerBuilder(
+                    natsHeaders is not null && natsHeaders.TryGetValue(Headers.MessageId, out var messageId)
+                        ? messageId.ToString()
+                        : null
+                );
+                return [];
+            };
         }
 #pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.
         var pool = new Headless.Messaging.Nats.NatsConnectionPool(
@@ -408,7 +437,13 @@ public sealed class NatsFixture : HeadlessNatsFixture
             if (request is null)
             {
 #pragma warning disable CA2000 // False positive: the client transfers to consumer, which the session or the catch disposes.
-                var client = new NatsConsumerClient(group, 1, options, services, lane: _ToMessageLane(lane));
+                var client = new NatsConsumerClient(
+                    group,
+                    sessionOptions.Concurrency,
+                    options,
+                    services,
+                    lane: _ToMessageLane(lane)
+                );
 #pragma warning restore CA2000
                 consumer = client;
                 await client.ConnectAsync(cancellationToken);
@@ -445,7 +480,8 @@ public sealed class NatsFixture : HeadlessNatsFixture
                             group,
                             createReplacement: false,
                             failEnvelopeBuild,
-                            replacementToken
+                            replacementToken,
+                            sessionOptions: sessionOptions
                         )
                     : null
             );

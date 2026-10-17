@@ -12,6 +12,7 @@ namespace Tests.Contracts;
 public sealed class SimulatorConsumerConformanceTests : TransportConsumerConformanceTestsBase
 {
     private readonly SimulatorConformance _simulator = new();
+    private int _deadLettersTaken;
 
     protected override string ProviderName => SimulatedBroker.ProviderName;
 
@@ -21,6 +22,40 @@ public sealed class SimulatorConsumerConformanceTests : TransportConsumerConform
     protected override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
         CancellationToken cancellationToken
     ) => _simulator.CreateQueueSessionAsync(cancellationToken);
+
+    protected override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
+        TransportConformanceSessionOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        // The simulator has no header builder, size limit, time-to-live, or key ordering; its manifest cells for those
+        // are not applicable, and a dead-letter is a recorded broker event, so only the concurrency is configurable.
+        return options with { Concurrency = 1, DeadLettering = false } == new TransportConformanceSessionOptions()
+            ? _simulator.CreateQueueSessionAsync(cancellationToken, options.Concurrency)
+            : throw new NotSupportedException($"The simulator does not configure {options}.");
+    }
+
+    protected override bool HasDeadLetterDestination => true;
+
+    /// <summary>The simulator keeps no dead-letter queue; each dead-letter it records stands for the copy one would hold.</summary>
+    protected override ValueTask<IReadOnlyList<string>> TakeDeadLetteredMessageIdsAsync(
+        TransportConsumerConformanceSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        var subscription = ((SimulatedConsumerClient)session.Consumer).Subscription;
+        var deadLettered = _simulator
+            .Broker.Events.Where(brokerEvent =>
+                brokerEvent.Kind is BrokerEventKind.DeadLettered
+                && string.Equals(brokerEvent.Subscription, subscription, StringComparison.Ordinal)
+            )
+            .Select(brokerEvent => brokerEvent.MessageId!)
+            .ToList();
+        var taken = deadLettered.Skip(_deadLettersTaken).ToList();
+        _deadLettersTaken = deadLettered.Count;
+
+        return ValueTask.FromResult<IReadOnlyList<string>>(taken);
+    }
 
     [Fact]
     public override Task should_match_production_runtime_capabilities() =>

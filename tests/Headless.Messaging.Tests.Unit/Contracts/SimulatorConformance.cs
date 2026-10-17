@@ -28,23 +28,28 @@ internal sealed class SimulatorConformance : IAsyncDisposable
     public TransportProviderConformanceDriver Driver { get; }
 
     /// <summary>Opens a session on a queue of its own, as a broker leaf's per-test destination.</summary>
-    public ValueTask<TransportConsumerConformanceSession> CreateQueueSessionAsync(CancellationToken cancellationToken)
+    public ValueTask<TransportConsumerConformanceSession> CreateQueueSessionAsync(
+        CancellationToken cancellationToken,
+        byte concurrency = 1
+    )
     {
         var destination = $"conformance-{Guid.NewGuid():N}";
         return CreateSessionAsync(
             new TransportConformanceEndpoint(MessageLane.Queue, destination, destination, "replica-1"),
-            cancellationToken
+            cancellationToken,
+            concurrency
         );
     }
 
     public async ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
         TransportConformanceEndpoint endpoint,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        byte concurrency = 1
     )
     {
 #pragma warning disable CA2000 // Ownership transfers to the returned conformance session.
         var producer = Broker.CreateTransport(endpoint.Lane);
-        var consumer = Broker.CreateConsumerClient(endpoint.ToRequest());
+        var consumer = Broker.CreateConsumerClient(endpoint.ToRequest(concurrency));
 #pragma warning restore CA2000
         await consumer.SubscribeAsync([endpoint.LogicalName], cancellationToken);
 
@@ -53,7 +58,7 @@ internal sealed class SimulatorConformance : IAsyncDisposable
             producer,
             consumer,
             TimeSpan.FromSeconds(1),
-            createReplacementSession: token => CreateSessionAsync(endpoint, token),
+            createReplacementSession: token => CreateSessionAsync(endpoint, token, concurrency),
             timeProvider: WaitClock
         );
     }

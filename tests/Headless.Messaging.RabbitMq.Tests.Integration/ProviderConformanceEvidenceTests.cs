@@ -97,6 +97,34 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
                     RabbitMqConsumerClientConformanceTests.should_terminally_reject_malformed_envelope_across_consumer_restart
                 )
             ),
+            _Bind(
+                TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+                nameof(
+                    RabbitMqConsumerClientConformanceTests.should_redeliver_then_give_up_when_the_header_builder_fails_transiently
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.DeadLetterSingleCopy,
+                nameof(
+                    RabbitMqConsumerClientConformanceTests.should_keep_one_dead_letter_copy_and_settle_the_original_once
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.StandardHeaderRoundTrip,
+                nameof(RabbitMqConsumerClientConformanceTests.should_round_trip_every_standard_header_unchanged)
+            ),
+            _Bind(
+                TransportConformanceScenario.HandlerConcurrencyCap,
+                nameof(
+                    RabbitMqConsumerClientConformanceTests.should_never_hand_over_more_deliveries_at_once_than_the_requested_concurrency
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.MessageExpiry,
+                nameof(
+                    RabbitMqConsumerClientConformanceTests.should_not_deliver_a_message_that_expired_before_it_was_consumed
+                )
+            ),
             _BindRequestReply(
                 TransportConformanceScenario.RequestReplyRoundTrip,
                 nameof(RabbitMqRequestReplyConformanceTests.should_return_the_typed_response_of_a_request)

@@ -29,6 +29,20 @@ public sealed class AmazonSqsConsumerClientConformanceTests(LocalStackTestFixtur
         return fixture.CreateConformanceSessionAsync(cancellationToken);
     }
 
+    protected override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
+        TransportConformanceSessionOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        return fixture.CreateConformanceSessionAsync(cancellationToken, options: options);
+    }
+
+    /// <summary>
+    /// LocalStack's SQS limit of 256 KiB, which counts message attributes too: the conformance envelope's header bag
+    /// takes 207 bytes of it, and SQS refuses a larger message at send.
+    /// </summary>
+    protected override int MaximumBodySize => (256 * 1024) - 207;
+
     [Fact]
     public override Task should_round_trip_queue_message_body_and_headers()
     {

@@ -23,6 +23,32 @@ public sealed class RedisConsumerConformanceTests(RedisMessagingFixture fixture)
         return fixture.CreateSessionAsync(MessageLane.Queue, destination, destination, cancellationToken);
     }
 
+    protected override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
+        TransportConformanceSessionOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        var destination = $"conformance-{Guid.NewGuid():N}";
+        return fixture.CreateSessionAsync(
+            MessageLane.Queue,
+            destination,
+            destination,
+            cancellationToken,
+            request: new ConsumerClientRequest(destination, options.Concurrency, MessageLane.Queue),
+            configure: redis =>
+            {
+                if (options.HeaderBuilder is { } headerBuilder)
+                {
+                    redis.CustomHeadersBuilder = (entry, _) =>
+                    {
+                        headerBuilder(RedisMessage.Create(entry).Id);
+                        return [];
+                    };
+                }
+            }
+        );
+    }
+
     [Fact]
     public override Task should_round_trip_queue_message_body_and_headers() =>
         base.should_round_trip_queue_message_body_and_headers();

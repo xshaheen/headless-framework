@@ -35,6 +35,13 @@ public enum TransportConformanceScenario
     RequestReplyCallerCleanup,
     RequestReplyStartupRejection,
     RawPayloadConsumption,
+    HeaderBuilderFailureRedelivery,
+    DeadLetterSingleCopy,
+    StandardHeaderRoundTrip,
+    HandlerConcurrencyCap,
+    PerKeyOrdering,
+    BodySizeLimit,
+    MessageExpiry,
 }
 
 /// <summary>
@@ -236,6 +243,15 @@ public static class TransportConformanceManifest
 {
     private const string _RequestReplyIssueUrl = "https://github.com/xshaheen/headless-framework/issues/222";
 
+    /// <summary>The open issue that tracks settling a custom headers builder failure the same way on every provider.</summary>
+    private const string _HeaderBuilderIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1199";
+
+    /// <summary>An Azure Service Bus cell that only the protected, credential-gated workflow can prove.</summary>
+    private static readonly ConformanceSupport _AzureWorkflowGap = ConformanceSupport.Unsupported(
+        "Needs the protected Azure workflow to execute; no run has proven it yet.",
+        TransportConformanceProfile.GapIssueUrl
+    );
+
     private static readonly TransportConformanceScenario[] _MandatoryBaselineScenarios =
     [
         TransportConformanceScenario.RoutingAffinityMappingOrRejection,
@@ -288,6 +304,23 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.RequestReplyStartupRejection,
                     ConformanceSupport.NotApplicable("NATS supports request/reply, so startup accepts it.")
                 )
+                .WithScenario(TransportConformanceScenario.HeaderBuilderFailureRedelivery, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.DeadLetterSingleCopy,
+                    ConformanceSupport.NotApplicable(
+                        "JetStream has no dead-letter destination: a dead-letter terminates the delivery, and the server's MSG_TERMINATED advisory is the only record of it."
+                    )
+                )
+                .WithScenario(TransportConformanceScenario.StandardHeaderRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HandlerConcurrencyCap, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.PerKeyOrdering,
+                    ConformanceSupport.NotApplicable(
+                        "NATS rejects a routing affinity key at publish, so it orders no messages by key."
+                    )
+                )
+                .WithScenario(TransportConformanceScenario.BodySizeLimit, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.MessageExpiry, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
             ["RabbitMQ"] = TransportConformanceProfile
                 .CreateDisabled("RabbitMQ")
@@ -353,6 +386,24 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.RequestReplyStartupRejection,
                     ConformanceSupport.NotApplicable("RabbitMQ supports request/reply, so startup accepts it.")
                 )
+                .WithScenario(TransportConformanceScenario.HeaderBuilderFailureRedelivery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.DeadLetterSingleCopy, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.StandardHeaderRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HandlerConcurrencyCap, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.PerKeyOrdering,
+                    ConformanceSupport.NotApplicable(
+                        "RabbitMQ rejects a routing affinity key at publish, so it orders no messages by key."
+                    )
+                )
+                .WithScenario(
+                    TransportConformanceScenario.BodySizeLimit,
+                    ConformanceSupport.Unsupported(
+                        "A body over the client's 64 MiB inbound limit is accepted by the broker, then closes the consumer's connection on delivery, so the consumer stops and the publish is reported as failed although the message was kept.",
+                        "https://github.com/xshaheen/headless-framework/issues/1280"
+                    )
+                )
+                .WithScenario(TransportConformanceScenario.MessageExpiry, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
             ["AWS/LocalStack"] = TransportConformanceProfile
                 .CreateDisabled("AWS/LocalStack")
@@ -397,6 +448,29 @@ public static class TransportConformanceManifest
                     )
                 )
                 .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+                    ConformanceSupport.Unsupported(
+                        "A header builder failure settles the message as malformed and deletes it, so the message is lost instead of redelivered.",
+                        _HeaderBuilderIssueUrl
+                    )
+                )
+                .WithScenario(
+                    TransportConformanceScenario.DeadLetterSingleCopy,
+                    ConformanceSupport.NotApplicable(
+                        "SQS moves a message to a dead-letter queue only through a queue's redrive policy, so a dead-letter deletes the message as a commit does."
+                    )
+                )
+                .WithScenario(TransportConformanceScenario.StandardHeaderRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HandlerConcurrencyCap, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.PerKeyOrdering, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BodySizeLimit, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.MessageExpiry,
+                    ConformanceSupport.NotApplicable(
+                        "SQS expires a message only through its queue's retention period, at least 60 seconds, which the provider leaves at the queue default."
+                    )
+                )
                 .EnableRealBrokerLeaf(),
             ["Kafka"] = TransportConformanceProfile
                 .CreateDisabled("Kafka")
@@ -466,6 +540,29 @@ public static class TransportConformanceManifest
                     )
                 )
                 .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+                    ConformanceSupport.Unsupported(
+                        "A header builder failure seeks back to the record, which is redelivered without end: Kafka has no delivery budget and the provider adds none.",
+                        _HeaderBuilderIssueUrl
+                    )
+                )
+                .WithScenario(
+                    TransportConformanceScenario.DeadLetterSingleCopy,
+                    ConformanceSupport.NotApplicable(
+                        "Kafka has no dead-letter destination, so a dead-letter commits the record's offset as a commit does."
+                    )
+                )
+                .WithScenario(TransportConformanceScenario.StandardHeaderRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HandlerConcurrencyCap, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.PerKeyOrdering, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BodySizeLimit, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.MessageExpiry,
+                    ConformanceSupport.NotApplicable(
+                        "Kafka retention deletes whole log segments on a topic-wide schedule; it is not a per-message time-to-live, and the provider sets none."
+                    )
+                )
                 .EnableRealBrokerLeaf(),
             ["Pulsar"] = TransportConformanceProfile
                 .CreateDisabled("Pulsar")
@@ -518,6 +615,29 @@ public static class TransportConformanceManifest
                     )
                 )
                 .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+                    ConformanceSupport.Unsupported(
+                        "A header builder failure settles the message as malformed and acknowledges it, so the message is lost instead of redelivered.",
+                        _HeaderBuilderIssueUrl
+                    )
+                )
+                .WithScenario(
+                    TransportConformanceScenario.DeadLetterSingleCopy,
+                    ConformanceSupport.NotApplicable(
+                        "Pulsar's dead-letter topic is fed only by the client's redelivery budget, so a dead-letter acknowledges the message as a commit does."
+                    )
+                )
+                .WithScenario(TransportConformanceScenario.StandardHeaderRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HandlerConcurrencyCap, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.PerKeyOrdering, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BodySizeLimit, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.MessageExpiry,
+                    ConformanceSupport.NotApplicable(
+                        "Pulsar's message time-to-live is a namespace policy an operator sets; the provider sets none."
+                    )
+                )
                 .EnableRealBrokerLeaf(),
             ["Azure Service Bus"] = TransportConformanceProfile
                 .CreateDisabled("Azure Service Bus")
@@ -572,6 +692,25 @@ public static class TransportConformanceManifest
                     )
                 )
                 .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+                    ConformanceSupport.Unsupported(
+                        "A header builder failure dead-letters the message at once, so it is never redelivered and only a manual replay recovers it.",
+                        _HeaderBuilderIssueUrl
+                    )
+                )
+                .WithScenario(TransportConformanceScenario.DeadLetterSingleCopy, _AzureWorkflowGap)
+                .WithScenario(TransportConformanceScenario.StandardHeaderRoundTrip, _AzureWorkflowGap)
+                .WithScenario(TransportConformanceScenario.HandlerConcurrencyCap, _AzureWorkflowGap)
+                .WithScenario(
+                    TransportConformanceScenario.PerKeyOrdering,
+                    ConformanceSupport.Unsupported(
+                        "Ordering by key needs a session-enabled entity, which the conformance leaf does not provision, and the protected Azure workflow to run it.",
+                        TransportConformanceProfile.GapIssueUrl
+                    )
+                )
+                .WithScenario(TransportConformanceScenario.BodySizeLimit, _AzureWorkflowGap)
+                .WithScenario(TransportConformanceScenario.MessageExpiry, _AzureWorkflowGap)
                 .EnableRealBrokerLeaf(),
             ["InMemory"] = TransportConformanceProfile
                 .CreateDisabled("InMemory")
@@ -613,6 +752,26 @@ public static class TransportConformanceManifest
                 .WithScenario(
                     TransportConformanceScenario.RequestReplyStartupRejection,
                     ConformanceSupport.NotApplicable("InMemory supports request/reply, so startup accepts it.")
+                )
+                .WithScenario(
+                    TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+                    ConformanceSupport.NotApplicable(
+                        "InMemory transports TransportMessage instances directly, so no custom headers builder runs."
+                    )
+                )
+                .WithScenario(
+                    TransportConformanceScenario.PerKeyOrdering,
+                    ConformanceSupport.NotApplicable(
+                        "InMemory rejects a routing affinity key at publish, so it orders no messages by key."
+                    )
+                )
+                .WithScenario(
+                    TransportConformanceScenario.BodySizeLimit,
+                    ConformanceSupport.NotApplicable("InMemory keeps bodies in process memory and has no size limit.")
+                )
+                .WithScenario(
+                    TransportConformanceScenario.MessageExpiry,
+                    ConformanceSupport.NotApplicable("InMemory has no message time-to-live.")
                 ),
             ["Redis"] = TransportConformanceProfile
                 .CreateDisabled("Redis")
@@ -652,6 +811,37 @@ public static class TransportConformanceManifest
                 .WithScenario(
                     TransportConformanceScenario.RequestReplyStartupRejection,
                     ConformanceSupport.NotApplicable("Redis supports request/reply, so startup accepts it.")
+                )
+                .WithScenario(
+                    TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+                    ConformanceSupport.Unsupported(
+                        "A header builder failure settles the entry as malformed and acknowledges it, so the message is lost instead of redelivered.",
+                        _HeaderBuilderIssueUrl
+                    )
+                )
+                .WithScenario(
+                    TransportConformanceScenario.DeadLetterSingleCopy,
+                    ConformanceSupport.NotApplicable(
+                        "Redis Streams have no dead-letter destination, so a dead-letter acknowledges the entry as a commit does."
+                    )
+                )
+                .WithScenario(TransportConformanceScenario.StandardHeaderRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HandlerConcurrencyCap, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.PerKeyOrdering,
+                    ConformanceSupport.NotApplicable(
+                        "Redis rejects a routing affinity key at publish, so it orders no messages by key."
+                    )
+                )
+                .WithScenario(
+                    TransportConformanceScenario.BodySizeLimit,
+                    ConformanceSupport.NotApplicable(
+                        "Redis bounds a stream field only by the server's 512 MB proto-max-bulk-len, a server setting far above any body a conformance run can carry."
+                    )
+                )
+                .WithScenario(
+                    TransportConformanceScenario.MessageExpiry,
+                    ConformanceSupport.NotApplicable("Redis Stream entries have no time-to-live.")
                 )
                 .EnableRealBrokerLeaf(),
             [SimulatedBroker.ProviderName] = _CreateSimulatorProfile(),
@@ -795,6 +985,9 @@ public static class TransportConformanceManifest
             TransportConformanceScenario.BusReplicaCompetition,
             TransportConformanceScenario.QueueOwnership,
             TransportConformanceScenario.SameNameLaneIsolation,
+            TransportConformanceScenario.DeadLetterSingleCopy,
+            TransportConformanceScenario.StandardHeaderRoundTrip,
+            TransportConformanceScenario.HandlerConcurrencyCap,
         ];
 
         var profile = TransportConformanceProfile
@@ -840,6 +1033,26 @@ public static class TransportConformanceManifest
                 ConformanceSupport.NotApplicable(
                     "The simulator carries only messages Headless publishes; no foreign producer can reach it."
                 )
+            )
+            .WithScenario(
+                TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+                ConformanceSupport.NotApplicable(
+                    "The simulator hands TransportMessage instances over directly, so no custom headers builder runs."
+                )
+            )
+            .WithScenario(
+                TransportConformanceScenario.PerKeyOrdering,
+                ConformanceSupport.NotApplicable(
+                    "The simulator rejects a routing affinity key at publish, so it orders no messages by key."
+                )
+            )
+            .WithScenario(
+                TransportConformanceScenario.BodySizeLimit,
+                ConformanceSupport.NotApplicable("The simulator keeps bodies in memory and has no size limit.")
+            )
+            .WithScenario(
+                TransportConformanceScenario.MessageExpiry,
+                ConformanceSupport.NotApplicable("The simulator has no message time-to-live.")
             );
     }
 
