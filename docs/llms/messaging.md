@@ -2606,7 +2606,7 @@ None.
 
 ### Runtime behavior
 
-Registers in-memory transports and consumer client factory. Messages are lost when the process exits.
+Registers in-memory transports and consumer client factory. Messages are lost when the process exits. Outside the Development and Test environments the host logs warning `3013` (`InMemoryTransportOutsideDevelopment`) at start; it does not stop the host, because a single-process deployment can choose this transport on purpose.
 
 A rejected delivery is requeued to the same consumer client after a backoff: about one second for the first delivery, doubling with each redelivery to 30 seconds, jittered (the same curve NATS uses for its `NAK` delay). The core rejects every delivery while a consumer's circuit is open or its half-open probe is out, so without the delay those deliveries would spin. A requeue still pending when the client stops is dropped.
 
