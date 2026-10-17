@@ -146,8 +146,8 @@ public sealed record TransportConformanceProfile(
     TransportMalformedEnvelopeBound? MalformedEnvelopeBound
 )
 {
-    /// <summary>The umbrella issue a cell links while no run has proven it yet.</summary>
-    internal const string GapIssueUrl = "https://github.com/xshaheen/headless-framework/issues/359";
+    /// <summary>The open issue that tracks messaging scenarios no run has proven yet.</summary>
+    internal const string GapIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1277";
 
     /// <summary>The open issue that tracks the network-fault scenarios no provider has proven yet.</summary>
     internal const string NetworkFaultGapIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1247";
@@ -241,7 +241,12 @@ public sealed record TransportConformanceProfile(
 [PublicAPI]
 public static class TransportConformanceManifest
 {
-    private const string _RequestReplyIssueUrl = "https://github.com/xshaheen/headless-framework/issues/222";
+    /// <summary>The open issue that builds the Pulsar reply channel request/reply needs.</summary>
+    private const string _PulsarReplyChannelIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1071";
+
+    /// <summary>The open issue that builds the Azure Service Bus reply channel request/reply needs.</summary>
+    private const string _AzureServiceBusReplyChannelIssueUrl =
+        "https://github.com/xshaheen/headless-framework/issues/1070";
 
     /// <summary>The open issue that tracks settling a custom headers builder failure the same way on every provider.</summary>
     private const string _HeaderBuilderIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1199";
@@ -611,7 +616,7 @@ public static class TransportConformanceManifest
                 .WithRequestReplyScenarios(
                     ConformanceSupport.Unsupported(
                         "The Pulsar reply channel is not built yet, so the provider rejects request/reply at startup.",
-                        _RequestReplyIssueUrl
+                        _PulsarReplyChannelIssueUrl
                     )
                 )
                 .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
@@ -688,7 +693,7 @@ public static class TransportConformanceManifest
                 .WithRequestReplyScenarios(
                     ConformanceSupport.Unsupported(
                         "The Azure Service Bus reply channel is not built yet, so the provider rejects request/reply at startup.",
-                        _RequestReplyIssueUrl
+                        _AzureServiceBusReplyChannelIssueUrl
                     )
                 )
                 .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
