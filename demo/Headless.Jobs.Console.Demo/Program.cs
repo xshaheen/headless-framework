@@ -35,11 +35,16 @@ var host = Host.CreateDefaultBuilder(args)
             });
 
             services.AddHostedService<SampleScheduler>();
+
+            // The host start only verifies its tables, so this demo creates them as it starts; a deployed app runs
+            // `dotnet <app>.dll resources setup` instead.
+            services.AddHeadlessResourceSetupOnStartup();
+            services.AddHeadlessSeedOnStartup();
         }
     )
     .Build();
 
-// Apply the Jobs operational store migrations. The coordination provider creates its own tables during host start.
+// Apply the Jobs operational store migrations. The coordination tables are set up as the host starts.
 await using (var scope = host.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<JobsDbContext>();

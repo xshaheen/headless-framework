@@ -98,7 +98,11 @@ internal static class SqliteFencingSchemaContribution
                     sql
                 ),
             ],
-            applyOnStartup: options.InitializeOnStartup
+            objects:
+            [
+                SchemaObject.Sequence(SqliteDialect.QualifiedName(schema, t.SequenceName)),
+                SchemaObject.Table(SqliteDialect.QualifiedName(schema, t.TableName)),
+            ]
         );
     }
 }

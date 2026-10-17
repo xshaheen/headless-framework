@@ -12,11 +12,12 @@ namespace Headless.Features;
 public sealed class FeatureManagementOptions
 {
     /// <summary>
-    /// When <see langword="true"/>, static feature definitions are persisted to the database on startup so they are
-    /// available to all application instances via the dynamic store. Default: <see langword="true"/>.
+    /// When <see langword="true"/>, the <c>FeatureDefinitions</c> seeder persists static feature definitions to the
+    /// database so they are available to all application instances via the dynamic store. Default:
+    /// <see langword="true"/>.
     /// </summary>
     /// <remarks>
-    /// The startup initializer retries the save up to 10 times with exponential back-off. Set to
+    /// The seeder retries the save up to 10 times with exponential back-off. Set to
     /// <see langword="false"/> when feature definitions are managed exclusively in code and do not need to be
     /// stored in the dynamic store.
     /// </remarks>

@@ -42,9 +42,8 @@ public static class SetupFencingSqlite
         /// <param name="connectionString">The SQLite connection string.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The lease table is created at host startup unless
-        /// <see cref="RelationalFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
-        /// is accepted only on a unit whose SQLite connection reaches this same database.
+        /// The lease table is created by <c>resources setup</c> and verified at host start.
+        /// An enlisted call is accepted only on a unit whose SQLite connection reaches this same database.
         /// </remarks>
         /// <exception cref="ArgumentException"><paramref name="connectionString" /> is <see langword="null" /> or whitespace.</exception>
         public HeadlessFencingSetupBuilder UseSqlite(string connectionString)
@@ -61,9 +60,8 @@ public static class SetupFencingSqlite
         /// <param name="configuration">The configuration section bound to the provider options.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The lease table is created at host startup unless
-        /// <see cref="RelationalFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
-        /// is accepted only on a unit whose SQLite connection reaches the configured database.
+        /// The lease table is created by <c>resources setup</c> and verified at host start.
+        /// An enlisted call is accepted only on a unit whose SQLite connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configuration" /> is <see langword="null" />.</exception>
         public HeadlessFencingSetupBuilder UseSqlite(IConfiguration configuration)
@@ -79,9 +77,8 @@ public static class SetupFencingSqlite
         /// <param name="configure">Delegate that configures the provider options.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The lease table is created at host startup unless
-        /// <see cref="RelationalFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
-        /// is accepted only on a unit whose SQLite connection reaches the configured database.
+        /// The lease table is created by <c>resources setup</c> and verified at host start.
+        /// An enlisted call is accepted only on a unit whose SQLite connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
         public HeadlessFencingSetupBuilder UseSqlite(Action<SqliteFencingOptions> configure)
@@ -100,9 +97,8 @@ public static class SetupFencingSqlite
         /// <param name="configure">Delegate that configures the provider options with service resolution.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The lease table is created at host startup unless
-        /// <see cref="RelationalFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
-        /// is accepted only on a unit whose SQLite connection reaches the configured database.
+        /// The lease table is created by <c>resources setup</c> and verified at host start.
+        /// An enlisted call is accepted only on a unit whose SQLite connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
         public HeadlessFencingSetupBuilder UseSqlite(Action<SqliteFencingOptions, IServiceProvider> configure)

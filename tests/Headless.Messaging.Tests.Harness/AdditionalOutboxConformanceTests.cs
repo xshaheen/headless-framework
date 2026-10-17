@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Headless.Hosting;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
@@ -248,8 +249,15 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
             services =>
                 services.AddDbContext<ShippingOutboxDbContext>(options =>
                     UseDatabase(options, shipping.ConnectionString)
-                )
+                ),
+            setupResources: false
         );
+
+        // The deploy step reaches every database it can and names the one it cannot.
+        await FluentActions
+            .Awaiting(() => host.Services.SetupResourcesAsync(AbortToken))
+            .Should()
+            .ThrowAsync<StatefulResourceException>();
 
         // when
         await _StartAsync(host);
@@ -262,8 +270,9 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
         await _PublishAsync<BillingOutboxDbContext>(host.Services, billingMarker);
         await inbox.WaitAsync(billingMarker, _DeliveryTimeout, AbortToken);
 
-        // and when — the shipping database comes back and a unit on it publishes
+        // and when — the shipping database comes back, the deployment sets it up, and a unit on it publishes
         await CreateDatabaseAsync(shipping.Name);
+        await host.Services.SetupResourcesAsync(AbortToken);
         var shippingMarker = $"shipping-{Guid.NewGuid():N}";
         await _PublishAsync<ShippingOutboxDbContext>(host.Services, shippingMarker);
 
@@ -279,14 +288,14 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
     [Fact]
     public async Task should_export_an_outbox_schema_that_creates_its_tables_on_an_empty_database()
     {
-        // given — a host with an additional outbox whose database is still empty, and a runner that only verifies
+        // given — a host with an additional outbox whose database is still empty
         var orders = await _CreateDatabaseAsync("orders");
         var billing = await _CreateDatabaseAsync("billing");
         using var host = _BuildHost(
             orders,
             billing,
             setup => UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox()),
-            services => services.AddHeadlessSchemaRunner(options => options.Mode = SchemaRunnerMode.Verify)
+            setupResources: false
         );
         var runner = host.Services.GetRequiredService<SchemaRunner>();
         var outboxContribution = runner.Contributions.Single(c => c.ExportOnly);
@@ -306,12 +315,19 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
         TestDatabase primary,
         TestDatabase billing,
         Action<MessagingSetupBuilder> configureOutboxes,
-        Action<IServiceCollection>? configureServices = null
+        Action<IServiceCollection>? configureServices = null,
+        bool setupResources = true
     )
     {
         var builder = Host.CreateApplicationBuilder();
         var services = builder.Services;
         services.AddLogging();
+
+        if (setupResources)
+        {
+            services.AddHeadlessResourceSetupOnStartup();
+        }
+
         services.AddSingleton<ProbeInbox>();
         services.AddDbContext<OrdersOutboxDbContext>(options => UseDatabase(options, primary.ConnectionString));
         services.AddDbContext<BillingOutboxDbContext>(options => UseDatabase(options, billing.ConnectionString));
@@ -338,7 +354,8 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
 
     private async Task _InitializeAllOutboxesAsync(IHost host)
     {
-        await host.Services.ApplyMessagingSchemaAsync(AbortToken);
+        // The deploy step: creates the primary's and every additional outbox's tables, which the initializers verify.
+        await host.Services.SetupResourcesAsync(AbortToken);
         foreach (var outbox in host.Services.GetRequiredService<MessagingOutboxes>().Secondaries)
         {
             await outbox.Initializer.InitializeAsync(AbortToken);

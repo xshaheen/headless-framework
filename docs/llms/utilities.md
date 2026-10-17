@@ -292,15 +292,16 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 - Dependency health checks: provider packages contribute readiness checks through `AddHeadlessHealthCheck`, tagged with `HeadlessHealthCheckTags`; applications drop any of them with `RemoveHealthChecks`. See [Health checks](#health-checks)
 - Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
 - Host manifest: `RunHeadlessAsync(args)` prints, for the `describe` verb, the JSON each `IHostManifestSection` writes about what its feature registered, without starting the host. See [Host manifest](#host-manifest)
+- Stateful resources: `IStatefulResource` (setup, check, clear, teardown, status) for external state a feature needs, the `resources` verb of `RunHeadlessAsync(args)` that a deployment runs, `AddHeadlessResourceSetupOnStartup` for development and test hosts, and `SetupResourcesAsync` / `ResetResourceStateAsync` / `TeardownResourcesAsync` on `IServiceProvider`. See [Stateful resources](#stateful-resources)
 - Pre-start health check: `RunHeadlessAsync(args)` runs the host's health checks once for the `check` verb, skipping `host-state` checks, and exits 1 when one is `Unhealthy`. See [Health check command](#health-check-command)
 - Options validation with FluentValidation
 - Configuration binding extensions
 - Environment detection extensions
-- Database seeder infrastructure (`ISeeder`, ordered by `[SeederPriority]`)
+- Seeders (`ISeeder`, ordered by `[SeederPriority]`): opt-in through the `seed` verb (`AddHeadlessSeedDuringDeploy`) or `AddHeadlessSeedOnStartup`, with a startup warning when neither is configured. See [Database Seeders](#database-seeders)
 - Keyed services helpers
 - Hosted service management
 - Background startup processes can expose readiness signals so dependent flows can wait for initialization completion.
-- The schema runner (`Headless.Hosting.Initialization.Schema`): features register idempotent, versioned DDL steps with `AddHeadlessSchemaContribution`; one hosted `SchemaRunner` applies or verifies them at startup (`AddHeadlessSchemaRunner(o => o.Mode = SchemaRunnerMode.Verify)`) and exports a deploy script with `ExportScript`. Its traces and metrics are under `Headless.SchemaRunner` (`SchemaRunnerDiagnostics`, `AddSchemaRunnerInstrumentation()`). The consumer contract is in [SQL](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), including [its observability](sql.md#schema-runner-observability).
+- The schema runner (`Headless.Hosting.Initialization.Schema`): features register idempotent, versioned DDL steps with `AddHeadlessSchemaContribution`; one hosted `SchemaRunner` verifies them at startup, `resources setup` applies them, and `ExportScript` writes a deploy script. Its traces and metrics are under `Headless.SchemaRunner` (`SchemaRunnerDiagnostics`, `AddSchemaRunnerInstrumentation()`). The consumer contract is in [SQL](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), including [its observability](sql.md#schema-runner-observability).
 
 ### Install
 
@@ -343,9 +344,16 @@ services.Configure<AppOptions, AppOptionsValidator>(configuration.GetSection("Ap
 
 #### Database Seeders
 
-Implement `ISeeder` and register with `AddSeeder<T>()`. All seeders run via a single
-`SeedAsync()` ascending by `[SeederPriority(n)]` (default `0`; lower runs first — EF migrations
-use `int.MinValue` so they run before data seeders).
+A seeder writes data the code declares (definitions, cron jobs, reference rows) into the stores. It is not a [stateful resource](#stateful-resources): a resource is structure that `resources setup` creates once; a seeder writes rows and must run again whenever the declarations change. Framework packages register their own: `FeatureDefinitions`, `PermissionDefinitions`, `SettingDefinitions`, and `Jobs`.
+
+Implement `ISeeder` and register with `AddSeeder<T>()` (or `AddSeeder(sp => …)`). Seeders run one at a time ascending by `[SeederPriority(n)]` (default `0`; lower runs first — EF migrations use `int.MinValue`), each named by `ISeeder.Name` (default: the type name).
+
+Nothing seeds on its own. Choose one:
+
+- **The deployment runs the `seed` verb** of `RunHeadlessAsync(args)`: `dotnet MyApp.dll seed` runs every seeder, `seed -n Jobs` one of them, `seed list` lists them; `--timeout <seconds>` bounds the run (default 300). One line per seeder: name, `Ok`, `Failed`, or `Skipped`, duration, message. A failed seeder stops the run and the rest are `Skipped`, because a later seeder may need what an earlier one writes. Exit code `0` on success, `1` on a failure or failed startup validation, `2` for invalid arguments or an unknown seeder name. Call `services.AddHeadlessSeedDuringDeploy()` to declare this; it runs nothing.
+- **A development or test host seeds as it starts**: `services.AddHeadlessSeedOnStartup()` runs every seeder after the [stateful resources](#stateful-resources) are set up and before any hosted service starts; a failed seeder fails the start. `HeadlessTestServer` does this by default (`seed: false` turns it off).
+
+A host that registers seeders and does neither logs one warning at startup (`SeedingNotConfigured`) naming them, because a skipped seed fails silently: definitions that other applications sharing the database read go stale, configured `Deleted*` definitions are not removed, `DynamicPermissionDefinitionsChanged` is not published, and cron expression changes, removed crons, and new crons are not applied (see the [Jobs seeder](jobs.md#headlessjobs)).
 
 ```csharp
 [SeederPriority(1)]
@@ -358,7 +366,11 @@ public sealed class UserSeeder : ISeeder
 builder.Services.AddSeeder<UserSeeder>();
 builder.Services.AddDbMigrationSeeder<AppDbContext>(); // runs first (SeederPriority int.MinValue)
 
-// In startup — runs all seeders in priority order
+// Development: seed as the host starts. Production: run `dotnet MyApp.dll seed` and declare it.
+if (builder.Environment.IsDevelopment()) builder.Services.AddHeadlessSeedOnStartup();
+else builder.Services.AddHeadlessSeedDuringDeploy();
+
+// A tool or test can run them directly, in priority order
 await app.Services.SeedAsync();
 ```
 
@@ -523,7 +535,7 @@ return await app.RunHeadlessAsync(args);
 dotnet MyApp.dll describe | jq '.sections.jobs.functions[].name'
 ```
 
-- **`describe` verb.** When the first argument is `describe`, `RunHeadlessAsync` (namespace `Microsoft.Extensions.Hosting`) builds the manifest instead of running the host and returns the exit code. When it is `check`, it runs the health checks instead ([Health check command](#health-check-command)). Any other first argument runs the host as `RunAsync` does and returns 0. It disposes the host in both modes.
+- **`describe` verb.** When the first argument is `describe`, `RunHeadlessAsync` (namespace `Microsoft.Extensions.Hosting`) builds the manifest instead of running the host and returns the exit code. When it is `check`, it runs the health checks instead ([Health check command](#health-check-command)). `resources` runs the [Stateful resources](#stateful-resources) command instead. Any other first argument runs the host as `RunAsync` does and returns 0. It disposes the host in every mode.
 - **Validates like a start, starts nothing.** It first runs options marked `ValidateOnStart`, then every `IHeadlessStartupValidator`, in the same order a real start does. It never starts a hosted service, so it opens no broker connection and claims no job. Only the entry point sees the host's real configuration sources, which is why the command runs there rather than in a separate tool.
 - **Needs no infrastructure.** Neither validation nor any section opens a connection, so `describe` succeeds when the broker and databases are unreachable or absent, for example in CI or on a laptop. Configuration still has to be valid: a missing RabbitMQ password, or two outboxes on one database, fails the command as it would fail a start.
 - **Output.** On success, standard output carries only the JSON document and the exit code is 0. On any failure (a validator, an options validation, or a section), standard output stays empty, `Host manifest failed: {message}` goes to standard error, and the exit code is 1.
@@ -586,6 +598,52 @@ services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostManifestSection, Sear
 - Read only state that exists once the host is built. Never start a hosted service, open a connection, or call a broker.
 - Write entries in a stable order, and omit a setting that does not apply to an entry instead of writing `null`, so two manifests of the same configuration diff cleanly.
 - Two sections with the same `Name` fail the manifest. A section that throws fails it too, with a message that names the section and carries the section's error text, so never show that message to an untrusted caller. The whole document is built in memory first, so a failure writes nothing to the destination stream.
+
+#### Stateful resources
+
+A stateful resource is external state a feature needs before it runs: database tables, broker queues, a storage container. A deployment creates them with the `resources` verb, from the same entry point and configuration as the host:
+
+```bash
+dotnet MyApp.dll resources                      # setup, the default subcommand
+dotnet MyApp.dll resources check -t Schema      # verify without writing
+dotnet MyApp.dll resources list
+dotnet MyApp.dll resources statistics -n PostgreSql/headless/Sequences
+```
+
+- **Subcommands.** `setup` (default) creates whatever is missing; `check` verifies without writing; `clear` removes data and keeps the structure; `teardown` deletes what setup created, in reverse order; `statistics` prints each resource's status values; `list` prints the resources and runs nothing.
+- **Filters.** `-t|--type <type>` and `-n|--name <name>` match exactly, ignoring case. Repeat a flag to match any of its values; both flags must match. `--timeout <seconds>` bounds the whole run: the resource running when it elapses and every resource not yet reached report `TimedOut`. Without it the run has no budget of its own, so each resource's own timeouts govern, such as the schema runner's 2-minute lock wait and 10-minute DDL command timeout.
+- **Validates like a start.** The verb first runs options marked `ValidateOnStart` and every `IHeadlessStartupValidator`, then runs the resources. It starts no hosted service.
+- **Output.** One aligned line per resource on standard output: type, name, status (`Ok`, `Failed`, `Unsupported`, `TimedOut`), duration, and the failure message. `statistics` indents each status value under its resource. Console logging goes to standard error, as for `describe`.
+- **Production guard.** In the Production environment (`IHostEnvironment.IsProduction()`), `clear` and `teardown` delete data, so they refuse to run and exit `2` unless `--force` is passed: `dotnet MyApp.dll resources teardown --force`. Other environments and the other subcommands need no flag.
+- **Exit codes.** `0` when every resource is `Ok` or `Unsupported`, or none is registered; `1` when any resource fails or times out, or startup validation fails; `2` for an unknown subcommand or option, a missing or invalid value, filters that match no resource, or `clear` or `teardown` in Production without `--force`.
+- **Every resource runs.** A failure does not stop the run, so the report names every resource. Resources run one at a time, in dependency order.
+
+Which resources a host has follows from what it registers:
+
+| Type | Registered by | Name | Setup | Check | Clear | Teardown |
+| --- | --- | --- | --- | --- | --- | --- |
+| `Schema` | every relational storage feature, one per `SchemaContribution` | `{dialect}/{schema}/{feature}` | applies the missing steps, export-only contributions included | fails on a missing step or a changed checksum | deletes the rows of its tables, keeping host-state tables, sequences, and history | drops its tables and sequences and deletes its history rows, so the next setup recreates them |
+| `RabbitMQ` (any transport with an `ITransportTopologyProvisioner`) | `UseRabbitMq` | `topology` | declares the lane exchanges, one queue per competing consumer subscription and registered Queue-lane message with its `.dlq`, and the bindings | passively declares each exchange and queue | purges each queue this host consumes and its `.dlq`, never a queue it only publishes to | deletes the queues this host consumes and their `.dlq`; leaves the lane exchanges and their `.dlx` in place, because every service on the broker shares them and a publisher binds nothing, so no check can prove them unused (see [RabbitMQ](messaging.md#headlessmessagingrabbitmq)) |
+
+Implement `IStatefulResource` for a feature's own external state, and register it with `services.AddHeadlessStatefulResource(sp => ...)`. When the set depends on other registrations, such as one queue per consumer, implement `IStatefulResourceSource` and register it with `services.AddHeadlessStatefulResourceSource<TSource>()`, which adds a source type once however often a feature's setup runs. A resource that implements `IStatefulResourceWithDependencies` names the resources it must follow; two resources that depend on each other fail every operation with the cycle in the message.
+
+- Make every operation idempotent: a deployment runs `setup` on every release.
+- Throw `StatefulResourceException` from `CheckAsync` with a message that tells the operator what to run.
+- Throw `StatefulResourceUnsupportedException` from an operation that does not apply. Callers report it as `Unsupported` and do not fail on it. Any other exception, a driver's `NotSupportedException` included, is `Failed`.
+- Keep `Name` free of host names, connection strings, and credentials: it is printed to deploy logs.
+
+A development or test host can create its resources when it starts instead:
+
+```csharp
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddHeadlessResourceSetupOnStartup();
+}
+```
+
+`AddHeadlessResourceSetupOnStartup(StatefulResourceStartupAction.ResetState)` also clears each resource's data after setup; in the Production environment it fails the host start instead of clearing anything. The startup action runs before every other hosted service, wherever the call sits, and a failure fails the host start, naming each failed resource. A second call replaces the action. `TryAddHeadlessResourceSetupOnStartup()` registers startup setup only when nothing registered it yet; `HeadlessTestServer` uses it, so an application that registers `ResetState` keeps it under the test server.
+
+Tests and tools reach the same runner on a built host's services: `await host.Services.SetupResourcesAsync()`, `ResetResourceStateAsync()`, and `TeardownResourcesAsync()`. Each one runs every resource, skips unsupported operations, and then throws one `StatefulResourceException` whose `Failures` holds each failed resource's error.
 
 #### Health check command
 

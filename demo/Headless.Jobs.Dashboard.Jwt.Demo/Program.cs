@@ -52,6 +52,9 @@ builder.Services.AddHeadlessJobs(options =>
 
 builder.Services.AddHostedService<DemoJobSeeder>();
 
+// Nothing seeds on its own, so this demo seeds as it starts; a deployed app runs `dotnet <app>.dll seed` instead.
+builder.Services.AddHeadlessSeedOnStartup();
+
 var app = builder.Build();
 
 app.UseHttpsRedirection();

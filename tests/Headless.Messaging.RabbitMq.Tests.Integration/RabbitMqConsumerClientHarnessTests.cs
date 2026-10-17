@@ -47,7 +47,14 @@ public sealed class RabbitMqConsumerClientHarnessTests(RabbitMqFixture fixture) 
         _connectionPools.Add(pool);
 
         return Task.FromResult<IConsumerClient>(
-            new RabbitMqConsumerClient($"test-group-{Guid.NewGuid():N}", 1, pool, rabbitOptions, _serviceProvider)
+            new RabbitMqConsumerClient(
+                $"test-group-{Guid.NewGuid():N}",
+                1,
+                pool,
+                rabbitOptions,
+                _serviceProvider,
+                provisionsTopology: true
+            )
         );
     }
 

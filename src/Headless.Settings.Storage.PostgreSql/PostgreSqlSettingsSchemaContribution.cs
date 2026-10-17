@@ -19,11 +19,7 @@ internal static class PostgreSqlSettingsSchemaContribution
         new SettingsStorageOptions()
     );
 
-    public static SchemaContribution Create(
-        PostgreSqlSettingsOptions providerOptions,
-        RelationalSettingsTables tables,
-        bool applyOnStartup
-    )
+    public static SchemaContribution Create(PostgreSqlSettingsOptions providerOptions, RelationalSettingsTables tables)
     {
         var valuesName = tables.ValuesName;
         var definitionsName = tables.DefinitionsName;
@@ -84,8 +80,8 @@ internal static class PostgreSqlSettingsSchemaContribution
                     indexesSql
                 ),
             ],
-            applyOnStartup: applyOnStartup,
-            hostStateTables: [definitionsName]
+            hostStateTables: [definitionsName],
+            objects: [SchemaObject.Table(definitionsName), SchemaObject.Table(valuesName)]
         );
     }
 }

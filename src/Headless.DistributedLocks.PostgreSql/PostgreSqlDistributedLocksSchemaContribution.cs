@@ -42,7 +42,8 @@ internal static class PostgreSqlDistributedLocksSchemaContribution
                     "Create the fence sequence.",
                     $"CREATE SEQUENCE IF NOT EXISTS {QualifiedSequence(schema)};"
                 ),
-            ]
+            ],
+            objects: [SchemaObject.Sequence(SequenceName)]
         );
     }
 }

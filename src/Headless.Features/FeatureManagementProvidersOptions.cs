@@ -11,8 +11,8 @@ namespace Headless.Features;
 /// Consumers do not typically interact with this class directly; use
 /// <c>IServiceCollection.AddFeatureDefinitionProvider&lt;T&gt;</c> and
 /// <c>IServiceCollection.AddFeatureValueProvider&lt;T&gt;</c> instead.
-/// The <see cref="DeletedFeatures"/> and <see cref="DeletedFeatureGroups"/> sets let the startup
-/// initializer purge dynamic records for features that have been removed from code.
+/// The <see cref="DeletedFeatures"/> and <see cref="DeletedFeatureGroups"/> sets let the
+/// <c>FeatureDefinitions</c> seeder purge dynamic records for features that have been removed from code.
 /// </remarks>
 public sealed class FeatureManagementProvidersOptions
 {

@@ -24,7 +24,7 @@ public sealed class SqliteSequencesStorageInitializerTests(SqliteSequencesFixtur
     {
         // A file in a directory that does not exist cannot be created, so the open fails.
         var unreachable = $"Data Source={Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "x.db")}";
-        using var host = _CreateHost(options => options.ConnectionString = unreachable);
+        using var host = _CreateHost(options => options.ConnectionString = unreachable, setupResources: false);
 
         await FluentActions
             .Awaiting(() => host.StartAsync(AbortToken))
@@ -69,19 +69,13 @@ public sealed class SqliteSequencesStorageInitializerTests(SqliteSequencesFixtur
     }
 
     [Fact]
-    public async Task should_leave_one_table_when_the_initializer_runs_twice()
+    public async Task should_leave_one_table_when_setup_runs_twice()
     {
         const string schema = "sequences_sqlite_rerun";
         using var host = _CreateHost(schema: schema);
-        var initializer = host
-            .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .OfType<HostedInitializer>()
-            .Single();
+        await host.Services.SetupResourcesAsync(AbortToken);
+        await host.Services.SetupResourcesAsync(AbortToken);
 
-        await initializer.StartingAsync(AbortToken);
-        await initializer.StartingAsync(AbortToken);
-
-        initializer.IsInitialized.Should().BeTrue();
         (await _CountTablesAsync(schema)).Should().Be(1);
     }
 
@@ -107,28 +101,25 @@ public sealed class SqliteSequencesStorageInitializerTests(SqliteSequencesFixtur
     }
 
     [Fact]
-    public async Task should_not_create_the_table_when_initialization_is_off()
+    public async Task should_fail_the_start_naming_resources_setup_when_the_table_is_missing()
     {
         const string schema = "sequences_sqlite_no_init";
-        using var host = _CreateHost(options =>
-        {
-            options.ConnectionString = fixture.ConnectionString;
-            options.Schema = schema;
-            options.InitializeOnStartup = false;
-        });
+        using var host = _CreateHost(
+            options =>
+            {
+                options.ConnectionString = fixture.ConnectionString;
+                options.Schema = schema;
+            },
+            setupResources: false
+        );
 
-        await host.StartAsync(AbortToken);
+        await FluentActions
+            .Awaiting(() => host.StartAsync(AbortToken))
+            .Should()
+            .ThrowAsync<SchemaRunnerException>()
+            .WithMessage("*resources setup*");
 
-        host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized.Should().BeTrue();
         (await _CountTablesAsync(schema)).Should().Be(0);
-
-        // The consumer owns the table in this mode, so a call before it exists fails instead of creating it.
-        var act = async () =>
-            await host.Services.GetRequiredService<ISequenceGenerator>().NextAsync("x", cancellationToken: AbortToken);
-
-        (await act.Should().ThrowAsync<SqliteException>()).Which.Message.Should().Contain("no such table");
-        (await _CountTablesAsync(schema)).Should().Be(0);
-        await host.StopAsync(AbortToken);
     }
 
     [Fact]
@@ -171,9 +162,15 @@ public sealed class SqliteSequencesStorageInitializerTests(SqliteSequencesFixtur
         new SqliteSequencesOptions().Schema.Should().Be("headless");
     }
 
-    private static IHost _CreateHost(Action<SqliteSequencesOptions> configure)
+    private static IHost _CreateHost(Action<SqliteSequencesOptions> configure, bool setupResources = true)
     {
         var builder = Host.CreateApplicationBuilder();
+
+        if (setupResources)
+        {
+            builder.Services.AddHeadlessResourceSetupOnStartup();
+        }
+
         builder.Services.AddHeadlessSequences(setup => setup.UseSqlite(configure));
 
         return builder.Build();

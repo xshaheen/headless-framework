@@ -74,4 +74,20 @@ public interface ISchemaDialect
 
     /// <summary>Returns <see langword="true"/> when <paramref name="exception"/> means the history table or its schema does not exist.</summary>
     bool IsObjectNotFound(Exception exception);
+
+    /// <summary>Returns the statement that deletes every row of <paramref name="table"/> in <paramref name="schema"/>.</summary>
+    /// <param name="schema">The contribution's schema.</param>
+    /// <param name="table">The unquoted table name, as <see cref="SchemaObject.Name"/> declares it.</param>
+    string DeleteRowsSql(string schema, string table);
+
+    /// <summary>Returns the statement that drops <paramref name="schemaObject"/> from <paramref name="schema"/>, doing nothing when it does not exist.</summary>
+    /// <param name="schema">The contribution's schema.</param>
+    /// <param name="schemaObject">The object to drop.</param>
+    string DropObjectSql(string schema, SchemaObject schemaObject);
+
+    /// <summary>
+    /// Returns the statement that deletes every history row of the feature named by the <c>@Feature</c> parameter from
+    /// the history table of <paramref name="schema"/>, so a later run applies that feature's steps again.
+    /// </summary>
+    string DeleteFeatureHistorySql(string schema);
 }

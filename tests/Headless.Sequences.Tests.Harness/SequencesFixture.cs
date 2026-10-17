@@ -76,6 +76,9 @@ public static class SequencesFixtureExtensions
             configure?.Invoke(setup);
         });
 
+        // A host start only verifies the schema, so the test host creates it first, as a development host does.
+        services.AddHeadlessResourceSetupOnStartup();
+
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         foreach (var initializer in provider.GetServices<IHostedService>().OfType<IHostedLifecycleService>())

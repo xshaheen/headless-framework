@@ -311,6 +311,7 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
             setup.UseSqlServer(fixture.ConnectionString);
         });
 
+        builder.Services.AddHeadlessResourceSetupOnStartup();
         return builder.Build();
     }
 

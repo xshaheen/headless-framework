@@ -44,9 +44,8 @@ public static class SetupIdempotencySqlServer
         /// <param name="connectionString">The SqlClient connection string.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The record table is created at host startup unless
-        /// <see cref="RelationalIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
-        /// call is accepted only on a unit whose SqlClient connection reaches this same database.
+        /// The record table is created by <c>resources setup</c> and verified at host start.
+        /// An enlisted call is accepted only on a unit whose SqlClient connection reaches this same database.
         /// </remarks>
         /// <exception cref="ArgumentException"><paramref name="connectionString" /> is <see langword="null" /> or whitespace.</exception>
         public HeadlessIdempotencySetupBuilder UseSqlServer(string connectionString)
@@ -63,9 +62,8 @@ public static class SetupIdempotencySqlServer
         /// <param name="configuration">The configuration section bound to the provider options.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The record table is created at host startup unless
-        /// <see cref="RelationalIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
-        /// call is accepted only on a unit whose SqlClient connection reaches the configured database.
+        /// The record table is created by <c>resources setup</c> and verified at host start.
+        /// An enlisted call is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configuration" /> is <see langword="null" />.</exception>
         public HeadlessIdempotencySetupBuilder UseSqlServer(IConfiguration configuration)
@@ -81,9 +79,8 @@ public static class SetupIdempotencySqlServer
         /// <param name="configure">Delegate that configures the provider options.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The record table is created at host startup unless
-        /// <see cref="RelationalIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
-        /// call is accepted only on a unit whose SqlClient connection reaches the configured database.
+        /// The record table is created by <c>resources setup</c> and verified at host start.
+        /// An enlisted call is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
         public HeadlessIdempotencySetupBuilder UseSqlServer(Action<SqlServerIdempotencyOptions> configure)
@@ -102,9 +99,8 @@ public static class SetupIdempotencySqlServer
         /// <param name="configure">Delegate that configures the provider options with service resolution.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The record table is created at host startup unless
-        /// <see cref="RelationalIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
-        /// call is accepted only on a unit whose SqlClient connection reaches the configured database.
+        /// The record table is created by <c>resources setup</c> and verified at host start.
+        /// An enlisted call is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
         public HeadlessIdempotencySetupBuilder UseSqlServer(

@@ -81,13 +81,6 @@ public sealed class CronFingerprintActivationTests : TestBase
         var provider = services.BuildServiceProvider();
         return new JobsInitializationHostedService(
             provider,
-            new JobFunctionRegistry(
-                FrozenDictionary<string, JobFunctionRegistration>.Empty,
-                FrozenDictionary<string, (string, Type)>.Empty,
-                FrozenDictionary<string, JobFunctionDescriptor>.Empty,
-                FrozenDictionary<Type, JobFunctionDescriptor>.Empty,
-                FrozenDictionary<Type, JobFunctionDescriptor>.Empty
-            ),
             new JobsActivationBarrier(),
             NullLogger<JobsInitializationHostedService>.Instance
         );

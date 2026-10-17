@@ -39,7 +39,8 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
         const string validGroupName = "valid-queue_name.123";
 
         // when
-        var action = () => new RabbitMqConsumerClient(validGroupName, 1, _pool, _options, _serviceProvider);
+        var action = () =>
+            new RabbitMqConsumerClient(validGroupName, 1, _pool, _options, _serviceProvider, provisionsTopology: true);
 
         // then
         action.Should().NotThrow();
@@ -52,7 +53,8 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
     public void should_reject_null_or_whitespace_subscription_name(string? groupName)
     {
         // given, When
-        var action = () => new RabbitMqConsumerClient(groupName!, 1, _pool, _options, _serviceProvider);
+        var action = () =>
+            new RabbitMqConsumerClient(groupName!, 1, _pool, _options, _serviceProvider, provisionsTopology: true);
 
         // then
         action.Should().Throw<ArgumentException>();
@@ -65,7 +67,8 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
         const string identity = "billing ops.invoice/projection";
 
         // when
-        var action = () => new RabbitMqConsumerClient(identity, 1, _pool, _options, _serviceProvider);
+        var action = () =>
+            new RabbitMqConsumerClient(identity, 1, _pool, _options, _serviceProvider, provisionsTopology: true);
 
         // then
         action.Should().NotThrow();
@@ -82,7 +85,8 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
         var identity = new string('a', 300);
 
         // when
-        var action = () => new RabbitMqConsumerClient(identity, 1, _pool, _options, _serviceProvider);
+        var action = () =>
+            new RabbitMqConsumerClient(identity, 1, _pool, _options, _serviceProvider, provisionsTopology: true);
 
         // then
         action.Should().NotThrow();
@@ -93,7 +97,14 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
     public async Task should_reject_invalid_topic_name_on_subscribe()
     {
         // given
-        await using var client = new RabbitMqConsumerClient("valid-queue", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "valid-queue",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
 
         var channel = Substitute.For<IChannel>();
         var connection = Substitute.For<IConnection>();
@@ -119,6 +130,7 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
             _pool,
             _options,
             _serviceProvider,
+            provisionsTopology: true,
             lane: MessageLane.Queue
         );
         var validLogicalButInvalidPhysicalName = new string('a', 252);
@@ -133,7 +145,14 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
     public async Task should_accept_valid_topic_name_on_subscribe()
     {
         // given
-        await using var client = new RabbitMqConsumerClient("valid-queue", 1, _pool, _options, _serviceProvider);
+        await using var client = new RabbitMqConsumerClient(
+            "valid-queue",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
 
         var channel = Substitute.For<IChannel>();
         var connection = Substitute.For<IConnection>();

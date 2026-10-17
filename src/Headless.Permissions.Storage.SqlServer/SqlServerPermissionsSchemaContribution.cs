@@ -18,11 +18,7 @@ internal static class SqlServerPermissionsSchemaContribution
         new PermissionsStorageOptions()
     );
 
-    public static SchemaContribution Create(
-        SqlServerPermissionsOptions options,
-        RelationalPermissionsTables tables,
-        bool applyOnStartup
-    )
+    public static SchemaContribution Create(SqlServerPermissionsOptions options, RelationalPermissionsTables tables)
     {
         var grantsName = tables.GrantsName;
         var definitionsName = tables.DefinitionsName;
@@ -112,8 +108,13 @@ internal static class SqlServerPermissionsSchemaContribution
             [
                 new SchemaStep(StepVersion, "Create the grant, definition, and group tables and their indexes.", sql),
             ],
-            applyOnStartup: applyOnStartup,
-            hostStateTables: [definitionsName, groupsName]
+            hostStateTables: [definitionsName, groupsName],
+            objects:
+            [
+                SchemaObject.Table(groupsName),
+                SchemaObject.Table(definitionsName),
+                SchemaObject.Table(grantsName),
+            ]
         );
     }
 }

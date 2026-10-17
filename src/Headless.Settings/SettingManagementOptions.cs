@@ -14,7 +14,7 @@ public sealed class SettingManagementOptions
     public bool IsDynamicSettingStoreEnabled { get; set; }
 
     /// <summary>
-    /// Gets or sets whether static setting definitions are persisted to the database on startup.
+    /// Gets or sets whether the <c>SettingDefinitions</c> seeder persists static setting definitions to the database.
     /// Default: <see langword="true"/>.
     /// </summary>
     public bool SaveStaticSettingsToDatabase { get; set; } = true;

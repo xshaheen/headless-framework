@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
@@ -24,10 +25,14 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
     [Fact]
     public async Task should_keep_queue_message_published_before_any_consumer_existed()
     {
-        // given
+        // given — the deployment set the topology up, and no consumer has started yet
         var options = _CreateOptions();
         var name = $"orders-{Guid.NewGuid():N}";
         await using var pool = _CreatePool(options);
+        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).SetupAsync(
+            new MessagingTopology([], [new TopologyMessage(name, MessageLane.Queue)]),
+            AbortToken
+        );
         await using var transport = new RabbitMqTransport(
             NullLogger<RabbitMqTransport>.Instance,
             pool,
@@ -43,13 +48,16 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
     }
 
     [Fact]
-    public async Task should_fail_queue_publish_when_auto_provision_is_off_and_queue_is_missing()
+    public async Task should_fail_queue_publish_naming_resources_setup_when_the_queue_is_missing()
     {
         // given
         var options = _CreateOptions();
-        options.AutoProvision = false;
         await _DeclareExchangesAsOperatorAsync(options.ExchangeName);
         await using var pool = _CreatePool(options);
+        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).SetupAsync(
+            MessagingTopology.Empty,
+            AbortToken
+        );
         await using var transport = new RabbitMqTransport(
             NullLogger<RabbitMqTransport>.Instance,
             pool,
@@ -60,9 +68,10 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
         // when
         var result = await transport.SendAsync(_CreateMessage(name), AbortToken);
 
-        // then — the passive declare proved nothing would receive it, and nothing was created
+        // then — the passive declare proved nothing would receive it, said how to fix it, and created nothing
         result.Succeeded.Should().BeFalse();
-        result.Exception!.InnerException.Should().BeOfType<OperationInterruptedException>();
+        result.Exception!.InnerException.Should().BeOfType<StatefulResourceException>();
+        result.Exception.InnerException!.Message.Should().Contain("resources setup");
         (await fixture.QueueExistsAsync($"queue.{name}", AbortToken)).Should().BeFalse();
     }
 
@@ -71,11 +80,14 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
     {
         // given — an operator-managed queue that nobody bound to the exchange
         var options = _CreateOptions();
-        options.AutoProvision = false;
         await _DeclareExchangesAsOperatorAsync(options.ExchangeName);
         var name = $"orders-{Guid.NewGuid():N}";
         await _DeclareQueueAsOperatorAsync($"queue.{name}");
         await using var pool = _CreatePool(options);
+        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).SetupAsync(
+            MessagingTopology.Empty,
+            AbortToken
+        );
         await using var transport = new RabbitMqTransport(
             NullLogger<RabbitMqTransport>.Instance,
             pool,
@@ -100,6 +112,10 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
         options.CustomHeadersBuilder = static (_, _) => [new(MessagingHeaders.MessageId, string.Empty)];
         var name = $"orders-{Guid.NewGuid():N}";
         await using var pool = _CreatePool(options);
+        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).SetupAsync(
+            MessagingTopology.Empty,
+            AbortToken
+        );
         await using var transport = new RabbitMqTransport(
             NullLogger<RabbitMqTransport>.Instance,
             pool,
@@ -112,6 +128,7 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
             pool,
             Options.Create(options),
             services,
+            provisionsTopology: true,
             lane: MessageLane.Queue
         );
         consumer.AttachCallbacks((_, _) => Task.CompletedTask, _ => { });
@@ -146,6 +163,10 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
         options.QueueArguments.EnableDeadLettering = true;
         var name = $"orders-{Guid.NewGuid():N}";
         await using var pool = _CreatePool(options);
+        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).SetupAsync(
+            MessagingTopology.Empty,
+            AbortToken
+        );
         await using var transport = new RabbitMqTransport(
             NullLogger<RabbitMqTransport>.Instance,
             pool,
@@ -158,6 +179,7 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
             pool,
             Options.Create(options),
             services,
+            provisionsTopology: true,
             lane: MessageLane.Queue
         );
         consumer.AttachCallbacks(
@@ -195,6 +217,10 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
         var options = _CreateOptions();
         var name = $"orders-{Guid.NewGuid():N}";
         await using var pool = _CreatePool(options);
+        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).SetupAsync(
+            MessagingTopology.Empty,
+            AbortToken
+        );
         await using var transport = new RabbitMqTransport(
             NullLogger<RabbitMqTransport>.Instance,
             pool,
@@ -207,6 +233,7 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
             pool,
             Options.Create(options),
             services,
+            provisionsTopology: true,
             lane: MessageLane.Queue
         );
         var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

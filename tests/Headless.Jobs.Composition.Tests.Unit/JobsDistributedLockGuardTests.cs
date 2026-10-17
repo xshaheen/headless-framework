@@ -3,6 +3,7 @@
 using Headless;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.InMemory;
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Coordination;
@@ -15,7 +16,7 @@ using NSubstitute.ExceptionExtensions;
 namespace Tests;
 
 /// <summary>
-/// Behavior of the cron-seed migration guard (<see cref="JobsInitializationHostedService"/>) — skip-on-contention,
+/// Behavior of the cron-seed migration guard (<see cref="JobsSeeder"/>) — skip-on-contention,
 /// unchanged no-lock default, and lease release on the success and throw paths — plus the dead-node reclaim contract
 /// (<see cref="JobsDeadOwnerReclaimer"/>). The reclaim path is intentionally <em>not</em> lock-guarded (#267 review):
 /// the shared <c>DeadOwnerRecoveryBridge</c> marks owners reclaimed before the call and only retries on a thrown
@@ -69,14 +70,9 @@ public sealed class JobsDistributedLockGuardTests : TestBase
 
         // Drive the seed guard directly, without StartAsync, so the test controls the registry it seeds from. A rename
         // breaks the build, not at runtime.
-        var hostedService = new JobsInitializationHostedService(
-            sp,
-            functionRegistry ?? _EmptyRegistry,
-            new JobsActivationBarrier(),
-            NullLogger<JobsInitializationHostedService>.Instance
-        );
+        var seeder = new JobsSeeder(sp, functionRegistry ?? _EmptyRegistry, NullLogger<JobsSeeder>.Instance);
 
-        await hostedService.SeedDefinedCronJobsAsync(options, cancellationToken);
+        await seeder.SeedDefinedCronJobsAsync(options, cancellationToken);
     }
 
     [Fact]
@@ -369,7 +365,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     }
 
     [Fact]
-    public async Task seed_skips_when_acquire_faults()
+    public async Task seed_fails_when_acquire_faults()
     {
         var faultingLock = Substitute.For<IDistributedLock>();
         faultingLock
@@ -378,9 +374,10 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         var manager = Substitute.For<IInternalJobManager>();
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
 
-        // Faulting acquire is swallowed as a skip — startup must not fail on a lock-store hiccup.
-        await _InvokeSeedAsync(manager, options, faultingLock, AbortToken);
+        // Nothing retries a skipped seed, so a lock-store fault fails it instead of reporting success.
+        var act = () => _InvokeSeedAsync(manager, options, faultingLock, AbortToken);
 
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("lock store down");
         await manager
             .DidNotReceive()
             .MigrateDefinedCronJobs(Arg.Any<CronSeedDefinition[]>(), Arg.Any<CancellationToken>());
@@ -409,10 +406,10 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     }
 
     [Fact]
-    public async Task seed_skips_when_acquire_throws_oce_but_caller_token_not_cancelled()
+    public async Task seed_fails_when_acquire_throws_oce_but_caller_token_not_cancelled()
     {
         // A provider that surfaces its own internal timeout as an OperationCanceledException while the caller token is
-        // NOT cancelled must be treated as an acquire fault (skip), not propagated as a host-startup crash.
+        // NOT cancelled is an acquire fault: the seed fails with it.
         var faultingLock = Substitute.For<IDistributedLock>();
         faultingLock
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
@@ -420,21 +417,19 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         var manager = Substitute.For<IInternalJobManager>();
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
 
-        // AbortToken is normally not cancelled, so the provider OCE is swallowed as a skip; if the test is aborted,
-        // cancellation can still propagate promptly.
-        await _InvokeSeedAsync(manager, options, faultingLock, AbortToken);
+        var act = () => _InvokeSeedAsync(manager, options, faultingLock, AbortToken);
 
+        await act.Should().ThrowAsync<OperationCanceledException>();
         await manager
             .DidNotReceive()
             .MigrateDefinedCronJobs(Arg.Any<CronSeedDefinition[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task seed_skips_when_lock_factory_throws_at_resolution()
+    public async Task seed_fails_when_lock_factory_throws_at_resolution()
     {
-        // A consumer factory that throws when DI resolves the keyed lock (e.g. a required service is missing) must be
-        // treated as an acquire fault — the seed skips — not crash host startup. The guard resolves the keyed lock
-        // lazily inside its try/catch precisely so this is recoverable.
+        // A consumer factory that throws when DI resolves the keyed lock (e.g. a required service is missing) is an
+        // acquire fault: the seed fails with it.
         var manager = Substitute.For<IInternalJobManager>();
         var services = new ServiceCollection();
         services.AddSingleton(manager);
@@ -444,19 +439,39 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         );
         await using var sp = services.BuildServiceProvider();
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
-        var hostedService = new JobsInitializationHostedService(
-            sp,
-            _EmptyRegistry,
-            new JobsActivationBarrier(),
-            NullLogger<JobsInitializationHostedService>.Instance
-        );
+        var seeder = new JobsSeeder(sp, _EmptyRegistry, NullLogger<JobsSeeder>.Instance);
 
-        // Must not throw — the throwing factory is swallowed as a skip.
-        await hostedService.SeedDefinedCronJobsAsync(options, AbortToken);
+        var act = () => seeder.SeedDefinedCronJobsAsync(options, AbortToken);
 
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("no IDistributedLock registered");
         await manager
             .DidNotReceive()
             .MigrateDefinedCronJobs(Arg.Any<CronSeedDefinition[]>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task seed_run_fails_when_the_jobs_seeder_cannot_acquire_the_lock()
+    {
+        // given — the whole seed run, as the seed verb and AddHeadlessSeedOnStartup run it
+        var faultingLock = Substitute.For<IDistributedLock>();
+        faultingLock
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("lock store down"));
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(Substitute.For<IInternalJobManager>());
+        services.AddSingleton(new CronScheduleCache(TimeZoneInfo.Utc));
+        services.AddSingleton(new JobsExecutionContext());
+        services.AddSingleton(new SchedulerOptionsBuilder { UseStorageLock = true });
+        services.AddKeyedSingleton(JobsKeys.LockProvider, faultingLock);
+        services.AddSeeder(static sp => new JobsSeeder(sp, _EmptyRegistry, NullLogger<JobsSeeder>.Instance));
+        await using var sp = services.BuildServiceProvider();
+
+        // when
+        var act = () => sp.SeedAsync(cancellationToken: AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("lock store down");
     }
 
     // ----------------------------------------------------------------------------------------------------------------

@@ -97,7 +97,7 @@ internal static class PostgreSqlAuditLogSchemaContribution
                 new SchemaStep(TableStepVersion, "Create the audit log table.", tableSql),
                 new SchemaStep(IndexesStepVersion, "Create the audit log read indexes.", indexesSql),
             ],
-            applyOnStartup: storageOptions.InitializeOnStartup
+            objects: [SchemaObject.Table(tableName)]
         );
     }
 

@@ -17,7 +17,7 @@ internal static class RelationalSettingsStorage
         IServiceCollection services,
         ISqlDialect dialect,
         StorageProvider provider,
-        Func<TOptions, RelationalSettingsTables, bool, SchemaContribution> createContribution
+        Func<TOptions, RelationalSettingsTables, SchemaContribution> createContribution
     )
         where TOptions : RelationalSettingsOptions
     {
@@ -32,13 +32,11 @@ internal static class RelationalSettingsStorage
             sp.GetRequiredService<IOptions<SettingsStorageOptions>>().Value
         ));
 
-        // The contribution factory reads options at first resolution, so InitializeOnStartup keeps its contract:
-        // false keeps the steps out of the runner's apply pass while verify and export still see them.
+        // The contribution factory reads options at first resolution, so configured names reach the steps.
         services.AddHeadlessSchemaContribution(sp =>
             createContribution(
                 sp.GetRequiredService<IOptions<TOptions>>().Value,
-                sp.GetRequiredService<RelationalSettingsTables>(),
-                sp.GetRequiredService<IOptions<SettingsStorageOptions>>().Value.InitializeOnStartup
+                sp.GetRequiredService<RelationalSettingsTables>()
             )
         );
 

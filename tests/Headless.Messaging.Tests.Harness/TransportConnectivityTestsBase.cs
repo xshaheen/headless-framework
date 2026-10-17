@@ -77,6 +77,7 @@ public abstract class TransportConnectivityTestsBase : TestBase
             await using var provider = services.BuildServiceProvider();
             var bootstrapper = provider.GetRequiredService<IBootstrapper>();
             var connectivity = provider.GetRequiredService<TransportConnectivity>();
+            await provider.SetupResourcesAsync(AbortToken);
             await bootstrapper.BootstrapAsync(AbortToken);
             connectivity.IsReachable.Should().BeTrue("the host just reached the broker to subscribe");
 

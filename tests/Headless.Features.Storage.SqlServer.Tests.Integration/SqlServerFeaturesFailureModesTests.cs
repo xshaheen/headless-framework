@@ -19,7 +19,7 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
         // Password is a placeholder; we never reach the auth handshake because the TCP connect fails first.
         const string unreachable =
             "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=true";
-        using var host = fixture.CreateHost("features_sql_failure", unreachable);
+        using var host = fixture.CreateHost("features_sql_failure", unreachable, setupResources: false);
 
         // when & then — wrapped in HostFailedToStartException by the host pipeline; inner is SqlException
         await FluentActions

@@ -72,7 +72,7 @@ SequenceNumber receipt = await unit.Sequences.NextNumberAsync("receipt", ct); //
 - A fast call cancelled or cut off during its commit may still have consumed a number. Treat that as an ordinary fast-mode gap.
 - The tenant is read from `ICurrentTenant` on every call. There is no tenant argument; host code numbering on behalf of a tenant switches with `ICurrentTenant.Change(...)`. With no tenant (`Id` is `null`), calls use the host counter. An empty or whitespace tenant id is refused, so it can never fall into the host counter.
 - Names and partitions compare ordinally and case-sensitively: `"INV"` and `"inv"` are two counters. A name may be at most 128 characters, a partition at most 64, and a tenant id at most 128 (`SequenceFieldLimits`). Longer values, a blank name, a whitespace-only partition, and any key part that starts or ends with whitespace throw `ArgumentException` before any SQL runs. The whitespace rule exists because SQL Server ignores trailing spaces when comparing keys, so `"acme"` and `"acme "` would otherwise share one counter there. A key part with a NUL character or an unpaired UTF-16 surrogate throws the same way: PostgreSQL cannot store NUL, and SqlClient sends a lone surrogate as U+FFFD, so SQL Server would share one counter between keys that differ only in which lone surrogate they carry (`Argument.IsPortableKey`). A `null` or empty partition means no partition.
-- The table is created at startup by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). With `InitializeOnStartup = false` the application owns the table. A call against a missing table fails, and on PostgreSQL that failure aborts the caller's unit.
+- The deployment creates the table by running `resources setup`, which applies the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) step; a host start only verifies it and fails fast when it is missing (see [Stateful resources](utilities.md#stateful-resources)). A call against a missing table fails, and on PostgreSQL that failure aborts the caller's unit.
 - There is no reset, set, peek, or delete API. Start a new period with a new partition.
 - On SQL Server, the first call on a new counter takes a key-range lock on the gap in the primary key that holds the new key. In gap-free mode that lock is held until the unit commits, so first use of any other new counter whose key sorts into the same gap waits, for any tenant and from either mode. Two units that each first-use several new counters can deadlock on those ranges. Keep a unit that takes a counter's first number short. PostgreSQL locks only the conflicting key.
 
@@ -217,14 +217,13 @@ Gap-free units begin over a PostgreSQL connection or an EF `DbContext` (`AddUnit
 | `ConnectionString` | required | The database that holds the counters and that gap-free units must run on |
 | `CommandTimeout` | 30 seconds | Also bounds how long a gap-free call waits for another unit's row lock |
 | `Schema` / `TableName` | `headless` / `sequences` | Validated as PostgreSQL identifiers. Sequences has no `ConfigureStorage`; the schema is a provider option. `headless` is the schema every Headless feature shares |
-| `InitializeOnStartup` | `true` | When `false`, the application creates the table |
 
 ### Design and runtime behavior
 
 - Each call is one `INSERT … ON CONFLICT (tenant_id, name, partition) DO UPDATE … RETURNING`, so concurrent first calls on a new key never collide. Key columns use `COLLATE "C"`.
 - The fast path opens its own connection, runs in an explicit READ COMMITTED transaction, and retries a transient fault raised before the commit (a deadlock, `40P01`, a serialization conflict, `40001`, or anything Npgsql reports as transient; never a fault from the commit) in a fresh transaction up to 3 attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`) between them.
 - The gap-free path runs on the unit's own connection and transaction, with no retry. A failed or cancelled statement aborts the caller's PostgreSQL transaction, so the unit can then only roll back.
-- The table is a step the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one advisory lock per database shared with every other Headless feature, and records in `headless_schema_history` as `Sequences/1` (`Sequences:<table>/1` for a configured table name).
+- The table is a step `resources setup` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), under one advisory lock per database shared with every other Headless feature, and records in `headless_schema_history` as `Sequences/1` (`Sequences:<table>/1` for a configured table name).
 
 ---
 
@@ -254,7 +253,6 @@ Gap-free units begin over a SQL Server connection or an EF `DbContext` (`AddUnit
 | `ConnectionString` | required | The database that holds the counters and that gap-free units must run on |
 | `CommandTimeout` | 30 seconds | Also bounds how long a gap-free call waits for another unit's locks |
 | `Schema` / `TableName` | `headless` / `Sequences` | Validated as SQL Server identifiers. Sequences has no `ConfigureStorage`; the schema is a provider option. `headless` is the schema every Headless feature shares |
-| `InitializeOnStartup` | `true` | When `false`, the application creates the table |
 
 ### Design and runtime behavior
 
@@ -262,7 +260,7 @@ Gap-free units begin over a SQL Server connection or an EF `DbContext` (`AddUnit
 - Key columns use a binary (`_BIN2`) collation, so names compare ordinally, as on PostgreSQL. The clustered primary key is exactly `(TenantId, Name, Partition)`, and it is what makes the range lock above serialize first use.
 - The fast path opens its own connection, runs in an explicit READ COMMITTED transaction, and retries a transient fault raised before the commit (a deadlock, 1205, a snapshot update conflict, 3960, a lock timeout, 1222, or a connection fault EF Core's SQL Server retry set covers; never a fault from the commit) in a fresh transaction up to 3 attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`) between them.
 - The gap-free path runs on the unit's own connection and transaction with no retry. With `XACT_ABORT ON`, a timeout or cancellation rolls back the caller's transaction.
-- The table and its clustered key are a step the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one `sp_getapplock` per database shared with every other Headless feature, and records in `headless_schema_history` as `Sequences/1` (`Sequences:<table>/1` for a configured table name).
+- The table and its clustered key are a step `resources setup` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), under one `sp_getapplock` per database shared with every other Headless feature, and records in `headless_schema_history` as `Sequences/1` (`Sequences:<table>/1` for a configured table name).
 
 ---
 
@@ -292,12 +290,11 @@ Gap-free units begin over a SQLite connection (`AddUnitOfWork()`).
 | `ConnectionString` | required | The database file that holds the counters and that gap-free units must run on |
 | `CommandTimeout` | 30 seconds | Also bounds how long a call waits for another writer's lock |
 | `Schema` / `TableName` | `headless` / `sequences` | Validated as PostgreSQL-style identifiers. SQLite has no schemas, so the table is named `<schema>_<table>` (`headless_sequences`) |
-| `InitializeOnStartup` | `true` | When `false`, the application creates the table |
 
 ### Design and runtime behavior
 
 - Each call is an `UPDATE … RETURNING` of an existing counter, else an `INSERT … RETURNING` of a new one, in one batch. Both run under the database write lock, which the transaction takes when it begins (`BEGIN IMMEDIATE`), so concurrent first calls on a new key never collide. Key columns are `TEXT` with SQLite's binary collation, so names compare ordinally.
 - A gap-free unit holds the write lock from its begin to its commit, so a second unit waits at its own begin, not only at the counter row, and every other writer to the file waits too. Keep gap-free units short.
 - The fast path opens its own connection and retries `SQLITE_BUSY` and `SQLITE_LOCKED` raised before the commit in a fresh transaction, up to 3 attempts. The driver already waited out its busy timeout (`Default Timeout`, 30 seconds) before raising either.
-- The table is a step the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup and records in `<schema>_headless_schema_history` as `Sequences/1` (`Sequences:<table>/1` for a configured table name).
+- The table is a step `resources setup` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) and records in `<schema>_headless_schema_history` as `Sequences/1` (`Sequences:<table>/1` for a configured table name).
 

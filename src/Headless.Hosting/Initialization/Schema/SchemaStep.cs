@@ -61,10 +61,6 @@ public sealed record SchemaContribution
     /// </param>
     /// <param name="schema">The already-validated schema that holds the feature's objects and the history table.</param>
     /// <param name="steps">The feature's steps, applied in list order.</param>
-    /// <param name="applyOnStartup">
-    /// <see langword="false"/> keeps the steps registered, so verify mode and script export still describe them, but
-    /// the runner never applies them: the feature's <c>InitializeOnStartup = false</c> contract.
-    /// </param>
     /// <param name="exportOnly">
     /// <see langword="true"/> limits the contribution to <see cref="SchemaRunner.ExportScript"/>: the runner neither
     /// applies nor verifies it. For a feature that runs its database's steps with a runner of its own, so that one
@@ -75,6 +71,12 @@ public sealed record SchemaContribution
     /// than application data: rows the feature writes at startup from code (definitions) or keeps live while the host
     /// runs (cluster membership). A tool that clears application data between tests must keep them, because the
     /// running host never writes them again. Omit for a feature whose tables hold only application data.
+    /// </param>
+    /// <param name="objects">
+    /// The tables and sequences the steps create, in creation order: <c>resources clear</c> deletes the tables' rows
+    /// and <c>resources teardown</c> drops the objects, both in reverse order so a foreign key never blocks them. Names
+    /// come from the same options as the steps, so a configured name is honored. Omit only for a contribution that
+    /// cannot be cleared or torn down; those operations then report it as unsupported.
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="dialect"/>, <paramref name="createConnection"/>, or <paramref name="steps"/> is null.</exception>
     /// <exception cref="ArgumentException">
@@ -87,9 +89,9 @@ public sealed record SchemaContribution
         Func<DbConnection> createConnection,
         string schema,
         IReadOnlyList<SchemaStep> steps,
-        bool applyOnStartup = true,
         bool exportOnly = false,
-        IReadOnlyList<string>? hostStateTables = null
+        IReadOnlyList<string>? hostStateTables = null,
+        IReadOnlyList<SchemaObject>? objects = null
     )
     {
         Feature = Argument.IsNotNullOrWhiteSpace(feature);
@@ -105,9 +107,10 @@ public sealed record SchemaContribution
             nameof(steps)
         );
         Steps = steps;
-        ApplyOnStartup = applyOnStartup;
         ExportOnly = exportOnly;
         HostStateTables = hostStateTables ?? [];
+        Objects = objects ?? [];
+        Argument.IsTrue(Objects.All(static o => o is not null), "A schema object cannot be null.", nameof(objects));
         Argument.IsTrue(
             HostStateTables.All(static name => !string.IsNullOrWhiteSpace(name)),
             "A host-state table name cannot be null or whitespace.",
@@ -130,9 +133,6 @@ public sealed record SchemaContribution
     /// <summary>The feature's steps, in application order.</summary>
     public IReadOnlyList<SchemaStep> Steps { get; }
 
-    /// <summary>Whether the runner applies the steps at startup.</summary>
-    public bool ApplyOnStartup { get; }
-
     /// <summary>Whether the runner only exports the steps, and never applies or verifies them.</summary>
     public bool ExportOnly { get; }
 
@@ -141,6 +141,28 @@ public sealed record SchemaContribution
     /// kept live by the running host, so a test data reset keeps them. Empty when every table holds application data.
     /// </summary>
     public IReadOnlyList<string> HostStateTables { get; }
+
+    /// <summary>
+    /// The tables and sequences the steps create, listed in creation order: clear deletes the tables' rows and teardown
+    /// drops the objects in reverse of that order, so a table is always handled before the tables its foreign keys
+    /// reference. A list out of creation order can fail clear or teardown on a foreign key. Empty when the contribution
+    /// declares none.
+    /// </summary>
+    public IReadOnlyList<SchemaObject> Objects { get; }
+
+    /// <summary>
+    /// Returns the identity of the database the contribution reaches, read from an unopened connection, so contributions
+    /// that each build their own connection to one database share one lock and one pass.
+    /// </summary>
+    internal async ValueTask<string> GetDatabaseIdentityAsync()
+    {
+        var probe = CreateConnection();
+
+        await using (probe.ConfigureAwait(false))
+        {
+            return Dialect.DatabaseIdentity(probe);
+        }
+    }
 
     /// <summary>
     /// Returns the history identity of a feature whose object names are configurable: <paramref name="feature"/>

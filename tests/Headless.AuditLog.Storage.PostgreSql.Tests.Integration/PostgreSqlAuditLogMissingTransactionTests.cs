@@ -214,6 +214,7 @@ public sealed class PostgreSqlAuditLogMissingTransactionTests(PostgreSqlAuditLog
             setup.UsePostgreSql(fixture.ConnectionString);
         });
 
+        builder.Services.AddHeadlessResourceSetupOnStartup();
         var host = builder.Build();
         await host.StartAsync(AbortToken);
 

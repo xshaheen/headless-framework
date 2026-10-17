@@ -78,6 +78,7 @@ internal static class IdempotencyTestApp
             configure?.Invoke(o);
         });
 
+        builder.Services.AddHeadlessResourceSetupOnStartup();
         var app = builder.Build();
 
         // Ambient tenant from a caller-controlled header BEFORE idempotency, the way pre-auth catalog resolution

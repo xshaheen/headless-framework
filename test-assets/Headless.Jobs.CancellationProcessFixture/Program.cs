@@ -58,6 +58,8 @@ internal static class Program
             });
         });
 
+        builder.Services.AddHeadlessResourceSetupOnStartup();
+        builder.Services.AddHeadlessSeedOnStartup();
         using var host = builder.Build();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         try

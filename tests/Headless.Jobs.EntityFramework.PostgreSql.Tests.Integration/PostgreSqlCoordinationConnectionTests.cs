@@ -46,6 +46,8 @@ public sealed class PostgreSqlCoordinationConnectionTests(PostgreSqlJobsCoordina
             );
         });
 
+        builder.Services.AddHeadlessResourceSetupOnStartup();
+        builder.Services.AddHeadlessSeedOnStartup();
         using var host = builder.Build();
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync<DataSourceApplicationContext>(host, AbortToken);
         await host.StartAsync(AbortToken);

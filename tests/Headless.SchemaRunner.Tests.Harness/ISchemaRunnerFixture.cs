@@ -33,8 +33,11 @@ public interface ISchemaRunnerFixture
     /// </summary>
     SchemaRunner CreateRunner(string schema);
 
-    /// <summary>Builds a host whose only hosted service is the runner of <see cref="CreateRunner"/>, in <paramref name="mode"/>.</summary>
-    IHost CreateHost(string schema, SchemaRunnerMode mode);
+    /// <summary>
+    /// Builds a host whose hosted services are the runner of <see cref="CreateRunner"/>, which verifies at start, and,
+    /// when <paramref name="setupResources"/> is set, the resource setup that applies the steps first.
+    /// </summary>
+    IHost CreateHost(string schema, bool setupResources);
 
     /// <summary>Drops <paramref name="schema"/> and everything in it, if it exists.</summary>
     Task DropSchemaAsync(string schema, CancellationToken cancellationToken);
@@ -59,6 +62,30 @@ public interface ISchemaRunnerFixture
 
     /// <summary>Counts the base tables in <paramref name="schema"/>.</summary>
     Task<int> CountTablesAsync(string schema, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Lists every table and sequence the catalog holds in <paramref name="schema"/>, by unqualified name (on SQLite, the
+    /// name after the schema prefix). It reads the catalog, so an object a feature creates without declaring it shows.
+    /// </summary>
+    Task<IReadOnlyList<string>> ListObjectsAsync(string schema, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Adds state another application owns to <paramref name="schema"/>: the table <see cref="ForeignTable"/> with one
+    /// row, and one history row for <see cref="ForeignFeature"/>. The history table must already exist.
+    /// </summary>
+    Task AddForeignStateAsync(string schema, CancellationToken cancellationToken);
+
+    /// <summary>Counts the rows of <see cref="ForeignTable"/>.</summary>
+    Task<int> CountForeignRowsAsync(string schema, CancellationToken cancellationToken);
+
+    /// <summary>Counts the history rows of one feature.</summary>
+    Task<int> CountHistoryRowsAsync(string schema, string feature, CancellationToken cancellationToken);
+
+    /// <summary>A table no registered feature declares.</summary>
+    const string ForeignTable = "foreign_data";
+
+    /// <summary>A feature no runner in the suite registers.</summary>
+    const string ForeignFeature = "ForeignFeature";
 
     /// <summary>
     /// Runs the protocol of the deleted hand-written initializers for every pilot contribution in

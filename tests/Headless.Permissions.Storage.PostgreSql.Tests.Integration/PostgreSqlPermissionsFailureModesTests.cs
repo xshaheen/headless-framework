@@ -21,7 +21,7 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
         // Credentials are placeholders; we never reach the auth handshake because the TCP connect fails first.
         const string unreachable =
             "Host=127.0.0.1;Port=1;Database=missing;Username=postgres;Password=placeholder-never-used;Timeout=2";
-        using var host = _CreateHost(unreachable);
+        using var host = _CreateHost(unreachable, setupResources: false);
 
         // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is NpgsqlException
         await FluentActions
@@ -86,7 +86,11 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
         }
     }
 
-    private static IHost _CreateHost(string connectionString, string schema = "permissions_pg_failure")
+    private static IHost _CreateHost(
+        string connectionString,
+        string schema = "permissions_pg_failure",
+        bool setupResources = true
+    )
     {
         var builder = Host.CreateApplicationBuilder();
         // unify: management-core deps
@@ -98,6 +102,11 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
             setup.ConfigureStorage(options => options.Schema = schema);
             setup.UsePostgreSql(connectionString);
         });
+
+        if (setupResources)
+        {
+            builder.Services.AddHeadlessResourceSetupOnStartup();
+        }
 
         return builder.Build();
     }

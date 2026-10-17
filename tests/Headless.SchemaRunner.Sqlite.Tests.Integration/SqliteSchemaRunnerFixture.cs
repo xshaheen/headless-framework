@@ -61,11 +61,20 @@ public sealed class SqliteSchemaRunnerFixture
         return services.BuildServiceProvider().GetRequiredService<SchemaRunner>();
     }
 
-    public IHost CreateHost(string schema, SchemaRunnerMode mode)
+    public IHost CreateHost(string schema, bool setupResources)
     {
         var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddSingleton(CreateRunner(schema));
-        builder.Services.AddHeadlessSchemaRunner(options => options.Mode = mode);
+        // The pilot features' contributions alone, so the runner and the resource setup are the host's only hosted
+        // services, and the setup sees the contributions the runner verifies.
+        foreach (var contribution in CreateRunner(schema).Contributions)
+        {
+            builder.Services.AddHeadlessSchemaContribution(_ => contribution);
+        }
+
+        if (setupResources)
+        {
+            builder.Services.AddHeadlessResourceSetupOnStartup();
+        }
 
         return builder.Build();
     }
@@ -188,6 +197,52 @@ public sealed class SqliteSchemaRunnerFixture
     {
         return _ScalarAsync(
             $"SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND {_InSchema(schema)}",
+            cancellationToken
+        );
+    }
+
+    public async Task<IReadOnlyList<string>> ListObjectsAsync(string schema, CancellationToken cancellationToken)
+    {
+        await using var connection = await _OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT substr(name, {schema.Length + 2}) FROM sqlite_schema WHERE type = 'table' AND {_InSchema(schema)}";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var names = new List<string>();
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            names.Add(reader.GetString(0));
+        }
+
+        return names;
+    }
+
+    public Task AddForeignStateAsync(string schema, CancellationToken cancellationToken)
+    {
+        return _ExecuteAsync(
+            $"""
+            CREATE TABLE "{schema}_{ISchemaRunnerFixture.ForeignTable}" (id INTEGER PRIMARY KEY);
+            INSERT INTO "{schema}_{ISchemaRunnerFixture.ForeignTable}" (id) VALUES (1);
+            INSERT INTO "{schema}_headless_schema_history" (feature, step_version, description, checksum)
+            VALUES ('{ISchemaRunnerFixture.ForeignFeature}', '1', 'foreign', '{new string('0', 64)}');
+            """,
+            cancellationToken
+        );
+    }
+
+    public Task<int> CountForeignRowsAsync(string schema, CancellationToken cancellationToken)
+    {
+        return _ScalarAsync(
+            $"""SELECT count(*) FROM "{schema}_{ISchemaRunnerFixture.ForeignTable}";""",
+            cancellationToken
+        );
+    }
+
+    public Task<int> CountHistoryRowsAsync(string schema, string feature, CancellationToken cancellationToken)
+    {
+        return _ScalarAsync(
+            $"""SELECT count(*) FROM "{schema}_headless_schema_history" WHERE feature = '{feature}';""",
             cancellationToken
         );
     }

@@ -73,19 +73,6 @@ public sealed class RabbitMqMessagingOptions
     public bool PublishConfirms { get; set; } = true;
 
     /// <summary>
-    /// When <see langword="true"/> (default), the transport declares the exchanges, the shared queues, their bindings,
-    /// and the dead-letter topology it uses. Set it to <see langword="false"/> when the topology is managed outside the
-    /// application (for example by infrastructure as code) and the application's user lacks <c>configure</c>
-    /// permission: every exchange and shared queue is then declared passively, which fails with <c>NOT_FOUND</c> when it
-    /// is missing, and no binding is created.
-    /// </summary>
-    /// <remarks>
-    /// Per-process queues stay the application's own either way: an every-instance consumer's exclusive queue and the
-    /// request/reply queue are still declared and bound.
-    /// </remarks>
-    public bool AutoProvision { get; set; } = true;
-
-    /// <summary>
     /// The most AMQP channels the publish pool holds and hands out at once. Defaults to <c>15</c>. A publish rents a
     /// channel for its duration, so this also caps the publishes in flight on one connection: a publisher that waits
     /// on broker confirms under load raises it, a host that wants fewer channels on the broker lowers it.

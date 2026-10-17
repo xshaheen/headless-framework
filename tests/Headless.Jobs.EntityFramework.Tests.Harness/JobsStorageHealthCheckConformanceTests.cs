@@ -66,6 +66,8 @@ public abstract class JobsStorageHealthCheckConformanceTests<TFixture>(TFixture 
                 )
         );
 
+        builder.Services.AddHeadlessResourceSetupOnStartup();
+        builder.Services.AddHeadlessSeedOnStartup();
         return builder.Build();
     }
 

@@ -348,7 +348,6 @@ public sealed class RabbitMqMessagingOptionsValidatorTests : TestBase
         var options = _CreateValidOptions();
 
         options.PublishConfirms.Should().BeTrue();
-        options.AutoProvision.Should().BeTrue();
         options.QueueArguments.EnableDeadLettering.Should().BeFalse();
         options.QueueArguments.DeliveryLimit.Should().BeNull();
     }

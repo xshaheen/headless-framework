@@ -85,7 +85,11 @@ internal static class PostgreSqlFencingSchemaContribution
                     sql
                 ),
             ],
-            applyOnStartup: options.InitializeOnStartup
+            objects:
+            [
+                SchemaObject.Sequence(PostgreSqlFencingSchema.SequenceName),
+                SchemaObject.Table(PostgreSqlFencingSchema.TableName),
+            ]
         );
     }
 }

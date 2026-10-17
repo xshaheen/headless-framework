@@ -74,6 +74,9 @@ builder.Services.AddDbContextFactory<FeaturesMigrationDbContext>(options =>
 
 builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<FeaturesMigrationDbContext>());
 
+// Nothing seeds on its own, so this demo seeds as it starts; a deployed app runs `dotnet <app>.dll seed` instead.
+builder.Services.AddHeadlessSeedOnStartup();
+
 var app = builder.Build();
 
 await app.RunAsync();

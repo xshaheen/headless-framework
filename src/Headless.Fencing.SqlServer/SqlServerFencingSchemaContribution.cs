@@ -96,7 +96,11 @@ internal static class SqlServerFencingSchemaContribution
                     sql
                 ),
             ],
-            applyOnStartup: options.InitializeOnStartup
+            objects:
+            [
+                SchemaObject.Sequence(SqlServerFencingSchema.SequenceName),
+                SchemaObject.Table(SqlServerFencingSchema.TableName),
+            ]
         );
     }
 }

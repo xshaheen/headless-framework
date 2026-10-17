@@ -34,6 +34,9 @@ builder
             )
     );
 
+// Nothing seeds on its own, so this demo seeds as it starts; a deployed app runs `dotnet <app>.dll seed` instead.
+builder.Services.AddHeadlessSeedOnStartup();
+
 var app = builder.Build();
 
 // Configure middleware pipeline

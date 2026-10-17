@@ -52,6 +52,17 @@ internal static class PostgreSqlMessagingSchemaContribution
                 + _PublishedTableSql(schema, options.OwnerColumnMaxLength)
             : _PublishedTableSql(schema, options.OwnerColumnMaxLength);
 
+        // Creation order: the audit table references the receipts table, so the reverse drops it first.
+        IReadOnlyList<SchemaObject> objects = inbox
+            ?
+            [
+                SchemaObject.Table(_TableName("MessagingReceived")),
+                SchemaObject.Table(_ReceiptsTable),
+                SchemaObject.Table(_AuditTable),
+                SchemaObject.Table(_TableName("MessagingPublished")),
+            ]
+            : [SchemaObject.Table(_TableName("MessagingPublished"))];
+
         return new SchemaContribution(
             feature: inbox ? Feature : OutboxFeature,
             dialect: PostgreSqlSchemaDialect.Instance,
@@ -79,7 +90,8 @@ internal static class PostgreSqlMessagingSchemaContribution
                     _ContentSearchSql(schema, inbox)
                 ),
             ],
-            exportOnly: exportOnly
+            exportOnly: exportOnly,
+            objects: objects
         );
     }
 
@@ -211,7 +223,7 @@ internal static class PostgreSqlMessagingSchemaContribution
             -- schema directly; it does not carry migration DDL for superseded index shapes.
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_status_name_added" ON {received} ("status_name","added");
 
-            CREATE TABLE IF NOT EXISTS "{schema}"."messaging_inbox_operation_receipts"(
+            CREATE TABLE IF NOT EXISTS "{schema}"."{_ReceiptsTable}"(
                 "operation_id" UUID PRIMARY KEY NOT NULL,
                 "target_kind" VARCHAR(50) COLLATE "C" NOT NULL DEFAULT 'Inbox',
                 "generation_incarnation_id" UUID NULL,
@@ -231,7 +243,7 @@ internal static class PostgreSqlMessagingSchemaContribution
                 "created_at" TIMESTAMPTZ NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS "{schema}"."messaging_inbox_audit"(
+            CREATE TABLE IF NOT EXISTS "{schema}"."{_AuditTable}"(
                 "audit_id" UUID PRIMARY KEY NOT NULL,
                 "operation_id" UUID NOT NULL,
                 "target_kind" VARCHAR(50) COLLATE "C" NOT NULL DEFAULT 'Inbox',
@@ -242,9 +254,9 @@ internal static class PostgreSqlMessagingSchemaContribution
                 "outcome" VARCHAR(50) COLLATE "C" NOT NULL,
                 "created_at" TIMESTAMPTZ NOT NULL,
                 CONSTRAINT "fk_messaging_inbox_audit_operation" FOREIGN KEY ("operation_id")
-                    REFERENCES "{schema}"."messaging_inbox_operation_receipts"("operation_id") ON DELETE RESTRICT
+                    REFERENCES "{schema}"."{_ReceiptsTable}"("operation_id") ON DELETE RESTRICT
             );
-            CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_incarnation_created" ON "{schema}"."messaging_inbox_audit" ("generation_incarnation_id","created_at");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_incarnation_created" ON "{schema}"."{_AuditTable}" ("generation_incarnation_id","created_at");
 
 
             -- CREATE TABLE IF NOT EXISTS skips a table that already exists in another shape (created by an
@@ -272,15 +284,15 @@ internal static class PostgreSqlMessagingSchemaContribution
                     AND EXISTS (SELECT 1 FROM information_schema.columns
                         WHERE table_schema='{schema}' AND table_name='messaging_received' AND column_name='consumer_identity_hash')
                     AND EXISTS (SELECT 1 FROM information_schema.columns
-                        WHERE table_schema='{schema}' AND table_name='messaging_inbox_operation_receipts' AND column_name='expected_status')
+                        WHERE table_schema='{schema}' AND table_name='{_ReceiptsTable}' AND column_name='expected_status')
                     AND EXISTS (SELECT 1 FROM information_schema.columns
-                        WHERE table_schema='{schema}' AND table_name='messaging_inbox_operation_receipts' AND column_name='outcome')
+                        WHERE table_schema='{schema}' AND table_name='{_ReceiptsTable}' AND column_name='outcome')
                     AND EXISTS (SELECT 1 FROM information_schema.columns
-                        WHERE table_schema='{schema}' AND table_name='messaging_inbox_operation_receipts' AND column_name='target_kind')
+                        WHERE table_schema='{schema}' AND table_name='{_ReceiptsTable}' AND column_name='target_kind')
                     AND EXISTS (SELECT 1 FROM information_schema.columns
-                        WHERE table_schema='{schema}' AND table_name='messaging_inbox_operation_receipts' AND column_name='expected_due_at')
+                        WHERE table_schema='{schema}' AND table_name='{_ReceiptsTable}' AND column_name='expected_due_at')
                     AND EXISTS (SELECT 1 FROM information_schema.columns
-                        WHERE table_schema='{schema}' AND table_name='messaging_inbox_audit' AND column_name='target_kind')
+                        WHERE table_schema='{schema}' AND table_name='{_AuditTable}' AND column_name='target_kind')
                 ) THEN
                     RAISE EXCEPTION 'Headless.Messaging inbox schema is incomplete: the lifecycle, retention or operation receipt contract is missing.';
                 END IF;
@@ -329,9 +341,18 @@ internal static class PostgreSqlMessagingSchemaContribution
         );
     }
 
+    // One name for the DDL and for the declared objects, so clear and teardown act on the tables the steps create.
+    private static readonly string _ReceiptsTable = _TableName("MessagingInboxOperationReceipts");
+    private static readonly string _AuditTable = _TableName("MessagingInboxAudit");
+
     private static string _Table(string schema, string pascalName)
     {
-        return PostgreSqlDialect.Instance.Qualify(schema, PostgreSqlDialect.Instance.Name(pascalName));
+        return PostgreSqlDialect.Instance.Qualify(schema, _TableName(pascalName));
+    }
+
+    private static string _TableName(string pascalName)
+    {
+        return PostgreSqlDialect.Instance.Name(pascalName);
     }
 
     private static string _PickupIndexesSql(string schema, bool inbox)
@@ -359,9 +380,9 @@ internal static class PostgreSqlMessagingSchemaContribution
                 CREATE INDEX IF NOT EXISTS "idx_messaging_received_version_next_retry_at" ON {received} ("version","intent_type","next_retry_at") INCLUDE ("retries","locked_until") WHERE "next_retry_at" IS NOT NULL;
                 CREATE INDEX IF NOT EXISTS "idx_messaging_received_owner_not_null" ON {received} ("owner") WHERE "owner" IS NOT NULL;
 
-                CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_receipts_type_created" ON "{schema}"."messaging_inbox_operation_receipts" ("operation_type","created_at");
-                CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_type_created" ON "{schema}"."messaging_inbox_audit" ("operation_type","created_at");
-                CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_operation" ON "{schema}"."messaging_inbox_audit" ("operation_id");
+                CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_receipts_type_created" ON "{schema}"."{_ReceiptsTable}" ("operation_type","created_at");
+                CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_type_created" ON "{schema}"."{_AuditTable}" ("operation_type","created_at");
+                CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_operation" ON "{schema}"."{_AuditTable}" ("operation_id");
                 """;
     }
 

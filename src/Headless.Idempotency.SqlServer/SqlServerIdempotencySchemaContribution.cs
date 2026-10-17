@@ -104,7 +104,7 @@ internal static class SqlServerIdempotencySchemaContribution
             [
                 new SchemaStep(StepVersion, "Create the generation sequence, record table, and retention index.", sql),
             ],
-            applyOnStartup: options.InitializeOnStartup
+            objects: [SchemaObject.Sequence(t.SequenceName), SchemaObject.Table(t.TableName)]
         );
     }
 }

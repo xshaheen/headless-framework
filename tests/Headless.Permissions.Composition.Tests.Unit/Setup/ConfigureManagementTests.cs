@@ -112,7 +112,7 @@ public sealed class ConfigureManagementTests
     }
 
     [Fact]
-    public void should_register_startup_initializer_by_default()
+    public void should_register_the_definitions_seeder_without_seeding_at_startup()
     {
         // given
         var services = new ServiceCollection();
@@ -120,26 +120,9 @@ public sealed class ConfigureManagementTests
         // when
         services.AddHeadlessPermissions(setup => setup.UseEntityFramework<OptionsTestDbContext>());
 
-        // then
-        services.Should().Contain(d => d.ServiceType == typeof(IInitializer));
-    }
-
-    [Fact]
-    public void should_not_register_startup_initializer_when_disabled()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessPermissions(setup =>
-        {
-            setup.DisableStartupInitialization();
-            setup.UseEntityFramework<OptionsTestDbContext>();
-        });
-
-        // then — the seeder is the only IInitializer the package registers; the other hosted services stay.
+        // then - seeding is opt-in: the seeder is registered, but nothing runs it at startup
+        services.Should().Contain(d => d.ServiceType == typeof(ISeeder));
         services.Should().NotContain(d => d.ServiceType == typeof(IInitializer));
-        services.Should().Contain(d => d.ServiceType == typeof(IConfigureOptions<PermissionManagementOptions>));
     }
 
     private sealed class OptionsTestDbContext(DbContextOptions<OptionsTestDbContext> options) : DbContext(options);

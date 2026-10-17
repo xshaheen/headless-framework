@@ -17,6 +17,8 @@ namespace Microsoft.Extensions.Hosting;
 public static class HeadlessHostRunExtensions
 {
     private const string _DescribeCommand = "describe";
+    private const string _ResourcesCommand = StatefulResourcesCommand.Name;
+    private const string _SeedCommand = SeedCommand.Name;
     private const string _CheckCommand = "check";
 
     extension(IHost host)
@@ -24,29 +26,44 @@ public static class HeadlessHostRunExtensions
         /// <summary>
         /// Runs the host until shutdown, or answers a command about it without starting it: when the first argument is
         /// <c>describe</c>, prints the host manifest as JSON to standard output; when it is <c>check</c>, runs the
-        /// host's health checks once and prints one line per check.
+        /// host's health checks once and prints one line per check; when it is <c>resources</c>, sets up, checks,
+        /// clears, tears down, or lists the host's stateful resources and prints one line per resource; when it is
+        /// <c>seed</c>, runs or lists the host's seeders and prints one line per seeder.
         /// </summary>
         /// <param name="args">
-        /// The process arguments. Any first argument other than <c>describe</c> or <c>check</c> runs the host.
+        /// The process arguments. Any first argument other than <c>describe</c>, <c>check</c>, <c>resources</c>, or
+        /// <c>seed</c> runs the host.
         /// </param>
         /// <param name="cancellationToken">Stops the host, or abandons the command.</param>
         /// <returns>
-        /// The process exit code: 0 on success; 1 when the manifest fails, when startup validation fails, or when a
-        /// health check reports <see cref="HealthStatus.Unhealthy" />.
+        /// The process exit code: 0 on success; 1 when the manifest fails, when startup validation fails, when a
+        /// health check reports <see cref="HealthStatus.Unhealthy" />, or when a resource or a seeder fails or times
+        /// out; 2 when the <c>resources</c> or <c>seed</c> arguments are invalid or match nothing.
         /// </returns>
         /// <remarks>
         /// <para>
         /// Call it from <c>Program.cs</c> in place of <c>RunAsync</c>: <c>return await app.RunHeadlessAsync(args);</c>.
-        /// Only the host's own entry point sees its real configuration sources, so both commands see the configuration
+        /// Only the host's own entry point sees its real configuration sources, so every command sees the configuration
         /// the host would run with.
         /// </para>
         /// <para>
-        /// Both commands first run the startup validation a real start runs: options marked <c>ValidateOnStart</c>,
-        /// then every <see cref="IHeadlessStartupValidator" />. Neither starts a hosted service. Standard output carries
+        /// Every command first runs the startup validation a real start runs: options marked <c>ValidateOnStart</c>,
+        /// then every <see cref="IHeadlessStartupValidator" />. None starts a hosted service. Standard output carries
         /// only the command's result; console logging written meanwhile goes to standard error. That redirect needs a
         /// host built with <c>HostApplicationBuilder</c> or <c>WebApplicationBuilder</c>: on a host built with
         /// <c>Host.CreateDefaultBuilder</c>, the Microsoft console logger keeps the standard output it captured at
         /// build time, so its log lines can still reach standard output.
+        /// </para>
+        /// <para>
+        /// <c>resources</c> takes a subcommand (<c>setup</c>, the default, <c>check</c>, <c>clear</c>, <c>teardown</c>,
+        /// <c>statistics</c>, or <c>list</c>), <c>--type</c> and <c>--name</c> filters, an optional <c>--timeout</c> in
+        /// seconds for the whole run (none by default, so each resource's own timeouts govern), and <c>--force</c>,
+        /// which <c>clear</c> and <c>teardown</c> need in the Production environment. See
+        /// <see cref="IStatefulResource" />.
+        /// </para>
+        /// <para>
+        /// <c>seed</c> runs every seeder in priority order, or <c>list</c>s them, with <c>--name</c> filters and a
+        /// <c>--timeout</c> in seconds (default 300); a failed seeder stops the run. See <see cref="ISeeder" />.
         /// </para>
         /// <para>
         /// <c>check</c> skips every check tagged <see cref="HeadlessHealthCheckTags.HostState" />, because those report
@@ -64,6 +81,35 @@ public static class HeadlessHostRunExtensions
             if (args.Length > 0 && string.Equals(args[0], _DescribeCommand, StringComparison.Ordinal))
             {
                 return await _RunCommandAsync(host, _DescribeAsync, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (args.Length > 0 && string.Equals(args[0], _SeedCommand, StringComparison.Ordinal))
+            {
+                return await _RunCommandAsync(
+                        host,
+                        (services, stdout, stderr, token) =>
+                            SeedCommand.RunAsync(args[1..], services, stdout, stderr, _ValidateStartupAsync, token),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            if (args.Length > 0 && string.Equals(args[0], _ResourcesCommand, StringComparison.Ordinal))
+            {
+                return await _RunCommandAsync(
+                        host,
+                        (services, stdout, stderr, token) =>
+                            StatefulResourcesCommand.RunAsync(
+                                args[1..],
+                                services,
+                                stdout,
+                                stderr,
+                                _ValidateStartupAsync,
+                                token
+                            ),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
             }
 
             if (args.Length > 0 && string.Equals(args[0], _CheckCommand, StringComparison.Ordinal))

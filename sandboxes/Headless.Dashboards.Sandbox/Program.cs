@@ -88,6 +88,13 @@ builder.Services.AddHeadlessMessaging(setup =>
     });
 });
 
+// The host start only verifies its tables and queues, so this demo creates them as it starts; a deployed app runs
+// `dotnet <app>.dll resources setup` instead.
+builder.Services.AddHeadlessResourceSetupOnStartup();
+
+// Nothing seeds on its own, so this demo seeds as it starts; a deployed app runs `dotnet <app>.dll seed` instead.
+builder.Services.AddHeadlessSeedOnStartup();
+
 var app = builder.Build();
 
 if (postgres is not null)

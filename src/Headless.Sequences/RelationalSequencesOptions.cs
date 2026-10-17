@@ -31,14 +31,6 @@ public abstract class RelationalSequencesOptions(string defaultTableName)
     /// </summary>
     public string TableName { get; set; } = defaultTableName;
 
-    /// <summary>
-    /// Gets or sets whether the schema and table are created at host startup when missing. The default is
-    /// <see langword="true" />. Set it to <see langword="false" /> when a migration tool owns the table.
-    /// The provider never creates the table lazily inside a call, because DDL inside a caller's transaction
-    /// would roll back with it.
-    /// </summary>
-    public bool InitializeOnStartup { get; set; } = true;
-
     internal int CommandTimeoutSeconds => (int)Math.Ceiling(CommandTimeout.TotalSeconds);
 }
 

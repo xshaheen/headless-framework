@@ -76,6 +76,15 @@ public sealed record ConsumerClientRequest
     /// the messaging core creates a competing client.
     /// </summary>
     public Guid InstanceId { get; }
+
+    /// <summary>
+    /// Whether the client creates the shared broker objects its competing subscription needs, such as a durable queue
+    /// and its bindings. <see langword="false"/> for a consumer registered before the host was built: the deployment
+    /// created its objects with <c>resources setup</c>, so the client only checks they exist. <see langword="true"/>
+    /// when the subscription includes one an <c>IRuntimeSubscriber</c> added while the host runs, which no deploy step
+    /// knows about. Per-process objects, such as an every-instance subscription's, are always the client's to create.
+    /// </summary>
+    public bool ProvisionsTopology { get; init; }
 }
 
 /// <summary>How the processes that open one subscription share its messages.</summary>

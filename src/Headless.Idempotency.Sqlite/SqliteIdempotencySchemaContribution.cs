@@ -109,7 +109,11 @@ internal static class SqliteIdempotencySchemaContribution
             [
                 new SchemaStep(StepVersion, "Create the generation sequence, record table, and retention index.", sql),
             ],
-            applyOnStartup: options.InitializeOnStartup
+            objects:
+            [
+                SchemaObject.Sequence(SqliteDialect.QualifiedName(schema, t.SequenceName)),
+                SchemaObject.Table(SqliteDialect.QualifiedName(schema, t.TableName)),
+            ]
         );
     }
 }
