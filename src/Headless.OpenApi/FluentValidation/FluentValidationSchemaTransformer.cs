@@ -103,21 +103,7 @@ internal sealed class FluentValidationSchemaTransformer : IOpenApiSchemaTransfor
 
     private IValidator? _GetValidator(IServiceProvider services, Type type)
     {
-        if (type.IsGenericTypeDefinition || type.IsPointer || type.IsByRef)
-        {
-            return null;
-        }
-
-        try
-        {
-            return services.GetService(typeof(IValidator<>).MakeGenericType(type)) as IValidator;
-        }
-        catch (Exception e)
-        {
-            _GetLogger(services).LogGetValidatorFailed(e, type.Name);
-
-            return null;
-        }
+        return services.GetFluentValidator(type, _GetLogger(services));
     }
 
     // One logger per transformer, which belongs to one application's document; a race only creates a spare logger.

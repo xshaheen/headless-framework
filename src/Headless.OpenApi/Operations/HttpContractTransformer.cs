@@ -26,12 +26,21 @@ internal sealed class HttpContractTransformer : IOpenApiOperationTransformer
     {
         foreach (var contract in context.Description.ActionDescriptor.EndpointMetadata.OfType<HttpContractMetadata>())
         {
-            _AddRequestHeaders(operation, contract.RequestHeaders);
-            _AddResponses(operation, contract.Responses);
-            _AddResponseHeaders(operation, contract.ResponseHeaders);
+            Apply(operation, contract);
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Renders one contract on the operation, for a transformer that derives a contract from the application's
+    /// services rather than from endpoint metadata.
+    /// </summary>
+    public static void Apply(OpenApiOperation operation, HttpContractMetadata contract)
+    {
+        _AddRequestHeaders(operation, contract.RequestHeaders);
+        _AddResponses(operation, contract.Responses);
+        _AddResponseHeaders(operation, contract.ResponseHeaders);
     }
 
     private static void _AddRequestHeaders(

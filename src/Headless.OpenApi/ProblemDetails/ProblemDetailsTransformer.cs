@@ -17,7 +17,9 @@ namespace Headless.OpenApi;
 /// </summary>
 /// <remarks>
 /// It types only responses the operation already declares, so it runs after the transformers that add responses: the
-/// 401, 403, 400, 409, 428, and 429 ones and those of <see cref="Headless.Api.HttpContractMetadata"/>. The problem types are registered as shared components, so every operation
+/// 401, 403, 400, 409, 413, 428, and 429 ones and those of <see cref="Headless.Api.HttpContractMetadata"/>; a
+/// transformer that adds a response after it, such as <see cref="TenantResolutionTransformer"/>, calls
+/// <see cref="DescribeAsync"/>. The problem types are registered as shared components, so every operation
 /// references one schema per status. A 400 the endpoint declared as <see cref="HttpValidationProblemDetails"/> gets
 /// <see cref="BadRequestValidationProblemDetails"/>, the shape the validation filter writes. Other media types the
 /// endpoint declared for the response keep their schema. The examples use the camelCase member names of the Headless web
@@ -40,47 +42,65 @@ internal sealed class ProblemDetailsTransformer : IOpenApiOperationTransformer
 
         foreach (var (statusCode, response) in responses)
         {
-            if (response is not OpenApiResponse concrete || !_Problems.TryGetValue(statusCode, out var problem))
+            if (response is OpenApiResponse concrete)
             {
-                continue;
+                await DescribeAsync(statusCode, concrete, context, cancellationToken);
             }
+        }
+    }
 
-            if (
-                string.Equals(statusCode, OpenApiStatusCodes.BadRequest, StringComparison.Ordinal)
-                && _DeclaresValidationProblem(context)
-            )
-            {
-                problem = _ValidationProblem;
-            }
+    /// <summary>
+    /// Types one error response with its Headless problem-details schema and example, and adds its <c>Retry-After</c>
+    /// header. A status with no known problem shape is left alone.
+    /// </summary>
+    /// <remarks>For a transformer that adds an error response after this one ran.</remarks>
+    public static async Task DescribeAsync(
+        string statusCode,
+        OpenApiResponse response,
+        OpenApiOperationTransformerContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!_Problems.TryGetValue(statusCode, out var problem))
+        {
+            return;
+        }
 
-            IOpenApiSchema schema = await context.GetOrCreateSchemaAsync(
-                problem.SchemaType,
-                parameterDescription: null,
-                cancellationToken
-            );
+        if (
+            string.Equals(statusCode, OpenApiStatusCodes.BadRequest, StringComparison.Ordinal)
+            && _DeclaresValidationProblem(context)
+        )
+        {
+            problem = _ValidationProblem;
+        }
 
-            if (context.Document is { } document)
-            {
-                schema = OpenApiSchemaComponents.Resolve(document, schema);
-            }
+        IOpenApiSchema schema = await context.GetOrCreateSchemaAsync(
+            problem.SchemaType,
+            parameterDescription: null,
+            cancellationToken
+        );
 
-            var content = concrete.Content ??= new Dictionary<string, OpenApiMediaType>(StringComparer.Ordinal);
-            content.TryAdd(ContentTypes.Applications.ProblemJson, new OpenApiMediaType());
+        if (context.Document is { } document)
+        {
+            schema = OpenApiSchemaComponents.Resolve(document, schema);
+        }
 
-            var mediaType = content[ContentTypes.Applications.ProblemJson];
-            mediaType.Schema = schema;
-            // A JSON node belongs to one parent, so every response gets its own copy.
-            mediaType.Example = problem.Example.DeepClone();
+        var content = response.Content ??= new Dictionary<string, OpenApiMediaType>(StringComparer.Ordinal);
+        content.TryAdd(ContentTypes.Applications.ProblemJson, new OpenApiMediaType());
 
-            switch (statusCode)
-            {
-                case OpenApiStatusCodes.TooManyRequests:
-                    _AddRetryAfterHeader(concrete, required: true);
-                    break;
-                case OpenApiStatusCodes.ServiceUnavailable:
-                    _AddRetryAfterHeader(concrete, required: false);
-                    break;
-            }
+        var mediaType = content[ContentTypes.Applications.ProblemJson];
+        mediaType.Schema = schema;
+        // A JSON node belongs to one parent, so every response gets its own copy.
+        mediaType.Example = problem.Example.DeepClone();
+
+        switch (statusCode)
+        {
+            case OpenApiStatusCodes.TooManyRequests:
+                _AddRetryAfterHeader(response, required: true);
+                break;
+            case OpenApiStatusCodes.ServiceUnavailable:
+                _AddRetryAfterHeader(response, required: false);
+                break;
         }
     }
 

@@ -12,12 +12,13 @@ namespace Headless.OpenApi;
 /// </summary>
 /// <remarks>
 /// Each scheme is a separate requirement, so a client may satisfy any one of them. The accepted schemes are those
-/// <see cref="HeadlessOpenApiOptions.SecuritySchemeSelector"/> returns, else every registered scheme. The roles named
+/// <see cref="HeadlessOpenApiOptions.SecuritySchemeSelector"/> returns, else every scheme
+/// <see cref="SecuritySchemeCatalog"/> finds. The roles named
 /// by <c>[Authorize(Roles = ...)]</c> become the requirement's scopes, which OpenAPI 3.1 allows for any scheme type.
 /// </remarks>
 internal sealed class SecurityRequirementTransformer : IOpenApiOperationTransformer
 {
-    public Task TransformAsync(
+    public async Task TransformAsync(
         OpenApiOperation operation,
         OpenApiOperationTransformerContext context,
         CancellationToken cancellationToken
@@ -27,11 +28,11 @@ internal sealed class SecurityRequirementTransformer : IOpenApiOperationTransfor
 
         if (!EndpointAuthorization.RequiresAuthentication(description, context.ApplicationServices))
         {
-            return Task.CompletedTask;
+            return;
         }
 
         var options = context.ApplicationServices.GetRequiredService<IOptions<HeadlessOpenApiOptions>>().Value;
-        var schemes = options.GetSecuritySchemes();
+        var schemes = await SecuritySchemeCatalog.GetAsync(context.ApplicationServices);
         var accepted = options.SecuritySchemeSelector?.Invoke(description) ?? schemes.Keys;
         var roles = EndpointAuthorization.GetRoles(description);
         var document = context.Document;
@@ -50,7 +51,5 @@ internal sealed class SecurityRequirementTransformer : IOpenApiOperationTransfor
                 new OpenApiSecurityRequirement { [new OpenApiSecuritySchemeReference(name, document)] = [.. roles] }
             );
         }
-
-        return Task.CompletedTask;
     }
 }

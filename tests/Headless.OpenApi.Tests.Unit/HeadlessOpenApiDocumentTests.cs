@@ -237,7 +237,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         var valued = document.Operation("/api/invoices/{id}", "get")["responses"]!;
         _ResponseCodes(document.Operation("/api/invoices/{id}", "get"))
             .Should()
-            .BeEquivalentTo(["200", "401", "403", "404", "409", "422"]);
+            .BeEquivalentTo(["200", "400", "401", "403", "404", "409", "422"]);
         ((string?)valued["200"]!["content"]!["application/json"]!["schema"]!["$ref"])
             .Should()
             .Be("#/components/schemas/ProductView");
@@ -248,7 +248,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         var unit = document.Operation("/api/invoices/{id}", "delete")["responses"]!;
         _ResponseCodes(document.Operation("/api/invoices/{id}", "delete"))
             .Should()
-            .BeEquivalentTo(["204", "401", "403", "404", "409", "422"]);
+            .BeEquivalentTo(["204", "400", "401", "403", "404", "409", "422"]);
         unit["204"]!["content"].Should().BeNull();
         _ProblemSchemaRef(unit["404"]!).Should().Be("#/components/schemas/EntityNotFoundProblemDetails");
         document["components"]!["schemas"]!.AsObject().Should().NotContainKey("ApiActionResultOfProductView");
@@ -629,7 +629,8 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         var document = await _GetDocumentAsync();
         var operation = document.Operation("/filtered", "post");
 
-        _ResponseCodes(operation).Should().BeEquivalentTo(["200", "400", "422"]);
+        // The 413 is the server's body size limit, which applies to every operation with a body.
+        _ResponseCodes(operation).Should().BeEquivalentTo(["200", "400", "413", "422"]);
         _ProblemSchemaRef(operation["responses"]!["400"]!).Should().Be("#/components/schemas/BadRequestProblemDetails");
         _ProblemSchemaRef(operation["responses"]!["422"]!)
             .Should()
@@ -758,7 +759,8 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         // GET is never an idempotency method, so the middleware passes the request through untouched.
         var read = document.Operation("/payments/{id}", "get");
         read["parameters"]!.AsArray().Select(x => (string?)x!["name"]).Should().Equal("id");
-        _ResponseCodes(read).Should().Equal("200");
+        // The 400 is the route value that may fail to bind, not an idempotency response.
+        _ResponseCodes(read).Should().Equal("200", "400");
     }
 
     [Fact]
@@ -806,7 +808,8 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         ((bool?)source[0]!["required"]).Should().BeTrue();
 
         var responses = operation["responses"]!;
-        _ResponseCodes(operation).Should().BeEquivalentTo(["200", "404"]);
+        // The 400 is the bound X-Request-Source header, which may fail to bind.
+        _ResponseCodes(operation).Should().BeEquivalentTo(["200", "400", "404"]);
         ((string?)responses["404"]!["description"]).Should().Be("No resource matches the request.");
         _ProblemSchemaRef(responses["404"]!).Should().Be("#/components/schemas/EntityNotFoundProblemDetails");
 

@@ -255,6 +255,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - HTTP edge rate limiting: `RateLimiterOptions.UseHeadlessProblemDetails()` rejects with 429 ProblemDetails (`g:rate_limit_exceeded`, `Retry-After`, `Cache-Control: no-store`), and `HttpContext.GetIpAddressPartition(ipv6PrefixLength = 64)` keys anonymous callers by IPv4 address or IPv6 /64. The application owns the limiter itself; see [HTTP edge limits](rate-limiting.md#http-edge-limits)
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
 - `HttpContractMetadata` — endpoint metadata a feature that runs around the handler (a middleware, a filter) attaches to describe HTTP behavior the handler's signature does not show, so API documentation can render it without referencing the feature: `RequestHeaders` (`HttpRequestHeaderDescription(name, required, description)`), `Responses` (`HttpResponseDescription(statusCode, description)`), and `ResponseHeaders` (`HttpResponseHeaderDescription(name, statusCode, description)` or `(name, minStatusCode, maxStatusCode, description)`, with an optional `Required`). It describes and never enforces; an endpoint may carry several. `Headless.OpenApi` renders it as header parameters, problem-details responses, and response headers, and `Headless.Idempotency.ResponseReplay` attaches one for its key header. A response header range (`200`–`299`) covers success statuses the feature cannot name
+- Documentation contracts that other packages implement and Headless.OpenApi reads, so neither side references the other: `IEnvironmentRestrictionMetadata.IsAvailableIn(IHostEnvironment)` (endpoint metadata for an endpoint that answers 404 outside some environments, left out of documents there), `IHttpCredentialSchemeOptions.Credentials` (implemented by an authentication scheme's options; each `HttpCredentialDescription.Header(name, description)`, `.Query(...)`, or `.Authorization(scheme, description)` becomes a security scheme), and `IFormFileSizeValidator` (`MinBytes`, `MaxBytes`) / `IFormFileContentTypeValidator` (`ContentTypes`), FluentValidation property validators whose bounds become a form part's encoding and description
 
 ### Design constraints
 
@@ -798,8 +799,9 @@ FluentValidation extensions for ASP.NET Core file uploads and reusable Headless 
 - `FileNotEmpty()` — validates file has content
 - `GreaterThanOrEqualTo(bytes)` — minimum file size validation
 - `LessThanOrEqualTo(bytes)` — maximum file size validation
-- `ContentTypes(list)` — MIME type allowlist validation
+- `ContentTypes(list)` — MIME type allowlist validation; the rule copies the list when it is built
 - `HaveSignatures(inspector, predicate)` — magic bytes/file signature validation
+- The size and content-type rules are typed validators implementing `IFormFileSizeValidator` and `IFormFileContentTypeValidator` (`Headless.Api`), so Headless.OpenApi documents a form's accepted part types and size bounds; `HaveSignatures` is a predicate and documents nothing
 - `PhoneNumber()` — validates `PhoneNumberRequest` country code and local subscriber number
 - `GeoCoordinate()` — validates `GeoCoordinateRequest` latitude/longitude ranges
 - `PageMetadata()` — validates `PageMetadataRequest` SEO field length and element-count limits
@@ -895,7 +897,7 @@ builder.Services
     .AddBasicSchema<AppUser, Guid>();
 ```
 
-`AddBasicSchema()` defaults to the canonical `Basic` authentication scheme and `AddApiKey()` defaults to `ApiKey`. `DynamicAuthenticationSchemeProvider` selects those same canonical names. API keys are read from the configured header by default; query-string keys are routed and accepted only when `ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString` is `true`.
+`AddBasicSchema()` defaults to the canonical `Basic` authentication scheme and `AddApiKey()` defaults to `ApiKey`. `DynamicAuthenticationSchemeProvider` selects those same canonical names. API keys are read from the configured header by default; query-string keys are routed and accepted only when `ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString` is `true`. Both options classes implement `IHttpCredentialSchemeOptions`, so Headless.OpenApi publishes each registered scheme from its own options: an `apiKey` header scheme named after the scheme, an `apiKey` query scheme (`{scheme}Query`) while the query fallback is on, and an HTTP `basic` scheme for `AddBasicSchema()`.
 
 ### Runtime behavior
 
@@ -1120,7 +1122,7 @@ Framework integration for ASP.NET Core MVC/Web API with controllers, filters, JS
 ### API and behavior
 
 - `ApiControllerBase` — base controller with common utilities
-- Environment-based action filters (`BlockInEnvironmentAttribute`, `RequireEnvironmentAttribute`)
+- Environment-based action filters (`BlockInEnvironmentAttribute`, `RequireEnvironmentAttribute`). Outside their environment they answer 404, and they implement `IEnvironmentRestrictionMetadata`, so Headless.OpenApi leaves the action out of documents generated there
 - URL canonicalization middleware (`RedirectToCanonicalUrlRule`, registered via `UseRedirectToCanonicalUrl()`)
 - Pre-configured JSON and MVC options
 - Direct MVC `ObjectResult` responses carrying Headless-normalized `ProblemDetails` run `ProblemDetailsOptions.CustomizeProblemDetails` once before serialization

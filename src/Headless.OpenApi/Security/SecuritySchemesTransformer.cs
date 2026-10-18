@@ -1,14 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Microsoft.AspNetCore.OpenApi;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 
 namespace Headless.OpenApi;
 
 /// <summary>
-/// Publishes every registered security scheme under <c>components.securitySchemes</c>, so clients and documentation
+/// Publishes every security scheme <see cref="SecuritySchemeCatalog"/> finds under <c>components.securitySchemes</c>, so clients and documentation
 /// UIs can offer them.
 /// </summary>
 /// <remarks>
@@ -18,19 +16,15 @@ namespace Headless.OpenApi;
 /// </remarks>
 internal sealed class SecuritySchemesTransformer : IOpenApiDocumentTransformer
 {
-    public Task TransformAsync(
+    public async Task TransformAsync(
         OpenApiDocument document,
         OpenApiDocumentTransformerContext context,
         CancellationToken cancellationToken
     )
     {
-        var options = context.ApplicationServices.GetRequiredService<IOptions<HeadlessOpenApiOptions>>().Value;
-
-        foreach (var (name, scheme) in options.GetSecuritySchemes())
+        foreach (var (name, scheme) in await SecuritySchemeCatalog.GetAsync(context.ApplicationServices))
         {
             document.AddComponent(name, scheme);
         }
-
-        return Task.CompletedTask;
     }
 }

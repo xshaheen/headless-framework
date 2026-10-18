@@ -19,10 +19,17 @@ internal static class OpenApiTestHost
         Action<WebApplicationBuilder> configureServices,
         Action<WebApplication> mapEndpoints,
         string documentName,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action<WebApplication>? configurePipeline = null
     )
     {
-        var documents = await GetDocumentsAsync(configureServices, mapEndpoints, [documentName], cancellationToken);
+        var documents = await GetDocumentsAsync(
+            configureServices,
+            mapEndpoints,
+            [documentName],
+            cancellationToken,
+            configurePipeline
+        );
 
         return documents[documentName];
     }
@@ -31,7 +38,8 @@ internal static class OpenApiTestHost
         Action<WebApplicationBuilder> configureServices,
         Action<WebApplication> mapEndpoints,
         IEnumerable<string> documentNames,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action<WebApplication>? configurePipeline = null
     )
     {
         var builder = WebApplication.CreateBuilder();
@@ -50,6 +58,8 @@ internal static class OpenApiTestHost
 
         await using var app = builder.Build();
         app.UseRouting();
+        // Middleware that must sit between routing and authentication, such as tenant catalog resolution.
+        configurePipeline?.Invoke(app);
         app.UseAuthentication();
         app.UseAuthorization();
         mapEndpoints(app);
@@ -107,6 +117,12 @@ internal static class OpenApiTestHost
             JsonValue value => [value.GetValue<string>()],
             _ => [],
         };
+    }
+
+    /// <summary>Asserts the node equals <paramref name="expected"/> as JSON, so escaping and member order do not matter.</summary>
+    public static void ShouldBeJson(this JsonNode? node, [StringSyntax(StringSyntaxAttribute.Json)] string expected)
+    {
+        JsonNode.DeepEquals(node, JsonNode.Parse(expected)).Should().BeTrue(node?.ToJsonString());
     }
 
     public static JsonNode Parameter(this JsonNode operation, string name)

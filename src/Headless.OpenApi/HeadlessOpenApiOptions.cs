@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Http;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.OpenApi;
 
@@ -14,6 +15,10 @@ namespace Headless.OpenApi;
 /// <remarks>
 /// One instance is shared by every Headless document in the application. Configure it with
 /// <c>ConfigureHeadlessOpenApi(...)</c>; registration order relative to the document registrations does not matter.
+/// Besides the schemes configured here, every document publishes one scheme per credential of each registered
+/// authentication scheme whose options implement <see cref="Headless.Api.IHttpCredentialSchemeOptions"/>, such as the
+/// API-key and Basic schemes of <c>Headless.Api.Identity</c>. A scheme configured here wins over a discovered scheme
+/// with the same name.
 /// </remarks>
 [PublicAPI]
 public sealed class HeadlessOpenApiOptions
@@ -34,13 +39,17 @@ public sealed class HeadlessOpenApiOptions
     /// Whether to register an API-key security scheme named <see cref="ApiKeySchemeName"/> that reads the
     /// <see cref="ApiKeyHeaderName"/> header. Default is <see langword="false"/>.
     /// </summary>
+    /// <remarks>
+    /// Leave it off when the API key is checked by the <c>Headless.Api.Identity</c> handler: its scheme is published
+    /// from the handler's own options, query fallback included. Turn it on for an API key checked elsewhere.
+    /// </remarks>
     public bool AddApiKeySecurity { get; set; }
 
     /// <summary>
     /// The request header carrying the API key when <see cref="AddApiKeySecurity"/> is <see langword="true"/>.
-    /// Default is <c>X-API-Key</c>.
+    /// Default is <c>X-Api-Key</c>, the header the <c>Headless.Api.Identity</c> API-key handler reads by default.
     /// </summary>
-    public string ApiKeyHeaderName { get; set; } = "X-API-Key";
+    public string ApiKeyHeaderName { get; set; } = HttpHeaderNames.ApiKey;
 
     /// <summary>
     /// Additional security schemes to publish under <c>components.securitySchemes</c>, keyed by component name.

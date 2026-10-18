@@ -6,6 +6,8 @@ using Headless.Api;
 using Headless.Checks;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Headless.OpenApi;
 
@@ -149,6 +151,7 @@ public static class SetupHeadlessOpenApi
         Argument.IsNotNull(services);
         Argument.IsNotNull(setupAction);
 
+        _AddEnvironmentFilter(services);
         services.Configure<HeadlessOpenApiOptions, HeadlessOpenApiOptionsValidator>(setupAction);
 
         return services;
@@ -169,6 +172,7 @@ public static class SetupHeadlessOpenApi
         Argument.IsNotNull(services);
         Argument.IsNotNull(setupAction);
 
+        _AddEnvironmentFilter(services);
         services.Configure<HeadlessOpenApiOptions, HeadlessOpenApiOptionsValidator>(setupAction);
 
         return services;
@@ -214,25 +218,49 @@ public static class SetupHeadlessOpenApi
         options.AddOperationTransformer(new RateLimitingResponseTransformer());
         options.AddOperationTransformer(new EntityTagResponseTransformer());
         options.AddOperationTransformer(new HttpContractTransformer());
+        // After the feature contracts, so a feature's own description of a 400 or 413 wins over the generic one.
+        options.AddOperationTransformer(new RequestReadingResponseTransformer());
+        options.AddOperationTransformer(new FormFileValidationTransformer());
         options.AddOperationTransformer(new SecurityRequirementTransformer());
         options.AddOperationTransformer(new ProblemDetailsTransformer());
         options.AddOperationTransformer(new TenantRequiredExampleTransformer());
+        // After the problem types, so it can tell a response the operation already documents from one only the tenant
+        // rejection produces.
+        options.AddOperationTransformer(new TenantResolutionTransformer());
 
         options.AddDocumentTransformer(new DocumentInfoTransformer());
         options.AddDocumentTransformer(new SecuritySchemesTransformer());
+        options.AddDocumentTransformer(new TenantServersTransformer());
         options.AddDocumentTransformer(new OperationIdDeduplicationTransformer());
         options.AddDocumentTransformer(new ProblemDetailsComponentsTransformer());
 
         return options;
     }
 
+    /// <summary>Whether <see cref="AddHeadlessTransformers"/> ran on <paramref name="options"/>.</summary>
+    internal static bool HasHeadlessTransformers(OpenApiOptions options)
+    {
+        return _EnrichedDocuments.TryGetValue(options, out _);
+    }
+
     private static void _AddOptions(IServiceCollection services)
     {
+        _AddEnvironmentFilter(services);
+
         if (services.Any(service => service.ServiceType == typeof(IValidator<HeadlessOpenApiOptions>)))
         {
             return;
         }
 
         services.AddOptions<HeadlessOpenApiOptions, HeadlessOpenApiOptionsValidator>();
+    }
+
+    // Registered apart from the options, because ConfigureHeadlessOpenApi registers the validator _AddOptions checks
+    // for, and it is the only Headless call an app that builds its documents with the native AddOpenApi() makes.
+    private static void _AddEnvironmentFilter(IServiceCollection services)
+    {
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IPostConfigureOptions<OpenApiOptions>, EnvironmentRestrictionFilter>()
+        );
     }
 }

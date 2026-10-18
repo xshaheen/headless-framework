@@ -274,7 +274,7 @@ public sealed class HeadlessOpenApiOptionsTests : TestBase
 
         options.AddBearerSecurity.Should().BeTrue();
         options.AddApiKeySecurity.Should().BeFalse();
-        options.ApiKeyHeaderName.Should().Be("X-API-Key");
+        options.ApiKeyHeaderName.Should().Be("X-Api-Key");
     }
 
     [Fact]

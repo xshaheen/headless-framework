@@ -3,6 +3,7 @@
 using FluentValidation;
 using FluentValidation.Validators;
 using Headless.Text;
+using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi;
 
 namespace Headless.OpenApi;
@@ -10,6 +11,29 @@ namespace Headless.OpenApi;
 /// <summary>Reads FluentValidation rules and writes their bounds onto OpenAPI schemas.</summary>
 internal static class ValidationExtensions
 {
+    /// <summary>
+    /// Resolves the <c>IValidator&lt;T&gt;</c> of <paramref name="type"/>, or <see langword="null"/> when none is
+    /// registered, the type cannot close the generic, or resolving it throws, which is logged.
+    /// </summary>
+    public static IValidator? GetFluentValidator(this IServiceProvider services, Type type, ILogger logger)
+    {
+        if (type.IsGenericTypeDefinition || type.IsPointer || type.IsByRef)
+        {
+            return null;
+        }
+
+        try
+        {
+            return services.GetService(typeof(IValidator<>).MakeGenericType(type)) as IValidator;
+        }
+        catch (Exception e)
+        {
+            logger.LogGetValidatorFailed(e, type.Name);
+
+            return null;
+        }
+    }
+
     /// <summary>
     /// Returns every unconditional property validator registered for <paramref name="name"/>, paired with whether it
     /// came from a collection rule (<c>RuleForEach</c>) and so constrains the collection's elements.
