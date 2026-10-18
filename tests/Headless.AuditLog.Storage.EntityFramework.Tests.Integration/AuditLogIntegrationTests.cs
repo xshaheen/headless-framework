@@ -1,4 +1,5 @@
 using Headless.AuditLog;
+using Headless.Context;
 using Headless.EntityFramework;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -698,6 +699,46 @@ public sealed class AuditLogIntegrationTests : TestBase
         saved.Should().BePositive();
         var auditCount = await db.Set<AuditLogEntry>().AsNoTracking().CountAsync(AbortToken);
         auditCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task save_changes_succeeds_when_reading_the_audit_actor_throws()
+    {
+        // The actor is part of the capture, so a current user that throws falls under the same continue-on-failure
+        // contract as a throwing capture: the entity is saved without its audit row.
+
+        // given
+        var throwingUser = Substitute.For<ICurrentUser>();
+        throwingUser.UserId.Returns(_ => throw new InvalidOperationException("Simulated claim failure."));
+
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync(
+            configure: null,
+            configureServices: services =>
+            {
+                services.Unregister<ICurrentUser>();
+                services.AddSingleton(throwingUser);
+            }
+        );
+        await using var _ = conn;
+        await using var __ = sp;
+        await using var scope = sp.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
+
+        var order = new Order
+        {
+            Id = Guid.NewGuid(),
+            CustomerName = "Grace",
+            Email = "grace@example.com",
+            Amount = 8m,
+        };
+        db.Orders.Add(order);
+
+        // when
+        var saved = await db.SaveChangesAsync(AbortToken);
+
+        // then
+        saved.Should().BePositive();
+        (await db.Set<AuditLogEntry>().AsNoTracking().CountAsync(AbortToken)).Should().Be(0);
     }
 
     [Fact]

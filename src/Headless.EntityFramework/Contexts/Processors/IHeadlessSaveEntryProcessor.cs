@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Headless.EntityFramework;

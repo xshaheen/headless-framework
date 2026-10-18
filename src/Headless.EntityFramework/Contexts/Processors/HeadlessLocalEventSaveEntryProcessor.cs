@@ -3,7 +3,6 @@
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using Headless.Domain;
-using Headless.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -45,77 +44,91 @@ public sealed class HeadlessLocalEventSaveEntryProcessor : IHeadlessSaveEntryPro
     private static readonly ConditionalWeakTable<Type, Func<object, object>>.CreateValueCallback _ChangedFactory =
         static type => _CompileEventFactory(typeof(EntityChangedEventData<>), type);
 
+    // The payload types are what the dispatcher resolves handlers for, so they are built once per entity type.
+    private static readonly ConditionalWeakTable<Type, LifecycleEventTypes> _EventTypes = [];
+
+    private static readonly ConditionalWeakTable<Type, LifecycleEventTypes>.CreateValueCallback _CreateEventTypes =
+        static type =>
+            new(
+                typeof(EntityCreatedEventData<>).MakeGenericType(type),
+                typeof(EntityUpdatedEventData<>).MakeGenericType(type),
+                typeof(EntityDeletedEventData<>).MakeGenericType(type),
+                typeof(EntityChangedEventData<>).MakeGenericType(type)
+            );
+
     /// <summary>
     /// Enqueues the appropriate lifecycle domain event on the entity based on its current
     /// <see cref="EntityState"/>. No-ops for entities that do not implement <c>IDomainEventEmitter</c>.
     /// </summary>
+    /// <remarks>
+    /// With the built-in dispatcher, an event type that no handler is registered for is not enqueued: nobody would
+    /// observe it, and enqueueing it would make the save open a transaction to dispatch nothing.
+    /// </remarks>
     /// <param name="entry">The tracked entity entry to inspect.</param>
-    /// <param name="context">The per-save scratchpad (not used by this processor).</param>
+    /// <param name="context">The per-save scratchpad that knows which event types have handlers.</param>
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
     {
+        if (entry.Entity is not IDomainEventEmitter emitter)
+        {
+            return;
+        }
+
         switch (entry.State)
         {
             case EntityState.Added:
-                _TryPublishCreatedLocalMessage(entry);
+                _Publish(emitter, context, _CreatedFactories, _CreatedFactory, static types => types.Created);
                 break;
             case EntityState.Modified:
-                _TryPublishUpdatedLocalMessage(entry);
+                // The property scan allocates a PropertyEntry per property, so it runs only when an update or change
+                // event could reach a handler.
+                if (!_HasUpdateHandler(emitter, context) || !_HasDomainModifiedProperties(entry))
+                {
+                    return;
+                }
+
+                _Publish(emitter, context, _UpdatedFactories, _UpdatedFactory, static types => types.Updated);
                 break;
             case EntityState.Deleted:
-                _TryPublishDeletedLocalMessage(entry);
+                _Publish(emitter, context, _DeletedFactories, _DeletedFactory, static types => types.Deleted);
                 break;
+            default:
+                return;
         }
+
+        _Publish(emitter, context, _ChangedFactories, _ChangedFactory, static types => types.Changed);
     }
 
-    private static void _TryPublishCreatedLocalMessage(EntityEntry entry)
+    private static bool _HasUpdateHandler(IDomainEventEmitter entity, HeadlessSaveEntryContext context)
     {
-        if (entry.Entity is IDomainEventEmitter localEmitter)
+        if (context.DomainEventHandlerFilter is null)
         {
-            _PublishEntityCreated(localEmitter);
-            _PublishEntityChanged(localEmitter);
+            return true;
         }
+
+        var types = _EventTypes.GetValue(entity.GetType(), _CreateEventTypes);
+
+        return context.HasDomainEventHandler(types.Updated) || context.HasDomainEventHandler(types.Changed);
     }
 
-    private static void _TryPublishUpdatedLocalMessage(EntityEntry entry)
+    private static void _Publish(
+        IDomainEventEmitter entity,
+        HeadlessSaveEntryContext context,
+        ConditionalWeakTable<Type, Func<object, object>> factories,
+        ConditionalWeakTable<Type, Func<object, object>>.CreateValueCallback createFactory,
+        Func<LifecycleEventTypes, Type> selectEventType
+    )
     {
-        if (entry.Entity is IDomainEventEmitter localEmitter && _HasDomainModifiedProperties(entry))
+        var entityType = entity.GetType();
+
+        if (
+            context.DomainEventHandlerFilter is not null
+            && !context.HasDomainEventHandler(selectEventType(_EventTypes.GetValue(entityType, _CreateEventTypes)))
+        )
         {
-            _PublishEntityUpdated(localEmitter);
-            _PublishEntityChanged(localEmitter);
+            return;
         }
-    }
 
-    private static void _TryPublishDeletedLocalMessage(EntityEntry entry)
-    {
-        if (entry.Entity is IDomainEventEmitter localEmitter)
-        {
-            _PublishEntityDeleted(localEmitter);
-            _PublishEntityChanged(localEmitter);
-        }
-    }
-
-    private static void _PublishEntityCreated(IDomainEventEmitter entity)
-    {
-        var factory = _CreatedFactories.GetValue(entity.GetType(), _CreatedFactory);
-        entity.AddDomainEvent(factory(entity));
-    }
-
-    private static void _PublishEntityUpdated(IDomainEventEmitter entity)
-    {
-        var factory = _UpdatedFactories.GetValue(entity.GetType(), _UpdatedFactory);
-        entity.AddDomainEvent(factory(entity));
-    }
-
-    private static void _PublishEntityDeleted(IDomainEventEmitter entity)
-    {
-        var factory = _DeletedFactories.GetValue(entity.GetType(), _DeletedFactory);
-        entity.AddDomainEvent(factory(entity));
-    }
-
-    private static void _PublishEntityChanged(IDomainEventEmitter entity)
-    {
-        var factory = _ChangedFactories.GetValue(entity.GetType(), _ChangedFactory);
-        entity.AddDomainEvent(factory(entity));
+        entity.AddDomainEvent(factories.GetValue(entityType, createFactory)(entity));
     }
 
     private static Func<object, object> _CompileEventFactory(Type genericEventType, Type entityType)
@@ -140,4 +153,6 @@ public sealed class HeadlessLocalEventSaveEntryProcessor : IHeadlessSaveEntryPro
         return property is { IsModified: true, Metadata.ValueGenerated: ValueGenerated.Never or ValueGenerated.OnAdd }
             && !property.Metadata.IsForeignKey();
     }
+
+    private sealed record LifecycleEventTypes(Type Created, Type Updated, Type Deleted, Type Changed);
 }
