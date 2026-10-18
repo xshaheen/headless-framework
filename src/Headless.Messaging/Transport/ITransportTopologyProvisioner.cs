@@ -18,7 +18,9 @@ namespace Headless.Messaging.Transport;
 /// process creates its own. An operation the broker cannot express throws
 /// <see cref="Headless.Hosting.StatefulResourceUnsupportedException"/>, which the resource reports as unsupported; any
 /// other exception is a failure. Once a transport provisions here, its consumer clients create shared objects
-/// only when <see cref="ConsumerClientRequest.ProvisionsTopology"/> is set, and otherwise only check them.
+/// only when <see cref="ConsumerClientRequest.ProvisionsTopology"/> is set, and otherwise declare nothing for them: unless
+/// <see cref="MessagingOptions.VerifyTopology"/> is off, the running host calls <see cref="CheckAsync"/> once after it
+/// starts, behind its readiness check.
 /// </para>
 /// </remarks>
 [PublicAPI]

@@ -19,7 +19,7 @@ internal sealed class TransportTopologyResourceSource(
     // container, and runtime subscriptions are never in it, so it cannot change while a run lasts.
     public Task<IReadOnlyList<IStatefulResource>> GetResourcesAsync(CancellationToken cancellationToken)
     {
-        var topology = new Lazy<MessagingTopology>(_BuildTopology);
+        var topology = new Lazy<MessagingTopology>(() => BuildTopology(selector, messages));
         IReadOnlyList<IStatefulResource> resources =
         [
             .. provisioners.Select(p => new TransportTopologyResource(p, topology)),
@@ -28,7 +28,11 @@ internal sealed class TransportTopologyResourceSource(
         return Task.FromResult(resources);
     }
 
-    private MessagingTopology _BuildTopology()
+    /// <summary>
+    /// Builds the shared topology the registered consumers and messages need. It reads only registrations frozen with
+    /// the container, so every caller of one host sees the same topology.
+    /// </summary>
+    internal static MessagingTopology BuildTopology(MethodMatcherCache selector, IMessageMetadataRegistry? messages)
     {
         var subscriptions = new List<TopologySubscription>();
 

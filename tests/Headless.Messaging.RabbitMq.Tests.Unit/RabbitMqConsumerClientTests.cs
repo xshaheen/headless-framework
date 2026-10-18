@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
@@ -8,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using RabbitMQ.Client.Exceptions;
 
 namespace Tests;
 
@@ -1502,8 +1504,42 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         });
     }
 
+    [Theory]
+    [InlineData(MessageLane.Queue)]
+    [InlineData(MessageLane.Bus)]
+    public async Task should_declare_nothing_when_a_registered_subscription_connects_and_subscribes(MessageLane lane)
+    {
+        // given
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: false,
+            lane: lane
+        );
+
+        // when
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        // then - the host's topology warm-up checks the shared objects once; a client makes no round trip for them
+        _channel
+            .ReceivedCalls()
+            .Select(call => call.GetMethodInfo().Name)
+            .Should()
+            .NotContain([
+                nameof(IChannel.ExchangeDeclarePassiveAsync),
+                nameof(IChannel.QueueDeclarePassiveAsync),
+                nameof(IChannel.ExchangeDeclareAsync),
+                nameof(IChannel.QueueDeclareAsync),
+                nameof(IChannel.QueueBindAsync),
+            ]);
+        client.QueueNames.Should().NotBeEmpty("the client still consumes the queues it would have declared");
+    }
+
     [Fact]
-    public async Task should_declare_queue_passively_and_skip_binding_for_a_registered_subscription()
+    public async Task should_fail_listening_naming_resources_setup_when_a_registered_queue_is_missing()
     {
         // given
         await using var client = new RabbitMqConsumerClient(
@@ -1515,22 +1551,51 @@ public sealed class RabbitMqConsumerClientTests : TestBase
             provisionsTopology: false,
             lane: MessageLane.Queue
         );
+        var refused = false;
+        _channel.IsClosed.Returns(_ => refused);
+        _channel
+            .BasicConsumeAsync(
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<IDictionary<string, object?>>(),
+                Arg.Any<IAsyncBasicConsumer>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ =>
+            {
+                // The broker answers a consume on a missing queue by closing the channel.
+                refused = true;
 
-        // when
+                return Task.FromException<string>(
+                    new OperationInterruptedException(
+                        new ShutdownEventArgs(ShutdownInitiator.Peer, 404, "NOT_FOUND - no queue")
+                    )
+                );
+            });
         await client.SubscribeAsync(["orders.created"], AbortToken);
 
+        // when
+        var listening = () => client.ListeningAsync(TimeSpan.Zero, AbortToken).AsTask();
+
         // then
-        await _channel.Received(1).ExchangeDeclarePassiveAsync("test.exchange.queue", AbortToken);
-        await _channel.Received(1).QueueDeclarePassiveAsync("queue.orders.created", AbortToken);
+        await listening
+            .Should()
+            .ThrowAsync<StatefulResourceException>()
+            .WithMessage("RabbitMQ queue 'queue.orders.created' does not exist. Run 'resources setup'*");
+        await FluentActions
+            .Awaiting(() => client.WaitUntilReadyAsync(AbortToken).AsTask())
+            .Should()
+            .ThrowAsync<StatefulResourceException>();
         _channel
             .ReceivedCalls()
-            .Select(call => call.GetMethodInfo().Name)
             .Should()
-            .NotContain([
-                nameof(IChannel.ExchangeDeclareAsync),
-                nameof(IChannel.QueueDeclareAsync),
-                nameof(IChannel.QueueBindAsync),
-            ]);
+            .NotContain(
+                c => c.GetMethodInfo().Name == nameof(IChannel.BasicCancelAsync),
+                "the closed channel took its consumers with it"
+            );
     }
 
     private static IReadOnlyBasicProperties _CreateDeliveryProperties()

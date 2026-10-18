@@ -82,6 +82,46 @@ public sealed class RabbitMqTopologyResourceTests(RabbitMqFixture fixture) : Tes
     }
 
     [Fact]
+    public async Task should_hold_the_topology_warmup_naming_the_missing_queue_until_resources_setup_runs()
+    {
+        // given
+        var (provider, name, exchange) = _Build();
+        await using var _ = provider;
+        var queue = RabbitMqPhysicalAddress.Queue(MessageLane.Queue, name, name);
+        var warmup = provider.GetServices<IWarmup>().Should().ContainSingle(w => w.Name == "MessagingTopology").Which;
+
+        // The lane exchanges exist, as another service's setup leaves them, so the queue is what is missing.
+        var connection = await fixture.GetConnectionAsync();
+        await using (var channel = await connection.CreateChannelAsync(cancellationToken: AbortToken))
+        {
+            foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
+            {
+                await RabbitMqQueueTopology.EnsureExchangeAsync(
+                    channel,
+                    RabbitMqPhysicalAddress.Exchange(exchange, lane),
+                    RabbitMqPhysicalAddress.ExchangeType(lane),
+                    AbortToken
+                );
+            }
+        }
+
+        // when
+        var beforeSetup = () => warmup.WarmUpAsync(AbortToken);
+
+        // then
+        await beforeSetup
+            .Should()
+            .ThrowAsync<StatefulResourceException>()
+            .WithMessage($"RabbitMQ queue '{queue}' does not exist. Run 'resources setup'*");
+
+        // and when - the deployment creates the topology
+        await provider.SetupResourcesAsync(AbortToken);
+
+        // then
+        await warmup.WarmUpAsync(AbortToken);
+    }
+
+    [Fact]
     public async Task should_consume_once_the_deployment_set_the_topology_up()
     {
         // given

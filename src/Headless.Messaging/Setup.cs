@@ -172,6 +172,13 @@ public static class SetupMessaging
         // resources setup creates the broker topology the registered consumers and messages need.
         services.AddHeadlessStatefulResourceSource<TransportTopologyResourceSource>();
 
+        // The running host checks that topology once, in one batch per transport after it starts, instead of each
+        // consumer client checking its own objects as it connects; readiness waits for the check.
+        if (options.VerifyTopology)
+        {
+            services.AddWarmup<TransportTopologyWarmup>();
+        }
+
         services.TryAddSingleton<IConsumerRegister, ConsumerRegister>();
 
         // One per host: consumer clients and the outbox sender both report into it, so a publish-only host still
