@@ -3,6 +3,7 @@
 using Headless.Checks;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -71,7 +72,7 @@ public sealed class SimulationHost : IAsyncDisposable
     /// <param name="configureServices">Adds the services the consumers need; runs after the clock is registered.</param>
     /// <param name="broker">A broker shared with other hosts; a new one, on a new clock, when omitted.</param>
     /// <param name="cancellationToken">Cancels startup.</param>
-    public static async Task<SimulationHost> StartAsync(
+    public static Task<SimulationHost> StartAsync(
         Action<MessagingSetupBuilder> configure,
         Action<IServiceCollection>? configureServices = null,
         SimulatedBroker? broker = null,
@@ -84,6 +85,50 @@ public sealed class SimulationHost : IAsyncDisposable
         broker ??= new SimulatedBroker(new SimulationClock());
         var faults = ownsBroker ? broker.Faults : new FaultScript();
 
+        return _StartAsync(configure, configureServices, broker, faults, survivingStore: null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Starts a host in place of <paramref name="previous"/>, as a process restarts: on the same broker, the same store
+    /// with every row it holds, and the same fault plan, but with a new pipeline and nothing of the old one in memory.
+    /// </summary>
+    /// <remarks>
+    /// Stop or dispose <paramref name="previous"/> first. A host that crashed is one whose attempt was cut off before it
+    /// wrote anything; graceful shutdown cancels a running attempt the same way, so stopping it stands in for the crash.
+    /// </remarks>
+    /// <param name="previous">The stopped host whose broker, store, and faults the new host takes over.</param>
+    /// <param name="configure">Registers consumers and sets messaging options, as the restarted application does.</param>
+    /// <param name="configureServices">Adds the services the consumers need.</param>
+    /// <param name="cancellationToken">Cancels startup.</param>
+    public static Task<SimulationHost> RestartAsync(
+        SimulationHost previous,
+        Action<MessagingSetupBuilder> configure,
+        Action<IServiceCollection>? configureServices = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(previous);
+        Argument.IsNotNull(configure);
+
+        return _StartAsync(
+            configure,
+            configureServices,
+            previous.Broker,
+            previous.Faults,
+            previous.Storage.Inner,
+            cancellationToken
+        );
+    }
+
+    private static async Task<SimulationHost> _StartAsync(
+        Action<MessagingSetupBuilder> configure,
+        Action<IServiceCollection>? configureServices,
+        SimulatedBroker broker,
+        FaultScript faults,
+        IDataStorage? survivingStore,
+        CancellationToken cancellationToken
+    )
+    {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<TimeProvider>(broker.Clock);
@@ -99,6 +144,12 @@ public sealed class SimulationHost : IAsyncDisposable
             setup.UseInMemoryStorage();
             configure(setup);
         });
+
+        if (survivingStore is not null)
+        {
+            // Registered as an instance, so the new provider decorates it and never disposes the rows it outlives.
+            services.AddSingleton(survivingStore);
+        }
 
         FaultInjectingDataStorage.Install(services, faults, broker.Clock);
 

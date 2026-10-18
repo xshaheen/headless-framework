@@ -46,6 +46,9 @@ public sealed class SimulatedConsumerClient : IConsumerClient
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly SemaphoreSlim? _slots;
 
+    // The same tracker the broker clients use, so a closing client waits for its running callbacks the way they do.
+    private readonly InFlightHandlerTracker _inFlightHandlers = new();
+
     // Guarded by the broker gate.
     private readonly HashSet<SimulatedDelivery> _inFlight = [];
     private SimulatedGroup? _group;
@@ -91,7 +94,21 @@ public sealed class SimulatedConsumerClient : IConsumerClient
         }
     }
 
+    /// <summary>Gets whether the client is paused, so it takes no delivery.</summary>
+    public bool IsPaused
+    {
+        get
+        {
+            lock (_broker.Gate)
+            {
+                return _paused;
+            }
+        }
+    }
+
     public BrokerAddress BrokerAddress => _broker.Address;
+
+    internal bool IsOpenLocked => !_closed && !_channelClosed;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; private set; }
 
@@ -245,26 +262,30 @@ public sealed class SimulatedConsumerClient : IConsumerClient
 
             if (_slots is null)
             {
-                await _InvokeAsync(step.Delivery).ConfigureAwait(false);
+                var inline = _InvokeAsync(step.Delivery);
+                _inFlightHandlers.Track(inline);
+                await inline.ConfigureAwait(false);
                 continue;
             }
 
             // The slot passes to the delivery and is released when its callback returns.
             slotHeld = false;
             var delivery = step.Delivery;
-            _ = Task.Run(
-                async () =>
-                {
-                    try
+            _inFlightHandlers.Track(
+                Task.Run(
+                    async () =>
                     {
-                        await _InvokeAsync(delivery).ConfigureAwait(false);
-                    }
-                    finally
-                    {
-                        _slots.Release();
-                    }
-                },
-                CancellationToken.None
+                        try
+                        {
+                            await _InvokeAsync(delivery).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            _slots.Release();
+                        }
+                    },
+                    CancellationToken.None
+                )
             );
         }
 
@@ -272,14 +293,18 @@ public sealed class SimulatedConsumerClient : IConsumerClient
         cancellationToken.ThrowIfCancellationRequested();
     }
 
+    // Each settlement honours its token as a broker client's network call does: a canceled settlement never reaches the
+    // broker, so a caller that settles with a token shutdown cancels leaves the delivery unsettled.
     public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         _Settle(sender, BrokerEventKind.Committed, redeliveryDelay: null);
         return ValueTask.CompletedTask;
     }
 
     public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         _Settle(sender, BrokerEventKind.Rejected, TimeSpan.Zero);
         return ValueTask.CompletedTask;
     }
@@ -287,6 +312,7 @@ public sealed class SimulatedConsumerClient : IConsumerClient
     // The broker holds the delivery for the delay itself, on the simulation clock, so the core's own hold is not needed.
     public ValueTask RejectAsync(object? sender, TimeSpan redeliveryDelay, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         _Settle(sender, BrokerEventKind.Rejected, redeliveryDelay);
         return ValueTask.CompletedTask;
     }
@@ -298,14 +324,15 @@ public sealed class SimulatedConsumerClient : IConsumerClient
         CancellationToken cancellationToken = default
     )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         _Settle(sender, BrokerEventKind.DeadLettered, redeliveryDelay: null);
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask PauseAsync(CancellationToken cancellationToken = default)
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
+        await _broker.Faults.TakePauseHold().WaitAsync(cancellationToken).ConfigureAwait(false);
         _SetPaused(paused: true);
-        return ValueTask.CompletedTask;
     }
 
     public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
@@ -314,14 +341,19 @@ public sealed class SimulatedConsumerClient : IConsumerClient
         return ValueTask.CompletedTask;
     }
 
+    /// <summary>
+    /// Closes the client once its running callbacks finish, waiting for them at most <paramref name="timeout"/> of
+    /// simulated time, as a broker client drains its handlers before it closes the channel their settlement needs.
+    /// </summary>
     public ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
-        return new ValueTask(_CloseAsync());
+        return new ValueTask(_CloseAsync(timeout));
     }
 
+    /// <summary>Closes the client without waiting for its running callbacks, unless a shutdown already began.</summary>
     public ValueTask DisposeAsync()
     {
-        return new ValueTask(_CloseAsync());
+        return new ValueTask(_CloseAsync(TimeSpan.Zero));
     }
 
     /// <summary>Returns every unsettled delivery to the group and makes its settlement value stale.</summary>
@@ -352,6 +384,39 @@ public sealed class SimulatedConsumerClient : IConsumerClient
         RequeueInFlightLocked();
         _broker.RecordLocked(BrokerEventKind.ChannelClosed, Subscription, messageId: null, deliveryCount: 0);
         return true;
+    }
+
+    /// <summary>
+    /// Closes this client's channel alone: it stops receiving, reports <see cref="MqLogType.ConsumerShutdown"/>, and its
+    /// unsettled deliveries go back to the group with stale values.
+    /// </summary>
+    public void CloseChannel()
+    {
+        bool closed;
+        lock (_broker.Gate)
+        {
+            closed = CloseChannelLocked();
+        }
+
+        if (closed)
+        {
+            ReportChannelClosed();
+        }
+    }
+
+    /// <summary>
+    /// Reports <see cref="MqLogType.ConsumerRegistered"/>, as a broker client does when the broker confirms its
+    /// consumer, for example after it recovers a channel on its own.
+    /// </summary>
+    public void ReportRegistered()
+    {
+        OnLogCallback?.Invoke(
+            new LogMessageEventArgs
+            {
+                LogType = MqLogType.ConsumerRegistered,
+                Reason = $"The simulated consumer of '{Subscription}' is registered.",
+            }
+        );
     }
 
     internal void ReportChannelClosed()
@@ -440,6 +505,11 @@ public sealed class SimulatedConsumerClient : IConsumerClient
     {
         try
         {
+            if (!_TryBuildHeaders(delivery))
+            {
+                return;
+            }
+
             await (OnMessageCallback?.Invoke(delivery.Message, delivery) ?? Task.CompletedTask).ConfigureAwait(false);
         }
 #pragma warning disable CA1031 // A callback failure is the client's to absorb: the delivery goes back, as an unacknowledged one does at a broker.
@@ -469,6 +539,35 @@ public sealed class SimulatedConsumerClient : IConsumerClient
                 _callbacksInFlight--;
                 _broker.PulseActivityLocked();
             }
+        }
+    }
+
+    /// <summary>Runs the broker's custom headers builder; a builder that throws settles the delivery as malformed.</summary>
+    private bool _TryBuildHeaders(SimulatedDelivery delivery)
+    {
+        if (_broker.CustomHeadersBuilder is not { } builder)
+        {
+            return true;
+        }
+
+        try
+        {
+            builder(delivery.Message.Headers);
+            return true;
+        }
+#pragma warning disable CA1031 // A builder is user code that may throw anything; the providers it models settle every failure as malformed.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ExceptionReceived,
+                    Reason = $"The custom headers builder failed: {ex.GetType().Name}.",
+                }
+            );
+            _Settle(delivery, BrokerEventKind.Committed, redeliveryDelay: null);
+            return false;
         }
     }
 
@@ -532,6 +631,18 @@ public sealed class SimulatedConsumerClient : IConsumerClient
 
     private void _Requeue(SimulatedGroup group, SimulatedPending pending)
     {
+        if (_broker.MaxDeliveries is { } limit && pending.DeliveryCount >= limit)
+        {
+            // The broker's own limit: the delivery goes to the dead-letter destination instead of coming back.
+            _broker.RecordLocked(
+                BrokerEventKind.DeadLettered,
+                group.Subscription,
+                SimulatedBroker.MessageIdOf(pending.Message),
+                pending.DeliveryCount
+            );
+            return;
+        }
+
         var redelivery = pending with { DeliveryCount = pending.DeliveryCount + 1 };
         group.Pending.Enqueue(redelivery);
         _broker.RecordLocked(
@@ -547,19 +658,24 @@ public sealed class SimulatedConsumerClient : IConsumerClient
         lock (_broker.Gate)
         {
             _paused = paused;
-            _broker.SignalLocked();
+            _broker.RecordLocked(
+                paused ? BrokerEventKind.Paused : BrokerEventKind.Resumed,
+                Subscription,
+                messageId: null,
+                deliveryCount: 0
+            );
         }
     }
 
-    private Task _CloseAsync()
+    private Task _CloseAsync(TimeSpan drainTimeout)
     {
         lock (_broker.Gate)
         {
-            return _closeTask ??= _CloseCoreAsync();
+            return _closeTask ??= _CloseCoreAsync(drainTimeout);
         }
     }
 
-    private async Task _CloseCoreAsync()
+    private async Task _CloseCoreAsync(TimeSpan drainTimeout)
     {
         bool subscribed;
         lock (_broker.Gate)
@@ -570,6 +686,30 @@ public sealed class SimulatedConsumerClient : IConsumerClient
         }
 
         _ready.TrySetCanceled();
+
+        // A callback still running past the bound settles against a closed client and is refused; its delivery went
+        // back to the group below, which is what a broker does with a delivery its closed channel never settled. The
+        // bound is broker work due at its deadline, so a clock that moves on quiescence cannot overtake the close once
+        // the bound has passed.
+        SimulatedTimedWork? drain = null;
+        if (drainTimeout > TimeSpan.Zero && _inFlightHandlers.Count > 0)
+        {
+            lock (_broker.Gate)
+            {
+                drain = _broker.AddTimedWorkLocked(_broker.Clock.GetUtcNow() + drainTimeout);
+            }
+        }
+
+        try
+        {
+            await _inFlightHandlers.DrainAsync(drainTimeout, _broker.Clock).ConfigureAwait(false);
+        }
+#pragma warning disable CA1031, ERP022 // The drain is best effort: a callback that timed out or faulted must not stop the close.
+        catch (Exception)
+        {
+            // The close goes on: the unsettled deliveries are returned below.
+        }
+#pragma warning restore CA1031, ERP022
 
         // A close fault holds only a client that opened a subscription: the core's short-lived topology clients have no
         // connection to tear down, so a fault armed before startup does not stall the bootstrap.
@@ -607,6 +747,11 @@ public sealed class SimulatedConsumerClient : IConsumerClient
             if (slowClose is not null)
             {
                 _broker.CompleteTimedWorkLocked(slowClose);
+            }
+
+            if (drain is not null)
+            {
+                _broker.CompleteTimedWorkLocked(drain);
             }
         }
     }

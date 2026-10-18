@@ -57,6 +57,15 @@ public enum BrokerEventKind
 
     /// <summary>A consumer client finished closing.</summary>
     ClientClosed,
+
+    /// <summary>A responder sent a reply; <see cref="BrokerEvent.Subscription"/> holds the reply address.</summary>
+    ReplySent,
+
+    /// <summary>A consumer client paused, so it takes no delivery until it resumes.</summary>
+    Paused,
+
+    /// <summary>A consumer client resumed taking deliveries.</summary>
+    Resumed,
 }
 
 /// <summary>One entry of the simulated broker's record.</summary>
@@ -145,6 +154,22 @@ public sealed class SimulatedBroker
     /// </summary>
     public TimeSpan RetryInterval { get; init; } = TimeSpan.FromSeconds(1);
 
+    /// <summary>
+    /// Gets how many times the broker delivers a message before it moves it to the dead-letter destination instead of
+    /// handing it back, as a queue's redrive or maximum-delivery limit does; unlimited when null.
+    /// </summary>
+    public int? MaxDeliveries { get; init; }
+
+    /// <summary>
+    /// Gets the custom headers builder every client runs on a delivery before the core sees it, as a provider's
+    /// <c>CustomHeadersBuilder</c> option does; none when null.
+    /// </summary>
+    /// <remarks>
+    /// A builder that throws is handled as Amazon SQS, Redis, and Pulsar handle it today: the delivery is settled as a
+    /// malformed envelope, committed without reaching the core, whatever the exception.
+    /// </remarks>
+    public Action<IDictionary<string, string?>>? CustomHeadersBuilder { get; init; }
+
     /// <summary>Gets the address every simulated transport and client reports.</summary>
     public BrokerAddress Address { get; } = new("simulator", "simulated-broker");
 
@@ -220,6 +245,21 @@ public sealed class SimulatedBroker
             }
 
             await changed.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Lists the open clients of <paramref name="subscription"/>, oldest first.</summary>
+    public IReadOnlyList<SimulatedConsumerClient> ClientsOf(string subscription)
+    {
+        lock (Gate)
+        {
+            return
+            [
+                .. _groups
+                    .Values.Where(group => string.Equals(group.Subscription, subscription, StringComparison.Ordinal))
+                    .SelectMany(static group => group.Clients)
+                    .Where(static client => client.IsOpenLocked),
+            ];
         }
     }
 
@@ -556,6 +596,7 @@ public sealed class SimulatedBroker
         lock (Gate)
         {
             _replyListeners.TryGetValue(address, out listener);
+            RecordLocked(BrokerEventKind.ReplySent, address, MessageIdOf(reply), deliveryCount: 0);
         }
 
         // The listener queues the reply for its own pump, so the caller's handling never runs on the responder's stack.

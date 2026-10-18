@@ -242,37 +242,37 @@ public static class MessagingGuarantees
             "A send or handler whose lease is lost is cancelled and writes no state, and the next owner's claim succeeds."
         ),
         // Consume and failure policy
-        _NoTestYet(
+        _Bound(
             "MSG-CONSUME-01",
             GuaranteeArea.Consume,
             realSystem: false,
             "A failing handler runs 1 + immediate + delayed attempts, then the row is Failed with no next retry and OnExhausted fires once."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-CONSUME-02",
             GuaranteeArea.Consume,
             realSystem: false,
             "A crash after the final attempt was reserved ends the row as spent without running the handler again."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-CONSUME-03",
             GuaranteeArea.Consume,
             realSystem: false,
             "A fail rule, permanent exception, undeserializable payload, or missing consumer fails the row at once and fires OnExhausted once."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-CONSUME-04",
             GuaranteeArea.Consume,
             realSystem: false,
             "When storage refuses a state write because the row is already terminal, the caller stops: no second OnExhausted and no breaker failure."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-CONSUME-05",
             GuaranteeArea.Consume,
             realSystem: false,
             "A handler that succeeded is not run again inline when its success write fails."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-CONSUME-06",
             GuaranteeArea.Consume,
             realSystem: false,
@@ -297,13 +297,13 @@ public static class MessagingGuarantees
             "A consumer client never runs more deliveries at once than the concurrency it was asked for."
         ),
         // Settlement
-        _NoTestYet(
+        _Bound(
             "MSG-SETTLE-01",
             GuaranteeArea.Settlement,
             realSystem: false,
             "A delivery is committed to the broker only after its inbox admission or poison row is stored."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-SETTLE-02",
             GuaranteeArea.Settlement,
             realSystem: false,
@@ -344,7 +344,13 @@ public static class MessagingGuarantees
             GuaranteeArea.Settlement,
             realSystem: false,
             "A header builder that throws a transient error leads to redelivery, then dead-letter once the retry budget is spent."
-        ),
+        ) with
+        {
+            Status = GuaranteeStatus.Unsupported,
+            Rationale =
+                "Amazon SQS, Redis, and Pulsar settle a CustomHeadersBuilder exception as a malformed envelope and drop the message, so a transient builder failure is never redelivered.",
+            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1199",
+        },
         // Inbox
         _Bound(
             "MSG-INBOX-01",
@@ -364,7 +370,7 @@ public static class MessagingGuarantees
             realSystem: true,
             "Every inbox key component, tenant included, isolates rows, and key lengths are enforced without truncation."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-INBOX-04",
             GuaranteeArea.Inbox,
             realSystem: false,
@@ -395,12 +401,18 @@ public static class MessagingGuarantees
             realSystem: false,
             "A success or failure report from an earlier circuit epoch never moves a half-open circuit."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-CB-03",
             GuaranteeArea.CircuitBreaker,
             realSystem: false,
             "An open circuit pauses every client of its consumer identity and lane, and a client added while it half-opens ends resumed."
-        ),
+        ) with
+        {
+            Status = GuaranteeStatus.Unsupported,
+            Rationale =
+                "SubscriptionHandle.AddClientAsync applies the pause it read outside the circuit's apply gate, so a client added while the circuit half-opens stays paused after the resume.",
+            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1244",
+        },
         _Bound(
             "MSG-CB-04",
             GuaranteeArea.CircuitBreaker,
@@ -450,7 +462,7 @@ public static class MessagingGuarantees
             realSystem: false,
             "A message cut off by graceful shutdown is processed exactly once after restart."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-SHUT-05",
             GuaranteeArea.Shutdown,
             realSystem: false,
@@ -509,6 +521,18 @@ public static class MessagingGuarantees
             realSystem: true,
             "A consumer resumes delivery once after a dropped connection and consumes what was published during the outage."
         ),
+        _Bound(
+            "MSG-CONN-03",
+            GuaranteeArea.Connectivity,
+            realSystem: false,
+            "A consumer client whose channel shut down is restarted at the next transport check, whatever another client of its subscription reports."
+        ) with
+        {
+            Status = GuaranteeStatus.Unsupported,
+            Rationale =
+                "The consumer register keeps one process-wide health flag, so one client's ConsumerRegistered hides another client's shutdown and the transport check never restarts it.",
+            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1245",
+        },
         // Request/reply
         _Bound("MSG-RR-01", GuaranteeArea.RequestReply, realSystem: true, "A caller receives only its own replies."),
         _Bound(
@@ -529,7 +553,7 @@ public static class MessagingGuarantees
             realSystem: true,
             "A responder failure faults the caller, and a reply that arrives after the call timed out is dropped."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-RR-05",
             GuaranteeArea.RequestReply,
             realSystem: false,
@@ -622,12 +646,18 @@ public static class MessagingGuarantees
             realSystem: true,
             "When revoke and dispatch-now race on one scheduled row, exactly one action wins."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-DASH-03",
             GuaranteeArea.Dashboard,
             realSystem: false,
             "Requeue of a Succeeded published row is refused, and requeue of a Failed row sends it once."
-        ),
+        ) with
+        {
+            Status = GuaranteeStatus.Unsupported,
+            Rationale =
+                "The store refuses to lease a terminal published row, so a requeued Failed row is ended silently without a send.",
+            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1241",
+        },
         // Registration and options
         _Bound(
             "MSG-REG-01",
@@ -636,7 +666,7 @@ public static class MessagingGuarantees
             "Startup rejects a dispatch timeout that does not exceed the worst-case inline publish burst."
         ),
         // Observability
-        _NoTestYet(
+        _Bound(
             "MSG-OBS-01",
             GuaranteeArea.Observability,
             realSystem: false,
@@ -644,6 +674,9 @@ public static class MessagingGuarantees
         ) with
         {
             Criticality = GuaranteeCriticality.Standard,
+            Status = GuaranteeStatus.Unsupported,
+            Rationale = "Eleven event IDs in Headless.Messaging are each declared for two different events.",
+            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1281",
         },
     ];
 

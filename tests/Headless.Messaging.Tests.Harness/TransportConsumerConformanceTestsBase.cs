@@ -64,6 +64,8 @@ public sealed class TransportConsumerConformanceSession(
     TimeProvider? timeProvider = null
 ) : IAsyncDisposable
 {
+    private static readonly TimeSpan _PublishRetryPause = TimeSpan.FromMilliseconds(500);
+
     private readonly ConcurrentQueue<LogMessageEventArgs> _logs = new();
     private readonly DeliveryInbox _inbox = new(timeProvider ?? TimeProvider.System);
 
@@ -131,26 +133,47 @@ public sealed class TransportConsumerConformanceSession(
     /// Publishes until the producer succeeds. The first publishes after a connection loss can fail while the client
     /// reconnects, and the outbox retries them, so only a publish that never succeeds within the window is a defect.
     /// </summary>
+    /// <remarks>
+    /// The window is a deadline read between attempts, never a timer armed before a send starts. A simulator's clock
+    /// counts an armed timer as a pending wait and moves to it once the broker is idle, so a window timer armed ahead of
+    /// the first send can run out, and cancel that send, while this thread is still on its way to it.
+    /// </remarks>
     public async Task PublishUntilSucceededAsync(
         TransportMessage message,
         TimeSpan window,
         CancellationToken cancellationToken = default
     )
     {
-        using var cts = new SessionTimeout(TimeProvider, window, cancellationToken);
+        var started = TimeProvider.GetTimestamp();
         Exception? lastFailure = null;
 
-        while (!cts.IsCancellationRequested)
+        while (true)
         {
+            var remaining = window - TimeProvider.GetElapsedTime(started);
+            if (remaining <= TimeSpan.Zero)
+            {
+                break;
+            }
+
+            using var attempt = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            Task<OperateResult>? send = null;
             try
             {
-                var result = await producer.SendAsync(message, cts.Token).ConfigureAwait(false);
+                // A send that completes at once arms no timer; only a send still running is bounded by the window.
+                send = producer.SendAsync(message, attempt.Token);
+                var result = await send.WaitAsync(remaining, TimeProvider, cancellationToken).ConfigureAwait(false);
                 if (result.Succeeded)
                 {
                     return;
                 }
 
                 lastFailure = result.Exception;
+            }
+            catch (TimeoutException ex) when (send is { IsCompleted: false })
+            {
+                await attempt.CancelAsync().ConfigureAwait(false);
+                lastFailure = ex;
+                break;
             }
 #pragma warning disable CA1031 // Any publish failure during the reconnect window is retried; the window bounds it.
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -159,14 +182,15 @@ public sealed class TransportConsumerConformanceSession(
                 lastFailure = ex;
             }
 
-            try
-            {
-                await TimeProvider.Delay(TimeSpan.FromMilliseconds(500), cts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            remaining = window - TimeProvider.GetElapsedTime(started);
+            if (remaining <= TimeSpan.Zero)
             {
                 break;
             }
+
+            await TimeProvider
+                .Delay(remaining < _PublishRetryPause ? remaining : _PublishRetryPause, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -216,16 +240,19 @@ public sealed class TransportConsumerConformanceSession(
             await _listeningCts.CancelAsync().ConfigureAwait(false);
         }
 
+        // On the session clock, so a simulator's clock can move the client's own shutdown bound while this waits.
         await Consumer
             .ShutdownAsync(timeout, CancellationToken.None)
             .AsTask()
-            .WaitAsync(timeout + TimeSpan.FromSeconds(1))
+            .WaitAsync(timeout + TimeSpan.FromSeconds(1), TimeProvider)
             .ConfigureAwait(false);
 
         if (_listeningTask is not null)
         {
             try
             {
+                // Real time: the listener ends as soon as it sees the cancellation, and a simulator's clock could fire a
+                // timer here before that completion propagates.
                 await _listeningTask.WaitAsync(timeout + TimeSpan.FromSeconds(1)).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (_listeningCts?.IsCancellationRequested == true)
@@ -283,38 +310,6 @@ public sealed class TransportConsumerConformanceSession(
                     }
                 }
             }
-        }
-    }
-
-    /// <summary>
-    /// Cancels when a timeout on the session clock runs out or the caller cancels. A zero timeout is already over and a
-    /// negative one never runs out, as with <c>TimeSpan.ToCancellationTokenSource</c>.
-    /// </summary>
-    private sealed class SessionTimeout : IDisposable
-    {
-        private readonly CancellationTokenSource _timeout;
-        private readonly CancellationTokenSource _linked;
-
-        public SessionTimeout(TimeProvider clock, TimeSpan timeout, CancellationToken cancellationToken)
-        {
-            _timeout =
-                timeout > TimeSpan.Zero ? clock.CreateCancellationTokenSource(timeout) : new CancellationTokenSource();
-            if (timeout == TimeSpan.Zero)
-            {
-                _timeout.Cancel();
-            }
-
-            _linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _timeout.Token);
-        }
-
-        public CancellationToken Token => _linked.Token;
-
-        public bool IsCancellationRequested => _linked.IsCancellationRequested;
-
-        public void Dispose()
-        {
-            _linked.Dispose();
-            _timeout.Dispose();
         }
     }
 
