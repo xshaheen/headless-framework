@@ -184,11 +184,11 @@ An empty `AsnEditionId` or `LocationEditionId` turns that edition off; configura
 
 | Option | Default | Notes |
 | --- | --- | --- |
-| `DatabaseDirectory` | (required) | Holds `<EditionId>.mmdb`; created by the updater when missing. |
+| `DatabaseDirectory` | (required) | Holds `<EditionId>.mmdb`; created by the updater when missing. A relative path resolves against the host's content root, not the working directory. |
 | `LocationEditionId` | `GeoLite2-City` | Also `GeoLite2-Country` or a paid `GeoIP2-*` City or Country edition. Null or empty turns it off. |
 | `AsnEditionId` | `GeoLite2-ASN` | Null or empty turns it off. At least one edition must stay on. |
 | `AccountId`, `LicenseKey` | none | Both or neither. Neither means local files only. |
-| `Locales` | `["en"]` | Name languages in order of preference. |
+| `Locales` | `["en"]` when left empty | Name languages in order of preference. A configured list replaces the default rather than appending to it. |
 | `UpdateCheckInterval` | 12 hours | At least 1 hour. GeoLite accounts may download 30 databases a day; HEAD checks do not count. |
 | `RetryDelay` | 30 minutes | Wait after a failed check; at least 1 minute. |
 | `DownloadEndpoint` | `https://download.maxmind.com/` | HTTPS, or HTTP on loopback for tests. |

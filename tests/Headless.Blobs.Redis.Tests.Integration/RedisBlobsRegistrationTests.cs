@@ -147,4 +147,26 @@ public sealed class RedisBlobsRegistrationTests
         monitor.Get("cache").ConnectionMultiplexer.Should().BeSameAs(cacheMultiplexer);
         monitor.Get("scratch").ConnectionMultiplexer.Should().BeSameAs(scratchMultiplexer);
     }
+
+    [Fact]
+    public async Task stores_use_the_registered_multiplexer_when_options_leave_it_unset()
+    {
+        // given
+        var multiplexer = _CreateMockMultiplexer();
+        var services = _BuildBaseServices();
+        services.AddSingleton(multiplexer);
+        services.AddHeadlessBlobs(blobs =>
+        {
+            blobs.UseRedis(options => options.MaxBulkParallelism = 4);
+            blobs.AddNamed("cache", instance => instance.UseRedis(options => options.MaxBulkParallelism = 4));
+        });
+        await using var serviceProvider = services.BuildServiceProvider();
+
+        // when
+        var monitor = serviceProvider.GetRequiredService<IOptionsMonitor<RedisBlobStorageOptions>>();
+
+        // then
+        monitor.CurrentValue.ConnectionMultiplexer.Should().BeSameAs(multiplexer);
+        monitor.Get("cache").ConnectionMultiplexer.Should().BeSameAs(multiplexer);
+    }
 }

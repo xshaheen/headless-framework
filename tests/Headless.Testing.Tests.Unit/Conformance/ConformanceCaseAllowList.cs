@@ -122,6 +122,11 @@ internal static class ConformanceCaseAllowList
             "The in-memory store keeps no per-row version column and builds no SQL, so there is no bound version to read back or quote to break; the relational storages run the case."
         ),
         new(
+            "InMemoryDataStorageTests",
+            "should_stamp_reserved_and_renewed_leases_from_the_database_clock",
+            "The in-memory store has no database clock separate from the node's, so there is no skew between them to observe; the relational storages run the case."
+        ),
+        new(
             "InMemoryDistributedLockTests",
             "should_fire_handle_lost_token_when_lock_holding_connection_dies",
             "The in-process lock has no backing connection to kill."

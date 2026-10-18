@@ -5,7 +5,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using Headless.AuditLog;
 using Headless.Domain;
-using Headless.EntityFramework.Contexts;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -67,9 +66,19 @@ internal sealed class HeadlessSaveChangesPipeline(
         + "Reference the Headless.EntityFramework.Messaging package and call "
         + "AddHeadlessDbContextServices(...).AddIntegrationEventOutbox().";
 
-    private readonly IReadOnlyList<IHeadlessSaveEntryProcessor> _entryProcessors = options.ResolveSaveEntryProcessors(
+    // An array, so the per-entry processor loop enumerates without allocating.
+    private readonly IHeadlessSaveEntryProcessor[] _entryProcessors = options.ResolveSaveEntryProcessors(
         serviceProvider
     );
+
+    private readonly bool _hasOnlyBuiltInProcessors = options.HasOnlyBuiltInSaveEntryProcessors;
+
+    // Only the built-in dispatcher resolves handlers from DI, so only it can say a payload has none; any other
+    // dispatcher may deliver events elsewhere, and every event it would receive is still synthesized and dispatched.
+    private readonly Func<Type, bool>? _domainEventHandlerFilter = domainEventDispatcher
+        is ServiceProviderDomainEventDispatcher builtIn
+        ? builtIn.HasHandler
+        : null;
 
     private readonly ILogger<HeadlessSaveChangesPipeline> _logger =
         logger ?? NullLogger<HeadlessSaveChangesPipeline>.Instance;
@@ -85,7 +94,7 @@ internal sealed class HeadlessSaveChangesPipeline(
         // _ProcessEntries, so a single snapshot is correct for the audit capture too.
         var trackedEntries = _SnapshotEntries(context);
         var saveContext = _ProcessEntries(context, trackedEntries);
-        var auditEntries = auditPersistence.CaptureEntries(trackedEntries);
+        var auditEntries = auditPersistence.CaptureEntries(trackedEntries, saveContext);
 
         var state = new AsyncSaveState(
             context,
@@ -128,7 +137,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     {
         var trackedEntries = _SnapshotEntries(context);
         var saveContext = _ProcessEntries(context, trackedEntries);
-        var auditEntries = auditPersistence.CaptureEntries(trackedEntries);
+        var auditEntries = auditPersistence.CaptureEntries(trackedEntries, saveContext);
 
         var state = new SaveState(
             context,
@@ -217,11 +226,14 @@ internal sealed class HeadlessSaveChangesPipeline(
     private HeadlessSaveEntryContext _ProcessEntries(DbContext context, IReadOnlyList<EntityEntry> entries)
     {
         var tenantId = context is IHeadlessDbContext headlessContext ? headlessContext.TenantId : null;
-        var saveContext = new HeadlessSaveEntryContext(context, tenantId) { TrackedEntries = entries };
+        var saveContext = new HeadlessSaveEntryContext(context, tenantId)
+        {
+            TrackedEntries = entries,
+            DomainEventHandlerFilter = _domainEventHandlerFilter,
+        };
 
         foreach (var entry in entries)
         {
-            saveContext.ProcessedEntities.Add(entry.Entity);
             foreach (var processor in _entryProcessors)
             {
                 processor.Process(entry, saveContext);
@@ -360,11 +372,15 @@ internal sealed class HeadlessSaveChangesPipeline(
                     var dispatcher =
                         domainEventDispatcher
                         ?? throw new InvalidOperationException(_MissingDomainEventDispatcherMessage);
-                    await dispatcher.DispatchAsync(occurrence, state.CancellationToken).ConfigureAwait(false);
+                    if (_MarkHandledOccurrence(state.SaveContext, occurrence))
+                    {
+                        await dispatcher.DispatchAsync(occurrence, state.CancellationToken).ConfigureAwait(false);
+                    }
+
                     state.SaveContext.DomainEventCursor++;
                 }
 
-                state.AuditEntries.Value = auditPersistence.CaptureEntries(_SnapshotEntries(state.Context));
+                _RecaptureAuditEntries(state.Context, state.SaveContext, state.AuditEntries);
                 state.DomainEventsPublished.Value = true;
             }
 
@@ -498,11 +514,15 @@ internal sealed class HeadlessSaveChangesPipeline(
                     var dispatcher =
                         domainEventDispatcher
                         ?? throw new InvalidOperationException(_MissingDomainEventDispatcherMessage);
-                    _DispatchDomainEventBlocking(dispatcher, occurrence);
+                    if (_MarkHandledOccurrence(state.SaveContext, occurrence))
+                    {
+                        _DispatchDomainEventBlocking(dispatcher, occurrence);
+                    }
+
                     state.SaveContext.DomainEventCursor++;
                 }
 
-                state.AuditEntries.Value = auditPersistence.CaptureEntries(_SnapshotEntries(state.Context));
+                _RecaptureAuditEntries(state.Context, state.SaveContext, state.AuditEntries);
                 state.DomainEventsPublished.Value = true;
             }
 
@@ -588,26 +608,91 @@ internal sealed class HeadlessSaveChangesPipeline(
         }
     }
 
+    /// <summary>
+    /// Records that a handler is about to run for <paramref name="occurrence"/>, or reports that none is registered:
+    /// an occurrence nobody handles is skipped, and it cannot change the graph.
+    /// </summary>
+    private static bool _MarkHandledOccurrence(HeadlessSaveEntryContext saveContext, EventContext<object> occurrence)
+    {
+        if (!saveContext.HasDomainEventHandler(occurrence.Payload.GetType()))
+        {
+            return false;
+        }
+
+        saveContext.HandlerMayHaveChangedGraph = true;
+        saveContext.GraphChangedSinceSnapshot = true;
+
+        return true;
+    }
+
+    /// <summary>
+    /// Refreshes the audit entries captured before the drain when the drain could have changed what they describe.
+    /// </summary>
+    /// <remarks>
+    /// With only the built-in processors, every framework write goes through the change tracker, so the entries
+    /// captured before the drain are still exact unless a handler ran; after one ran, the drain's last recollection
+    /// already took the snapshot to capture from. A consumer processor may write CLR members that only change
+    /// detection reveals, so a chain with one keeps taking a fresh snapshot.
+    /// </remarks>
+    private void _RecaptureAuditEntries(
+        DbContext context,
+        HeadlessSaveEntryContext saveContext,
+        StrongBox<IReadOnlyList<AuditLogEntryData>?> auditEntries
+    )
+    {
+        if (!_hasOnlyBuiltInProcessors)
+        {
+            auditEntries.Value = auditPersistence.CaptureEntries(_SnapshotEntries(context), saveContext);
+
+            return;
+        }
+
+        if (saveContext.HandlerMayHaveChangedGraph)
+        {
+            auditEntries.Value = auditPersistence.CaptureEntries(
+                saveContext.TrackedEntries ?? _SnapshotEntries(context),
+                saveContext
+            );
+        }
+    }
+
+    private static HashSet<object> _CollectEntities(IReadOnlyList<EntityEntry>? entries)
+    {
+        var entities = new HashSet<object>(entries?.Count ?? 0, ReferenceEqualityComparer.Instance);
+
+        if (entries is not null)
+        {
+            foreach (var entry in entries)
+            {
+                entities.Add(entry.Entity);
+            }
+        }
+
+        return entities;
+    }
+
     // The finite budget also covers lifecycle events and new emitters, so recursive handlers fail before saving.
     private const int _MaximumDomainOccurrencesPerSave = 1024;
 
     private EventContext<object>? _TryTakeDomainOccurrence(DbContext context, HeadlessSaveEntryContext saveContext)
     {
-        // Recollect after each completed pass, without synthesizing lifecycle events again for existing entries.
-        // The snapshot _ProcessEntries just processed is still current until a handler has run, so the first pass of
-        // a save with no occurrences, or with all of them still pending, skips a full tracker traversal.
+        // Recollect after each completed pass, without synthesizing lifecycle events again for existing entries. Only a
+        // handler can add entities or events, so the last snapshot stays current until one has run: a save with no
+        // occurrences, or whose occurrences have no handlers, skips a full tracker traversal.
         if (
             saveContext.DomainEventCursor == saveContext.PendingDomainEvents.Count
-            && saveContext.SnapshotCursor != saveContext.DomainEventCursor
+            && saveContext.GraphChangedSinceSnapshot
         )
         {
             var collector = _ResolveMessageCollector();
-            saveContext.SnapshotCursor = saveContext.DomainEventCursor;
+            saveContext.GraphChangedSinceSnapshot = false;
+            // Every entry of the snapshot being replaced has been processed, by the first pass or a recollection.
+            var processed = saveContext.ProcessedEntities ??= _CollectEntities(saveContext.TrackedEntries);
             var snapshot = _SnapshotEntries(context);
             saveContext.TrackedEntries = snapshot;
             foreach (var entry in snapshot)
             {
-                if (saveContext.ProcessedEntities.Add(entry.Entity))
+                if (processed.Add(entry.Entity))
                 {
                     foreach (var processor in _entryProcessors)
                     {
@@ -680,7 +765,24 @@ internal sealed class HeadlessSaveChangesPipeline(
     {
         return _HasAuditEntries(auditEntries)
             || saveContext.IntegrationEventEmitters.Count > 0
-            || saveContext.DomainEventEmitters.Count > 0;
+            || _HasHandledDomainEvent(saveContext);
+    }
+
+    // A domain event without a handler has nothing to run inside the transaction; its emitter is cleared after the
+    // save either way.
+    private static bool _HasHandledDomainEvent(HeadlessSaveEntryContext saveContext)
+    {
+        var pending = saveContext.PendingDomainEvents;
+
+        for (var i = 0; i < pending.Count; i++)
+        {
+            if (saveContext.HasDomainEventHandler(pending[i].Payload.GetType()))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool _HasAuditEntries(IReadOnlyList<AuditLogEntryData>? auditEntries)

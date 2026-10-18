@@ -2,7 +2,9 @@
 
 using Headless;
 using Headless.Checks;
+using Headless.EntityFramework;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.ValueGeneration;
@@ -25,6 +27,50 @@ public static class HeadlessDbContextOptionsBuilderExtensions
         builder.ReplaceService<IValueGeneratorSelector, CompactGuidValueGeneratorSelector>();
 
         return builder;
+    }
+
+    /// <summary>
+    /// Applies <see cref="IInterceptor" /> services registered in the application container to the context
+    /// options. EF Core does <b>not</b> auto-discover interceptors from the application service provider —
+    /// they must be added to the options explicitly, so without this seam package-registered interceptors
+    /// (e.g. the commit-coordination transaction interceptor) would silently never fire.
+    /// </summary>
+    /// <remarks>
+    /// Instances the consumer already added through its own options action are skipped (reference equality)
+    /// so an interceptor never runs twice per edge. Interceptors resolve from <paramref name="serviceProvider" />, so
+    /// a scoped <see cref="IInterceptor" /> needs scoped options; with singleton or pooled options it resolves from the
+    /// root and fails scope validation. The framework's own interceptors are singletons.
+    /// <para>
+    /// <c>AddHeadlessDbContext</c> / <c>AddHeadlessIdentityDbContext</c> call this automatically. Consumers wiring a
+    /// plain <see cref="DbContext" /> via <c>AddDbContext</c> can call it from their options action
+    /// (<c>(sp, options) =&gt; options.UseX(...).AddDiRegisteredInterceptors(sp)</c>) to pick up package-registered
+    /// interceptors — e.g. the commit-coordination transaction interceptor — without hand-rolling the discovery.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="optionsBuilder"/> or <paramref name="serviceProvider"/> is <see langword="null"/>.
+    /// </exception>
+    public static DbContextOptionsBuilder AddDiRegisteredInterceptors(
+        this DbContextOptionsBuilder optionsBuilder,
+        IServiceProvider serviceProvider
+    )
+    {
+        Argument.IsNotNull(optionsBuilder);
+        Argument.IsNotNull(serviceProvider);
+
+        var existing = optionsBuilder.Options.FindExtension<CoreOptionsExtension>()?.Interceptors;
+
+        var missing = serviceProvider
+            .GetServices<IInterceptor>()
+            .Where(interceptor => existing?.Any(e => ReferenceEquals(e, interceptor)) != true)
+            .ToArray();
+
+        if (missing.Length > 0)
+        {
+            optionsBuilder.AddInterceptors(missing);
+        }
+
+        return optionsBuilder;
     }
 
     #region Compact Guid
@@ -58,56 +104,13 @@ public static class HeadlessDbContextOptionsBuilderExtensions
 
     private sealed class StringCompactGuidValueGenerator(bool value) : ValueGenerator<string>
     {
-        private const string _SqlServerProviderName = "Microsoft.EntityFrameworkCore.SqlServer";
-
-        private static readonly IGuidGenerator _Version7GuidGenerator = new SequentialGuidGenerator(
-            SequentialGuidType.Version7
-        );
-
-        private static readonly IGuidGenerator _SqlServerGuidGenerator = new SequentialGuidGenerator(
-            SequentialGuidType.SqlServer
-        );
-
         public override bool GeneratesTemporaryValues { get; } = value;
 
+        // String primary keys share the framework's single guid source (fakeable in tests, swappable for a different
+        // strategy), with the framework default when the context has no application service provider.
         public override string Next(EntityEntry entry)
         {
-            return _ResolveGuidGenerator(entry.Context).Create().ToString("N");
-        }
-
-        // Pull the application-registered IGuidGenerator so string primary keys share the framework's single
-        // guid source (fakeable in tests, swappable for a different strategy). Falls back to the framework
-        // default when the context was built without an application service provider (e.g. a hand-constructed
-        // DbContextOptions).
-        private static IGuidGenerator _ResolveGuidGenerator(DbContext context)
-        {
-            var key = _GetKey(context.Database.ProviderName);
-            var fallback = _GetFallback(key);
-            var applicationServiceProvider = context
-                .GetService<IDbContextOptions>()
-                .FindExtension<CoreOptionsExtension>()
-                ?.ApplicationServiceProvider;
-
-            if (applicationServiceProvider is null)
-            {
-                return fallback;
-            }
-
-            return applicationServiceProvider.GetKeyedService<IGuidGenerator>(key)
-                ?? applicationServiceProvider.GetService<IGuidGenerator>()
-                ?? fallback;
-        }
-
-        private static SequentialGuidType _GetKey(string? providerName)
-        {
-            return string.Equals(providerName, _SqlServerProviderName, StringComparison.Ordinal)
-                ? SequentialGuidType.SqlServer
-                : SequentialGuidType.Version7;
-        }
-
-        private static IGuidGenerator _GetFallback(SequentialGuidType key)
-        {
-            return key == SequentialGuidType.SqlServer ? _SqlServerGuidGenerator : _Version7GuidGenerator;
+            return HeadlessGuidGeneratorResolver.Resolve(entry.Context).Create().ToString("N");
         }
     }
 

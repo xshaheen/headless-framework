@@ -180,7 +180,7 @@ builder.Services.AddHeadlessDbContext<AppDbContext, /* ... */>(
 builder.Services.Configure<IdentityOptions>(o => o.Stores.SchemaVersion = IdentitySchemaVersions.Version1);
 ```
 
-For `AddHeadlessDbContext`, service lifetimes default to `ServiceLifetime.Scoped` for both the context and its options. Override via the `contextLifetime` / `optionsLifetime` parameters when needed; `contextLifetime` may not be `Singleton`. `AddHeadlessDbContextPool` takes the same options and `configureHeadlessOptions` arguments plus `poolSize` (default 1024) instead of lifetimes.
+For `AddHeadlessDbContext`, `contextLifetime` defaults to `ServiceLifetime.Scoped` and may not be `Singleton`. The options lifetime follows the rules of the ORM registration ([Registration modes and scope binding](orm.md#registration-modes-and-scope-binding)): `optionsLifetime` defaults to `Scoped` on every overload, and `optionsLifetime: ServiceLifetime.Singleton` shares options built once from the root provider across scopes. Pass `Singleton` only when the options action reads no per-request or per-tenant state, because it runs once for the whole application. `AddHeadlessDbContextPool` takes the same options and `configureHeadlessOptions` arguments plus `poolSize` (default 1024) instead of lifetimes.
 
 #### Tenant-owned Identity
 
