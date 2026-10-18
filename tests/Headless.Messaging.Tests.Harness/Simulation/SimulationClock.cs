@@ -34,6 +34,7 @@ public sealed class SimulationClock(DateTimeOffset start) : TimeProvider
     private readonly List<SimulatedTimer> _timers = [];
     private readonly List<Deadline> _deadlines = [];
     private DateTimeOffset _now = start;
+    private TaskCompletionSource _armed = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private long _armSequence;
     private int _firing;
 
@@ -141,6 +142,25 @@ public sealed class SimulationClock(DateTimeOffset start) : TimeProvider
         }
     }
 
+    /// <summary>
+    /// Completes once a wait is armed after <paramref name="mark"/>, at once when one already was. A polling loop arms
+    /// its next wait when its turn ends, so a driver can let the work an advance released run before it advances again.
+    /// </summary>
+    /// <param name="mark">A value read from <see cref="WaitMark"/>.</param>
+    /// <param name="cancellationToken">Abandons the wait.</param>
+    public Task WhenWaitArmedAsync(long mark, CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            if (_armSequence > mark)
+            {
+                return Task.CompletedTask;
+            }
+
+            return _armed.Task.WaitAsync(cancellationToken);
+        }
+    }
+
     public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
     {
         Argument.IsNotNull(callback);
@@ -153,7 +173,7 @@ public sealed class SimulationClock(DateTimeOffset start) : TimeProvider
 
     private Task _Register(DateTimeOffset at, CancellationToken cancellationToken)
     {
-        var deadline = new Deadline(at, Interlocked.Increment(ref _armSequence));
+        var deadline = new Deadline(at, _NextArmLocked());
         _deadlines.Add(deadline);
 
         if (cancellationToken.CanBeCanceled)
@@ -196,7 +216,7 @@ public sealed class SimulationClock(DateTimeOffset start) : TimeProvider
                 return true;
             }
 
-            timer.ArmedAt = Interlocked.Increment(ref _armSequence);
+            timer.ArmedAt = _NextArmLocked();
             timer.Period = period > TimeSpan.Zero ? period : TimeSpan.Zero;
             timer.DueAt = _now + dueTime;
             _timers.Add(timer);
@@ -210,6 +230,16 @@ public sealed class SimulationClock(DateTimeOffset start) : TimeProvider
         }
 
         return true;
+    }
+
+    /// <summary>Numbers a wait being armed and wakes whoever waits for the next one; called under the gate.</summary>
+    private long _NextArmLocked()
+    {
+        var sequence = Interlocked.Increment(ref _armSequence);
+        var armed = _armed;
+        _armed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        armed.TrySetResult();
+        return sequence;
     }
 
     private void _Disarm(SimulatedTimer timer)

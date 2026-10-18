@@ -210,16 +210,19 @@ public sealed class TransportConsumerConformanceSession(
             await _listeningCts.CancelAsync().ConfigureAwait(false);
         }
 
+        // On the session clock, so a simulator's clock can move the client's own shutdown bound while this waits.
         await Consumer
             .ShutdownAsync(timeout, CancellationToken.None)
             .AsTask()
-            .WaitAsync(timeout + TimeSpan.FromSeconds(1))
+            .WaitAsync(timeout + TimeSpan.FromSeconds(1), TimeProvider)
             .ConfigureAwait(false);
 
         if (_listeningTask is not null)
         {
             try
             {
+                // Real time: the listener ends as soon as it sees the cancellation, and a simulator's clock could fire a
+                // timer here before that completion propagates.
                 await _listeningTask.WaitAsync(timeout + TimeSpan.FromSeconds(1)).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (_listeningCts?.IsCancellationRequested == true)

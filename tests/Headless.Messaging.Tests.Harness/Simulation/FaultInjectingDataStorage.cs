@@ -68,6 +68,10 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
     private readonly IMessageRevocationStorage _revocation = _Require<IMessageRevocationStorage>(inner);
     private readonly ConcurrentQueue<AppliedStoreFault> _applied = new();
     private readonly ConcurrentQueue<Guid> _lostLeases = new();
+    private readonly Lock _callGate = new();
+    private readonly ConcurrentDictionary<StorageOperation, int> _finishedCalls = new();
+    private TaskCompletionSource _callFinished = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private long _callMark;
 
     // Leases granted while ExpireLeasesAfter is armed: when each was first granted, and the identity it holds now.
     private readonly ConcurrentDictionary<(Guid StorageId, bool Published), LeaseGrant> _leases = new();
@@ -80,6 +84,27 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
 
     /// <summary>Gets the storage ids of the rows whose lease the decorator ended, in order.</summary>
     public IReadOnlyList<Guid> LostLeases => [.. _lostLeases];
+
+    /// <summary>
+    /// Gets a mark that moves each time a storage call through the decorator finishes, written or failed. Rows change
+    /// only through such calls, so a test that read the rows at a mark waits for the next change with
+    /// <see cref="WhenCallFinishedAsync"/> instead of on time.
+    /// </summary>
+    public long CallMark => Interlocked.Read(ref _callMark);
+
+    /// <summary>Gets how many calls of <paramref name="operation"/> have finished, written or failed.</summary>
+    public int CallsFinished(StorageOperation operation) => _finishedCalls.GetValueOrDefault(operation);
+
+    /// <summary>Completes once a storage call finishes after <paramref name="mark"/>, at once when one already has.</summary>
+    /// <param name="mark">A value read from <see cref="CallMark"/>.</param>
+    /// <param name="cancellationToken">Abandons the wait.</param>
+    public Task WhenCallFinishedAsync(long mark, CancellationToken cancellationToken = default)
+    {
+        lock (_callGate)
+        {
+            return _callMark > mark ? Task.CompletedTask : _callFinished.Task.WaitAsync(cancellationToken);
+        }
+    }
 
     /// <summary>
     /// Replaces the messaging store a host registered with a decorator over it, as both its <see cref="IDataStorage"/>
@@ -852,28 +877,56 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
         CancellationToken cancellationToken
     )
     {
-        var fault = _faults.TakeStoreFault(operation);
-        if (fault is null)
+        try
         {
-            return await call().ConfigureAwait(false);
+            var fault = _faults.TakeStoreFault(operation);
+            if (fault is null)
+            {
+                return await call().ConfigureAwait(false);
+            }
+
+            switch (fault.Kind)
+            {
+                case StoreFaultKind.Fail:
+                    _applied.Enqueue(new AppliedStoreFault(fault, WithheldResult: null));
+                    throw fault.Exception ?? _Failure(fault, "failed before it reached the store");
+                case StoreFaultKind.LoseReply:
+                {
+                    var result = await call().ConfigureAwait(false);
+                    _applied.Enqueue(new AppliedStoreFault(fault, result));
+                    throw _Failure(fault, "committed, but its reply was lost");
+                }
+                case StoreFaultKind.Refuse when typeof(T) == typeof(bool):
+                    _applied.Enqueue(new AppliedStoreFault(fault, WithheldResult: null));
+                    return (T)(object)false;
+                case StoreFaultKind.Refuse:
+                    throw new InvalidOperationException(
+                        $"{operation} does not report whether it took effect, so the simulation cannot refuse it."
+                    );
+                default:
+                    _applied.Enqueue(new AppliedStoreFault(fault, WithheldResult: null));
+                    await _clock.DelayAsync(fault.Delay, cancellationToken).ConfigureAwait(false);
+                    return await call().ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _CallFinished(operation);
+        }
+    }
+
+    private void _CallFinished(StorageOperation operation)
+    {
+        TaskCompletionSource finished;
+        lock (_callGate)
+        {
+            _finishedCalls.AddOrUpdate(operation, 1, static (_, count) => count + 1);
+            _callMark++;
+            finished = _callFinished;
+            _callFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
-        switch (fault.Kind)
-        {
-            case StoreFaultKind.Fail:
-                _applied.Enqueue(new AppliedStoreFault(fault, WithheldResult: null));
-                throw fault.Exception ?? _Failure(fault, "failed before it reached the store");
-            case StoreFaultKind.LoseReply:
-            {
-                var result = await call().ConfigureAwait(false);
-                _applied.Enqueue(new AppliedStoreFault(fault, result));
-                throw _Failure(fault, "committed, but its reply was lost");
-            }
-            default:
-                _applied.Enqueue(new AppliedStoreFault(fault, WithheldResult: null));
-                await _clock.DelayAsync(fault.Delay, cancellationToken).ConfigureAwait(false);
-                return await call().ConfigureAwait(false);
-        }
+        finished.TrySetResult();
     }
 
     private async ValueTask _RunAsync(

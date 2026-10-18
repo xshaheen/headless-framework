@@ -65,6 +65,12 @@ public enum StoreFaultKind
 
     /// <summary>The call reaches the store only after the simulation clock moves on by the fault's delay.</summary>
     DelayCommit,
+
+    /// <summary>
+    /// A conditional write reports that it changed nothing and writes nothing, as when another writer already made the
+    /// row terminal. Only an operation that reports whether it took effect can be refused.
+    /// </summary>
+    Refuse,
 }
 
 /// <summary>How a simulated consumer client closes, set by <see cref="FaultScript.SlowCloses"/> or <see cref="FaultScript.HangCloses"/>.</summary>
@@ -115,6 +121,9 @@ public sealed class FaultScript
     private CloseFaultKind _closeKind;
     private TimeSpan _closeDuration;
     private TaskCompletionSource _hungCloseRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private bool _holdPauses;
+    private TaskCompletionSource _heldPauseRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _pauseHeld = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>
     /// Gets how long a lease the store grants survives, from the moment it is granted, regardless of renewals; null
@@ -205,6 +214,43 @@ public sealed class FaultScript
         release.TrySetResult();
     }
 
+    /// <summary>
+    /// Makes every consumer client pause from now on wait, before the pause takes effect, until
+    /// <see cref="ReleaseHeldPauses"/>, so a test can run something else between a pause being asked for and applied.
+    /// </summary>
+    public FaultScript HoldPauses()
+    {
+        lock (_gate)
+        {
+            _holdPauses = true;
+        }
+
+        return this;
+    }
+
+    /// <summary>Completes once the first client pause is held by <see cref="HoldPauses"/>.</summary>
+    public Task WhenPauseHeldAsync(CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            return _pauseHeld.Task.WaitAsync(cancellationToken);
+        }
+    }
+
+    /// <summary>Lets every held pause take effect and makes later pauses apply at once.</summary>
+    public void ReleaseHeldPauses()
+    {
+        TaskCompletionSource release;
+        lock (_gate)
+        {
+            _holdPauses = false;
+            release = _heldPauseRelease;
+            _heldPauseRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        release.TrySetResult();
+    }
+
     /// <summary>Makes call <paramref name="onCall"/> of <paramref name="operation"/> throw before it reaches the store.</summary>
     /// <param name="operation">The storage operation to fault.</param>
     /// <param name="onCall">Which call, from now on, fails: 1 is the next one.</param>
@@ -218,6 +264,16 @@ public sealed class FaultScript
     public FaultScript LoseStoreReply(StorageOperation operation, int onCall = 1)
     {
         return _ArmStore(operation, StoreFaultKind.LoseReply, onCall, exception: null, TimeSpan.Zero);
+    }
+
+    /// <summary>
+    /// Makes call <paramref name="onCall"/> of <paramref name="operation"/> report that it changed nothing, without
+    /// reaching the store, as a conditional write does when another writer already made the row terminal.
+    /// </summary>
+    /// <remarks>Only an operation that returns whether it took effect can be refused; any other throws when it fires.</remarks>
+    public FaultScript RefuseStoreWrite(StorageOperation operation, int onCall = 1)
+    {
+        return _ArmStore(operation, StoreFaultKind.Refuse, onCall, exception: null, TimeSpan.Zero);
     }
 
     /// <summary>
@@ -290,6 +346,26 @@ public sealed class FaultScript
             _settlementFaults--;
             return true;
         }
+    }
+
+    /// <summary>The release a pause waits for, or a completed task when pauses are not held.</summary>
+    internal Task TakePauseHold()
+    {
+        TaskCompletionSource held;
+        Task release;
+        lock (_gate)
+        {
+            if (!_holdPauses)
+            {
+                return Task.CompletedTask;
+            }
+
+            held = _pauseHeld;
+            release = _heldPauseRelease.Task;
+        }
+
+        held.TrySetResult();
+        return release;
     }
 
     internal (CloseFaultKind Kind, TimeSpan Duration, Task Release) TakeCloseFault()
