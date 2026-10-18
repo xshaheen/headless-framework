@@ -52,6 +52,22 @@ public static class HeadlessStatefulResourceServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>Configures how the stateful resources are managed, such as where data-deleting operations may run.</summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Changes the options.</param>
+    /// <returns>The same service collection.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services" /> or <paramref name="configure" /> is null.</exception>
+    public static IServiceCollection ConfigureHeadlessStatefulResources(
+        this IServiceCollection services,
+        Action<StatefulResourceOptions> configure
+    )
+    {
+        Argument.IsNotNull(services);
+        Argument.IsNotNull(configure);
+
+        return services.Configure<StatefulResourceOptions, StatefulResourceOptionsValidator>(configure);
+    }
+
     /// <summary>
     /// Sets up every stateful resource when the host starts, before any other hosted service runs, so a development or
     /// test host needs no separate <c>resources setup</c> step. Calling it again replaces the action.
@@ -64,7 +80,8 @@ public static class HeadlessStatefulResourceServiceCollectionExtensions
     /// A failed setup fails the host start and names every failed resource. An operation a resource does not support is
     /// skipped. Guard the call on the environment to keep it out of production, for example
     /// <c>if (builder.Environment.IsDevelopment())</c>, where the deployment runs <c>resources setup</c> instead.
-    /// <see cref="StatefulResourceStartupAction.ResetState" /> fails the host start in the Production environment.
+    /// <see cref="StatefulResourceStartupAction.ResetState" /> fails the host start in an environment outside
+    /// <see cref="StatefulResourceOptions.DestructiveEnvironments" />.
     /// </remarks>
     public static IServiceCollection AddHeadlessResourceSetupOnStartup(
         this IServiceCollection services,

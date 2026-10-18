@@ -36,11 +36,28 @@ public static class HeadlessStatefulResourceServiceProviderExtensions
     /// <returns>A task that completes when every resource is cleared.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="services" /> is null.</exception>
     /// <exception cref="StatefulResourceException">At least one resource failed.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The host's environment is not in <see cref="StatefulResourceOptions.DestructiveEnvironments" />.
+    /// </exception>
     public static Task ResetResourceStateAsync(
         this IServiceProvider services,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(services);
+
+        if (
+            DestructiveOperationGuard.Refusal(
+                services,
+                "ResetResourceStateAsync",
+                "Build the host in a Development or Test environment"
+            ) is
+            { } refusal
+        )
+        {
+            throw new InvalidOperationException(refusal);
+        }
+
         return _RunAsync(services, StatefulResourceOperation.Clear, cancellationToken);
     }
 
@@ -50,11 +67,28 @@ public static class HeadlessStatefulResourceServiceProviderExtensions
     /// <returns>A task that completes when every resource is deleted.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="services" /> is null.</exception>
     /// <exception cref="StatefulResourceException">At least one resource failed.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The host's environment is not in <see cref="StatefulResourceOptions.DestructiveEnvironments" />.
+    /// </exception>
     public static Task TeardownResourcesAsync(
         this IServiceProvider services,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(services);
+
+        if (
+            DestructiveOperationGuard.Refusal(
+                services,
+                "TeardownResourcesAsync",
+                "Build the host in a Development or Test environment"
+            ) is
+            { } refusal
+        )
+        {
+            throw new InvalidOperationException(refusal);
+        }
+
         return _RunAsync(services, StatefulResourceOperation.Teardown, cancellationToken);
     }
 

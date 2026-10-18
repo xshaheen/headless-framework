@@ -245,13 +245,18 @@ public sealed class RunHeadlessResourcesTests : TestBase
     }
 
     [Theory]
-    [InlineData("clear")]
-    [InlineData("teardown")]
-    public async Task should_refuse_a_destructive_subcommand_in_production_without_force(string subcommand)
+    [InlineData("clear", "Production")]
+    [InlineData("teardown", "Production")]
+    [InlineData("clear", "Prod")]
+    [InlineData("teardown", "Staging")]
+    public async Task should_refuse_a_destructive_subcommand_outside_the_allowed_environments_without_force(
+        string subcommand,
+        string environment
+    )
     {
         // when
         var run = await _RunInAsync(
-            Microsoft.Extensions.Hosting.Environments.Production,
+            environment,
             services => services.AddHeadlessStatefulResource(_ => new RecordingResource("Schema", "orders", _log)),
             "resources",
             subcommand
@@ -259,9 +264,32 @@ public sealed class RunHeadlessResourcesTests : TestBase
 
         // then
         run.ExitCode.Should().Be(2);
-        run.StandardError.Should().Contain($"Refusing to run 'resources {subcommand}' in the Production environment");
-        run.StandardError.Should().Contain("--force");
+        run.StandardError.Should()
+            .Contain($"Refusing to run 'resources {subcommand}' in the '{environment}' environment");
+        run.StandardError.Should().Contain("--force").And.Contain("DestructiveEnvironments");
         _log.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("Test")]
+    [InlineData("qa")]
+    public async Task should_run_a_destructive_subcommand_without_force_in_an_allowed_environment(string environment)
+    {
+        // when
+        var run = await _RunInAsync(
+            environment,
+            services =>
+            {
+                services.AddHeadlessStatefulResource(_ => new RecordingResource("Schema", "orders", _log));
+                services.ConfigureHeadlessStatefulResources(options => options.DestructiveEnvironments.Add("QA"));
+            },
+            "resources",
+            "clear"
+        );
+
+        // then
+        run.ExitCode.Should().Be(0);
+        _log.Should().Equal("clear orders");
     }
 
     [Fact]
@@ -314,7 +342,7 @@ public sealed class RunHeadlessResourcesTests : TestBase
         _log.Should().BeEmpty();
     }
 
-    // Development, so clear and teardown run without --force; the Production guard has tests of its own.
+    // Development, so clear and teardown run without --force; the environment guard has tests of its own.
     private Task<HostConsoleRun> _RunAsync(Action<IServiceCollection> configure, params string[] args)
     {
         return _RunInAsync(Microsoft.Extensions.Hosting.Environments.Development, configure, args);

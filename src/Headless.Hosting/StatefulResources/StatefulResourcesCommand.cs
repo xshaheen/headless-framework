@@ -71,21 +71,20 @@ internal static class StatefulResourcesCommand
 
         var operation = _Subcommands[parsed.Subcommand ?? "setup"];
 
-        // Clear and teardown delete data; in Production they run only when the operator says so explicitly.
+        // Clear and teardown delete data, so outside the allowed environments they run only when the operator says so
+        // explicitly: a production-like environment refuses them whatever it is named.
         if (
             operation is StatefulResourceOperation.Clear or StatefulResourceOperation.Teardown
             && !parsed.Switches.Contains(_Force)
-            && services.GetService<IHostEnvironment>()?.IsProduction() == true
+            && DestructiveOperationGuard.Refusal(
+                services,
+                $"'resources {parsed.Subcommand}'",
+                "Pass --force to run it anyway"
+            )
+                is { } refusal
         )
         {
-            await HostCommandLine
-                .WriteAsync(
-                    stderr,
-                    $"Refusing to run 'resources {parsed.Subcommand}' in the Production environment: it deletes "
-                        + "data. Pass --force to run it anyway.\n",
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            await HostCommandLine.WriteAsync(stderr, refusal + "\n", cancellationToken).ConfigureAwait(false);
 
             return HostCommandLine.ExitUsage;
         }

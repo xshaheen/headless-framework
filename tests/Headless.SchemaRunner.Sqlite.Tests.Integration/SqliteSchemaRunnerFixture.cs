@@ -63,7 +63,10 @@ public sealed class SqliteSchemaRunnerFixture
 
     public IHost CreateHost(string schema, bool setupResources)
     {
-        var builder = Host.CreateApplicationBuilder();
+        // The Test environment, so the conformance suite may clear and tear down; the builder's default is Production.
+        var builder = Host.CreateApplicationBuilder(
+            new HostApplicationBuilderSettings { EnvironmentName = Headless.EnvironmentNames.Test }
+        );
         // The pilot features' contributions alone, so the runner and the resource setup are the host's only hosted
         // services, and the setup sees the contributions the runner verifies.
         foreach (var contribution in CreateRunner(schema).Contributions)

@@ -53,7 +53,7 @@ public sealed class ResourceSetupOnStartupTests : TestBase
     }
 
     [Fact]
-    public async Task should_fail_the_host_start_and_touch_no_resource_on_reset_state_in_production()
+    public async Task should_fail_the_host_start_and_touch_no_resource_on_reset_state_outside_the_allowed_environments()
     {
         // given
         var builder = Host.CreateApplicationBuilder(
@@ -72,7 +72,7 @@ public sealed class ResourceSetupOnStartupTests : TestBase
         // then
         await act.Should()
             .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*ResetState*refuses to run in the Production environment*");
+            .WithMessage("*ResetState*'Production' environment*SetupOnly*DestructiveEnvironments*");
         _log.Should().BeEmpty();
     }
 

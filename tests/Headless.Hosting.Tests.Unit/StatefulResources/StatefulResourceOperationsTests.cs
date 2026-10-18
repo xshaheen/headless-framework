@@ -91,6 +91,33 @@ public sealed class StatefulResourceOperationsTests : TestBase
         _log.Should().Equal("setup orders", "setup ok", "setup billing");
     }
 
+    [Theory]
+    [InlineData("reset")]
+    [InlineData("teardown")]
+    public async Task should_refuse_to_delete_data_and_touch_no_resource_outside_the_allowed_environments(
+        string operation
+    )
+    {
+        // given
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns("Live");
+        var services = new ServiceCollection();
+        services.AddSingleton(environment);
+        services.AddHeadlessStatefulResource(_ => new RecordingResource("Schema", "orders", _log));
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        Func<Task> act = string.Equals(operation, "reset", StringComparison.Ordinal)
+            ? () => provider.ResetResourceStateAsync(AbortToken)
+            : () => provider.TeardownResourcesAsync(AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*'Live' environment*DestructiveEnvironments*");
+        _log.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task should_skip_a_resource_that_cannot_clear_its_data_without_failing()
     {
