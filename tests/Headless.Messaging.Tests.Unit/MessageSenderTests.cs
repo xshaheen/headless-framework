@@ -2050,7 +2050,7 @@ public sealed class MessageSenderTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
-        var logs = new CapturingLoggerProvider();
+        using var logs = new CapturingLoggerProvider();
         var sender = _CreateSender(
             storage,
             Substitute.For<IMessageSerializer>(),
