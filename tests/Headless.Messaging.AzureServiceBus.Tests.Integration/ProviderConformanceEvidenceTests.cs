@@ -106,6 +106,75 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
         TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();
     }
 
+    [Fact]
+    public void should_back_every_supported_emulator_manifest_scenario_with_a_test()
+    {
+        var profile = TransportConformanceManifest.Providers[AzureServiceBusEmulatorFixture.ProviderName];
+        TransportConformanceTestBinding[] bindings =
+        [
+            _BindEmulator(
+                TransportConformanceScenario.QueueRoundTrip,
+                nameof(
+                    AzureServiceBusEmulatorConsumerClientHarnessTests.should_round_trip_queue_message_body_and_headers
+                )
+            ),
+            _BindEmulator(
+                TransportConformanceScenario.HeaderRoundTrip,
+                nameof(
+                    AzureServiceBusEmulatorConsumerClientHarnessTests.should_round_trip_queue_message_body_and_headers
+                )
+            ),
+            new(
+                TransportConformanceScenario.BusRoundTrip,
+                typeof(AzureServiceBusEmulatorTransportTests),
+                nameof(
+                    AzureServiceBusEmulatorTransportTests.should_fan_out_bus_delivery_to_the_configured_subscriptions
+                )
+            ),
+            _BindEmulator(
+                TransportConformanceScenario.CommitSettlement,
+                nameof(
+                    AzureServiceBusEmulatorConsumerClientHarnessTests.should_commit_real_delivery_and_prevent_redelivery
+                )
+            ),
+            _BindEmulator(
+                TransportConformanceScenario.RejectRedelivery,
+                nameof(
+                    AzureServiceBusEmulatorConsumerClientHarnessTests.should_reject_real_delivery_and_observe_redelivery
+                )
+            ),
+            _BindEmulator(
+                TransportConformanceScenario.StaleSettlement,
+                nameof(
+                    AzureServiceBusEmulatorConsumerClientHarnessTests.should_not_settle_another_delivery_when_a_settled_value_is_used_again
+                )
+            ),
+            _BindEmulator(
+                TransportConformanceScenario.HandlerFailureRedelivery,
+                nameof(
+                    AzureServiceBusEmulatorConsumerClientHarnessTests.should_keep_the_delivery_and_the_listener_when_the_callback_throws
+                )
+            ),
+            new(
+                TransportConformanceScenario.ConsumerPauseRecovery,
+                typeof(AzureServiceBusEmulatorBrokerFaultTests),
+                nameof(AzureServiceBusEmulatorBrokerFaultTests.should_resume_delivery_once_after_consumer_pause)
+            ),
+            new(
+                TransportConformanceScenario.BrokerInterruptionRecovery,
+                typeof(AzureServiceBusEmulatorBrokerFaultTests),
+                nameof(AzureServiceBusEmulatorBrokerFaultTests.should_resume_delivery_once_after_broker_restart)
+            ),
+        ];
+
+        TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();
+    }
+
+    private static TransportConformanceTestBinding _BindEmulator(
+        TransportConformanceScenario scenario,
+        string method
+    ) => new(scenario, typeof(AzureServiceBusEmulatorConsumerClientHarnessTests), method);
+
     private static TransportConformanceTestBinding _Bind(TransportConformanceScenario scenario, string method) =>
         new(scenario, typeof(AzureServiceBusConsumerClientHarnessTests), method);
 }

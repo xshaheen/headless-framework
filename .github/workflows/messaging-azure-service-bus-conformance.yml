@@ -1,7 +1,8 @@
 name: Azure Service Bus Conformance
 
-# Azure Service Bus has no local emulator with the broker semantics this suite proves. The credential lives in a
-# protected environment, so this workflow intentionally runs only after a reviewer dispatches it for a trusted ref.
+# Only a real namespace proves provisioning, the administration API, and every-instance subscriptions; the local
+# emulator covers fixed-entity scenarios in the messaging nightly. The credential lives in a protected environment, so
+# this workflow intentionally runs only after a reviewer dispatches it for a trusted ref.
 on:
   workflow_dispatch:
 

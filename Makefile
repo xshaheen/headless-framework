@@ -41,9 +41,10 @@ WRITE_NO_CHAOS_SOLUTION = $(GRAPH) solution-filter --exclude-suffix "$(CHAOS_TES
 MESSAGING_CHAOS_PROJECT ?= tests/Headless.Messaging.Tests.Chaos/Headless.Messaging.Tests.Chaos.csproj
 MESSAGING_CHAOS_RESULTS_DIR ?= $(TEST_RESULTS_DIR)/messaging-chaos
 # The scheduled messaging tier (messaging-nightly.yml): every broker, broker-plus-database, and relational storage
-# integration suite. Azure Service Bus needs a real namespace credential, so its suites stay in their own
-# dispatch-only workflow and outside this list.
-MESSAGING_NIGHTLY_PROJECTS ?= $(foreach project,Aws AwsPostgreSql Kafka KafkaPostgreSql Nats NatsPostgreSql Pulsar PulsarPostgreSql RabbitMq RabbitMqPostgreSql RabbitMqSqlServer Redis RedisPostgreSql Storage.PostgreSql Storage.SqlServer,tests/Headless.Messaging.$(project).Tests.Integration/Headless.Messaging.$(project).Tests.Integration.csproj) tests/Headless.EntityFramework.Messaging.Tests.Integration/Headless.EntityFramework.Messaging.Tests.Integration.csproj
+# integration suite. The Azure Service Bus project runs for its emulator profile, which skips unless
+# HEADLESS_ACCEPT_SERVICEBUS_EMULATOR_EULA=Y accepts the emulator's license; its real-namespace tests need a credential
+# and skip here, running in their own dispatch-only workflow.
+MESSAGING_NIGHTLY_PROJECTS ?= $(foreach project,AzureServiceBus Aws AwsPostgreSql Kafka KafkaPostgreSql Nats NatsPostgreSql Pulsar PulsarPostgreSql RabbitMq RabbitMqPostgreSql RabbitMqSqlServer Redis RedisPostgreSql Storage.PostgreSql Storage.SqlServer,tests/Headless.Messaging.$(project).Tests.Integration/Headless.Messaging.$(project).Tests.Integration.csproj) tests/Headless.EntityFramework.Messaging.Tests.Integration/Headless.EntityFramework.Messaging.Tests.Integration.csproj
 MESSAGING_NIGHTLY_RESULTS_DIR ?= $(TEST_RESULTS_DIR)/messaging-nightly
 MESSAGING_NIGHTLY_REPORT ?= true
 MESSAGING_DRIFT_REPORT_ROOT ?= $(MESSAGING_NIGHTLY_RESULTS_DIR)
