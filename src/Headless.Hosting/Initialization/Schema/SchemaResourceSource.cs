@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -21,7 +23,7 @@ internal sealed class SchemaResourceSource(
     {
         // The runner applies a feature registered twice for one schema of one database once; so does the resource list.
         var seen = new HashSet<(string Dialect, string Database, string Schema, string Feature)>();
-        var resources = new List<IStatefulResource>();
+        var distinct = new List<(SchemaContribution Contribution, string Database)>();
 
         foreach (var contribution in contributions)
         {
@@ -30,11 +32,28 @@ internal sealed class SchemaResourceSource(
 
             if (seen.Add((contribution.Dialect.Name, identity, contribution.Schema, contribution.Feature)))
             {
-                resources.Add(new SchemaContributionResource(contribution, options.Value, logger, timeProvider));
+                distinct.Add((contribution, identity));
             }
         }
 
-        return resources;
+        // The same feature in the same schema of two databases (an additional outbox on its own database, say) would
+        // otherwise share one name, and '--name' could not tell them apart; only those names carry the database.
+        var shared = distinct
+            .GroupBy(x => SchemaContributionResource.BaseName(x.Contribution), StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Skip(1).Any())
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return
+        [
+            .. distinct.Select(x => new SchemaContributionResource(
+                x.Contribution,
+                options.Value,
+                logger,
+                timeProvider,
+                shared.Contains(SchemaContributionResource.BaseName(x.Contribution)) ? x.Database : null
+            )),
+        ];
     }
 }
 
@@ -48,7 +67,8 @@ internal sealed class SchemaContributionResource : IStatefulResource
         SchemaContribution contribution,
         SchemaRunnerOptions options,
         ILogger<SchemaRunner>? logger,
-        TimeProvider? timeProvider
+        TimeProvider? timeProvider,
+        string? database = null
     )
     {
         _contribution = contribution;
@@ -67,8 +87,16 @@ internal sealed class SchemaContributionResource : IStatefulResource
         );
 
         _runner = new SchemaRunner([deployed], logger, timeProvider, options.LockTimeout, options.CommandTimeout);
-        Name = $"{contribution.Dialect.Name}/{contribution.Schema}/{contribution.Feature}";
+        // A hash, not the identity itself: the identity holds the host name, and a name is printed to deploy logs.
+        Name = database is null ? BaseName(contribution) : $"{BaseName(contribution)}@{_ShortHash(database)}";
     }
+
+    private static string _ShortHash(string database) =>
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(database)).AsSpan(0, 4));
+
+    /// <summary>The resource's name before any database suffix: <c>{dialect}/{schema}/{feature}</c>.</summary>
+    public static string BaseName(SchemaContribution contribution) =>
+        $"{contribution.Dialect.Name}/{contribution.Schema}/{contribution.Feature}";
 
     public string Type => "Schema";
 

@@ -233,6 +233,27 @@ public sealed class SchemaStatefulResourceTests : TestBase, IDisposable
     }
 
     [Fact]
+    public async Task should_name_the_database_only_when_one_feature_and_schema_live_in_two_databases()
+    {
+        // given
+        using var other = new SqliteSchemaDatabase();
+        await using var provider = _Provider(
+            _db.Contribution("Widgets", "s", _CreateWidgets),
+            other.Contribution("Widgets", "s", _CreateWidgets),
+            _db.Contribution("Gadgets", "s", _CreateWidgets)
+        );
+
+        // when
+        var names = (
+            await provider.GetServices<IStatefulResourceSource>().Single().GetResourcesAsync(AbortToken)
+        ).Select(r => r.Name);
+
+        // then
+        names.Should().HaveCount(3).And.OnlyHaveUniqueItems().And.Contain("Sqlite/s/Gadgets");
+        names.Where(n => n.StartsWith("Sqlite/s/Widgets@", StringComparison.Ordinal)).Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task should_fail_a_host_start_naming_resources_setup_when_a_step_is_missing()
     {
         // given
