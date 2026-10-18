@@ -92,11 +92,6 @@ public sealed class RabbitMqMessagingOptions
     public QueueArgumentsOptions QueueArguments { get; set; } = new();
 
     /// <summary>
-    /// Durability, exclusivity, and auto-delete flags applied when queues are declared.
-    /// </summary>
-    public QueueRabbitOptions QueueOptions { get; set; } = new();
-
-    /// <summary>
     /// Optional callback that adds extra headers to an inbound message from native RabbitMQ
     /// delivery arguments. Use this to surface broker-native properties (for example delivery
     /// tags, redelivery flags, or routing keys) as framework message headers.
@@ -196,28 +191,6 @@ public sealed class RabbitMqMessagingOptions
         /// across all consumers on the same channel.
         /// </summary>
         public bool Global { get; } = global;
-    }
-
-    /// <summary>Queue declaration flags applied when RabbitMQ queues are created.</summary>
-    public sealed class QueueRabbitOptions
-    {
-        /// <summary>
-        /// When <see langword="true"/> (default), the queue survives broker restarts.
-        /// Set to <see langword="false"/> only for transient, non-critical queues.
-        /// </summary>
-        public bool Durable { get; set; } = true;
-
-        /// <summary>
-        /// When <see langword="true"/>, the queue is restricted to the declaring connection
-        /// and is deleted when that connection closes. Defaults to <see langword="false"/>.
-        /// </summary>
-        public bool Exclusive { get; set; }
-
-        /// <summary>
-        /// When <see langword="true"/>, the queue is automatically deleted when the last consumer
-        /// unsubscribes. Defaults to <see langword="false"/>.
-        /// </summary>
-        public bool AutoDelete { get; set; }
     }
 }
 

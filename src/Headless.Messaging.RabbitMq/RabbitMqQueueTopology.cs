@@ -129,9 +129,12 @@ internal static class RabbitMqQueueTopology
         await channel
             .QueueDeclareAsync(
                 queueName,
-                options.QueueOptions.Durable,
-                options.QueueOptions.Exclusive,
-                options.QueueOptions.AutoDelete,
+                // A shared queue outlives the process that declares it: 'resources setup' creates it, and every host
+                // start expects it, so it must survive the declaring connection, its last consumer, and a broker
+                // restart.
+                durable: true,
+                exclusive: false,
+                autoDelete: false,
                 BuildQueueArguments(options, laneExchange, queueName),
                 cancellationToken: cancellationToken
             )

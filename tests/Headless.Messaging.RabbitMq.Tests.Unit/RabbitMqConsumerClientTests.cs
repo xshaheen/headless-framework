@@ -896,29 +896,14 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_use_custom_queue_options()
+    public async Task should_declare_shared_queue_as_durable_and_not_tied_to_its_connection()
     {
         // given
-        var options = Options.Create(
-            new RabbitMqMessagingOptions
-            {
-                HostName = "localhost",
-                Port = 5672,
-                UserName = "test_user",
-                Password = "test_pass",
-                QueueOptions = new RabbitMqMessagingOptions.QueueRabbitOptions
-                {
-                    Durable = false,
-                    Exclusive = true,
-                    AutoDelete = true,
-                },
-            }
-        );
         await using var client = new RabbitMqConsumerClient(
             "test-group",
             1,
             _pool,
-            options,
+            _options,
             _serviceProvider,
             provisionsTopology: true
         );
@@ -931,9 +916,9 @@ public sealed class RabbitMqConsumerClientTests : TestBase
             .Received(1)
             .QueueDeclareAsync(
                 "bus.test-group",
-                false, // durable
-                true, // exclusive
-                true, // autoDelete
+                true, // durable
+                false, // exclusive
+                false, // autoDelete
                 Arg.Any<Dictionary<string, object?>>(),
                 false,
                 false,
