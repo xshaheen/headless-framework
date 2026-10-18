@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using FluentValidation;
 using Headless.Api;
 using Headless.Checks;
+using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -121,7 +122,8 @@ public static class SetupHeadlessOpenApi
                         options.ShouldInclude = description =>
                             string.Equals(
                                 description
-                                    .ActionDescriptor.EndpointMetadata.OfType<IApiSurfaceMetadata>()
+                                    .GetEndpointMetadata()
+                                    .OfType<IApiSurfaceMetadata>()
                                     .LastOrDefault()
                                     ?.SurfaceName,
                                 surface.SurfaceName,
@@ -151,7 +153,7 @@ public static class SetupHeadlessOpenApi
         Argument.IsNotNull(services);
         Argument.IsNotNull(setupAction);
 
-        _AddEnvironmentFilter(services);
+        _AddDocumentServices(services);
         services.Configure<HeadlessOpenApiOptions, HeadlessOpenApiOptionsValidator>(setupAction);
 
         return services;
@@ -172,7 +174,7 @@ public static class SetupHeadlessOpenApi
         Argument.IsNotNull(services);
         Argument.IsNotNull(setupAction);
 
-        _AddEnvironmentFilter(services);
+        _AddDocumentServices(services);
         services.Configure<HeadlessOpenApiOptions, HeadlessOpenApiOptionsValidator>(setupAction);
 
         return services;
@@ -245,7 +247,7 @@ public static class SetupHeadlessOpenApi
 
     private static void _AddOptions(IServiceCollection services)
     {
-        _AddEnvironmentFilter(services);
+        _AddDocumentServices(services);
 
         if (services.Any(service => service.ServiceType == typeof(IValidator<HeadlessOpenApiOptions>)))
         {
@@ -257,10 +259,13 @@ public static class SetupHeadlessOpenApi
 
     // Registered apart from the options, because ConfigureHeadlessOpenApi registers the validator _AddOptions checks
     // for, and it is the only Headless call an app that builds its documents with the native AddOpenApi() makes.
-    private static void _AddEnvironmentFilter(IServiceCollection services)
+    private static void _AddDocumentServices(IServiceCollection services)
     {
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IPostConfigureOptions<OpenApiOptions>, EnvironmentRestrictionFilter>()
+        );
+        services.TryAddEnumerable(
+            ServiceDescriptor.Transient<IApiDescriptionProvider, EndpointMetadataDescriptionProvider>()
         );
     }
 }

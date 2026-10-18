@@ -85,6 +85,6 @@ internal sealed class TenantCatalogResolution
     /// <summary>Whether the middleware resolves a tenant for the endpoint: it does unless the endpoint opts out.</summary>
     public static bool Resolves(ApiDescription description)
     {
-        return !description.ActionDescriptor.EndpointMetadata.OfType<SkipTenantResolutionAttribute>().Any();
+        return !description.GetEndpointMetadata().OfType<SkipTenantResolutionAttribute>().Any();
     }
 }

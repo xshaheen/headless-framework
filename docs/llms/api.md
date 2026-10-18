@@ -1171,7 +1171,7 @@ public sealed class OrdersController(IOrderService service, IProblemDetailsCreat
 
 #### ETag concurrency
 
-`AddHeadlessMvcEntityTagConcurrency()` emits an `ETag` for successful MVC `ObjectResult` values implementing `IHasEntityTag`. Add `[RequireIfMatch]` to write actions; the filter accepts exactly one strong tag and exposes it through scoped `IIfMatchContext`. Missing tags return 428 with `g:if_match_required`, invalid tags return 400 with `g:if_match_invalid`, and persistence conflicts return 409 with `g:concurrency_failure`.
+`AddHeadlessMvcEntityTagConcurrency()` emits an `ETag` for successful MVC `ObjectResult` values implementing `IHasEntityTag`. Add `[RequireIfMatch]` to write actions, or attach `RequireIfMatchAttribute` to many at once with a `MapControllers().WithMetadata(new RequireIfMatchAttribute())` convention; the filter reads the routed endpoint's metadata, accepts exactly one strong tag and exposes it through scoped `IIfMatchContext`. Missing tags return 428 with `g:if_match_required`, invalid tags return 400 with `g:if_match_invalid`, and persistence conflicts return 409 with `g:concurrency_failure`.
 
 Use `AddHeadlessMvcEntityTagConcurrency(options => ...)` to apply API-wide representation validation after the strong tag is parsed. For PostgreSQL `xmin`, set `options.IfMatchValidator = static tag => tag.TryGetUInt32(out _)`. The same option is available for Minimal APIs.
 

@@ -20,7 +20,7 @@ internal sealed class IfMatchTransformer : IOpenApiOperationTransformer
         CancellationToken cancellationToken
     )
     {
-        if (!context.Description.ActionDescriptor.EndpointMetadata.OfType<RequireIfMatchAttribute>().Any())
+        if (!context.Description.GetEndpointMetadata().OfType<RequireIfMatchAttribute>().Any())
         {
             return Task.CompletedTask;
         }

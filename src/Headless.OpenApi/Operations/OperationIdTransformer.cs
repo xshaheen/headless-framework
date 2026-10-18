@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Routing;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.OpenApi;
 
 namespace Headless.OpenApi;
@@ -13,9 +14,14 @@ namespace Headless.OpenApi;
 /// <remarks>
 /// The native generator sets an id only from a route or endpoint name. This fills the rest: an MVC action gets the
 /// name of its HTTP method attribute when one is set, else <c>{Controller}_{Action}</c> without an <c>Async</c>
-/// suffix; an unnamed Minimal API endpoint gets its HTTP method followed by the literal text of its path segments
-/// (<c>GET /orders/{id}/items</c> becomes <c>GetOrdersItems</c>, <c>GET /v{version}/things</c> becomes
-/// <c>GetVThings</c>). Duplicates are numbered once the document is complete.
+/// suffix; an unnamed Minimal API endpoint gets its HTTP method followed by its path segments. A literal segment
+/// contributes its words, and a segment that is only a parameter contributes <c>By</c> and the parameter name, without
+/// its constraint, default, optional, or catch-all markers: <c>GET /orders/{orderId:guid}/items/{itemId?}</c> becomes
+/// <c>GetOrdersByOrderIdItemsByItemId</c>. A parameter that shares a segment with literal text contributes nothing, so
+/// <c>GET /v{version}/things/{id}</c> becomes <c>GetVThingsById</c>: such a parameter is a prefix every operation of a
+/// group shares (an API version, a culture), and naming it would lengthen every id without telling two apart, while a
+/// whole-segment parameter is what separates <c>GetThingsById</c> from the <c>GetThings</c> list. Duplicates are
+/// numbered once the document is complete, as a last resort.
 /// </remarks>
 internal sealed class OperationIdTransformer : IOpenApiOperationTransformer
 {
@@ -37,7 +43,7 @@ internal sealed class OperationIdTransformer : IOpenApiOperationTransformer
         operation.OperationId = description.ActionDescriptor is ControllerActionDescriptor action
             ? _GetHttpAttributeName(action, description.HttpMethod)
                 ?? $"{action.ControllerName}_{_TrimAsyncSuffix(action.ActionName)}"
-            : description.ActionDescriptor.EndpointMetadata.OfType<IRouteNameMetadata>().FirstOrDefault()?.RouteName
+            : description.GetEndpointMetadata().OfType<IRouteNameMetadata>().FirstOrDefault()?.RouteName
                 ?? _FromRoute(description.HttpMethod, description.RelativePath);
 
         return Task.CompletedTask;
@@ -64,19 +70,61 @@ internal sealed class OperationIdTransformer : IOpenApiOperationTransformer
         var builder = new StringBuilder();
         _AppendPascal(builder, (httpMethod ?? "Get").ToLowerInvariant());
 
-        foreach (var segment in (relativePath ?? string.Empty).Split(['/', '\\']))
+        foreach (var segment in _ParseSegments(relativePath))
         {
-            // A parameter can share a segment with literal text (v{version:apiVersion}); only the literal names it.
-            var parameterStart = segment.IndexOfAny(['{', '[']);
-            var literal = parameterStart < 0 ? segment : segment[..parameterStart];
+            var literalStart = builder.Length;
 
-            foreach (var word in literal.Split(_WordSeparators, StringSplitOptions.RemoveEmptyEntries))
+            foreach (var literal in segment.Parts.OfType<RoutePatternLiteralPart>())
             {
-                _AppendPascal(builder, word);
+                _AppendWords(builder, literal.Content);
+            }
+
+            if (builder.Length > literalStart)
+            {
+                continue;
+            }
+
+            foreach (var parameter in segment.Parts.OfType<RoutePatternParameterPart>())
+            {
+                builder.Append("By");
+                _AppendWords(builder, parameter.Name);
             }
         }
 
         return builder.ToString();
+    }
+
+    private static IReadOnlyList<RoutePatternPathSegment> _ParseSegments(string? relativePath)
+    {
+        if (string.IsNullOrEmpty(relativePath))
+        {
+            return [];
+        }
+
+        try
+        {
+            return RoutePatternFactory.Parse(relativePath).PathSegments;
+        }
+        catch (RoutePatternException)
+        {
+            // The path came from a route pattern, so this only guards a hand-built description; its literal
+            // segments still name the operation.
+            return
+            [
+                .. relativePath
+                    .Split('/', StringSplitOptions.RemoveEmptyEntries)
+                    .Where(segment => segment.IndexOfAny(['{', '}']) < 0)
+                    .Select(segment => RoutePatternFactory.Segment(RoutePatternFactory.LiteralPart(segment))),
+            ];
+        }
+    }
+
+    private static void _AppendWords(StringBuilder builder, string text)
+    {
+        foreach (var word in text.Split(_WordSeparators, StringSplitOptions.RemoveEmptyEntries))
+        {
+            _AppendPascal(builder, word);
+        }
     }
 
     private static void _AppendPascal(StringBuilder builder, string word)

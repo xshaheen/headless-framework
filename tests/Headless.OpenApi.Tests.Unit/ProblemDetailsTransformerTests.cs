@@ -3,6 +3,9 @@
 using System.Text.Json.Nodes;
 using Headless.OpenApi;
 using Headless.Testing.Tests;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
@@ -255,4 +258,46 @@ public sealed class ProblemDetailsTransformerTests : TestBase
         var expected = JsonNode.Parse(expectedExample);
         JsonNode.DeepEquals(example, expected).Should().BeTrue($"the {status} example is {example?.ToJsonString()}");
     }
+
+    [Fact]
+    public async Task should_keep_a_problem_type_the_endpoint_declared_and_type_the_generic_ones()
+    {
+        var document = await OpenApiTestHost.GetDocumentAsync(
+            builder => builder.Services.AddHeadlessOpenApi(),
+            app =>
+                app.MapPost("/reservations", () => TypedResults.NoContent())
+                    .Produces<SeatTakenProblem>(StatusCodes.Status409Conflict, "application/problem+json")
+                    .ProducesProblem(StatusCodes.Status404NotFound)
+                    .AllowAnonymous(),
+            "v1",
+            AbortToken
+        );
+
+        var responses = document.Operation("/reservations", "post")["responses"]!;
+
+        responses["409"]!
+            ["content"]
+            .ShouldBeJson(
+                """
+                {
+                  "application/problem+json": {
+                    "schema": { "$ref": "#/components/schemas/SeatTakenProblem" }
+                  }
+                }
+                """
+            );
+        document.Schema("SeatTakenProblem")["properties"]!["seat"].Should().NotBeNull();
+
+        var notFound = responses["404"]!["content"]!["application/problem+json"]!;
+        ((string?)notFound["schema"]!["$ref"]).Should().Be("#/components/schemas/EntityNotFoundProblemDetails");
+        notFound["example"].Should().NotBeNull();
+    }
+}
+
+/// <summary>A problem body an endpoint writes itself, which the document must not replace.</summary>
+public sealed class SeatTakenProblem
+{
+    public required string Type { get; init; }
+
+    public required string Seat { get; init; }
 }

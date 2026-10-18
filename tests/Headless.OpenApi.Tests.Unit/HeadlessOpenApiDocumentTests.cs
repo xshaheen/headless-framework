@@ -6,6 +6,8 @@ using Headless.OpenApi;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -152,11 +154,64 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         ((string?)document.Operation("/api/products", "get")["operationId"]).Should().Be("ListProducts");
         ((string?)document.Operation("/api/products/{id}", "delete")["operationId"]).Should().Be("Products_Delete");
         ((string?)document.Operation("/orders/{id}", "get")["operationId"]).Should().Be("GetOrder");
-        ((string?)document.Operation("/unnamed/items/{id}", "get")["operationId"]).Should().Be("GetUnnamedItems");
+        ((string?)document.Operation("/unnamed/items/{id}", "get")["operationId"]).Should().Be("GetUnnamedItemsById");
         // A parameter sharing a segment with literal text contributes nothing, so no brace reaches the id.
         ((string?)document.Operation("/v{version}/things", "get")["operationId"])
             .Should()
             .Be("GetVThings");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_tell_a_list_from_a_get_by_id_whatever_the_mapping_order(bool mapByIdFirst)
+    {
+        var document = await OpenApiTestHost.GetDocumentAsync(
+            builder => builder.Services.AddHeadlessOpenApi(),
+            app =>
+            {
+                if (mapByIdFirst)
+                {
+                    _MapThingById(app);
+                    _MapThings(app);
+                }
+                else
+                {
+                    _MapThings(app);
+                    _MapThingById(app);
+                }
+
+                app.MapGet(
+                        "/orders/{orderId:guid}/items/{itemId?}",
+                        (Guid orderId, string? itemId) => TypedResults.Ok()
+                    )
+                    .AllowAnonymous();
+                app.MapGet("/files/{**path}", (string path) => TypedResults.Ok(path)).AllowAnonymous();
+                app.MapGet("/pages/{index:int=1}", (int index) => TypedResults.Ok(index)).AllowAnonymous();
+            },
+            "v1",
+            AbortToken
+        );
+
+        var ids = document["paths"]!
+            .AsObject()
+            .SelectMany(path => path.Value!.AsObject().Select(operation => (string?)operation.Value!["operationId"]))
+            .ToList();
+
+        ids.Should()
+            .BeEquivalentTo(
+                "GetVThings",
+                "GetVThingsById",
+                "GetOrdersByOrderIdItemsByItemId",
+                "GetFilesByPath",
+                "GetPagesByIndex"
+            );
+
+        static void _MapThings(WebApplication app) =>
+            app.MapGet("/v{version}/things", (string version) => TypedResults.Ok(version)).AllowAnonymous();
+
+        static void _MapThingById(WebApplication app) =>
+            app.MapGet("/v{version}/things/{id:int}", (string version, int id) => TypedResults.Ok(id)).AllowAnonymous();
     }
 
     [Fact]
@@ -725,6 +780,61 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
     }
 
     [Fact]
+    public async Task should_document_metadata_that_controller_conventions_attach()
+    {
+        var document = await OpenApiTestHost.GetDocumentAsync(
+            builder =>
+            {
+                builder
+                    .Services.AddControllers()
+                    .ConfigureApplicationPartManager(manager =>
+                        manager.FeatureProviders.Add(new SingleControllerFeatureProvider(typeof(TransfersController)))
+                    );
+                builder.Services.AddHeadlessOpenApi();
+            },
+            // MVC's API Explorer reads the action descriptor, which never sees these conventions.
+            app => app.MapControllers().RequireIdempotencyKey().RequireAuthorization(),
+            "v1",
+            AbortToken
+        );
+
+        var post = document.Operation("/mvc/transfers", "post");
+        post["parameters"]
+            .ShouldBeJson(
+                """
+                [
+                  {
+                    "name": "Idempotency-Key",
+                    "in": "header",
+                    "description": "A client-generated key, unique per operation and at most 255 characters, that makes retrying the request safe: a retry with the same key and body replays the first response instead of running the operation again.",
+                    "required": true,
+                    "schema": { "type": "string" }
+                  }
+                ]
+                """
+            );
+        _ResponseCodes(post).Should().BeEquivalentTo(["204", "400", "401", "409", "413", "422"]);
+        post["responses"]!["204"]!
+            ["headers"]
+            .ShouldBeJson(
+                """
+                {
+                  "Idempotent-Replayed": {
+                    "description": "true when the response is the stored response of an earlier request with the same key, replayed instead of running the operation again.",
+                    "schema": { "type": "string" }
+                  }
+                }
+                """
+            );
+        post["security"].ShouldBeJson("""[{ "Bearer": [] }]""");
+
+        // GET is never an idempotency method, so only the authorization convention shows.
+        var get = document.Operation("/mvc/transfers", "get");
+        get["parameters"].Should().BeNull();
+        _ResponseCodes(get).Should().BeEquivalentTo(["200", "401"]);
+    }
+
+    [Fact]
     public async Task should_follow_the_endpoint_idempotency_overrides()
     {
         var document = await _GetDocumentAsync();
@@ -825,4 +935,16 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
 
     private static string? _ProblemSchemaRef(JsonNode response) =>
         (string?)response["content"]?["application/problem+json"]?["schema"]?["$ref"];
+}
+
+[NonController]
+[ApiController]
+[Route("mvc/transfers")]
+public sealed class TransfersController : ControllerBase
+{
+    [HttpPost]
+    public NoContent Post() => TypedResults.NoContent();
+
+    [HttpGet]
+    public Ok<string> Get() => TypedResults.Ok("transfers");
 }

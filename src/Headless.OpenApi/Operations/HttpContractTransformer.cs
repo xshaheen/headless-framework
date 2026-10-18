@@ -24,7 +24,7 @@ internal sealed class HttpContractTransformer : IOpenApiOperationTransformer
         CancellationToken cancellationToken
     )
     {
-        foreach (var contract in context.Description.ActionDescriptor.EndpointMetadata.OfType<HttpContractMetadata>())
+        foreach (var contract in context.Description.GetEndpointMetadata().OfType<HttpContractMetadata>())
         {
             Apply(operation, contract);
         }

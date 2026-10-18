@@ -57,10 +57,18 @@ public sealed class OperationIdTransformerTests : TestBase
     }
 
     [Theory]
-    [InlineData("POST", "orders/{id}/line-items", "PostOrdersLineItems")]
+    [InlineData("POST", "orders/{id}/line-items", "PostOrdersByIdLineItems")]
     [InlineData("DELETE", "orders", "DeleteOrders")]
+    [InlineData("GET", "things/{id:guid}", "GetThingsById")]
+    [InlineData("GET", "things/{id?}", "GetThingsById")]
+    [InlineData("GET", "things/{id:int=5}", "GetThingsById")]
+    [InlineData("GET", "files/{**file-path}", "GetFilesByFilePath")]
+    [InlineData("GET", "files/{*path}", "GetFilesByPath")]
+    [InlineData("GET", "v{version:apiVersion}/things", "GetVThings")]
+    [InlineData("GET", "reports/{year}-{month}", "GetReportsByYearByMonth")]
+    [InlineData("GET", "orders/{id", "GetOrders")]
     [InlineData(null, null, "Get")]
-    public async Task should_name_an_unnamed_endpoint_after_its_method_and_literal_path(
+    public async Task should_name_an_unnamed_endpoint_after_its_method_and_path(
         string? httpMethod,
         string? relativePath,
         string expectedId

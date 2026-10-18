@@ -28,7 +28,7 @@ internal sealed class RateLimitingResponseTransformer : IOpenApiOperationTransfo
         CancellationToken cancellationToken
     )
     {
-        var metadata = context.Description.ActionDescriptor.EndpointMetadata;
+        var metadata = context.Description.GetEndpointMetadata();
 
         if (metadata.OfType<DisableRateLimitingAttribute>().Any())
         {

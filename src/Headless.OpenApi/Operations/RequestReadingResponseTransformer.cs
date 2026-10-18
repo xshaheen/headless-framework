@@ -118,7 +118,7 @@ internal sealed class RequestReadingResponseTransformer : IOpenApiOperationTrans
     // parameter turns validation off.
     private static AntiforgeryOptions? _GetAntiforgeryOptions(ApiDescription description, IServiceProvider services)
     {
-        var metadata = description.ActionDescriptor.EndpointMetadata.OfType<IAntiforgeryMetadata>().LastOrDefault();
+        var metadata = description.GetEndpointMetadata().OfType<IAntiforgeryMetadata>().LastOrDefault();
 
         if (metadata is not { RequiresValidation: true } || services.GetService<IAntiforgery>() is null)
         {
@@ -131,9 +131,7 @@ internal sealed class RequestReadingResponseTransformer : IOpenApiOperationTrans
     // False when the endpoint lifts the limit; otherwise the endpoint's own limit, or null when the server's applies.
     private static bool _HasBodySizeLimit(ApiDescription description, out long? limit)
     {
-        var metadata = description
-            .ActionDescriptor.EndpointMetadata.OfType<IRequestSizeLimitMetadata>()
-            .LastOrDefault();
+        var metadata = description.GetEndpointMetadata().OfType<IRequestSizeLimitMetadata>().LastOrDefault();
         limit = metadata?.MaxRequestBodySize;
 
         return metadata is null || limit is not null;

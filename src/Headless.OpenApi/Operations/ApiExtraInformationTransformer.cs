@@ -48,7 +48,7 @@ internal sealed class ApiExtraInformationTransformer : IOpenApiOperationTransfor
 
     private static bool _IsDeprecated(ApiDescription description)
     {
-        var metadata = description.ActionDescriptor.EndpointMetadata;
+        var metadata = description.GetEndpointMetadata();
 
         if (metadata.OfType<ObsoleteAttribute>().Any())
         {

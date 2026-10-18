@@ -23,7 +23,7 @@ internal static class EndpointAuthorization
     /// <summary>Whether the endpoint carries <see cref="IAllowAnonymous"/>, which bypasses every policy.</summary>
     public static bool AllowsAnonymous(ApiDescription description)
     {
-        return description.ActionDescriptor.EndpointMetadata.OfType<IAllowAnonymous>().Any();
+        return description.GetEndpointMetadata().OfType<IAllowAnonymous>().Any();
     }
 
     /// <summary>
@@ -40,7 +40,7 @@ internal static class EndpointAuthorization
 
         // Any policy refuses an anonymous caller with a challenge, so a fallback policy alone means 401.
         return _HasAuthorizationMetadata(description)
-            || description.ActionDescriptor.EndpointMetadata.OfType<IAuthorizationRequirementData>().Any()
+            || description.GetEndpointMetadata().OfType<IAuthorizationRequirementData>().Any()
             || _GetAuthorizationOptions(services).FallbackPolicy is not null
             || _GetFilterRequirements(description).OfType<DenyAnonymousAuthorizationRequirement>().Any();
     }
@@ -57,7 +57,7 @@ internal static class EndpointAuthorization
             return false;
         }
 
-        var metadata = description.ActionDescriptor.EndpointMetadata;
+        var metadata = description.GetEndpointMetadata();
 
         if (metadata.OfType<IAuthorizeData>().Any(data => data.Policy is not null || data.Roles is not null))
         {
@@ -89,9 +89,9 @@ internal static class EndpointAuthorization
         }
 
         // The later of the two attributes wins, as it does in TenantRequirementHandler.
-        var tenancy = description.ActionDescriptor.EndpointMetadata.LastOrDefault(item =>
-            item is RequireTenantAttribute or AllowMissingTenantAttribute
-        );
+        var tenancy = description
+            .GetEndpointMetadata()
+            .LastOrDefault(item => item is RequireTenantAttribute or AllowMissingTenantAttribute);
 
         return tenancy switch
         {
@@ -107,7 +107,8 @@ internal static class EndpointAuthorization
         return
         [
             .. description
-                .ActionDescriptor.EndpointMetadata.OfType<IAuthorizeData>()
+                .GetEndpointMetadata()
+                .OfType<IAuthorizeData>()
                 .Where(data => data.Roles is not null)
                 .SelectMany(data =>
                     data.Roles!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -118,7 +119,7 @@ internal static class EndpointAuthorization
 
     private static bool _HasAuthorizationMetadata(ApiDescription description)
     {
-        var metadata = description.ActionDescriptor.EndpointMetadata;
+        var metadata = description.GetEndpointMetadata();
 
         return metadata.OfType<IAuthorizeData>().Any() || metadata.OfType<AuthorizationPolicy>().Any();
     }
@@ -128,7 +129,7 @@ internal static class EndpointAuthorization
         IServiceProvider services
     )
     {
-        var metadata = description.ActionDescriptor.EndpointMetadata;
+        var metadata = description.GetEndpointMetadata();
         var options = _GetAuthorizationOptions(services);
         var requirements = _GetFilterRequirements(description)
             .Concat(metadata.OfType<AuthorizationPolicy>().SelectMany(policy => policy.Requirements))

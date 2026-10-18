@@ -22,8 +22,10 @@ namespace Headless.OpenApi;
 /// <see cref="DescribeAsync"/>. The problem types are registered as shared components, so every operation
 /// references one schema per status. A 400 the endpoint declared as <see cref="HttpValidationProblemDetails"/> gets
 /// <see cref="BadRequestValidationProblemDetails"/>, the shape the validation filter writes. Other media types the
-/// endpoint declared for the response keep their schema. The examples use the camelCase member names of the Headless web
-/// JSON options; a test checks each one against its schema.
+/// endpoint declared for the response keep their schema, and so does an <c>application/problem+json</c> body the endpoint
+/// declared with its own problem type rather than <see cref="Microsoft.AspNetCore.Mvc.ProblemDetails"/> or
+/// <see cref="HttpValidationProblemDetails"/>. The examples use the camelCase member names of the Headless web JSON
+/// options; a test checks each one against its schema.
 /// </remarks>
 internal sealed class ProblemDetailsTransformer : IOpenApiOperationTransformer
 {
@@ -74,6 +76,19 @@ internal sealed class ProblemDetailsTransformer : IOpenApiOperationTransformer
             problem = _ValidationProblem;
         }
 
+        var content = response.Content ??= new Dictionary<string, OpenApiMediaType>(StringComparer.Ordinal);
+
+        if (
+            content.TryGetValue(ContentTypes.Applications.ProblemJson, out var declared)
+            && declared.Schema is not null
+            && _DeclaresOwnProblemType(context, statusCode, problem.SchemaType)
+        )
+        {
+            _AddRetryAfterHeader(response, statusCode);
+
+            return;
+        }
+
         IOpenApiSchema schema = await context.GetOrCreateSchemaAsync(
             problem.SchemaType,
             parameterDescription: null,
@@ -85,7 +100,6 @@ internal sealed class ProblemDetailsTransformer : IOpenApiOperationTransformer
             schema = OpenApiSchemaComponents.Resolve(document, schema);
         }
 
-        var content = response.Content ??= new Dictionary<string, OpenApiMediaType>(StringComparer.Ordinal);
         content.TryAdd(ContentTypes.Applications.ProblemJson, new OpenApiMediaType());
 
         var mediaType = content[ContentTypes.Applications.ProblemJson];
@@ -93,15 +107,30 @@ internal sealed class ProblemDetailsTransformer : IOpenApiOperationTransformer
         // A JSON node belongs to one parent, so every response gets its own copy.
         mediaType.Example = problem.Example.DeepClone();
 
-        switch (statusCode)
-        {
-            case OpenApiStatusCodes.TooManyRequests:
-                _AddRetryAfterHeader(response, required: true);
-                break;
-            case OpenApiStatusCodes.ServiceUnavailable:
-                _AddRetryAfterHeader(response, required: false);
-                break;
-        }
+        _AddRetryAfterHeader(response, statusCode);
+    }
+
+    // The Headless shape replaces only the generic problem types an endpoint declares by default (ProducesProblem(),
+    // ProducesValidationProblem(), [ProducesResponseType<ProblemDetails>]) and the Headless type itself. A problem type
+    // the endpoint chose describes the body it writes, so its schema and example stay.
+    private static bool _DeclaresOwnProblemType(
+        OpenApiOperationTransformerContext context,
+        string statusCode,
+        Type replacement
+    )
+    {
+        return context.Description.SupportedResponseTypes.Any(responseType =>
+            string.Equals(
+                responseType.StatusCode.ToString(CultureInfo.InvariantCulture),
+                statusCode,
+                StringComparison.Ordinal
+            )
+            && responseType.Type is { } type
+            && type != typeof(void)
+            && type != typeof(Microsoft.AspNetCore.Mvc.ProblemDetails)
+            && type != typeof(HttpValidationProblemDetails)
+            && type != replacement
+        );
     }
 
     // ProducesValidationProblem() and the AddValidation() filter declare the native validation problem, whose errors are
@@ -117,8 +146,22 @@ internal sealed class ProblemDetailsTransformer : IOpenApiOperationTransformer
 
     // Both writers of a 429 (the rate limiter rejection and TooManyRequestsException) always send the header; a 503
     // sends it only when the server knows when to retry.
-    private static void _AddRetryAfterHeader(OpenApiResponse response, bool required)
+    private static void _AddRetryAfterHeader(OpenApiResponse response, string statusCode)
     {
+        bool required;
+
+        switch (statusCode)
+        {
+            case OpenApiStatusCodes.TooManyRequests:
+                required = true;
+                break;
+            case OpenApiStatusCodes.ServiceUnavailable:
+                required = false;
+                break;
+            default:
+                return;
+        }
+
         var headers = response.Headers ??= new Dictionary<string, IOpenApiHeader>(StringComparer.OrdinalIgnoreCase);
 
         if (headers.Keys.Any(name => string.Equals(name, _RetryAfterHeader, StringComparison.OrdinalIgnoreCase)))

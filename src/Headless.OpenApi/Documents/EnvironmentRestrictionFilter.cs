@@ -38,7 +38,8 @@ internal sealed class EnvironmentRestrictionFilter(IServiceProvider services) : 
     private static bool _IsAvailable(ApiDescription description, IHostEnvironment environment)
     {
         return description
-            .ActionDescriptor.EndpointMetadata.OfType<IEnvironmentRestrictionMetadata>()
+            .GetEndpointMetadata()
+            .OfType<IEnvironmentRestrictionMetadata>()
             .All(restriction => restriction.IsAvailableIn(environment));
     }
 }
