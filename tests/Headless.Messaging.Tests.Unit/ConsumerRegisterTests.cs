@@ -1080,7 +1080,8 @@ public sealed class ConsumerRegisterTests : TestBase
         IDispatcher Dispatcher,
         RecordingDataStorage Storage,
         Headless.Messaging.IMessageSerializer Serializer,
-        ServiceProvider Provider
+        ServiceProvider Provider,
+        FakeTimeProvider BackoffClock
     ) : IAsyncDisposable
     {
         public async ValueTask DisposeAsync()
@@ -1116,6 +1117,11 @@ public sealed class ConsumerRegisterTests : TestBase
         )> Admissions { get; } = [];
 
         public List<Message> DispatchedOrigins { get; } = [];
+
+        private int _admissionFailuresLeft;
+
+        /// <summary>Fails the next <paramref name="count"/> inbox admission writes, as a store outage would.</summary>
+        public void FailNextAdmissions(int count) => Volatile.Write(ref _admissionFailuresLeft, count);
 
         /// <summary>When set, the admitted-inbox lookup fails with it instead of reaching the storage.</summary>
         public Exception? AdmissionLookupFailure { get; set; }
@@ -1171,6 +1177,17 @@ public sealed class ConsumerRegisterTests : TestBase
             )
             {
                 Admissions.Add(((string)args[0]!, (string)args[1]!, (string)args[2]!, (MediumMessage)args[3]!));
+
+                if (Interlocked.Decrement(ref _admissionFailuresLeft) >= 0)
+                {
+                    return new ValueTask<Headless.Messaging.Persistence.InboxAdmissionResult>(
+                        Task.FromException<Headless.Messaging.Persistence.InboxAdmissionResult>(
+                            new TimeoutException("store unavailable")
+                        )
+                    );
+                }
+
+                Interlocked.Exchange(ref _admissionFailuresLeft, 0);
             }
 
             if (
@@ -1303,7 +1320,8 @@ public sealed class ConsumerRegisterTests : TestBase
         MessageLane lane = MessageLane.Bus,
         bool queueResponder = false,
         bool nativeDeadLetter = false,
-        bool deadLetterThrows = false
+        bool deadLetterThrows = false,
+        int admissionFailures = 0
     )
     {
         await using var client = new InboxConsumerClient
@@ -1418,6 +1436,9 @@ public sealed class ConsumerRegisterTests : TestBase
                 : null
         );
 
+        recorder.FailNextAdmissions(admissionFailures);
+        var backoffClock = _UseFakeBackoffClock(register);
+
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = messageId,
@@ -1430,11 +1451,11 @@ public sealed class ConsumerRegisterTests : TestBase
 
         var transport = new TransportMessage(headers, body);
 
-        await client.OnMessageCallback!(transport, null);
+        await _DeliverAsync(client, transport, backoffClock);
 
         recorder.DispatchedOrigins.AddRange(dispatchedOrigins);
 
-        return new ReceiveRingTestRun(client, dispatcher, recorder, serializer, provider);
+        return new ReceiveRingTestRun(client, dispatcher, recorder, serializer, provider, backoffClock);
     }
 
     [Fact]
@@ -2688,6 +2709,166 @@ public sealed class ConsumerRegisterTests : TestBase
         omittedRow.Origin.Value.Should().BeNull("far past the cap the body is omitted entirely");
     }
 
+    // --- Inbox admission back-off ------------------------------------------------------------------------
+
+    [Fact]
+    public async Task inbox_admission_retries_a_failing_store_write_before_the_delivery_is_settled()
+    {
+        // when: the store fails twice, inside the in-process retry budget
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "admission-blip",
+            "{}"u8.ToArray(),
+            admissionFailures: 2
+        );
+
+        // then: the third write wins, so the broker never sees the blip
+        run.Storage.Admissions.Should().HaveCount(3);
+        run.Client.CommitCount.Should().Be(1);
+        run.Client.RejectCount.Should().Be(0);
+        run.Storage.DispatchedOrigins.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task inbox_admission_hands_the_delivery_back_with_a_delay_when_the_store_stays_down()
+    {
+        // when: every write of the first try and its retries fails
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "admission-outage",
+            "{}"u8.ToArray(),
+            admissionFailures: 1 + RedeliveryBackoff.AdmissionRetries
+        );
+
+        // then: the delivery goes back to the broker, but not for an immediate redelivery
+        run.Storage.Admissions.Should().HaveCount(1 + RedeliveryBackoff.AdmissionRetries);
+        run.Client.CommitCount.Should().Be(0);
+        run.Client.RedeliveryDelays.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeCloseTo(TimeSpan.FromSeconds(0.875), TimeSpan.FromSeconds(0.125));
+        run.Storage.DispatchedOrigins.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task redelivery_delay_grows_while_admissions_keep_failing_and_starts_over_once_one_succeeds()
+    {
+        // given: a first delivery the store could not take in
+        const int failingWrites = 1 + RedeliveryBackoff.AdmissionRetries;
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "admission-escalation-1",
+            "{}"u8.ToArray(),
+            admissionFailures: failingWrites
+        );
+
+        // when: a second delivery fails too, then a third is taken in, then a fourth fails
+        run.Storage.FailNextAdmissions(failingWrites);
+        await _DeliverAsync(run.Client, _ReadyTransport("admission-escalation-2"), run.BackoffClock);
+        await _DeliverAsync(run.Client, _ReadyTransport("admission-escalation-3"), run.BackoffClock);
+        run.Storage.FailNextAdmissions(failingWrites);
+        await _DeliverAsync(run.Client, _ReadyTransport("admission-escalation-4"), run.BackoffClock);
+
+        // then: about 1 s, then about 2 s, then about 1 s again
+        run.Client.RedeliveryDelays.Should().HaveCount(3);
+        var delays = run.Client.RedeliveryDelays.ToArray();
+        delays[0].Should().BeCloseTo(TimeSpan.FromSeconds(0.875), TimeSpan.FromSeconds(0.125));
+        delays[1].Should().BeCloseTo(TimeSpan.FromSeconds(1.75), TimeSpan.FromSeconds(0.25));
+        delays[2].Should().BeCloseTo(TimeSpan.FromSeconds(0.875), TimeSpan.FromSeconds(0.125));
+        run.Client.CommitCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task failed_inbox_admission_reports_to_the_consumer_circuit()
+    {
+        // given
+        var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
+        circuitBreaker.TryAcquireHalfOpenProbe(Arg.Any<string>()).Returns(1L);
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "admission-circuit",
+            "{}"u8.ToArray(),
+            circuitBreaker: circuitBreaker,
+            admissionFailures: 1 + RedeliveryBackoff.AdmissionRetries
+        );
+
+        // then: the failure counts once, and the report owns the probe, so it is not released as well
+        await circuitBreaker
+            .Received(1)
+            .ReportPreHandlerFailureAsync(
+                $"{MessageLane.Bus:D}:{BootstrapReadyConsumer.Identity}",
+                Arg.Any<TimeoutException>(),
+                1L,
+                Arg.Any<CancellationToken>()
+            );
+        circuitBreaker.DidNotReceive().ReleaseHalfOpenProbe(Arg.Any<string>(), Arg.Any<long>());
+        run.Client.RedeliveryDelays.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task delivery_refused_by_a_busy_half_open_probe_is_handed_back_with_a_delay()
+    {
+        // given: the circuit's one half-open probe is already out
+        var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
+        circuitBreaker.TryAcquireHalfOpenProbe(Arg.Any<string>()).Returns((long?)null);
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "probe-busy",
+            "{}"u8.ToArray(),
+            circuitBreaker: circuitBreaker
+        );
+
+        // then
+        run.Storage.Admissions.Should().BeEmpty();
+        run.Client.RedeliveryDelays.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeCloseTo(TimeSpan.FromSeconds(0.875), TimeSpan.FromSeconds(0.125));
+    }
+
+    private static TransportMessage _ReadyTransport(string messageId)
+    {
+        return new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = messageId,
+                [Headers.MessageName] = "ready-messageName",
+            },
+            "{}"u8.ToArray()
+        );
+    }
+
+    /// <summary>
+    /// Replaces the real-time clock the admission retries wait on with a fake one, so a test steps through the back-off
+    /// instead of sleeping.
+    /// </summary>
+    private static FakeTimeProvider _UseFakeBackoffClock(ConsumerRegister register)
+    {
+        var clock = new FakeTimeProvider();
+        typeof(ConsumerRegister)
+            .GetField("_backoffClock", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
+            .SetValue(register, clock);
+
+        return clock;
+    }
+
+    /// <summary>Runs one delivery through the client's callback, advancing the back-off clock until it settles.</summary>
+    private static async Task _DeliverAsync(IConsumerClient client, TransportMessage transport, FakeTimeProvider clock)
+    {
+        var delivery = client.OnMessageCallback!(transport, null);
+        while (!delivery.IsCompleted)
+        {
+            clock.Advance(TimeSpan.FromMilliseconds(250));
+            await Task.Delay(TimeSpan.FromMilliseconds(1), AbortToken);
+        }
+
+        await delivery;
+    }
+
     private ConsumerRegister _CreateRegister()
     {
         // The register is used after the helper returns; its short-lived provider owns no
@@ -3177,6 +3358,15 @@ public sealed class ConsumerRegisterTests : TestBase
         {
             Interlocked.Increment(ref _rejectCount);
             return ValueTask.CompletedTask;
+        }
+
+        public ConcurrentQueue<TimeSpan> RedeliveryDelays { get; } = new();
+
+        // Records the delay the core asked for and rejects at once, like a transport whose broker delays redelivery.
+        public ValueTask RejectAsync(object? sender, TimeSpan redeliveryDelay, CancellationToken cancellationToken)
+        {
+            RedeliveryDelays.Enqueue(redeliveryDelay);
+            return RejectAsync(sender, CancellationToken.None);
         }
 
         public ValueTask DeadLetterAsync(

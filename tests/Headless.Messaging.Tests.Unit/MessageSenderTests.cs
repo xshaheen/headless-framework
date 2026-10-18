@@ -1487,6 +1487,105 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
+    public async Task should_renew_the_lease_while_a_slow_send_runs()
+    {
+        // given: a send that outlasts several renewal intervals
+        var storage = Substitute.For<IDataStorage>();
+        var renewals = 0;
+        storage
+            .RenewPublishLeaseAsync(Arg.Any<MediumMessage>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref renewals);
+                return ValueTask.FromResult(true);
+            });
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                while (Volatile.Read(ref renewals) < 2)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(5), AbortToken);
+                }
+
+                return OperateResult.Success;
+            });
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions { RetryPolicy = { LeaseRenewalInterval = TimeSpan.FromMilliseconds(20) } }
+        );
+
+        // when
+        var result = await sender.SendAsync(_CreateMediumMessage());
+
+        // then: the send kept its row and wrote its success
+        result.Succeeded.Should().BeTrue();
+        await storage
+            .Received(1)
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Succeeded,
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_cancel_the_send_and_write_no_state_when_the_lease_is_lost()
+    {
+        // given: the first renewal finds the lease gone while the broker has not answered
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .RenewPublishLeaseAsync(Arg.Any<MediumMessage>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(false));
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
+                return OperateResult.Success;
+            });
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions { RetryPolicy = { LeaseRenewalInterval = TimeSpan.FromMilliseconds(20) } },
+            new FakeHostApplicationLifetime(AbortToken)
+        );
+
+        // when
+        var result = await sender.SendAsync(_CreateMediumMessage());
+
+        // then: another node may own the row now, so nothing is written to it
+        result.Succeeded.Should().BeFalse();
+        storage
+            .ReceivedCalls()
+            .Select(call => call.GetMethodInfo().Name)
+            .Should()
+            .NotContain(name => name.StartsWith("Change", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task should_issue_single_combined_storage_write_before_fresh_dispatch()
     {
         // given

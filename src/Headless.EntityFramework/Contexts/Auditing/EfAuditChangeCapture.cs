@@ -41,23 +41,9 @@ internal sealed class EfAuditChangeCapture(
         ConcurrentDictionary<Type, bool>
     >.CreateValueCallback _CreateEntityFilterMemo = static _ => new ConcurrentDictionary<Type, bool>();
 
-    private static readonly ConditionalWeakTable<
-        Func<Type, string, bool>,
-        ConcurrentDictionary<(Type Type, string PropertyName), bool>
-    > _PropertyFilterCache = [];
-
-    private static readonly ConditionalWeakTable<
-        Func<Type, string, bool>,
-        ConcurrentDictionary<(Type Type, string PropertyName), bool>
-    >.CreateValueCallback _CreatePropertyFilterMemo = static _ => new ConcurrentDictionary<
-        (Type Type, string PropertyName),
-        bool
-    >();
-
-    // EF metadata annotations are frozen once the model is built, so an entity type's or property's audit
-    // policy is a pure function of the metadata instance. Memoize it on that instance to avoid re-reading up
-    // to three annotations per property per save; the weak table releases the memo when the model is
-    // collected, which matters for the many short-lived models tests and design-time tooling create.
+    // EF metadata annotations are frozen once the model is built, so an entity type's audit policy is a pure
+    // function of the metadata instance. An owned entry resolves its policy from the runtime principal on every save,
+    // so the policy is memoized on that instance; the weak table releases the memo when the model is collected.
     private static readonly ConditionalWeakTable<IEntityType, EntityAuditPolicy> _EntityPolicyCache = [];
 
     private static readonly ConditionalWeakTable<
@@ -67,16 +53,9 @@ internal sealed class EfAuditChangeCapture(
         _FindEntityAuditPolicy(entityType)
     );
 
-    private static readonly ConditionalWeakTable<IProperty, PropertyAuditPolicy> _PropertyPolicyCache = [];
-
-    private static readonly ConditionalWeakTable<
-        IProperty,
-        PropertyAuditPolicy
-    >.CreateValueCallback _CreatePropertyPolicy = static property => new PropertyAuditPolicy(
-        property.FindAnnotation(HeadlessModelAnnotations.AuditLog.PropertyIsSensitive) is { Value: true },
-        property.FindAnnotation(HeadlessModelAnnotations.AuditLog.PropertyIsExcluded) is { Value: true },
-        _GetSensitiveDataStrategy(property)
-    );
+    // Which properties of an entity type are captured, and how, depends only on the frozen model and the options, so it
+    // is resolved once per entity type and options instance instead of per property on every save.
+    private const string _CapturePlanAnnotation = "Headless:AuditLog:CapturePlan";
 
     // Deferred store-generated value resolution, keyed on the produced data object itself so
     // interleaved captures on the same scoped instance (e.g. a domain-event handler saving a
@@ -120,12 +99,14 @@ internal sealed class EfAuditChangeCapture(
 
             try
             {
-                if (!_ShouldAudit(entry, opts))
+                var plan = _GetCapturePlan(entry.Metadata, opts);
+
+                if (!_ShouldAudit(entry, plan, opts))
                 {
                     continue;
                 }
 
-                var data = _CaptureEntry(entry, opts, userId, accountId, tenantId, correlationId, timestamp);
+                var data = _CaptureEntry(entry, plan, opts, userId, accountId, tenantId, correlationId, timestamp);
 
                 if (data is not null)
                 {
@@ -171,6 +152,46 @@ internal sealed class EfAuditChangeCapture(
         }
     }
 
+    /// <inheritdoc />
+    public bool RequiresDeferredResolution(AuditLogEntryData entry)
+    {
+        return _deferredResolutions.TryGetValue(entry, out _);
+    }
+
+    // The identity is final when every property it is built from already holds its real value. A key the store
+    // generates is temporary, or still the CLR default when a database default (not an EF generator) fills it.
+    private static bool _IdentityNeedsStoreValue(EntityEntry entry)
+    {
+        var properties = entry.Metadata.IsOwned()
+            ? entry.Metadata.FindOwnership()!.Properties
+            : entry.Metadata.FindPrimaryKey()?.Properties;
+
+        if (properties is null)
+        {
+            return false;
+        }
+
+        foreach (var metadata in properties)
+        {
+            var property = entry.Property(metadata.Name);
+
+            if (property.IsTemporary)
+            {
+                return true;
+            }
+
+            if (
+                metadata.ValueGenerated.HasFlag(ValueGenerated.OnAdd)
+                && (property.CurrentValue is null || Equals(property.CurrentValue, metadata.ClrType.GetDefaultValue()))
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private void _LogDisabledWarningOnce()
     {
         if (_hasLoggedDisabledWarning)
@@ -182,9 +203,13 @@ internal sealed class EfAuditChangeCapture(
         _logger.LogAuditDisabled();
     }
 
-    private static bool _ShouldAudit(EntityEntry entry, AuditLogOptions opts)
+    private static bool _ShouldAudit(EntityEntry entry, AuditCapturePlan plan, AuditLogOptions opts)
     {
-        var policyEntityType = _GetPolicyEntityType(entry);
+        return plan.IsAudited ?? _ShouldAudit(_GetPolicyEntityType(entry), opts);
+    }
+
+    private static bool _ShouldAudit(IEntityType policyEntityType, AuditLogOptions opts)
+    {
         var policy = _EntityPolicyCache.GetValue(policyEntityType, _CreateEntityPolicy).IsAudited;
 
         if (!(policy ?? opts.AuditByDefault))
@@ -193,6 +218,55 @@ internal sealed class EfAuditChangeCapture(
         }
 
         return !_ShouldExcludeEntity(policyEntityType.ClrType, opts);
+    }
+
+    private static AuditCapturePlan _GetCapturePlan(IEntityType entityType, AuditLogOptions opts)
+    {
+        // An options reload yields a new instance, which builds a new plan; concurrent first saves may each build one.
+        if (
+            entityType.FindRuntimeAnnotationValue(_CapturePlanAnnotation) is AuditCapturePlan plan
+            && ReferenceEquals(plan.Options, opts)
+        )
+        {
+            return plan;
+        }
+
+        plan = _CreateCapturePlan(entityType, opts);
+        entityType.SetRuntimeAnnotation(_CapturePlanAnnotation, plan);
+
+        return plan;
+    }
+
+    private static AuditCapturePlan _CreateCapturePlan(IEntityType entityType, AuditLogOptions opts)
+    {
+        var clrType = entityType.ClrType;
+        var properties = new List<CapturedProperty>();
+
+        foreach (var property in entityType.GetProperties())
+        {
+            var policy = new PropertyAuditPolicy(
+                property.FindAnnotation(HeadlessModelAnnotations.AuditLog.PropertyIsSensitive) is { Value: true },
+                property.FindAnnotation(HeadlessModelAnnotations.AuditLog.PropertyIsExcluded) is { Value: true },
+                _GetSensitiveDataStrategy(property)
+            );
+
+            if (
+                (property.PropertyInfo is null && !policy.IsSensitive) // Unconfigured shadow and field-only properties.
+                || opts.DefaultExcludedProperties.Contains(property.Name)
+                || policy.IsExcluded
+                || opts.PropertyFilter?.Invoke(clrType, property.Name) == true
+            )
+            {
+                continue;
+            }
+
+            properties.Add(new CapturedProperty(property, policy));
+        }
+
+        // An owned type's policy comes from the runtime principal of each entry, so it is not decided here.
+        bool? isAudited = entityType.IsOwned() ? null : _ShouldAudit(entityType, opts);
+
+        return new AuditCapturePlan(opts, isAudited, [.. properties]);
     }
 
     private static IEntityType _GetPolicyEntityType(EntityEntry entry)
@@ -263,22 +337,9 @@ internal sealed class EfAuditChangeCapture(
             .GetOrAdd(clrType, static (type, f) => f(type), filter);
     }
 
-    private static bool _ShouldExcludeProperty(Type clrType, string propertyName, AuditLogOptions opts)
-    {
-        var filter = opts.PropertyFilter;
-
-        if (filter is null)
-        {
-            return false;
-        }
-
-        return _PropertyFilterCache
-            .GetValue(filter, _CreatePropertyFilterMemo)
-            .GetOrAdd((clrType, propertyName), static (key, f) => f(key.Type, key.PropertyName), filter);
-    }
-
     private AuditLogEntryData? _CaptureEntry(
         EntityEntry entry,
+        AuditCapturePlan plan,
         AuditLogOptions opts,
         string? userId,
         string? accountId,
@@ -308,33 +369,10 @@ internal sealed class EfAuditChangeCapture(
         var actionContext = new ActionContext();
         List<TemporaryValuePatch>? temporaryValuePatches = null;
 
-        foreach (var property in entry.Properties)
+        foreach (var (metadata, policy) in plan.Properties)
         {
-            var policy = _PropertyPolicyCache.GetValue(property.Metadata, _CreatePropertyPolicy);
-
-            if (property.Metadata.PropertyInfo is null && !policy.IsSensitive)
-            {
-                continue; // Preserve legacy behavior for unconfigured shadow and field-only properties.
-            }
-
-            var propertyName = property.Metadata.Name;
-
-            // Default framework property exclusion
-            if (opts.DefaultExcludedProperties.Contains(propertyName))
-            {
-                continue;
-            }
-
-            if (policy.IsExcluded)
-            {
-                continue;
-            }
-
-            // Option-based property filter
-            if (_ShouldExcludeProperty(clrType, propertyName, opts))
-            {
-                continue;
-            }
+            var property = entry.Property(metadata);
+            var propertyName = metadata.Name;
 
             _CaptureActionFlags(actionContext, propertyName, property);
 
@@ -407,14 +445,14 @@ internal sealed class EfAuditChangeCapture(
             CreatedAt = timestamp,
         };
 
-        // Created entries need EntityId re-resolution once store-generated keys are assigned;
-        // any entry may additionally carry temporary property values that need patching post-save.
-        if (changeType is AuditChangeType.Created || temporaryValuePatches is not null)
+        // Created entries whose key the store assigns need EntityId re-resolution once it does; a Created entry with a
+        // client-assigned key is already complete. Any entry may additionally carry temporary property values that
+        // need patching post-save.
+        var resolveEntityId = changeType is AuditChangeType.Created && _IdentityNeedsStoreValue(entry);
+
+        if (resolveEntityId || temporaryValuePatches is not null)
         {
-            _deferredResolutions.Add(
-                data,
-                new DeferredEntryResolution(entry, changeType is AuditChangeType.Created, temporaryValuePatches)
-            );
+            _deferredResolutions.Add(data, new DeferredEntryResolution(entry, resolveEntityId, temporaryValuePatches));
         }
 
         return data;
@@ -634,7 +672,16 @@ internal sealed class EfAuditChangeCapture(
     /// <summary>Annotation-derived audit policy for one entity type, memoized on its metadata instance.</summary>
     private sealed record EntityAuditPolicy(bool? IsAudited);
 
-    /// <summary>Annotation-derived audit policy for one property, memoized on its metadata instance.</summary>
+    /// <summary>
+    /// The captured properties of one entity type in declaration order, and whether the type is audited at all, for one
+    /// options instance. <see cref="IsAudited"/> is <see langword="null"/> for an owned type, whose policy comes from
+    /// the runtime principal of each entry.
+    /// </summary>
+    private sealed record AuditCapturePlan(AuditLogOptions Options, bool? IsAudited, CapturedProperty[] Properties);
+
+    private readonly record struct CapturedProperty(IProperty Metadata, PropertyAuditPolicy Policy);
+
+    /// <summary>Annotation-derived audit policy for one property.</summary>
     private sealed record PropertyAuditPolicy(
         bool IsSensitive,
         bool IsExcluded,

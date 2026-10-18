@@ -25,10 +25,10 @@ namespace Headless.UnitOfWork;
 /// so walking innermost-first would reach the socket error and lose the transient signal on the driver exception.
 /// </para>
 /// <para>
-/// <see cref="DbException.IsTransient" /> is only one signal. Npgsql and MySqlConnector override it, so their
+/// <c>DbException.IsTransient</c> is only one signal. Npgsql and MySqlConnector override it, so their
 /// connection, capacity, and lock faults arrive classified. SQL Server's <c>SqlException</c> overrides neither it
 /// nor <see cref="DbException.SqlState" />, which is why the SQL Server half matches on error numbers instead,
-/// over every error the exception carries. <c>Microsoft.Data.Sqlite</c> leaves <see cref="DbException.IsTransient" />
+/// over every error the exception carries. <c>Microsoft.Data.Sqlite</c> leaves <c>DbException.IsTransient</c>
 /// false for a busy or locked database, so its result code is matched too.
 /// </para>
 /// <para>
@@ -59,6 +59,7 @@ public static class RelationalTransientFaults
             return false;
         }
 
+#pragma warning disable RS0030 // False positive: this is the classifier the ban points to, and it reads SQL Server error numbers below.
         return databaseException.IsTransient
             || PostgreSqlTransientFaults.IsTransientSqlState(databaseException.SqlState)
             || (
@@ -66,5 +67,6 @@ public static class RelationalTransientFaults
                 && SqlServerTransientFaults.HasTransientError(databaseException)
             )
             || SqliteTransientFaults.IsTransient(databaseException);
+#pragma warning restore RS0030
     }
 }

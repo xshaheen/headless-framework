@@ -197,11 +197,46 @@ public interface IDataStorage
     );
 
     /// <summary>Atomically reserves the next published delivery attempt under the active lease.</summary>
+    /// <remarks>
+    /// The reservation also slides the lease forward: the store re-stamps <c>LockedUntil</c> to its own clock plus
+    /// <c>RetryPolicy.DispatchTimeout</c> in the same statement, so a row reserved late in a claimed batch still holds a
+    /// full lease when its attempt starts. It applies only while the caller's <c>Owner</c> and <c>LockedUntil</c> still
+    /// match the row and that lease is live by the store's clock. On success the caller's <c>LockedUntil</c>,
+    /// <c>Owner</c>, and inbox attempt fence carry the new lease identity, which every later fenced write uses.
+    /// </remarks>
     ValueTask<bool> ReservePublishAttemptAsync(
         MediumMessage message,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Slides the active lease on a published message forward while its attempt runs, so a send that outlasts
+    /// <c>RetryPolicy.DispatchTimeout</c> keeps its row and is not dispatched a second time by another node.
+    /// </summary>
+    /// <remarks>
+    /// Applies only while the caller's <c>Owner</c> and <c>LockedUntil</c> still match a non-terminal row and that
+    /// lease is live by the store's clock; the store stamps the new deadline from that same clock. On success the
+    /// caller's <c>LockedUntil</c> carries the new lease identity. The default throws
+    /// <see cref="NotSupportedException"/>; the core then keeps the lease it reserved for the attempt.
+    /// </remarks>
+    /// <param name="message">The message whose lease the caller holds.</param>
+    /// <param name="leaseDuration">How long the renewed lease lasts from the store's clock.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>
+    /// <see langword="true"/> when the lease was renewed; <see langword="false"/> when the caller no longer holds it
+    /// (it expired, another node took it, or the row reached a terminal state). The caller must stop the attempt and
+    /// write no state on <see langword="false"/>.
+    /// </returns>
+    /// <exception cref="NotSupportedException">The storage provider does not support lease renewal.</exception>
+    ValueTask<bool> RenewPublishLeaseAsync(
+        MediumMessage message,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken
+    ) =>
+        throw new NotSupportedException(
+            $"Messaging storage provider '{GetType().FullName}' does not support lease renewal."
+        );
 
     /// <summary>
     /// Writes a pre-attempt lease on a published message, setting <c>LockedUntil</c> on the row so
@@ -315,11 +350,42 @@ public interface IDataStorage
     );
 
     /// <summary>Atomically reserves the next received delivery attempt under the active lease.</summary>
+    /// <remarks>
+    /// The reservation also slides the lease forward: the store re-stamps <c>LockedUntil</c> to its own clock plus
+    /// <c>RetryPolicy.DispatchTimeout</c> in the same statement, so a row reserved late in a claimed batch still holds a
+    /// full lease when its attempt starts. It applies only while the caller's <c>Owner</c> and <c>LockedUntil</c> still
+    /// match the row and that lease is live by the store's clock. On success the caller's <c>LockedUntil</c>,
+    /// <c>Owner</c>, and inbox attempt fence carry the new lease identity, which every later fenced write uses.
+    /// </remarks>
     ValueTask<bool> ReserveReceiveAttemptAsync(
         MediumMessage message,
         int originalInlineAttempts,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Slides the active lease on a received message forward while its handler runs, so a handler that outlasts
+    /// <c>RetryPolicy.DispatchTimeout</c> keeps its row and does not run a second time on another node.
+    /// </summary>
+    /// <remarks>
+    /// Same contract as <see cref="RenewPublishLeaseAsync"/>; an inbox row also requires the caller's complete inbox
+    /// attempt fence, and on success that fence carries the new lease identity too.
+    /// </remarks>
+    /// <param name="message">The message whose lease the caller holds.</param>
+    /// <param name="leaseDuration">How long the renewed lease lasts from the store's clock.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>
+    /// <see langword="true"/> when the lease was renewed; <see langword="false"/> when the caller no longer holds it.
+    /// </returns>
+    /// <exception cref="NotSupportedException">The storage provider does not support lease renewal.</exception>
+    ValueTask<bool> RenewReceiveLeaseAsync(
+        MediumMessage message,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken
+    ) =>
+        throw new NotSupportedException(
+            $"Messaging storage provider '{GetType().FullName}' does not support lease renewal."
+        );
 
     /// <summary>
     /// Writes a pre-attempt lease on a received message, setting <c>LockedUntil</c> on the row so

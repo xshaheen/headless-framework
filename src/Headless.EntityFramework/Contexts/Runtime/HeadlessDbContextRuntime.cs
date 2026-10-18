@@ -1,17 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
-using Headless.Domain;
-using Headless.EntityFramework.ChangeTrackers;
-using Headless.EntityFramework.Contexts;
 using Headless.MultiTenancy;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Metadata;
-using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -19,8 +12,8 @@ using Microsoft.Extensions.Options;
 namespace Headless.EntityFramework;
 
 /// <summary>
-/// Per-<see cref="DbContext"/> runtime that wires the navigation-change tracker and the tenant stamp, runs
-/// framework conventions in <c>OnModelCreating</c>, and forwards <c>SaveChanges</c> to the
+/// Per-<see cref="DbContext"/> runtime that wires the tenant stamp, registers the
+/// framework model conventions, and forwards <c>SaveChanges</c> to the
 /// <see cref="IHeadlessSaveChangesPipeline"/> of the context's current service binding.
 /// </summary>
 /// <remarks>
@@ -42,16 +35,7 @@ namespace Headless.EntityFramework;
 /// </remarks>
 internal sealed class HeadlessDbContextRuntime(DbContext db)
 {
-    private static readonly MethodInfo _ConfigureQueryFiltersMethod = typeof(HeadlessDbContextRuntime).GetMethod(
-        nameof(_ConfigureQueryFilters),
-        BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly
-    )!;
-
-    private static readonly Type _DateTimeType = typeof(DateTime);
-    private static readonly Type _NullableDateTimeType = typeof(DateTime?);
-
     private readonly DbContext _db = db;
-    private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker = new();
 
     // Fixed for the instance's life: the options, and so the application provider, never change across leases.
     private IServiceProvider? _applicationServices;
@@ -75,12 +59,31 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     public void AttachChangeTrackerHandlers()
     {
         // Attached in the constructor so EF's pool snapshot captures them and SetLease restores them on every lease;
-        // handlers attached later would be dropped by the next lease. The tenant stamp is always attached and checks
-        // the write-guard option when it fires, because the option is not known until a provider is bound.
-        _db.ChangeTracker.Tracked += _navigationModifiedTracker.ChangeTrackerTracked;
-        _db.ChangeTracker.StateChanged += _navigationModifiedTracker.ChangeTrackerStateChanged;
+        // handlers attached later would be dropped by the next lease. That makes this the one place to decide, and
+        // the decision holds for the instance's life: its options, and so its model and guard setting, never change.
+        if (!_TenantStampCanApply())
+        {
+            return;
+        }
+
         _db.ChangeTracker.Tracking += _OnTracking;
         _db.ChangeTracker.StateChanging += _OnStateChanging;
+    }
+
+    /// <summary>
+    /// Whether the tenant stamp could ever stamp an entity of this context: its model has a tenant-owned type and the
+    /// write guard is on. Every tracked query row and accepted entry otherwise pays for handlers that do nothing.
+    /// </summary>
+    private bool _TenantStampCanApply()
+    {
+        // Reading the model builds it, which calls back into this runtime's ConfigureConventions.
+        if (!HeadlessTenantPlan.ModelHasTenantOwnedTypes(_db.Model))
+        {
+            return false;
+        }
+
+        // Without an application provider the guard setting cannot be read here; the stamp checks it when it fires.
+        return _db.GetApplicationServices()?.GetService<IOptions<TenantGuardOptions>>()?.Value.GuardWrites ?? true;
     }
 
     /// <summary>The ambient tenant, read on every access so a tenant change inside one lease is observed.</summary>
@@ -184,7 +187,6 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
         _pipeline = null;
         _currentTenant = null;
         _guardOptions = null;
-        _navigationModifiedTracker.Clear();
 
         return ownedScope;
     }
@@ -228,17 +230,31 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     private IHeadlessSaveChangesPipeline _GetPipeline() =>
         _pipeline ??= ServiceProvider.GetRequiredService<IHeadlessSaveChangesPipeline>();
 
-    private void _OnTracking(object? sender, EntityTrackingEventArgs e) => _StampTenantOnAdded(e.Entry, e.State);
-
-    private void _OnStateChanging(object? sender, EntityStateChangingEventArgs e) =>
-        _StampTenantOnAdded(e.Entry, e.NewState);
-
-    private void _StampTenantOnAdded(EntityEntry entry, EntityState targetState)
+    // The target state is checked before e.Entry, which allocates an EntityEntry: Tracking fires for every tracked
+    // query row and StateChanging for every accepted entry, almost never for an add.
+    private void _OnTracking(object? sender, EntityTrackingEventArgs e)
     {
+        if (e.State == EntityState.Added)
+        {
+            _StampTenantOnAdded(e.Entry);
+        }
+    }
+
+    private void _OnStateChanging(object? sender, EntityStateChangingEventArgs e)
+    {
+        if (e.NewState == EntityState.Added)
+        {
+            _StampTenantOnAdded(e.Entry);
+        }
+    }
+
+    private void _StampTenantOnAdded(EntityEntry entry)
+    {
+        var plan = HeadlessTenantPlan.For(entry.Metadata);
+
         if (
-            targetState != EntityState.Added
-            || entry.Metadata.IsOwned()
-            || !entry.Metadata.IsTenantOwned()
+            plan.IsOwnedType
+            || !plan.IsTenantOwned
             || !_GetGuardOptions().GuardWrites
             || _SingletonServices().GetRequiredService<ITenantWriteGuardBypass>().IsActive
         )
@@ -246,7 +262,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
             return;
         }
 
-        var property = entry.Property(entry.Metadata.GetTenantPropertyName()!);
+        var property = entry.Property(plan.TenantProperty!);
         var suppliedTenantId = (string?)property.CurrentValue;
         if (!string.IsNullOrWhiteSpace(suppliedTenantId))
         {
@@ -275,30 +291,14 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
         CancellationToken cancellationToken
     )
     {
-        try
-        {
-            return await _GetPipeline()
-                .SaveChangesAsync(_db, baseSaveChangesAsync, acceptAllChangesOnSuccess, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            // Run cleanup on both success and failure paths so a thrown CrossTenantWriteException
-            // (or any other pipeline failure) does not leak stale modified-entry tracking state.
-            _navigationModifiedTracker.RemoveModifiedEntityEntries();
-        }
+        return await _GetPipeline()
+            .SaveChangesAsync(_db, baseSaveChangesAsync, acceptAllChangesOnSuccess, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public int SaveChanges(Func<bool, int> baseSaveChanges, bool acceptAllChangesOnSuccess)
     {
-        try
-        {
-            return _GetPipeline().SaveChanges(_db, baseSaveChanges, acceptAllChangesOnSuccess);
-        }
-        finally
-        {
-            _navigationModifiedTracker.RemoveModifiedEntityEntries();
-        }
+        return _GetPipeline().SaveChanges(_db, baseSaveChanges, acceptAllChangesOnSuccess);
     }
 
     /// <summary>
@@ -356,102 +356,8 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     public void ConfigureConventions(ModelConfigurationBuilder builder)
     {
         builder.AddBuildingBlocksPrimitivesConvertersMappings();
+        // The entity mapping runs first: the tenant convention validates the finished mapping of each root.
+        builder.Conventions.Add(_ => new HeadlessEntityModelConvention());
         builder.Conventions.Add(_ => new HeadlessTenantModelConvention(_db));
-    }
-
-    public static void ProcessModelCreating(ModelBuilder builder)
-    {
-        _ConfigureEntityConventions(builder);
-        _ConfigureDateTimeValueConverters(builder);
-        _ConfigureQueryFiltersForModel(builder);
-    }
-
-    private static void _ConfigureEntityConventions(ModelBuilder modelBuilder)
-    {
-        foreach (var type in modelBuilder.Model.GetEntityTypes())
-        {
-            if (!type.IsOwned() && type.ClrType.IsAssignableTo<IEntity>())
-            {
-                modelBuilder.Entity(type.ClrType).ConfigureHeadlessConvention();
-                // Opt Guid keys into client-side generation: ValueGenerated.Never plus the framework's
-                // IGuidGenerator-backed value generator, which EF Core runs at add time. Only applied here, inside
-                // the HeadlessDbContext runtime, so it stays a deliberate framework choice — not in the general
-                // ConfigureHeadlessConvention bundle, which also runs in plain consumer DbContexts that may want
-                // store-generated keys.
-                type.ConfigureHeadlessValueGenerated();
-            }
-        }
-    }
-
-    private static void _ConfigureDateTimeValueConverters(ModelBuilder modelBuilder)
-    {
-        foreach (var type in modelBuilder.Model.GetEntityTypes())
-        {
-            if (type.BaseType is null && !type.IsOwned())
-            {
-                _ConfigureDateTimeValueConverters(modelBuilder, type);
-            }
-        }
-    }
-
-    private static void _ConfigureDateTimeValueConverters(ModelBuilder modelBuilder, IMutableEntityType type)
-    {
-        var properties = type.GetProperties()
-            .Where(property =>
-                property.PropertyInfo is { CanWrite: true }
-                && (
-                    property.PropertyInfo.PropertyType == _DateTimeType
-                    || property.PropertyInfo.PropertyType == _NullableDateTimeType
-                )
-            )
-            .ToList();
-
-        if (properties.Count == 0)
-        {
-            return;
-        }
-
-        var dateTimeConverter = new NormalizeDateTimeValueConverter();
-        var nullableDateTimeConverter = new NullableNormalizeDateTimeValueConverter();
-
-        foreach (var property in properties)
-        {
-            ValueConverter converter =
-                property.ClrType == _DateTimeType ? dateTimeConverter : nullableDateTimeConverter;
-            modelBuilder.Entity(type.ClrType).Property(property.Name).HasConversion(converter);
-        }
-    }
-
-    private static void _ConfigureQueryFiltersForModel(ModelBuilder modelBuilder)
-    {
-        foreach (var type in modelBuilder.Model.GetEntityTypes())
-        {
-            if (type.BaseType is null && !type.IsOwned() && type.ClrType.IsAssignableTo<IEntity>())
-            {
-                _ConfigureQueryFiltersMethod.MakeGenericMethod(type.ClrType).Invoke(null, [modelBuilder]);
-            }
-        }
-    }
-
-    private static void _ConfigureQueryFilters<TEntity>(ModelBuilder modelBuilder)
-        where TEntity : class
-    {
-        var entityType = typeof(TEntity);
-        var entityBuilder = modelBuilder.Entity<TEntity>();
-
-        if (entityType.IsAssignableTo<IDeleteAudit>())
-        {
-            var isDeletedName = _GetColumnName(entityBuilder.Metadata, nameof(IDeleteAudit.IsDeleted));
-
-            entityBuilder.HasQueryFilter(
-                HeadlessQueryFilters.NotDeletedFilter,
-                x => !EF.Property<bool>(x, isDeletedName)
-            );
-        }
-    }
-
-    private static string _GetColumnName(IMutableEntityType type, string name)
-    {
-        return type.FindProperty(name)?.GetColumnName() ?? name;
     }
 }

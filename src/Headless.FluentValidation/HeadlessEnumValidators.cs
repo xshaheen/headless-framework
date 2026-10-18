@@ -32,6 +32,6 @@ public static class HeadlessEnumValidators
         var names = EnumNameValidator.GetNames(enumType, ignoreCase);
 
         return rule.Must(value => value is null || names.Contains(value))
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.Enums.InvalidName());
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Enums.InvalidName);
     }
 }

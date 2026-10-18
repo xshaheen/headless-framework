@@ -370,30 +370,32 @@ public abstract class InboxStorageConformanceTests : TestBase
             .Should()
             .BeTrue();
         var originalFence = message.InboxAttemptFence!;
-        var capturedLease = new MessageLeaseIdentity(
-            message.StorageId,
-            message.Owner,
-            message.LockedUntil!.Value,
-            lane,
-            originalFence
-        );
 
         for (var attempt = 0; attempt < 2; attempt++)
         {
             var originalAttempts = message.InlineAttempts++;
             (await storage.ReserveReceiveAttemptAsync(message, originalAttempts, AbortToken)).Should().BeTrue();
-            message.InboxAttemptFence.Should().Be(originalFence);
+
+            // The reservation re-stamps the lease but keeps the attempt: only the deadline in the fence moves.
+            message.InboxAttemptFence.Should().Be(originalFence with { LockedUntil = message.LockedUntil!.Value });
             var persisted = (await _AdmitAsync(storage, envelope)).Message;
             persisted.InlineAttempts.Should().Be(message.InlineAttempts);
-            persisted.InboxAttemptFence.Should().Be(originalFence);
-            persisted.LockedUntil.Should().Be(capturedLease.LockedUntil);
+            persisted.InboxAttemptFence.Should().Be(message.InboxAttemptFence);
+            persisted.LockedUntil.Should().Be(message.LockedUntil);
             (await storage.ReserveReceiveAttemptAsync(message, originalAttempts, AbortToken))
                 .Should()
                 .BeFalse("a stale counter cannot reserve again, even with the right fence");
         }
 
-        // A claim-time identity must remain valid throughout the inline retry burst.
-        (await _MutateLeaseAsync(storage, recoverThroughPickup ? "defer" : "release", capturedLease, TimeSpan.Zero))
+        // The identity the attempt holds after its reservations, not the claim-time one, releases or defers the row.
+        var heldLease = new MessageLeaseIdentity(
+            message.StorageId,
+            message.Owner,
+            message.LockedUntil!.Value,
+            lane,
+            message.InboxAttemptFence
+        );
+        (await _MutateLeaseAsync(storage, recoverThroughPickup ? "defer" : "release", heldLease, TimeSpan.Zero))
             .Should()
             .BeTrue();
         var successor = (await _AdmitAsync(storage, envelope)).Message;
@@ -422,7 +424,7 @@ public abstract class InboxStorageConformanceTests : TestBase
         successorFence.AttemptId.Should().NotBe(originalFence.AttemptId);
         var nextAttempt = successor.InlineAttempts++;
         (await storage.ReserveReceiveAttemptAsync(successor, nextAttempt, AbortToken)).Should().BeTrue();
-        successor.InboxAttemptFence.Should().Be(successorFence);
+        successor.InboxAttemptFence.Should().Be(successorFence with { LockedUntil = successor.LockedUntil!.Value });
     }
 
     public static TheoryData<string, string?> InvalidIdentities =>

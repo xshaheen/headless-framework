@@ -379,7 +379,35 @@ internal static partial class LoggerExtensions
     public static partial void ReplayedRequestRunsWithoutCaller(this ILogger logger, Guid storageId, long generation);
 
     [LoggerMessage(
-        EventId = 4120,
+        EventId = 4121,
+        EventName = "MessageLeaseRenewalFailed",
+        Level = LogLevel.Warning,
+        Message = "Renewing the lease on message {StorageId} failed; the lease it last confirmed is still live, so the renewal is retried on the next tick."
+    )]
+    public static partial void MessageLeaseRenewalFailed(this ILogger logger, Exception exception, Guid storageId);
+
+    [LoggerMessage(
+        EventId = 4123,
+        EventName = "MessageLeaseRenewalFailedPastLease",
+        Level = LogLevel.Warning,
+        Message = "Renewing the lease on message {StorageId} failed and the lease it last confirmed could lapse before the next tick; the attempt is cancelled."
+    )]
+    public static partial void MessageLeaseRenewalFailedPastLease(
+        this ILogger logger,
+        Exception exception,
+        Guid storageId
+    );
+
+    [LoggerMessage(
+        EventId = 4122,
+        EventName = "MessageLeaseLost",
+        Level = LogLevel.Warning,
+        Message = "The lease on message {StorageId} was lost while its attempt ran; the attempt is cancelled and writes no state, and the row is recovered like a crashed attempt."
+    )]
+    public static partial void MessageLeaseLost(this ILogger logger, Guid storageId);
+
+    [LoggerMessage(
+        EventId = 4125,
         EventName = "StoredMessageDeliverByExceeded",
         Level = LogLevel.Information,
         Message = "Message stored as {StorageId} (name '{MessageName}') passed its delivery deadline {Deadline}; it is marked failed without being sent."
@@ -392,7 +420,7 @@ internal static partial class LoggerExtensions
     );
 
     [LoggerMessage(
-        EventId = 4121,
+        EventId = 4126,
         EventName = "MessageDeliverByExceededOnReceive",
         Level = LogLevel.Information,
         Message = "Message {MessageId} (name '{MessageName}', consumer '{Consumer}') arrived after its delivery deadline; it is committed and dropped without running the consumer."
@@ -405,7 +433,7 @@ internal static partial class LoggerExtensions
     );
 
     [LoggerMessage(
-        EventId = 4122,
+        EventId = 4127,
         EventName = "MessageDeliverByExceededBeforeAttempt",
         Level = LogLevel.Information,
         Message = "Message stored as {StorageId} passed its delivery deadline before an attempt started; it ends without running the consumer."
@@ -413,7 +441,7 @@ internal static partial class LoggerExtensions
     public static partial void MessageDeliverByExceededBeforeAttempt(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
-        EventId = 4123,
+        EventId = 4128,
         EventName = "DirectSendDeliverByExceeded",
         Level = LogLevel.Information,
         Message = "Direct send of message {MessageId} (name '{MessageName}') passed its delivery deadline before reaching the transport; it is dropped without being sent."

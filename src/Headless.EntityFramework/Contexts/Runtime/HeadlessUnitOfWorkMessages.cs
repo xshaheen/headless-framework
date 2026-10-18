@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.EntityFramework.Contexts;
-
 namespace Headless.EntityFramework;
 
 /// <summary>

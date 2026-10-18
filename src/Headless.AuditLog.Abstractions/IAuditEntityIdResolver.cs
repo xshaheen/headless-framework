@@ -20,4 +20,12 @@ public interface IAuditEntityIdResolver
     /// execution-strategy retry, where store-generated keys may differ between attempts.
     /// </remarks>
     void ResolveEntityIds(IReadOnlyList<AuditLogEntryData> entries);
+
+    /// <summary>
+    /// Reports whether <paramref name="entry"/> still needs <see cref="ResolveEntityIds"/> after SaveChanges. An entry
+    /// that returns <see langword="false"/> is complete as captured, so a store that adds rows to the saving context
+    /// can persist it in the same batch as the entity change instead of in a second save.
+    /// </summary>
+    /// <remarks>The default is <see langword="true"/>, which keeps every entry in the two-phase flow.</remarks>
+    bool RequiresDeferredResolution(AuditLogEntryData entry) => true;
 }

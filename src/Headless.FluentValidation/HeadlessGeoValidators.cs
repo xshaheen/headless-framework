@@ -15,7 +15,7 @@ public static class HeadlessGeoValidators
     {
         return builder
             .Must(GeoCoordinateValidator.IsValidLatitude)
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLatitude());
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLatitude);
     }
 
     /// <summary>Validates that the value is a valid latitude in the range [-90, 90]. Passes <see langword="null"/> through without failure.</summary>
@@ -24,7 +24,7 @@ public static class HeadlessGeoValidators
     {
         return builder
             .Must(latitude => latitude is null || GeoCoordinateValidator.IsValidLatitude(latitude.Value))
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLatitude());
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLatitude);
     }
 
     /// <summary>Validates that the value is a valid longitude in the range [-180, 180].</summary>
@@ -33,7 +33,7 @@ public static class HeadlessGeoValidators
     {
         return builder
             .Must(GeoCoordinateValidator.IsValidLongitude)
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLongitude());
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLongitude);
     }
 
     /// <summary>Validates that the value is a valid longitude in the range [-180, 180]. Passes <see langword="null"/> through without failure.</summary>
@@ -42,7 +42,7 @@ public static class HeadlessGeoValidators
     {
         return builder
             .Must(longitude => longitude is null || GeoCoordinateValidator.IsValidLongitude(longitude.Value))
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLongitude());
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLongitude);
     }
 
 #nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
@@ -62,7 +62,7 @@ public static class HeadlessGeoValidators
                     && GeoCoordinateValidator.IsValidLatitude(lat)
                 )
             )
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLatitude());
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLatitude);
     }
 
 #nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
@@ -82,6 +82,6 @@ public static class HeadlessGeoValidators
                     && GeoCoordinateValidator.IsValidLongitude(lon)
                 )
             )
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLongitude());
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLongitude);
     }
 }

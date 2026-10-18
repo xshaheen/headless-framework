@@ -33,21 +33,34 @@ internal sealed class HeadlessAuditPersistence(
     /// <see cref="CaptureErrorStrategy.Continue"/>). Rethrows when configured for
     /// <see cref="CaptureErrorStrategy.Throw"/>.
     /// </summary>
-    public IReadOnlyList<AuditLogEntryData>? CaptureEntries(IReadOnlyList<EntityEntry> entries)
+    public IReadOnlyList<AuditLogEntryData>? CaptureEntries(
+        IReadOnlyList<EntityEntry> entries,
+        HeadlessSaveEntryContext saveContext
+    )
     {
         if (_auditCapture is null)
         {
             return null;
         }
 
+        // A save that changes nothing has nothing to capture, so it reads no actor.
+        if (!_HasChanges(entries))
+        {
+            return [];
+        }
+
         var timestamp = _timeProvider.GetUtcNow();
 
         try
         {
+            // The actor is read once per save and shared with the audit-field stampers. It is read inside the try so
+            // an ICurrentUser that throws is handled by the capture error strategy like any other capture failure.
+            var (userId, accountId) = _currentUser is null ? default : saveContext.GetActor(_currentUser);
+
             return _auditCapture.CaptureChanges(
                 entries,
-                _currentUser?.UserId?.ToString(),
-                _currentUser?.AccountId?.ToString(),
+                userId?.ToString(),
+                accountId?.ToString(),
                 _currentTenant?.Id,
                 _correlationIdProvider?.CorrelationId,
                 timestamp
@@ -70,12 +83,88 @@ internal sealed class HeadlessAuditPersistence(
         }
     }
 
+    private static bool _HasChanges(IReadOnlyList<EntityEntry> entries)
+    {
+        foreach (var entry in entries)
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Cleans up stale audit entries from a prior failed attempt before an execution strategy retry.
     /// </summary>
     public void PrepareForRetry(DbContext context)
     {
         _auditStore?.PrepareForRetry(context);
+    }
+
+    public async Task<HeadlessAuditSplit> AddReadyEntriesAsync(
+        DbContext context,
+        IReadOnlyList<AuditLogEntryData>? entries,
+        CancellationToken cancellationToken
+    )
+    {
+        var (ready, deferred) = _Partition(entries);
+
+        if (ready is null)
+        {
+            return new(default, entries);
+        }
+
+        var handles = await _SaveEntriesAsync(context, ready, cancellationToken).ConfigureAwait(false);
+
+        return new(new(RequiresManualAcceptAllChanges: true, handles), deferred);
+    }
+
+    public HeadlessAuditSplit AddReadyEntries(DbContext context, IReadOnlyList<AuditLogEntryData>? entries)
+    {
+        var (ready, deferred) = _Partition(entries);
+
+        if (ready is null)
+        {
+            return new(default, entries);
+        }
+
+        return new(new(RequiresManualAcceptAllChanges: true, _SaveEntries(context, ready)), deferred);
+    }
+
+    // Only a store that adds rows to the saving context can run before the entity save; one that writes on its own
+    // connection would leave an audit row behind for an entity change that then fails.
+    private (List<AuditLogEntryData>? Ready, List<AuditLogEntryData>? Deferred) _Partition(
+        IReadOnlyList<AuditLogEntryData>? entries
+    )
+    {
+        if (
+            entries is not { Count: > 0 }
+            || _auditStore is not { AddsToSavingContext: true }
+            || _auditCapture is not IAuditEntityIdResolver resolver
+        )
+        {
+            return (null, null);
+        }
+
+        List<AuditLogEntryData>? ready = null;
+        List<AuditLogEntryData>? deferred = null;
+
+        foreach (var entry in entries)
+        {
+            if (resolver.RequiresDeferredResolution(entry))
+            {
+                (deferred ??= []).Add(entry);
+            }
+            else
+            {
+                (ready ??= []).Add(entry);
+            }
+        }
+
+        return (ready, deferred);
     }
 
     public async Task<HeadlessAuditSaveResult> ResolveAndPersistAsync(
@@ -166,12 +255,14 @@ internal sealed class HeadlessAuditPersistence(
             return;
         }
 
+        // Detach the audit rows before accepting: AcceptAllChanges would otherwise snapshot every JSON column of
+        // each row just before the row leaves the tracker.
+        ReleaseEntries(auditSave);
+
         if (acceptAllChangesOnSuccess)
         {
             context.ChangeTracker.AcceptAllChanges();
         }
-
-        ReleaseEntries(auditSave);
     }
 
     public void DiscardEntries(HeadlessAuditSaveResult auditSave)

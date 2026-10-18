@@ -83,6 +83,11 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
         builder.Append("[UnderlyingPrimitiveType(typeof(").Append(data.PrimitiveTypeFriendlyName).AppendLine("))]");
         builder.AppendDebuggerDisplay("{_value}");
 
+        if (!data.GenerateComparison)
+        {
+            builder.AppendComparableWithoutOperatorsSuppression();
+        }
+
         if (options.GenerateJsonConverters)
         {
             builder.AppendJsonConverterAttribute(data.ClassName + "JsonConverter");

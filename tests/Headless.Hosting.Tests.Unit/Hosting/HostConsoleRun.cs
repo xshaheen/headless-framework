@@ -61,6 +61,16 @@ internal sealed record HostConsoleRun(int ExitCode, string StandardOutput, strin
         return RunAsync(configure, ["describe"], cancellationToken);
     }
 
+    public static Task<HostConsoleRun> CheckAsync(
+        Action<HostApplicationBuilder> configure,
+        CancellationToken cancellationToken
+    )
+    {
+        return RunAsync(configure, ["check"], cancellationToken);
+    }
+
+    public string[] StandardOutputLines() => StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
     public JsonDocument ParseStandardOutput() => JsonDocument.Parse(StandardOutput);
 }
 

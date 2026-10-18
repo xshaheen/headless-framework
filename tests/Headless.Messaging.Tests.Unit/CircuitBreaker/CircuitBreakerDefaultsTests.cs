@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using System.Net;
 using System.Net.Sockets;
 using Headless.Messaging;
@@ -52,6 +53,29 @@ public sealed class CircuitBreakerDefaultsTests : TestBase
         var ex = new BrokerConnectionException(new Exception("broker down"));
 
         CircuitBreakerDefaults.IsTransient(ex).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void database_exception_is_transient_only_when_the_provider_says_so(bool providerTransient)
+    {
+        CircuitBreakerDefaults.IsTransient(new TestDbException(providerTransient)).Should().Be(providerTransient);
+    }
+
+    private sealed class TestDbException(bool isTransient) : DbException("store unavailable")
+    {
+        public override bool IsTransient { get; } = isTransient;
+    }
+
+    [Theory]
+    [InlineData(64, true)] // connection broken
+    [InlineData(40613, true)] // database unavailable
+    [InlineData(2627, false)] // unique key violation
+    public void sql_server_fault_is_classified_by_its_error_number(int number, bool transient)
+    {
+        // SqlClient reports nothing through DbException.IsTransient, so only the error number can tell.
+        CircuitBreakerDefaults.IsTransient(new Microsoft.Data.SqlClient.SqlException(number)).Should().Be(transient);
     }
 
     [Fact]

@@ -46,7 +46,7 @@ public static class HeadlessCollectionValidators
                         return false;
                     }
                 )
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.MaximumElementsValidator());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.MaximumElementsValidator);
         }
 
         /// <summary>Validates that the collection contains at least <paramref name="minElements"/> elements.</summary>
@@ -83,7 +83,7 @@ public static class HeadlessCollectionValidators
                         return false;
                     }
                 )
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.MinimumElementsValidator());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.MinimumElementsValidator);
         }
 
         /// <summary>Validates that all elements in the collection are distinct.</summary>
@@ -124,7 +124,7 @@ public static class HeadlessCollectionValidators
                         return false;
                     }
                 )
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.UniqueElementsValidator());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.UniqueElementsValidator);
         }
 
         /// <summary>
@@ -171,7 +171,7 @@ public static class HeadlessCollectionValidators
                         return false;
                     }
                 )
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.UniqueElementsValidator());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.UniqueElementsValidator);
         }
     }
 }

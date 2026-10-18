@@ -67,7 +67,9 @@ internal static class InDoubtCommitFaults
 
         // A driver exception with no server state is the driver's own view of the wire. Npgsql, for one, reports a
         // broken or timed-out connection as a transient exception without a SQLSTATE.
+#pragma warning disable RS0030 // False positive: the SqlClient and SQLSTATE paths above already ran, so this reads only drivers that override it.
         return databaseException.IsTransient;
+#pragma warning restore RS0030
     }
 
     private static bool _HasTransportFault(Exception? exception)

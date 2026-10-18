@@ -502,4 +502,46 @@ public sealed class ServiceProviderDomainEventDispatcherTests : TestBase
     }
 
     #endregion
+
+    #region Handler Presence Tests
+
+    [Fact]
+    public void should_report_handler_for_closed_registration_only_for_that_payload()
+    {
+        var services = new ServiceCollection().AddSingleton<IDomainEventHandler<TestLocalMessage>>(
+            new TrackingHandler()
+        );
+        var dispatcher = new ServiceProviderDomainEventDispatcher(services.BuildServiceProvider());
+
+        dispatcher.HasHandler(typeof(TestLocalMessage)).Should().BeTrue();
+        dispatcher.HasHandler(typeof(UnhandledMessage)).Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_report_handler_for_open_generic_registration()
+    {
+        var services = new ServiceCollection().AddSingleton(typeof(IDomainEventHandler<>), typeof(OpenHandler<>));
+        var dispatcher = new ServiceProviderDomainEventDispatcher(services.BuildServiceProvider());
+
+        dispatcher.HasHandler(typeof(UnhandledMessage)).Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_report_handler_when_container_cannot_answer()
+    {
+        var provider = Substitute.For<IServiceProvider>();
+        var dispatcher = new ServiceProviderDomainEventDispatcher(provider);
+
+        dispatcher.HasHandler(typeof(UnhandledMessage)).Should().BeTrue();
+    }
+
+    private sealed record UnhandledMessage;
+
+    private sealed class OpenHandler<T> : IDomainEventHandler<T>
+        where T : class
+    {
+        public ValueTask HandleAsync(EventContext<T> context, CancellationToken cancellationToken = default) => default;
+    }
+
+    #endregion
 }

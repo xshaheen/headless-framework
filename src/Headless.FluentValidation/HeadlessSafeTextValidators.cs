@@ -27,7 +27,7 @@ public static class HeadlessSafeTextValidators
         public IRuleBuilderOptions<T, string> NoScripts()
         {
             return rule.Must(static value => value is null || !RegexPatterns.HtmlScripts.IsMatch(value))
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.ContainsScripts());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.ContainsScripts);
         }
     }
 }
