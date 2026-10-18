@@ -6,6 +6,30 @@ Shared test harness for messaging providers. Provides base test classes with reu
 
 This harness enables consistent integration testing across all messaging providers (RabbitMQ, Kafka, NATS, AWS SQS, etc.) by defining standard test scenarios that each provider can run against its real infrastructure.
 
+## Which tier proves what
+
+A messaging change is confirmed in seconds by the fast tier, and the slower tiers prove what only a real broker, a real database, or several hosts can show.
+
+| Tier | Projects | Runs | What it proves |
+|---|---|---|---|
+| Fast | `Headless.Messaging.Tests.Unit`, `Headless.Messaging.InMemory.Tests.Unit`, `Headless.Messaging.Storage.InMemory.Tests.Unit` | `make test-affected`, `make verify-affected`, CI | The real pipeline against the simulated broker and fault-injecting store (`Simulation/`), on a fake clock: retry, settlement order, shutdown drain, circuit pause and resume, request/reply, and every contract suite the simulator supports |
+| Real broker | `Headless.Messaging.<Broker>.Tests.Integration` | `make test-affected-integration` before a PR, nightly | Protocol behavior the simulator only models: settlement, redelivery, restart and network-fault recovery, ordering, size limits |
+| Real database | `Headless.Messaging.Storage.<Db>.Tests.Integration` | as above | Store-clock leases, clock skew, racing claimants, lost commit replies, fault classification |
+| End to end | `Headless.Messaging.<Broker><Store>.Tests.Integration` | as above | Outbox to broker to consumer to inbox through the real host |
+| Scheduled | `Headless.Messaging.Tests.Chaos` | `make test-messaging-chaos`, nightly | Several hosts under broker, storage, and network faults, checked by a message ledger; never selected by an affected run |
+
+Fast-tier projects may not start a container or open a socket, and `Policy/FastTierPolicyTests` counts real waits (`Task.Delay`, `Thread.Sleep`, `SpinWait.SpinUntil`, `TimeProvider.System.Delay`) in the two core unit projects and this harness against `Policy/real-wait-baseline.txt`. A new wait fails the test; converting one lowers its line. Waits that back off, reconnect, or time out I/O read the keyed back-off clock (`MessagingOptions.BackoffClockServiceKey`), which `SimulationHost` replaces with the simulated clock.
+
+## Guarantees and quarantine
+
+`Guarantees/MessagingGuarantee.cs` catalogues the critical messaging guarantees, each with a stable `MSG-…` ID. A guarantee is in one of three states:
+
+- **Bound:** at least one test carries `[Guarantee("MSG-…")]` and runs. A guarantee that needs a real system must be bound to a real-broker or real-store test, not only the simulator.
+- **No test yet:** a catalogue entry that names an open issue tracking the missing test.
+- **Unsupported:** its test exists but fails on a product defect, so it skips through `MessagingGuarantees.RequireSupport` with the defect and an open issue. A transport scenario is quarantined the same way in `TransportConformanceManifest`.
+
+`Policy/GuaranteeCatalogueTests` fails when a critical guarantee has no binding and no issue, or when an attribute names an unknown ID. Each provider's `ProviderConformanceEvidenceTests` fails when a guarantee it inherits does not run there. Never delete or `Skip` a failing test: quarantine it against an issue, and flip it back to `Supported` in the change that fixes the defect. The nightly quarantine check fails while a closed issue still quarantines a cell.
+
 ## Base Test Classes
 
 | Class | Purpose |
@@ -421,27 +445,36 @@ subscriber.ReceivedMessages.Should().ContainSingle(m => m.Id == message.Id);
 ## Running Tests
 
 ```bash
-# Run specific integration tests
-dotnet test tests/Headless.Messaging.RabbitMq.Tests.Integration
+# One class in one project: seconds for the fast tier
+make test-class CLASS='*SimulatorBrokerFaultTests' TEST_PROJECT=tests/Headless.Messaging.Tests.Unit/Headless.Messaging.Tests.Unit.csproj
 
-# Run with filter
-dotnet test --filter "FullyQualifiedName~RabbitMqTransportTests"
+# Chase a flaky fault test
+make test-class CLASS='*RabbitMqNetworkFaultTests' REPEAT=5 TEST_PROJECT=tests/Headless.Messaging.RabbitMq.Tests.Integration/Headless.Messaging.RabbitMq.Tests.Integration.csproj
+
+# Before a PR that touches a provider or storage package (needs Docker)
+make test-affected-integration
+
+# The scheduled tiers
+make test-messaging-chaos          # smoke sizes; HEADLESS_CHAOS_PROFILE=full for the full sizes
+make messaging-quarantine-check    # every quarantine links an open issue
 ```
 
 ## Adding New Test Scenarios
 
-1. Add virtual test method to appropriate base class
-2. Use capability flags for conditional execution
-3. Existing provider tests automatically gain new scenarios
+1. Add the scenario to the base class with `[Fact]` on the base method, so every leaf inherits it instead of opting in.
+2. Gate it with `RequireSupport(<scenario>)` for a transport scenario, or a capability flag for storage, and add the scenario to the manifest and the matrix above.
+3. Tag it with its guarantee ID, adding a catalogue entry when none fits.
+4. Run it on every provider. Bind each pass in that provider's `ProviderConformanceEvidenceTests`; quarantine each product-defect failure against an issue.
 
 ```csharp
-// In TransportTestsBase
+// In TransportConsumerConformanceTestsBase
+[Fact]
+[Guarantee("MSG-SETTLE-09")]
 public virtual async Task should_handle_new_scenario()
 {
-    if (!Capabilities.SupportsNewFeature)
-    {
-        Assert.Skip("Transport does not support new feature");
-    }
+    RequireSupport(TransportConformanceScenario.NewScenario);
+
+    await using var session = await CreateSessionAsync(AbortToken);
     // Test implementation
 }
 ```
