@@ -35,7 +35,7 @@ public static class HeadlessFileValidators
         {
             return builder
                 .Must((_, file) => file is null || file.Length > 0)
-                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileNotEmpty());
+                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileNotEmpty);
         }
 
         /// <summary>Validates that the uploaded file size is at least <paramref name="minBytes"/> bytes.</summary>
@@ -69,7 +69,7 @@ public static class HeadlessFileValidators
                         return false;
                     }
                 )
-                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileGreaterThanOrEqualToValidator());
+                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileGreaterThanOrEqualToValidator);
         }
 
         /// <summary>Validates that the uploaded file size does not exceed <paramref name="maxBytes"/> bytes.</summary>
@@ -103,7 +103,7 @@ public static class HeadlessFileValidators
                         return false;
                     }
                 )
-                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileLessThanOrEqualToValidator());
+                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileLessThanOrEqualToValidator);
         }
     }
 
@@ -148,7 +148,7 @@ public static class HeadlessFileValidators
                         return false;
                     }
                 )
-                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileContentTypeValidator());
+                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileContentTypeValidator);
         }
 
         /// <summary>
@@ -189,7 +189,7 @@ public static class HeadlessFileValidators
                         return predicate(format);
                     }
                 )
-                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileSignatureValidator());
+                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileSignatureValidator);
         }
     }
 }
