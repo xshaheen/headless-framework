@@ -5,6 +5,7 @@ using Headless.IpGeolocation.Internal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Headless.IpGeolocation;
@@ -64,6 +65,7 @@ public static class SetupMaxMind
         {
             services.AddOptions<MaxMindOptions, MaxMindOptionsValidator>();
             configure(services);
+            services.AddOptions<MaxMindOptions>().PostConfigure<IServiceProvider>(_ApplyDefaults);
 
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<MaxMindDatabases>();
@@ -80,6 +82,27 @@ public static class SetupMaxMind
                     client.Timeout = options.DownloadTimeout;
                 }
             );
+        }
+
+        private static void _ApplyDefaults(MaxMindOptions options, IServiceProvider services)
+        {
+            if (options.Locales is not { Count: > 0 })
+            {
+                options.Locales = ["en"];
+            }
+
+            // The working directory differs between dotnet run, an orchestrating host, and a test host, so a
+            // relative directory would point somewhere different in each; the content root does not.
+            var environment = services.GetService<IHostEnvironment>();
+
+            if (
+                environment is not null
+                && !string.IsNullOrEmpty(options.DatabaseDirectory)
+                && !Path.IsPathRooted(options.DatabaseDirectory)
+            )
+            {
+                options.DatabaseDirectory = Path.GetFullPath(options.DatabaseDirectory, environment.ContentRootPath);
+            }
         }
     }
 }

@@ -279,6 +279,50 @@ public sealed class InMemoryConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_release_at_once_and_redeliver_after_the_core_delay_when_rejected_with_a_longer_delay()
+    {
+        // given
+        var coreDelay = TimeSpan.FromSeconds(20);
+        var clock = new FakeTimeProvider();
+        await using var client = new InMemoryConsumerClient(_queue, "core-delay-group", 1, redeliveryClock: clock);
+        await client.SubscribeAsync(["core-delay-messageName"], AbortToken);
+
+        var deliveries = 0;
+        var rejected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var redelivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = async (_, sender) =>
+        {
+            if (Interlocked.Increment(ref deliveries) == 1)
+            {
+                // The reject completes without the clock moving: the delivery is not held for the delay.
+                await client.RejectAsync(sender, coreDelay, AbortToken);
+                rejected.SetResult();
+                return;
+            }
+
+            await client.CommitAsync(sender, AbortToken);
+            redelivered.TrySetResult();
+        };
+
+        using var cts = new CancellationTokenSource();
+        _StartListening(client, cts.Token);
+        _queue.SendBus(_CreateTestMessage("msg-1", "core-delay-messageName"));
+        await rejected.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when: past the transport's own first delay, but short of the core's
+        clock.Advance(coreDelay - TimeSpan.FromMilliseconds(1));
+        await Task.Delay(200, AbortToken);
+        var deliveriesBeforeCoreDelay = Volatile.Read(ref deliveries);
+        clock.Advance(TimeSpan.FromMilliseconds(1));
+
+        // then
+        await redelivered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await cts.CancelAsync();
+        deliveriesBeforeCoreDelay.Should().Be(1);
+        deliveries.Should().Be(2);
+    }
+
+    [Fact]
     public async Task should_wait_longer_before_each_further_redelivery_of_a_rejected_message()
     {
         // given: a message rejected on its first two deliveries

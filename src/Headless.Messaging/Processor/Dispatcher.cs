@@ -880,7 +880,7 @@ internal sealed class Dispatcher
         {
             await using var dispatchScope = _scopeFactory.CreateAsyncScope();
             var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
-            if (!result.Succeeded)
+            if (!result.Succeeded && !_IsDeliverByDrop(result))
             {
                 _logger.DelayedMessageSendFailed(message.StorageId);
             }
@@ -990,7 +990,7 @@ internal sealed class Dispatcher
                 : await _sender
                     .SendRetryAsync(message, dispatchScope.ServiceProvider, executionState)
                     .ConfigureAwait(false);
-            if (!result.Succeeded)
+            if (!result.Succeeded && !_IsDeliverByDrop(result))
             {
                 _logger.MessagePublishException(result.Exception, message.Origin.Id, result.ToString());
             }
@@ -1018,7 +1018,7 @@ internal sealed class Dispatcher
                 : await _sender
                     .SendRetryAsync(message, dispatchScope.ServiceProvider, executionState)
                     .ConfigureAwait(false);
-            if (!result.Succeeded)
+            if (!result.Succeeded && !_IsDeliverByDrop(result))
             {
                 _logger.MessagePublishException(result.Exception, message.Origin.Id, result.ToString());
             }
@@ -1032,6 +1032,9 @@ internal sealed class Dispatcher
             _logger.TransportSendError(ex, message.StorageId);
         }
     }
+
+    // A row past its delivery deadline is a designed drop the sender already logged and counted, not a publish failure.
+    private static bool _IsDeliverByDrop(OperateResult result) => result.Exception is MessageDeliverByExceededException;
 
     #endregion
 

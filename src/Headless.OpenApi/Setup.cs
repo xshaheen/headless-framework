@@ -92,7 +92,7 @@ public static class SetupHeadlessOpenApi
     )
     {
         Argument.IsNotNull(services);
-        documentNames ??= services.InferHeadlessApiSurfaceDocumentNames();
+        documentNames ??= services.FreezeHeadlessApiSurfaces();
         _AddOptions(services);
 
         foreach (var documentName in documentNames.Distinct(StringComparer.OrdinalIgnoreCase))

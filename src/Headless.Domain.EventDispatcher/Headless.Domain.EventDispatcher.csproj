@@ -14,5 +14,7 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Domain.EventDispatcher.Tests.Unit" />
+    <!-- The EF save pipeline asks which payloads have handlers so it can skip events and transactions nobody observes. -->
+    <InternalsVisibleTo Include="Headless.EntityFramework" />
   </ItemGroup>
 </Project>

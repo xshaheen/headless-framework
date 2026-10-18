@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace Headless.Blobs;
 
@@ -46,10 +47,9 @@ public static class SetupRedisBlob
 
         /// <summary>Uses Redis as the default (unkeyed) <see cref="IBlobStorage"/>, binding options from configuration.</summary>
         /// <remarks>
-        /// Configuration binding cannot set the required <see cref="RedisBlobStorageOptions.ConnectionMultiplexer"/>
-        /// (an interface instance), so this overload alone leaves it unset and options validation fails at startup.
-        /// Use it for scalar options only, and supply the multiplexer through one of the
-        /// <c>Action&lt;RedisBlobStorageOptions&gt;</c> overloads.
+        /// Configuration binding cannot set <see cref="RedisBlobStorageOptions.ConnectionMultiplexer"/> (an interface
+        /// instance), so it comes from the registered <see cref="IConnectionMultiplexer"/>. Without one, options
+        /// validation fails at startup.
         /// </remarks>
         public HeadlessBlobsSetupBuilder UseRedis(IConfiguration configuration)
         {
@@ -68,6 +68,7 @@ public static class SetupRedisBlob
     private static IServiceCollection _AddBlobsDefaultCore(IServiceCollection services)
     {
         _AddBlobsCoreShared(services);
+        services.AddOptions<RedisBlobStorageOptions>().PostConfigure<IServiceProvider>(_UseRegisteredMultiplexer);
 
         services.AddSingleton<IBlobStorage>(serviceProvider => new RedisBlobStorage(
             serviceProvider.GetRequiredService<IOptions<RedisBlobStorageOptions>>(),
@@ -92,6 +93,7 @@ public static class SetupRedisBlob
     internal static IServiceCollection AddBlobsNamedCore(IServiceCollection services, string name)
     {
         _AddBlobsCoreShared(services);
+        services.AddOptions<RedisBlobStorageOptions>(name).PostConfigure<IServiceProvider>(_UseRegisteredMultiplexer);
 
         services.AddKeyedSingleton<IBlobStorage>(
             name,
@@ -120,6 +122,14 @@ public static class SetupRedisBlob
         );
 
         return services;
+    }
+
+    private static void _UseRegisteredMultiplexer(RedisBlobStorageOptions options, IServiceProvider services)
+    {
+        if (options.ConnectionMultiplexer is null && services.GetService<IConnectionMultiplexer>() is { } multiplexer)
+        {
+            options.ConnectionMultiplexer = multiplexer;
+        }
     }
 
     private static IServiceCollection _AddBlobsCoreShared(IServiceCollection services)
@@ -174,10 +184,9 @@ public static class SetupRedisBlobNamed
 
         /// <summary>Uses Redis for this named instance, binding options from configuration.</summary>
         /// <remarks>
-        /// Configuration binding cannot set the required <see cref="RedisBlobStorageOptions.ConnectionMultiplexer"/>
-        /// (an interface instance), so this overload alone leaves it unset and options validation fails at startup.
-        /// Use it for scalar options only, and supply the multiplexer through one of the
-        /// <c>Action&lt;RedisBlobStorageOptions&gt;</c> overloads.
+        /// Configuration binding cannot set <see cref="RedisBlobStorageOptions.ConnectionMultiplexer"/> (an interface
+        /// instance), so it comes from the registered <see cref="IConnectionMultiplexer"/>. Without one, options
+        /// validation fails at startup.
         /// </remarks>
         public HeadlessBlobInstanceBuilder UseRedis(IConfiguration configuration)
         {

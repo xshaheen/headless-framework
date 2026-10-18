@@ -246,21 +246,34 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <returns>A completed task</returns>
     public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
+        return RejectAsync(sender, TimeSpan.Zero, CancellationToken.None);
+    }
+
+    // The redelivery is already scheduled rather than awaited, so the delivery is released at once instead of being
+    // held for the core's delay and then delayed again.
+    public ValueTask RejectAsync(object? sender, TimeSpan redeliveryDelay, CancellationToken cancellationToken)
+    {
         // The listening loop already releases the delivery's concurrency slot when the callback returns; releasing it
         // here as well would grow the group's concurrency on every reject.
         if (sender is Delivery delivery && Volatile.Read(ref _disposed) == 0)
         {
-            _ = _RedeliverAfterDelayAsync(delivery, Volatile.Read(ref _drainGeneration));
+            _ = _RedeliverAfterDelayAsync(delivery, redeliveryDelay, Volatile.Read(ref _drainGeneration));
         }
 
         return ValueTask.CompletedTask;
     }
 
-    private async Task _RedeliverAfterDelayAsync(Delivery delivery, int drainGeneration)
+    private async Task _RedeliverAfterDelayAsync(Delivery delivery, TimeSpan minimumDelay, int drainGeneration)
     {
         try
         {
-            var delay = RejectRedeliveryDelay.For(delivery.DeliveryCount, Random.Shared);
+            // The core's own delay wins when it is longer.
+            var delay = RedeliveryBackoff.RedeliveryDelay(delivery.DeliveryCount, Random.Shared);
+            if (minimumDelay > delay)
+            {
+                delay = minimumDelay;
+            }
+
             await Task.Delay(delay, _redeliveryClock, _disposeCts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -367,5 +380,5 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <summary>A message handed to the consumer callback, and the settlement token that callback passes back.</summary>
     /// <param name="Message">The delivered message.</param>
     /// <param name="DeliveryCount">How many times the message has been delivered, this delivery included.</param>
-    private sealed record Delivery(TransportMessage Message, ulong DeliveryCount);
+    private sealed record Delivery(TransportMessage Message, long DeliveryCount);
 }

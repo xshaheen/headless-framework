@@ -257,7 +257,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - HTTP edge rate limiting: `RateLimiterOptions.UseHeadlessProblemDetails()` rejects with 429 ProblemDetails (`g:rate_limit_exceeded`, `Retry-After`, `Cache-Control: no-store`), and `HttpContext.GetIpAddressPartition(ipv6PrefixLength = 64)` keys anonymous callers by IPv4 address or IPv6 /64. The application owns the limiter itself; see [HTTP edge limits](rate-limiting.md#http-edge-limits)
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
 - `IFormFileSizeValidator` (`MinBytes`, `MaxBytes`) / `IFormFileContentTypeValidator` (`ContentTypes`) — FluentValidation property validators that Headless.OpenApi reads without referencing `Headless.Api.FluentValidation`; their bounds become a form part's encoding and description
-- `IServiceCollection.InferHeadlessApiSurfaceDocumentNames()` — returns the OpenAPI document names of the API surfaces registered so far and closes surface registration, so a later `AddHeadlessApiSurface(...)` throws. `AddHeadlessApiSurfaceDocuments()` and `AddHeadless()` call it; a custom document provider calls it while the service collection is still writable
+- `IServiceCollection.FreezeHeadlessApiSurfaces()` — freezes the set of API surfaces and returns their OpenAPI document names, so a later `AddHeadlessApiSurface(...)` throws. `AddHeadlessApiSurfaceDocuments()` and `AddHeadless()` call it; a custom document provider calls it while the service collection is still writable
 
 ### Design constraints
 

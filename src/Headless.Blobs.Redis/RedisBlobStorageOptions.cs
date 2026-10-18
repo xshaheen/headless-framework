@@ -18,8 +18,11 @@ namespace Headless.Blobs.Redis;
 [PublicAPI]
 public sealed class RedisBlobStorageOptions
 {
-    /// <summary>The Redis connection multiplexer to use. Required.</summary>
-    public required IConnectionMultiplexer ConnectionMultiplexer { get; set; }
+    /// <summary>
+    /// The Redis connection multiplexer to use. Left unset, it resolves to the <see cref="IConnectionMultiplexer"/>
+    /// registered in the service collection.
+    /// </summary>
+    public IConnectionMultiplexer ConnectionMultiplexer { get; set; } = null!;
 
     /// <summary>
     /// Optional logger factory for Redis-level diagnostics. When <see langword="null"/>, a no-op logger is used.
@@ -46,7 +49,9 @@ internal sealed class RedisBlobStorageOptionsValidator : AbstractValidator<Redis
 {
     public RedisBlobStorageOptionsValidator()
     {
-        RuleFor(x => x.ConnectionMultiplexer).NotNull();
+        RuleFor(x => x.ConnectionMultiplexer)
+            .NotNull()
+            .WithMessage("Set ConnectionMultiplexer or register an IConnectionMultiplexer in the service collection.");
         RuleFor(x => x.MaxBulkParallelism).GreaterThan(0);
         RuleFor(x => x.MaxBlobSizeBytes).GreaterThanOrEqualTo(0);
     }

@@ -21,7 +21,7 @@ public static class HeadlessStringsFluentValidationExtensions
         return builder
             .Matches(RegexPatterns.IntegerNumber)
             .When(x => x is not null)
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.OnlyNumberValidator());
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.OnlyNumberValidator);
     }
 
 #nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
@@ -38,7 +38,7 @@ public static class HeadlessStringsFluentValidationExtensions
             return builder
                 .Matches(RegexPatterns.DecimalNumber)
                 .When(x => x is not null)
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.OnlyDecimalsValidator());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.OnlyDecimalsValidator);
         }
 
         /// <summary>
@@ -52,7 +52,7 @@ public static class HeadlessStringsFluentValidationExtensions
             return builder
                 .Matches(RegexPatterns.Slug)
                 .When(x => x is not null)
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.InvalidSlug());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.InvalidSlug);
         }
 
         /// <summary>
@@ -66,7 +66,7 @@ public static class HeadlessStringsFluentValidationExtensions
             return builder
                 .Matches(RegexPatterns.Username)
                 .When(x => x is not null)
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.InvalidUsername());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.InvalidUsername);
         }
 
         /// <summary>
@@ -79,7 +79,7 @@ public static class HeadlessStringsFluentValidationExtensions
             return builder
                 .Matches(RegexPatterns.ZipCode)
                 .When(x => x is not null)
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.InvalidZipCode());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.InvalidZipCode);
         }
 
         /// <summary>
@@ -120,7 +120,7 @@ public static class HeadlessStringsFluentValidationExtensions
 
                     return true;
                 })
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.InvalidHexColor());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.InvalidHexColor);
         }
 
         /// <summary>
@@ -133,7 +133,7 @@ public static class HeadlessStringsFluentValidationExtensions
         {
             return builder
                 .Must(static value => value is null || System.Buffers.Text.Base64.IsValid(value.AsSpan()))
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.InvalidBase64());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.InvalidBase64);
         }
 
         /// <summary>
@@ -145,7 +145,7 @@ public static class HeadlessStringsFluentValidationExtensions
         {
             return builder
                 .Must(static value => value is null || value.AsSpan().Trim().Length == value.Length)
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.NotTrimmed());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.NotTrimmed);
         }
 
         /// <summary>
@@ -176,7 +176,7 @@ public static class HeadlessStringsFluentValidationExtensions
                         return false;
                     }
                 })
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.InvalidCulture());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.InvalidCulture);
         }
     }
 }

@@ -68,6 +68,34 @@ public abstract record MessageOptions
     public DateTimeOffset? ScheduledAt { get; init; }
 
     /// <summary>
+    /// Gets the period, measured from the publish call, within which the message must be delivered to its consumer.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The publisher's registered <see cref="TimeProvider"/> turns this into an absolute UTC deadline at publish time
+    /// and stamps it as the <see cref="Headers.DeliverBy"/> header. Past that instant the message is dropped instead of
+    /// delivered, and every drop the framework makes is logged and counted: the outbox relay marks a stored row terminally <c>Failed</c>
+    /// with the reason and does not send it, a <see cref="DeliveryMode.Direct"/> send is not handed to the transport,
+    /// a consumer commits an arriving delivery without storing or handling it, and a stored inbox row that waited past
+    /// the deadline ends <c>Failed</c> without running the consumer. None of these retries or fires the exhausted
+    /// callback. The receiver compares against its own clock, so clock skew between hosts shifts the window.
+    /// </para>
+    /// <para>
+    /// Must be positive. A <see cref="Delay"/> or <see cref="ScheduledAt"/> whose due time lands at or after the
+    /// deadline is rejected at publish time with <see cref="ArgumentException"/>, because such a message could never be
+    /// delivered. RabbitMQ and Azure Service Bus also receive the remaining time as the native per-message TTL, so an
+    /// undelivered message expires inside the broker instead of waiting in a queue. The broker discards that message
+    /// without the framework seeing it, so a broker expiry is neither logged nor counted, and where the queue
+    /// dead-letters expired messages (a RabbitMQ dead-letter exchange, or Service Bus dead-lettering on expiration) it
+    /// lands in the dead-letter queue rather than disappearing.
+    /// </para>
+    /// <para>
+    /// A request ignores this value, including one publish middleware sets: its own timeout is its deadline.
+    /// </para>
+    /// </remarks>
+    public TimeSpan? DeliverWithin { get; init; }
+
+    /// <summary>
     /// Gets the explicit message name override. When <see langword="null"/>, the message name is resolved from mappings or conventions.
     /// </summary>
     public string? MessageName { get; init; }
@@ -171,6 +199,7 @@ public abstract record MessageOptions
 
         return Nullable.Equals(Delay, other.Delay)
             && Nullable.Equals(ScheduledAt, other.ScheduledAt)
+            && Nullable.Equals(DeliverWithin, other.DeliverWithin)
             && string.Equals(MessageName, other.MessageName, StringComparison.Ordinal)
             && string.Equals(ContractVersion, other.ContractVersion, StringComparison.Ordinal)
             && string.Equals(RoutingAffinityKey, other.RoutingAffinityKey, StringComparison.Ordinal)
@@ -195,6 +224,7 @@ public abstract record MessageOptions
         var hash = new HashCode();
         hash.Add(Delay);
         hash.Add(ScheduledAt);
+        hash.Add(DeliverWithin);
         hash.Add(MessageName, StringComparer.Ordinal);
         hash.Add(ContractVersion, StringComparer.Ordinal);
         hash.Add(RoutingAffinityKey, StringComparer.Ordinal);

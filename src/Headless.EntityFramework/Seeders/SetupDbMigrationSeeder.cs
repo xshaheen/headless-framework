@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.EntityFramework;
+using Headless.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Hosting;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Extension methods for registering <see cref="DbMigrationSeeder{TDbContext}"/> in the application's

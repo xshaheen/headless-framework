@@ -8,23 +8,38 @@ internal sealed class RetryDispatchAttempt
 {
     private readonly IGracefulLeaseReleaseStorage _storage;
     private readonly MessageType _direction;
+    private readonly MediumMessage _message;
+    private readonly DateTimeOffset _claimedLockedUntil;
     private readonly Action? _onAbandonedBeforeExecution;
     private int _state = (int)AttemptState.Claimed;
 
     private RetryDispatchAttempt(
         IGracefulLeaseReleaseStorage storage,
         MessageType direction,
-        MessageLeaseIdentity identity,
+        MediumMessage message,
+        DateTimeOffset claimedLockedUntil,
         Action? onAbandonedBeforeExecution
     )
     {
         _storage = storage;
         _direction = direction;
-        Identity = identity;
+        _message = message;
+        _claimedLockedUntil = claimedLockedUntil;
         _onAbandonedBeforeExecution = onAbandonedBeforeExecution;
     }
 
-    public MessageLeaseIdentity Identity { get; }
+    /// <summary>
+    /// The lease generation a release matches: the message's current one, because the attempt's reservation and its
+    /// renewals re-stamp the lease the claim took. A release only follows the attempt, so nothing moves it meanwhile.
+    /// </summary>
+    public MessageLeaseIdentity Identity =>
+        new(
+            _message.StorageId,
+            _message.Owner,
+            _message.LockedUntil ?? _claimedLockedUntil,
+            _message.Lane,
+            _message.InboxAttemptFence
+        );
 
     /// <summary>Creates a durable attempt for a claimed retry, or <see langword="null"/> when the store cannot release exact leases.</summary>
     /// <param name="storage">The storage that owns the claimed lease.</param>
@@ -46,18 +61,7 @@ internal sealed class RetryDispatchAttempt
             return null;
         }
 
-        return new RetryDispatchAttempt(
-            releaser,
-            direction,
-            new MessageLeaseIdentity(
-                message.StorageId,
-                message.Owner,
-                lockedUntil,
-                message.Lane,
-                message.InboxAttemptFence
-            ),
-            onAbandonedBeforeExecution
-        );
+        return new RetryDispatchAttempt(releaser, direction, message, lockedUntil, onAbandonedBeforeExecution);
     }
 
     public static async ValueTask ReleaseClaimedBatchAsync(

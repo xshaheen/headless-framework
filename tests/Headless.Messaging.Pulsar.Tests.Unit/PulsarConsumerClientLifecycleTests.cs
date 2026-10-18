@@ -54,6 +54,23 @@ public sealed class PulsarConsumerClientLifecycleTests : TestBase
     }
 
     [Fact]
+    public async Task should_release_a_delayed_reject_at_once_because_pulsar_delays_the_redelivery()
+    {
+        // given
+        await using var client = new PulsarConsumerClient(
+            Options.Create(new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" }),
+            client: null!,
+            new ConsumerClientRequest("delayed-reject-test", concurrency: 0, MessageLane.Bus)
+        );
+
+        // when: a delivery with no message id to negatively acknowledge, so only the hold is observable
+        var reject = client.RejectAsync(sender: null, TimeSpan.FromMinutes(5), AbortToken).AsTask();
+
+        // then: NegativeAckRedeliveryDelay holds the message back, so the core's delay is not waited out here
+        await reject.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+    }
+
+    [Fact]
     public async Task should_stamp_topic_as_transport_address_when_wire_property_spoofs_it()
     {
         // given

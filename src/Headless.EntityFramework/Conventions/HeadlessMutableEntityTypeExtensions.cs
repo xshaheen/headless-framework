@@ -2,7 +2,7 @@
 
 using System.ComponentModel.DataAnnotations.Schema;
 using Headless.Domain;
-using Headless.EntityFramework.Contexts;
+using Headless.EntityFramework;
 using Headless.Reflection;
 using Microsoft.EntityFrameworkCore.Metadata;
 

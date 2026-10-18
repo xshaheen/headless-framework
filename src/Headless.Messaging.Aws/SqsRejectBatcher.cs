@@ -31,7 +31,13 @@ internal sealed class SqsRejectBatcher(
 
     public Task RejectAsync(string receiptHandle, CancellationToken cancellationToken)
     {
-        var pending = new PendingReject(receiptHandle);
+        return RejectAsync(receiptHandle, visibilitySeconds, cancellationToken);
+    }
+
+    /// <summary>Rejects a message so SQS hides it for <paramref name="hiddenSeconds"/> before it is received again.</summary>
+    public Task RejectAsync(string receiptHandle, int hiddenSeconds, CancellationToken cancellationToken)
+    {
+        var pending = new PendingReject(receiptHandle, hiddenSeconds);
         bool startFlush;
 
         lock (_lock)
@@ -150,7 +156,7 @@ internal sealed class SqsRejectBatcher(
                 .ChangeMessageVisibilityAsync(
                     queueUrl,
                     pending.ReceiptHandle,
-                    visibilitySeconds,
+                    pending.VisibilitySeconds,
                     CancellationToken.None
                 )
                 .ConfigureAwait(false);
@@ -174,7 +180,7 @@ internal sealed class SqsRejectBatcher(
                     batch[i].ReceiptHandle
                 )
                 {
-                    VisibilityTimeout = visibilitySeconds,
+                    VisibilityTimeout = batch[i].VisibilitySeconds,
                 }
             );
         }
@@ -217,9 +223,11 @@ internal sealed class SqsRejectBatcher(
         }
     }
 
-    private sealed class PendingReject(string receiptHandle)
+    private sealed class PendingReject(string receiptHandle, int visibilitySeconds)
     {
         public string ReceiptHandle { get; } = receiptHandle;
+
+        public int VisibilitySeconds { get; } = visibilitySeconds;
 
         public TaskCompletionSource Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }

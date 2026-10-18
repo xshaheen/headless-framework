@@ -951,6 +951,87 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     }
 
     [Fact]
+    public async Task should_drop_direct_send_without_reaching_transport_when_deadline_passes_before_send()
+    {
+        // given — building the transport message takes long enough for the delivery deadline to pass
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero));
+        var real = new JsonUtf8Serializer(Options.Create(new MessagingOptions()));
+        var slowSerializer = Substitute.For<IMessageSerializer>();
+        slowSerializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                clock.Advance(TimeSpan.FromSeconds(2));
+                return real.SerializeToTransportMessageAsync(call.Arg<Message>(), call.Arg<CancellationToken>());
+            });
+        await using var harness = _CreateHarness(clock, serializer: slowSerializer);
+
+        // when
+        var receipt = await harness.Publisher.PublishAsync(
+            MessageLane.Queue,
+            new DeliveryMessage("late"),
+            new QueueOptions { DeliveryMode = DeliveryMode.Direct, DeliverWithin = TimeSpan.FromSeconds(1) },
+            unitOfWork: null,
+            requireCoordination: false,
+            AbortToken
+        );
+
+        // then — nobody may consume it now, so the broker never sees it; the caller still gets its identity
+        harness.TransportMessages.Should().BeEmpty();
+        receipt.MessageId.Should().NotBeNullOrWhiteSpace();
+        receipt.StorageId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_send_direct_with_deliver_by_header_when_deadline_is_still_ahead()
+    {
+        // given
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero));
+        await using var harness = _CreateHarness(clock);
+
+        // when
+        await harness.Publisher.PublishAsync(
+            MessageLane.Bus,
+            new DeliveryMessage("on-time"),
+            new PublishOptions { DeliveryMode = DeliveryMode.Direct, DeliverWithin = TimeSpan.FromSeconds(30) },
+            unitOfWork: null,
+            requireCoordination: false,
+            AbortToken
+        );
+
+        // then
+        var sent = harness.TransportMessages.Should().ContainSingle().Which;
+        sent.Headers[Headers.DeliverBy]
+            .Should()
+            .Be(clock.GetUtcNow().AddSeconds(30).ToString("O", CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public async Task should_carry_deliver_by_header_into_the_durable_row()
+    {
+        // given
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero));
+        await using var harness = _CreateHarness(clock);
+        var stored = _CaptureStoredMessage(harness.Storage);
+
+        // when
+        await harness.Publisher.PublishAsync(
+            MessageLane.Bus,
+            new DeliveryMessage("durable"),
+            new PublishOptions { DeliverWithin = TimeSpan.FromMinutes(1) },
+            unitOfWork: null,
+            requireCoordination: false,
+            AbortToken
+        );
+
+        // then — the relay reads the deadline from the stored envelope
+        stored
+            .Value!.Origin.Headers[Headers.DeliverBy]
+            .Should()
+            .Be(clock.GetUtcNow().AddMinutes(1).ToString("O", CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
     public async Task should_send_transport_direct_through_incompatible_unit_of_work_without_storage_side_effects()
     {
         await using var fakeUnitOfWork = FakeUnitOfWorks.CreateActive();

@@ -36,7 +36,7 @@ public static class HeadlessFileValidators
         {
             return builder
                 .SetValidator(new FormFileSizeValidator<T>(minBytes: 1, maxBytes: null, formatSizes: false))
-                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileNotEmpty());
+                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileNotEmpty);
         }
 
         /// <summary>Validates that the uploaded file size is at least <paramref name="minBytes"/> bytes.</summary>
@@ -50,7 +50,7 @@ public static class HeadlessFileValidators
         {
             return builder
                 .SetValidator(new FormFileSizeValidator<T>(minBytes, maxBytes: null, formatSizes: true))
-                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileGreaterThanOrEqualToValidator());
+                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileGreaterThanOrEqualToValidator);
         }
 
         /// <summary>Validates that the uploaded file size does not exceed <paramref name="maxBytes"/> bytes.</summary>
@@ -64,7 +64,7 @@ public static class HeadlessFileValidators
         {
             return builder
                 .SetValidator(new FormFileSizeValidator<T>(minBytes: null, maxBytes, formatSizes: true))
-                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileLessThanOrEqualToValidator());
+                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileLessThanOrEqualToValidator);
         }
     }
 
@@ -89,7 +89,7 @@ public static class HeadlessFileValidators
         {
             return builder
                 .SetValidator(new FormFileContentTypeValidator<T, TIFormFile>(contentTypes))
-                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileContentTypeValidator());
+                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileContentTypeValidator);
         }
 
         /// <summary>
@@ -130,7 +130,7 @@ public static class HeadlessFileValidators
                         return predicate(format);
                     }
                 )
-                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileSignatureValidator());
+                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileSignatureValidator);
         }
     }
 }

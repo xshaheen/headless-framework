@@ -33,9 +33,9 @@ public static class HeadlessModelConfigurationBuilderExtensions
         b.Properties<UserId>().HaveConversion<UserIdValueConverter>();
         b.Properties<AccountId>().HaveConversion<AccountIdValueConverter>();
         // File and Image carry mutable members (Container, Metadata), so they need a deep comparer for an in-place
-        // change to be saved.
-        b.Properties<File>().HaveConversion<JsonValueConverter<File>, JsonValueComparer<File>>();
-        b.Properties<Image>().HaveConversion<JsonValueConverter<Image>, JsonValueComparer<Image>>();
+        // change to be saved. A structural one avoids serializing the value on every change-detection pass.
+        b.Properties<File>().HaveConversion<JsonValueConverter<File>, FileValueComparer>();
+        b.Properties<Image>().HaveConversion<JsonValueConverter<Image>, ImageValueComparer>();
         b.Properties<Locales>().HaveConversion<LocalesValueConverter, LocalesValueComparer>();
         b.Properties<ExtraProperties>().HaveConversion<ExtraPropertiesValueConverter, ExtraPropertiesValueComparer>();
     }

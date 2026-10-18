@@ -25,6 +25,7 @@ namespace Headless.Primitives;
 
 [UnderlyingPrimitiveType(typeof(Guid))]
 [global::System.Diagnostics.DebuggerDisplay("{_value}")]
+[global::System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1036:Override methods on comparable types", Justification = "Primitives are sortable through IComparable; ordering operators are generated only for numeric, char, and date/time types.")]
 [global::System.Text.Json.Serialization.JsonConverter(typeof(GuidPrimitiveJsonConverter))]
 [global::System.ComponentModel.TypeConverter(typeof(GuidPrimitiveTypeConverter))]
 public readonly partial struct GuidPrimitive : global::System.IEquatable<GuidPrimitive>

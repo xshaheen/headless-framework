@@ -9,7 +9,12 @@ namespace Headless.Messaging.Internal;
 /// </summary>
 internal static class DirectPublisherCore
 {
-    internal static async Task SendAsync(
+    /// <summary>Serializes <paramref name="message"/> and sends it through the transport, tracing the send.</summary>
+    /// <returns>
+    /// <see langword="true"/> when the message was handed to the transport; <see langword="false"/> when its delivery
+    /// deadline passed before the send, so it was dropped without contacting the broker.
+    /// </returns>
+    internal static async Task<bool> SendAsync(
         Message message,
         MessageLane lane,
         IMessageSerializer serializer,
@@ -25,6 +30,13 @@ internal static class DirectPublisherCore
         var transportMsg = await serializer
             .SerializeToTransportMessageAsync(message, cancellationToken)
             .ConfigureAwait(false);
+
+        // A Direct send has no relay to catch an expired message later, so the last instant before the broker call is
+        // where its delivery deadline is enforced.
+        if (DeliverByEnvelope.IsExpired(transportMsg.Headers, timeProvider.GetUtcNow()))
+        {
+            return false;
+        }
 
         using var timeoutCts = new CancellationTokenSource(transportPublishTimeout, timeProvider);
 
@@ -48,6 +60,7 @@ internal static class DirectPublisherCore
             }
 
             _TracingAfterSend(traceHandle, transportMsg, lane, brokerAddress, nowMs);
+            return true;
         }
         catch (OperationCanceledException ex)
         {
