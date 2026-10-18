@@ -203,14 +203,10 @@ internal sealed class MessageSender : IMessageSender
         var brokerAddress = transport.BrokerAddress;
         var traceHandle = _TracingBefore(transportMsg, message.Lane, brokerAddress);
 
-        // The publish timeout runs on the back-off clock, so a test steps through a broker that never answers. With no
-        // host lifetime to observe (test and non-hosted contexts) the shutdown token can never fire, so the timeout
-        // source alone bounds the send instead of a linked source wrapping it in extra registration state.
-        using var publishTimeoutCts = new CancellationTokenSource(_options.TransportPublishTimeout, _backoffClock);
-        using var linkedPublishCts = _shutdownToken.CanBeCanceled
-            ? CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken, publishTimeoutCts.Token)
-            : null;
-        var publishCts = linkedPublishCts ?? publishTimeoutCts;
+        // The timer is declared first so the linked source over it is disposed first, unregistering from a live token.
+        var publishTimeout = _CreatePublishTimeoutSources();
+        using var publishTimerCts = publishTimeout.Timer;
+        using var publishCts = publishTimeout.Publish;
         OperateResult result;
 
         // Slides the lease forward while the send runs, so a send that outlasts DispatchTimeout keeps its row.
@@ -344,14 +340,40 @@ internal sealed class MessageSender : IMessageSender
         }
     }
 
+    // Returns the source that bounds the send, cancelled by the publish timeout or host shutdown, and the back-off
+    // clock's timer source when it is a separate object the caller must also dispose.
+    private (CancellationTokenSource Publish, CancellationTokenSource? Timer) _CreatePublishTimeoutSources()
+    {
+        // With no host lifetime to observe (test and non-hosted contexts) the shutdown token can never fire, so no
+        // linked source wraps the timeout in extra registration state.
+        if (ReferenceEquals(_backoffClock, TimeProvider.System))
+        {
+            // A source's own timer already runs on the system clock, so one source carries both the timeout and
+            // shutdown: the hot path allocates a single source per send.
+            var publish = _shutdownToken.CanBeCanceled
+                ? CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken)
+                : new CancellationTokenSource();
+            publish.CancelAfter(_options.TransportPublishTimeout);
+
+            return (publish, null);
+        }
+
+        // Any other back-off clock needs a timer source of its own, so a test steps through a broker that never answers.
+        var timer = new CancellationTokenSource(_options.TransportPublishTimeout, _backoffClock);
+
+        return _shutdownToken.CanBeCanceled
+            ? (CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken, timer.Token), timer)
+            : (timer, null);
+    }
+
     private MessageLeaseRenewal _StartLeaseRenewal(MediumMessage message, CancellationToken cancellationToken)
     {
         return MessageLeaseRenewal.Start(
             message,
             _StorageOf(message).RenewPublishLeaseAsync,
             _retryPolicy,
-            _timeProvider,
-            _backoffClock,
+            clock: _timeProvider,
+            backoffClock: _backoffClock,
             _logger,
             cancellationToken
         );

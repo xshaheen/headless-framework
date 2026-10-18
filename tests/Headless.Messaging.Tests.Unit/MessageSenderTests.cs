@@ -755,6 +755,65 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
+    public async Task should_schedule_a_retry_when_the_publish_times_out_on_the_system_clock_while_the_host_runs()
+    {
+        // given — no back-off clock is registered, so one source on the system clock carries both the publish timeout
+        // and the running host's stopping token.
+        var storage = Substitute.For<IDataStorage>();
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
+                return OperateResult.Success;
+            });
+
+        var options = new MessagingOptions
+        {
+            TransportPublishTimeout = TimeSpan.FromMilliseconds(20),
+            RetryPolicy =
+            {
+                RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.FromSeconds(5)),
+                MaxPersistedRetries = 1,
+            },
+        };
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            options,
+            new FakeHostApplicationLifetime(AbortToken)
+        );
+
+        // when
+        var result = await sender.SendAsync(_CreateMediumMessage()).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then — the timeout, not shutdown, cut the send off, so the row is scheduled for a later attempt.
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<TimeoutException>();
+        await storage
+            .Received(1)
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
+                Arg.Is<RetryDelay?>(value => value.HasValue),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Is<int>(value => value == 0),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_rethrow_a_transport_cancellation_caused_by_shutdown()
     {
         // given — the host is stopping, which cancels the in-flight publish.

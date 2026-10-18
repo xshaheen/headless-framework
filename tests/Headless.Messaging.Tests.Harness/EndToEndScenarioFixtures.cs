@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Tests.Helpers;
 
 namespace Tests;
 
@@ -22,8 +23,8 @@ public sealed class HandlerRunLedger
     private readonly Lock _lock = new();
     private readonly Dictionary<string, int> _started = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _completed = new(StringComparer.Ordinal);
+    private readonly ChangeSignal _changed = new();
     private TaskCompletionSource _gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private TaskCompletionSource _changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _gateOpen = true;
 
     /// <summary>Holds every gated handler until <see cref="OpenGate"/> runs or its delivery is cancelled.</summary>
@@ -89,52 +90,23 @@ public sealed class HandlerRunLedger
     /// <see langword="false"/> when <paramref name="timeout"/> passes first, so a test can also assert that nothing more
     /// happened within a window.
     /// </summary>
-    public async Task<bool> WaitUntilAsync(
+    public Task<bool> WaitUntilAsync(
         Func<HandlerRunLedger, bool> condition,
         TimeSpan timeout,
         CancellationToken cancellationToken
     )
     {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(timeout);
-
-        try
-        {
-            while (true)
-            {
-                Task changed;
-
-                lock (_lock)
-                {
-                    changed = _changed.Task;
-                }
-
-                if (condition(this))
-                {
-                    return true;
-                }
-
-                await changed.WaitAsync(deadline.Token).ConfigureAwait(false);
-            }
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return false;
-        }
+        return _changed.WaitUntilAsync(() => condition(this), timeout, cancellationToken);
     }
 
     private void _Increment(Dictionary<string, int> runs, string id)
     {
-        TaskCompletionSource changed;
-
         lock (_lock)
         {
             runs[id] = runs.GetValueOrDefault(id) + 1;
-            changed = _changed;
-            _changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
-        changed.TrySetResult();
+        _changed.Notify();
     }
 }
 

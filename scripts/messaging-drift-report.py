@@ -36,6 +36,8 @@ SKIPPED = "skipped"
 NOT_RUN = "not run"
 
 _CELL_MARK = {PASSED: "pass", FAILED: "**FAIL**", SKIPPED: "skip", NOT_RUN: "not run"}
+# Worst outcome ranks highest: a test or cell with several results reports the worst of them.
+_OUTCOME_RANK = {NOT_RUN: 0, SKIPPED: 1, PASSED: 2, FAILED: 3}
 
 
 @dataclass(frozen=True)
@@ -124,7 +126,7 @@ def load_results(results: Path) -> dict[TestKey, TestResult]:
 
 
 def _rank(outcome: str) -> int:
-    return {NOT_RUN: 0, SKIPPED: 1, PASSED: 2, FAILED: 3}[outcome]
+    return _OUTCOME_RANK[outcome]
 
 
 def cell_outcome(keys: set[TestKey], tests: dict[TestKey, TestResult]) -> str:

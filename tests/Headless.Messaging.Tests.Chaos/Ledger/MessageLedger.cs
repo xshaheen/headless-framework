@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.InteropServices;
+using Tests.Helpers;
 
 namespace Tests.Ledger;
 
@@ -18,7 +19,7 @@ public sealed class MessageLedger(TimeProvider clock)
     private readonly Lock _lock = new();
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
     private readonly List<DateTimeOffset> _completions = [];
-    private TaskCompletionSource _changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly ChangeSignal _changed = new();
     private LedgerProgress _progress;
 
     public DateTimeOffset Now => clock.GetUtcNow();
@@ -112,46 +113,17 @@ public sealed class MessageLedger(TimeProvider clock)
     /// Returns <see langword="false"/> when <paramref name="timeout"/> passes first, so a caller can also assert that
     /// nothing more happened within a window.
     /// </summary>
-    public async Task<bool> WaitUntilAsync(
+    public Task<bool> WaitUntilAsync(
         Func<LedgerProgress, bool> condition,
         TimeSpan timeout,
         CancellationToken cancellationToken
     )
     {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(timeout);
-
-        try
-        {
-            while (true)
-            {
-                Task changed;
-                LedgerProgress progress;
-
-                lock (_lock)
-                {
-                    changed = _changed.Task;
-                    progress = _progress;
-                }
-
-                if (condition(progress))
-                {
-                    return true;
-                }
-
-                await changed.WaitAsync(deadline.Token).ConfigureAwait(false);
-            }
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return false;
-        }
+        return _changed.WaitUntilAsync(() => condition(Progress), timeout, cancellationToken);
     }
 
     private void _Update(string key, Action<Entry> update)
     {
-        TaskCompletionSource changed;
-
         lock (_lock)
         {
             if (!_entries.TryGetValue(key, out var entry))
@@ -163,11 +135,9 @@ public sealed class MessageLedger(TimeProvider clock)
             var before = entry.Totals();
             update(entry);
             _progress = LedgerProgress.Add(_progress, LedgerProgress.Subtract(entry.Totals(), before));
-            changed = _changed;
-            _changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
-        changed.TrySetResult();
+        _changed.Notify();
     }
 
     private sealed class Entry

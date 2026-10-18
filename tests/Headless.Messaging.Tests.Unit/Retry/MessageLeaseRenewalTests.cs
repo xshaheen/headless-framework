@@ -179,8 +179,8 @@ public sealed class MessageLeaseRenewalTests : TestBase
                 return ValueTask.FromResult(!_outcomes.TryDequeue(out var outcome) || outcome());
             },
             policy,
-            _clock,
-            _backoffClock,
+            clock: _clock,
+            backoffClock: _backoffClock,
             NullLogger.Instance,
             AbortToken
         );

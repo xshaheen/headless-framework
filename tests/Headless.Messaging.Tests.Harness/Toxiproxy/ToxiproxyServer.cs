@@ -21,21 +21,30 @@ public sealed class ToxiproxyServer : IAsyncDisposable
     private const int _FirstProxyPort = 8666;
     private const int _MaxProxies = 3;
 
-    private readonly IContainer _container = new ContainerBuilder(_Image)
-        .WithPortBinding(_ApiPort, assignRandomHostPort: true)
-        .WithPortBinding(_FirstProxyPort, assignRandomHostPort: true)
-        .WithPortBinding(_FirstProxyPort + 1, assignRandomHostPort: true)
-        .WithPortBinding(_FirstProxyPort + 2, assignRandomHostPort: true)
-        // Lets the proxy reach a broker published on the Docker host, on Linux CI as well as Docker Desktop.
-        .WithExtraHost("host.docker.internal", "host-gateway")
-        .WithWaitStrategy(
-            Wait.ForUnixContainer()
-                .UntilHttpRequestIsSucceeded(request => request.ForPath("/version").ForPort(_ApiPort))
-        )
-        .Build();
+    private readonly IContainer _container = _BuildContainer();
 
     private HttpClient? _http;
     private int _proxies;
+
+    private static IContainer _BuildContainer()
+    {
+        var builder = new ContainerBuilder(_Image).WithPortBinding(_ApiPort, assignRandomHostPort: true);
+
+        // One published port per proxy slot, so the bindings follow the cap CreateProxyAsync enforces.
+        for (var index = 0; index < _MaxProxies; index++)
+        {
+            builder = builder.WithPortBinding(_FirstProxyPort + index, assignRandomHostPort: true);
+        }
+
+        return builder
+            // Lets the proxy reach a broker published on the Docker host, on Linux CI as well as Docker Desktop.
+            .WithExtraHost("host.docker.internal", "host-gateway")
+            .WithWaitStrategy(
+                Wait.ForUnixContainer()
+                    .UntilHttpRequestIsSucceeded(request => request.ForPath("/version").ForPort(_ApiPort))
+            )
+            .Build();
+    }
 
     public async ValueTask StartAsync(CancellationToken cancellationToken = default)
     {
