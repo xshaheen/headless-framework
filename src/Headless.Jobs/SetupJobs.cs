@@ -247,6 +247,9 @@ public static class SetupJobs
             if (optionInstance.RegisterBackgroundServices)
             {
                 services.AddWarmup<JobsActivationWarmup>();
+                services.AddSingleton<IInitializer>(static sp => new JobsActivationInitializer(
+                    sp.GetRequiredService<JobsActivationBarrier>()
+                ));
             }
         }
         else
