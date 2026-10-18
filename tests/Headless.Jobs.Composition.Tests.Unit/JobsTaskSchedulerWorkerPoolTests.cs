@@ -176,7 +176,9 @@ public sealed class JobsTaskSchedulerWorkerPoolTests : TestBase
             await scheduler.QueueAsync(_ => release.Task, JobPriority.Normal, AbortToken, AbortToken, gate);
         }
 
-        await _WaitUntilAsync(() => scheduler.ParkedTasks == 3);
+        // The permit holder still counts as queued between taking the permit and starting, so the counts settle
+        // only once it is active.
+        await _WaitUntilAsync(() => scheduler.ParkedTasks == 3 && scheduler.ActiveTasks == 1);
         scheduler.TotalQueuedTasks.Should().Be(3);
         scheduler.GetDiagnostics().Should().NotContain("DISCREPANCY");
         (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromMilliseconds(100))).Should().BeFalse();
