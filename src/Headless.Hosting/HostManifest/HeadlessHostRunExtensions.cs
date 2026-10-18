@@ -37,8 +37,9 @@ public static class HeadlessHostRunExtensions
         /// <param name="cancellationToken">Stops the host, or abandons the command.</param>
         /// <returns>
         /// The process exit code: 0 on success; 1 when the manifest fails, when startup validation fails, when a
-        /// health check reports <see cref="HealthStatus.Unhealthy" />, or when a resource or a seeder fails or times
-        /// out; 2 when the <c>resources</c> or <c>seed</c> arguments are invalid or match nothing.
+        /// health check reports <see cref="HealthStatus.Unhealthy" />, when a resource or a seeder fails or times out,
+        /// or when a <see cref="BackgroundService" /> faulted while the host ran; 2 when the
+        /// <c>resources</c> or <c>seed</c> arguments are invalid or match nothing.
         /// </returns>
         /// <remarks>
         /// <para>
@@ -117,9 +118,26 @@ public static class HeadlessHostRunExtensions
                 return await _RunCommandAsync(host, _CheckAsync, cancellationToken).ConfigureAwait(false);
             }
 
+            // Resolved before the run because RunAsync disposes the host. A background service's fault stops the host
+            // (or, when the host ignores such faults, leaves a dead component) but lets the process end normally, so
+            // without this a crash reads as a clean exit to an orchestrator.
+            var backgroundServices = host.Services.GetServices<IHostedService>().OfType<BackgroundService>().ToList();
+
             await host.RunAsync(cancellationToken).ConfigureAwait(false);
 
-            return 0;
+            var faulted = backgroundServices.FindAll(static s => s.ExecuteTask?.IsFaulted == true);
+
+            foreach (var service in faulted)
+            {
+                await Console
+                    .Error.WriteLineAsync(
+                        $"Host stopped: {service.GetType().Name} failed: "
+                            + service.ExecuteTask!.Exception!.GetBaseException().Message
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            return faulted.Count == 0 ? 0 : 1;
         }
     }
 

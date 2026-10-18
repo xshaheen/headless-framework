@@ -214,6 +214,31 @@ public sealed class RunHeadlessAsyncTests : TestBase
         section.Calls.Should().Be(0);
     }
 
+    [Fact]
+    public async Task should_exit_1_when_a_background_service_fault_stops_the_host()
+    {
+        // when
+        var run = await HostConsoleRun.RunAsync(
+            builder => builder.Services.AddHostedService<FaultingBackgroundService>(),
+            [],
+            AbortToken
+        );
+
+        // then
+        run.ExitCode.Should().Be(1, "an orchestrator must see a host that stopped on a fault as a failed process");
+        run.StandardError.Should().Contain(nameof(FaultingBackgroundService)).And.Contain("queue is missing");
+    }
+
+    private sealed class FaultingBackgroundService : BackgroundService
+    {
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        {
+            await Task.Yield();
+
+            throw new InvalidOperationException("The queue is missing. Run 'resources setup'.");
+        }
+    }
+
     private sealed class SampleOptions
     {
         public int Concurrency { get; set; }
