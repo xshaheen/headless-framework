@@ -293,6 +293,7 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 - Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
 - Host manifest: `RunHeadlessAsync(args)` prints, for the `describe` verb, the JSON each `IHostManifestSection` writes about what its feature registered, without starting the host. See [Host manifest](#host-manifest)
 - Stateful resources: `IStatefulResource` (setup, check, clear, teardown, status) for external state a feature needs, the `resources` verb of `RunHeadlessAsync(args)` that a deployment runs, `AddHeadlessResourceSetupOnStartup` for development and test hosts, and `SetupResourcesAsync` / `ResetResourceStateAsync` / `TeardownResourcesAsync` on `IServiceProvider`. See [Stateful resources](#stateful-resources)
+- Warm-up: `IWarmup` work runs in the background after start, behind the `warmup` readiness check. See [Warm-up](#warm-up)
 - Pre-start health check: `RunHeadlessAsync(args)` runs the host's health checks once for the `check` verb, skipping `host-state` checks, and exits 1 when one is `Unhealthy`. See [Health check command](#health-check-command)
 - Options validation with FluentValidation
 - Configuration binding extensions
@@ -643,6 +644,15 @@ if (builder.Environment.IsDevelopment())
 `AddHeadlessResourceSetupOnStartup(StatefulResourceStartupAction.ResetState)` also clears each resource's data after setup; outside `StatefulResourceOptions.DestructiveEnvironments` it fails the host start instead of clearing anything. The startup action runs before every other hosted service, wherever the call sits, and a failure fails the host start, naming each failed resource. A second call replaces the action. `TryAddHeadlessResourceSetupOnStartup()` registers startup setup only when nothing registered it yet; `HeadlessTestServer` uses it, so an application that registers `ResetState` keeps it under the test server.
 
 Tests and tools reach the same runner on a built host's services: `await host.Services.SetupResourcesAsync()`, `ResetResourceStateAsync()`, and `TeardownResourcesAsync()`. Each one runs every resource, skips unsupported operations, and then throws one `StatefulResourceException` whose `Failures` holds each failed resource's error. `ResetResourceStateAsync` and `TeardownResourcesAsync` throw `InvalidOperationException` and touch nothing when the host's environment is outside `StatefulResourceOptions.DestructiveEnvironments`; services built without an `IHostEnvironment` are allowed.
+
+#### Warm-up
+
+A warm-up is work a feature does once after the host starts so its first requests do not pay for it: loading a cache, reading a key ring, downloading data, or checking that broker objects exist. Implement `IWarmup` (`Name`, `GatesReadiness`, `WarmUpAsync`) and register it with `services.AddWarmup<T>()` or `services.AddWarmup(sp => ...)`; registering a type again adds nothing.
+
+- **Never delays the start.** The host runs every warm-up concurrently in the background after `IHostedLifecycleService.StartedAsync`, each resolved from its own scope that lives for the whole run.
+- **Readiness waits.** The first `AddWarmup` call contributes the `warmup` health check (`HeadlessWarmupServiceCollectionExtensions.HealthCheckName`), tagged `ready`, `headless`, and `host-state`. It reports `Unhealthy`, naming each pending warm-up and its last error, until every warm-up whose `GatesReadiness` is `true` (the default) has finished. Liveness is not affected, and the [`check` command](#health-check-command) skips it.
+- **Failures retry, never crash.** A failed warm-up is logged (`WarmupFailed`) and retried with a jittered back-off from one second to 30 seconds, in real time, until it succeeds or the host stops. Make `WarmUpAsync` safe to repeat. A misconfiguration that must stop the start belongs in an `IHeadlessStartupValidator` instead.
+- **Tests wait for it.** The runner is an `IInitializer`, so `HeadlessTestServer` returns only once the gating warm-ups have finished.
 
 #### Health check command
 
