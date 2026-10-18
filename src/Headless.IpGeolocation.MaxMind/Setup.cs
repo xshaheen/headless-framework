@@ -68,8 +68,13 @@ public static class SetupMaxMind
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<MaxMindDatabases>();
             services.TryAddSingleton<MaxMindDownloader>();
+            services.TryAddSingleton<MaxMindDatabaseSync>();
             services.TryAddSingleton<IIpGeolocator, MaxMindIpGeolocator>();
             services.AddHostedService<MaxMindDatabaseUpdater>();
+            services.AddWarmup<MaxMindDatabaseWarmup>();
+            services.AddHeadlessStatefulResource(static provider =>
+                ActivatorUtilities.CreateInstance<MaxMindDatabaseResource>(provider)
+            );
 
             services.AddHttpClient(
                 MaxMindOptions.HttpClientName,

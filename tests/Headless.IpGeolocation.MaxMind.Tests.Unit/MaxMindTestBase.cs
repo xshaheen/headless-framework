@@ -46,6 +46,18 @@ public abstract class MaxMindTestBase : TestBase
         return provider;
     }
 
+    /// <summary>Polls <paramref name="condition" /> until it holds, failing the test after 10 seconds.</summary>
+    protected static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+
+        while (!condition())
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(20), timeout.Token);
+        }
+    }
+
     protected override ValueTask DisposeAsyncCore()
     {
         foreach (var provider in _providers)
