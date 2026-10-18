@@ -74,6 +74,38 @@ public sealed record LedgerVerdict(
         return violations;
     }
 
+    /// <summary>
+    /// The failures of a load scenario's acceptance floor. The loss checks judge only accepted messages, so a run that
+    /// accepted nothing would pass them having exercised nothing; this fails it instead.
+    /// </summary>
+    /// <param name="attempted">How many publishes the scenario attempted.</param>
+    /// <param name="minimumShare">The share of <paramref name="attempted"/> that must be accepted, from 0 to 1.</param>
+    public IEnumerable<string> AcceptanceViolations(int attempted, double minimumShare)
+    {
+        if (attempted == 0)
+        {
+            yield return "no publish was attempted";
+            yield break;
+        }
+
+        if (Accepted == 0)
+        {
+            yield return string.Create(
+                CultureInfo.InvariantCulture,
+                $"none of {attempted} attempted publish(es) was accepted"
+            );
+            yield break;
+        }
+
+        if (Accepted < attempted * minimumShare)
+        {
+            yield return string.Create(
+                CultureInfo.InvariantCulture,
+                $"only {Accepted} of {attempted} attempted publish(es) were accepted, under the {minimumShare:P0} floor"
+            );
+        }
+    }
+
     /// <summary>The counts in one line, for the run summary and the test output.</summary>
     public string Describe() =>
         string.Create(

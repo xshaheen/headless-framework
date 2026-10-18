@@ -28,6 +28,12 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
     /// <summary>How long a scenario waits for the stack to finish its work once the faults are over.</summary>
     private static readonly TimeSpan _Recovery = TimeSpan.FromMinutes(3);
 
+    /// <summary>
+    /// The share of publishes that must be accepted while storage stays up. A publish then only has to write the
+    /// outbox, so most must succeed; the floor stays loose until a nightly run has measured the real rejection rate.
+    /// </summary>
+    private const double _StorageUpAcceptanceShare = 0.5;
+
     private static ChaosProfile Profile => ChaosProfile.Current;
 
     [Fact]
@@ -206,7 +212,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
         );
         await Task.Delay(size.Outage, AbortToken);
         await stack.RestoreBrokerAnswersAsync(AbortToken);
-        await publishing;
+        var attempted = await publishing;
 
         var recovered = await run.Ledger.WaitUntilAsync(
             progress => progress.AllAcceptedCompleted,
@@ -230,7 +236,11 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
         // A send that returns later than the retry delay can only be a back-off; the tolerance covers timer skew.
         var floor = strategy.Delay - TimeSpan.FromMilliseconds(100);
 
-        List<string> violations = [.. verdict.LossViolations()];
+        List<string> violations =
+        [
+            .. verdict.AcceptanceViolations(attempted, _StorageUpAcceptanceShare),
+            .. verdict.LossViolations(),
+        ];
         _AddIf(
             violations,
             !recovered,
@@ -250,7 +260,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
         _Report(
             "broker brown-out",
             violations,
-            $"outage {_Seconds(size.Outage)}, send attempts {snapshot.Accepted.Sum(entry => entry.Sends.Count)}, max per row {snapshot.Accepted.Select(entry => entry.Sends.Count).DefaultIfEmpty().Max()}, shortest retry gap {_Seconds(shortestGap)}, duplicate sends {snapshot.Accepted.Sum(entry => Math.Max(0, entry.SuccessfulSends - 1))}; {verdict.Describe()}"
+            $"outage {_Seconds(size.Outage)}, publishes attempted {attempted}, send attempts {snapshot.Accepted.Sum(entry => entry.Sends.Count)}, max per row {snapshot.Accepted.Select(entry => entry.Sends.Count).DefaultIfEmpty().Max()}, shortest retry gap {_Seconds(shortestGap)}, duplicate sends {snapshot.Accepted.Sum(entry => Math.Max(0, entry.SuccessfulSends - 1))}; {verdict.Describe()}"
         );
         violations.Should().BeEmpty();
     }
@@ -274,10 +284,11 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
 
         // when — storage drops out on a fixed cadence while load keeps arriving
         var flaps = 0;
+        int attempted;
         using (var flapping = CancellationTokenSource.CreateLinkedTokenSource(AbortToken))
         {
             var flapper = _FlapStorageAsync(size, () => flaps++, flapping.Token);
-            await run.PublishAtRateAsync(
+            attempted = await run.PublishAtRateAsync(
                 size.MessagesPerSecond,
                 size.Duration,
                 index => hosts[index % hosts.Length],
@@ -300,7 +311,12 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
         var deadLettered = await stack.CountQueuedAsync(run.WorkDeadLetterQueue, AbortToken);
         var failedRows = await run.CountReceivedAsync(ChaosModule.WorkName, StatusName.Failed, AbortToken);
 
-        List<string> violations = [.. verdict.NoLossViolations(maxDuplicateRatio: 0.01)];
+        // Storage refuses publishes while it is down, so only a run that accepted nothing fails the floor.
+        List<string> violations =
+        [
+            .. verdict.AcceptanceViolations(attempted, minimumShare: 0),
+            .. verdict.NoLossViolations(maxDuplicateRatio: 0.01),
+        ];
         _AddIf(
             violations,
             !recovered,
@@ -312,7 +328,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
         _Report(
             "storage flap under load",
             violations,
-            $"rate {size.MessagesPerSecond}/s for {_Seconds(size.Duration)}, flaps {flaps}, dead-lettered {deadLettered}, failed rows {failedRows}; {verdict.Describe()}"
+            $"rate {size.MessagesPerSecond}/s for {_Seconds(size.Duration)}, publishes attempted {attempted}, flaps {flaps}, dead-lettered {deadLettered}, failed rows {failedRows}; {verdict.Describe()}"
         );
         violations.Should().BeEmpty();
     }
@@ -331,10 +347,11 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
 
         // when — the broker link drops on a fixed cadence under a steady load
         var drops = 0;
+        int attempted;
         using (var churning = CancellationTokenSource.CreateLinkedTokenSource(AbortToken))
         {
             var churner = _ChurnBrokerAsync(size.DropEvery, () => drops++, churning.Token);
-            await run.PublishAtRateAsync(
+            attempted = await run.PublishAtRateAsync(
                 size.MessagesPerSecond,
                 size.Duration,
                 index => hosts[index % hosts.Length],
@@ -358,7 +375,11 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
         var longestGap = completions.Zip(completions.Skip(1), (first, next) => next - first).DefaultIfEmpty().Max();
         var limit = ReconnectBackoff.Ceiling + TimeSpan.FromSeconds(5);
 
-        List<string> violations = [.. verdict.LossViolations()];
+        List<string> violations =
+        [
+            .. verdict.AcceptanceViolations(attempted, _StorageUpAcceptanceShare),
+            .. verdict.LossViolations(),
+        ];
         _AddIf(violations, !recovered, $"not every accepted message ran within {_Recovery} after the churn stopped");
         _AddIf(
             violations,
@@ -369,7 +390,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
         _Report(
             "connection churn",
             violations,
-            $"rate {size.MessagesPerSecond}/s for {_Seconds(size.Duration)}, drops {drops}, longest consumption gap {_Seconds(longestGap)}; {verdict.Describe()}"
+            $"rate {size.MessagesPerSecond}/s for {_Seconds(size.Duration)}, publishes attempted {attempted}, drops {drops}, longest consumption gap {_Seconds(longestGap)}; {verdict.Describe()}"
         );
         violations.Should().BeEmpty();
     }
@@ -661,7 +682,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
 
         // when
         var faults = _InjectAsync(plan, run, live, AbortToken);
-        await run.PublishAtRateAsync(
+        var attempted = await run.PublishAtRateAsync(
             size.MessagesPerSecond,
             size.Duration,
             index => live[index % live.Length],
@@ -682,7 +703,12 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
         var failedRows = await run.CountReceivedAsync(ChaosModule.WorkName, StatusName.Failed, AbortToken);
         var deadLettered = await stack.CountQueuedAsync(run.WorkDeadLetterQueue, AbortToken);
 
-        List<string> violations = [.. verdict.LossViolations()];
+        // The seeded faults take storage down too, so only a run that accepted nothing fails the floor.
+        List<string> violations =
+        [
+            .. verdict.AcceptanceViolations(attempted, minimumShare: 0),
+            .. verdict.LossViolations(),
+        ];
         _AddIf(violations, !recovered, $"not every accepted message ran within {_Recovery} after the last fault");
         _AddIf(violations, failedRows > 0, $"{failedRows} received row(s) ended Failed");
         _AddIf(violations, deadLettered > 0, $"{deadLettered} message(s) were dead-lettered by the broker");
@@ -690,7 +716,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
         _Report(
             "seeded soak",
             violations,
-            $"{plan}; failed rows {failedRows}, dead-lettered {deadLettered}; {verdict.Describe()}"
+            $"{plan}; publishes attempted {attempted}, failed rows {failedRows}, dead-lettered {deadLettered}; {verdict.Describe()}"
         );
         violations.Should().BeEmpty($"the soak with {plan} must lose nothing; {replay}");
     }
