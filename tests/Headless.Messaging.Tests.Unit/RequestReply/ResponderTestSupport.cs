@@ -344,7 +344,8 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
 
     public static ConsumerExecutorDescriptor ResponderDescriptor(
         MessageConsumerDispatch? dispatch = null,
-        FailurePolicyDefinition? failurePolicy = null
+        FailurePolicyDefinition? failurePolicy = null,
+        ConsumerRateLimit? rateLimit = null
     )
     {
         return new ConsumerExecutorDescriptor
@@ -360,6 +361,7 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
             ConsumerIdentity = QuoteResponder.Identity,
             MessageContractVersion = "1",
             ResponseType = typeof(PriceQuote),
+            RateLimit = rateLimit,
         };
     }
 

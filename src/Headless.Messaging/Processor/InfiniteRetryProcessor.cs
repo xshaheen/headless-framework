@@ -64,7 +64,7 @@ internal sealed class InfiniteRetryProcessor(IProcessor inner, ILoggerFactory lo
 internal static partial class InfiniteRetryProcessorLog
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 125,
         EventName = "ProcessorFailedRetrying",
         Level = LogLevel.Warning,
         Message = "Processor '{ProcessorName}' failed. Retrying in {BackoffSeconds}s..."
