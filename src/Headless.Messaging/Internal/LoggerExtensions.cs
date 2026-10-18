@@ -379,7 +379,7 @@ internal static partial class LoggerExtensions
     public static partial void ReplayedRequestRunsWithoutCaller(this ILogger logger, Guid storageId, long generation);
 
     [LoggerMessage(
-        EventId = 4121,
+        EventId = 4129,
         EventName = "MessageLeaseRenewalFailed",
         Level = LogLevel.Warning,
         Message = "Renewing the lease on message {StorageId} failed; the lease it last confirmed is still live, so the renewal is retried on the next tick."
@@ -387,7 +387,7 @@ internal static partial class LoggerExtensions
     public static partial void MessageLeaseRenewalFailed(this ILogger logger, Exception exception, Guid storageId);
 
     [LoggerMessage(
-        EventId = 4123,
+        EventId = 4130,
         EventName = "MessageLeaseRenewalFailedPastLease",
         Level = LogLevel.Warning,
         Message = "Renewing the lease on message {StorageId} failed and the lease it last confirmed could lapse before the next tick; the attempt is cancelled."
@@ -399,7 +399,7 @@ internal static partial class LoggerExtensions
     );
 
     [LoggerMessage(
-        EventId = 4122,
+        EventId = 4131,
         EventName = "MessageLeaseLost",
         Level = LogLevel.Warning,
         Message = "The lease on message {StorageId} was lost while its attempt ran; the attempt is cancelled and writes no state, and the row is recovered like a crashed attempt."
