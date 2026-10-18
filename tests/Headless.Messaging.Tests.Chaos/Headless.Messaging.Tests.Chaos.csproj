@@ -14,6 +14,7 @@
     <ProjectReference Include="..\..\src\Headless.Messaging.Storage.PostgreSql\Headless.Messaging.Storage.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Storage.SqlServer\Headless.Messaging.Storage.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
+    <ProjectReference Include="..\Headless.Messaging.Storage.PostgreSql.Tests.Harness\Headless.Messaging.Storage.PostgreSql.Tests.Harness.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Tests.Harness\Headless.Messaging.Tests.Harness.csproj" />
   </ItemGroup>
 </Project>

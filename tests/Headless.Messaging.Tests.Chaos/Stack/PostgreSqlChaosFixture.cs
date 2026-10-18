@@ -2,9 +2,9 @@
 
 using Headless.Coordination;
 using Headless.Messaging;
-using Headless.Testing.Testcontainers;
 using Npgsql;
 using Testcontainers.PostgreSql;
+using Tests.Fixtures;
 
 namespace Tests.Stack;
 
@@ -15,7 +15,7 @@ public sealed class PostgreSqlChaosFixture : ChaosStackFixture
 
     public override string Database => "PostgreSQL";
 
-    public override string StorageConnectionString => _postgreSql.Container.GetConnectionString();
+    public override string StorageConnectionString => _postgreSql.ConnectionString;
 
     public override string ProxiedStorageConnectionString =>
         new NpgsqlConnectionStringBuilder(StorageConnectionString)
@@ -37,24 +37,7 @@ public sealed class PostgreSqlChaosFixture : ChaosStackFixture
     public override void UseCoordination(HeadlessCoordinationSetupBuilder setup, string connectionString) =>
         setup.UsePostgreSql(connectionString);
 
-    private sealed class PostgreSqlComponent : HeadlessPostgreSqlFixture, IAsyncLifetime
-    {
-        protected override PostgreSqlBuilder Configure() =>
-            base.Configure().WithDatabase("messages_chaos").WithUsername("postgres").WithPassword("postgres");
-
-        async ValueTask IAsyncLifetime.InitializeAsync()
-        {
-            await InitializeAsync();
-
-            // The container is reused across runs, and the schema runner trusts the history it finds: tables an older
-            // build created would be kept in their older shape. Start every run from an empty schema.
-            await using var connection = new NpgsqlConnection(Container.GetConnectionString());
-            await connection.OpenAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText = """DROP SCHEMA IF EXISTS "headless" CASCADE;""";
-            await command.ExecuteNonQueryAsync();
-        }
-    }
+    private sealed class PostgreSqlComponent() : PostgreSqlStackComponent("messages_chaos");
 }
 
 [CollectionDefinition(Name, DisableParallelization = true)]

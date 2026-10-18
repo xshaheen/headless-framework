@@ -913,6 +913,17 @@
           "Npgsql": "[10.0.3, )"
         }
       },
+      "headless.messaging.storage.postgresql.tests.harness": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.6.0, )",
+          "AwesomeAssertions.Json": "[9.0.0, )",
+          "Bogus": "[35.6.5, )",
+          "Headless.Testing.Testcontainers": "[1.0.0, )",
+          "NSubstitute": "[6.2.0, )",
+          "Npgsql": "[10.0.3, )"
+        }
+      },
       "headless.messaging.tests.harness": {
         "type": "Project",
         "dependencies": {

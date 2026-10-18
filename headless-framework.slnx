@@ -447,6 +447,7 @@
         <Project Path="tests/Headless.Messaging.Tests.Unit/Headless.Messaging.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.SourceGenerator.Tests.Unit/Headless.Messaging.SourceGenerator.Tests.Unit.csproj" />
         <Project Path="test-assets/Headless.Messaging.GeneratedModuleFixture/Headless.Messaging.GeneratedModuleFixture.csproj" />
+        <Project Path="tests/Headless.Messaging.Storage.PostgreSql.Tests.Harness/Headless.Messaging.Storage.PostgreSql.Tests.Harness.csproj" />
         <Project Path="tests/Headless.Messaging.Storage.PostgreSql.Tests.Integration/Headless.Messaging.Storage.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Storage.SqlServer.Tests.Integration/Headless.Messaging.Storage.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Redis.Tests.Unit/Headless.Messaging.Redis.Tests.Unit.csproj" />
