@@ -105,9 +105,9 @@ AFFECTED_UPSTREAM := $(shell git rev-parse --abbrev-ref --symbolic-full-name '@{
 AFFECTED_OWN_COPY := origin/$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 AFFECTED_BASE := $(or $(filter-out $(AFFECTED_OWN_COPY),$(AFFECTED_UPSTREAM)),origin/main)
 endif
-# The affected set takes every transitive dependent of a changed project, as pull-request CI does, so a dependent of a
-# dependent fails here before it fails in CI. AFFECTED_TRANSITIVE=false narrows it to the direct dependents.
-AFFECTED_TRANSITIVE ?= true
+# The affected set takes only the direct dependents of a changed project, so the local loop stays short; pull-request
+# CI still runs every transitive dependent. AFFECTED_TRANSITIVE=true widens a local run to match CI.
+AFFECTED_TRANSITIVE ?= false
 AFFECTED_SCOPE_ARGS = $(if $(filter true,$(AFFECTED_TRANSITIVE)),--transitive,)
 # Filter targets scope to one project when TEST_PROJECT is set and fall back to the whole solution.
 TEST_SCOPE_TARGET = $(if $(TEST_PROJECT),test-project,test)
@@ -897,8 +897,8 @@ test-project-fast: ## Run one prebuilt test project without restore/build.
 	$(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
 
 # The affected set comes from the ProjectReference graph (scripts/project-graph.py), not from
-# directory names: changed projects plus every transitive dependent (only the direct ones with
-# AFFECTED_TRANSITIVE=false), and every unit- or integration-test project that is in that set or
+# directory names: changed projects plus their direct dependents (every transitive one with
+# AFFECTED_TRANSITIVE=true), and every unit- or integration-test project that is in that set or
 # references a member of it directly. A change to a build-wide file (global.json, Directory.*.props,
 # .editorconfig, eng/DashboardSpa.targets) selects every project below it.
 # All selected projects build in one invocation of a generated solution filter, all test modules run
