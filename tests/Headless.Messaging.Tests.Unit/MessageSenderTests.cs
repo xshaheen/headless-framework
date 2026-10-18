@@ -2044,6 +2044,50 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_count_or_log_the_drop_when_another_worker_already_settled_the_expired_row()
+    {
+        // given — the deadline passed, but the Failed write loses its fence to another worker that settled the row
+        var storage = Substitute.For<IDataStorage>();
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        var logs = new CapturingLoggerProvider();
+        var sender = _CreateSender(
+            storage,
+            Substitute.For<IMessageSerializer>(),
+            transport,
+            new MessagingOptions { RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(3) } },
+            loggerProvider: logs
+        );
+        storage
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(false));
+        var message = _CreateMediumMessage(MessageLane.Queue);
+        message.Origin.Headers[Headers.DeliverBy] = DateTimeOffset
+            .UtcNow.AddSeconds(-1)
+            .ToString("O", CultureInfo.InvariantCulture);
+        var expired = new List<string?>();
+        using var listener = _ListenToSendExpired(expired);
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then — the attempt still ends unsent, but the drop is the winner's to count and log
+        result.Exception.Should().BeOfType<MessageDeliverByExceededException>();
+        await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, Arg.Any<CancellationToken>());
+        expired.Should().BeEmpty();
+        logs.Entries.Should().NotContain(e => e.EventId.Id == 4125);
+    }
+
+    [Fact]
     public async Task should_end_as_expired_without_exhausting_when_crash_recovery_finds_deadline_passed()
     {
         // given — a crashed dispatch already reserved its final inline attempt, and the deadline passed since

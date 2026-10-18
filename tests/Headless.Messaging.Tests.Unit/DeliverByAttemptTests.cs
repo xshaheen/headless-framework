@@ -132,6 +132,29 @@ public sealed class DeliverByAttemptTests : TestBase
     }
 
     [Fact]
+    public async Task should_end_expired_row_without_opening_an_inbox_transaction_under_the_transactional_guarantee()
+    {
+        // given — the transactional tier would run the consumer inside an inbox transaction it opens per attempt
+        var runner = Substitute.For<IInboxTransactionRunner>();
+        await using var host = ResponderExecutorHost.Create(
+            configure: options => options.MinimumInboxGuarantee = InboxGuarantee.Transactional,
+            configureServices: services => services.AddSingleton(runner)
+        );
+        var message = _PlainMessage(host, TimeSpan.FromSeconds(5), generation: 0);
+        host.Clock.Advance(TimeSpan.FromSeconds(6));
+
+        // when
+        var result = await host.ExecuteAsync(message, AbortToken);
+
+        // then — terminal through the ordinary state write, with no transaction and no consumer
+        result.Exception.Should().BeOfType<MessageDeliverByExceededException>();
+        await runner.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default!, Arg.Any<CancellationToken>());
+        host.Invoker.ReceivedCalls().Should().BeEmpty();
+        host.StateWrites().Should().ContainSingle().Which.Should().Be((StatusName.Failed, (RetryDelay?)null));
+        host.ExhaustedCalls.Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_end_crash_recovered_message_as_expired_without_the_exhausted_callback()
     {
         // given — the process died during the final inline attempt, and the row is picked up after the deadline
