@@ -448,6 +448,19 @@ internal static partial class LoggerExtensions
     )]
     public static partial void DirectSendDeliverByExceeded(this ILogger logger, string? messageId, string? messageName);
 
+    [LoggerMessage(
+        EventId = 4132,
+        EventName = "MessageDeliverByExceededWhileThrottled",
+        Level = LogLevel.Information,
+        Message = "Message {MessageId} (name '{MessageName}', consumer '{Consumer}') passed its delivery deadline while waiting for its consumer's rate limit; it is dropped without running the consumer."
+    )]
+    public static partial void MessageDeliverByExceededWhileThrottled(
+        this ILogger logger,
+        string? messageId,
+        string? messageName,
+        string? consumer
+    );
+
     [LoggerMessage(EventId = 42, Level = LogLevel.Warning, Message = "RabbitMQ consumer cancelled. --> {Reason}")]
     public static partial void RabbitMqConsumerCancelled(this ILogger logger, string reason);
 

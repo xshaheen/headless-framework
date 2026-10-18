@@ -101,6 +101,37 @@ public sealed class DeliverByAttemptTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_spend_a_rate_limit_permit_on_a_message_past_its_delivery_deadline()
+    {
+        // given — one permit an hour: an expired message that took it would hold every later delivery for the hour
+        await using var host = ResponderExecutorHost.Create();
+        var descriptor = ResponderExecutorHost.ResponderDescriptor(
+            rateLimit: ConsumerRateLimit.FixedWindow(1, TimeSpan.FromHours(1))
+        );
+        var expired = new[]
+        {
+            _PlainMessage(host, TimeSpan.FromSeconds(5)),
+            _PlainMessage(host, TimeSpan.FromSeconds(5)),
+        };
+        host.Clock.Advance(TimeSpan.FromSeconds(6));
+        var live = _PlainMessage(host, TimeSpan.FromMinutes(5));
+
+        // when
+        foreach (var message in expired)
+        {
+            (await host.ExecuteAsync(message, AbortToken, descriptor))
+                .Exception.Should()
+                .BeOfType<MessageDeliverByExceededException>();
+        }
+
+        var result = await host.ExecuteAsync(live, AbortToken, descriptor);
+
+        // then — the permit was still there for the live message
+        result.Succeeded.Should().BeTrue();
+        host.Invoker.ReceivedCalls().Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task should_end_crash_recovered_message_as_expired_without_the_exhausted_callback()
     {
         // given — the process died during the final inline attempt, and the row is picked up after the deadline
