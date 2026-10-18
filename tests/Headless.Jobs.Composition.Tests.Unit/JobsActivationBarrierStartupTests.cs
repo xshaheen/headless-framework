@@ -32,7 +32,6 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessJobs();
-        services.AddHeadlessSeedDuringDeploy();
         services.AddSingleton(probe.Manager);
 
         await using var provider = services.BuildServiceProvider();
@@ -73,7 +72,6 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
                 // Keeps the test from installing the process-wide Ctrl+C / ProcessExit handlers ConsoleLifetime adds.
                 services.AddSingleton<IHostLifetime, NoopHostLifetime>();
                 services.AddHeadlessJobs();
-                services.AddHeadlessSeedDuringDeploy();
                 services.AddSingleton(probe.Manager);
             })
             .Build();
@@ -106,7 +104,6 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
         services.AddHeadlessJobs(options =>
             options.ConfigureScheduler(scheduler => scheduler.StartMode = JobsStartMode.Manual)
         );
-        services.AddHeadlessSeedDuringDeploy();
         services.AddSingleton(probe.Manager);
 
         await using var provider = services.BuildServiceProvider();
@@ -150,7 +147,6 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
         services.AddHeadlessJobs(options =>
             options.ConfigureScheduler(scheduler => scheduler.StartMode = JobsStartMode.Manual)
         );
-        services.AddHeadlessSeedDuringDeploy();
         services.AddSingleton(probe.Manager);
 
         await using var provider = services.BuildServiceProvider();

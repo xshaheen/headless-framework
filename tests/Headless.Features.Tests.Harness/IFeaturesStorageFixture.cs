@@ -75,7 +75,6 @@ public static class FeaturesStorageFixtureExtensions
             setup.ConfigureStorage(options => options.Schema = schema);
             fixture.UseStorage(setup, connectionString ?? fixture.ConnectionString);
         });
-        builder.Services.AddHeadlessSeedDuringDeploy();
 
         if (setupResources)
         {

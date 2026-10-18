@@ -248,7 +248,6 @@ public sealed class JobsHealthCheckTests : TestBase
                 // Keeps the test from installing the process-wide Ctrl+C / ProcessExit handlers ConsoleLifetime adds.
                 services.AddSingleton<IHostLifetime, NoopHostLifetime>();
                 services.AddHeadlessJobs(configureJobs);
-                services.AddHeadlessSeedDuringDeploy();
                 afterJobs?.Invoke(services);
             })
             .Build();

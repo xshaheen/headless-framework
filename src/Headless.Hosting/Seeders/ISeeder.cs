@@ -8,9 +8,8 @@ namespace Headless.Hosting;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Nothing seeds on its own. The deployment runs the <c>seed</c> verb of <c>RunHeadlessAsync</c> (declared with
-/// <c>AddHeadlessSeedDuringDeploy</c>), or a development or test host calls <c>AddHeadlessSeedOnStartup</c>. A host that
-/// registers seeders and does neither logs a warning at startup, because a skipped seed fails silently.
+/// The host start never seeds by default: the deployment runs the <c>seed</c> verb of <c>RunHeadlessAsync</c>, and a
+/// development or test host that should seed as it starts calls <c>AddHeadlessSeedOnStartup</c>.
 /// </para>
 /// <para>
 /// Seeders run one at a time, ordered by <see cref="SeederPriorityAttribute"/> (lower first), each resolved from one

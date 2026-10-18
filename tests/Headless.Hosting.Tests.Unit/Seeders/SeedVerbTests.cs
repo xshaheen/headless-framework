@@ -128,32 +128,12 @@ public sealed class SeedOnStartupTests : TestBase
     }
 
     [Fact]
-    public async Task should_fail_the_start_when_seeders_are_registered_and_nothing_runs_them()
+    public async Task should_start_without_seeding_when_the_host_does_not_opt_in()
     {
         // given
         SeedLog.Entries.Clear();
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddSeeder<FirstSeeder>();
-        using var host = builder.Build();
-
-        // when
-        var act = () => host.StartAsync(AbortToken);
-
-        // then
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*FirstSeeder*'seed' verb*AddHeadlessSeedDuringDeploy()*AddHeadlessSeedOnStartup()*");
-        SeedLog.Entries.Should().NotContain("first", "a refused start runs no seeder");
-    }
-
-    [Fact]
-    public async Task should_start_without_seeding_when_the_deployment_seeds()
-    {
-        // given
-        SeedLog.Entries.Clear();
-        var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddSeeder<FirstSeeder>();
-        builder.Services.AddHeadlessSeedDuringDeploy();
         using var host = builder.Build();
 
         // when
@@ -161,7 +141,7 @@ public sealed class SeedOnStartupTests : TestBase
         await host.StopAsync(AbortToken);
 
         // then
-        SeedLog.Entries.Should().NotContain("first", "declaring the deploy step runs nothing at startup");
+        SeedLog.Entries.Should().BeEmpty("the deployment's seed verb is the default runner");
     }
 
     [Fact]

@@ -102,7 +102,6 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
             setup.ConfigureStorage(options => options.Schema = schema);
             setup.UsePostgreSql(connectionString);
         });
-        builder.Services.AddHeadlessSeedDuringDeploy();
 
         if (setupResources)
         {

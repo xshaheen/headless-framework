@@ -39,7 +39,6 @@ public sealed class CoreSettingsSetupTests
 
         // when
         builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<OptionsTestDbContext>());
-        builder.Services.AddHeadlessSeedDuringDeploy();
 
         using var serviceProvider = builder.Services.BuildServiceProvider();
         var encryptionOptions = serviceProvider.GetRequiredService<IOptions<StringEncryptionOptions>>().Value;

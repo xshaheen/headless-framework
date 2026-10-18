@@ -290,7 +290,6 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
             setup.ConfigureStorage(options => options.Schema = _Schema);
             setup.UsePostgreSql(fixture.ConnectionString);
         });
-        builder.Services.AddHeadlessSeedDuringDeploy();
 
         builder.Services.AddHeadlessResourceSetupOnStartup();
         return builder.Build();

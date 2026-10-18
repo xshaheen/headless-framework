@@ -87,13 +87,6 @@ public static class DbSeedersExtensions
         }
 
         services.AddSingleton(new SeederRegistration(seederType, factory));
-        services.AddOptions<SeedingOptions>();
-        // First, like resource setup on startup: the host runs StartingAsync in registration order, and a refused start
-        // must stop before a feature's own initializer or scheduler starts.
-        if (!services.Any(static d => d.ImplementationType == typeof(SeedingConfigurationCheck)))
-        {
-            services.Insert(0, ServiceDescriptor.Singleton<IHostedService, SeedingConfigurationCheck>());
-        }
 
         return true;
     }

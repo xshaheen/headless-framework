@@ -447,9 +447,8 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
 
         // The real registration, so the handler under test is the one AddHeadlessFeatures installs. Only the value
         // source is replaced, keeping the host free of a database; the definitions seeder never runs because the
-        // host declares that its deployment seeds.
+        // host does not opt in to seeding.
         builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<FeaturesDbContext>());
-        builder.Services.AddHeadlessSeedDuringDeploy();
         builder.Services.AddDbContextFactory<FeaturesDbContext>(db => db.UseSqlite("Data Source=:memory:"));
         builder.Services.AddSingleton(Substitute.For<ICache>());
         builder.Services.Replace(ServiceDescriptor.Singleton(_CreateFeatureManager(options.EnabledFeatures)));

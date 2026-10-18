@@ -165,7 +165,6 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
         configureHost?.Invoke(builder.Services);
 
         builder.Services.AddHeadlessJobs(options => options.DisableBackgroundServices().AddDashboard(configureJobs));
-        builder.Services.AddHeadlessSeedDuringDeploy();
         builder.Services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();

@@ -130,7 +130,7 @@ The two messages travel on separate subscriptions, and nothing orders them. With
 
 `AddHeadlessFeatures` registers an `ISeeder` named `FeatureDefinitions`. When `SaveStaticFeaturesToDatabase` is true, it saves the static feature definitions through `IDynamicFeatureDefinitionStore.SaveAsync` (idempotent and guarded by a distributed lock), with up to 10 jittered exponential-back-off retries capped at 30 seconds. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; any other failure surfaces from the seed run after the last retry. The back-off waits run on the system clock, not the registered `TimeProvider`, so a host that registers a `FakeTimeProvider` still retries in real time.
 
-Seeding is opt-in. In production, run the `seed` verb in the deployment (`dotnet app.dll seed`) and call `services.AddHeadlessSeedDuringDeploy()`. In development, call `services.AddHeadlessSeedOnStartup()`. `HeadlessTestServer` seeds by default. A host that registers the seeder and does neither logs a warning at startup. See [Database Seeders](utilities.md#database-seeders).
+The host start does not seed. In production, run the `seed` verb in the deployment (`dotnet app.dll seed`); in development, call `services.AddHeadlessSeedOnStartup()`. `HeadlessTestServer` seeds by default. See [Database Seeders](utilities.md#database-seeders).
 
 A host that never seeds still serves its static definitions from memory, and the dynamic store loads on its first read. But:
 

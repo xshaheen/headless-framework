@@ -297,7 +297,7 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 - Options validation with FluentValidation
 - Configuration binding extensions
 - Environment detection extensions
-- Seeders (`ISeeder`, ordered by `[SeederPriority]`): opt-in through the `seed` verb (`AddHeadlessSeedDuringDeploy`) or `AddHeadlessSeedOnStartup`; the host start fails when neither is configured. See [Database Seeders](#database-seeders)
+- Seeders (`ISeeder`, ordered by `[SeederPriority]`): run by the `seed` verb by default, or at host start with `AddHeadlessSeedOnStartup`. See [Database Seeders](#database-seeders)
 - Keyed services helpers
 - Hosted service management
 - Background startup processes can expose readiness signals so dependent flows can wait for initialization completion.
@@ -348,12 +348,12 @@ A seeder writes data the code declares (definitions, cron jobs, reference rows) 
 
 Implement `ISeeder` and register with `AddSeeder<T>()` (or `AddSeeder(sp => …)`). Seeders run one at a time ascending by `[SeederPriority(n)]` (default `0`; lower runs first — EF migrations use `int.MinValue`), each named by `ISeeder.Name` (default: the type name).
 
-Nothing seeds on its own. Choose one:
+The host start does not seed. Seeders run in one of two ways:
 
-- **The deployment runs the `seed` verb** of `RunHeadlessAsync(args)`: `dotnet MyApp.dll seed` runs every seeder, `seed -n Jobs` one of them, `seed list` lists them; `--timeout <seconds>` bounds the run (default 300). One line per seeder: name, `Ok`, `Failed`, or `Skipped`, duration, message. A failed seeder stops the run and the rest are `Skipped`, because a later seeder may need what an earlier one writes. Exit code `0` on success, `1` on a failure or failed startup validation, `2` for invalid arguments or an unknown seeder name. Call `services.AddHeadlessSeedDuringDeploy()` to declare this; it runs nothing.
+- **The deployment runs the `seed` verb** of `RunHeadlessAsync(args)`: `dotnet MyApp.dll seed` runs every seeder, `seed -n Jobs` one of them, `seed list` lists them; `--timeout <seconds>` bounds the run (default 300). One line per seeder: name, `Ok`, `Failed`, or `Skipped`, duration, message. A failed seeder stops the run and the rest are `Skipped`, because a later seeder may need what an earlier one writes. Exit code `0` on success, `1` on a failure or failed startup validation, `2` for invalid arguments or an unknown seeder name. This is the default and needs no registration.
 - **A development or test host seeds as it starts**: `services.AddHeadlessSeedOnStartup()` runs every seeder after the [stateful resources](#stateful-resources) are set up and before any hosted service starts; a failed seeder fails the start. `HeadlessTestServer` does this by default (`seed: false` turns it off).
 
-A host that registers seeders and does neither fails its start, before any hosted service starts, with a message naming the seeders and both calls. The check reads registrations only, so it costs no I/O, and the verbs (`seed`, `resources`, `check`, `describe`) do not run it, because they are the deployment steps it asks for. Jobs, Features, Permissions, and Settings each register a seeder, so every host that uses one of them makes this choice. It fails instead of warning because a skipped seed fails silently: definitions that other applications sharing the database read go stale, configured `Deleted*` definitions are not removed, `DynamicPermissionDefinitionsChanged` is not published, and cron expression changes, removed crons, and new crons are not applied (see the [Jobs seeder](jobs.md#headlessjobs)).
+A deployment that forgets the `seed` step leaves the seeded data silently out of date: definitions that other applications sharing the database read go stale, configured `Deleted*` definitions are not removed, `DynamicPermissionDefinitionsChanged` is not published, and cron expression changes, removed crons, and new crons are not applied (see the [Jobs seeder](jobs.md#headlessjobs)). Run `seed` on every release, next to `resources setup`.
 
 ```csharp
 [SeederPriority(1)]
@@ -366,9 +366,8 @@ public sealed class UserSeeder : ISeeder
 builder.Services.AddSeeder<UserSeeder>();
 builder.Services.AddDbMigrationSeeder<AppDbContext>(); // runs first (SeederPriority int.MinValue)
 
-// Development: seed as the host starts. Production: run `dotnet MyApp.dll seed` and declare it.
+// Development: seed as the host starts. Production: the deployment runs `dotnet MyApp.dll seed`.
 if (builder.Environment.IsDevelopment()) builder.Services.AddHeadlessSeedOnStartup();
-else builder.Services.AddHeadlessSeedDuringDeploy();
 
 // A tool or test can run them directly, in priority order
 await app.Services.SeedAsync();

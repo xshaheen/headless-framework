@@ -127,7 +127,6 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
             {
                 services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(5));
                 services.AddHeadlessJobs();
-                services.AddHeadlessSeedDuringDeploy();
                 services.AddSingleton(manager);
             })
             .Build();

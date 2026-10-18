@@ -34,7 +34,6 @@ public sealed class JobsStoreHostManifestTests : TestBase
             {
                 services.AddDbContext<ApplicationContext>(db => db.UseNpgsql(_UnreachableDatabase));
                 services.AddHeadlessJobs(jobs => jobs.UsePostgreSql<ApplicationContext>(_ => { }));
-                services.AddHeadlessSeedDuringDeploy();
             })
             .Build();
 

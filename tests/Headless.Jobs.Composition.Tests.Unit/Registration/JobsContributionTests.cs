@@ -37,7 +37,6 @@ public sealed class JobsContributionTests : TestBase
         var services = new ServiceCollection();
         services.ConfigureJobs(jobs => jobs.AddModule<GeneratedFixture.JobsModule>());
         services.AddHeadlessJobs();
-        services.AddHeadlessSeedDuringDeploy();
         await using var provider = services.BuildServiceProvider();
 
         // when
@@ -53,7 +52,6 @@ public sealed class JobsContributionTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddHeadlessJobs();
-        services.AddHeadlessSeedDuringDeploy();
         services.ConfigureJobs(jobs => jobs.AddModule<GeneratedFixture.JobsModule>());
         await using var provider = services.BuildServiceProvider();
 
@@ -77,7 +75,6 @@ public sealed class JobsContributionTests : TestBase
         services.ConfigureJobs(jobs => jobs.AddModule<GeneratedFixture.JobsModule>());
         services.ConfigureJobs(jobs => jobs.AddModule<GeneratedFixture.JobsModule>());
         services.AddHeadlessJobs(options => options.AddModule<GeneratedFixture.JobsModule>());
-        services.AddHeadlessSeedDuringDeploy();
         await using var provider = services.BuildServiceProvider();
 
         // when
@@ -117,7 +114,6 @@ public sealed class JobsContributionTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddHeadlessJobs(options => options.AddModule<BillingJobsModule>());
-        services.AddHeadlessSeedDuringDeploy();
         services.ConfigureJobs(jobs => jobs.AddModule<RivalCloseDayJobsModule>());
         await using var provider = services.BuildServiceProvider();
 
@@ -140,7 +136,6 @@ public sealed class JobsContributionTests : TestBase
         var services = new ServiceCollection();
         services.ConfigureJobs(jobs => jobs.AddModule<BillingJobsModule>().AddModule<RivalInvoiceArgsJobsModule>());
         services.AddHeadlessJobs();
-        services.AddHeadlessSeedDuringDeploy();
         await using var provider = services.BuildServiceProvider();
 
         // when

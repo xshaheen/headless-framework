@@ -28,7 +28,6 @@ public sealed class FeaturesEntityStartupValidatorTests(FeaturesTestFixture fixt
             setup.UseRedis(options => options.ConnectionMultiplexer = Fixture.Multiplexer)
         );
         builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<MissingFeaturesEntityDbContext>());
-        builder.Services.AddHeadlessSeedDuringDeploy();
         using var host = builder.Build();
 
         // when
