@@ -68,7 +68,7 @@ Settings do **not** carry a first-class `TenantId` column or implement `IMultiTe
 
 ### Static Store vs. Dynamic Store
 
-The *static store* (`IStaticSettingDefinitionStore`) builds the setting catalog once at startup by invoking all registered `ISettingDefinitionProvider` implementations. It is thread-safe and lazily initialized. The *dynamic store* (`IDynamicSettingDefinitionStore`) reads definitions from the database, caches them in-process with a configurable expiry (`DynamicDefinitionsMemoryCacheExpiration`, default 30 seconds), and coordinates cross-instance refreshes via a distributed cache stamp and a distributed lock. The dynamic store is disabled by default (`IsDynamicSettingStoreEnabled = false`); enable it only when setting definitions must be edited at runtime without redeployment.
+The *static store* (`IStaticSettingDefinitionStore`) builds the setting catalog once at startup by invoking all registered `ISettingDefinitionProvider` implementations. It is thread-safe and lazily initialized. The *dynamic store* (`IDynamicSettingDefinitionStore`) reads definitions from the database, caches them in-process with a configurable expiry (`DynamicDefinitionsMemoryCacheExpiration`, default 30 seconds), and coordinates cross-instance refreshes via a distributed cache stamp and a distributed lock. The dynamic store is disabled by default (`IsDynamicSettingStoreEnabled = false`); enable it only when setting definitions must be edited at runtime without redeployment. When it is enabled, the `SettingDefinitions` [warm-up](utilities.md#warm-up) loads it through `IDynamicSettingDefinitionStore.GetAllAsync` after the host starts, so the first request does not wait on the database; the `warmup` readiness check reports `Unhealthy` until that load succeeds, and a failed load is retried in the background. With the dynamic store disabled, the warm-up does nothing and does not hold readiness.
 
 ### Setting Value Caching
 
@@ -277,6 +277,7 @@ Core implementation of dynamic settings management with hierarchical value provi
 - `IStaticSettingDefinitionStore` — builds the setting catalog lazily from all registered `ISettingDefinitionProvider` implementations
 - `IDynamicSettingDefinitionStore` — database-backed definition store with in-process caching and distributed-stamp cross-instance coordination
 - `SettingDefinitions` seeder — saves static definitions when the host seeds, with up to 10 jittered exponential-back-off retries capped at 30 seconds
+- `SettingDefinitions` warm-up — loads the dynamic store into its in-process cache after the start, behind readiness, when `IsDynamicSettingStoreEnabled` is true
 - `SettingManagementOptions` — tuning options for lock keys, cache expiries, dynamic store toggle
 - `SettingsStorageOptions` — schema and table name configuration shared across all storage providers
 - `RelationalSettingsOptions` — base of `PostgreSqlSettingsOptions` and `SqlServerSettingsOptions` (`ConnectionString`, `CommandTimeout`). Core also holds the one relational value and definition repository both raw providers run, written over the `ISqlDialect` statement kit; each provider package supplies only its options, DDL, and registration
@@ -470,6 +471,7 @@ Every object follows its database's naming convention. On PostgreSQL the tables,
 - Registers `ISettingDefinitionManager`, `IStaticSettingDefinitionStore`, `IDynamicSettingDefinitionStore`, `ISettingValueStore`, `ISettingValueProviderManager` as singletons
 - Registers `DefaultValueSettingValueProvider`, `ConfigurationSettingValueProvider`, `GlobalSettingValueProvider`, `TenantSettingValueProvider`, `UserSettingValueProvider` as singletons
 - Registers the `SettingDefinitions` seeder (`ISeeder`); it runs only when the host seeds
+- Registers the `SettingDefinitions` warm-up (`IWarmup`), which adds the `warmup` readiness check; it loads and gates readiness only when `IsDynamicSettingStoreEnabled` is true
 - `AddSettingsSnapshot<T>` registers `ISettingsSnapshot<T>` as a singleton, one hosted service that loads and re-reads every snapshot, and, with messaging, the every-instance consumer `headless.settings.snapshot`
 
 ---

@@ -23,6 +23,10 @@ public sealed class PermissionManagementOptions
     /// read operations return empty/null without hitting the database. Set to <see langword="true"/> to enable
     /// DB-backed dynamic permissions.
     /// </summary>
+    /// <remarks>
+    /// When enabled, the <c>PermissionDefinitions</c> warm-up loads the dynamic definitions after the host starts, and
+    /// the host reports not ready until that load succeeds.
+    /// </remarks>
     public bool IsDynamicPermissionStoreEnabled { get; set; }
 
     /// <summary>

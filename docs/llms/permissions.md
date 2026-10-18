@@ -148,7 +148,7 @@ The two messages travel on separate subscriptions, and nothing orders them. With
 
 The *static store* (`IStaticPermissionDefinitionStore`) builds the permission catalog once at startup by invoking all registered `IPermissionDefinitionProvider` instances. It is thread-safe and lazily initialized on first access.
 
-The *dynamic store* (`IDynamicPermissionDefinitionStore`) reads definitions from the database, caches them in-process with a configurable expiry (`DynamicDefinitionsMemoryCacheExpiration`, default 30 seconds), and coordinates cross-instance refreshes via a distributed cache stamp and a distributed lock. The dynamic store is disabled by default (`IsDynamicPermissionStoreEnabled = false`); enable it only when permission definitions must be edited at runtime without redeployment.
+The *dynamic store* (`IDynamicPermissionDefinitionStore`) reads definitions from the database, caches them in-process with a configurable expiry (`DynamicDefinitionsMemoryCacheExpiration`, default 30 seconds), and coordinates cross-instance refreshes via a distributed cache stamp and a distributed lock. The dynamic store is disabled by default (`IsDynamicPermissionStoreEnabled = false`); enable it only when permission definitions must be edited at runtime without redeployment. When it is enabled, the `PermissionDefinitions` [warm-up](utilities.md#warm-up) loads it through `IDynamicPermissionDefinitionStore.GetGroupsAsync` after the host starts, so the first request does not wait on the database; the `warmup` readiness check reports `Unhealthy` until that load succeeds, and a failed load is retried in the background. With the dynamic store disabled, the warm-up does nothing and does not hold readiness.
 
 When a save adds or updates definitions, the dynamic store publishes `DynamicPermissionDefinitionsChanged` over `IBus`, listing the added or updated names. A host without messaging still saves the definitions and changes the common stamp, so other instances refresh on their next read; it publishes nothing. Wire contract: `AddHeadlessPermissions` declares it as `headless.permissions.definitions-changed`, contract version `1` (`DynamicPermissionDefinitionsChanged.MessageName`). The host's naming conventions (`UseConventions`) do not rename it; only the host-wide `MessagingOptions.MessageNamePrefix` applies, as it does to every message.
 
@@ -273,6 +273,7 @@ Core implementation of permission management with grant resolution, caching, the
 - `IStaticPermissionDefinitionStore` — builds the permission catalog lazily and thread-safely from all registered `IPermissionDefinitionProvider` instances
 - `IDynamicPermissionDefinitionStore` — database-backed definition store with in-process caching and distributed-stamp cross-instance coordination; disabled by default
 - `PermissionDefinitions` seeder — saves static definitions when the host seeds, with up to 10 jittered exponential-back-off retries capped at 30 seconds
+- `PermissionDefinitions` warm-up — loads the dynamic store into its in-process cache after the start, behind readiness, when `IsDynamicPermissionStoreEnabled` is true
 - `PermissionManagementOptions` — all tuning options for lock keys/timeouts, cache expiry, dynamic store toggle
 - `PermissionsStorageOptions` — schema and table name configuration shared across all storage providers
 - `RelationalPermissionsOptions` — base of `PostgreSqlPermissionsOptions` and `SqlServerPermissionsOptions` (`ConnectionString`, `CommandTimeout`). Core also holds the one relational grant and definition repository both raw providers run, written over the `ISqlDialect` statement kit; each provider package supplies only its options, DDL, and registration
@@ -510,6 +511,7 @@ The raw providers write no DDL when the host starts: `resources setup` creates t
 - Registers `IStaticPermissionDefinitionStore`, `IDynamicPermissionDefinitionStore`, `IPermissionDefinitionManager` as singletons
 - Registers `RolePermissionGrantProvider`, `UserPermissionGrantProvider` as singletons
 - Registers the `PermissionDefinitions` seeder (`ISeeder`); it runs only when the host seeds
+- Registers the `PermissionDefinitions` warm-up (`IWarmup`), which adds the `warmup` readiness check; it loads and gates readiness only when `IsDynamicPermissionStoreEnabled` is true
 - Registers `IGrantPermissionsSeedHelper` as transient
 - Registers `PermissionRequirementHandler` and `PermissionsRequirementHandler` as `IAuthorizationHandler` singletons
 - Calls `AddAuthorizationCore()`, so `IAuthorizationService` resolves in a host that never called `AddAuthorization()` (a worker, for example); the call only adds what is missing, so a host's own authorization registrations win

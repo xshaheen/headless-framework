@@ -67,7 +67,7 @@ Feature values are resolved by a chain of `IFeatureValueReadProvider` implementa
 
 ### Static Store vs. Dynamic Store
 
-The *static store* (`IStaticFeatureDefinitionStore`) builds the feature catalog once at startup by invoking all registered `IFeatureDefinitionProvider` implementations. It is thread-safe and lazily initialized. The *dynamic store* (`IDynamicFeatureDefinitionStore`) reads feature definitions from the database, caches them in-process with a configurable expiry (`DynamicDefinitionsMemoryCacheExpiration`, default 30 seconds), and coordinates cross-instance refreshes via a distributed cache stamp and a distributed lock. The dynamic store is disabled by default (`IsDynamicFeatureStoreEnabled = false`); enable it only when feature definitions must be edited at runtime without redeployment.
+The *static store* (`IStaticFeatureDefinitionStore`) builds the feature catalog once at startup by invoking all registered `IFeatureDefinitionProvider` implementations. It is thread-safe and lazily initialized. The *dynamic store* (`IDynamicFeatureDefinitionStore`) reads feature definitions from the database, caches them in-process with a configurable expiry (`DynamicDefinitionsMemoryCacheExpiration`, default 30 seconds), and coordinates cross-instance refreshes via a distributed cache stamp and a distributed lock. The dynamic store is disabled by default (`IsDynamicFeatureStoreEnabled = false`); enable it only when feature definitions must be edited at runtime without redeployment. When it is enabled, the `FeatureDefinitions` [warm-up](utilities.md#warm-up) loads it through `IDynamicFeatureDefinitionStore.GetGroupsAsync` after the host starts, so the first request does not wait on the database; the `warmup` readiness check reports `Unhealthy` until that load succeeds, and a failed load is retried in the background. With the dynamic store disabled, the warm-up does nothing and does not hold readiness.
 
 ### Feature Value Caching
 
@@ -253,6 +253,7 @@ Core implementation of feature management with caching, value providers, and def
 - `IStaticFeatureDefinitionStore` — builds the feature catalog lazily and thread-safely from all registered `IFeatureDefinitionProvider` implementations
 - `IDynamicFeatureDefinitionStore` — database-backed definition store with in-process caching and distributed-stamp cross-instance coordination
 - `FeatureDefinitions` seeder — saves static definitions when the host seeds, with up to 10 jittered exponential-back-off retries capped at 30 seconds
+- `FeatureDefinitions` warm-up — loads the dynamic store into its in-process cache after the start, behind readiness, when `IsDynamicFeatureStoreEnabled` is true
 - `FeatureManagementOptions` — tuning options for lock keys, cache expiries, dynamic store toggle, and named cache routing
 - `FeaturesStorageOptions` — schema and table name configuration shared across all storage providers
 - `RelationalFeaturesOptions` — base of `PostgreSqlFeaturesOptions` and `SqlServerFeaturesOptions` (`ConnectionString`, `CommandTimeout`). Core also holds the one relational value and definition repository both raw providers run, written over the `ISqlDialect` statement kit; each provider package supplies only its options, DDL, and registration
@@ -369,6 +370,7 @@ Every object follows its database's naming convention. On PostgreSQL the tables,
 - Registers `IStaticFeatureDefinitionStore`, `IDynamicFeatureDefinitionStore`, `IFeatureDefinitionManager`, `IFeatureValueStore`, `IFeatureValueProviderManager` as singletons
 - Registers `DefaultValueFeatureValueProvider`, `EditionFeatureValueProvider`, `TenantFeatureValueProvider` as singletons
 - Registers the `FeatureDefinitions` seeder (`ISeeder`); it runs only when the host seeds
+- Registers the `FeatureDefinitions` warm-up (`IWarmup`), which adds the `warmup` readiness check; it loads and gates readiness only when `IsDynamicFeatureStoreEnabled` is true
 - Registers `IMethodInvocationFeatureCheckerService` as singleton
 - Registers the feature authorization handler (transient, once however often `AddHeadlessFeatures` runs) and calls `AddAuthorizationCore()`, which only adds services the host has not registered
 

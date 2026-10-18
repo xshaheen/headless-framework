@@ -139,6 +139,10 @@ public static class SetupFeatures
             ActivatorUtilities.CreateInstance<FeatureDefinitionsSeeder>(sp, TimeProvider.System)
         );
 
+        // Loads the dynamic definitions after the start, behind readiness, so the first request does not pay for it.
+        // It gates itself on the dynamic-store option, which is unknown until options resolve.
+        services.AddWarmup<FeatureDefinitionsWarmup>();
+
         // The definition store keys its cross-instance lock on the application name and the manager stamps
         // its change announcements with the instance id; a host that never registered an identity gets one.
         services.AddHeadlessHostIdentity();

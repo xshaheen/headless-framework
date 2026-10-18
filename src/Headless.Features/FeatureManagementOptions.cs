@@ -30,7 +30,9 @@ public sealed class FeatureManagementOptions
     /// <remarks>
     /// Requires a configured storage provider. Dynamic definitions are cached in-process for
     /// <see cref="DynamicDefinitionsMemoryCacheExpiration"/> before the distributed cache stamp is re-checked.
-    /// Static definitions always take precedence over dynamic ones with the same name.
+    /// Static definitions always take precedence over dynamic ones with the same name. When enabled, the
+    /// <c>FeatureDefinitions</c> warm-up loads the dynamic definitions after the host starts, and the host reports not
+    /// ready until that load succeeds.
     /// </remarks>
     public bool IsDynamicFeatureStoreEnabled { get; set; }
 
