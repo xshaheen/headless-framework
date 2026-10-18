@@ -35,8 +35,8 @@ internal static class BudgetedStep
 
     /// <summary>
     /// Runs <paramref name="step"/> with the budget's token. A <see cref="StatefulResourceUnsupportedException"/> is
-    /// unsupported, the budget elapsing is a timeout, and any other exception is a failure; only the caller's own
-    /// cancellation propagates.
+    /// unsupported, any exception thrown once the budget has elapsed is a timeout, and any other exception is a failure;
+    /// only the caller's own cancellation propagates.
     /// </summary>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was canceled.</exception>
     public static async Task<BudgetedStepResult> RunAsync(
@@ -57,19 +57,18 @@ internal static class BudgetedStep
         {
             return new(BudgetedStepStatus.Unsupported, Stopwatch.GetElapsedTime(started), exception);
         }
-        catch (OperationCanceledException exception)
-            when (!cancellationToken.IsCancellationRequested && budgetToken.IsCancellationRequested)
-        {
-            return new(
-                BudgetedStepStatus.TimedOut,
-                Stopwatch.GetElapsedTime(started),
-                new TimeoutException("The timeout elapsed while this step was running.", exception)
-            );
-        }
 #pragma warning disable CA1031, EPC12 // False positive: one step's failure is recorded in the report so the run can decide what to do next; the caller's own cancellation still propagates.
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
-            return new(BudgetedStepStatus.Failed, Stopwatch.GetElapsedTime(started), exception);
+            // Drivers report a canceled command in their own exception type (SqlClient throws SqlException), not only as
+            // OperationCanceledException, so the elapsed budget, not the exception type, says the step timed out.
+            return budgetToken.IsCancellationRequested
+                ? new(
+                    BudgetedStepStatus.TimedOut,
+                    Stopwatch.GetElapsedTime(started),
+                    new TimeoutException("The timeout elapsed while this step was running.", exception)
+                )
+                : new(BudgetedStepStatus.Failed, Stopwatch.GetElapsedTime(started), exception);
         }
 #pragma warning restore CA1031, EPC12
     }

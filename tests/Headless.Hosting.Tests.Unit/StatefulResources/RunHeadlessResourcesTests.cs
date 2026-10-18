@@ -218,6 +218,26 @@ public sealed class RunHeadlessResourcesTests : TestBase
     }
 
     [Fact]
+    public async Task should_report_a_timeout_when_a_driver_answers_the_elapsed_budget_with_its_own_exception()
+    {
+        // given
+        var stalled = new RecordingResource("Schema", "orders", _log);
+        stalled.StallingThenDriverError.Add("setup");
+
+        // when
+        var run = await _RunAsync(
+            services => services.AddHeadlessStatefulResource(_ => stalled),
+            "resources",
+            "--timeout",
+            "1"
+        );
+
+        // then
+        run.ExitCode.Should().Be(1);
+        run.StandardOutput.Should().Contain("TimedOut").And.NotContain("Failed");
+    }
+
+    [Fact]
     public async Task should_time_out_the_running_resource_and_skip_the_rest_when_the_budget_elapses()
     {
         // given

@@ -23,6 +23,9 @@ internal class RecordingResource(string type, string name, List<string> log) : I
     /// <summary>Operations that wait until canceled.</summary>
     public HashSet<string> Stalling { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>Operations that wait until canceled, then fail with a driver's own exception instead of a cancellation.</summary>
+    public HashSet<string> StallingThenDriverError { get; } = new(StringComparer.Ordinal);
+
     public string FailureMessage { get; init; } = "The broker refused the declaration.";
 
     public IReadOnlyList<KeyValuePair<string, string>> Status { get; init; } = [new("queues", "2")];
@@ -64,6 +67,15 @@ internal class RecordingResource(string type, string name, List<string> log) : I
         if (Stalling.Contains(operation))
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+
+        if (StallingThenDriverError.Contains(operation))
+        {
+            // A driver such as SqlClient reports a canceled command in its own exception type, not as a cancellation.
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken)
+                .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+
+            throw new InvalidOperationException("Operation cancelled by user.");
         }
     }
 }
