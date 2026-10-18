@@ -16,8 +16,8 @@ namespace Headless.OpenApi;
 /// <c>Retry-After</c> header of 429 and 503.
 /// </summary>
 /// <remarks>
-/// It types only responses the operation already declares, so it runs after the transformers that add the 401, 403,
-/// 400, 409, 428, and 429 responses. The problem types are registered as shared components, so every operation
+/// It types only responses the operation already declares, so it runs after the transformers that add responses: the
+/// 401, 403, 400, 409, 428, and 429 ones and those of <see cref="Headless.Api.HttpContractMetadata"/>. The problem types are registered as shared components, so every operation
 /// references one schema per status. A 400 the endpoint declared as <see cref="HttpValidationProblemDetails"/> gets
 /// <see cref="BadRequestValidationProblemDetails"/>, the shape the validation filter writes. Other media types the
 /// endpoint declared for the response keep their schema. The examples use the camelCase member names of the Headless web

@@ -608,6 +608,19 @@
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
         }
       },
+      "headless.api.minimalapi": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Api": "[1.0.0, )"
+        }
+      },
+      "headless.api.mvc": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Api": "[1.0.0, )",
+          "Mediator.Abstractions": "[3.0.2, )"
+        }
+      },
       "headless.auditlog.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -674,6 +687,25 @@
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.13, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.13, )",
           "OpenTelemetry.Api": "[1.19.1, )"
+        }
+      },
+      "headless.idempotency.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.idempotency.responsereplay": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Api": "[1.0.0, )",
+          "Headless.Api.Abstractions": "[1.0.0, )",
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Idempotency.Abstractions": "[1.0.0, )",
+          "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
       },
       "headless.multitenancy": {
@@ -743,6 +775,12 @@
           "xunit.v3.extensibility.core": "[4.0.2, )"
         }
       },
+      "headless.unitofwork.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
       "Asp.Versioning.Abstractions": {
         "type": "CentralTransitive",
         "requested": "[10.2.1, )",
@@ -766,6 +804,15 @@
         "requested": "[12.2.0, )",
         "resolved": "12.2.0",
         "contentHash": "DR3lFbdnKucaaj1/8zMNOACMz/64igzox1yVZSFVsLxYB5mxAB+wFP1WZ8fjwrZnbU1KA1DoMzHKYKxUfuZ4wQ=="
+      },
+      "Mediator.Abstractions": {
+        "type": "CentralTransitive",
+        "requested": "[3.0.2, )",
+        "resolved": "3.0.2",
+        "contentHash": "TytjnyN8gLObZBxkM7HHPFJF3LHtk6Y8mHW56ONuXRuVEK6Fmed3f0z79H9TpmoZQP2zQAIS4/0O9R2w0v02qw==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "8.0.0"
+        }
       },
       "Meziantou.Extensions.Logging.Xunit.v3": {
         "type": "CentralTransitive",

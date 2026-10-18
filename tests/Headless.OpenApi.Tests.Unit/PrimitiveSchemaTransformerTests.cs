@@ -83,6 +83,31 @@ public sealed class PrimitiveSchemaTransformerTests : TestBase
     }
 
     [Fact]
+    public async Task should_publish_the_string_length_bounds_of_a_string_primitive()
+    {
+        var schema = _ObjectSchema();
+
+        await _TransformAsync(schema, typeof(BoundedCode));
+
+        schema.Type.Should().Be(JsonSchemaType.String);
+        schema.MinLength.Should().Be(2);
+        schema.MaxLength.Should().Be(10);
+    }
+
+    [Theory]
+    [InlineData(typeof(UnvalidatedCode))]
+    [InlineData(typeof(TestPrimitive<string>))]
+    public async Task should_publish_no_length_bounds_when_the_primitive_enforces_none(Type primitiveType)
+    {
+        var schema = _ObjectSchema();
+
+        await _TransformAsync(schema, primitiveType);
+
+        schema.MinLength.Should().BeNull();
+        schema.MaxLength.Should().BeNull();
+    }
+
+    [Fact]
     public async Task should_leave_a_type_that_is_not_a_primitive_untouched()
     {
         var schema = _ObjectSchema();
@@ -154,3 +179,25 @@ public readonly record struct ComparableLastPrimitive : IPrimitive<int>, ICompar
     public static PrimitiveValidationResult Validate(int value) => PrimitiveValidationResult.Ok;
 }
 #pragma warning restore CA1036
+
+/// <summary>A string primitive whose generated constructor enforces 2 to 10 characters.</summary>
+[StringLength(2, 10)]
+public sealed class BoundedCode : IPrimitive<string>
+{
+    public Type GetUnderlyingPrimitiveType() => typeof(string);
+
+    public string GetUnderlyingPrimitiveValue() => "";
+
+    public static PrimitiveValidationResult Validate(string value) => PrimitiveValidationResult.Ok;
+}
+
+/// <summary>A string primitive that declares bounds but opts out of enforcing them.</summary>
+[StringLength(2, 10, validate: false)]
+public sealed class UnvalidatedCode : IPrimitive<string>
+{
+    public Type GetUnderlyingPrimitiveType() => typeof(string);
+
+    public string GetUnderlyingPrimitiveValue() => "";
+
+    public static PrimitiveValidationResult Validate(string value) => PrimitiveValidationResult.Ok;
+}

@@ -1,17 +1,71 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Api;
 using Headless.Context;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Extensions;
 
 public sealed class ApiResultMvcExtensionsTests : TestBase
 {
+    // PopulateMetadata ignores the method; any method stands in for the action.
+    private static readonly MethodInfo _ActionMethod = ((Func<ApiActionResult?>)_Action).Method;
+
+    #region OpenAPI metadata
+
+    [Fact]
+    public void should_publish_complete_openapi_metadata_for_valued_results()
+    {
+        // given
+        var builder = new RouteEndpointBuilder(_ => Task.CompletedTask, RoutePatternFactory.Parse("/"), order: 0);
+
+        // when
+        ApiActionResult<string>.PopulateMetadata(_ActionMethod, builder);
+
+        // then
+        var responses = builder.Metadata.OfType<IProducesResponseTypeMetadata>().ToList();
+        responses.Select(response => response.StatusCode).Should().BeEquivalentTo([200, 401, 403, 404, 409, 422]);
+        var success = responses.Single(response => response.StatusCode == 200);
+        success.Type.Should().Be<string>();
+        success.ContentTypes.Should().Equal("application/json");
+        responses
+            .Where(response => response.StatusCode >= 400)
+            .Should()
+            .AllSatisfy(response =>
+            {
+                response.Type.Should().Be<ProblemDetails>();
+                response.ContentTypes.Should().Equal("application/problem+json");
+            });
+    }
+
+    [Fact]
+    public void should_publish_a_bodyless_204_for_unit_results()
+    {
+        // given
+        var builder = new RouteEndpointBuilder(_ => Task.CompletedTask, RoutePatternFactory.Parse("/"), order: 0);
+
+        // when
+        ApiActionResult.PopulateMetadata(_ActionMethod, builder);
+
+        // then
+        var responses = builder.Metadata.OfType<IProducesResponseTypeMetadata>().ToList();
+        responses.Select(response => response.StatusCode).Should().BeEquivalentTo([204, 401, 403, 404, 409, 422]);
+        var success = responses.Single(response => response.StatusCode == 204);
+        success.Type.Should().Be(typeof(void));
+        success.ContentTypes.Should().BeEmpty();
+    }
+
+    #endregion
+
     #region Error description localization
 
     [Fact]
@@ -58,10 +112,10 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
         var actionResult = result.ToActionResult(controller, creator);
 
         // then
-        actionResult.Result.Should().BeOfType<OkObjectResult>();
-        var okResult = (OkObjectResult)actionResult.Result!;
+        var okResult = actionResult.Result.Should().BeOfType<OkObjectResult>().Subject;
         okResult.Value.Should().Be(expectedValue);
         okResult.StatusCode.Should().Be(StatusCodes.Status200OK);
+        ((IConvertToActionResult)actionResult).Convert().Should().BeSameAs(okResult);
     }
 
     [Fact]
@@ -98,9 +152,9 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
         var actionResult = result.ToActionResult(controller, creator);
 
         // then
-        actionResult.Should().BeOfType<NoContentResult>();
-        var noContentResult = (NoContentResult)actionResult;
+        var noContentResult = actionResult.Result.Should().BeOfType<NoContentResult>().Subject;
         noContentResult.StatusCode.Should().Be(StatusCodes.Status204NoContent);
+        ((IConvertToActionResult)actionResult).Convert().Should().BeSameAs(noContentResult);
     }
 
     [Fact]
@@ -115,8 +169,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
         var actionResult = result.ToActionResult(controller, creator);
 
         // then
-        actionResult.Should().BeOfType<ConflictObjectResult>();
-        var conflictResult = (ConflictObjectResult)actionResult;
+        var conflictResult = actionResult.Result.Should().BeOfType<ConflictObjectResult>().Subject;
         conflictResult.StatusCode.Should().Be(StatusCodes.Status409Conflict);
     }
 
@@ -464,6 +517,8 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
         public string? Localize(ErrorDescriptor error) =>
             string.Equals(error.Code, "app:out_of_stock", StringComparison.Ordinal) ? "نفدت الكمية" : null;
     }
+
+    private static ApiActionResult? _Action() => null;
 
     private static TestController _CreateController()
     {

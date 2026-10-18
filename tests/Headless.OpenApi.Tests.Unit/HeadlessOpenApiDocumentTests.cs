@@ -1,8 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json.Nodes;
+using Headless.Idempotency;
 using Headless.OpenApi;
 using Headless.Testing.Tests;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
@@ -223,6 +227,31 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         var error = badRequest["properties"]!["error"]!["oneOf"]!.AsArray();
         ((string?)error[0]!["type"]).Should().Be("null");
         ((string?)error[1]!["$ref"]).Should().Be("#/components/schemas/ErrorDescriptor");
+    }
+
+    [Fact]
+    public async Task should_document_the_api_result_contract_of_mvc_actions_returning_api_action_results()
+    {
+        var document = await _GetDocumentAsync();
+
+        var valued = document.Operation("/api/invoices/{id}", "get")["responses"]!;
+        _ResponseCodes(document.Operation("/api/invoices/{id}", "get"))
+            .Should()
+            .BeEquivalentTo(["200", "401", "403", "404", "409", "422"]);
+        ((string?)valued["200"]!["content"]!["application/json"]!["schema"]!["$ref"])
+            .Should()
+            .Be("#/components/schemas/ProductView");
+        _ProblemSchemaRef(valued["404"]!).Should().Be("#/components/schemas/EntityNotFoundProblemDetails");
+        _ProblemSchemaRef(valued["409"]!).Should().Be("#/components/schemas/ConflictProblemDetails");
+        _ProblemSchemaRef(valued["422"]!).Should().Be("#/components/schemas/UnprocessableEntityProblemDetails");
+
+        var unit = document.Operation("/api/invoices/{id}", "delete")["responses"]!;
+        _ResponseCodes(document.Operation("/api/invoices/{id}", "delete"))
+            .Should()
+            .BeEquivalentTo(["204", "401", "403", "404", "409", "422"]);
+        unit["204"]!["content"].Should().BeNull();
+        _ProblemSchemaRef(unit["404"]!).Should().Be("#/components/schemas/EntityNotFoundProblemDetails");
+        document["components"]!["schemas"]!.AsObject().Should().NotContainKey("ApiActionResultOfProductView");
     }
 
     [Fact]
@@ -595,6 +624,19 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
     }
 
     [Fact]
+    public async Task should_type_the_responses_of_the_validator_filter()
+    {
+        var document = await _GetDocumentAsync();
+        var operation = document.Operation("/filtered", "post");
+
+        _ResponseCodes(operation).Should().BeEquivalentTo(["200", "400", "422"]);
+        _ProblemSchemaRef(operation["responses"]!["400"]!).Should().Be("#/components/schemas/BadRequestProblemDetails");
+        _ProblemSchemaRef(operation["responses"]!["422"]!)
+            .Should()
+            .Be("#/components/schemas/UnprocessableEntityProblemDetails");
+    }
+
+    [Fact]
     public async Task should_describe_a_declared_validation_problem_with_its_own_shape()
     {
         var document = await _GetDocumentAsync();
@@ -649,6 +691,130 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         month.Select(x => x.Key).Should().BeSubsetOf(["type", "format", "description"]);
         month.Types().Should().Equal("integer");
         ((string?)month["format"]).Should().Be("int32");
+    }
+
+    [Fact]
+    public async Task should_document_the_required_idempotency_key_and_the_responses_the_middleware_writes()
+    {
+        var document = await _GetDocumentAsync();
+        var operation = document.Operation("/payments", "post");
+
+        var key = operation.Parameter("Idempotency-Key");
+        ((string?)key["in"]).Should().Be("header");
+        ((bool?)key["required"]).Should().BeTrue();
+        ((string?)key["schema"]!["type"]).Should().Be("string");
+
+        var responses = operation["responses"]!;
+        _ResponseCodes(operation).Should().BeEquivalentTo(["200", "400", "409", "413", "422"]);
+        _ProblemSchemaRef(responses["400"]!).Should().Be("#/components/schemas/BadRequestProblemDetails");
+        ((string?)responses["400"]!["description"]).Should().Contain("g:idempotency_key_required");
+        _ProblemSchemaRef(responses["409"]!).Should().Be("#/components/schemas/ConflictProblemDetails");
+        ((string?)responses["409"]!["description"])
+            .Should()
+            .Contain("g:idempotency_in_flight")
+            .And.NotContain("g:idempotency_key_reused");
+        _ProblemSchemaRef(responses["422"]!).Should().Be("#/components/schemas/UnprocessableEntityProblemDetails");
+        ((string?)responses["422"]!["description"]).Should().Contain("g:idempotency_key_reused");
+        _ProblemSchemaRef(responses["413"]!).Should().Be("#/components/schemas/PayloadTooLargeProblemDetails");
+
+        responses["409"]!["headers"]!.AsObject().Select(x => x.Key).Should().Equal("Retry-After");
+        responses["200"]!["headers"]!.AsObject().Select(x => x.Key).Should().Equal("Idempotent-Replayed");
+        ((bool?)responses["200"]!["headers"]!["Idempotent-Replayed"]!["required"]).Should().NotBe(true);
+        responses["400"]!["headers"].Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_follow_the_endpoint_idempotency_overrides()
+    {
+        var document = await _GetDocumentAsync();
+        var operation = document.Operation("/payments/{id}", "put");
+
+        // The handler binds the header itself, so it is declared once and stays optional.
+        var headers = operation["parameters"]!
+            .AsArray()
+            .Where(x => string.Equals((string?)x!["name"], "Idempotency-Key", StringComparison.Ordinal))
+            .ToList();
+        headers.Should().ContainSingle();
+        ((bool?)headers[0]!["required"]).Should().NotBe(true);
+
+        _ResponseCodes(operation).Should().BeEquivalentTo(["204", "400", "409"]);
+        var responses = operation["responses"]!;
+        ((string?)responses["400"]!["description"])
+            .Should()
+            .Contain("g:idempotency_key_malformed")
+            .And.NotContain("g:idempotency_key_required");
+        ((string?)responses["409"]!["description"])
+            .Should()
+            .Contain("g:idempotency_in_flight_timeout")
+            .And.Contain("g:idempotency_key_reused");
+        responses["204"]!["headers"]!.AsObject().Select(x => x.Key).Should().Equal("Idempotent-Replayed");
+
+        // A route group's requirement and the endpoint's own override compose into one description.
+        var entry = document.Operation("/ledger/entries", "post");
+        entry["parameters"]!.AsArray().Should().ContainSingle();
+        ((bool?)entry.Parameter("Idempotency-Key")["required"]).Should().BeTrue();
+        _ResponseCodes(entry).Should().BeEquivalentTo(["204", "400", "409", "413"]);
+
+        // GET is never an idempotency method, so the middleware passes the request through untouched.
+        var read = document.Operation("/payments/{id}", "get");
+        read["parameters"]!.AsArray().Select(x => (string?)x!["name"]).Should().Equal("id");
+        _ResponseCodes(read).Should().Equal("200");
+    }
+
+    [Fact]
+    public async Task should_use_the_application_idempotency_header_name()
+    {
+        var document = await OpenApiTestHost.GetDocumentAsync(
+            builder =>
+            {
+                builder.Services.Configure<HttpIdempotencyOptions>(options => options.HeaderName = "X-Request-Key");
+                builder.Services.AddHeadlessOpenApi();
+            },
+            app =>
+                app.MapPost("/transfers", () => TypedResults.NoContent())
+                    // The middleware reads the application-level name before it resolves endpoint overrides.
+                    .WithIdempotency(options => options.HeaderName = "Ignored-Key")
+                    .RequireIdempotencyKey()
+                    .AllowAnonymous(),
+            "v1",
+            AbortToken
+        );
+
+        var operation = document.Operation("/transfers", "post");
+        ((bool?)operation.Parameter("X-Request-Key")["required"]).Should().BeTrue();
+        operation["parameters"]!.AsArray().Should().ContainSingle();
+        ((string?)operation["responses"]!["400"]!["description"]).Should().Contain("X-Request-Key");
+    }
+
+    [Fact]
+    public async Task should_render_http_contract_metadata_as_headers_and_typed_responses()
+    {
+        var document = await _GetDocumentAsync();
+        var operation = document.Operation("/contract", "get");
+
+        var language = operation.Parameter("Accept-Language");
+        ((string?)language["in"]).Should().Be("header");
+        ((bool?)language["required"]).Should().NotBe(true);
+        ((string?)language["description"]).Should().Be("The preferred language of the response.");
+
+        // A header the handler binds is reused, not repeated, and becomes required.
+        var source = operation["parameters"]!
+            .AsArray()
+            .Where(x => string.Equals((string?)x!["name"], "X-Request-Source", StringComparison.Ordinal))
+            .ToList();
+        source.Should().ContainSingle();
+        ((bool?)source[0]!["required"]).Should().BeTrue();
+
+        var responses = operation["responses"]!;
+        _ResponseCodes(operation).Should().BeEquivalentTo(["200", "404"]);
+        ((string?)responses["404"]!["description"]).Should().Be("No resource matches the request.");
+        _ProblemSchemaRef(responses["404"]!).Should().Be("#/components/schemas/EntityNotFoundProblemDetails");
+
+        responses["200"]!["headers"]!
+            .ToJsonString()
+            .Should()
+            .Be("""{"Content-Language":{"description":"The language of the response.","schema":{"type":"string"}}}""");
+        responses["404"]!["headers"].Should().BeNull();
     }
 
     private static string[] _ResponseCodes(JsonNode operation) =>

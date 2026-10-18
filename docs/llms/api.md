@@ -254,6 +254,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - Single-claim authorization: `RequireSingleClaimValue(claimType, value)`, `RequireSingleClaim(claimType, predicate)`, and `SingleClaimRequirement`
 - HTTP edge rate limiting: `RateLimiterOptions.UseHeadlessProblemDetails()` rejects with 429 ProblemDetails (`g:rate_limit_exceeded`, `Retry-After`, `Cache-Control: no-store`), and `HttpContext.GetIpAddressPartition(ipv6PrefixLength = 64)` keys anonymous callers by IPv4 address or IPv6 /64. The application owns the limiter itself; see [HTTP edge limits](rate-limiting.md#http-edge-limits)
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
+- `HttpContractMetadata` — endpoint metadata a feature that runs around the handler (a middleware, a filter) attaches to describe HTTP behavior the handler's signature does not show, so API documentation can render it without referencing the feature: `RequestHeaders` (`HttpRequestHeaderDescription(name, required, description)`), `Responses` (`HttpResponseDescription(statusCode, description)`), and `ResponseHeaders` (`HttpResponseHeaderDescription(name, statusCode, description)` or `(name, minStatusCode, maxStatusCode, description)`, with an optional `Required`). It describes and never enforces; an endpoint may carry several. `Headless.OpenApi` renders it as header parameters, problem-details responses, and response headers, and `Headless.Idempotency.ResponseReplay` attaches one for its key header. A response header range (`200`–`299`) covers success statuses the feature cannot name
 
 ### Design constraints
 
@@ -1040,7 +1041,7 @@ Framework integration for ASP.NET Core Minimal APIs with JSON configuration, val
 ### API and behavior
 
 - Pre-configured JSON serialization options
-- `MinimalApiValidatorFilter` — FluentValidation integration via `.Validate<T>()` on endpoint builders
+- `MinimalApiValidatorFilter` — FluentValidation integration via `.Validate<T>()` on endpoint builders. `.Validate<T>()` also declares the filter's problem-details 400 (missing body) and 422 (validation errors) responses, so OpenAPI documents them without `.ProducesProblem(...)` calls
 - Entity-tag concurrency via `.WithEntityTag()` and `.RequireIfMatch()` endpoint filters
 - `ApiResult<T>.ToHttpResult(...)` / `ApiResult.ToHttpResult(...)` — exception-equivalent ProblemDetails mapping with automatic 200/204 and 401/403/404/409/422 OpenAPI metadata. The extensions (`ApiResultExtensions`) and the returned `ApiResultHttpResult<T>` / `ApiResultHttpResult` live in `Headless.Api`, the namespace the rest of the package's endpoint API uses, so a file that imports `Headless.Api` and `Headless.Primitives` (for `ApiResult`) sees them; do not write a local bridge
 - API versioning integration
@@ -1123,7 +1124,7 @@ Framework integration for ASP.NET Core MVC/Web API with controllers, filters, JS
 - URL canonicalization middleware (`RedirectToCanonicalUrlRule`, registered via `UseRedirectToCanonicalUrl()`)
 - Pre-configured JSON and MVC options
 - Direct MVC `ObjectResult` responses carrying Headless-normalized `ProblemDetails` run `ProblemDetailsOptions.CustomizeProblemDetails` once before serialization
-- `ApiResult<T>.ToActionResult(...)` / `ApiResult.ToActionResult(...)` — exception-equivalent ProblemDetails mapping for expected failures. The extensions (`ApiResultMvcExtensions`) live in `Headless.Api`, as the Minimal API bridge does
+- `ApiResult<T>.ToActionResult(...)` / `ApiResult.ToActionResult(...)` — exception-equivalent ProblemDetails mapping for expected failures, returning `ApiActionResult<T>` / `ApiActionResult`. An action that declares one of them as its return type (`Task<ApiActionResult<Order>>`) publishes the same OpenAPI response set as the Minimal API bridge: 200 with `T` (or a bodyless 204) and `application/problem+json` 401/403/404/409/422, with no `[ProducesResponseType]` attributes. MVC converts the result to the controller helper's typed result (`OkObjectResult`, `NotFoundObjectResult`, ...) before result filters run, so filters see the same results as before; `Result` exposes it to tests. `ApiResultError.ToActionResult(...)` still returns a plain `ActionResult` and publishes nothing. The extensions (`ApiResultMvcExtensions`) and both result types live in `Headless.Api`, as the Minimal API bridge does
 - API versioning integration with API Explorer
 - Opt-in strong ETag responses and `If-Match` request validation
 
@@ -1158,7 +1159,7 @@ app.Run();
 public sealed class OrdersController(IOrderService service, IProblemDetailsCreator problems) : ControllerBase
 {
     [HttpGet("{id:int}")]
-    public async Task<ActionResult<Order>> GetAsync(int id, CancellationToken ct)
+    public async Task<ApiActionResult<Order>> GetAsync(int id, CancellationToken ct)
     {
         var result = await service.GetAsync(id, ct).ConfigureAwait(false);
         return result.ToActionResult(this, problems);

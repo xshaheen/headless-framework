@@ -11,6 +11,9 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Api.MinimalApi\Headless.Api.MinimalApi.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Api.Mvc\Headless.Api.Mvc.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Idempotency.ResponseReplay\Headless.Idempotency.ResponseReplay.csproj" />
     <ProjectReference Include="..\..\src\Headless.OpenApi\Headless.OpenApi.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>

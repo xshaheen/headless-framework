@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using Asp.Versioning;
 using FluentValidation;
 using Headless.Api;
+using Headless.Idempotency;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
@@ -113,11 +114,62 @@ internal static class SampleApi
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .AllowAnonymous();
 
+        app.MapPost("/filtered", (RegisterRequest request) => TypedResults.Ok(request.UserName))
+            .Validate<RegisterRequest>()
+            .AllowAnonymous();
+
         app.MapPost("/validated", (RegisterRequest request) => TypedResults.Ok(request.UserName))
             .ProducesValidationProblem()
             .AllowAnonymous();
 
         app.MapGet("/accounts/{account}", (AccountId account, [FromQuery] Month month) => TypedResults.Ok(account))
+            .AllowAnonymous();
+
+        // The idempotency middleware is not in this pipeline: the document comes from the endpoint metadata alone.
+        app.MapPost("/payments", (CreateOrderRequest request) => TypedResults.Ok(request.Name))
+            .RequireIdempotencyKey()
+            .AllowAnonymous();
+        app.MapPut(
+                "/payments/{id:int}",
+                (int id, [FromHeader(Name = "Idempotency-Key")] string? key) => TypedResults.NoContent()
+            )
+            .WithIdempotency(options =>
+            {
+                options.MismatchStatusCode = StatusCodes.Status409Conflict;
+                options.InFlightStrategy = InFlightStrategy.WaitAndReplay;
+                options.OversizeBehavior = OversizeBehavior.PassThrough;
+            })
+            .AllowAnonymous();
+        app.MapGet("/payments/{id:int}", (int id) => TypedResults.Ok(id)).WithIdempotency(_ => { }).AllowAnonymous();
+        app.MapGroup("/ledger")
+            .RequireIdempotencyKey()
+            .MapPost("/entries", () => TypedResults.NoContent())
+            .WithIdempotency(options => options.MismatchStatusCode = StatusCodes.Status409Conflict)
+            .AllowAnonymous();
+
+        app.MapGet(
+                "/contract",
+                ([FromHeader(Name = "X-Request-Source")] string? source) => TypedResults.Ok(source ?? "")
+            )
+            .WithMetadata(
+                new HttpContractMetadata
+                {
+                    RequestHeaders =
+                    [
+                        new("Accept-Language", required: false, "The preferred language of the response."),
+                        new("X-Request-Source", required: true, "Where the request came from."),
+                    ],
+                    Responses = [new(StatusCodes.Status404NotFound, "No resource matches the request.")],
+                    ResponseHeaders =
+                    [
+                        new("Content-Language", StatusCodes.Status200OK, 299, "The language of the response."),
+                        new("X-Failure", StatusCodes.Status500InternalServerError, "Sent on a server failure.")
+                        {
+                            Required = true,
+                        },
+                    ],
+                }
+            )
             .AllowAnonymous();
 
         app.MapGet("/envelopes/nullable", () => TypedResults.Ok(new DataEnvelope<string?>(null)));
@@ -271,6 +323,24 @@ public sealed class ProductsController : ControllerBase
     [HttpGet("find/by-code")]
     [ActionName("Find")]
     public Ok<string> FindByCode(string code) => TypedResults.Ok(code);
+}
+
+/// <summary>Returns <see cref="ApiResult"/> outcomes, so its whole response contract comes from the return types.</summary>
+[ApiController]
+[Route("api/invoices")]
+public sealed class InvoicesController(IProblemDetailsCreator problems) : ControllerBase
+{
+    [HttpGet("{id:int}")]
+    public Task<ApiActionResult<ProductView>> GetAsync(int id) =>
+        Task.FromResult(
+            ApiResult<ProductView>
+                .Ok(new ProductView { Name = id.ToString(CultureInfo.InvariantCulture) })
+                .ToActionResult(this, problems)
+        );
+
+    [HttpDelete("{id:int}")]
+    public ApiActionResult Delete(int id) =>
+        (id > 0 ? ApiResult.Ok() : ApiResult.NotFound("Invoice", "id")).ToActionResult(this, problems);
 }
 
 public sealed class RegisterRequest

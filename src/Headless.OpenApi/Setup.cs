@@ -213,6 +213,7 @@ public static class SetupHeadlessOpenApi
         options.AddOperationTransformer(new IfMatchTransformer());
         options.AddOperationTransformer(new RateLimitingResponseTransformer());
         options.AddOperationTransformer(new EntityTagResponseTransformer());
+        options.AddOperationTransformer(new HttpContractTransformer());
         options.AddOperationTransformer(new SecurityRequirementTransformer());
         options.AddOperationTransformer(new ProblemDetailsTransformer());
         options.AddOperationTransformer(new TenantRequiredExampleTransformer());

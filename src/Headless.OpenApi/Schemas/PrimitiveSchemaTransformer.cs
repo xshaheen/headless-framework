@@ -10,7 +10,8 @@ namespace Headless.OpenApi;
 
 /// <summary>
 /// Describes every Headless primitive (a type implementing <c>IPrimitive&lt;T&gt;</c>, such as <c>MoneyAmount</c>,
-/// <c>Month</c>, <c>AccountId</c>, and <c>UserId</c>) as the JSON type of its underlying value.
+/// <c>Month</c>, <c>AccountId</c>, and <c>UserId</c>) as the JSON type of its underlying value, with the bounds of a
+/// string primitive's <see cref="StringLengthAttribute"/> as <c>minLength</c> and <c>maxLength</c>.
 /// </summary>
 /// <remarks>
 /// A primitive serializes through its own converter, which the native generator cannot see through, so without this
@@ -50,8 +51,33 @@ internal sealed class PrimitiveSchemaTransformer : IOpenApiSchemaTransformer
         schema.AnyOf = null;
         schema.AllOf = null;
         schema.Pattern = null;
+        _ApplyStringLength(schema, nullableUnderlying ?? type, valueType);
 
         return Task.CompletedTask;
+    }
+
+    // The generated constructor enforces the attribute's bounds unless it opts out with validate: false, in which case
+    // the bounds describe nothing a request is held to.
+    private static void _ApplyStringLength(OpenApiSchema schema, Type primitiveType, Type valueType)
+    {
+        if (
+            valueType != typeof(string)
+            || Attribute.GetCustomAttribute(primitiveType, typeof(StringLengthAttribute))
+                is not StringLengthAttribute { Validate: true } length
+        )
+        {
+            return;
+        }
+
+        if (length.MinimumLength > 0)
+        {
+            schema.MinLength = length.MinimumLength;
+        }
+
+        if (length.MaximumLength > 0)
+        {
+            schema.MaxLength = length.MaximumLength;
+        }
     }
 
     internal static bool IsPrimitive(Type type)
