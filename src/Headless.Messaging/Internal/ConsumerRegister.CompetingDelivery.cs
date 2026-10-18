@@ -167,6 +167,36 @@ internal sealed partial class ConsumerRegister
                     return;
                 }
 
+                // A plain message past its delivery deadline settles the same way, for the same reason: the publisher
+                // said nobody can use it after that instant, so no inbox row, no handler, and no callback — only a
+                // visible drop.
+                if (DeliverByEnvelope.IsExpired(transportMessage.Headers, _timeProvider.GetUtcNow()))
+                {
+                    if (_logger.IsEnabled(LogLevel.Information))
+                    {
+                        _logger.MessageDeliverByExceededOnReceive(
+                            LogSanitizer.Sanitize(transportMessage.Id),
+                            LogSanitizer.Sanitize(transportMessage.Name),
+                            LogSanitizer.Sanitize(consumerIdentity)
+                        );
+                    }
+
+                    MessagingMetrics.RecordReceiveOutcome(MessagingMetrics.ReceiveOutcomeExpired);
+                    traceHandle.Activity?.SetTag(
+                        MessagingMetrics.TagReceiveOutcome,
+                        MessagingMetrics.ReceiveOutcomeExpired
+                    );
+
+                    _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                    consumeOutcomeRecorded = true;
+
+                    // Settlement is must-complete: never abandon a commit on host shutdown.
+                    await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
+                    transportSettled = true;
+
+                    return;
+                }
+
                 if (!canFindSubscriber)
                 {
                     var safeName = LogSanitizer.Sanitize(name);

@@ -1979,4 +1979,180 @@ public sealed class MessageSenderTests : TestBase
             }
         }
     }
+
+    [Fact]
+    public async Task should_mark_row_failed_without_sending_when_delivery_deadline_passed()
+    {
+        // given — a stored row whose delivery deadline passed while it waited for the relay
+        var storage = Substitute.For<IDataStorage>();
+        var serializer = Substitute.For<IMessageSerializer>();
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        var callbackInvoked = false;
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    RetryStrategy = TestRetryStrategies.ZeroDelay(3),
+                    MaxPersistedRetries = 2,
+                    OnExhausted = (_, _) =>
+                    {
+                        callbackInvoked = true;
+                        return Task.CompletedTask;
+                    },
+                },
+            }
+        );
+        var message = _CreateMediumMessage(MessageLane.Queue);
+        message.Origin.Headers[Headers.DeliverBy] = DateTimeOffset
+            .UtcNow.AddSeconds(-1)
+            .ToString("O", CultureInfo.InvariantCulture);
+        var expired = new List<string?>();
+        using var listener = _ListenToSendExpired(expired);
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then — terminal Failed with the reason, no serialization, no transport attempt, no retry, no callback
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<MessageDeliverByExceededException>();
+        await serializer
+            .DidNotReceiveWithAnyArgs()
+            .SerializeToTransportMessageAsync(default!, Arg.Any<CancellationToken>());
+        await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, Arg.Any<CancellationToken>());
+        await storage
+            .Received(1)
+            .ChangePublishRetryStateAsync(
+                message,
+                StatusName.Failed,
+                MessageContentWrite.Refresh,
+                null,
+                null,
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+        message.Origin.Headers[Headers.Exception].Should().Be(nameof(MessageDeliverByExceededException));
+        message.ExceptionInfo.Should().Contain("deliver_by_exceeded");
+        message.ExpiresAt.Should().BeAfter(DateTimeOffset.UtcNow);
+        callbackInvoked.Should().BeFalse();
+        expired.Should().Contain("queue");
+    }
+
+    [Fact]
+    public async Task should_end_as_expired_without_exhausting_when_crash_recovery_finds_deadline_passed()
+    {
+        // given — a crashed dispatch already reserved its final inline attempt, and the deadline passed since
+        var storage = Substitute.For<IDataStorage>();
+        var serializer = Substitute.For<IMessageSerializer>();
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        var callbackInvoked = false;
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    RetryStrategy = TestRetryStrategies.ZeroDelay(0),
+                    MaxPersistedRetries = 0,
+                    OnExhausted = (_, _) =>
+                    {
+                        callbackInvoked = true;
+                        return Task.CompletedTask;
+                    },
+                },
+            }
+        );
+        var message = _CreateMediumMessage();
+        message.InlineAttempts = 1;
+        message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(1);
+        message.Origin.Headers[Headers.DeliverBy] = DateTimeOffset
+            .UtcNow.AddSeconds(-1)
+            .ToString("O", CultureInfo.InvariantCulture);
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then — the would-be exhaustion becomes a silent expiry
+        result.Exception.Should().BeOfType<MessageDeliverByExceededException>();
+        callbackInvoked.Should().BeFalse();
+        await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, Arg.Any<CancellationToken>());
+        await storage
+            .Received(1)
+            .ChangePublishRetryStateAsync(
+                message,
+                StatusName.Failed,
+                MessageContentWrite.Refresh,
+                null,
+                null,
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_send_normally_when_delivery_deadline_is_still_ahead()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport.SendAsync(transportMessage, Arg.Any<CancellationToken>()).Returns(OperateResult.Success);
+        var sender = _CreateSender(storage, serializer, transport, new MessagingOptions());
+        var message = _CreateMediumMessage();
+        message.Origin.Headers[Headers.DeliverBy] = DateTimeOffset
+            .UtcNow.AddMinutes(5)
+            .ToString("O", CultureInfo.InvariantCulture);
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await transport.Received(1).SendAsync(transportMessage, Arg.Any<CancellationToken>());
+    }
+
+    private static System.Diagnostics.Metrics.MeterListener _ListenToSendExpired(List<string?> lanes)
+    {
+        var listener = new System.Diagnostics.Metrics.MeterListener
+        {
+            InstrumentPublished = (instrument, meterListener) =>
+            {
+                if (string.Equals(instrument.Name, MessagingMetrics.SendExpiredName, StringComparison.Ordinal))
+                {
+                    meterListener.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        listener.SetMeasurementEventCallback<long>(
+            (_, _, tags, _) =>
+            {
+                foreach (var tag in tags)
+                {
+                    if (string.Equals(tag.Key, MessagingTags.Lane, StringComparison.Ordinal))
+                    {
+                        lock (lanes)
+                        {
+                            lanes.Add(tag.Value?.ToString());
+                        }
+                    }
+                }
+            }
+        );
+        listener.Start();
+        return listener;
+    }
 }

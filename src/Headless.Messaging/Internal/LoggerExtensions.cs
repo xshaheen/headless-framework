@@ -406,6 +406,48 @@ internal static partial class LoggerExtensions
     )]
     public static partial void MessageLeaseLost(this ILogger logger, Guid storageId);
 
+    [LoggerMessage(
+        EventId = 4125,
+        EventName = "StoredMessageDeliverByExceeded",
+        Level = LogLevel.Information,
+        Message = "Message stored as {StorageId} (name '{MessageName}') passed its delivery deadline {Deadline}; it is marked failed without being sent."
+    )]
+    public static partial void StoredMessageDeliverByExceeded(
+        this ILogger logger,
+        Guid storageId,
+        string messageName,
+        DateTimeOffset? deadline
+    );
+
+    [LoggerMessage(
+        EventId = 4126,
+        EventName = "MessageDeliverByExceededOnReceive",
+        Level = LogLevel.Information,
+        Message = "Message {MessageId} (name '{MessageName}', consumer '{Consumer}') arrived after its delivery deadline; it is committed and dropped without running the consumer."
+    )]
+    public static partial void MessageDeliverByExceededOnReceive(
+        this ILogger logger,
+        string? messageId,
+        string? messageName,
+        string? consumer
+    );
+
+    [LoggerMessage(
+        EventId = 4127,
+        EventName = "MessageDeliverByExceededBeforeAttempt",
+        Level = LogLevel.Information,
+        Message = "Message stored as {StorageId} passed its delivery deadline before an attempt started; it ends without running the consumer."
+    )]
+    public static partial void MessageDeliverByExceededBeforeAttempt(this ILogger logger, Guid storageId);
+
+    [LoggerMessage(
+        EventId = 4128,
+        EventName = "DirectSendDeliverByExceeded",
+        Level = LogLevel.Information,
+        Message = "Direct send of message {MessageId} (name '{MessageName}') passed its delivery deadline before reaching the transport; it is dropped without being sent."
+    )]
+    public static partial void DirectSendDeliverByExceeded(this ILogger logger, string? messageId, string? messageName);
+
     [LoggerMessage(EventId = 42, Level = LogLevel.Warning, Message = "RabbitMQ consumer cancelled. --> {Reason}")]
     public static partial void RabbitMqConsumerCancelled(this ILogger logger, string reason);
 

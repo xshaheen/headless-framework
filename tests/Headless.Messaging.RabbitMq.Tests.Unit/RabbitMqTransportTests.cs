@@ -5,6 +5,7 @@ using Headless.Messaging.RabbitMq;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using RabbitMQ.Client.Exceptions;
@@ -128,6 +129,112 @@ public sealed class RabbitMqTransportTests : TestBase
                 Arg.Any<CancellationToken>()
             );
         _pool.Received(1).Return(_channel);
+    }
+
+    [Fact]
+    public async Task should_set_expiration_to_remaining_milliseconds_when_message_carries_delivery_deadline()
+    {
+        // given
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero));
+        await using var transport = new RabbitMqTransport(_logger, _pool, MessageLane.Bus, clock);
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestMessage" },
+                {
+                    MessagingHeaders.DeliverBy,
+                    clock.GetUtcNow().AddSeconds(90).ToString("O", CultureInfo.InvariantCulture)
+                },
+            },
+            body: "test-body"u8.ToArray()
+        );
+
+        // when
+        var result = await transport.SendAsync(message, AbortToken);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await _channel
+            .Received(1)
+            .BasicPublishAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Is<BasicProperties>(p => p.Expiration == "90000"),
+                Arg.Any<ReadOnlyMemory<byte>>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_round_sub_millisecond_remaining_time_up_to_one_millisecond_expiration()
+    {
+        // given — "0" would tell RabbitMQ to drop the message unless a consumer takes it at once
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero));
+        await using var transport = new RabbitMqTransport(_logger, _pool, MessageLane.Bus, clock);
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestMessage" },
+                {
+                    MessagingHeaders.DeliverBy,
+                    clock.GetUtcNow().AddTicks(5_000).ToString("O", CultureInfo.InvariantCulture)
+                },
+            },
+            body: "test-body"u8.ToArray()
+        );
+
+        // when
+        await transport.SendAsync(message, AbortToken);
+
+        // then
+        await _channel
+            .Received(1)
+            .BasicPublishAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Is<BasicProperties>(p => p.Expiration == "1"),
+                Arg.Any<ReadOnlyMemory<byte>>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not-a-date")]
+    [InlineData("2026-10-15T11:59:00.0000000+00:00")]
+    public async Task should_leave_expiration_unset_when_deadline_is_absent_unreadable_or_passed(string? deliverBy)
+    {
+        // given
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero));
+        await using var transport = new RabbitMqTransport(_logger, _pool, MessageLane.Bus, clock);
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            { MessagingHeaders.MessageId, "msg-123" },
+            { MessagingHeaders.MessageName, "TestMessage" },
+        };
+        if (deliverBy is not null)
+        {
+            headers[MessagingHeaders.DeliverBy] = deliverBy;
+        }
+
+        // when
+        await transport.SendAsync(new TransportMessage(headers, "test-body"u8.ToArray()), AbortToken);
+
+        // then
+        await _channel
+            .Received(1)
+            .BasicPublishAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Is<BasicProperties>(p => p.Expiration == null),
+                Arg.Any<ReadOnlyMemory<byte>>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]

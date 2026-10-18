@@ -2,6 +2,8 @@
 
 using Headless.Messaging.RequestReply;
 using Headless.UnitOfWork;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.Messaging.Internal;
 
@@ -17,10 +19,12 @@ internal sealed class MessagePublisher(
     MessagingTelemetry? telemetry = null,
     TimeSpan? transportPublishTimeout = null,
     DeliveryMode defaultDeliveryMode = DeliveryMode.Durable,
-    IEnumerable<MessageRegistration>? registrations = null
+    IEnumerable<MessageRegistration>? registrations = null,
+    ILogger? logger = null
 )
 {
     private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
+    private readonly ILogger _logger = logger ?? NullLogger.Instance;
     private readonly TimeSpan _transportPublishTimeout = transportPublishTimeout ?? TimeSpan.FromSeconds(10);
 
     // Frozen at construction from the message contracts only: consumer registrations never carry a policy, and several
@@ -172,7 +176,7 @@ internal sealed class MessagePublisher(
                         }
 
                         var transport = transportResolver(lane);
-                        await DirectPublisherCore
+                        var sent = await DirectPublisherCore
                             .SendAsync(
                                 prepared.Message,
                                 prepared.Lane,
@@ -186,6 +190,21 @@ internal sealed class MessagePublisher(
                                 ct
                             )
                             .ConfigureAwait(false);
+
+                        // A Direct send has no stored row to carry the reason, so the drop is made visible here the
+                        // same way the relay's is.
+                        if (!sent)
+                        {
+                            MessagingMetrics.RecordSendExpired(lane);
+                            if (_logger.IsEnabled(LogLevel.Information))
+                            {
+                                _logger.DirectSendDeliverByExceeded(
+                                    LogSanitizer.Sanitize(prepared.Message.Headers[Headers.MessageId]),
+                                    LogSanitizer.Sanitize(prepared.MessageName)
+                                );
+                            }
+                        }
+
                         receipt = new PublishReceipt(prepared.Message.Headers[Headers.MessageId], StorageId: null);
                         return;
                     }
