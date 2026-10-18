@@ -3,6 +3,7 @@
 using Headless;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
+using Headless.Messaging.RequestReply;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
@@ -150,6 +151,21 @@ public sealed class DeliverWithinPublishTests : TestBase
         // then
         Headers.DeliverBy.Should().Be("headless-deliver-by");
         act.Should().Throw<InvalidOperationException>().WithMessage("*headless-deliver-by*reserved*");
+    }
+
+    [Fact]
+    public void should_not_stamp_deadline_on_a_request_when_middleware_sets_deliver_within()
+    {
+        // given — a request is never dropped before it is sent, or its caller would wait out the timeout for nothing
+        var factory = _CreateFactory(new FakeTimeProvider(_Now));
+        var options = new QueueOptions { MessageName = "orders.place", DeliverWithin = TimeSpan.FromMilliseconds(1) };
+        var stamp = new RequestStamp("request-1", "reply-address", _Now.AddSeconds(30), _ => { });
+
+        // when
+        var prepared = factory.CreateRequest(new OrderPlaced("o-1"), typeof(OrderPlaced), options, stamp);
+
+        // then
+        prepared.Message.Headers.Should().NotContainKey(Headers.DeliverBy);
     }
 
     [Fact]

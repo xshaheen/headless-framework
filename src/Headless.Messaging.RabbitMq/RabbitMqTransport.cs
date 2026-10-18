@@ -68,8 +68,10 @@ internal sealed class RabbitMqTransport(
                 var remaining = deliverBy - _timeProvider.GetUtcNow();
                 if (remaining > TimeSpan.Zero)
                 {
-                    // RabbitMQ takes the TTL in milliseconds as a string.
-                    props.Expiration = ((long)remaining.TotalMilliseconds).ToString(CultureInfo.InvariantCulture);
+                    // RabbitMQ takes the TTL in milliseconds as a string. A sub-millisecond remainder would truncate
+                    // to "0", which RabbitMQ reads as "expire unless a consumer takes it at once", so it rounds up.
+                    props.Expiration = Math.Max(1L, (long)remaining.TotalMilliseconds)
+                        .ToString(CultureInfo.InvariantCulture);
                 }
             }
 

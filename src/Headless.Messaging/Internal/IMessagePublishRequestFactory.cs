@@ -197,8 +197,10 @@ internal sealed class MessagePublishRequestFactory(
         }
 
         // The delivery deadline is measured from the publish call, not the schedule's due time, so the same
-        // DeliverWithin bounds immediate, delayed, and absolutely scheduled publishes alike.
-        var deliverBy = _ResolveDeliverBy(options, publishAt, delayTime);
+        // DeliverWithin bounds immediate, delayed, and absolutely scheduled publishes alike. A request already carries
+        // its own deadline, and dropping it anywhere would leave its caller waiting out the timeout for a reply that
+        // cannot come, so a DeliverWithin that publish middleware set on one is ignored.
+        var deliverBy = request is null ? _ResolveDeliverBy(options, publishAt, delayTime) : null;
 
         var messageName = _ResolveMessageName(declaredMessageType, lane, options?.MessageName);
         MessageMetadata? metadata = null;

@@ -167,6 +167,41 @@ public sealed class RabbitMqTransportTests : TestBase
             );
     }
 
+    [Fact]
+    public async Task should_round_sub_millisecond_remaining_time_up_to_one_millisecond_expiration()
+    {
+        // given — "0" would tell RabbitMQ to drop the message unless a consumer takes it at once
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero));
+        await using var transport = new RabbitMqTransport(_logger, _pool, MessageLane.Bus, clock);
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestMessage" },
+                {
+                    MessagingHeaders.DeliverBy,
+                    clock.GetUtcNow().AddTicks(5_000).ToString("O", CultureInfo.InvariantCulture)
+                },
+            },
+            body: "test-body"u8.ToArray()
+        );
+
+        // when
+        await transport.SendAsync(message, AbortToken);
+
+        // then
+        await _channel
+            .Received(1)
+            .BasicPublishAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Is<BasicProperties>(p => p.Expiration == "1"),
+                Arg.Any<ReadOnlyMemory<byte>>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("not-a-date")]

@@ -74,7 +74,7 @@ public abstract record MessageOptions
     /// <para>
     /// The publisher's registered <see cref="TimeProvider"/> turns this into an absolute UTC deadline at publish time
     /// and stamps it as the <see cref="Headers.DeliverBy"/> header. Past that instant the message is dropped instead of
-    /// delivered, and every drop is logged and counted: the outbox relay marks a stored row terminally <c>Failed</c>
+    /// delivered, and every drop the framework makes is logged and counted: the outbox relay marks a stored row terminally <c>Failed</c>
     /// with the reason and does not send it, a <see cref="DeliveryMode.Direct"/> send is not handed to the transport,
     /// a consumer commits an arriving delivery without storing or handling it, and a stored inbox row that waited past
     /// the deadline ends <c>Failed</c> without running the consumer. None of these retries or fires the exhausted
@@ -84,7 +84,13 @@ public abstract record MessageOptions
     /// Must be positive. A <see cref="Delay"/> or <see cref="ScheduledAt"/> whose due time lands at or after the
     /// deadline is rejected at publish time with <see cref="ArgumentException"/>, because such a message could never be
     /// delivered. RabbitMQ and Azure Service Bus also receive the remaining time as the native per-message TTL, so an
-    /// undelivered message expires inside the broker instead of waiting in a queue.
+    /// undelivered message expires inside the broker instead of waiting in a queue. The broker discards that message
+    /// without the framework seeing it, so a broker expiry is neither logged nor counted, and where the queue
+    /// dead-letters expired messages (a RabbitMQ dead-letter exchange, or Service Bus dead-lettering on expiration) it
+    /// lands in the dead-letter queue rather than disappearing.
+    /// </para>
+    /// <para>
+    /// A request ignores this value, including one publish middleware sets: its own timeout is its deadline.
     /// </para>
     /// </remarks>
     public TimeSpan? DeliverWithin { get; init; }
