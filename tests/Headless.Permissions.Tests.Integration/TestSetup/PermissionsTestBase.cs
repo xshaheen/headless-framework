@@ -75,6 +75,7 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
             setup.ConfigureStorage(ConfigurePermissionsStorage);
             UsePermissionsEntityFramework(setup);
         });
+        services.AddHeadlessSeedDuringDeploy();
     }
 
     protected virtual void ConfigurePermissionsStorage(PermissionsStorageOptions options) { }

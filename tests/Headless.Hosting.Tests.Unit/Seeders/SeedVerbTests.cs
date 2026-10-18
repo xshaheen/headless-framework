@@ -4,7 +4,6 @@ using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Tests.Hosting;
 using Tests.StatefulResources;
 
@@ -129,13 +128,32 @@ public sealed class SeedOnStartupTests : TestBase
     }
 
     [Fact]
-    public async Task should_warn_once_when_seeders_are_registered_and_nothing_runs_them()
+    public async Task should_fail_the_start_when_seeders_are_registered_and_nothing_runs_them()
     {
         // given
-        using var logs = new CapturingLoggerProvider();
+        SeedLog.Entries.Clear();
         var builder = Host.CreateApplicationBuilder();
-        builder.Logging.AddProvider(logs);
         builder.Services.AddSeeder<FirstSeeder>();
+        using var host = builder.Build();
+
+        // when
+        var act = () => host.StartAsync(AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*FirstSeeder*'seed' verb*AddHeadlessSeedDuringDeploy()*AddHeadlessSeedOnStartup()*");
+        SeedLog.Entries.Should().NotContain("first", "a refused start runs no seeder");
+    }
+
+    [Fact]
+    public async Task should_start_without_seeding_when_the_deployment_seeds()
+    {
+        // given
+        SeedLog.Entries.Clear();
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSeeder<FirstSeeder>();
+        builder.Services.AddHeadlessSeedDuringDeploy();
         using var host = builder.Build();
 
         // when
@@ -143,27 +161,6 @@ public sealed class SeedOnStartupTests : TestBase
         await host.StopAsync(AbortToken);
 
         // then
-        logs.Warnings.Should()
-            .ContainSingle()
-            .Which.Should()
-            .Contain("'seed' verb")
-            .And.Contain("AddHeadlessSeedOnStartup()");
-    }
-
-    [Fact]
-    public async Task should_not_warn_when_the_deployment_seeds()
-    {
-        using var logs = new CapturingLoggerProvider();
-        var builder = Host.CreateApplicationBuilder();
-        builder.Logging.AddProvider(logs);
-        builder.Services.AddSeeder<FirstSeeder>();
-        builder.Services.AddHeadlessSeedDuringDeploy();
-        using var host = builder.Build();
-
-        await host.StartAsync(AbortToken);
-        await host.StopAsync(AbortToken);
-
-        logs.Warnings.Should().BeEmpty();
         SeedLog.Entries.Should().NotContain("first", "declaring the deploy step runs nothing at startup");
     }
 
@@ -255,43 +252,6 @@ public sealed class SeedOnStartupTests : TestBase
             log.Add("seed");
 
             return ValueTask.CompletedTask;
-        }
-    }
-
-    private sealed class CapturingLoggerProvider : ILoggerProvider
-    {
-        public List<string> Warnings { get; } = [];
-
-        public ILogger CreateLogger(string categoryName) => new Logger(this);
-
-        public void Dispose() { }
-
-        private sealed class Logger(CapturingLoggerProvider owner) : ILogger
-        {
-            public IDisposable? BeginScope<TState>(TState state)
-                where TState : notnull => null;
-
-            public bool IsEnabled(LogLevel logLevel) => true;
-
-            public void Log<TState>(
-                LogLevel logLevel,
-                EventId eventId,
-                TState state,
-                Exception? exception,
-                Func<TState, Exception?, string> formatter
-            )
-            {
-                if (
-                    logLevel == LogLevel.Warning
-                    && string.Equals(eventId.Name, "SeedingNotConfigured", StringComparison.Ordinal)
-                )
-                {
-                    lock (owner.Warnings)
-                    {
-                        owner.Warnings.Add(formatter(state, exception));
-                    }
-                }
-            }
         }
     }
 }

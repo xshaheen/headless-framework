@@ -30,6 +30,7 @@ public sealed class SqlServerCoordinationConnectionTests : TestBase
                 coordination.Configure(options => options.ClusterName = "access-token")
             );
         });
+        builder.Services.AddHeadlessSeedDuringDeploy();
 
         using var host = builder.Build();
         var act = () => host.Services.GetRequiredService<IOptions<SqlServerCoordinationOptions>>().Value;

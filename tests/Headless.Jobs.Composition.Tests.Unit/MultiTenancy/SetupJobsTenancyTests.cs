@@ -142,6 +142,7 @@ public sealed class SetupJobsTenancyTests : TestBase
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddLogging();
         builder.Services.AddHeadlessJobs(options => options.DisableBackgroundServices());
+        builder.Services.AddHeadlessSeedDuringDeploy();
         builder.AddHeadlessTenancy(tenancy => tenancy.Jobs(jobs => jobs.PropagateTenant()));
 
         using var provider = builder.Services.BuildServiceProvider();

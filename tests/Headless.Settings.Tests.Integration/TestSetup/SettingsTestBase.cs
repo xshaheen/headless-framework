@@ -76,6 +76,7 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
             setup.ConfigureStorage(ConfigureSettingsStorage);
             UseSettingsEntityFramework(setup);
         });
+        services.AddHeadlessSeedDuringDeploy();
     }
 
     protected virtual void ConfigureSettingsStorage(SettingsStorageOptions options) { }

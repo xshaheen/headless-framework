@@ -3,7 +3,6 @@
 using Headless.Hosting.Initialization.Schema;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Hosting;
@@ -53,16 +52,18 @@ internal sealed class SeedStartupService(
 }
 
 /// <summary>
-/// Warns once at startup when seeders are registered but nothing runs them: a skipped seed fails silently, unlike a
-/// missing table, so the log is the only signal. It reads the registrations and constructs no seeder.
+/// Fails the host start when seeders are registered but the application has not said what runs them: a skipped seed
+/// leaves definitions and cron rows silently out of date, unlike a missing table, so it is refused before any hosted
+/// service starts. It reads the registrations only, so it costs no I/O and constructs no seeder. It is a hosted service
+/// rather than a startup validator because the host verbs run the validators too, and the <c>seed</c> and
+/// <c>resources</c> verbs are the deployment steps this check asks for.
 /// </summary>
-internal sealed partial class SeedingConfigurationCheck(
+internal sealed class SeedingConfigurationCheck(
     IEnumerable<SeederRegistration> registrations,
-    IOptions<SeedingOptions> options,
-    ILogger<SeedingConfigurationCheck> logger
-) : IHostedService
+    IOptions<SeedingOptions> options
+) : IHostedLifecycleService
 {
-    public Task StartAsync(CancellationToken cancellationToken)
+    public Task StartingAsync(CancellationToken cancellationToken)
     {
         if (options.Value is { OnStartup: false, DuringDeploy: false })
         {
@@ -70,24 +71,26 @@ internal sealed partial class SeedingConfigurationCheck(
 
             if (names.Count > 0)
             {
-                LogSeedingNotConfigured(logger, string.Join(", ", names));
+                throw new InvalidOperationException(
+                    $"Seeders {string.Join(", ", names)} are registered but nothing runs them, so code-declared data "
+                        + "(definitions, cron jobs) would never be written. Run the 'seed' verb in the deployment and call "
+                        + "AddHeadlessSeedDuringDeploy(), or call AddHeadlessSeedOnStartup() in development."
+                );
             }
         }
 
         return Task.CompletedTask;
     }
 
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    [LoggerMessage(
-        EventId = 7,
-        EventName = "SeedingNotConfigured",
-        Level = LogLevel.Warning,
-        Message = "Seeders {Seeders} are registered but nothing runs them, so code-declared data (definitions, cron jobs) "
-            + "is not written or updated. Run the 'seed' verb in the deployment and call AddHeadlessSeedDuringDeploy(), or "
-            + "call AddHeadlessSeedOnStartup() in development."
-    )]
-    private static partial void LogSeedingNotConfigured(ILogger logger, string seeders);
+    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 /// <summary>How the application has said its seeders run.</summary>

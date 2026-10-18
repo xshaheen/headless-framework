@@ -102,6 +102,7 @@ public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFi
             setup.ConfigureStorage(options => options.Schema = schema);
             setup.UseSqlServer(connectionString);
         });
+        builder.Services.AddHeadlessSeedDuringDeploy();
 
         if (setupResources)
         {

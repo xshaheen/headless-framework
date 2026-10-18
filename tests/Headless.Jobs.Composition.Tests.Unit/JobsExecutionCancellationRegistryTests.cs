@@ -251,6 +251,7 @@ public sealed class JobsExecutionCancellationRegistryTests : TestBase
                         scheduler.CancellationObservationInterval = TimeSpan.FromMilliseconds(25);
                     });
                 });
+                services.AddHeadlessSeedDuringDeploy();
                 services.AddSingleton(durableStore);
             })
             .Build();

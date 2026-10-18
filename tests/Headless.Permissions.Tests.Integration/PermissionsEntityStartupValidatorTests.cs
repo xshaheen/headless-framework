@@ -24,6 +24,7 @@ public sealed class PermissionsEntityStartupValidatorTests(PermissionsTestFixtur
             options.UseNpgsql(Fixture.SqlConnectionString)
         );
         builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<MissingPermissionsEntityDbContext>());
+        builder.Services.AddHeadlessSeedDuringDeploy();
         using var host = builder.Build();
 
         // when

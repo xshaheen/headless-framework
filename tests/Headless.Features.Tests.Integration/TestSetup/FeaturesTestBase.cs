@@ -74,6 +74,7 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
             setup.ConfigureStorage(ConfigureFeaturesStorage);
             UseFeaturesEntityFramework(setup);
         });
+        services.AddHeadlessSeedDuringDeploy();
     }
 
     protected virtual void ConfigureFeaturesStorage(FeaturesStorageOptions options) { }

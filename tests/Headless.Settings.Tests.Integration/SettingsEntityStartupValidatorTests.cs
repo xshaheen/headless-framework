@@ -35,6 +35,7 @@ public sealed class SettingsEntityStartupValidatorTests(SettingsTestFixture fixt
             setup.UseRedis(options => options.ConnectionMultiplexer = Fixture.Multiplexer)
         );
         builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<MissingSettingsEntityDbContext>());
+        builder.Services.AddHeadlessSeedDuringDeploy();
         using var host = builder.Build();
 
         // when
