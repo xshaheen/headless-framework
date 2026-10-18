@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Instrumentation;
@@ -47,8 +48,13 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
         await probe.Manager.DidNotReceive().RunTimedOutTickers(Arg.Any<CancellationToken>());
         await probe.Manager.DidNotReceive().ReclaimStalledResources(Arg.Any<CancellationToken>());
 
-        probe.ReleaseDrain();
+        // The initializer's start leaves the barrier closed: the drain that opens it runs after the host start.
         await initializer.StartAsync(AbortToken);
+        provider.GetRequiredService<JobsActivationBarrier>().IsActivated.Should().BeFalse();
+        await probe.Manager.DidNotReceive().GetNextJobs(Arg.Any<CancellationToken>());
+
+        probe.ReleaseDrain();
+        await _Warmup(provider).WarmUpAsync(AbortToken);
 
         // The barrier is open, so the scheduler resumes — and its first selection observed a completed drain.
         (await probe.FirstSelection.Task.WaitAsync(AbortToken))
@@ -60,34 +66,60 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
         await fallback.StopAsync(AbortToken);
     }
 
-    [Fact]
-    public async Task should_not_select_any_work_until_the_activation_drain_releases_under_concurrent_service_start()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_return_from_the_host_start_before_the_drain_and_select_nothing_until_it_completes(
+        bool startConcurrently
+    )
     {
         var probe = new ManagerProbe();
-
-        using var host = new HostBuilder()
-            .ConfigureServices(services =>
-            {
-                services.Configure<HostOptions>(options => options.ServicesStartConcurrently = true);
-                // Keeps the test from installing the process-wide Ctrl+C / ProcessExit handlers ConsoleLifetime adds.
-                services.AddSingleton<IHostLifetime, NoopHostLifetime>();
-                services.AddHeadlessJobs();
-                services.AddSingleton(probe.Manager);
-            })
-            .Build();
+        using var host = _BuildHost(probe, startConcurrently);
+        var barrier = host.Services.GetRequiredService<JobsActivationBarrier>();
 
         var startTask = host.StartAsync(AbortToken);
 
-        // The initializer is inside the drain and is holding host startup open, while every other hosted service has
-        // already been started concurrently alongside it.
+        // The drain runs after the start and is still blocked, yet the start has returned: it no longer waits on a
+        // store round trip per page and per stale row.
         await probe.DrainEntered.Task.WaitAsync(AbortToken);
-        startTask.IsCompleted.Should().BeFalse();
+        await startTask.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+        barrier.IsActivated.Should().BeFalse();
+        probe.SelectionsBeforeActivation.Should().Be(0);
 
         probe.ReleaseDrain();
-        await startTask;
 
         (await probe.FirstSelection.Task.WaitAsync(AbortToken)).Should().BeTrue();
         probe.SelectionsBeforeActivation.Should().Be(0);
+        barrier.IsActivated.Should().BeTrue();
+
+        await host.StopAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_keep_the_barrier_closed_and_retry_a_failed_drain_without_stopping_the_host()
+    {
+        var probe = new ManagerProbe(failedDrains: 1);
+        probe.ReleaseDrain();
+        using var host = _BuildHost(probe, startConcurrently: false);
+        var barrier = host.Services.GetRequiredService<JobsActivationBarrier>();
+        var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
+
+        // A store outage during the drain no longer aborts the start.
+        await host.StartAsync(AbortToken);
+        await probe.FirstDrainFailed.Task.WaitAsync(AbortToken);
+
+        // Failed closed: the barrier stays shut, nothing was selected, and the host keeps running.
+        barrier.IsActivated.Should().BeFalse();
+        probe.SelectionsBeforeActivation.Should().Be(0);
+        lifetime.ApplicationStopping.IsCancellationRequested.Should().BeFalse();
+
+        // The warm-up runner retries the drain; once it succeeds the barrier opens and the scheduler selects.
+        (await probe.FirstSelection.Task.WaitAsync(AbortToken))
+            .Should()
+            .BeTrue();
+        probe.DrainAttempts.Should().Be(2);
+        probe.SelectionsBeforeActivation.Should().Be(0);
+        barrier.IsActivated.Should().BeTrue();
 
         await host.StopAsync(AbortToken);
     }
@@ -119,6 +151,7 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
 
         probe.ReleaseDrain();
         await initializer.StartAsync(AbortToken);
+        await _Warmup(provider).WarmUpAsync(AbortToken);
 
         // The barrier is now open — which under manual mode must still dispatch nothing. The fallback loop IS running
         // and past its barrier wait; it stays idle because manual mode leaves the shared task pool frozen.
@@ -155,6 +188,7 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
 
         probe.ReleaseDrain();
         await initializer.StartAsync(AbortToken);
+        await _Warmup(provider).WarmUpAsync(AbortToken);
         await scheduler.StartAsync(AbortToken);
 
         scheduler.IsRunning.Should().BeFalse();
@@ -242,6 +276,25 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
         await manager.DidNotReceive().ReclaimStalledResources(Arg.Any<CancellationToken>());
     }
 
+    private static JobsActivationWarmup _Warmup(IServiceProvider provider)
+    {
+        return provider.GetServices<IWarmup>().OfType<JobsActivationWarmup>().Single();
+    }
+
+    private static IHost _BuildHost(ManagerProbe probe, bool startConcurrently)
+    {
+        return new HostBuilder()
+            .ConfigureServices(services =>
+            {
+                services.Configure<HostOptions>(options => options.ServicesStartConcurrently = startConcurrently);
+                // Keeps the test from installing the process-wide Ctrl+C / ProcessExit handlers ConsoleLifetime adds.
+                services.AddSingleton<IHostLifetime, NoopHostLifetime>();
+                services.AddHeadlessJobs();
+                services.AddSingleton(probe.Manager);
+            })
+            .Build();
+    }
+
     private static JobsExecutionTaskHandler _Handler(IServiceProvider serviceProvider, IInternalJobManager manager)
     {
         return new JobsExecutionTaskHandler(
@@ -298,8 +351,15 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
     private sealed class ManagerProbe
     {
         private readonly TaskCompletionSource _releaseDrain = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _failedDrainsLeft;
+        private int _drainAttempts;
         private int _drainCompleted;
         private int _selectionsBeforeActivation;
+
+        /// <summary>Completes when the first drain attempt has failed.</summary>
+        public TaskCompletionSource FirstDrainFailed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int DrainAttempts => Volatile.Read(ref _drainAttempts);
 
         public IInternalJobManager Manager { get; }
 
@@ -312,8 +372,9 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
 
         public int SelectionsBeforeActivation => Volatile.Read(ref _selectionsBeforeActivation);
 
-        public ManagerProbe()
+        public ManagerProbe(int failedDrains = 0)
         {
+            _failedDrainsLeft = failedDrains;
             var manager = Substitute.For<IInternalJobManager>();
 
             manager
@@ -365,8 +426,17 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
 
         private async Task<CronFingerprintSweepResult> _DrainAsync()
         {
+            Interlocked.Increment(ref _drainAttempts);
             DrainEntered.TrySetResult();
             await _releaseDrain.Task.ConfigureAwait(false);
+
+            if (Interlocked.Decrement(ref _failedDrainsLeft) >= 0)
+            {
+                FirstDrainFailed.TrySetResult();
+
+                throw new InvalidOperationException("store unavailable");
+            }
+
             Volatile.Write(ref _drainCompleted, 1);
 
             return new CronFingerprintSweepResult

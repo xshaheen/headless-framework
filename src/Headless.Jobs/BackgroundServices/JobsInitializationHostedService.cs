@@ -10,11 +10,14 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Jobs.BackgroundServices;
 
 /// <summary>
-/// Handles Jobs core initialization (function building, notification wiring, external provider init, the
-/// fingerprint drain). Seeding is <see cref="JobsSeeder"/>'s, which runs only when the application opts in.
-/// Signals <see cref="JobsActivationBarrier"/> when it finishes, which is what actually orders the scheduler behind
-/// it — registration order alone does not survive <c>HostOptions.ServicesStartConcurrently</c>.
+/// Handles the cheap part of Jobs core initialization (function building, option checks, notification wiring,
+/// external provider init). Seeding is <see cref="JobsSeeder"/>'s, which runs only when the application opts in.
 /// </summary>
+/// <remarks>
+/// The cron fingerprint drain that opens <see cref="JobsActivationBarrier"/> is <see cref="JobsActivationWarmup"/>'s:
+/// it touches the store once per page and per stale row, so it runs after the host has started instead of holding the
+/// start open. On a host without background services nothing selects work, so this service opens the barrier itself.
+/// </remarks>
 internal sealed class JobsInitializationHostedService(
     IServiceProvider serviceProvider,
     JobsActivationBarrier activationBarrier,
@@ -24,26 +27,26 @@ internal sealed class JobsInitializationHostedService(
     private Action<object?, CoreNotifyActionType>? _notifyCoreHandler;
     private JobsExecutionContext? _executionContext;
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public Task StartAsync(CancellationToken cancellationToken)
     {
         try
         {
-            await _StartCoreAsync(cancellationToken).ConfigureAwait(false);
+            _StartCore();
         }
         catch (Exception exception)
         {
             // Fail closed. Publish the failure to every loop parked on the barrier — including loops already running
-            // under a concurrent start — so none of them proceeds to select work under an unverified schedule
-            // interpretation, then let the original exception abort host startup as before.
+            // under a concurrent start — so none of them proceeds to select work on a host whose configuration was
+            // rejected, then let the original exception abort host startup.
             activationBarrier.MarkFailed(exception);
 
             throw;
         }
 
-        activationBarrier.MarkCompleted();
+        return Task.CompletedTask;
     }
 
-    private async Task _StartCoreAsync(CancellationToken cancellationToken)
+    private void _StartCore()
     {
         _ = serviceProvider.GetRequiredService<JobSchedulingPolicies>();
         var executionContext = serviceProvider.GetRequiredService<JobsExecutionContext>();
@@ -68,7 +71,7 @@ internal sealed class JobsInitializationHostedService(
         schedulerOptions.ResolveLeaseRenewalInterval();
 
         // Probe for the background scheduler: its presence is what tells this initializer whether background services
-        // were registered at all, gating both the notification wiring below and the fingerprint drain further down.
+        // were registered at all, gating both the notification wiring below and who opens the activation barrier.
         // JobsStartMode.Manual is deliberately NOT pushed onto it from here — the scheduler consumes its own configured
         // start mode, because a push only lands in time when this initializer starts first, which
         // HostOptions.ServicesStartConcurrently does not guarantee.
@@ -114,15 +117,11 @@ internal sealed class JobsInitializationHostedService(
             executionContext.ExternalProviderApplicationAction = null;
         }
 
-        // Drain one stable store snapshot here, before the caller opens the activation barrier and therefore before any
-        // loop can pick up a uninitialized or stale-fingerprint row. The BARRIER is the ordering guarantee, not hosted-
-        // service registration order: a host that sets HostOptions.ServicesStartConcurrently starts the scheduler at
-        // the same time as this initializer. Deterministically invalid definitions are durably deferred by the manager;
-        // storage/infrastructure failures propagate, leave the barrier closed-with-failure, and fail closed instead of
-        // allowing dispatch under an unverified interpretation.
-        if (backgroundScheduler is not null)
+        // A host that runs no job loops has nothing to drain the fingerprints for. A host that does keeps the barrier
+        // closed here: JobsActivationWarmup drains one stable snapshot after the start and only then opens it.
+        if (backgroundScheduler is null)
         {
-            await DrainFingerprintSnapshotAsync(schedulerOptions, cancellationToken).ConfigureAwait(false);
+            activationBarrier.MarkCompleted();
         }
     }
 
@@ -134,54 +133,6 @@ internal sealed class JobsInitializationHostedService(
         }
 
         return Task.CompletedTask;
-    }
-
-    internal async Task DrainFingerprintSnapshotAsync(
-        SchedulerOptionsBuilder schedulerOptions,
-        CancellationToken cancellationToken
-    )
-    {
-        var manager = serviceProvider.GetRequiredService<IInternalJobManager>();
-        Guid? cursor = null;
-        Guid? highWatermark = null;
-        var scanned = 0;
-        var rebased = 0;
-        var deferred = 0;
-        var lostFence = 0;
-        CronFingerprintSweepResult result;
-        while (true)
-        {
-            result = await manager
-                .RebaseStaleFingerprintsAsync(
-                    schedulerOptions.FingerprintSweepBatchSize,
-                    afterId: cursor,
-                    throughId: highWatermark,
-                    cancellationToken: cancellationToken
-                )
-                .ConfigureAwait(false);
-            scanned += result.Scanned;
-            rebased += result.Rebased;
-            deferred += result.Deferred;
-            lostFence += result.LostFence;
-            cursor = result.NextCursorId;
-            highWatermark ??= result.SnapshotHighWatermarkId;
-
-            if (result.HasMore)
-            {
-                if (cursor is null)
-                {
-                    throw new InvalidOperationException(
-                        "Fingerprint sweep reported more rows without a continuation cursor."
-                    );
-                }
-
-                continue;
-            }
-
-            break;
-        }
-
-        logger.CronFingerprintActivationCompleted(scanned, rebased, deferred, lostFence);
     }
 }
 

@@ -239,8 +239,15 @@ public static class SetupJobs
         {
             services.AddSingleton<JobsActivationBarrier>();
 
-            // Core initialization — opens the activation barrier when its drain completes.
+            // Core initialization — the cheap checks run inside the host start.
             services.AddHostedService<JobsInitializationHostedService>();
+
+            // The fingerprint drain runs after the start and opens the barrier once it completes; a host without job
+            // loops has nothing to drain, so its initializer opens the barrier instead.
+            if (optionInstance.RegisterBackgroundServices)
+            {
+                services.AddWarmup<JobsActivationWarmup>();
+            }
         }
         else
         {
