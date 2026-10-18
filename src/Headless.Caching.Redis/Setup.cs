@@ -7,7 +7,6 @@ using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -20,8 +19,9 @@ public static class SetupRedisCache
     {
         /// <summary>
         /// Uses the Redis cache as the default (unkeyed) <see cref="ICache"/> and <see cref="IRemoteCache"/>.
-        /// Also registers the <see cref="CacheConstants.RemoteCacheProvider"/> role key and the Lua scripts
-        /// preload initializer. <see cref="RedisCacheOptions.ConnectionMultiplexer"/> is required.
+        /// Also registers the <see cref="CacheConstants.RemoteCacheProvider"/> role key. Each Lua script loads on
+        /// its first use instead of at host start.
+        /// <see cref="RedisCacheOptions.ConnectionMultiplexer"/> is required.
         /// </summary>
         /// <param name="setupAction">Configuration action for <see cref="RedisCacheOptions"/>.</param>
         /// <returns>The setup builder for chaining.</returns>
@@ -169,7 +169,6 @@ public static class SetupRedisCache
         services.PostConfigure<RedisCacheOptions>(name, options => options.CacheName ??= name);
 
         var loaderKey = RedisCacheServiceKeys.NamedScriptsLoader(name);
-        var initializerKey = RedisCacheServiceKeys.NamedScriptsInitializer(name);
 
         if (instance.SerializerFactory is { } serializerFactory)
         {
@@ -184,21 +183,6 @@ public static class SetupRedisCache
                     sp.GetService<TimeProvider>(),
                     sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
                 )
-        );
-
-        // Per-instance scripts preload: the same shared singleton is forwarded as IInitializer and
-        // IHostedService (mirrors AddInitializerHostedService, which cannot be reused because each named
-        // instance needs its own initializer bound to its own loader).
-        services.TryAddKeyedSingleton(
-            initializerKey,
-            (sp, _) =>
-                new RedisCacheScriptsInitializer(sp.GetRequiredKeyedService<HeadlessRedisScriptsLoader>(loaderKey))
-        );
-        services.AddSingleton<IInitializer>(sp =>
-            sp.GetRequiredKeyedService<RedisCacheScriptsInitializer>(initializerKey)
-        );
-        services.AddSingleton<IHostedService>(sp =>
-            sp.GetRequiredKeyedService<RedisCacheScriptsInitializer>(initializerKey)
         );
 
         services.AddHeadlessHealthCheck(
@@ -266,7 +250,6 @@ public static class SetupRedisCache
                     sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
                 )
         );
-        services.AddInitializerHostedService<RedisCacheScriptsInitializer>();
         services.TryAddSingleton<IRemoteCache, RedisCache>();
         services.AddHeadlessHealthCheck(
             "cache-redis",

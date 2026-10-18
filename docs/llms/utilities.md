@@ -32,7 +32,7 @@ CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) is its own d
 - Use `Headless.Hosting` for DI helpers. Key methods: `AddIf(condition, action)`, `AddIfElse(condition, ifAction, elseAction)`, `AddOrReplaceSingleton<TService, TImpl>()`, `Configure<TOptions, TValidator>(configuration, name)`.
 - Use `ISeeder` from Hosting for database seeding; register with `services.AddSeeder<T>()`. Run all seeders with `await app.Services.SeedAsync()` at startup. Use `[SeederPriority(n)]` to control order (lower runs first, default `0`); EF migrations seed first via `AddDbMigrationSeeder<TContext>()` (`SeederPriority` `int.MinValue`).
 - Use `Headless.NetTopologySuite` for geospatial work. Key methods: `SanitizeForSqlGeography()`, `PermissiveIntersection()`, `PermissiveUnion()`, `ComputeOverlap()`, `EnsureIsOrientedCounterClockwise()`, `Simplify()`. Use `GeoConstants.GoogleMapsSrid` (4326) for SRID.
-- Use `Headless.Redis` for Lua script management only, not for general Redis operations. Call `HeadlessRedisScriptsLoader.EvaluateAsync(...)` for on-demand loading. Provider packages own hosted warmup for their own script bundles.
+- Use `Headless.Redis` for Lua script management only, not for general Redis operations. Call `HeadlessRedisScriptsLoader.EvaluateAsync(...)` directly: the first evaluation loads the script. Do not add a startup initializer that calls `LoadAsync`; it blocks the host start for a round trip the first use pays anyway.
 - Use `Headless.Sitemaps` for XML sitemap generation. Create `List<SitemapUrl>` and call `urls.WriteToAsync(stream)`. Auto-splits at 50,000 URLs via `urls.WriteAsync()`. Use `SitemapAlternateUrl` for hreflang/localized URLs.
 - Use `Slug.Create(text)` for slug generation. Customize with `SlugOptions` (separator, max length, casing, character replacements). Handles Unicode/Arabic text natively.
 
@@ -877,12 +877,12 @@ Redis utilities and Lua script management for StackExchange.Redis.
 
 - `HeadlessConnectionMultiplexerExtensions` - Helper extensions for Redis connections; `PingAsync` sends `PING` through the default database and returns the round-trip time (its token abandons the wait; the command itself ends through the multiplexer timeout), `ProbeEndpointsAsync` sends `PING` to every configured endpoint and checks `CLUSTER INFO` reports `cluster_state:ok` on cluster nodes (the Redis readiness checks use it), `GetEndpointsKey` names the deployment by its sorted configured endpoints, with no credential and without contacting the server (the Redis readiness checks collapse on it), and `CountAllKeysAsync` accepts an optional trailing `CancellationToken`, checks it before endpoint discovery and between endpoint queries, and cannot interrupt an in-flight `DBSIZE` because StackExchange.Redis exposes no cancellation for that command
 - `RedisScriptDefinition` - Base type for named Lua script definitions
-- `HeadlessRedisScriptsLoader` - Generic Lua script loader and evaluator
+- `HeadlessRedisScriptsLoader` - Generic Lua script loader and evaluator. `EvaluateAsync` loads a script onto every writable node (`SCRIPT LOAD`) on its first use, then runs it by SHA (`EVALSHA`). On `NOSCRIPT` (failover, restart, or a flushed script cache) it runs that call through `EVAL` and reloads on the next call. `LoadAsync` loads a set of scripts ahead of first use and is optional
 - Repository integration tests retain an internal destructive `FlushAllAsync` helper; it is not part of the package's supported public API
 
 #### Design constraints
 
-`Headless.Redis` owns script definitions and generic loading only. Provider packages own script grouping, hosted warmup, typed parameters, and result decoding so consumers load only the script definitions they need.
+`Headless.Redis` owns script definitions and generic loading only. Provider packages own typed parameters and result decoding. No first-party provider preloads its scripts at host start: the Redis cache, distributed locks, and coordination providers load each script on its first use, so a host starts without a Redis round trip and loads only the scripts it runs. The first call to each script costs one extra `SCRIPT LOAD` round trip, and the loader serializes concurrent first loads.
 
 Each concrete `RedisScriptDefinition` type is a singleton contract. Reuse the exposed `Instance` member; the loader rejects multiple instances of the same concrete type because it caches loaded scripts by definition type.
 
@@ -902,8 +902,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 var redis = await ConnectionMultiplexer.ConnectAsync("localhost");
 var scriptsLoader = new HeadlessRedisScriptsLoader(redis);
-
-await scriptsLoader.LoadAsync([IncrementWithExpireScript.Instance]);
 
 // The loader caches loaded scripts by definition type, so each definition exposes one shared instance.
 public sealed class IncrementWithExpireScript : RedisScriptDefinition

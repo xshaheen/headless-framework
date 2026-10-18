@@ -19,7 +19,7 @@ namespace Headless.Coordination;
 /// <remarks>
 /// Requires a pre-registered <c>IConnectionMultiplexer</c> in the DI container (for example from
 /// <c>AddHeadlessRedis</c>). The Redis store uses Lua scripts for atomic heartbeat and incarnation
-/// allocation; scripts are loaded at startup by an initializer hosted service.
+/// allocation; each script loads on its first use instead of at host start.
 /// </remarks>
 [PublicAPI]
 public static class SetupCoordinationRedis
@@ -117,7 +117,6 @@ public static class SetupCoordinationRedis
         );
 
         services.TryAddSingleton<IMembershipStore>(static sp => sp.GetRequiredService<RedisMembershipStore>());
-        services.AddInitializerHostedService<CoordinationRedisScriptsInitializer>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, RedisMembershipCleanupService>(static sp =>
                 sp.GetRequiredService<RedisMembershipCleanupService>()

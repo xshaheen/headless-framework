@@ -338,7 +338,7 @@ Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `R
 
 ### Runtime behavior
 
-Registers the core membership services, Redis membership store, keyed Lua script loader, script initializer hosted service, and cleanup hosted service. Requires an `IConnectionMultiplexer` registration.
+Registers the core membership services, Redis membership store, keyed Lua script loader, and cleanup hosted service. Requires an `IConnectionMultiplexer` registration. The host start loads no Lua script: each script loads on the first membership operation that runs it, which costs that operation one extra round trip.
 
 ---
 
