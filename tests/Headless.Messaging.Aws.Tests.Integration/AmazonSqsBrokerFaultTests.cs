@@ -50,6 +50,12 @@ public sealed class AmazonSqsBrokerFaultTests(LocalStackTestFixture fixture) : B
     }
 
     [Fact]
+    public override Task should_resume_delivery_once_after_consumer_pause()
+    {
+        return base.should_resume_delivery_once_after_consumer_pause();
+    }
+
+    [Fact]
     public override Task should_resume_delivery_once_after_broker_restart()
     {
         return base.should_resume_delivery_once_after_broker_restart();

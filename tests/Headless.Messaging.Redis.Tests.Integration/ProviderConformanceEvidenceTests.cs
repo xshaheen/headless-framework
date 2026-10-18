@@ -70,6 +70,11 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
                 nameof(RedisConsumerConformanceTests.should_reject_real_delivery_and_observe_redelivery)
             ),
             new(
+                TransportConformanceScenario.ConsumerPauseRecovery,
+                typeof(RedisBrokerFaultTests),
+                nameof(RedisBrokerFaultTests.should_resume_delivery_once_after_consumer_pause)
+            ),
+            new(
                 TransportConformanceScenario.BrokerInterruptionRecovery,
                 typeof(RedisBrokerFaultTests),
                 nameof(RedisBrokerFaultTests.should_resume_delivery_once_after_broker_restart)

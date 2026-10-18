@@ -139,7 +139,7 @@ That policy holds only while the real brokers keep passing, so `.github/workflow
 | `EmptyBodyDispatch` | S | S | N/A | U | U | U | U | S | S | S |
 | `CommitSettlement` | S | S | S | S | S | S† | S‡ | S | S | S |
 | `RejectRedelivery` | S | S | S | S | S | S† | S‡ | S | S | S |
-| `ConsumerPauseRecovery` | S | S | U | S | S | S† | S‡ | U | U | S |
+| `ConsumerPauseRecovery` | S | S | S | S | S | S† | S‡ | U | S | S |
 | `BrokerInterruptionRecovery` | S | U | S | S | U | U | S‡ | U | S | S |
 | `ConnectionDropRecovery` | S | S | S | S | S | U | U | U | S | S |
 | `PublishDuringOutage` | S | U | S | S | S | U | U | U | S | S |

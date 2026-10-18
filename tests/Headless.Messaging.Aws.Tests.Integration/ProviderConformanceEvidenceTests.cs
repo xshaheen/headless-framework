@@ -81,6 +81,11 @@ public sealed class ProviderConformanceEvidenceTests(LocalStackTestFixture fixtu
                 nameof(AmazonSqsConsumerClientConformanceTests.should_reject_real_delivery_and_observe_redelivery)
             ),
             new(
+                TransportConformanceScenario.ConsumerPauseRecovery,
+                typeof(AmazonSqsBrokerFaultTests),
+                nameof(AmazonSqsBrokerFaultTests.should_resume_delivery_once_after_consumer_pause)
+            ),
+            new(
                 TransportConformanceScenario.BrokerInterruptionRecovery,
                 typeof(AmazonSqsBrokerFaultTests),
                 nameof(AmazonSqsBrokerFaultTests.should_resume_delivery_once_after_broker_restart)

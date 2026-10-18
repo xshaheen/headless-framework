@@ -426,6 +426,7 @@ public static class TransportConformanceManifest
                     supportsIndependentLaneTopology: true
                 )
                 .WithMalformedEnvelopeBound("SQS deletion after terminal classification", 1, TimeSpan.FromSeconds(5))
+                .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BrokerInterruptionRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HandlerFailureRedelivery, ConformanceSupport.Supported)
@@ -807,6 +808,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.EmptyBodyDispatch, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BrokerInterruptionRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HandlerFailureRedelivery, ConformanceSupport.Supported)
