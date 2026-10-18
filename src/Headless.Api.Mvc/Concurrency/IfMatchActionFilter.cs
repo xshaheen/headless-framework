@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -9,18 +10,7 @@ internal sealed class IfMatchActionFilter : IAsyncActionFilter
 {
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
-        var endpointMetadata = context.ActionDescriptor.EndpointMetadata;
-        var requiresIfMatch = false;
-        for (var index = 0; index < endpointMetadata.Count; index++)
-        {
-            if (endpointMetadata[index] is RequireIfMatchAttribute)
-            {
-                requiresIfMatch = true;
-                break;
-            }
-        }
-
-        if (!requiresIfMatch)
+        if (!_RequiresIfMatch(context))
         {
             _ = await next().ConfigureAwait(false);
             return;
@@ -34,5 +24,27 @@ internal sealed class IfMatchActionFilter : IAsyncActionFilter
         }
 
         _ = await next().ConfigureAwait(false);
+    }
+
+    // The routed endpoint's metadata holds the action's attributes plus what a MapControllers() convention added, which
+    // the action descriptor never sees; the descriptor is the fallback for a request that was not endpoint-routed.
+    private static bool _RequiresIfMatch(ActionExecutingContext context)
+    {
+        if (context.HttpContext.GetEndpoint() is { } endpoint)
+        {
+            return endpoint.Metadata.GetMetadata<RequireIfMatchAttribute>() is not null;
+        }
+
+        var actionMetadata = context.ActionDescriptor.EndpointMetadata;
+
+        for (var index = 0; index < actionMetadata.Count; index++)
+        {
+            if (actionMetadata[index] is RequireIfMatchAttribute)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

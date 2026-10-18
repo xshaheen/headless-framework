@@ -33,7 +33,6 @@ internal static class Emitter
             return;
         }
 
-        var swaggerTypes = new List<GeneratorData>(typesToGenerate.Length);
         var efValueConverterTypes = new List<GeneratorData>(typesToGenerate.Length);
         var dapperConverterTypes = new List<GeneratorData>(typesToGenerate.Length);
 
@@ -71,27 +70,10 @@ internal static class Emitter
                     dapperConverterTypes.Add(generatorData);
                     context.AddDapperTypeHandlerConverter(generatorData);
                 }
-
-                if (globalOptions.GenerateSwashbuckleSwaggerConverters || globalOptions.GenerateNswagSwaggerConverters)
-                {
-                    swaggerTypes.Add(generatorData);
-                }
             }
 
             // Add helpers
             var addAssemblyAttribute = true;
-
-            if (globalOptions.GenerateSwashbuckleSwaggerConverters && swaggerTypes.Count > 0)
-            {
-                context.AddSwashbuckleSwaggerMappingsHelper(assemblyName, swaggerTypes, addAssemblyAttribute);
-                addAssemblyAttribute = false;
-            }
-
-            if (globalOptions.GenerateNswagSwaggerConverters && swaggerTypes.Count > 0)
-            {
-                context.AddNswagSwaggerMappingsHelper(assemblyName, swaggerTypes, addAssemblyAttribute);
-                addAssemblyAttribute = false;
-            }
 
             if (globalOptions.GenerateEntityFrameworkValueConverters && efValueConverterTypes.Count > 0)
             {

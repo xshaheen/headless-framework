@@ -59,7 +59,11 @@ public sealed class HeadlessServiceDefaultsOpenApiOptions
     /// <summary>Surface documents to publish. Null infers registered surfaces; empty selects the ordinary v1 document.</summary>
     public IReadOnlyCollection<string>? SurfaceDocumentNames { get; set; }
 
-    /// <summary>Allows callers to tune ASP.NET Core OpenAPI options.</summary>
+    /// <summary>
+    /// Tunes the native ASP.NET Core OpenAPI options of every registered document. It runs after the Headless
+    /// transformers are added, so its transformers can override their output. Configure the shared Headless
+    /// enrichment (security schemes, FluentValidation rules) with <c>ConfigureHeadlessOpenApi(...)</c>.
+    /// </summary>
     public Action<OpenApiOptions>? ConfigureOpenApi { get; set; }
 
     /// <summary>The route pattern for OpenAPI JSON documents.</summary>
