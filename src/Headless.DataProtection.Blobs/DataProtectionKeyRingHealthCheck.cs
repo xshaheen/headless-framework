@@ -11,9 +11,9 @@ namespace Headless.DataProtection;
 
 /// <summary>
 /// Readiness health check for the blob-backed data-protection key ring — the continuous complement to the
-/// <c>ValidateKeyRingAtStartup</c> boot gate: the gate validates once before the host starts, this check keeps
-/// validating on every probe, catching a container deleted or write permission revoked AFTER boot (which the
-/// one-shot gate cannot see). Registered by
+/// <c>ValidateKeyRing</c> warm-up: the warm-up validates once after the host starts, this check keeps validating on
+/// every probe, catching a container deleted or write permission revoked later (which the one-shot warm-up cannot
+/// see). Registered by
 /// <see cref="DataProtectionHealthChecksExtensions.AddDataProtectionKeyRing"/>.
 /// </summary>
 /// <remarks>

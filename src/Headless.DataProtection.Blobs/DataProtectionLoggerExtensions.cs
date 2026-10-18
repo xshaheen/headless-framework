@@ -70,19 +70,19 @@ internal static partial class DataProtectionLoggerExtensions
 
     [LoggerMessage(
         EventId = 10,
-        EventName = "StartupValidationRoundTripSucceeded",
+        EventName = "KeyRingValidationRoundTripSucceeded",
         Level = LogLevel.Information,
-        Message = "Data protection startup validation succeeded: a protect/unprotect round-trip exercised the key ring against the '{Container}' container"
+        Message = "Data protection key-ring validation succeeded: a protect/unprotect round-trip exercised the key ring against the '{Container}' container"
     )]
-    public static partial void LogStartupValidationRoundTripSucceeded(this ILogger logger, string container);
+    public static partial void LogKeyRingValidationRoundTripSucceeded(this ILogger logger, string container);
 
     [LoggerMessage(
         EventId = 11,
-        EventName = "StartupValidationReadProbeSucceeded",
+        EventName = "KeyRingValidationReadProbeSucceeded",
         Level = LogLevel.Information,
-        Message = "Data protection startup validation succeeded: the read-only key-ring probe loaded {KeyCount} keys from the '{Container}' container (AutoGenerateKeys is false, so no key was generated)"
+        Message = "Data protection key-ring validation succeeded: the read-only key-ring probe loaded {KeyCount} keys from the '{Container}' container (AutoGenerateKeys is false, so no key was generated)"
     )]
-    public static partial void LogStartupValidationReadProbeSucceeded(
+    public static partial void LogKeyRingValidationReadProbeSucceeded(
         this ILogger logger,
         int keyCount,
         string container
@@ -90,33 +90,33 @@ internal static partial class DataProtectionLoggerExtensions
 
     [LoggerMessage(
         EventId = 12,
-        EventName = "StartupValidationFailed",
+        EventName = "KeyRingValidationFailed",
         Level = LogLevel.Critical,
-        Message = "Data protection startup validation failed and Mode is LogOnly — continuing startup. The key ring could not be exercised against the '{Container}' blob container; the first key write or the ~90-day key rotation will likely fail the same way. Verify the container exists and the credentials allow access, wire an IBlobContainerManager so PersistKeysToBlobStorage ensures the container before writes, or provision the container out-of-band (BlobContainerProvisioning.PreProvisioned)"
+        Message = "Data protection key-ring validation failed and Mode is LogOnly, so readiness is not gated and the validation is not retried. The key ring could not be exercised against the '{Container}' blob container; the first key write or the ~90-day key rotation will likely fail the same way. Verify the container exists and the credentials allow access, wire an IBlobContainerManager so PersistKeysToBlobStorage ensures the container before writes, or provision the container out-of-band (BlobContainerProvisioning.PreProvisioned)"
     )]
-    public static partial void LogStartupValidationFailed(this ILogger logger, Exception exception, string container);
+    public static partial void LogKeyRingValidationFailed(this ILogger logger, Exception exception, string container);
 
     [LoggerMessage(
         EventId = 13,
-        EventName = "StartupValidationWriteProbeSucceeded",
+        EventName = "KeyRingValidationWriteProbeSucceeded",
         Level = LogLevel.Information,
-        Message = "Data protection startup validation write probe succeeded: uploaded and deleted the reserved sentinel blob in the '{Container}' container through the key-write pipeline"
+        Message = "Data protection key-ring validation write probe succeeded: uploaded and deleted the reserved sentinel blob in the '{Container}' container through the key-write pipeline"
     )]
-    public static partial void LogStartupValidationWriteProbeSucceeded(this ILogger logger, string container);
+    public static partial void LogKeyRingValidationWriteProbeSucceeded(this ILogger logger, string container);
 
     [LoggerMessage(
         EventId = 14,
-        EventName = "StartupValidationWriteProbeSkipped",
+        EventName = "KeyRingValidationWriteProbeSkipped",
         Level = LogLevel.Debug,
-        Message = "Data protection startup validation write probe skipped: the configured IXmlRepository ('{RepositoryType}') is not the blob-storage repository, so there is no generic write to safely perform"
+        Message = "Data protection key-ring validation write probe skipped: the configured IXmlRepository ('{RepositoryType}') is not the blob-storage repository, so there is no generic write to safely perform"
     )]
-    public static partial void LogStartupValidationWriteProbeSkipped(this ILogger logger, string repositoryType);
+    public static partial void LogKeyRingValidationWriteProbeSkipped(this ILogger logger, string repositoryType);
 
     [LoggerMessage(
         EventId = 15,
-        EventName = "StartupValidationEmptyKeyRing",
+        EventName = "KeyRingValidationEmptyKeyRing",
         Level = LogLevel.Critical,
-        Message = "Data protection startup validation failed and Mode is LogOnly — continuing startup. The key-ring read probe reached the '{Container}' container but found no keys; AutoGenerateKeys is false on this node so it cannot create one, and its first protected operation will fail. Has the designated key writer run yet? Is this the right container/storage for this environment?"
+        Message = "Data protection key-ring validation failed and Mode is LogOnly, so readiness is not gated and the validation is not retried. The key-ring read probe reached the '{Container}' container but found no keys; AutoGenerateKeys is false on this node so it cannot create one, and its first protected operation will fail. Has the designated key writer run yet? Is this the right container/storage for this environment?"
     )]
-    public static partial void LogStartupValidationEmptyKeyRing(this ILogger logger, string container);
+    public static partial void LogKeyRingValidationEmptyKeyRing(this ILogger logger, string container);
 }

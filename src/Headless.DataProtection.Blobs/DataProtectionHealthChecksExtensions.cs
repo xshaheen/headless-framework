@@ -17,8 +17,8 @@ public static class DataProtectionHealthChecksExtensions
 
     /// <summary>
     /// Registers a readiness health check for the blob-backed data-protection key ring — the continuous
-    /// complement to <c>ValidateKeyRingAtStartup</c>: the boot gate validates once before the host starts, this
-    /// check keeps validating on every probe, catching a container deleted or write permission revoked AFTER boot.
+    /// complement to <c>ValidateKeyRing</c>: the warm-up validates once after the host starts, this check keeps
+    /// validating on every probe, catching a container deleted or write permission revoked later.
     /// </summary>
     /// <param name="builder">The <see cref="IHealthChecksBuilder"/> to add the check to.</param>
     /// <param name="name">The health check name; defaults to <see cref="DefaultName"/>.</param>
