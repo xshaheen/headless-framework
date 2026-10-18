@@ -23,6 +23,9 @@ public sealed class ToxiproxyServer : IAsyncDisposable
 
     private readonly IContainer _container = _BuildContainer();
 
+    // Serializes slot allocation, so a slot is counted only once its proxy exists and a failed create frees it.
+    private readonly SemaphoreSlim _createLock = new(1, 1);
+
     private HttpClient? _http;
     private int _proxies;
 
@@ -66,28 +69,36 @@ public sealed class ToxiproxyServer : IAsyncDisposable
     )
     {
         var http = _http ?? throw new InvalidOperationException("The Toxiproxy server has not started.");
-        var index = Interlocked.Increment(ref _proxies) - 1;
-        if (index >= _MaxProxies)
+        await _createLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            throw new InvalidOperationException($"This server publishes {_MaxProxies} proxy ports at most.");
+            if (_proxies >= _MaxProxies)
+            {
+                throw new InvalidOperationException($"This server publishes {_MaxProxies} proxy ports at most.");
+            }
+
+            var listenPort = _FirstProxyPort + _proxies;
+            using var response = await http.PostAsJsonAsync(
+                    "/proxies",
+                    new
+                    {
+                        name,
+                        listen = $"0.0.0.0:{listenPort}",
+                        upstream = $"host.docker.internal:{upstreamHostPort}",
+                        enabled = true,
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            await _EnsureSuccessAsync(response, "create proxy", cancellationToken).ConfigureAwait(false);
+            _proxies++;
+
+            return new ToxiproxyProxy(http, name, _container.Hostname, _container.GetMappedPublicPort(listenPort));
         }
-
-        var listenPort = _FirstProxyPort + index;
-        using var response = await http.PostAsJsonAsync(
-                "/proxies",
-                new
-                {
-                    name,
-                    listen = $"0.0.0.0:{listenPort}",
-                    upstream = $"host.docker.internal:{upstreamHostPort}",
-                    enabled = true,
-                },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-        await _EnsureSuccessAsync(response, "create proxy", cancellationToken).ConfigureAwait(false);
-
-        return new ToxiproxyProxy(http, name, _container.Hostname, _container.GetMappedPublicPort(listenPort));
+        finally
+        {
+            _createLock.Release();
+        }
     }
 
     /// <summary>
@@ -103,6 +114,7 @@ public sealed class ToxiproxyServer : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _http?.Dispose();
+        _createLock.Dispose();
         await _container.DisposeAsync().ConfigureAwait(false);
     }
 

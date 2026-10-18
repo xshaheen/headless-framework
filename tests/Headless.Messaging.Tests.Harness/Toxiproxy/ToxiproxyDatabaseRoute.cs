@@ -26,7 +26,9 @@ public sealed class ToxiproxyDatabaseRoute : IAsyncDisposable
         CancellationToken cancellationToken = default
     )
     {
+#pragma warning disable CA2000 // False positive: the catch disposes the server, and on success the returned route owns and disposes it.
         var server = new ToxiproxyServer();
+#pragma warning restore CA2000
 
         try
         {

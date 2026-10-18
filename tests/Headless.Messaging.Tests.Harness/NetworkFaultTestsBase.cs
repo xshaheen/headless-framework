@@ -141,15 +141,18 @@ public abstract class NetworkFaultTestsBase : TransportConsumerConformanceSessio
         for (var attempt = 0; clock.GetElapsedTime(outageStarted) < OutageDuration; attempt++)
         {
             var during = _CreateProbe(session.Destination, $"during-outage-{attempt}");
+            var publish = session.PublishAsync(during, AbortToken);
             try
             {
-                await session.PublishAsync(during, AbortToken).WaitAsync(TimeSpan.FromSeconds(5), clock, AbortToken);
+                await publish.WaitAsync(TimeSpan.FromSeconds(5), clock, AbortToken);
             }
 #pragma warning disable CA1031 // A publish during an outage may fail or throw; only its effect on the consumer is asserted.
             catch (Exception ex) when (ex is not OperationCanceledException || !AbortToken.IsCancellationRequested)
 #pragma warning restore CA1031
             {
-                // Expected: the network is down.
+                // Expected: the network is down. A publish the wait gave up on keeps running; observe its fault so it
+                // does not surface later as an unobserved task exception.
+                _ObserveFault(publish);
             }
 
             await clock.Delay(TimeSpan.FromSeconds(1), AbortToken);
@@ -295,4 +298,12 @@ public abstract class NetworkFaultTestsBase : TransportConsumerConformanceSessio
 
         return new TransportMessage(headers, System.Text.Encoding.UTF8.GetBytes(label));
     }
+
+    private static void _ObserveFault(Task task) =>
+        _ = task.ContinueWith(
+            static faulted => _ = faulted.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
 }
