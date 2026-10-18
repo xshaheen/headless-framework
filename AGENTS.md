@@ -95,7 +95,7 @@ Use the affected and project-scoped targets: `test-class` with `TEST_PROJECT`, `
 - **Mutation testing runs weekly.** `mutation.yml` runs Stryker.NET (`make mutation`) on the foundation packages every Monday and reports each score in the run summary. It never gates. Stryker.NET's Microsoft Testing Platform runner is in preview, so check the report before you act on a score.
 - **CodeQL does not compile.** It uses build-mode none, so it does not analyze code that source generators emit.
 - **`main` requires only the `CI status` job in `ci.yml`.** A skipped job passes. Add every new CI job to the `needs` list of `CI status`. When you change a trigger on a required workflow, change branch protection in the same change.
-- **Pull-request CI runs no integration suite.** See [Work in the affected scope](#work-in-the-affected-scope). The scheduled `messaging-nightly.yml` runs the messaging integration and chaos suites outside `CI status`, so its failures never block a pull request.
+- **Pull-request CI runs no integration suite.** See [Work in the affected scope](#work-in-the-affected-scope). `messaging-integration.yml` runs the messaging integration and chaos suites outside `CI status`, so its failures never block a pull request: on each push to `main` only the suites the change affects, and a full run weekly.
 - **Every CI run checks layering.** The `changes` job runs `make check-layering` (an Abstractions package references only Abstractions or foundation packages; a family's root package never references that family's providers; no public namespace or source folder is named after a kind of type).
 - **Some legs run only on a release.** Pack and SBOM, the Africa/Cairo test leg, and the messaging and R2 conformance legs run only for a published release or a `workflow_dispatch` with `release_checks`. Before you tag a change to packaging or time handling, rehearse that path.
 - **Packages publish only from a published GitHub Release.** Release Drafter never publishes. A release pushes to GitHub Packages, then to nuget.org. To stop at GitHub Packages, set the repository variable `PUBLISH_NUGET_ORG` to `false` before you publish the release (`gh variable set PUBLISH_NUGET_ORG --body false`); delete it to publish to nuget.org again. Before 1.0, Release Drafter resolves the `major` label to a minor bump.
@@ -118,7 +118,7 @@ Derive test classes from `TestBase` (`Headless.Testing.Tests`). Pass its `protec
 
 To add a second provider-integration project for one feature, extract a shared `*.Tests.Harness` project first instead of copying the fixture; match an existing harness project.
 
-Messaging has a tiered suite: a fast in-process simulator tier in its unit projects, real-broker and real-database suites, and a nightly workflow (`messaging-nightly.yml`) that adds chaos runs and a simulator-drift report. Before you change a messaging package or its tests, read the tier map and the guarantee and quarantine rules in [tests/Headless.Messaging.Tests.Harness/README.md](tests/Headless.Messaging.Tests.Harness/README.md).
+Messaging has a tiered suite: a fast in-process simulator tier in its unit projects, real-broker and real-database suites, and a workflow (`messaging-integration.yml`) that runs them after merge, adds chaos runs, and reports simulator drift. Before you change a messaging package or its tests, read the tier map and the guarantee and quarantine rules in [tests/Headless.Messaging.Tests.Harness/README.md](tests/Headless.Messaging.Tests.Harness/README.md).
 
 ## Conventions
 

@@ -188,7 +188,7 @@ def build_report(snapshot: dict, bindings: dict[tuple[str, str], set[TestKey]], 
         counts[result.outcome] += 1
 
     lines = [
-        "## Messaging nightly: simulator drift and provider failures",
+        "## Messaging integration: simulator drift and provider failures",
         "",
         f"Tests: {counts[PASSED]} passed, {counts[FAILED]} failed, {counts[SKIPPED]} skipped, across "
         f"{len({key.assembly for key in tests})} test module(s).",

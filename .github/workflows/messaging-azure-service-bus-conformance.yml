@@ -1,7 +1,7 @@
 name: Azure Service Bus Conformance
 
 # Only a real namespace proves provisioning, the administration API, and every-instance subscriptions; the local
-# emulator covers fixed-entity scenarios in the messaging nightly. The credential lives in a protected environment, so
+# emulator covers fixed-entity scenarios in messaging-integration.yml. The credential lives in a protected environment, so
 # this workflow intentionally runs only after a reviewer dispatches it for a trusted ref.
 on:
   workflow_dispatch:

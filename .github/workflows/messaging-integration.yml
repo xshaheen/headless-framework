@@ -1,19 +1,28 @@
-name: "Messaging nightly"
+name: "Messaging integration"
 
-# The messaging fast tier proves delivery guarantees against an in-process simulator; this run keeps that honest. Each
-# night it runs every broker, broker-plus-database, and relational storage integration suite, plus the chaos and soak
-# suite, against real containers, then reports two things a pull request never sees: a simulator cell that every real
-# broker backing it now fails (simulator drift), and a quarantined cell whose linked issue is already closed. Nothing
-# gates on it and it stays outside the required "CI status", so a red night never blocks a pull request.
+# The messaging fast tier proves delivery guarantees against an in-process simulator; this workflow keeps that honest
+# against real containers, and reports two things a pull request never sees: a simulator cell that every real broker
+# backing it now fails (simulator drift), and a quarantined cell whose linked issue is already closed. Nothing gates on
+# it and it stays outside the required "CI status", so a red run never blocks a pull request.
 #
-# Retries are off: no step passes --retry-failed-tests, so the SDK's retry extension stays inactive and a guarantee that
-# fails once shows as a failure. Azure Service Bus has two profiles. The real namespace needs a credential and keeps its
-# own dispatch-only workflow (messaging-azure-service-bus-conformance.yml); the drift report does not wait for its cells.
-# The emulator profile runs here, on fixed entities, because the run step sets HEADLESS_ACCEPT_SERVICEBUS_EMULATOR_EULA;
-# without it every emulator test skips with that reason.
+# It pays only for what changed. scripts/messaging-integration-scope.py decides each run:
+# - push to main: the legs whose integration project the change affects, through every transitive dependent, since the
+#   last green run, and chaos at smoke sizes when the change reaches it. A push that touches no messaging code runs
+#   only the scope job.
+# - weekly schedule: every leg, chaos at full sizes, and the quarantine check; with main unmoved since the last green
+#   full run, only the quarantine check, since an issue can close while the code stands still.
+# - dispatch: everything, at the requested chaos sizes, for a run before a release.
+#
+# Retries are off: no step passes --retry-failed-tests, so a guarantee that fails once shows as a failure. Azure Service
+# Bus has two profiles. The real namespace needs a credential and keeps its own dispatch-only workflow
+# (messaging-azure-service-bus-conformance.yml); the drift report does not wait for its cells. The emulator profile runs
+# here, on fixed entities, because the run step sets HEADLESS_ACCEPT_SERVICEBUS_EMULATOR_EULA; without it every emulator
+# test skips with that reason.
 on:
+  push:
+    branches: [main]
   schedule:
-    - cron: "0 1 * * *"
+    - cron: "0 1 * * 0"
   workflow_dispatch:
     inputs:
       chaos_profile:
@@ -29,9 +38,11 @@ on:
         required: false
         type: string
 
+# Queue rather than cancel: each run diffs against the last green run, so a later push covers a queued one it replaces,
+# but cancelling a running one would drop a result already paid for.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -47,8 +58,68 @@ env:
   CONFIGURATION: Release
 
 jobs:
+  scope:
+    name: "Messaging integration · scope"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Reads this workflow's own run history to find the last green run; it changes nothing.
+      actions: read
+    outputs:
+      legs: ${{ steps.select.outputs.legs }}
+      run_legs: ${{ steps.select.outputs.run_legs }}
+      run_chaos: ${{ steps.select.outputs.run_chaos }}
+      chaos_profile: ${{ steps.select.outputs.chaos_profile }}
+      run_quarantine: ${{ steps.select.outputs.run_quarantine }}
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          # The affected set diffs against the last green run's head, which may be many commits back.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # A push compares with the last green run of any kind, so a failed or queued-and-replaced run's changes are
+      # tested again. The schedule compares with the last green full run only: a green push run covers just the legs
+      # it selected.
+      - name: "Find the last green run"
+        id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" == "push" ]]; then
+            filter='.[0].headSha // ""'
+          else
+            filter='[.[] | select(.event == "schedule" or .event == "workflow_dispatch")][0].headSha // ""'
+          fi
+          base=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow messaging-integration.yml --branch main \
+            --status success --limit 50 --json headSha,event --jq "$filter")
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+          echo "Last green run: ${base:-none}"
+
+      - name: "Choose the legs"
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ steps.base.outputs.sha }}
+          CHAOS_PROFILE: ${{ inputs.chaos_profile }}
+        run: |
+          set -euo pipefail
+          make --no-print-directory messaging-integration-scope EVENT="$EVENT" BASE="$BASE" CHAOS_PROFILE="$CHAOS_PROFILE" > selection.txt
+          cat selection.txt >> "$GITHUB_OUTPUT"
+          {
+            echo "### Messaging integration scope"
+            grep -E '^(mode|reason|run_legs|run_chaos|chaos_profile|run_quarantine)=' selection.txt | sed 's/^/- /'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   integration:
-    name: "Messaging nightly · ${{ matrix.leg.name }}"
+    name: "Messaging integration · ${{ matrix.leg.name }}"
+    needs: scope
+    if: needs.scope.outputs.run_legs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -56,30 +127,10 @@ jobs:
       packages: read
     strategy:
       fail-fast: false
+      # Six container stacks at a time leave the account's other workflows room to start while a full run is going.
+      max-parallel: 6
       matrix:
-        # Keep this list in step with MESSAGING_NIGHTLY_PROJECTS in the Makefile; tests/scripts/test-messaging-nightly.sh
-        # checks that every project there has a leg here.
-        leg:
-          - { name: azure-service-bus-emulator, project: tests/Headless.Messaging.AzureServiceBus.Tests.Integration/Headless.Messaging.AzureServiceBus.Tests.Integration.csproj, tz: UTC }
-          - { name: aws, project: tests/Headless.Messaging.Aws.Tests.Integration/Headless.Messaging.Aws.Tests.Integration.csproj, tz: UTC }
-          - { name: aws-postgresql, project: tests/Headless.Messaging.AwsPostgreSql.Tests.Integration/Headless.Messaging.AwsPostgreSql.Tests.Integration.csproj, tz: UTC }
-          - { name: kafka, project: tests/Headless.Messaging.Kafka.Tests.Integration/Headless.Messaging.Kafka.Tests.Integration.csproj, tz: UTC }
-          - { name: kafka-postgresql, project: tests/Headless.Messaging.KafkaPostgreSql.Tests.Integration/Headless.Messaging.KafkaPostgreSql.Tests.Integration.csproj, tz: UTC }
-          - { name: nats, project: tests/Headless.Messaging.Nats.Tests.Integration/Headless.Messaging.Nats.Tests.Integration.csproj, tz: UTC }
-          - { name: nats-postgresql, project: tests/Headless.Messaging.NatsPostgreSql.Tests.Integration/Headless.Messaging.NatsPostgreSql.Tests.Integration.csproj, tz: UTC }
-          - { name: pulsar, project: tests/Headless.Messaging.Pulsar.Tests.Integration/Headless.Messaging.Pulsar.Tests.Integration.csproj, tz: UTC }
-          - { name: pulsar-postgresql, project: tests/Headless.Messaging.PulsarPostgreSql.Tests.Integration/Headless.Messaging.PulsarPostgreSql.Tests.Integration.csproj, tz: UTC }
-          - { name: rabbitmq, project: tests/Headless.Messaging.RabbitMq.Tests.Integration/Headless.Messaging.RabbitMq.Tests.Integration.csproj, tz: UTC }
-          - { name: rabbitmq-postgresql, project: tests/Headless.Messaging.RabbitMqPostgreSql.Tests.Integration/Headless.Messaging.RabbitMqPostgreSql.Tests.Integration.csproj, tz: UTC }
-          - { name: rabbitmq-sqlserver, project: tests/Headless.Messaging.RabbitMqSqlServer.Tests.Integration/Headless.Messaging.RabbitMqSqlServer.Tests.Integration.csproj, tz: UTC }
-          - { name: redis, project: tests/Headless.Messaging.Redis.Tests.Integration/Headless.Messaging.Redis.Tests.Integration.csproj, tz: UTC }
-          - { name: redis-postgresql, project: tests/Headless.Messaging.RedisPostgreSql.Tests.Integration/Headless.Messaging.RedisPostgreSql.Tests.Integration.csproj, tz: UTC }
-          - { name: storage-postgresql, project: tests/Headless.Messaging.Storage.PostgreSql.Tests.Integration/Headless.Messaging.Storage.PostgreSql.Tests.Integration.csproj, tz: UTC }
-          # Runners are UTC, which hides code that trusts DateTime.Kind or a local offset. Schedules, leases and
-          # retry times are stored here, so this suite runs a second time in a DST-observing zone east of UTC.
-          - { name: storage-postgresql-cairo, project: tests/Headless.Messaging.Storage.PostgreSql.Tests.Integration/Headless.Messaging.Storage.PostgreSql.Tests.Integration.csproj, tz: Africa/Cairo }
-          - { name: storage-sqlserver, project: tests/Headless.Messaging.Storage.SqlServer.Tests.Integration/Headless.Messaging.Storage.SqlServer.Tests.Integration.csproj, tz: UTC }
-          - { name: entityframework, project: tests/Headless.EntityFramework.Messaging.Tests.Integration/Headless.EntityFramework.Messaging.Tests.Integration.csproj, tz: UTC }
+        leg: ${{ fromJSON(needs.scope.outputs.legs) }}
     steps:
       - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -114,31 +165,33 @@ jobs:
           TZ: ${{ matrix.leg.tz }}
           PROJECT: ${{ matrix.leg.project }}
           LEG: ${{ matrix.leg.name }}
-          # Empty on every scheduled run, so the drill never fails a real night.
+          # Empty on every push and scheduled run, so the drill never fails a real run.
           HEADLESS_CONFORMANCE_DRIFT_DRILL: ${{ inputs.drift_drill }}
           # The repository owner accepted the Azure Service Bus emulator EULA for test runs; only the emulator fixture reads this.
           HEADLESS_ACCEPT_SERVICEBUS_EMULATOR_EULA: "Y"
         run: >-
-          make test-messaging-nightly
-          MESSAGING_NIGHTLY_PROJECTS="$PROJECT"
-          MESSAGING_NIGHTLY_RESULTS_DIR="artifacts/test-results/messaging-nightly/$LEG"
-          MESSAGING_NIGHTLY_REPORT=false
+          make test-messaging-integration
+          MESSAGING_INTEGRATION_PROJECTS="$PROJECT"
+          MESSAGING_INTEGRATION_RESULTS_DIR="artifacts/test-results/messaging-integration/$LEG"
+          MESSAGING_INTEGRATION_REPORT=false
 
       - name: "Upload test results"
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: messaging-nightly-${{ matrix.leg.name }}
+          name: messaging-integration-${{ matrix.leg.name }}
           path: |
-            artifacts/test-results/messaging-nightly/**/*.trx
-            artifacts/test-results/messaging-nightly/**/*.json
-            artifacts/test-results/messaging-nightly/**/*.dmp
-            artifacts/test-results/messaging-nightly/**/*.crash.sequence.log
+            artifacts/test-results/messaging-integration/**/*.trx
+            artifacts/test-results/messaging-integration/**/*.json
+            artifacts/test-results/messaging-integration/**/*.dmp
+            artifacts/test-results/messaging-integration/**/*.crash.sequence.log
           if-no-files-found: warn
           retention-days: 30
 
   chaos:
-    name: "Messaging nightly · chaos and soak"
+    name: "Messaging integration · chaos and soak"
+    needs: scope
+    if: needs.scope.outputs.run_chaos == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -172,7 +225,7 @@ jobs:
 
       - name: "Run the chaos and soak suite"
         env:
-          HEADLESS_CHAOS_PROFILE: ${{ inputs.chaos_profile || 'full' }}
+          HEADLESS_CHAOS_PROFILE: ${{ needs.scope.outputs.chaos_profile }}
         run: make test-messaging-chaos
 
       - name: "Publish the chaos summary"
@@ -186,7 +239,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: messaging-nightly-chaos
+          name: messaging-integration-chaos
           path: |
             artifacts/test-results/messaging-chaos/**/*.trx
             artifacts/test-results/messaging-chaos/**/*.md
@@ -195,7 +248,9 @@ jobs:
           retention-days: 30
 
   quarantine:
-    name: "Messaging nightly · quarantine check"
+    name: "Messaging integration · quarantine check"
+    needs: scope
+    if: needs.scope.outputs.run_quarantine == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -237,9 +292,10 @@ jobs:
           make messaging-quarantine-check | tee -a "$GITHUB_STEP_SUMMARY"
 
   report:
-    name: "Messaging nightly · drift report"
-    needs: [integration, chaos]
-    if: always()
+    name: "Messaging integration · drift report"
+    needs: [scope, integration, chaos]
+    # Runs whenever legs ran, pass or fail; a run with no legs has no results to judge.
+    if: always() && needs.scope.outputs.run_legs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -252,16 +308,16 @@ jobs:
       - name: "Download every leg's results"
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          pattern: messaging-nightly-*
-          path: artifacts/test-results/messaging-nightly-all
+          pattern: messaging-integration-*
+          path: artifacts/test-results/messaging-integration-all
 
       - name: "Label simulator drift and provider failures"
         run: |
           set -euo pipefail
           status=0
-          make messaging-drift-report MESSAGING_DRIFT_REPORT_ROOT=artifacts/test-results/messaging-nightly-all || status=$?
-          if [[ -f artifacts/test-results/messaging-nightly-all/summary.md ]]; then
-            cat artifacts/test-results/messaging-nightly-all/summary.md >> "$GITHUB_STEP_SUMMARY"
+          make messaging-drift-report MESSAGING_DRIFT_REPORT_ROOT=artifacts/test-results/messaging-integration-all || status=$?
+          if [[ -f artifacts/test-results/messaging-integration-all/summary.md ]]; then
+            cat artifacts/test-results/messaging-integration-all/summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
           exit "$status"
 
@@ -269,7 +325,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: messaging-nightly-summary
-          path: artifacts/test-results/messaging-nightly-all/summary.md
+          name: messaging-integration-summary
+          path: artifacts/test-results/messaging-integration-all/summary.md
           if-no-files-found: warn
           retention-days: 30

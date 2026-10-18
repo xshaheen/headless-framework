@@ -40,15 +40,15 @@ NO_CHAOS_SOLUTION ?= $(ARTIFACTS_DIR)/solution-filters/headless-framework.no-cha
 WRITE_NO_CHAOS_SOLUTION = $(GRAPH) solution-filter --exclude-suffix "$(CHAOS_TEST_SUFFIX)" --out "$(NO_CHAOS_SOLUTION)" --solution "$(SOLUTION)"
 MESSAGING_CHAOS_PROJECT ?= tests/Headless.Messaging.Tests.Chaos/Headless.Messaging.Tests.Chaos.csproj
 MESSAGING_CHAOS_RESULTS_DIR ?= $(TEST_RESULTS_DIR)/messaging-chaos
-# The scheduled messaging tier (messaging-nightly.yml): every broker, broker-plus-database, and relational storage
-# integration suite. The Azure Service Bus project runs for its emulator profile, which skips unless
-# HEADLESS_ACCEPT_SERVICEBUS_EMULATOR_EULA=Y accepts the emulator's license; its real-namespace tests need a credential
-# and skip here, running in their own dispatch-only workflow.
-MESSAGING_NIGHTLY_PROJECTS ?= $(foreach project,AzureServiceBus Aws AwsPostgreSql Kafka KafkaPostgreSql Nats NatsPostgreSql Pulsar PulsarPostgreSql RabbitMq RabbitMqPostgreSql RabbitMqSqlServer Redis RedisPostgreSql Storage.PostgreSql Storage.SqlServer,tests/Headless.Messaging.$(project).Tests.Integration/Headless.Messaging.$(project).Tests.Integration.csproj) tests/Headless.EntityFramework.Messaging.Tests.Integration/Headless.EntityFramework.Messaging.Tests.Integration.csproj
-MESSAGING_NIGHTLY_RESULTS_DIR ?= $(TEST_RESULTS_DIR)/messaging-nightly
-MESSAGING_NIGHTLY_REPORT ?= true
-MESSAGING_DRIFT_REPORT_ROOT ?= $(MESSAGING_NIGHTLY_RESULTS_DIR)
-# Providers whose real-broker leaves the nightly does not run; the drift report does not wait for their cells.
+# The messaging integration tier (messaging-integration.yml): every broker, broker-plus-database, and relational
+# storage integration suite, listed once in scripts/messaging-integration-scope.py. The Azure Service Bus project runs
+# for its emulator profile, which skips unless HEADLESS_ACCEPT_SERVICEBUS_EMULATOR_EULA=Y accepts the emulator's
+# license; its real-namespace tests need a credential and skip here, running in their own dispatch-only workflow.
+MESSAGING_INTEGRATION_PROJECTS ?= $(shell $(PYTHON) -I scripts/messaging-integration-scope.py projects)
+MESSAGING_INTEGRATION_RESULTS_DIR ?= $(TEST_RESULTS_DIR)/messaging-integration
+MESSAGING_INTEGRATION_REPORT ?= true
+MESSAGING_DRIFT_REPORT_ROOT ?= $(MESSAGING_INTEGRATION_RESULTS_DIR)
+# Providers whose real-broker leaves the integration tier does not run; the drift report does not wait for their cells.
 MESSAGING_DRIFT_EXCLUDED_PROVIDERS ?= Azure Service Bus
 MESSAGING_QUARANTINE_DIR ?= $(TEST_RESULTS_DIR)/messaging-quarantine
 MESSAGING_UNIT_PROJECT ?= tests/Headless.Messaging.Tests.Unit/Headless.Messaging.Tests.Unit.csproj
@@ -1005,24 +1005,30 @@ test-messaging-chaos: ## Run the messaging chaos and soak suite on PostgreSQL an
 	@$(ASSERT_RESTORED); assert_restored "$(MESSAGING_CHAOS_PROJECT)"
 	HEADLESS_CHAOS_SUMMARY_DIR="$(abspath $(MESSAGING_CHAOS_RESULTS_DIR))" $(DOTNET) test --project "$(MESSAGING_CHAOS_PROJECT)" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_CHAOS_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
 
-# The scheduled tier runs each suite once, with no --retry-failed-tests, so a flaky guarantee shows as a failure rather
-# than a pass on the second try. Every suite runs to completion, and the evidence tests export the manifest and their
-# scenario bindings beside the TRX files so the drift report can tell a simulator that drifted from the real brokers
-# apart from one provider failing. The results directory is cleared first: a stale TRX would be judged as this run's.
-.PHONY: test-messaging-nightly
-test-messaging-nightly: ## Run the scheduled messaging integration suites with no retries, then the drift report (needs Docker; long). MESSAGING_NIGHTLY_PROJECTS narrows the set; MESSAGING_NIGHTLY_REPORT=false skips the report.
-	@$(ASSERT_RESTORED); for project in $(MESSAGING_NIGHTLY_PROJECTS); do assert_restored "$$project"; done
-	@test -n "$(MESSAGING_NIGHTLY_RESULTS_DIR)" || { echo "MESSAGING_NIGHTLY_RESULTS_DIR is empty." >&2; exit 2; }; rm -rf "$(MESSAGING_NIGHTLY_RESULTS_DIR)"; mkdir -p "$(MESSAGING_NIGHTLY_RESULTS_DIR)"
-	@status=0; for project in $(MESSAGING_NIGHTLY_PROJECTS); do \
-		printf '\033[36m[nightly]\033[0m %s\n' "$$project"; \
-		HEADLESS_CONFORMANCE_EXPORT_DIR="$(abspath $(MESSAGING_NIGHTLY_RESULTS_DIR))/conformance" \
-			$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_NIGHTLY_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER) || status=1; \
+# The integration tier runs each suite once, with no --retry-failed-tests, so a flaky guarantee shows as a failure
+# rather than a pass on the second try. Every suite runs to completion, and the evidence tests export the manifest and
+# their scenario bindings beside the TRX files so the drift report can tell a simulator that drifted from the real
+# brokers apart from one provider failing. The results directory is cleared first: a stale TRX would be judged as this
+# run's.
+.PHONY: test-messaging-integration
+test-messaging-integration: ## Run the messaging integration suites with no retries, then the drift report (needs Docker; long). MESSAGING_INTEGRATION_PROJECTS narrows the set; MESSAGING_INTEGRATION_REPORT=false skips the report.
+	@$(ASSERT_RESTORED); for project in $(MESSAGING_INTEGRATION_PROJECTS); do assert_restored "$$project"; done
+	@test -n "$(MESSAGING_INTEGRATION_RESULTS_DIR)" || { echo "MESSAGING_INTEGRATION_RESULTS_DIR is empty." >&2; exit 2; }; rm -rf "$(MESSAGING_INTEGRATION_RESULTS_DIR)"; mkdir -p "$(MESSAGING_INTEGRATION_RESULTS_DIR)"
+	@status=0; for project in $(MESSAGING_INTEGRATION_PROJECTS); do \
+		printf '\033[36m[integration]\033[0m %s\n' "$$project"; \
+		HEADLESS_CONFORMANCE_EXPORT_DIR="$(abspath $(MESSAGING_INTEGRATION_RESULTS_DIR))/conformance" \
+			$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_INTEGRATION_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER) || status=1; \
 	done; \
-	if [ "$(MESSAGING_NIGHTLY_REPORT)" = "true" ]; then $(MAKE) --no-print-directory messaging-drift-report MESSAGING_DRIFT_REPORT_ROOT="$(MESSAGING_NIGHTLY_RESULTS_DIR)" || status=1; fi; \
+	if [ "$(MESSAGING_INTEGRATION_REPORT)" = "true" ]; then $(MAKE) --no-print-directory messaging-drift-report MESSAGING_DRIFT_REPORT_ROOT="$(MESSAGING_INTEGRATION_RESULTS_DIR)" || status=1; fi; \
 	exit $$status
 
+# Prints what messaging-integration.yml would run for one event, as key=value lines; the workflow's scope job calls it.
+.PHONY: messaging-integration-scope
+messaging-integration-scope: ## Print the messaging integration run's selection for EVENT (push|schedule|workflow_dispatch) against BASE, the last green run's head.
+	@$(PYTHON) -I scripts/messaging-integration-scope.py select --event "$(EVENT)" --base "$(BASE)" $(if $(CHAOS_PROFILE),--chaos-profile "$(CHAOS_PROFILE)",)
+
 .PHONY: messaging-drift-report
-messaging-drift-report: ## Label simulator drift apart from provider failures in a nightly run's TRX files and conformance export under MESSAGING_DRIFT_REPORT_ROOT; writes summary.md there and exits 3 on drift.
+messaging-drift-report: ## Label simulator drift apart from provider failures in a messaging integration run's TRX files and conformance export under MESSAGING_DRIFT_REPORT_ROOT; writes summary.md there and exits 3 on drift.
 	@$(PYTHON) -I scripts/messaging-drift-report.py --results "$(MESSAGING_DRIFT_REPORT_ROOT)" --exclude-providers "$(MESSAGING_DRIFT_EXCLUDED_PROVIDERS)" --out "$(MESSAGING_DRIFT_REPORT_ROOT)/summary.md"
 
 # A quarantined cell skips its test until someone marks it Supported, and closing the linked issue does not do that,

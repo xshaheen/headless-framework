@@ -30,7 +30,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
 
     /// <summary>
     /// The share of publishes that must be accepted while storage stays up. A publish then only has to write the
-    /// outbox, so most must succeed; the floor stays loose until a nightly run has measured the real rejection rate.
+    /// outbox, so most must succeed; the floor stays loose until a full chaos run has measured the real rejection rate.
     /// </summary>
     private const double _StorageUpAcceptanceShare = 0.5;
 

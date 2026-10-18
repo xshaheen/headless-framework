@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Copyright (c) Mahmoud Shaheen. All rights reserved.
-# Exercises the messaging nightly's reports against scratch inputs: the quarantine check against a fake gh that
-# serves issue states, the drift report against TRX files and conformance exports shaped like the ones the
-# integration suites write, and the workflow's place outside the required CI checks.
+# Exercises the messaging integration workflow's logic against scratch inputs: the quarantine check against a fake gh
+# that serves issue states, the drift report against TRX files and conformance exports shaped like the ones the
+# integration suites write, the scope selection that decides which legs a run pays for, and the workflow's place
+# outside the required CI checks.
 set -euo pipefail
 
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -11,6 +12,7 @@ trap 'rm -rf "$scratch"' EXIT
 
 quarantine=(python3 -I "$repo_root/scripts/quarantine-check.py")
 drift=(python3 -I "$repo_root/scripts/messaging-drift-report.py")
+scope=(python3 -I "$repo_root/scripts/messaging-integration-scope.py")
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -125,7 +127,7 @@ pass "a gh failure is an error, not a pass"
 # --- Drift report -----------------------------------------------------------------------------------------------
 
 # Three real brokers back the simulator's QueueRoundTrip and EmptyBodyDispatch cells. Alpha and Beta run; Gamma is
-# outside the run when --exclude-providers names it, as Azure Service Bus is in the nightly.
+# outside the run when --exclude-providers names it, as Azure Service Bus is in the integration workflow.
 results="$scratch/results"
 mkdir -p "$results/alpha/conformance/bindings" "$results/beta/conformance/bindings"
 cat > "$results/alpha/conformance/snapshot.json" <<'JSON'
@@ -162,7 +164,7 @@ write_trx() {
   local leg="$1" provider="$2" assembly="Tests.$2"
   cat > "$results/$leg/${assembly}_net10.0_x64.trx" <<XML
 <?xml version="1.0" encoding="utf-8"?>
-<TestRun id="00000000-0000-0000-0000-000000000000" name="nightly" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+<TestRun id="00000000-0000-0000-0000-000000000000" name="integration" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
   <Results>
     <UnitTestResult executionId="e1" testId="t1" testName="Tests.${provider}ConformanceTests.should_round_trip" outcome="$3">
       <Output><ErrorInfo><Message>round trip $3 on $provider</Message></ErrorInfo></Output>
@@ -218,32 +220,79 @@ expect "drift report rejects an unknown excluded provider" 2 "${drift[@]}" --res
 expect "drift report needs TRX files" 1 "${drift[@]}" --results "$results/alpha/conformance"
 pass "the drift report rejects bad inputs"
 
+# --- Scope selection --------------------------------------------------------------------------------------------
+
+# value <key>: reads one key=value line the scope selection printed.
+value() {
+  sed -n "s/^$1=//p" "$scratch/out.txt"
+}
+
+head_sha=$(git -C "$repo_root" rev-parse HEAD)
+leg_count=$("${scope[@]}" select --event workflow_dispatch | sed -n 's/^legs=//p' | python3 -I -c 'import json, sys; print(len(json.load(sys.stdin)))')
+[[ "$leg_count" -gt 0 ]] || fail "scope: a dispatched run selects no legs"
+
+expect "scope runs everything on dispatch" 0 "${scope[@]}" select --event workflow_dispatch --chaos-profile smoke
+[[ "$(value mode)" == "full" && "$(value run_legs)" == "true" && "$(value run_quarantine)" == "true" ]] || fail "scope: dispatch is not a full run"
+[[ "$(value chaos_profile)" == "smoke" ]] || fail "scope: dispatch ignores the requested chaos sizes"
+pass "a dispatched run runs every leg, chaos at the requested sizes, and the quarantine check"
+
+expect "scope skips an unchanged week" 0 "${scope[@]}" select --event schedule --base "$head_sha"
+[[ "$(value mode)" == "unchanged" && "$(value run_legs)" == "false" && "$(value run_chaos)" == "false" ]] || fail "scope: an unchanged week still runs legs"
+[[ "$(value run_quarantine)" == "true" ]] || fail "scope: an unchanged week skips the quarantine check"
+pass "a scheduled run with main unmoved since the last green full run runs only the quarantine check"
+
+expect "scope runs the full week" 0 "${scope[@]}" select --event schedule --base ""
+[[ "$(value mode)" == "full" && "$(value chaos_profile)" == "full" && "$(value run_quarantine)" == "true" ]] || fail "scope: a changed week is not a full run"
+pass "a scheduled run with no earlier green full run runs everything at full sizes"
+
+expect "scope runs everything on the first push" 0 "${scope[@]}" select --event push --base ""
+[[ "$(value mode)" == "full" && "$(value chaos_profile)" == "smoke" && "$(value run_quarantine)" == "false" ]] || fail "scope: a push with no green run is not a full smoke run"
+pass "a push with no green run to diff against runs every leg, chaos at smoke sizes, and no quarantine check"
+
+kafka=tests/Headless.Messaging.Kafka.Tests.Integration/Headless.Messaging.Kafka.Tests.Integration.csproj
+chaos_project=tests/Headless.Messaging.Tests.Chaos/Headless.Messaging.Tests.Chaos.csproj
+printf '{"integration_tests": ["%s", "tests/Headless.Features.Tests.Integration/Headless.Features.Tests.Integration.csproj"], "affected_projects": ["%s"]}\n' "$kafka" "$chaos_project" > "$scratch/affected.json"
+expect "scope narrows a push to its affected legs" 0 "${scope[@]}" select --event push --base "$head_sha" --affected-report "$scratch/affected.json"
+[[ "$(value mode)" == "affected" && "$(value run_chaos)" == "true" && "$(value chaos_profile)" == "smoke" ]] || fail "scope: an affected push does not run chaos at smoke sizes"
+[[ "$(value legs)" == "[{\"name\":\"kafka\",\"project\":\"$kafka\",\"tz\":\"UTC\"}]" ]] || fail "scope: an affected push selects legs beyond the affected messaging suites: $(value legs)"
+pass "a push runs only the legs it affects, ignoring affected suites that are not legs, and chaos when it reaches it"
+
+printf '{"integration_tests": [], "affected_projects": []}\n' > "$scratch/affected.json"
+expect "scope skips an unrelated push" 0 "${scope[@]}" select --event push --base "$head_sha" --affected-report "$scratch/affected.json"
+[[ "$(value run_legs)" == "false" && "$(value run_chaos)" == "false" && "$(value legs)" == "[]" ]] || fail "scope: a push affecting no messaging suite still runs legs"
+pass "a push that affects no messaging suite runs nothing"
+
+expect "scope rejects an unknown event" 2 "${scope[@]}" select --event pull_request
+pass "the scope selection rejects an event the workflow does not run on"
+
+# The Makefile reads the leg projects from the scope script, so a local run and the workflow run the same suites.
+# GNU Make 3.81 on macOS has no --eval, so the printing rule arrives on stdin beside an include of the Makefile.
+# shellcheck disable=SC2016 # $(MESSAGING_INTEGRATION_PROJECTS) is a make expansion in the rule, not the shell's.
+make_projects=$(printf 'include Makefile\nprint-integration-projects:\n\t@printf "%%s\\n" $(MESSAGING_INTEGRATION_PROJECTS)\n' | make -s --no-print-directory -C "$repo_root" -f - print-integration-projects)
+[[ -n "$make_projects" ]] || fail "MESSAGING_INTEGRATION_PROJECTS is empty"
+[[ "$make_projects" == "$("${scope[@]}" projects)" ]] || fail "MESSAGING_INTEGRATION_PROJECTS differs from the scope script's legs"
+pass "the Makefile runs the same integration projects the workflow's legs do"
+
 # --- Workflow placement -----------------------------------------------------------------------------------------
 
-workflow="$repo_root/.github/workflows/messaging-nightly.yml"
-# A pull request can only wait on the nightly if ci.yml calls it or the nightly runs on pull-request events.
-if grep -qF 'messaging-nightly.yml' "$repo_root/.github/workflows/ci.yml"; then
-  fail "ci.yml must not call the messaging nightly"
+workflow="$repo_root/.github/workflows/messaging-integration.yml"
+# A pull request can only wait on this workflow if ci.yml calls it or it runs on pull-request events.
+if grep -qF 'messaging-integration.yml' "$repo_root/.github/workflows/ci.yml"; then
+  fail "ci.yml must not call the messaging integration workflow"
 fi
-if grep -qE '^\s+(pull_request|pull_request_target|push|workflow_call|merge_group):' "$workflow"; then
-  fail "the messaging nightly must run only on a schedule or a dispatch"
+if grep -qE '^\s+(pull_request|pull_request_target|workflow_call|merge_group):' "$workflow"; then
+  fail "the messaging integration workflow must not run on pull-request events"
 fi
+# The only push it takes is a push to main; a branch push would run real-broker suites for unmerged work.
+grep -A1 -E '^  push:' "$workflow" | grep -qE '^\s+branches: \[main\]$' || fail "the messaging integration workflow must run on push to main only"
+grep -qE '^\s+schedule:' "$workflow" || fail "the messaging integration workflow must keep its weekly schedule"
+# Cancelling a running run would drop results already paid for; each run diffs against the last green one instead.
+grep -qE '^\s+cancel-in-progress: false$' "$workflow" || fail "the messaging integration workflow must queue runs, not cancel them"
 if grep -qE '^\s+[a-z-]+:\s*write\s*$' "$workflow"; then
-  fail "the messaging nightly must not request a write permission"
+  fail "the messaging integration workflow must not request a write permission"
 fi
-grep -qE '^\s+schedule:' "$workflow" || fail "the messaging nightly must run on a schedule"
 # Comments may name the flag to say it is left out; only a command passing it turns retries on.
 if grep -hvE '^\s*#' "$workflow" "$repo_root/Makefile" | grep -qF -- '--retry-failed-tests'; then
-  fail "the messaging nightly must run without retries"
+  fail "the messaging integration workflow must run without retries"
 fi
-pass "the nightly runs only on a schedule or dispatch, outside CI status, read-only, without retries"
-
-# Every project the Makefile runs nightly needs a leg in the workflow matrix.
-# GNU Make 3.81 on macOS has no --eval, so the printing rule arrives on stdin beside an include of the Makefile.
-# shellcheck disable=SC2016 # $(MESSAGING_NIGHTLY_PROJECTS) is a make expansion in the rule, not the shell's.
-projects=$(printf 'include Makefile\nprint-nightly-projects:\n\t@printf "%%s\\n" $(MESSAGING_NIGHTLY_PROJECTS)\n' | make -s --no-print-directory -C "$repo_root" -f - print-nightly-projects)
-[[ -n "$projects" ]] || fail "MESSAGING_NIGHTLY_PROJECTS is empty"
-while IFS= read -r project; do
-  grep -qF -- "project: $project," "$workflow" || fail "messaging-nightly.yml has no leg for $project"
-done <<< "$projects"
-pass "every nightly project in the Makefile has a workflow leg"
+pass "the workflow runs on push to main, weekly, or on dispatch, outside CI status, read-only, queued, without retries"
