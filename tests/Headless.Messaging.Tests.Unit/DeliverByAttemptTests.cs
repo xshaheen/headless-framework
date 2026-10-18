@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -47,6 +49,55 @@ public sealed class DeliverByAttemptTests : TestBase
         host.StateWrites().Should().ContainSingle().Which.Should().Be((StatusName.Failed, (RetryDelay?)null));
         host.ExhaustedCalls.Should().Be(0);
         message.ExceptionInfo.Should().Contain("deliver_by_exceeded");
+    }
+
+    [Fact]
+    public async Task should_count_inbox_row_dropped_past_its_delivery_deadline_as_failed_expired_terminal()
+    {
+        // given — an admitted inbox row, so the attempt it reserved needs a terminal outcome
+        await using var host = ResponderExecutorHost.Create();
+        var message = _PlainMessage(host, TimeSpan.FromSeconds(5), generation: 0);
+        host.Clock.Advance(TimeSpan.FromSeconds(6));
+        var outcomes = new ConcurrentQueue<string?>();
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (
+                    string.Equals(instrument.Meter.Name, MessagingDiagnostics.SourceName, StringComparison.Ordinal)
+                    && string.Equals(instrument.Name, MessagingMetrics.InboxTerminalName, StringComparison.Ordinal)
+                )
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        listener.SetMeasurementEventCallback<long>(
+            (_, _, tags, _) =>
+            {
+                foreach (var tag in tags)
+                {
+                    if (
+                        string.Equals(tag.Key, MessagingTags.InboxConsumer, StringComparison.Ordinal)
+                        && string.Equals(tag.Value as string, QuoteResponder.Identity, StringComparison.Ordinal)
+                    )
+                    {
+                        outcomes.Enqueue(
+                            tags.ToArray()
+                                .Single(t => string.Equals(t.Key, MessagingTags.InboxOutcome, StringComparison.Ordinal))
+                                .Value as string
+                        );
+                    }
+                }
+            }
+        );
+        listener.Start();
+
+        // when
+        await host.ExecuteAsync(message, AbortToken);
+
+        // then
+        outcomes.Should().ContainSingle().Which.Should().Be("FailedExpired");
     }
 
     [Fact]

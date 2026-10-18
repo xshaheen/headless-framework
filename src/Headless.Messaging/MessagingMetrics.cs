@@ -529,7 +529,7 @@ internal static class MessagingMetrics
 
     /// <summary>
     /// Records one published message dropped because its delivery deadline (<c>MessageOptions.DeliverWithin</c>)
-    /// passed before the relay could send it. Tagged only with the lane: names and ids are unbounded, so they never
+    /// passed before the relay or a <c>Direct</c> send could hand it to the transport. Tagged only with the lane: names and ids are unbounded, so they never
     /// become metric tags.
     /// </summary>
     internal static void RecordSendExpired(MessageLane lane)
@@ -717,6 +717,7 @@ internal enum InboxMetricOutcome
     Purged = 11,
     Replayed = 12,
     Expired = 13,
+    FailedExpired = 14,
 }
 
 /// <summary>How inbox measurements treat the tenant dimension, resolved once from the host configuration.</summary>

@@ -973,6 +973,13 @@ internal sealed class SubscribeExecutor(
             await replies.SendFaultAsync(message.Origin, ResponderReplies.FaultCodeFor(ex), ex).ConfigureAwait(false);
         }
 
+        // An expired row (a request whose caller gave up, or a message past its delivery deadline) ends Failed without
+        // the exhausted path, so it gets its own terminal outcome: otherwise the attempt it reserved has no end.
+        if (affected && decision.IsSilentExpiry)
+        {
+            _RecordInboxMetric(message, InboxMetricKind.Terminal, InboxMetricOutcome.FailedExpired);
+        }
+
         if (affected && decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
         {
             _RecordInboxMetric(message, InboxMetricKind.Terminal, InboxMetricOutcome.FailedExhausted);
