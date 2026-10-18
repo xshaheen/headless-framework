@@ -173,7 +173,7 @@ public static class SetupApi
             if (options.OpenApi.Enabled)
             {
                 var documentNames =
-                    options.OpenApi.SurfaceDocumentNames ?? ApiSurfaceRegistration.InferDocumentNames(builder.Services);
+                    options.OpenApi.SurfaceDocumentNames ?? builder.Services.InferHeadlessApiSurfaceDocumentNames();
                 var configureOpenApi = options.OpenApi.ConfigureOpenApi;
                 if (documentNames.Count > 0)
                 {

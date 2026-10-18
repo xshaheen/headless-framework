@@ -3,7 +3,7 @@
 using Headless.Api;
 using Headless.Testing.Tests;
 
-namespace Tests.Security;
+namespace Tests.ApiDescription;
 
 public sealed class HttpCredentialDescriptionTests : TestBase
 {

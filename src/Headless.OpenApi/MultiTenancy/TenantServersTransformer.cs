@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Api;
 using Microsoft.AspNetCore.OpenApi;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi;
 
 namespace Headless.OpenApi;
@@ -24,7 +26,10 @@ internal sealed class TenantServersTransformer : IOpenApiDocumentTransformer
         CancellationToken cancellationToken
     )
     {
-        if (TenantCatalogResolution.Get(context.ApplicationServices) is not { HostTemplates.Count: > 0 } resolution)
+        if (
+            context.ApplicationServices.GetService<TenantCatalogResolutionDescription>()
+            is not { IsConfigured: true, HostTemplates.Count: > 0 } resolution
+        )
         {
             return Task.CompletedTask;
         }

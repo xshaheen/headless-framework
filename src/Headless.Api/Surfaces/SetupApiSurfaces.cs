@@ -87,4 +87,22 @@ public static class SetupApiSurfaces
 
         return services;
     }
+
+    /// <summary>
+    /// Returns the OpenAPI document names of the API surfaces registered so far and closes surface registration, so a
+    /// document provider can register one document per surface while the service collection is still writable.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The document name of each registered surface, in registration order.</returns>
+    /// <remarks>
+    /// A later <see cref="AddHeadlessApiSurface"/> or <see cref="AddHeadlessApiSurfaces"/> call throws, so a surface
+    /// registered after the inference cannot silently miss its document. Repeated calls return the same names.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> is <see langword="null"/>.</exception>
+    public static IReadOnlyList<string> InferHeadlessApiSurfaceDocumentNames(this IServiceCollection services)
+    {
+        Argument.IsNotNull(services);
+
+        return ApiSurfaceRegistration.InferDocumentNames(services);
+    }
 }

@@ -9,10 +9,15 @@ namespace Headless.Api;
 /// depending on it.
 /// </summary>
 /// <remarks>
+/// <para>
+/// It describes only what framework features write or read on the wire; it is not a general OpenAPI model.
+/// </para>
+/// <para>
 /// An endpoint may carry several instances; consumers apply each of them. It describes the contract only, so nothing
 /// enforces it at run time. Headless.OpenApi renders it as header parameters, problem-details responses, and response
 /// headers. An entry an endpoint already declares by itself (a bound header parameter, a declared response, or a
 /// response header) keeps its own description.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public sealed class HttpContractMetadata

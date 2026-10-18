@@ -299,6 +299,10 @@ public sealed class HeadlessHttpTenancyBuilder
         var sourcesBuilder = new HeadlessTenantCatalogResolutionBuilder(_builder.Services);
         configure?.Invoke(sourcesBuilder);
 
+        // Computed on first resolution, after the container is built, so sources and options contributed after
+        // this call are described too.
+        _builder.Services.TryAddSingleton(_DescribeCatalogResolution);
+
         _builder.RecordSeam(
             TenantCatalogPosture.Seam,
             TenantPostureStatus.Enforcing,
@@ -306,6 +310,45 @@ public sealed class HeadlessHttpTenancyBuilder
         );
 
         return this;
+    }
+
+    // Reads the same state UseHeadlessTenantCatalogResolution() requires before it adds the middleware, from
+    // registrations rather than the pipeline marker, so a build-time document describes the same contract.
+    private static TenantCatalogResolutionDescription _DescribeCatalogResolution(IServiceProvider services)
+    {
+        var seam = services.GetService<TenantPostureManifest>()?.GetSeam(TenantCatalogPosture.Seam);
+        var sources = services.GetServices<ITenantIdentifierSource>().ToArray();
+
+        if (
+            sources.Length == 0
+            || seam?.Capabilities.Contains(TenantCatalogPosture.ResolutionCapability, StringComparer.Ordinal) != true
+        )
+        {
+            return new TenantCatalogResolutionDescription(
+                isConfigured: false,
+                detailedResolutionErrors: false,
+                headerNames: [],
+                hostTemplates: [],
+                hasNonHeaderSource: false
+            );
+        }
+
+        return new TenantCatalogResolutionDescription(
+            isConfigured: true,
+            services.GetRequiredService<IOptions<TenantCatalogOptions>>().Value.DetailedResolutionErrors,
+            sources.OfType<HeaderTenantIdentifierSource>().Any()
+                ?
+                [
+                    .. services
+                        .GetRequiredService<IOptions<HeaderTenantIdentifierSourceOptions>>()
+                        .Value.HeaderNames.Distinct(StringComparer.OrdinalIgnoreCase),
+                ]
+                : [],
+            sources.OfType<HostTenantIdentifierSource>().Any()
+                ? [.. services.GetRequiredService<IOptions<HostTenantIdentifierSourceOptions>>().Value.Templates]
+                : [],
+            sources.Any(source => source is not HeaderTenantIdentifierSource)
+        );
     }
 }
 

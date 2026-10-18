@@ -3,7 +3,7 @@
 using Headless.Api;
 using Headless.Testing.Tests;
 
-namespace Tests.ApiExplorer;
+namespace Tests.ApiDescription;
 
 public sealed class HttpContractMetadataTests : TestBase
 {

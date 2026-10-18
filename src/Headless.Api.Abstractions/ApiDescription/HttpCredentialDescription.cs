@@ -6,7 +6,7 @@ namespace Headless.Api;
 
 /// <summary>A credential an authentication scheme reads from the request, as part of <see cref="IHttpCredentialSchemeOptions"/>.</summary>
 [PublicAPI]
-public sealed class HttpCredentialDescription
+public sealed record HttpCredentialDescription
 {
     private HttpCredentialDescription(HttpCredentialLocation location, string name, string description)
     {

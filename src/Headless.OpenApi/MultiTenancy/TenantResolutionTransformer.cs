@@ -6,6 +6,7 @@ using Headless.Http;
 using Headless.MultiTenancy.Resources;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.AspNetCore.OpenApi;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi;
 
 namespace Headless.OpenApi;
@@ -16,7 +17,8 @@ namespace Headless.OpenApi;
 /// </summary>
 /// <remarks>
 /// <para>
-/// It runs only when <see cref="TenantCatalogResolution"/> finds resolution configured, and skips endpoints marked with
+/// It runs only when the registered <see cref="TenantCatalogResolutionDescription"/> says resolution is configured,
+/// and skips endpoints marked with
 /// <see cref="SkipTenantResolutionAttribute"/>. Each configured header becomes an optional header parameter; the single
 /// header becomes required when the endpoint requires a tenant and no other identifier source can supply one.
 /// </para>
@@ -52,14 +54,15 @@ internal sealed class TenantResolutionTransformer : IOpenApiOperationTransformer
         var description = context.Description;
 
         if (
-            !TenantCatalogResolution.Resolves(description)
-            || TenantCatalogResolution.Get(context.ApplicationServices) is not { } resolution
+            description.GetEndpointMetadata().OfType<SkipTenantResolutionAttribute>().Any()
+            || context.ApplicationServices.GetService<TenantCatalogResolutionDescription>()
+                is not { IsConfigured: true } resolution
         )
         {
             return;
         }
 
-        var rejections = _GetRejections(resolution.DetailedErrors);
+        var rejections = _GetRejections(resolution.DetailedResolutionErrors);
 
         foreach (var (statusCode, rejection) in rejections)
         {
@@ -84,7 +87,7 @@ internal sealed class TenantResolutionTransformer : IOpenApiOperationTransformer
     }
 
     private static List<HttpRequestHeaderDescription> _GetRequestHeaders(
-        TenantCatalogResolution resolution,
+        TenantCatalogResolutionDescription resolution,
         ApiDescription description,
         IServiceProvider services
     )
@@ -99,7 +102,7 @@ internal sealed class TenantResolutionTransformer : IOpenApiOperationTransformer
         // With several names, or another source that can supply the identifier, no single header is mandatory.
         var required =
             names.Count == 1
-            && !resolution.HasOtherSources
+            && !resolution.HasNonHeaderSource
             && EndpointAuthorization.RequiresTenant(description, services);
 
         var text =
