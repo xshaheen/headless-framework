@@ -187,6 +187,13 @@ internal sealed class RedisConsumerClient(
         return ValueTask.CompletedTask;
     }
 
+    // The claim pass already waits PendingClaimMinIdleTime before it delivers a rejected entry again, so the delivery is
+    // released at once rather than held for the core's delay as well.
+    public ValueTask RejectAsync(object? sender, TimeSpan redeliveryDelay, CancellationToken cancellationToken)
+    {
+        return RejectAsync(sender, CancellationToken.None);
+    }
+
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
         await _pauseGate.PauseAsync().ConfigureAwait(false);

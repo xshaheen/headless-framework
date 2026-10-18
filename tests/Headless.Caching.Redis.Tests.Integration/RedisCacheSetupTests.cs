@@ -5,6 +5,8 @@ using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace Tests;
 
@@ -97,5 +99,61 @@ public sealed class RedisCacheSetupTests(RedisCacheFixture fixture) : TestBase
         host.Services.GetRequiredService<ICache<RedisCacheSetupTests>>().Should().NotBeNull();
 
         await host.StopAsync(AbortToken);
+    }
+
+    [Fact]
+    public void should_use_the_registered_multiplexer_when_options_leave_it_unset()
+    {
+        // given
+        var multiplexer = Substitute.For<IConnectionMultiplexer>();
+        var services = new ServiceCollection();
+        services.AddSingleton(multiplexer);
+        services.AddHeadlessCaching(setup =>
+        {
+            setup.UseRedis(options => options.KeyPrefix = "default:");
+            setup.AddNamed("tenant", instance => instance.UseRedis(options => options.KeyPrefix = "tenant:"));
+        });
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var monitor = provider.GetRequiredService<IOptionsMonitor<RedisCacheOptions>>();
+
+        // then
+        monitor.CurrentValue.ConnectionMultiplexer.Should().BeSameAs(multiplexer);
+        monitor.Get("tenant").ConnectionMultiplexer.Should().BeSameAs(multiplexer);
+    }
+
+    [Fact]
+    public void should_keep_an_explicit_multiplexer_over_the_registered_one()
+    {
+        // given
+        var explicitMultiplexer = Substitute.For<IConnectionMultiplexer>();
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
+        services.AddHeadlessCaching(setup =>
+            setup.UseRedis(options => options.ConnectionMultiplexer = explicitMultiplexer)
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var options = provider.GetRequiredService<IOptions<RedisCacheOptions>>().Value;
+
+        // then
+        options.ConnectionMultiplexer.Should().BeSameAs(explicitMultiplexer);
+    }
+
+    [Fact]
+    public void should_fail_validation_when_no_multiplexer_is_set_or_registered()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddHeadlessCaching(setup => setup.UseRedis(options => options.KeyPrefix = "default:"));
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<RedisCacheOptions>>().Value;
+
+        // then
+        act.Should().Throw<OptionsValidationException>().WithMessage("*register an IConnectionMultiplexer*");
     }
 }

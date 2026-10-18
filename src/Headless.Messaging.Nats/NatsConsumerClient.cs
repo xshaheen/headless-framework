@@ -1122,15 +1122,31 @@ internal sealed class NatsConsumerClient(
         }
     }
 
-    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+    public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+    {
+        return _NakAsync(sender, TimeSpan.Zero, cancellationToken);
+    }
+
+    // JetStream delays the redelivery itself, so the delivery is released at once rather than held for the delay.
+    public ValueTask RejectAsync(object? sender, TimeSpan redeliveryDelay, CancellationToken cancellationToken)
+    {
+        return _NakAsync(sender, redeliveryDelay, CancellationToken.None);
+    }
+
+    private async ValueTask _NakAsync(object? sender, TimeSpan minimumDelay, CancellationToken cancellationToken)
     {
         try
         {
             if (await _SettlingMessageAsync(sender).ConfigureAwait(false) is { } msg)
             {
-                // The core rejects every delivery while the consumer's circuit is open or a half-open probe is out, and
-                // JetStream redelivers a plain NAK on the next pull, so without a delay those deliveries spin.
-                var delay = RejectRedeliveryDelay.For(msg.Metadata?.NumDelivered ?? 1, Random.Shared);
+                // JetStream redelivers a plain NAK on the next pull, so every reject carries a delay that grows with
+                // the delivery count; the core's own delay wins when it is longer.
+                var delay = NakDelay(msg.Metadata?.NumDelivered ?? 1, Random.Shared);
+                if (minimumDelay > delay)
+                {
+                    delay = minimumDelay;
+                }
+
                 await msg.NakAsync(new AckOpts { NakDelay = delay }, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -1159,6 +1175,18 @@ internal sealed class NatsConsumerClient(
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// The delay before JetStream redelivers a rejected delivery: about one second for the first delivery, doubling with
+    /// each redelivery up to 30 seconds, and jittered so the deliveries rejected by one open circuit do not return
+    /// together.
+    /// </summary>
+    /// <param name="numDelivered">How many times JetStream has delivered the message, this delivery included.</param>
+    /// <param name="random">The jitter source.</param>
+    internal static TimeSpan NakDelay(ulong numDelivered, Random random)
+    {
+        return RedeliveryBackoff.RedeliveryDelay((long)Math.Min(numDelivered, long.MaxValue), random);
     }
 
     private void _ReleaseSemaphore()

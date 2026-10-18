@@ -494,6 +494,22 @@ public sealed class NatsConsumerClientTests : TestBase
             );
     }
 
+    [Fact]
+    public async Task should_nak_with_the_core_delay_when_it_is_longer_than_the_delivery_count_delay()
+    {
+        await using var client = _CreateClient("test-group");
+        var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
+
+        // JetStream holds the message back itself, so the delivery is released at once with the longer delay.
+        await client.RejectAsync(msg, TimeSpan.FromSeconds(20), AbortToken);
+
+        await msg.Received(1)
+            .NakAsync(
+                Arg.Is<AckOpts?>(options => options.HasValue && options.Value.NakDelay == TimeSpan.FromSeconds(20)),
+                CancellationToken.None
+            );
+    }
+
     [Theory]
     [InlineData(0UL, 1)]
     [InlineData(1UL, 1)]
@@ -509,7 +525,9 @@ public sealed class NatsConsumerClientTests : TestBase
     {
         var nominal = TimeSpan.FromSeconds(nominalSeconds);
 
-        var delays = Enumerable.Range(0, 200).Select(seed => RejectRedeliveryDelay.For(numDelivered, new Random(seed)));
+        var delays = Enumerable
+            .Range(0, 200)
+            .Select(seed => NatsConsumerClient.NakDelay(numDelivered, new Random(seed)));
 
         // Jittered down by at most a quarter, so rejections of one open circuit do not return together.
         delays.Should().OnlyContain(delay => delay <= nominal && delay >= nominal * 0.75);

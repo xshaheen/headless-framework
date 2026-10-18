@@ -31,6 +31,18 @@ internal static class PrimitiveSourceCodeBuilderExtensions
         return builder.AppendLine($"[global::System.ComponentModel.TypeConverter(typeof({typeName}))]");
     }
 
+    /// <summary>
+    /// Every primitive implements <c>IComparable</c> so it can be sorted, but ordering operators are generated
+    /// only for numeric, char, and date/time types. CA1036 would otherwise ask the consumer to add <c>&lt;</c> to an
+    /// opaque ID, where it has no meaning. Attributes on any partial declaration apply to the whole type.
+    /// </summary>
+    public static SourceCodeBuilder AppendComparableWithoutOperatorsSuppression(this SourceCodeBuilder builder)
+    {
+        return builder.AppendLine(
+            "[global::System.Diagnostics.CodeAnalysis.SuppressMessage(\"Design\", \"CA1036:Override methods on comparable types\", Justification = \"Primitives are sortable through IComparable; ordering operators are generated only for numeric, char, and date/time types.\")]"
+        );
+    }
+
     public static SourceCodeBuilder AppendDebuggerDisplay(this SourceCodeBuilder builder, string value)
     {
         return builder.AppendLine($"[global::System.Diagnostics.DebuggerDisplay(\"{value}\")]");

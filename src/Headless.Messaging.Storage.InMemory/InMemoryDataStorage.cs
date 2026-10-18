@@ -218,9 +218,31 @@ internal sealed partial class InMemoryDataStorage(
             PublishedMessages,
             message,
             originalInlineAttempts,
+            messagingOptions.Value.RetryPolicy.DispatchTimeout,
             timeProvider,
             cancellationToken
         );
+    }
+
+    public ValueTask<bool> RenewPublishLeaseAsync(
+        MediumMessage message,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken
+    )
+    {
+        return _RenewLeaseAsync(PublishedMessages, message, leaseDuration, timeProvider, cancellationToken);
+    }
+
+    public ValueTask<bool> RenewReceiveLeaseAsync(
+        MediumMessage message,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken
+    )
+    {
+        lock (_receivedUpsertLock)
+        {
+            return _RenewLeaseAsync(ReceivedMessages, message, leaseDuration, timeProvider, cancellationToken);
+        }
     }
 
     /// <summary>
@@ -406,6 +428,7 @@ internal sealed partial class InMemoryDataStorage(
                 ReceivedMessages,
                 message,
                 originalInlineAttempts,
+                messagingOptions.Value.RetryPolicy.DispatchTimeout,
                 timeProvider,
                 cancellationToken
             );

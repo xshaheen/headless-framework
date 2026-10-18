@@ -173,6 +173,60 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    public async Task pre_handler_non_transient_failure_releases_the_half_open_probe_without_closing_the_circuit()
+    {
+        // given: a half-open circuit whose probe a delivery holds
+        await using var sut = await _CreateHalfOpenAsync();
+        var probe = sut.TryAcquireHalfOpenProbe(_Group);
+
+        // when: the store fails that delivery before the consumer ran, with a fault the predicate does not count
+        await sut.ReportPreHandlerFailureAsync(
+            _Group,
+            new InvalidOperationException("store"),
+            probe!.Value,
+            AbortToken
+        );
+
+        // then: the circuit stays half-open and the next delivery may probe
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.HalfOpen);
+        sut.TryAcquireHalfOpenProbe(_Group).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task pre_handler_transient_failure_reopens_the_half_open_circuit()
+    {
+        // given
+        await using var sut = await _CreateHalfOpenAsync();
+        var probe = sut.TryAcquireHalfOpenProbe(_Group);
+
+        // when: the store is still unreachable
+        await sut.ReportPreHandlerFailureAsync(_Group, new TimeoutException("store"), probe!.Value, AbortToken);
+
+        // then
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
+    }
+
+    private async Task<CircuitBreakerStateManager> _CreateHalfOpenAsync()
+    {
+        var halfOpen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
+        sut.RegisterConsumerCallbacks(
+            _Group,
+            onPause: _ => ValueTask.CompletedTask,
+            onResume: _ =>
+            {
+                halfOpen.TrySetResult();
+                return ValueTask.CompletedTask;
+            }
+        );
+        await sut.ReportFailureAsync(_Group, 0, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(30));
+        await halfOpen.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        return sut;
+    }
+
+    [Fact]
     public async Task should_allow_only_one_halfopen_probe_at_a_time()
     {
         // given

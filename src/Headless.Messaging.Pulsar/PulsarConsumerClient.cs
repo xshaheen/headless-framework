@@ -511,6 +511,13 @@ internal sealed class PulsarConsumerClient(
         }
     }
 
+    // Pulsar holds a negatively acknowledged message back for NegativeAckRedeliveryDelay itself, so the delivery is
+    // released at once rather than held for the core's delay as well.
+    public ValueTask RejectAsync(object? sender, TimeSpan redeliveryDelay, CancellationToken cancellationToken)
+    {
+        return RejectAsync(sender, CancellationToken.None);
+    }
+
     private async Task _SafeShutdownRejectAsync(MessageId messageId)
     {
         try

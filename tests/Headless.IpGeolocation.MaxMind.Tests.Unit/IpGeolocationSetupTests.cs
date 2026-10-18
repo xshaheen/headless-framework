@@ -4,6 +4,7 @@ using Headless.IpGeolocation;
 using Headless.IpGeolocation.Internal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
@@ -61,6 +62,84 @@ public sealed class IpGeolocationSetupTests : MaxMindTestBase
         services.AddSingleton(new DatabaseLocation(DatabaseDirectory));
         services.AddHeadlessIpGeolocation(geo =>
             geo.UseMaxMind((options, sp) => options.DatabaseDirectory = sp.GetRequiredService<DatabaseLocation>().Path)
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var options = provider.GetRequiredService<IOptions<MaxMindOptions>>().Value;
+
+        // then
+        options.DatabaseDirectory.Should().Be(DatabaseDirectory);
+    }
+
+    [Fact]
+    public void should_replace_the_default_locales_when_configuration_binds_a_list()
+    {
+        // given
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["DatabaseDirectory"] = DatabaseDirectory,
+                    ["Locales:0"] = "ar",
+                    ["Locales:1"] = "en",
+                }
+            )
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessIpGeolocation(geo => geo.UseMaxMind(configuration));
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var options = provider.GetRequiredService<IOptions<MaxMindOptions>>().Value;
+
+        // then
+        options.Locales.Should().Equal("ar", "en");
+    }
+
+    [Fact]
+    public void should_default_locales_to_english_when_none_are_configured()
+    {
+        // given
+        var provider = BuildProvider();
+
+        // when
+        var options = provider.GetRequiredService<IOptions<MaxMindOptions>>().Value;
+
+        // then
+        options.Locales.Should().Equal("en");
+    }
+
+    [Fact]
+    public void should_resolve_a_relative_database_directory_against_the_content_root()
+    {
+        // given
+        var contentRoot = Path.Combine(Path.GetTempPath(), "headless-ipgeo-root-" + Guid.NewGuid().ToString("N"));
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IHostEnvironment>(_HostEnvironment(contentRoot));
+        services.AddHeadlessIpGeolocation(geo =>
+            geo.UseMaxMind(options => options.DatabaseDirectory = "App_Data/geoip")
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var options = provider.GetRequiredService<IOptions<MaxMindOptions>>().Value;
+
+        // then
+        options.DatabaseDirectory.Should().Be(Path.Combine(contentRoot, "App_Data", "geoip"));
+    }
+
+    [Fact]
+    public void should_keep_an_absolute_database_directory_unchanged()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IHostEnvironment>(_HostEnvironment(Path.GetTempPath()));
+        services.AddHeadlessIpGeolocation(geo =>
+            geo.UseMaxMind(options => options.DatabaseDirectory = DatabaseDirectory)
         );
         using var provider = services.BuildServiceProvider();
 
@@ -151,6 +230,14 @@ public sealed class IpGeolocationSetupTests : MaxMindTestBase
 
         // then
         act.Should().Throw<OptionsValidationException>();
+    }
+
+    private static IHostEnvironment _HostEnvironment(string contentRootPath)
+    {
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.ContentRootPath.Returns(contentRootPath);
+
+        return environment;
     }
 }
 

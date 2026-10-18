@@ -40,7 +40,8 @@ internal static class JobsHealthChecks
 
                 return Task.CompletedTask;
             },
-            HeadlessHealthCheckTags.Jobs
+            HeadlessHealthCheckTags.Jobs,
+            HeadlessHealthCheckTags.HostState
         );
 
         // Degraded rather than Unhealthy: an operator stop or manual start mode is deliberate, so the pod stays in
@@ -51,7 +52,8 @@ internal static class JobsHealthChecks
                 provider.GetRequiredService<IJobsHostScheduler>().IsRunning
                     ? Task.CompletedTask
                     : throw new InvalidOperationException("The Jobs scheduler is not running."),
-            HeadlessHealthCheckTags.Jobs
+            HeadlessHealthCheckTags.Jobs,
+            HeadlessHealthCheckTags.HostState
         );
 
         services.ConfigureHeadlessHealthCheckDefault(
