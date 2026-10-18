@@ -530,7 +530,7 @@ internal static partial class LoggerExtensions
     public static partial void TransportSettlementFailed(this ILogger logger, string reason);
 
     [LoggerMessage(
-        EventId = 122,
+        EventId = 132,
         EventName = "TransportBrokerUnreachable",
         Level = LogLevel.Warning,
         Message = "The transport could not reach the broker and keeps retrying. --> {Reason}"
