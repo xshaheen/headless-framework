@@ -8,7 +8,7 @@ namespace Headless.Api.Identity;
 
 /// <summary>Options for the API key authentication scheme.</summary>
 [PublicAPI]
-public sealed class ApiKeyAuthenticationSchemeOptions : AuthenticationSchemeOptions
+public sealed class ApiKeyAuthenticationSchemeOptions : AuthenticationSchemeOptions, IHttpCredentialSchemeOptions
 {
     /// <summary>Default scheme name used when none is specified during registration.</summary>
     public const string DefaultScheme = AuthenticationConstants.Schemas.ApiKey;
@@ -40,4 +40,23 @@ public sealed class ApiKeyAuthenticationSchemeOptions : AuthenticationSchemeOpti
     /// Defaults to <c>"api_key"</c>.
     /// </summary>
     public string ApiKeyParamName { get; set; } = ParamName;
+
+    /// <inheritdoc/>
+    /// <remarks>The <see cref="ApiKeyHeaderName"/> header, then the <see cref="ApiKeyParamName"/> query parameter when <see cref="AllowApiKeyInQueryString"/> is set.</remarks>
+    public IReadOnlyList<HttpCredentialDescription> Credentials =>
+        AllowApiKeyInQueryString
+            ?
+            [
+                _HeaderCredential(),
+                HttpCredentialDescription.Query(
+                    ApiKeyParamName,
+                    $"The API key in the {ApiKeyParamName} query parameter, read only when the {ApiKeyHeaderName} header is absent. Servers and proxies log query strings, so prefer the header."
+                ),
+            ]
+            : [_HeaderCredential()];
+
+    private HttpCredentialDescription _HeaderCredential()
+    {
+        return HttpCredentialDescription.Header(ApiKeyHeaderName, $"The API key in the {ApiKeyHeaderName} header.");
+    }
 }

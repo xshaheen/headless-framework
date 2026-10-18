@@ -15,11 +15,10 @@ public sealed class WithIdempotencyEndpointMetadataTests
 
         builder.WithIdempotency(o => o.Retention = TimeSpan.FromDays(7));
 
-        builder.CapturedMetadata.Should().ContainSingle();
-        builder.CapturedMetadata[0].Should().BeOfType<HttpIdempotencyMetadata>();
+        var metadata = builder.CapturedMetadata.OfType<HttpIdempotencyMetadata>().Should().ContainSingle().Subject;
 
         var probe = new HttpIdempotencyOptions();
-        ((HttpIdempotencyMetadata)builder.CapturedMetadata[0]).Configure(probe);
+        metadata.Configure(probe);
         probe.Retention.Should().Be(TimeSpan.FromDays(7));
     }
 
@@ -31,11 +30,12 @@ public sealed class WithIdempotencyEndpointMetadataTests
         builder.WithIdempotency(o => o.Retention = TimeSpan.FromHours(1));
         builder.WithIdempotency(o => o.Retention = TimeSpan.FromHours(2));
 
-        builder.CapturedMetadata.Should().HaveCount(2);
+        var metadata = builder.CapturedMetadata.OfType<HttpIdempotencyMetadata>().ToList();
+        metadata.Should().HaveCount(2);
 
         // Verify the LAST entry carries the second config (GetMetadata<T> returns last)
         var probe = new HttpIdempotencyOptions();
-        ((HttpIdempotencyMetadata)builder.CapturedMetadata[1]).Configure(probe);
+        metadata[1].Configure(probe);
         probe.Retention.Should().Be(TimeSpan.FromHours(2));
     }
 

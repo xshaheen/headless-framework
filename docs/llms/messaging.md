@@ -2232,6 +2232,7 @@ Read [dashboards.md](dashboards.md) for the shared authentication modes and prod
 
 - **Real-Time Monitoring**: Live message throughput and latency metrics
 - **Message Explorer**: Search, filter, and inspect messages
+- **Hidden from application API documents**: every dashboard endpoint is excluded from API Explorer (`ExcludeFromDescription()`), because the dashboard runs in an `app.Map(basePath)` branch and a host's OpenAPI document would list its routes without the base path. The dashboard SPA is their only client.
 - **Failure Management**: View and retry failed messages
 - **Node Discovery**: Multi-instance cluster visibility through async `INodeDiscoveryProvider` operations with optional trailing cancellation tokens; implementations propagate caller-requested cancellation instead of converting it to an empty or not-found result
 - **Provider Capabilities**: The protected metadata endpoint and responsive footer dialog show every registered provider role. Transport cards report delivery lanes and topology, storage cards report delivery lanes and delayed scheduling, and coordination cards report cluster coordination without exposing physical resource names or credentials

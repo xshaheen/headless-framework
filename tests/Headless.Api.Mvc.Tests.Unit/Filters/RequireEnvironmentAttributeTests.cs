@@ -100,6 +100,21 @@ public sealed class RequireEnvironmentAttributeTests : TestBase
         environment.Should().Be("Development");
     }
 
+    [Fact]
+    public void should_report_availability_through_the_environment_restriction_metadata()
+    {
+        // given
+        IEnvironmentRestrictionMetadata restriction = new RequireEnvironmentAttribute("Development");
+
+        // when
+        var available = restriction.IsAvailableIn(_CreateEnvironment("development"));
+        var unavailable = restriction.IsAvailableIn(_CreateEnvironment("Production"));
+
+        // then
+        available.Should().BeTrue();
+        unavailable.Should().BeFalse();
+    }
+
     #region Helper Methods
 
     private static ResourceExecutingContext _CreateResourceExecutingContext(
