@@ -7,8 +7,10 @@ name: "Messaging nightly"
 # gates on it and it stays outside the required "CI status", so a red night never blocks a pull request.
 #
 # Retries are off: no step passes --retry-failed-tests, so the SDK's retry extension stays inactive and a guarantee that
-# fails once shows as a failure. Azure Service Bus needs a real namespace credential and keeps its own dispatch-only
-# workflow (messaging-azure-service-bus-conformance.yml); the drift report does not wait for its cells.
+# fails once shows as a failure. Azure Service Bus has two profiles. The real namespace needs a credential and keeps its
+# own dispatch-only workflow (messaging-azure-service-bus-conformance.yml); the drift report does not wait for its cells.
+# The emulator profile runs here, on fixed entities, because the run step sets HEADLESS_ACCEPT_SERVICEBUS_EMULATOR_EULA;
+# without it every emulator test skips with that reason.
 on:
   schedule:
     - cron: "0 1 * * *"
@@ -58,6 +60,7 @@ jobs:
         # Keep this list in step with MESSAGING_NIGHTLY_PROJECTS in the Makefile; tests/scripts/test-messaging-nightly.sh
         # checks that every project there has a leg here.
         leg:
+          - { name: azure-service-bus-emulator, project: tests/Headless.Messaging.AzureServiceBus.Tests.Integration/Headless.Messaging.AzureServiceBus.Tests.Integration.csproj, tz: UTC }
           - { name: aws, project: tests/Headless.Messaging.Aws.Tests.Integration/Headless.Messaging.Aws.Tests.Integration.csproj, tz: UTC }
           - { name: aws-postgresql, project: tests/Headless.Messaging.AwsPostgreSql.Tests.Integration/Headless.Messaging.AwsPostgreSql.Tests.Integration.csproj, tz: UTC }
           - { name: kafka, project: tests/Headless.Messaging.Kafka.Tests.Integration/Headless.Messaging.Kafka.Tests.Integration.csproj, tz: UTC }
@@ -113,6 +116,8 @@ jobs:
           LEG: ${{ matrix.leg.name }}
           # Empty on every scheduled run, so the drill never fails a real night.
           HEADLESS_CONFORMANCE_DRIFT_DRILL: ${{ inputs.drift_drill }}
+          # The repository owner accepted the Azure Service Bus emulator EULA for test runs; only the emulator fixture reads this.
+          HEADLESS_ACCEPT_SERVICEBUS_EMULATOR_EULA: "Y"
         run: >-
           make test-messaging-nightly
           MESSAGING_NIGHTLY_PROJECTS="$PROJECT"

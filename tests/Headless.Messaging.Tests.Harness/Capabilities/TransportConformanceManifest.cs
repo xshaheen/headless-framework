@@ -723,6 +723,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.BodySizeLimit, _AzureWorkflowGap)
                 .WithScenario(TransportConformanceScenario.MessageExpiry, _AzureWorkflowGap)
                 .EnableRealBrokerLeaf(),
+            ["Azure Service Bus Emulator"] = _CreateAzureServiceBusEmulatorProfile(),
             ["InMemory"] = TransportConformanceProfile
                 .CreateDisabled("InMemory")
                 .WithScenario(
@@ -1064,6 +1065,84 @@ public static class TransportConformanceManifest
             .WithScenario(
                 TransportConformanceScenario.MessageExpiry,
                 ConformanceSupport.NotApplicable("The simulator has no message time-to-live.")
+            );
+    }
+
+    /// <summary>
+    /// Gets the Azure Service Bus emulator's profile: the provider with <c>AutoProvision = false</c> on the fixed entities
+    /// its <c>Config.json</c> declares. A scenario that creates an entity at run time is not applicable here and stays the
+    /// real namespace's to prove. Its leaves skip on any machine that has not accepted the emulator's license, and it has no
+    /// routing-affinity evidence, so it does not count as a real broker leaf: no simulator cell or drift verdict rests on it.
+    /// </summary>
+    private static TransportConformanceProfile _CreateAzureServiceBusEmulatorProfile()
+    {
+        TransportConformanceScenario[] supported =
+        [
+            TransportConformanceScenario.QueueRoundTrip,
+            TransportConformanceScenario.BusRoundTrip,
+            TransportConformanceScenario.HeaderRoundTrip,
+            TransportConformanceScenario.CommitSettlement,
+            TransportConformanceScenario.RejectRedelivery,
+            TransportConformanceScenario.ConsumerPauseRecovery,
+            TransportConformanceScenario.BrokerInterruptionRecovery,
+            TransportConformanceScenario.StaleSettlement,
+            TransportConformanceScenario.HandlerFailureRedelivery,
+        ];
+
+        TransportConformanceScenario[] provisioned =
+        [
+            TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+            TransportConformanceScenario.BusConsumerIdentityFanOut,
+            TransportConformanceScenario.BusReplicaCompetition,
+            TransportConformanceScenario.QueueOwnership,
+            TransportConformanceScenario.SameNameLaneIsolation,
+        ];
+
+        var profile = TransportConformanceProfile
+            .CreateDisabled("Azure Service Bus Emulator")
+            .WithRuntimeCapabilities(
+                "Azure Service Bus",
+                supportsBus: true,
+                supportsQueue: true,
+                supportsIndependentLaneTopology: true
+            )
+            .WithMalformedEnvelopeBound("Service Bus dead-letter settlement", 1, TimeSpan.FromSeconds(10));
+
+        foreach (var scenario in supported)
+        {
+            profile = profile.WithScenario(scenario, ConformanceSupport.Supported);
+        }
+
+        foreach (var scenario in provisioned)
+        {
+            profile = profile.WithScenario(
+                scenario,
+                ConformanceSupport.NotApplicable(
+                    "The scenario creates its queues, topics, or subscriptions at run time, and the emulator profile runs with provisioning off on fixed entities; the real-namespace profile proves it."
+                )
+            );
+        }
+
+        return profile
+            .WithRequestReplyScenarios(
+                ConformanceSupport.Unsupported(
+                    "The Azure Service Bus reply channel is not built yet, so the provider rejects request/reply at startup.",
+                    _AzureServiceBusReplyChannelIssueUrl
+                )
+            )
+            .WithScenario(
+                TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+                ConformanceSupport.Unsupported(
+                    "A header builder failure dead-letters the message at once, so it is never redelivered and only a manual replay recovers it.",
+                    _HeaderBuilderIssueUrl
+                )
+            )
+            .WithScenario(
+                TransportConformanceScenario.BoundedGracefulShutdown,
+                ConformanceSupport.Unsupported(
+                    "Stopping a consumer while a handler runs waits for the handler, because the processor drains in-flight handlers without the shutdown budget.",
+                    "https://github.com/xshaheen/headless-framework/issues/1282"
+                )
             );
     }
 

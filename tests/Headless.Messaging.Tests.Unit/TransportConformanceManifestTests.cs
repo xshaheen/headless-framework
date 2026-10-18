@@ -44,6 +44,7 @@ public sealed class TransportConformanceManifestTests : TestBase
             "Kafka",
             "Pulsar",
             "Azure Service Bus",
+            "Azure Service Bus Emulator",
             "InMemory",
             "Redis",
             "Simulator",
@@ -80,6 +81,34 @@ public sealed class TransportConformanceManifestTests : TestBase
     public void should_support_every_fault_scenario_on_the_simulator(TransportConformanceScenario scenario)
     {
         TransportConformanceManifest.Simulator.Scenarios[scenario].Status.Should().Be(ConformanceStatus.Supported);
+    }
+
+    [Theory]
+    [InlineData(TransportConformanceScenario.RoutingAffinityMappingOrRejection)]
+    [InlineData(TransportConformanceScenario.BusConsumerIdentityFanOut)]
+    [InlineData(TransportConformanceScenario.BusReplicaCompetition)]
+    [InlineData(TransportConformanceScenario.QueueOwnership)]
+    [InlineData(TransportConformanceScenario.SameNameLaneIsolation)]
+    public void should_leave_runtime_provisioning_scenarios_to_the_real_azure_namespace(
+        TransportConformanceScenario scenario
+    )
+    {
+        // given: the emulator runs on fixed entities with provisioning off, and these scenarios create entities per run
+        var emulator = TransportConformanceManifest.Providers["Azure Service Bus Emulator"];
+        var realNamespace = TransportConformanceManifest.Providers["Azure Service Bus"];
+
+        // then
+        emulator.Scenarios[scenario].Status.Should().Be(ConformanceStatus.NotApplicable);
+        realNamespace.Scenarios[scenario].Status.Should().Be(ConformanceStatus.Supported);
+    }
+
+    [Fact]
+    public void should_not_count_the_license_gated_azure_emulator_as_a_real_broker_leaf()
+    {
+        TransportConformanceManifest
+            .Providers["Azure Service Bus Emulator"]
+            .IsRealBrokerLeafEnabled.Should()
+            .BeFalse("the emulator skips wherever its license is not accepted, so simulator cells cannot rest on it");
     }
 
     [Fact]
@@ -368,6 +397,9 @@ public sealed class TransportConformanceManifestTests : TestBase
                 {
                     ConformanceStatus.Supported
                         when string.Equals(profile.Provider, "Azure Service Bus", StringComparison.Ordinal) => "S†",
+                    ConformanceStatus.Supported
+                        when string.Equals(profile.Provider, "Azure Service Bus Emulator", StringComparison.Ordinal) =>
+                        "S‡",
                     ConformanceStatus.Supported => "S",
                     ConformanceStatus.Unsupported => "U",
                     ConformanceStatus.NotApplicable => "N/A",
