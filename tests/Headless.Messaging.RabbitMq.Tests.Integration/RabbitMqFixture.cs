@@ -69,9 +69,12 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
             throw new InvalidOperationException($"rabbitmqctl list_queues failed ({result.ExitCode}): {result.Stderr}");
         }
 
+        // Only three-column lines are queue rows. A full-project run once got a shorter line on stdout while the broker
+        // was busy with other suites; its text was not captured, and no queue check needs it.
         return result
             .Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(static line => line.Split('\t'))
+            .Where(static columns => columns.Length == 3)
             .Select(static columns => new RabbitMqBrokerQueue(
                 columns[0],
                 Durable: bool.Parse(columns[1]),
