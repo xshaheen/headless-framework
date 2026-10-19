@@ -18,6 +18,7 @@ public sealed class RabbitMqReplyTransportTests : TestBase
 
     public RabbitMqReplyTransportTests()
     {
+        _pool.MaxMessageBodySize.Returns(ConnectionFactory.DefaultMaxInboundMessageBodySize);
         _pool.Rent(Arg.Any<CancellationToken>()).Returns(_channel);
     }
 
@@ -103,6 +104,21 @@ public sealed class RabbitMqReplyTransportTests : TestBase
             .ReceivedCalls()
             .Should()
             .NotContain(call => call.GetMethodInfo().Name == nameof(IConnectionChannelPool.Rent));
+    }
+
+    [Fact]
+    public async Task should_refuse_a_reply_body_larger_than_a_consumer_can_receive()
+    {
+        // given
+        _pool.MaxMessageBodySize.Returns(1u);
+        var transport = _CreateTransport();
+
+        // when
+        var act = async () => await transport.SendAsync(ReplyAddresses.Create(), _Reply(), AbortToken);
+
+        // then — the "{}" body is two bytes
+        await act.Should().ThrowAsync<PublisherSentFailedException>();
+        await _pool.DidNotReceive().Rent(Arg.Any<CancellationToken>());
     }
 
     private RabbitMqReplyTransport _CreateTransport()

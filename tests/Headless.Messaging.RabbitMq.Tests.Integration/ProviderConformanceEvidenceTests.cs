@@ -132,6 +132,12 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
                 )
             ),
             _Bind(
+                TransportConformanceScenario.BodySizeLimit,
+                nameof(
+                    RabbitMqConsumerClientConformanceTests.should_round_trip_a_body_at_the_size_limit_and_refuse_one_byte_more
+                )
+            ),
+            _Bind(
                 TransportConformanceScenario.MessageExpiry,
                 nameof(
                     RabbitMqConsumerClientConformanceTests.should_not_deliver_a_message_that_expired_before_it_was_consumed

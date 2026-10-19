@@ -27,6 +27,17 @@ internal interface IConnectionChannelPool
     /// </summary>
     string Exchange { get; }
 
+    /// <summary>
+    /// Gets the largest message body, in bytes, that a consumer on this pool's connections can receive: the connection
+    /// factory's <c>MaxInboundMessageBodySize</c>, which
+    /// <see cref="RabbitMqMessagingOptions.ConnectionFactoryOptions"/> can change.
+    /// </summary>
+    /// <remarks>
+    /// The broker accepts bodies up to its own <c>max_message_size</c>, 128 MiB by default, but the client closes the
+    /// whole connection when it receives a body over this limit, so a publish must not send one.
+    /// </remarks>
+    uint MaxMessageBodySize { get; }
+
     /// <summary>Returns the shared, lazily-established AMQP connection, opening it if necessary.</summary>
     /// <param name="cancellationToken">Token to cancel connection setup.</param>
     Task<IConnection> GetConnectionAsync(CancellationToken cancellationToken = default);
@@ -131,8 +142,25 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         _pool = new ConcurrentQueue<IChannel>();
         _poolSemaphore = new SemaphoreSlim(options.ChannelPoolSize, options.ChannelPoolSize);
 
-        _connectionActivator = connectionActivator ?? _CreateConnection(options, automaticRecovery: true);
-        _nonRecoveringConnectionActivator = connectionActivator ?? _CreateConnection(options, automaticRecovery: false);
+        if (connectionActivator is null)
+        {
+            var factory = _CreateFactory(options, automaticRecovery: true);
+            _connectionActivator = _CreateActivator(factory, options.HostName);
+            _nonRecoveringConnectionActivator = _CreateActivator(
+                _CreateFactory(options, automaticRecovery: false),
+                options.HostName
+            );
+
+            // Read through an endpoint, which caps the factory's value at the largest body the client accepts at all.
+            MaxMessageBodySize = factory.Endpoint.MaxInboundMessageBodySize;
+        }
+        else
+        {
+            _connectionActivator = connectionActivator;
+            _nonRecoveringConnectionActivator = connectionActivator;
+            MaxMessageBodySize = ConnectionFactory.DefaultMaxInboundMessageBodySize;
+        }
+
         _isPublishConfirms = options.PublishConfirms;
         _options = options;
 
@@ -191,6 +219,8 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
     public string HostAddress { get; }
 
     public string Exchange { get; }
+
+    public uint MaxMessageBodySize { get; }
 
     public async Task<IConnection> GetConnectionAsync(CancellationToken cancellationToken = default)
     {
@@ -326,10 +356,7 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         _connectionLock.Dispose();
     }
 
-    private static Func<CancellationToken, Task<IConnection>> _CreateConnection(
-        RabbitMqMessagingOptions options,
-        bool automaticRecovery
-    )
+    private static ConnectionFactory _CreateFactory(RabbitMqMessagingOptions options, bool automaticRecovery)
     {
         var factory = new ConnectionFactory
         {
@@ -340,22 +367,43 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
             ClientProvidedName = Assembly.GetEntryAssembly()?.GetName().Name!.ToLower(CultureInfo.InvariantCulture),
         };
 
-        if (options.HostName.Contains(',', StringComparison.Ordinal))
+        if (!options.HostName.Contains(',', StringComparison.Ordinal))
         {
-            options.ConnectionFactoryOptions?.Invoke(factory);
-            _ApplyRecovery(factory, automaticRecovery);
-            var endpoints = AmqpTcpEndpoint.ParseMultiple(options.HostName);
-            foreach (var endpoint in endpoints)
-            {
-                endpoint.Ssl = factory.Ssl;
-            }
+            factory.HostName = options.HostName;
+        }
+
+        options.ConnectionFactoryOptions?.Invoke(factory);
+        _ApplyRecovery(factory, automaticRecovery);
+        return factory;
+    }
+
+    private static Func<CancellationToken, Task<IConnection>> _CreateActivator(
+        ConnectionFactory factory,
+        string hostName
+    )
+    {
+        if (hostName.Contains(',', StringComparison.Ordinal))
+        {
+            // A parsed endpoint carries the client's default body limit, not the factory's, so each one is rebuilt
+            // with the factory's body limit; TLS is set first, because an endpoint without a port resolves the default
+            // port from it.
+            var endpoints = AmqpTcpEndpoint
+                .ParseMultiple(hostName)
+                .Select(endpoint =>
+                {
+                    endpoint.Ssl = factory.Ssl;
+                    return new AmqpTcpEndpoint(
+                        endpoint.HostName,
+                        endpoint.Port,
+                        factory.Ssl,
+                        factory.MaxInboundMessageBodySize
+                    );
+                })
+                .ToArray();
 
             return cancellationToken => factory.CreateConnectionAsync(endpoints, cancellationToken);
         }
 
-        factory.HostName = options.HostName;
-        options.ConnectionFactoryOptions?.Invoke(factory);
-        _ApplyRecovery(factory, automaticRecovery);
         return cancellationToken => factory.CreateConnectionAsync(cancellationToken);
     }
 

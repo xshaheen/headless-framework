@@ -389,13 +389,7 @@ public static class TransportConformanceManifest
                         "RabbitMQ rejects a routing affinity key at publish, so it orders no messages by key."
                     )
                 )
-                .WithScenario(
-                    TransportConformanceScenario.BodySizeLimit,
-                    ConformanceSupport.Unsupported(
-                        "A body over the client's 64 MiB inbound limit is accepted by the broker, then closes the consumer's connection on delivery, so the consumer stops and the publish is reported as failed although the message was kept.",
-                        "https://github.com/xshaheen/headless-framework/issues/1280"
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.BodySizeLimit, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.MessageExpiry, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
             ["AWS/LocalStack"] = TransportConformanceProfile

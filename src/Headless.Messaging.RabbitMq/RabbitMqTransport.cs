@@ -41,6 +41,18 @@ internal sealed class RabbitMqTransport(
         RabbitMqValidation.ValidateMessageName(message.Name);
         var routingKey = RabbitMqPhysicalAddress.RoutingKey(_lane, message.Name);
 
+        // The broker would keep a body over the consumers' inbound limit, and the client of every consumer it reaches
+        // would close its connection on it, so the message would block its queue for good.
+        if ((uint)message.Body.Length > _connectionChannelPool.MaxMessageBodySize)
+        {
+            var description = string.Create(
+                CultureInfo.InvariantCulture,
+                $"The {message.Body.Length}-byte body of message '{message.Id}' exceeds the {_connectionChannelPool.MaxMessageBodySize}-byte limit a RabbitMQ consumer can receive (ConnectionFactory.MaxInboundMessageBodySize)."
+            );
+
+            return OperateResult.Failed(new PublisherSentFailedException(description));
+        }
+
         IChannel? channel = null;
         try
         {

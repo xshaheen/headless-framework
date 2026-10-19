@@ -123,6 +123,35 @@ public sealed class ConnectionChannelPoolTests : TestBase
         pool.HostAddress.Should().Be("rabbit1.local,rabbit2.local:5672");
     }
 
+    [Theory]
+    [InlineData(null, ConnectionFactory.DefaultMaxInboundMessageBodySize)]
+    [InlineData(1024u, 1024u)]
+    public void should_take_the_largest_body_from_the_connection_factory(uint? configured, uint expected)
+    {
+        // given
+        var options = Options.Create(
+            new RabbitMqMessagingOptions
+            {
+                HostName = "localhost",
+                UserName = "test_user",
+                Password = "test_pass",
+                ConnectionFactoryOptions = factory =>
+                {
+                    if (configured is { } limit)
+                    {
+                        factory.MaxInboundMessageBodySize = limit;
+                    }
+                },
+            }
+        );
+
+        // when
+        using var pool = new ConnectionChannelPool(_logger, _capOptions, options);
+
+        // then
+        pool.MaxMessageBodySize.Should().Be(expected);
+    }
+
     [Fact]
     public async Task should_return_channel_to_pool_when_open()
     {
