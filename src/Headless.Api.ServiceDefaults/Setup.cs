@@ -6,6 +6,7 @@ using System.Net.Http.Headers;
 using System.Reflection;
 using FileSignatures;
 using FluentValidation;
+using FluentValidation.Resources;
 using Headless.Api;
 using Headless.Api.Security;
 using Headless.Checks;
@@ -48,8 +49,8 @@ public static class SetupApi
     private static int _globalSettingsConfigured;
 
     /// <summary>
-    /// Applies one-time process-wide defaults: regex timeout and FluentValidation cascade mode.
-    /// Idempotent — subsequent calls are no-ops.
+    /// Applies one-time process-wide defaults: regex timeout, FluentValidation cascade mode, and the Egyptian Arabic
+    /// (<c>ar-EG</c>) wording of FluentValidation's built-in messages. Idempotent — subsequent calls are no-ops.
     /// </summary>
     public static void ConfigureGlobalSettings()
     {
@@ -60,6 +61,13 @@ public static class SetupApi
 
         AppDomain.CurrentDomain.SetData("REGEX_DEFAULT_MATCH_TIMEOUT", TimeSpan.FromSeconds(1));
         ValidatorOptions.Global.LanguageManager.Enabled = true;
+
+        // A consumer may have installed its own ILanguageManager; only the stock manager type can take translations.
+        if (ValidatorOptions.Global.LanguageManager is LanguageManager languageManager)
+        {
+            languageManager.AddHeadlessEgyptianArabicTranslations();
+        }
+
         ValidatorOptions.Global.DefaultRuleLevelCascadeMode = CascadeMode.Stop;
     }
 

@@ -27,7 +27,7 @@
 		<value>ليس رقم موبايل اورانج صالح. الرجاء إدخال رقم صحيح مكون من 11 رقما يبدأ بـ 012.</value>
 	</data>
   <data name="CashInvalidVodafoneNumber" xml:space="preserve">
-		<value>ليس رقم موبايل فودافون صالح. الرجاء إدخال رقم صحيح مكون من 11 رقما يبدأ بـ 011.</value>
+		<value>ليس رقم موبايل فودافون صالح. الرجاء إدخال رقم صحيح مكون من 11 رقما يبدأ بـ 010.</value>
 	</data>
   <data name="CashNotValidWalletPhoneNumber" xml:space="preserve">
 		<value>ليس رقم صالح. الرجاء إدخال رقم محفظة لرقم مصري صحيح مكون من 11 رقما يبدأ بـ 010 او 011 او 012 او 015.</value>

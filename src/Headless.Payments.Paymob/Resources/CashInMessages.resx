@@ -23,7 +23,7 @@
 		<value>The operation could not be completed. This phone number is not subscribe to Etisalat Cash service to subscribe please visit the nearest branch of Etisalat with the SM card and national number.</value>
 	</data>
   <data name="CashNoVodafoneCash" xml:space="preserve">
-		<value>The operation could not be completed. This phone number is not subscribe to Etisalat Cash service to subscribe please visit the nearest branch of Etisalat with the SM card and national number.</value>
+		<value>The operation could not be completed. This phone number is not subscribe to Vodafone Cash service to subscribe please visit the nearest branch of Vodafone with the SM card and national number.</value>
 	</data>
   <data name="CashOutProviderIsDown" xml:space="preserve">
 		<value>Payment provider server is down. Please try again later.</value>
