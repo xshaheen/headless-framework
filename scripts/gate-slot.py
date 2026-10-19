@@ -101,7 +101,9 @@ def _acquire(directory: Path, slots: int, label: str, poll: float, exclusive: bo
     directory.mkdir(parents=True, exist_ok=True)
     held: list[int] = []
     waited_since = None
-    last_report = 0.0
+    # None, not 0.0: the monotonic clock may start near zero (Linux counts from boot), so a fresh CI runner would
+    # otherwise skip the first report and a waiting gate would never say who holds the slots.
+    last_report: float | None = None
     while True:
         if exclusive:
             while len(held) < slots:
@@ -131,7 +133,7 @@ def _acquire(directory: Path, slots: int, label: str, poll: float, exclusive: bo
         now = time.monotonic()
         if waited_since is None:
             waited_since = now
-        if now - last_report >= REPORT_EVERY_SECONDS:
+        if last_report is None or now - last_report >= REPORT_EVERY_SECONDS:
             last_report = now
             holders = "\n  ".join(_holders(directory, slots)) or "(holders exited; retrying)"
             print(
