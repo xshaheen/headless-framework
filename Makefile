@@ -207,7 +207,7 @@ AFFECTED_BUILD_STAGES = if [ -s "$$run/build.txt" ]; then \
 		$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/build.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo $(PROOF_ERROR_LOG_ARGS) $(MSBUILD_ARGS) || status=1; \
 	fi;
 # An analyzer finding sends the change back for an edit, and that edit re-runs every suite, so the integration gate
-# analyzes right after the build (about a minute) and skips its suites on a finding instead of finding out from
+# analyzes right after the build (it reads the build's compiler logs) and skips its suites on a finding instead of finding out from
 # verify-affected after the suites already ran. The skip goes through `status`, as a failed build's does.
 AFFECTED_INTEGRATION_ANALYZER_STAGE = if [ $$status -eq 0 ]; then \
 		$(AFFECTED_ANALYZER_STAGE) \
