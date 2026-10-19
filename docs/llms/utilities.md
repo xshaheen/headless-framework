@@ -28,7 +28,7 @@ CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) is its own d
 - Use `Generator.Primitives` + `Generator.Primitives.Abstractions` **together** for strongly-typed domain primitives. Define a `readonly partial struct` implementing `IPrimitive<T>` with a static `Validate` method. The source generator handles everything else.
 - Use `Headless.FluentValidation` for validators, not raw `FluentValidation`. It provides `EgyptianNationalId()`, `UniqueElements()`, `Latitude()`, `Longitude()`, `PageIndex()`, `PageSize()`, `Id()`, and more.
 - Use `Headless.PhoneNumbers` for phone validation and formatting: the `InternationalPhoneNumber()`, `MobilePhoneNumber()`, and `PhoneNumber(countryCode)` rules, and `GetInternationalFormat()` / `Normalize()` on `PhoneNumber`. `PhoneNumber` itself lives in `Headless.Primitives` and carries no libphonenumber dependency.
-- Use `ErrorDescriptor` with `.WithErrorDescriptor()` for structured API error responses. Convert results via `result.Errors.ToErrorDescriptors()`.
+- Use `ErrorDescriptor` with `.WithErrorDescriptor(factory)` for structured API error responses; pass a describer method group so the description follows the request culture. Convert results via `result.Errors.ToErrorDescriptors()`.
 - Use `Headless.Hosting` for DI helpers. Key methods: `AddIf(condition, action)`, `AddIfElse(condition, ifAction, elseAction)`, `AddOrReplaceSingleton<TService, TImpl>()`, `Configure<TOptions, TValidator>(configuration, name)`.
 - Use `ISeeder` from Hosting for database seeding; register with `services.AddSeeder<T>()`. Run all seeders with `await app.Services.SeedAsync()` at startup. Use `[SeederPriority(n)]` to control order (lower runs first, default `0`); EF migrations seed first via `AddDbMigrationSeeder<TContext>()` (`SeederPriority` `int.MinValue`).
 - Use `Headless.NetTopologySuite` for geospatial work. Key methods: `SanitizeForSqlGeography()`, `PermissiveIntersection()`, `PermissiveUnion()`, `ComputeOverlap()`, `EnsureIsOrientedCounterClockwise()`, `Simplify()`. Use `GeoConstants.GoogleMapsSrid` (4326) for SRID. Call `services.AddHeadlessNetTopologySuite()` once at startup: it installs `GeoServices.NtsGeometryServices` as the process-wide `NtsGeometryServices.Instance`, which NetTopologySuite reads instead of DI, and registers it and `GeoServices.GeometryFactory` as singletons.
@@ -83,8 +83,14 @@ public sealed class UserValidator : AbstractValidator<User>
 ```csharp
 RuleFor(x => x.Total)
     .GreaterThan(0)
-    .WithErrorDescriptor(new ErrorDescriptor("ORDER_TOTAL_INVALID", "Total must be positive."));
+    .WithErrorDescriptor(OrderErrorDescriber.TotalInvalid); // static ErrorDescriptor TotalInvalid() => new("order:total_invalid", OrderMessages.total_invalid);
 ```
+
+`WithErrorDescriptor` takes a factory, not a descriptor. It reads the code and severity once, when the rule is
+built, and calls the factory again for every failure, so a description read from a localized resource follows the
+culture of the request being validated. Validators are usually registered as singletons, so a description captured
+at construction would answer every later request in the language of the first one. Pass a describer method group, or
+a lambda such as `() => new ErrorDescriptor("order:total_invalid", "Total must be positive.")` for a fixed text.
 
 `ErrorDescriptor` defaults to error severity. Pass `ValidationSeverity.Warning` or
 `ValidationSeverity.Information` explicitly for non-error rules; severity is preserved by both
@@ -139,7 +145,7 @@ Roslyn source generator for creating strongly-typed domain primitives.
   - Entity Framework Core value converters
   - TypeConverter for model binding
   - Dapper type handlers
-  - NSwag/Swashbuckle schema mappings
+- No OpenAPI schema mapping is generated: `Headless.OpenApi` documents every `IPrimitive<T>` as its underlying JSON type automatically, with the `[StringLength]` bounds of a string primitive as `minLength`/`maxLength`
 
 ### Design constraints
 
@@ -204,8 +210,6 @@ modelBuilder.Entity<User>().Property(u => u.Email).HasConversion<EmailValueConve
 <PropertyGroup>
   <PrimitiveDapperConverters>true</PrimitiveDapperConverters>
   <PrimitiveEntityFrameworkValueConverters>true</PrimitiveEntityFrameworkValueConverters>
-  <PrimitiveSwashbuckleSwaggerConverters>false</PrimitiveSwashbuckleSwaggerConverters>
-  <PrimitiveNswagSwaggerConverters>false</PrimitiveNswagSwaggerConverters>
   <PrimitiveJsonConverters>true</PrimitiveJsonConverters>
   <PrimitiveTypeConverters>true</PrimitiveTypeConverters>
   <PrimitiveXmlConverters>false</PrimitiveXmlConverters>

@@ -173,6 +173,13 @@ internal sealed class MessageSender : IMessageSender
                 return MessagingRetryAttempt.Completed(OperateResult.Success);
             }
 
+            // The recovery transition would exhaust the row and fire the exhausted callback for a message nobody may
+            // deliver anymore; past its deadline it ends as expired instead, as at any other dispatch.
+            if (DeliverByEnvelope.IsExpired(message.Origin.Headers, _timeProvider.GetUtcNow()))
+            {
+                return await _EndDeliverByExceededAsync(message, executionState).ConfigureAwait(false);
+            }
+
             return recoveryAttempt;
         }
 
@@ -188,6 +195,13 @@ internal sealed class MessageSender : IMessageSender
         else if (!await _ReserveAttemptAsync(message, cancellationToken).ConfigureAwait(false))
         {
             return MessagingRetryAttempt.Completed(OperateResult.Success);
+        }
+
+        // Checked at every dispatch, persisted pickups and delayed rows included: a message whose delivery deadline
+        // passed can never be delivered, so it ends here instead of spending a transport attempt.
+        if (DeliverByEnvelope.IsExpired(message.Origin.Headers, _timeProvider.GetUtcNow()))
+        {
+            return await _EndDeliverByExceededAsync(message, executionState).ConfigureAwait(false);
         }
 
         var transportMsg = await _serializer
@@ -449,6 +463,61 @@ internal sealed class MessageSender : IMessageSender
         executionState?.RecordLeaseTransition(affected, lockedUntil);
 
         _logger.StoredMessageMissingLaneTransport(ex, message.StorageId, message.Lane.ToString("D"));
+    }
+
+    /// <summary>
+    /// Ends a published row whose delivery deadline passed: terminal <see cref="StatusName.Failed"/> with the expiry
+    /// reason on the envelope, no transport attempt, no retry, and no exhausted callback. Retention follows
+    /// <see cref="MessagingOptions.FailedMessageExpiredAfter"/> like any terminal publish failure.
+    /// </summary>
+    private async Task<MessagingRetryAttempt> _EndDeliverByExceededAsync(
+        MediumMessage message,
+        RetryExecutionState? executionState
+    )
+    {
+        var deadline = DeliverByEnvelope.GetDeadline(message.Origin.Headers);
+        var expired = new MessageDeliverByExceededException(deadline);
+
+        // The sole write site for a delivery deadline reached in the relay, so a future dedicated terminal state
+        // (instead of Failed-with-reason) is a change to this one method.
+        var originalInlineAttempts = message.InlineAttempts;
+        message.Origin.AddOrUpdateException(expired);
+        message.ExceptionInfo = expired.ExpandMessage();
+        message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
+        message.NextRetryAt = null;
+        DateTimeOffset? lockedUntil = null;
+
+        var affected = await _StorageOf(message)
+            .ChangePublishRetryStateAsync(
+                message,
+                StatusName.Failed,
+                // The expiry reason is stamped onto Origin above, so the stored envelope must be refreshed with it.
+                MessageContentWrite.Refresh,
+                retryDelay: null,
+                lockedUntil,
+                originalRetries: message.Retries,
+                originalInlineAttempts,
+                cancellationToken: CancellationToken.None
+            )
+            .ConfigureAwait(false);
+        executionState?.RecordLeaseTransition(affected, lockedUntil);
+
+        // A write the storage guard refused means another worker already settled the row, so this drop is not ours to
+        // count; the attempt still ends without sending.
+        if (affected)
+        {
+            MessagingMetrics.RecordSendExpired(message.Lane);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.StoredMessageDeliverByExceeded(
+                    message.StorageId,
+                    LogSanitizer.Sanitize(message.Origin.Name),
+                    deadline
+                );
+            }
+        }
+
+        return MessagingRetryAttempt.Completed(OperateResult.Failed(expired));
     }
 
     private async Task _SetSuccessfulState(

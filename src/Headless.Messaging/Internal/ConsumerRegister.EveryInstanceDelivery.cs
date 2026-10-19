@@ -164,6 +164,40 @@ internal sealed partial class ConsumerRegister
 
             traceHandle = _TracingBefore(transportMessage, lane, _serverAddress);
 
+            // Past its delivery deadline the message is dropped before any middleware or consumer runs: the publisher
+            // said nobody can use it after that instant, and an every-instance delivery has no storage row to carry
+            // the reason, so the drop is visible only here.
+            if (DeliverByEnvelope.IsExpired(transportMessage.Headers, _timeProvider.GetUtcNow()))
+            {
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.MessageDeliverByExceededOnReceive(
+                        LogSanitizer.Sanitize(transportMessage.Id),
+                        LogSanitizer.Sanitize(transportMessage.Name),
+                        LogSanitizer.Sanitize(consumerIdentity)
+                    );
+                }
+
+                MessagingMetrics.RecordReceiveOutcome(MessagingMetrics.ReceiveOutcomeExpired);
+                MessagingMetrics.RecordEveryInstanceDelivery(
+                    consumerIdentity,
+                    "dropped",
+                    typeof(MessageDeliverByExceededException).FullName
+                );
+                traceHandle.Activity?.SetTag(
+                    MessagingMetrics.TagReceiveOutcome,
+                    MessagingMetrics.ReceiveOutcomeExpired
+                );
+
+                _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                consumeOutcomeRecorded = true;
+
+                // Settlement is must-complete: never abandon a commit on host shutdown.
+                commitAttempted = true;
+                await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
+                return;
+            }
+
             if (executor is null)
             {
                 var notFound = new SubscriberNotFoundException(
@@ -325,6 +359,27 @@ internal sealed partial class ConsumerRegister
             if (_rateLimiters is not null)
             {
                 await _rateLimiters.WaitAsync(executor, hostShutdownToken).ConfigureAwait(false);
+
+                // The receive check ran before the wait, and a throttled delivery can wait past its deadline.
+                if (DeliverByEnvelope.IsExpired(transportMessage.Headers, _timeProvider.GetUtcNow()))
+                {
+                    if (_logger.IsEnabled(LogLevel.Information))
+                    {
+                        _logger.MessageDeliverByExceededWhileThrottled(
+                            LogSanitizer.Sanitize(transportMessage.Id),
+                            LogSanitizer.Sanitize(transportMessage.Name),
+                            LogSanitizer.Sanitize(consumerIdentity)
+                        );
+                    }
+
+                    MessagingMetrics.RecordEveryInstanceDelivery(
+                        consumerIdentity,
+                        "dropped",
+                        typeof(MessageDeliverByExceededException).FullName
+                    );
+                    _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                    return true;
+                }
             }
 
             // The invoker opens a fresh scope and runs the consume middleware, then the generated dispatch or the

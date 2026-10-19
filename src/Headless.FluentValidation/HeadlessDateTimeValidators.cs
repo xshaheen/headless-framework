@@ -38,7 +38,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value < provider.GetUtcNow())
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInPast());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInPast);
         }
 
         /// <summary>Validates that the value is strictly after the current instant.</summary>
@@ -49,7 +49,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value > provider.GetUtcNow())
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInFuture());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInFuture);
         }
 
         /// <summary>Validates that the value is the current instant or later.</summary>
@@ -60,7 +60,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value >= provider.GetUtcNow())
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInPast());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInPast);
         }
 
         /// <summary>Validates that the value is the current instant or earlier.</summary>
@@ -71,7 +71,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value <= provider.GetUtcNow())
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInFuture());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInFuture);
         }
     }
 
@@ -85,7 +85,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value is null || value.Value < provider.GetUtcNow())
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInPast());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInPast);
         }
 
         /// <summary>Validates that the value, when present, is strictly after the current instant.</summary>
@@ -96,7 +96,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value is null || value.Value > provider.GetUtcNow())
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInFuture());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInFuture);
         }
 
         /// <summary>Validates that the value, when present, is the current instant or later.</summary>
@@ -107,7 +107,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value is null || value.Value >= provider.GetUtcNow())
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInPast());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInPast);
         }
 
         /// <summary>Validates that the value, when present, is the current instant or earlier.</summary>
@@ -118,7 +118,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value is null || value.Value <= provider.GetUtcNow())
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInFuture());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInFuture);
         }
     }
 
@@ -132,7 +132,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => _ToUtc(value) < provider.GetUtcNow().UtcDateTime)
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInPast());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInPast);
         }
 
         /// <summary>Validates that the value is strictly after the current instant (compared in UTC).</summary>
@@ -143,7 +143,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => _ToUtc(value) > provider.GetUtcNow().UtcDateTime)
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInFuture());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInFuture);
         }
 
         /// <summary>Validates that the value is the current instant or later (compared in UTC).</summary>
@@ -154,7 +154,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => _ToUtc(value) >= provider.GetUtcNow().UtcDateTime)
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInPast());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInPast);
         }
 
         /// <summary>Validates that the value is the current instant or earlier (compared in UTC).</summary>
@@ -165,7 +165,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => _ToUtc(value) <= provider.GetUtcNow().UtcDateTime)
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInFuture());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInFuture);
         }
     }
 
@@ -179,7 +179,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value is null || _ToUtc(value.Value) < provider.GetUtcNow().UtcDateTime)
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInPast());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInPast);
         }
 
         /// <summary>Validates that the value, when present, is strictly after the current instant (compared in UTC).</summary>
@@ -190,7 +190,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value is null || _ToUtc(value.Value) > provider.GetUtcNow().UtcDateTime)
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInFuture());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInFuture);
         }
 
         /// <summary>Validates that the value, when present, is the current instant or later (compared in UTC).</summary>
@@ -201,7 +201,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value is null || _ToUtc(value.Value) >= provider.GetUtcNow().UtcDateTime)
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInPast());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInPast);
         }
 
         /// <summary>Validates that the value, when present, is the current instant or earlier (compared in UTC).</summary>
@@ -212,7 +212,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value is null || _ToUtc(value.Value) <= provider.GetUtcNow().UtcDateTime)
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInFuture());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInFuture);
         }
     }
 
@@ -226,7 +226,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value < _Today(provider))
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInPast());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInPast);
         }
 
         /// <summary>Validates that the value is strictly after the current UTC date.</summary>
@@ -237,7 +237,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value > _Today(provider))
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInFuture());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInFuture);
         }
 
         /// <summary>Validates that the value is the current UTC date or later.</summary>
@@ -248,7 +248,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value >= _Today(provider))
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInPast());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInPast);
         }
 
         /// <summary>Validates that the value is the current UTC date or earlier.</summary>
@@ -259,7 +259,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value <= _Today(provider))
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInFuture());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInFuture);
         }
 
         /// <summary>
@@ -289,7 +289,7 @@ public static class HeadlessDateTimeValidators
                         return false;
                     }
                 )
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MinimumAge());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MinimumAge);
         }
     }
 
@@ -303,7 +303,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value is null || value.Value < _Today(provider))
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInPast());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInPast);
         }
 
         /// <summary>Validates that the value, when present, is strictly after the current UTC date.</summary>
@@ -314,7 +314,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value is null || value.Value > _Today(provider))
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInFuture());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustBeInFuture);
         }
 
         /// <summary>Validates that the value, when present, is the current UTC date or later.</summary>
@@ -325,7 +325,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value is null || value.Value >= _Today(provider))
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInPast());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInPast);
         }
 
         /// <summary>Validates that the value, when present, is the current UTC date or earlier.</summary>
@@ -336,7 +336,7 @@ public static class HeadlessDateTimeValidators
             var provider = timeProvider ?? TimeProvider.System;
 
             return rule.Must(value => value is null || value.Value <= _Today(provider))
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInFuture());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MustNotBeInFuture);
         }
 
         /// <summary>
@@ -366,7 +366,7 @@ public static class HeadlessDateTimeValidators
                         return false;
                     }
                 )
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MinimumAge());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.DateTimes.MinimumAge);
         }
     }
 

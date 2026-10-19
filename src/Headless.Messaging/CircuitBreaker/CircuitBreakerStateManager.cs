@@ -1629,7 +1629,7 @@ internal static partial class CircuitBreakerStateManagerLog
     public static partial void IgnoringResumeTaskFailureDuringDisposal(this ILogger logger, Exception exception);
 
     [LoggerMessage(
-        EventId = 4112,
+        EventId = 4133,
         Level = LogLevel.Debug,
         Message = "Ignoring resume task failure during consumer removal."
     )]

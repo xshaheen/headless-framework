@@ -4,7 +4,7 @@ using Demo;
 using Demo.Endpoints;
 using Headless.Api;
 using Headless.Api.ServiceDefaults;
-using Headless.OpenApi.Nswag;
+using Headless.OpenApi;
 using Headless.Security;
 using Microsoft.AspNetCore.Authentication;
 
@@ -20,7 +20,7 @@ builder
         options.OpenApi.Enabled = false;
     })
     .ConfigureHeadlessMinimalApi();
-builder.Services.AddNswagOpenApi();
+builder.Services.AddHeadlessOpenApi();
 builder.Services.ConfigureHeadlessMvc();
 builder.Services.AddStatusCodesRewriterMiddleware();
 builder.Services.AddControllers();
@@ -57,7 +57,7 @@ app.UseExceptionHandler();
 app.UseStatusCodesRewriter();
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseNswagOpenApi();
+app.MapOpenApi("/openapi/{documentName}.json").AllowAnonymous();
 app.MapControllers();
 app.MapProblemsEndpoints();
 

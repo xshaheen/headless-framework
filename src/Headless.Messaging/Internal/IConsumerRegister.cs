@@ -1613,7 +1613,7 @@ internal sealed partial class ConsumerRegister(
 internal static partial class ConsumerRegisterLog
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 126,
         EventName = "ProcessReceivedMessageFailed",
         Level = LogLevel.Error,
         Message = "An exception occurred when process received message. Message:'{Message}'."
@@ -1637,7 +1637,7 @@ internal static partial class ConsumerRegisterLog
     );
 
     [LoggerMessage(
-        EventId = 4120,
+        EventId = 4134,
         EventName = "InboxAdmissionRetrying",
         Level = LogLevel.Warning,
         Message = "Storing received message '{MessageId}' in the inbox failed; retry {Retry} of {Retries} in {Delay}."

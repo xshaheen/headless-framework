@@ -24,7 +24,7 @@ public static class HeadlessPhoneNumberValidators
     {
         return builder
             .GreaterThan(0)
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumberCountryCodeValidator());
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumberCountryCodeValidator);
     }
 
     /// <summary>Validates that the phone country code is greater than zero.</summary>
@@ -33,7 +33,7 @@ public static class HeadlessPhoneNumberValidators
     {
         return builder
             .GreaterThan(0)
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumberCountryCodeValidator());
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumberCountryCodeValidator);
     }
 
     private static void _AddPhoneFailure<TObj>(
@@ -128,7 +128,7 @@ public static class HeadlessPhoneNumberValidators
         {
             return builder
                 .Must(_PhoneAttribute.IsValid)
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumber());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumber);
         }
 
         /// <summary>

@@ -87,4 +87,22 @@ public static class SetupApiSurfaces
 
         return services;
     }
+
+    /// <summary>
+    /// Freezes the set of API surfaces and returns their OpenAPI document names, so a document provider can register one
+    /// document per surface while the service collection is still writable.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The document name of each registered surface, in registration order.</returns>
+    /// <remarks>
+    /// A later <see cref="AddHeadlessApiSurface"/> or <see cref="AddHeadlessApiSurfaces"/> call throws, so a surface
+    /// registered after the freeze cannot silently miss its document. Repeated calls return the same names.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> is <see langword="null"/>.</exception>
+    public static IReadOnlyList<string> FreezeHeadlessApiSurfaces(this IServiceCollection services)
+    {
+        Argument.IsNotNull(services);
+
+        return ApiSurfaceRegistration.InferDocumentNames(services);
+    }
 }

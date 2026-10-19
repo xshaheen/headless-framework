@@ -1722,6 +1722,83 @@ public sealed class ConsumerRegisterTests : TestBase
         outcomes.Should().Contain("expired");
     }
 
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_commit_and_drop_before_admission_when_delivery_deadline_passed(MessageLane lane)
+    {
+        // given — a plain message whose delivery deadline passed a second ago on the receiver's clock
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
+        var outcomes = new ConcurrentQueue<string>();
+        using var listener = _ListenToReceiveOutcomes(outcomes);
+        var exhaustedFired = false;
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            $"receive-deliver-by-expired-{lane}",
+            "{}"u8.ToArray(),
+            onExhausted: (_, _) =>
+            {
+                exhaustedFired = true;
+                return Task.CompletedTask;
+            },
+            publisherHeaders: _DeliverByHeaders(clock.GetUtcNow().AddSeconds(-1)),
+            configureServices: services => services.AddSingleton<TimeProvider>(clock),
+            lane: lane
+        );
+
+        // then — settled and dropped: no inbox row, no poison row, no handler, no callback
+        run.Client.CommitCount.Should().Be(1);
+        run.Client.RejectCount.Should().Be(0);
+        run.Storage.Admissions.Should().BeEmpty();
+        run.Storage.ReceivedExceptionRows.Should().BeEmpty();
+        await run
+            .Dispatcher.DidNotReceive()
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                Arg.Any<CancellationToken>()
+            );
+        exhaustedFired.Should().BeFalse();
+        outcomes.Should().Contain("expired");
+    }
+
+    [Fact]
+    public async Task should_admit_and_dispatch_when_delivery_deadline_is_still_ahead()
+    {
+        // given
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-deliver-by-live",
+            "{}"u8.ToArray(),
+            publisherHeaders: _DeliverByHeaders(clock.GetUtcNow().AddSeconds(30)),
+            configureServices: services => services.AddSingleton<TimeProvider>(clock)
+        );
+
+        // then
+        run.Client.CommitCount.Should().Be(1);
+        run.Storage.Admissions.Should().ContainSingle();
+        await run
+            .Dispatcher.Received(1)
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    private static Dictionary<string, string?> _DeliverByHeaders(DateTimeOffset deadline)
+    {
+        return new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.DeliverBy] = deadline.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+        };
+    }
+
     [Fact]
     public async Task receive_request_for_a_plain_consumer_commits_skips_and_faults_with_no_responder()
     {

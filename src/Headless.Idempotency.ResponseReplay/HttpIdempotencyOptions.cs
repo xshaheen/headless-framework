@@ -200,6 +200,30 @@ public sealed class HttpIdempotencyOptions
     public Func<HttpContext, ValueTask<byte[]>>? RequestFingerprint { get; set; }
 
     /// <summary>
+    /// Returns the options an endpoint runs with: these options when it attached no overrides, otherwise a
+    /// <see cref="Clone"/> with every attachment applied in the order the endpoint declared them, so
+    /// <c>RequireIdempotencyKey()</c> and <c>WithIdempotency(...)</c> compose instead of the last one silently replacing
+    /// the other.
+    /// </summary>
+    [Pure]
+    internal HttpIdempotencyOptions WithEndpointOverrides(IReadOnlyList<HttpIdempotencyMetadata> metadata)
+    {
+        if (metadata.Count == 0)
+        {
+            return this;
+        }
+
+        var cloned = Clone();
+
+        foreach (var attached in metadata)
+        {
+            attached.Configure(cloned);
+        }
+
+        return cloned;
+    }
+
+    /// <summary>
     /// Returns a deep copy of this options instance with fresh mutable collections,
     /// so per-endpoint delegates can mutate <see cref="Methods"/> and
     /// <see cref="ReplayHeaderAllowlist"/> without affecting the application-level options.

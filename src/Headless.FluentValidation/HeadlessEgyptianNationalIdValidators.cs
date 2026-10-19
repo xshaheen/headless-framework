@@ -22,6 +22,6 @@ public static class HeadlessEgyptianNationalIdValidators
         // date, and governorate checks), so a separate .Length(14) would double-report on bad input.
         return builder
             .Must(value => value is null || EgyptianNationalIdValidator.IsValid(value))
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.NationalIds.InvalidEgyptianNationalId());
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.NationalIds.InvalidEgyptianNationalId);
     }
 }

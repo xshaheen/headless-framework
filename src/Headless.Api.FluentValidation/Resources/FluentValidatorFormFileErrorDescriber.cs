@@ -13,7 +13,7 @@ namespace Headless.FluentValidation.Resources;
 /// <c>g:snake_case</c> shape (the <c>g:</c> prefix marks the shared "general" descriptor space; the
 /// <c>file_</c> segment scopes the code to file-upload failures) and a localised description sourced from
 /// <c>FluentValidatorErrors</c> resource strings. These descriptors are consumed by the
-/// <c>.WithErrorDescriptor()</c> FluentValidation extension to populate the <c>code</c> and <c>description</c>
+/// <c>.WithErrorDescriptor(factory)</c> FluentValidation extension to populate the <c>code</c> and <c>description</c>
 /// fields on validation failures.
 /// </remarks>
 [PublicAPI]
