@@ -83,6 +83,10 @@ internal sealed partial class ConsumerRegister(
 #pragma warning restore CA2213
     private Task? _shutdownTask;
     private Task? _quiesceTask;
+
+    // A failure no single client owns (a group that did not start or stop); only a completed rebuild clears it. A
+    // client's own shutdown is tracked on its subscription handle instead, so another client's registration cannot
+    // hide it.
     private volatile bool _isHealthy = true;
     private int _pendingTopologyRefresh;
 
@@ -99,7 +103,20 @@ internal sealed partial class ConsumerRegister(
 
     public bool IsHealthy()
     {
-        return _isHealthy;
+        if (!_isHealthy)
+        {
+            return false;
+        }
+
+        foreach (var handle in _subscriptionHandles.Values)
+        {
+            if (handle.HasDegradedClient)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public async ValueTask StartAsync(CancellationToken stoppingToken)
@@ -819,7 +836,11 @@ internal sealed partial class ConsumerRegister(
             {
                 await using var client = await _CreateConsumerClientAsync(subscriptionKey, limit, _stoppingCts.Token)
                     .ConfigureAwait(false);
-                client.AttachCallbacks(onMessage: null, onLog: _WriteLog);
+                // This client only reads the message names and is disposed at once, so its shutdown is no health signal.
+                client.AttachCallbacks(
+                    onMessage: null,
+                    onLog: logMessage => _WriteLog(logMessage, owner: null, client)
+                );
                 messageNames = await client
                     .FetchMessageNamesAsync(match.Value.Select(x => x.MessageName), _stoppingCts.Token)
                     .ConfigureAwait(false);
@@ -1306,7 +1327,7 @@ internal sealed partial class ConsumerRegister(
                         hostShutdownToken
                     );
                 },
-                _WriteLog
+                logMessage => _WriteLog(logMessage, clientHandle, client)
             );
 
             return;
@@ -1326,22 +1347,30 @@ internal sealed partial class ConsumerRegister(
                     hostShutdownToken
                 );
             },
-            _WriteLog
+            logMessage => _WriteLog(logMessage, clientHandle, client)
         );
     }
 
-    private void _WriteLog(LogMessageEventArgs logMessage)
+    /// <summary>Logs a transport report and records what it says about the broker and the reporting client.</summary>
+    /// <param name="logMessage">The transport's report.</param>
+    /// <param name="owner">
+    /// The subscription handle <paramref name="client"/> belongs to, or <see langword="null"/> for a client outside any
+    /// handle, whose shutdown then marks nothing for restart.
+    /// </param>
+    /// <param name="client">The client that reported.</param>
+    private void _WriteLog(LogMessageEventArgs logMessage, SubscriptionHandle? owner, IConsumerClient client)
     {
         var reason = LogSanitizer.Sanitize(logMessage.Reason) ?? string.Empty;
 
         switch (logMessage.LogType)
         {
             case MqLogType.ConsumerCancelled:
-                _isHealthy = false;
+                owner?.MarkClientDegraded(client);
                 _logger.RabbitMqConsumerCancelled(reason);
                 break;
             case MqLogType.ConsumerRegistered:
-                _isHealthy = true;
+                // Only the reporting client's own shutdown is cured: another client's stays marked for restart.
+                owner?.MarkClientRegistered(client);
                 _connectivity.ReportBrokerSuccess();
                 _logger.RabbitMqConsumerRegistered(reason);
                 break;
@@ -1349,7 +1378,7 @@ internal sealed partial class ConsumerRegister(
                 _logger.RabbitMqConsumerUnregistered(reason);
                 break;
             case MqLogType.ConsumerShutdown:
-                _isHealthy = false;
+                owner?.MarkClientDegraded(client);
                 _connectivity.ReportBrokerFailure();
                 _logger.RabbitMqConsumerShutdown(reason);
                 break;
@@ -1360,7 +1389,7 @@ internal sealed partial class ConsumerRegister(
                 _logger.KafkaClientConsumeRetrying(reason);
                 break;
             case MqLogType.ServerConnError:
-                _isHealthy = false;
+                owner?.MarkClientDegraded(client);
                 _connectivity.ReportBrokerFailure();
                 _logger.KafkaServerConnectionError(reason);
                 break;
@@ -1371,7 +1400,7 @@ internal sealed partial class ConsumerRegister(
                 _logger.NatsSubscriberReceivedError(reason);
                 break;
             case MqLogType.ConnectError:
-                _isHealthy = false;
+                owner?.MarkClientDegraded(client);
                 _connectivity.ReportBrokerFailure();
                 _logger.NatsServerConnectionError(reason);
                 break;
@@ -1381,8 +1410,8 @@ internal sealed partial class ConsumerRegister(
             case MqLogType.MessageNotInflight:
                 _logger.AmazonSqsMessageNotInflight(reason);
                 break;
+            // A malformed stream entry says nothing about the client's connection, so it decides no restart.
             case MqLogType.RedisConsumeError:
-                _isHealthy = true;
                 _logger.RedisClientConsumeError(reason);
                 break;
             case MqLogType.TransportConfigurationWarning:
@@ -1458,6 +1487,7 @@ internal sealed partial class ConsumerRegister(
         public void RecordDeliveryTakenIn() => Interlocked.Exchange(ref _consecutiveDeliveryFailures, 0);
 
         private readonly List<IConsumerClient> _clients = [];
+        private readonly HashSet<IConsumerClient> _degradedClients = new(ReferenceEqualityComparer.Instance);
 
         public required ILogger Logger { get; init; }
         public required CancellationTokenSource Cts { get; init; }
@@ -1568,6 +1598,7 @@ internal sealed partial class ConsumerRegister(
                     lock (_clientsLock)
                     {
                         _clients.Remove(client);
+                        _degradedClients.Remove(client);
                     }
 
                     await client.DisposeAsync().ConfigureAwait(false);
@@ -1593,6 +1624,39 @@ internal sealed partial class ConsumerRegister(
             lock (_clientsLock)
             {
                 return [.. _clients];
+            }
+        }
+
+        /// <summary>Whether a client of this handle reported a shutdown it has not recovered from on its own.</summary>
+        public bool HasDegradedClient
+        {
+            get
+            {
+                lock (_clientsLock)
+                {
+                    return _degradedClients.Count > 0;
+                }
+            }
+        }
+
+        /// <summary>Marks <paramref name="client"/> for the transport check to restart.</summary>
+        public void MarkClientDegraded(IConsumerClient client)
+        {
+            lock (_clientsLock)
+            {
+                if (_clients.Contains(client))
+                {
+                    _degradedClients.Add(client);
+                }
+            }
+        }
+
+        /// <summary>Clears the mark of <paramref name="client"/>, whose broker confirmed its consumer again.</summary>
+        public void MarkClientRegistered(IConsumerClient client)
+        {
+            lock (_clientsLock)
+            {
+                _degradedClients.Remove(client);
             }
         }
 
