@@ -35,11 +35,12 @@ touch src/Stale/obj/Release/net10.0/Stale.dll
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 ids() { python3 -c 'import json,sys; print(" ".join(sorted(c["DiagnosticId"] for d in json.load(open(sys.argv[1])) for c in d["FileChanges"])))' "$1"; }
 
-# A fallback that records which projects it was asked to analyze and finds nothing.
+# A fallback that records which projects it was asked to analyze and exits with FALLBACK_EXIT (0: found nothing).
 cat > fallback.sh <<'SH'
 #!/usr/bin/env bash
 project="$1"
 printf '%s\n' "${project##*/}" >> "$(dirname "$0")/fallback.txt"
+exit "${FALLBACK_EXIT:-0}"
 SH
 chmod +x fallback.sh
 
@@ -65,3 +66,12 @@ sarif | python3 -c 'import json,sys; d=json.load(sys.stdin); d["runs"][0]["resul
 touch src/Fresh/obj/Release/net10.0/Fresh.dll
 python3 scripts/proof.py analyzers --dir run --configuration Release --severity hidden -- "$scratch/fallback.sh" 2>/dev/null || fail "a clean log should exit 0"
 echo 'PASS: clean log passes'
+
+# With a clean log, the stage result is the fallback's: a crash (1) must fail it and findings (2) must surface.
+printf 'src/Fresh/Fresh.csproj\nsrc/Missing/Missing.csproj\n' > run/changed.txt
+for expected in 1 2; do
+  rc=0
+  FALLBACK_EXIT=$expected python3 scripts/proof.py analyzers --dir run --configuration Release --severity hidden -- "$scratch/fallback.sh" 2>/dev/null || rc=$?
+  [ "$rc" -eq "$expected" ] || fail "a fallback exiting $expected should exit $expected, got $rc"
+done
+echo 'PASS: fallback exit code reaches the stage'

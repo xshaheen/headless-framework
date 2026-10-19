@@ -160,25 +160,35 @@ def owning_projects(file: str, by_directory: dict[str, list[str]]) -> set[str]:
     return owners
 
 
-def _canonical_props(xml: str) -> tuple[list[tuple[str, tuple[tuple[str, str], ...], str]], dict[str, str]] | None:
+def _canonical_props(
+    xml: str,
+) -> tuple[list[tuple[str, tuple[tuple[str, str], ...], str]], dict[str, list[tuple[tuple[str, ...], str]]]] | None:
     """Split a central package file into its version map and everything else, or None when it does not parse.
 
     A <PackageVersion> that carries only Include and Version goes into the map; every other element, attribute and
-    text stays in the returned sequence, so two files with the same sequence differ only in package versions.
+    text stays in the returned sequence, so two files with the same sequence differ only in package versions. Each
+    map entry keeps the Conditions of its enclosing elements: moving an entry into or out of a conditioned ItemGroup
+    changes which projects can resolve the package, so it must read as a change to that package.
     """
     try:
         root = ET.fromstring(xml)
     except ET.ParseError:
         return None
     rest: list[tuple[str, tuple[tuple[str, str], ...], str]] = []
-    versions: dict[str, str] = {}
-    for element in root.iter():
+    versions: dict[str, list[tuple[tuple[str, ...], str]]] = {}
+
+    def visit(element: ET.Element, conditions: tuple[str, ...]) -> None:
         attributes = dict(element.attrib)
         if element.tag == "PackageVersion" and set(attributes) == {"Include", "Version"} and not (element.text or "").strip():
-            versions[attributes["Include"].lower()] = attributes["Version"]
-            continue
+            versions.setdefault(attributes["Include"].lower(), []).append((conditions, attributes["Version"]))
+            return
         rest.append((element.tag, tuple(sorted(attributes.items())), (element.text or "").strip()))
-    return rest, versions
+        inner = (*conditions, attributes["Condition"]) if "Condition" in attributes else conditions
+        for child in element:
+            visit(child, inner)
+
+    visit(root, ())
+    return rest, {package: sorted(entries) for package, entries in versions.items()}
 
 
 def package_version_changes(base: str, file: str) -> set[str] | None:

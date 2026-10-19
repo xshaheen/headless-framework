@@ -172,9 +172,11 @@ COVERAGE_ARGS_FN = coverage_args=(); \
 # them again under `dotnet format analyzers` (which spent ~10 s loading a solution filter before analyzing anything,
 # and a 74 s median per verify-affected run); a project whose log is older than its assembly, because something built
 # it since without the log, falls back to `dotnet format analyzers` on that project.
-PROOF_ERROR_LOG_ARGS = -p:CustomAfterMicrosoftCommonTargets="$(CURDIR)/eng/ProofErrorLog.targets"
+# RunAnalyzers=true because the stage trusts these logs: a build under the SDK's local RunAnalyzersDuringBuild=false
+# opt-out would still write a log, empty of analyzer results, and the stage would pass on it.
+PROOF_ERROR_LOG_ARGS = -p:CustomAfterMicrosoftCommonTargets="$(CURDIR)/eng/ProofErrorLog.targets" -p:RunAnalyzers=true
 AFFECTED_ANALYZER_STAGE = if [ -s "$$run/changed.txt" ]; then \
-		$(PROOF) run --dir "$$run" --name analyzers -- $(PYTHON) scripts/proof.py analyzers --dir "$$run" --configuration "$(CONFIGURATION)" \
+		Configuration="$(CONFIGURATION)" $(PROOF) run --dir "$$run" --name analyzers -- $(PYTHON) scripts/proof.py analyzers --dir "$$run" --configuration "$(CONFIGURATION)" \
 			--severity "$(QUALITY_SEVERITY)" $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),) \
 			-- $(DOTNET) format analyzers --no-restore --verify-no-changes --severity "$(QUALITY_SEVERITY)" -v minimal $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),) || true; \
 	fi;
@@ -599,10 +601,11 @@ quality-analyzers-project: ## Report build warnings/errors and analyzer suggesti
 		if [ $$format_status -ne 0 ] && [ $$format_status -ne 2 ]; then cat "$(QUALITY_FORMAT_LOG)"; exit $$format_status; fi
 
 # quality-analyzers rebuilds all ~430 projects --no-incremental and then formats the whole solution.
-# This runs the same gate over only the projects the branch changed: an incremental build for compiler
-# errors, then `dotnet format analyzers`, which runs every analyzer itself at every severity, so a
-# separate --no-incremental analyzer build would repeat its work. The result is a proof bundle with every
-# finding grouped by rule. An analyzer finding in an untouched project still needs `make quality-analyzers`.
+# This runs the same gate over only the projects the branch changed: one incremental build that reports compiler
+# errors and writes each compile's analyzer findings, every severity, to analyzers.sarif (PROOF_ERROR_LOG_ARGS), then
+# an analyzer stage that reads those logs instead of analyzing again; a project with a missing or stale log falls back
+# to `dotnet format analyzers`. The result is a proof bundle with every finding grouped by rule. An analyzer finding
+# in an untouched project still needs `make quality-analyzers`.
 .PHONY: quality-analyzers-affected
 quality-analyzers-affected: ## Analyze the projects changed vs AFFECTED_BASE; writes a proof bundle under artifacts/proof/.
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-quality"; \

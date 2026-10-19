@@ -46,6 +46,9 @@ write_props() {
   <ItemGroup>
     <GlobalPackageReference Include="Some.Analyzer" Version="$3" />
   </ItemGroup>
+  <ItemGroup Condition="'\$(IsPackable)' == 'false'">
+    <PackageVersion Include="Some.Tool" Version="1.0.0" />
+  </ItemGroup>
 </Project>
 XML
 }
@@ -75,6 +78,29 @@ echo 'PASS: GlobalPackageReference bump selects everything'
 write_props $'\n    <SomeProperty>true</SomeProperty>' 1.0.0 1.0.0
 [ "$(changed)" = "$everything" ] || fail "a property edit should select everything: $(changed)"
 echo 'PASS: property edit selects everything'
+
+# Moving an unchanged version into the conditioned ItemGroup changes which projects can resolve it, so it selects
+# the package's lock-file users like a bump does.
+cat > Directory.Packages.props <<'XML'
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="Redis.Client" Version="1.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <GlobalPackageReference Include="Some.Analyzer" Version="1.0.0" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(IsPackable)' == 'false'">
+    <PackageVersion Include="Some.Tool" Version="1.0.0" />
+    <PackageVersion Include="Bogus" Version="1.0.0" />
+  </ItemGroup>
+</Project>
+XML
+[ "$(changed)" = "src/Headless.NoLock/Headless.NoLock.csproj tests/Headless.Checks.Tests.Unit/Headless.Checks.Tests.Unit.csproj " ] \
+  || fail "moving a version into a conditioned ItemGroup should select its lock-file users: $(changed)"
+echo 'PASS: version moved between conditioned ItemGroups selects lock-file users'
 
 # CI's scope never narrows: a central package file change is still a build-wide trigger there.
 write_props "" 2.0.0 1.0.0
