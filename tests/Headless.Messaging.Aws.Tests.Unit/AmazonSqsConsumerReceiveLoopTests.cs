@@ -320,9 +320,18 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
     {
         bool released() =>
             _sqs.ReceivedCalls()
-                .Where(call => call.GetMethodInfo().Name == nameof(IAmazonSQS.ChangeMessageVisibilityBatchAsync))
+                .Where(call =>
+                    string.Equals(
+                        call.GetMethodInfo().Name,
+                        nameof(IAmazonSQS.ChangeMessageVisibilityBatchAsync),
+                        StringComparison.Ordinal
+                    )
+                )
                 .SelectMany(call => (List<ChangeMessageVisibilityBatchRequestEntry>)call.GetArguments()[1]!)
-                .Any(entry => entry.ReceiptHandle == receiptHandle && entry.VisibilityTimeout == 0);
+                .Any(entry =>
+                    string.Equals(entry.ReceiptHandle, receiptHandle, StringComparison.Ordinal)
+                    && entry.VisibilityTimeout == 0
+                );
 
         for (var i = 0; i < 500 && !released(); i++)
         {
