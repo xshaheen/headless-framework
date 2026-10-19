@@ -12,8 +12,12 @@ namespace Headless.Api;
 /// <summary>Executes and documents the problem-details responses of the <see cref="ApiResult"/> result types.</summary>
 internal static class ApiResultProblemResponse
 {
-    // Every status an ApiResult result can answer with: a binding failure plus each ApiResultError kind.
-    private static readonly int[] _ResultProblemStatusCodes =
+    /// <summary>
+    /// The statuses an <see cref="ApiResult"/> result can answer with (the shared result contract plus the 400 a
+    /// dispatched request answers when its body is missing), and 429, which the rate limiter answers before any
+    /// handler runs.
+    /// </summary>
+    public static IReadOnlyList<int> StandardProblemStatusCodes { get; } =
     [
         StatusCodes.Status400BadRequest,
         StatusCodes.Status401Unauthorized,
@@ -21,11 +25,8 @@ internal static class ApiResultProblemResponse
         StatusCodes.Status404NotFound,
         StatusCodes.Status409Conflict,
         StatusCodes.Status422UnprocessableEntity,
+        StatusCodes.Status429TooManyRequests,
     ];
-
-    /// <summary>The result statuses plus 429, which the rate limiter answers before any handler runs.</summary>
-    public static IReadOnlyList<int> StandardProblemStatusCodes { get; } =
-    [.. _ResultProblemStatusCodes, StatusCodes.Status429TooManyRequests];
 
     public static int GetStatusCode(ApiResultError error)
     {
@@ -46,18 +47,10 @@ internal static class ApiResultProblemResponse
 
     public static void PopulateMetadata(EndpointBuilder builder, int successStatusCode, Type? successType)
     {
-        builder.Metadata.Add(
-            new ProducesResponseTypeMetadata(
-                successStatusCode,
-                successType,
-                successType is null ? [] : ["application/json"]
-            )
-        );
+        ApiResultResponseMetadata.Populate(builder, successStatusCode, successType);
 
-        foreach (var statusCode in _ResultProblemStatusCodes)
-        {
-            builder.Metadata.Add(_Problem(statusCode));
-        }
+        // Only Minimal API dispatch turns a missing body into a result, so the 400 sits outside the shared contract.
+        AddProblemIfMissing(builder, StatusCodes.Status400BadRequest);
     }
 
     /// <summary>

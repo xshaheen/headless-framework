@@ -1,12 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tests.Fixtures;
+using Tests.Guarantees;
 using Tests.Helpers;
 
 namespace Tests;
@@ -71,10 +74,36 @@ public abstract class MessagingIntegrationHostTestsBase : TestBase
     /// <param name="setup">The messaging setup builder to configure.</param>
     protected virtual void ConfigureMessaging(MessagingSetupBuilder setup) { }
 
+    /// <summary>
+    /// Gets the lane the end-to-end scenarios publish and consume on. A transport that offers only the Queue lane, such
+    /// as Kafka, returns <see cref="MessageLane.Queue"/>: its host then registers no Bus consumers, and the callback
+    /// scenarios, which travel on the Bus lane, do not apply to it.
+    /// </summary>
+    protected virtual MessageLane Lane => MessageLane.Bus;
+
+    /// <summary>
+    /// Gets the handler-run counts of the backlog and terminal-failure consumers. The same instance serves every host
+    /// this test builds, so the counts span a <see cref="StopHostAsync"/> and the <see cref="StartHostAsync"/> after it.
+    /// </summary>
+    protected HandlerRunLedger HandlerRuns { get; } = new();
+
     /// <inheritdoc />
     public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
+        await StartHostAsync();
+    }
+
+    /// <summary>
+    /// Builds a host from the leaf's configuration, applies the storage schema, and bootstraps messaging. The host
+    /// reuses the leaf's broker and database, so after <see cref="StopHostAsync"/> it resumes the earlier host's work.
+    /// </summary>
+    protected async Task StartHostAsync()
+    {
+        if (_serviceProvider is not null)
+        {
+            throw new InvalidOperationException("The host is already running; stop it before starting another.");
+        }
 
         var services = new ServiceCollection();
 
@@ -90,6 +119,23 @@ public abstract class MessagingIntegrationHostTestsBase : TestBase
         {
             ConfigureTransport(setup);
             ConfigureStorage(setup);
+
+            // A handler that host shutdown cuts off keeps its lease until the lease expires, so the restart
+            // scenario waits out one lease. The shortest lease startup accepts is just over the worst-case inline
+            // publish burst: 3 sends of TransportPublishTimeout (10s) plus 3s of back-off. A short shutdown budget
+            // cancels a held handler at once instead of draining it for the default 30s.
+            setup.Options.RetryPolicy.DispatchTimeout = TimeSpan.FromSeconds(40);
+            setup.Options.ShutdownTimeout = TimeSpan.FromSeconds(5);
+
+            // One backlog delivery at a time, so a closed gate holds every later one behind the delivery in flight.
+            setup.Tune(MessagingIntegrationTestsModule.BacklogConsumerIdentity, consumer => consumer.Concurrency(1));
+            setup.Tune(
+                MessagingIntegrationTestsModule.TerminalFailureConsumerIdentity,
+                consumer =>
+                    consumer.FailurePolicy(policy =>
+                        policy.Immediate(1).Delayed(1, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1))
+                    )
+            );
             ConfigureMessaging(setup);
         });
         services.ConfigureMessaging(messaging =>
@@ -110,16 +156,29 @@ public abstract class MessagingIntegrationHostTestsBase : TestBase
             messaging.Message<IsolationRewriteResponse>("isolation-rewritten-callback");
             messaging.Message<ChainIntermediateResponse>("chain-intermediate-callback");
             messaging.Message<ChainFinalResponse>("chain-final-callback");
-            messaging.AddModule<MessagingIntegrationTestsModule>();
+            messaging.Message<BacklogMessage>("backlog-message");
+            messaging.Message<TerminalFailureMessage>("terminal-failure");
+
+            if (Lane == MessageLane.Bus)
+            {
+                messaging.AddModule<MessagingIntegrationTestsModule>();
+            }
+            else
+            {
+                messaging.AddModule<MessagingIntegrationQueueLaneModule>();
+            }
         });
 
-        messagingBuilder.AddPublishMiddlewareFor<
-            CallbackPublishMiddleware<ICallbackResponseContract>,
-            ICallbackResponseContract
-        >(MessageLane.Bus);
-        messagingBuilder.AddPublishMiddlewareFor<CallbackPublishMiddleware<CallbackResponse>, CallbackResponse>(
-            MessageLane.Bus
-        );
+        if (Lane == MessageLane.Bus)
+        {
+            messagingBuilder.AddPublishMiddlewareFor<
+                CallbackPublishMiddleware<ICallbackResponseContract>,
+                ICallbackResponseContract
+            >(MessageLane.Bus);
+            messagingBuilder.AddPublishMiddlewareFor<CallbackPublishMiddleware<CallbackResponse>, CallbackResponse>(
+                MessageLane.Bus
+            );
+        }
 
         // Register test helpers as singletons (same instance used throughout tests)
         services.AddSingleton<TestSubscriber>();
@@ -142,6 +201,7 @@ public abstract class MessagingIntegrationHostTestsBase : TestBase
         services.AddSingleton<MessageCollector<IsolationKeepResponse>>();
         services.AddSingleton<MessageCollector<IsolationRewriteResponse>>();
         services.AddSingleton<MessageCollector<ChainFinalResponse>>();
+        services.AddSingleton(HandlerRuns);
 
         // Allow additional service configuration
         ConfigureServices(services);
@@ -157,6 +217,23 @@ public abstract class MessagingIntegrationHostTestsBase : TestBase
         await Bootstrapper.BootstrapAsync(AbortToken);
     }
 
+    /// <summary>
+    /// Stops the host the way a process shutdown does: messaging drains within its shutdown budget and cancels what
+    /// is still running. The broker and the database keep their state for the next <see cref="StartHostAsync"/>.
+    /// </summary>
+    protected async Task StopHostAsync()
+    {
+        if (_serviceProvider is null)
+        {
+            return;
+        }
+
+        var provider = _serviceProvider;
+        _serviceProvider = null;
+        await _testScope.DisposeAsync();
+        await provider.DisposeAsync();
+    }
+
     /// <inheritdoc />
     protected override async ValueTask DisposeAsyncCore()
     {
@@ -165,12 +242,7 @@ public abstract class MessagingIntegrationHostTestsBase : TestBase
             return;
         }
 
-        if (_serviceProvider is not null)
-        {
-            await _testScope.DisposeAsync();
-            await _serviceProvider.DisposeAsync();
-            _serviceProvider = null;
-        }
+        await StopHostAsync();
 
         _disposed = true;
         await base.DisposeAsyncCore();
@@ -200,7 +272,7 @@ public abstract class MessagingIntegrationHostTestsBase : TestBase
 
             lastMessageId = probe.Id;
 
-            await Bus.PublishAsync(probe, new PublishOptions { MessageName = messageName }, AbortToken);
+            await PublishOnLaneAsync(probe, messageName);
 
             var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(1), AbortToken);
             if (
@@ -220,6 +292,38 @@ public abstract class MessagingIntegrationHostTestsBase : TestBase
         throw new TimeoutException(
             $"Timed out waiting for test subscriber readiness on messageName '{messageName}'. Last probe id: '{lastMessageId}'."
         );
+    }
+
+    /// <summary>Publishes <paramref name="message"/> on <see cref="Lane"/>, through the test-owned scope.</summary>
+    protected Task PublishOnLaneAsync<T>(
+        T message,
+        string messageName,
+        string? messageId = null,
+        DeliveryMode? deliveryMode = null
+    )
+        where T : class
+    {
+        return Lane == MessageLane.Bus
+            ? Publisher.PublishAsync(
+                message,
+                new PublishOptions
+                {
+                    MessageName = messageName,
+                    MessageId = messageId,
+                    DeliveryMode = deliveryMode,
+                },
+                AbortToken
+            )
+            : QueuePublisher.EnqueueAsync(
+                message,
+                new QueueOptions
+                {
+                    MessageName = messageName,
+                    MessageId = messageId,
+                    DeliveryMode = deliveryMode,
+                },
+                AbortToken
+            );
     }
 
     protected string ResolveMessageName(string messageName)
@@ -612,6 +716,11 @@ public abstract class MessagingIntegrationTestsBase : MessagingIntegrationHostTe
     [Fact]
     public virtual async Task should_preserve_declared_interface_and_concrete_queue_callback_response()
     {
+        Assert.SkipUnless(
+            Lane == MessageLane.Bus,
+            "Callbacks travel on the Bus lane, which this transport does not offer."
+        );
+
         // given
         var collector = ServiceProvider.GetRequiredService<MessageCollector<ConcreteCallbackResponse>>();
         var recorder = ServiceProvider.GetRequiredService<CallbackPublishRecorder<ICallbackResponseContract>>();
@@ -942,6 +1051,365 @@ public abstract class MessagingIntegrationTestsBase : MessagingIntegrationHostTe
         succeeded.Should().BeEmpty("response serialization failure must not mark the request consume as succeeded");
     }
 
+    #region End to end through the real broker and store
+
+    private static readonly TimeSpan _DeliveryTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan _RecoveryTimeout = TimeSpan.FromSeconds(120);
+
+    // How long a test watches for a second copy after the first one arrived. Every broker here redelivers an
+    // unsettled delivery or relays a stray row well inside it, at the intervals the leaves configure.
+    private static readonly TimeSpan _NoDuplicateWindow = TimeSpan.FromSeconds(3);
+
+    /// <summary>Creates an unopened connection to the database the messaging storage uses.</summary>
+    protected abstract DbConnection CreateStorageConnection();
+
+    /// <summary>
+    /// Begins a unit of work that owns a transaction on <paramref name="connection"/>, the way an application enlists
+    /// its own writes on the messaging database.
+    /// </summary>
+    protected abstract ValueTask<IUnitOfWork> BeginUnitOfWorkAsync(
+        IUnitOfWorkFactory factory,
+        DbConnection connection,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Makes the broker unreachable from the host while leaving its state intact.</summary>
+    protected abstract Task InterruptBrokerAsync(CancellationToken cancellationToken);
+
+    /// <summary>Makes the broker reachable again after <see cref="InterruptBrokerAsync"/>.</summary>
+    protected abstract Task RestoreBrokerAsync(CancellationToken cancellationToken);
+
+    [Fact]
+    [Guarantee("MSG-PUB-01")]
+    [Guarantee("MSG-PUB-03")]
+    public virtual async Task should_deliver_a_message_published_in_a_committed_unit_of_work_once()
+    {
+        // given
+        var subscriber = ServiceProvider.GetRequiredService<TestSubscriber>();
+        subscriber.Clear();
+        var message = new TestMessage { Id = Guid.NewGuid().ToString("N"), Name = "CommittedUnit" };
+        await using var connection = CreateStorageConnection();
+        await connection.OpenAsync(AbortToken);
+        await using var unit = await BeginUnitOfWorkAsync(
+            ServiceProvider.GetRequiredService<IUnitOfWorkFactory>(),
+            connection,
+            AbortToken
+        );
+
+        // when
+        await _PublishInUnitAsync(unit, message);
+        var sentBeforeCommit = await subscriber.WaitForMessageAsync(_NoDuplicateWindow, AbortToken);
+        await unit.CompleteAsync(AbortToken);
+
+        // then
+        sentBeforeCommit.Should().BeFalse("the relay sends an enlisted row only after its unit commits");
+        (await subscriber.WaitForMessageAsync(_DeliveryTimeout, AbortToken))
+            .Should()
+            .BeTrue("a committed unit's row reaches the consumer through the broker");
+        (await subscriber.WaitForCountAsync(2, _NoDuplicateWindow, AbortToken))
+            .Should()
+            .BeFalse("the committed row is delivered once");
+        subscriber.ReceivedMessages.Should().ContainSingle(received => received.Id == message.Id);
+    }
+
+    [Fact]
+    [Guarantee("MSG-PUB-01")]
+    [Guarantee("MSG-PUB-03")]
+    public virtual async Task should_never_deliver_a_message_published_in_a_rolled_back_unit_of_work()
+    {
+        // given
+        var subscriber = ServiceProvider.GetRequiredService<TestSubscriber>();
+        subscriber.Clear();
+        var rolledBack = new TestMessage { Id = Guid.NewGuid().ToString("N"), Name = "RolledBackUnit" };
+        var sentinel = new TestMessage { Id = Guid.NewGuid().ToString("N"), Name = "AfterRollback" };
+        PublishReceipt receipt;
+
+        await using (var connection = CreateStorageConnection())
+        {
+            await connection.OpenAsync(AbortToken);
+            await using var unit = await BeginUnitOfWorkAsync(
+                ServiceProvider.GetRequiredService<IUnitOfWorkFactory>(),
+                connection,
+                AbortToken
+            );
+
+            // when
+            receipt = await _PublishInUnitAsync(unit, rolledBack);
+            await unit.RollbackAsync();
+        }
+
+        // A message published after the rollback marks the point by which a leaked row would have been relayed too.
+        await PublishOnLaneAsync(sentinel, "test-message", deliveryMode: DeliveryMode.Durable);
+
+        // then
+        (await subscriber.WaitForMessageAsync(_DeliveryTimeout, AbortToken))
+            .Should()
+            .BeTrue();
+        (await subscriber.WaitForCountAsync(2, _NoDuplicateWindow, AbortToken)).Should().BeFalse();
+        subscriber.ReceivedMessages.Should().ContainSingle().Which.Id.Should().Be(sentinel.Id);
+        receipt.StorageId.Should().NotBeNull();
+        (await DataStorage.GetMonitoringApi().GetPublishedMessageAsync(receipt.StorageId!.Value, AbortToken))
+            .Should()
+            .BeNull("a rolled-back unit leaves no outbox row");
+    }
+
+    [Fact]
+    [Guarantee("MSG-CONSUME-07")]
+    public virtual async Task should_retry_a_failing_handler_per_policy_then_leave_its_row_terminal_once()
+    {
+        // given — the consumer's policy allows 1 immediate and 1 delayed retry: 3 attempts in all
+        const int expectedAttempts = 3;
+        var message = new TerminalFailureMessage(Guid.NewGuid().ToString("N"));
+        var messageId = $"terminal-{message.Id}";
+
+        // when
+        await PublishOnLaneAsync(message, "terminal-failure", messageId, DeliveryMode.Durable);
+
+        // then
+        (
+            await HandlerRuns.WaitUntilAsync(
+                runs => runs.Started(message.Id) >= expectedAttempts,
+                _DeliveryTimeout,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue("the handler is retried until its policy is spent");
+        // A failed attempt with retries left is also Failed, with its next retry scheduled; the terminal write is
+        // the one that clears it.
+        var terminal = await _WaitForReceivedRowAsync(
+            "terminal-failure",
+            messageId,
+            row => row is { StatusName: StatusName.Failed, NextRetryAt: null }
+        );
+        terminal.Should().NotBeNull("a spent policy leaves the received row Failed with no retry scheduled");
+        terminal!.ExpiresAt.Should().NotBeNull("a terminal row is kept only for its retention");
+
+        (
+            await HandlerRuns.WaitUntilAsync(
+                runs => runs.Started(message.Id) > expectedAttempts,
+                _NoDuplicateWindow,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse("the delivery is settled once, so neither the broker nor the retry processor runs it again");
+        HandlerRuns.Started(message.Id).Should().Be(expectedAttempts);
+    }
+
+    [Fact]
+    [Guarantee("MSG-INBOX-05")]
+    public virtual async Task should_run_the_handler_once_when_the_broker_delivers_a_message_twice()
+    {
+        // given — two direct sends under one message ID reach the broker as two deliveries, past any outbox
+        var subscriber = ServiceProvider.GetRequiredService<TestSubscriber>();
+        subscriber.Clear();
+        var duplicateId = $"duplicate-{Guid.NewGuid():N}";
+        var duplicate = new TestMessage { Id = duplicateId, Name = "Duplicate" };
+        var sentinel = new TestMessage { Id = Guid.NewGuid().ToString("N"), Name = "AfterDuplicate" };
+
+        // when
+        await _PublishDirectAsync(duplicate, duplicateId);
+        await _PublishDirectAsync(duplicate, duplicateId);
+        await _PublishDirectAsync(sentinel, $"sentinel-{sentinel.Id}");
+
+        // then
+        (await subscriber.WaitForCountAsync(2, _DeliveryTimeout, AbortToken))
+            .Should()
+            .BeTrue();
+        (await subscriber.WaitForCountAsync(3, _NoDuplicateWindow, AbortToken))
+            .Should()
+            .BeFalse("the inbox admits one of the two deliveries");
+        subscriber
+            .ReceivedMessages.Count(received => string.Equals(received.Id, duplicateId, StringComparison.Ordinal))
+            .Should()
+            .Be(1);
+        subscriber.ReceivedMessages.Should().ContainSingle(received => received.Id == sentinel.Id);
+    }
+
+    [Fact]
+    [Guarantee("MSG-PUB-10")]
+    public virtual async Task should_deliver_a_row_written_while_the_broker_is_unreachable_once_it_returns()
+    {
+        // given
+        var subscriber = ServiceProvider.GetRequiredService<TestSubscriber>();
+        subscriber.Clear();
+        var message = new TestMessage { Id = Guid.NewGuid().ToString("N"), Name = "DuringOutage" };
+        var messageId = $"outage-{message.Id}";
+        bool receivedDuringOutage;
+
+        await InterruptBrokerAsync(AbortToken);
+
+        try
+        {
+            // when — the row is written to the database while no send can reach the broker
+            await PublishOnLaneAsync(message, "test-message", messageId, DeliveryMode.Durable)
+                .WaitAsync(_DeliveryTimeout, AbortToken);
+            receivedDuringOutage = await subscriber.WaitForMessageAsync(_NoDuplicateWindow, AbortToken);
+        }
+        finally
+        {
+            await RestoreBrokerAsync(AbortToken);
+        }
+
+        // then
+        receivedDuringOutage.Should().BeFalse("nothing reaches the consumer while the broker is unreachable");
+        (await subscriber.WaitForMessageAsync(_RecoveryTimeout, AbortToken))
+            .Should()
+            .BeTrue("the outbox row is sent once the broker is back");
+        (await subscriber.WaitForCountAsync(2, _NoDuplicateWindow, AbortToken))
+            .Should()
+            .BeFalse("a send retried across the outage is still handled once");
+        subscriber.ReceivedMessages.Should().ContainSingle(received => received.Id == message.Id);
+        (await _WaitForPublishedRowAsync("test-message", messageId, row => row.StatusName == StatusName.Succeeded))
+            .Should()
+            .NotBeNull("the outbox row ends Succeeded once its send is confirmed");
+    }
+
+    [Fact]
+    [Guarantee("MSG-SHUT-04")]
+    public virtual async Task should_process_the_rest_of_a_backlog_exactly_once_after_the_host_restarts()
+    {
+        // given — two messages already handled, then a gated backlog whose first delivery is in flight
+        var handled = Enumerable.Range(0, 2).Select(i => $"handled-{i}-{Guid.NewGuid():N}").ToArray();
+        var backlog = Enumerable.Range(0, 6).Select(i => $"backlog-{i}-{Guid.NewGuid():N}").ToArray();
+
+        foreach (var id in handled)
+        {
+            await _PublishBacklogAsync(id);
+        }
+
+        (
+            await HandlerRuns.WaitUntilAsync(
+                runs => handled.All(id => runs.Completed(id) == 1),
+                _DeliveryTimeout,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        HandlerRuns.CloseGate();
+
+        foreach (var id in backlog)
+        {
+            await _PublishBacklogAsync(id);
+        }
+
+        (
+            await HandlerRuns.WaitUntilAsync(
+                runs => backlog.Any(id => runs.Started(id) > 0),
+                _DeliveryTimeout,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue("one backlog delivery is in flight when the host stops");
+
+        // when — the stop cancels the held delivery; the next host runs with the gate open
+        await StopHostAsync();
+        backlog
+            .Should()
+            .OnlyContain(id => HandlerRuns.Completed(id) == 0, "no gated handler completes on the stopped host");
+        HandlerRuns.OpenGate();
+        await StartHostAsync();
+
+        // then
+        (
+            await HandlerRuns.WaitUntilAsync(
+                runs => backlog.All(id => runs.Completed(id) > 0),
+                _RecoveryTimeout,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue("the restarted host processes the rest of the backlog");
+        (
+            await HandlerRuns.WaitUntilAsync(
+                runs => runs.CompletedRuns().Values.Sum() > handled.Length + backlog.Length,
+                _NoDuplicateWindow,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse("no message is processed twice across the restart");
+        HandlerRuns
+            .CompletedRuns()
+            .Should()
+            .BeEquivalentTo(handled.Concat(backlog).ToDictionary(id => id, _ => 1, StringComparer.Ordinal));
+    }
+
+    private Task _PublishBacklogAsync(string id) =>
+        PublishOnLaneAsync(new BacklogMessage(id), "backlog-message", id, DeliveryMode.Durable);
+
+    private Task _PublishDirectAsync(TestMessage message, string messageId) =>
+        PublishOnLaneAsync(message, "test-message", messageId, DeliveryMode.Direct);
+
+    private Task<PublishReceipt> _PublishInUnitAsync(IUnitOfWork unit, TestMessage message)
+    {
+        var options = new OutboxOptions { MessageName = "test-message" };
+
+        return Lane == MessageLane.Bus
+            ? unit.Outbox.PublishAsync(message, options, AbortToken)
+            : unit.Outbox.EnqueueAsync(message, options, AbortToken);
+    }
+
+    private Task<MessageView?> _WaitForReceivedRowAsync(
+        string messageName,
+        string messageId,
+        Func<MessageView, bool> predicate
+    ) => _WaitForRowAsync(MessageType.Subscribe, messageName, messageId, predicate);
+
+    private Task<MessageView?> _WaitForPublishedRowAsync(
+        string messageName,
+        string messageId,
+        Func<MessageView, bool> predicate
+    ) => _WaitForRowAsync(MessageType.Publish, messageName, messageId, predicate);
+
+    private async Task<MessageView?> _WaitForRowAsync(
+        MessageType messageType,
+        string messageName,
+        string messageId,
+        Func<MessageView, bool> predicate
+    )
+    {
+        var monitoringApi = DataStorage.GetMonitoringApi();
+        var timeProvider = ServiceProvider.GetRequiredService<TimeProvider>();
+        var deadline = timeProvider.GetUtcNow() + _DeliveryTimeout;
+
+        while (timeProvider.GetUtcNow() < deadline)
+        {
+            var page = await monitoringApi.GetMessagesAsync(
+                new MessageQuery
+                {
+                    MessageType = messageType,
+                    Name = ResolveMessageName(messageName),
+                    CurrentPage = 0,
+                    PageSize = 100,
+                },
+                AbortToken
+            );
+
+            page.TotalItems.Should()
+                .BeLessThan(100, "MessageId filtering is in-memory; rows beyond one page risk truncation");
+
+            var row = page.Items.FirstOrDefault(item =>
+                string.Equals(item.MessageId, messageId, StringComparison.Ordinal) && predicate(item)
+            );
+
+            if (row is not null)
+            {
+                return row;
+            }
+
+            await timeProvider.Delay(TimeSpan.FromMilliseconds(200), AbortToken);
+        }
+
+        return null;
+    }
+
+    #endregion
+
     private async Task<MediumMessage?> _WaitForStoredCallbackAsync(string correlationId, TimeSpan timeout)
     {
         var monitoringApi = DataStorage.GetMonitoringApi();
@@ -1132,8 +1600,22 @@ public sealed class FailingTestSubscriber : IConsume<FailingTestMessage>
 /// <summary>The consumers every <see cref="MessagingIntegrationTestsBase"/> host registers.</summary>
 public sealed class MessagingIntegrationTestsModule : IMessagingModule
 {
+    public const string BacklogConsumerIdentity = "tests.integration.backlog";
+
+    public const string TerminalFailureConsumerIdentity = "tests.integration.terminal-failure";
+
     public static void Register(MessagingCatalogBuilder catalog)
     {
+        catalog.AddBusConsumer<BacklogConsumer, BacklogMessage>(
+            BacklogConsumerIdentity,
+            everyInstance: false,
+            TestConsumerDispatch.FromServices<BacklogConsumer, BacklogMessage>()
+        );
+        catalog.AddBusConsumer<TerminalFailureConsumer, TerminalFailureMessage>(
+            TerminalFailureConsumerIdentity,
+            everyInstance: false,
+            TestConsumerDispatch.FromServices<TerminalFailureConsumer, TerminalFailureMessage>()
+        );
         catalog.AddBusConsumer<TestSubscriber, TestMessage>(
             "tests.integration.test-subscriber",
             everyInstance: false,
@@ -1222,6 +1704,33 @@ public sealed class MessagingIntegrationTestsModule : IMessagingModule
             "tests.integration.chain-final-callback",
             everyInstance: false,
             TestConsumerDispatch.FromServices<MessageCollector<ChainFinalResponse>, ChainFinalResponse>()
+        );
+    }
+}
+
+/// <summary>
+/// The consumers a <see cref="MessagingIntegrationTestsBase"/> host registers on a Queue-only transport: the
+/// end-to-end scenarios' consumers under the same identities as on the Bus lane, and no callback consumers.
+/// </summary>
+public sealed class MessagingIntegrationQueueLaneModule : IMessagingModule
+{
+    public static void Register(MessagingCatalogBuilder catalog)
+    {
+        catalog.AddQueueConsumer<TestSubscriber, TestMessage>(
+            "tests.integration.test-subscriber",
+            TestConsumerDispatch.FromServices<TestSubscriber, TestMessage>()
+        );
+        catalog.AddQueueConsumer<FailingTestSubscriber, FailingTestMessage>(
+            "tests.integration.failing-subscriber",
+            TestConsumerDispatch.FromServices<FailingTestSubscriber, FailingTestMessage>()
+        );
+        catalog.AddQueueConsumer<BacklogConsumer, BacklogMessage>(
+            MessagingIntegrationTestsModule.BacklogConsumerIdentity,
+            TestConsumerDispatch.FromServices<BacklogConsumer, BacklogMessage>()
+        );
+        catalog.AddQueueConsumer<TerminalFailureConsumer, TerminalFailureMessage>(
+            MessagingIntegrationTestsModule.TerminalFailureConsumerIdentity,
+            TestConsumerDispatch.FromServices<TerminalFailureConsumer, TerminalFailureMessage>()
         );
     }
 }

@@ -90,17 +90,6 @@ internal static class PrimitiveUnderlyingTypeExtensions
                 or PrimitiveUnderlyingType.TimeSpan;
     }
 
-    /// <summary>Determines if the given PrimitiveUnderlyingType is a floating point type.</summary>
-    /// <param name="underlyingType">The PrimitiveUnderlyingType to check.</param>
-    /// <returns>True if the underlying type is a floating point type, false otherwise.</returns>
-    public static bool IsFloatingPoint(this PrimitiveUnderlyingType underlyingType)
-    {
-        return underlyingType
-            is PrimitiveUnderlyingType.Decimal
-                or PrimitiveUnderlyingType.Double
-                or PrimitiveUnderlyingType.Single;
-    }
-
     /// <summary>Determines if the given PrimitiveUnderlyingType is a byte or short.</summary>
     /// <param name="underlyingType">The PrimitiveUnderlyingType to check.</param>
     /// <returns>True if the underlyingType is a byte or short, false otherwise.</returns>

@@ -110,6 +110,38 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
+    public async ValueTask ReportPreHandlerFailureAsync(
+        string consumerKey,
+        Exception exception,
+        long probeEpoch,
+        CancellationToken cancellationToken
+    )
+    {
+        var state = _GetOrAddState(consumerKey);
+
+        if (state.Enabled && _IsTransient(state, consumerKey, exception))
+        {
+            await ReportFailureAsync(consumerKey, probeEpoch, exception, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        ReleaseHalfOpenProbe(consumerKey, probeEpoch);
+    }
+
+    private bool _IsTransient(ConsumerCircuitState state, string consumerKey, Exception exception)
+    {
+        try
+        {
+            return state.EffectiveIsTransient(exception);
+        }
+        catch (Exception ex)
+        {
+            logger.IsTransientPredicateFailed(ex, LogSanitizer.Sanitize(consumerKey));
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
     public async ValueTask ReportFailureAsync(
         string consumerKey,
         long admissionEpoch,
@@ -124,17 +156,7 @@ internal sealed class CircuitBreakerStateManager(
             return;
         }
 
-        bool isTransient;
-
-        try
-        {
-            isTransient = state.EffectiveIsTransient(exception);
-        }
-        catch (Exception ex)
-        {
-            logger.IsTransientPredicateFailed(ex, LogSanitizer.Sanitize(consumerKey));
-            isTransient = false;
-        }
+        var isTransient = _IsTransient(state, consumerKey, exception);
 
         var stateLock = state.SyncLock;
         Func<long, ValueTask>? pauseCallback = null;
@@ -1607,7 +1629,7 @@ internal static partial class CircuitBreakerStateManagerLog
     public static partial void IgnoringResumeTaskFailureDuringDisposal(this ILogger logger, Exception exception);
 
     [LoggerMessage(
-        EventId = 4112,
+        EventId = 4133,
         Level = LogLevel.Debug,
         Message = "Ignoring resume task failure during consumer removal."
     )]

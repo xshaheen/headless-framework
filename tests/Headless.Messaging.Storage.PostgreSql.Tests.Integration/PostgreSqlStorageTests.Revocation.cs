@@ -7,7 +7,7 @@ using Npgsql;
 
 namespace Tests;
 
-public sealed partial class PostgreSqlStorageTests
+public partial class PostgreSqlStorageTests
 {
     protected override (IDataStorage Storage, MessagingOptions Options) CreateSchedulingTestStorage(TimeProvider clock)
     {

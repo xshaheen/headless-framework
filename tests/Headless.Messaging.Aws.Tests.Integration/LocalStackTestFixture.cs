@@ -23,7 +23,8 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
         CancellationToken cancellationToken,
         string? destination = null,
         string? group = null,
-        bool ownsQueue = true
+        bool ownsQueue = true,
+        TransportConformanceSessionOptions? options = null
     )
     {
         return _CreateConformanceSessionAsync(
@@ -32,7 +33,8 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
             group,
             ownsQueue,
             createReplacement: ownsQueue,
-            cancellationToken
+            cancellationToken,
+            options
         );
     }
 
@@ -53,29 +55,86 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
         );
     }
 
-    private async ValueTask<TransportConsumerConformanceSession> _CreateConformanceSessionAsync(
+    /// <summary>
+    /// Opens a queue session on the LocalStack at <paramref name="serviceUrl"/>, for a test that runs its own LocalStack
+    /// rather than the collection's.
+    /// </summary>
+    public static ValueTask<TransportConsumerConformanceSession> CreateConformanceSessionAsync(
+        string serviceUrl,
+        CancellationToken cancellationToken
+    )
+    {
+        return _CreateConformanceSessionAsync(
+            serviceUrl,
+            MessageLane.Queue,
+            destination: null,
+            group: null,
+            ownsQueue: true,
+            createReplacement: false,
+            cancellationToken
+        );
+    }
+
+    private ValueTask<TransportConsumerConformanceSession> _CreateConformanceSessionAsync(
         MessageLane lane,
         string? destination,
         string? group,
         bool ownsQueue,
         bool createReplacement,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        TransportConformanceSessionOptions? options = null
     )
     {
-        destination ??= $"conf-{Guid.NewGuid():N}";
-        group ??= $"group-{Guid.NewGuid():N}";
+        return _CreateConformanceSessionAsync(
+            ConnectionString,
+            lane,
+            destination,
+            group,
+            ownsQueue,
+            createReplacement,
+            cancellationToken,
+            options
+        );
+    }
+
+    private static async ValueTask<TransportConsumerConformanceSession> _CreateConformanceSessionAsync(
+        string serviceUrl,
+        MessageLane lane,
+        string? destination,
+        string? group,
+        bool ownsQueue,
+        bool createReplacement,
+        CancellationToken cancellationToken,
+        TransportConformanceSessionOptions? sessionOptions = null
+    )
+    {
+        sessionOptions ??= new TransportConformanceSessionOptions();
+
+        // Only a FIFO queue orders by key, and SQS makes one of a name that ends in ".fifo".
+        var suffix = sessionOptions.RoutingAffinity ? ".fifo" : string.Empty;
+        destination ??= $"conf-{Guid.NewGuid():N}{suffix}";
+        group ??= $"group-{Guid.NewGuid():N}{suffix}";
         var options = Options.Create(
             new AmazonSqsMessagingOptions
             {
                 Region = Amazon.RegionEndpoint.USEast1,
-                SnsServiceUrl = ConnectionString,
-                SqsServiceUrl = ConnectionString,
+                SnsServiceUrl = serviceUrl,
+                SqsServiceUrl = serviceUrl,
                 Credentials = new BasicAWSCredentials("test", "test"),
                 // Every receive sets the visibility, so it overrides the queue attribute below; both keep redelivery
                 // conformance fast.
                 VisibilityTimeout = TimeSpan.FromSeconds(2),
             }
         );
+
+        if (sessionOptions.HeaderBuilder is { } headerBuilder)
+        {
+            options.Value.CustomHeadersBuilder = (message, _) =>
+            {
+                headerBuilder(SqsHeaderCodec.Decode(message.MessageAttributes).GetValueOrDefault(Headers.MessageId));
+                return [];
+            };
+        }
 
 #pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.
         ITransport producer = lane switch
@@ -86,7 +145,7 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
         };
         var consumer = new AmazonSqsConsumerClient(
             group,
-            1,
+            sessionOptions.Concurrency,
             options,
             NullLogger<AmazonSqsConsumerClient>.Instance,
             lane switch
@@ -143,12 +202,14 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
                 createReplacementSession: createReplacement
                     ? replacementToken =>
                         _CreateConformanceSessionAsync(
+                            serviceUrl,
                             lane,
                             destination,
                             group,
                             ownsQueue: false,
                             createReplacement: false,
-                            replacementToken
+                            replacementToken,
+                            sessionOptions
                         )
                     : null
             );

@@ -7,6 +7,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using Tests.Guarantees;
 
 #pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests.CircuitBreaker;
@@ -93,6 +94,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-CB-01")]
     public async Task should_open_after_reaching_failure_threshold()
     {
         // given
@@ -145,6 +147,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-CB-01")]
     public async Task should_transition_from_open_to_halfopen_after_timer()
     {
         // given
@@ -173,6 +176,61 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    public async Task pre_handler_non_transient_failure_releases_the_half_open_probe_without_closing_the_circuit()
+    {
+        // given: a half-open circuit whose probe a delivery holds
+        await using var sut = await _CreateHalfOpenAsync();
+        var probe = sut.TryAcquireHalfOpenProbe(_Group);
+
+        // when: the store fails that delivery before the consumer ran, with a fault the predicate does not count
+        await sut.ReportPreHandlerFailureAsync(
+            _Group,
+            new InvalidOperationException("store"),
+            probe!.Value,
+            AbortToken
+        );
+
+        // then: the circuit stays half-open and the next delivery may probe
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.HalfOpen);
+        sut.TryAcquireHalfOpenProbe(_Group).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task pre_handler_transient_failure_reopens_the_half_open_circuit()
+    {
+        // given
+        await using var sut = await _CreateHalfOpenAsync();
+        var probe = sut.TryAcquireHalfOpenProbe(_Group);
+
+        // when: the store is still unreachable
+        await sut.ReportPreHandlerFailureAsync(_Group, new TimeoutException("store"), probe!.Value, AbortToken);
+
+        // then
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
+    }
+
+    private async Task<CircuitBreakerStateManager> _CreateHalfOpenAsync()
+    {
+        var halfOpen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
+        sut.RegisterConsumerCallbacks(
+            _Group,
+            onPause: _ => ValueTask.CompletedTask,
+            onResume: _ =>
+            {
+                halfOpen.TrySetResult();
+                return ValueTask.CompletedTask;
+            }
+        );
+        await sut.ReportFailureAsync(_Group, 0, new TimeoutException(), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(30));
+        await halfOpen.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        return sut;
+    }
+
+    [Fact]
+    [Guarantee("MSG-CB-01")]
     public async Task should_allow_only_one_halfopen_probe_at_a_time()
     {
         // given
@@ -466,6 +524,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-CB-01")]
     public async Task should_close_on_halfopen_success()
     {
         // given
@@ -494,6 +553,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-CB-01")]
     public async Task should_reopen_on_halfopen_transient_failure()
     {
         // given
@@ -602,6 +662,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-CB-02")]
     public async Task should_ignore_stale_transient_failure_when_halfopen_and_close_on_probe_success()
     {
         // given
@@ -623,6 +684,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-CB-02")]
     public async Task should_ignore_stale_non_transient_failure_when_halfopen_and_reopen_on_probe_transient_failure()
     {
         // given
@@ -641,6 +703,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-CB-02")]
     public async Task should_ignore_stale_success_when_halfopen()
     {
         // given

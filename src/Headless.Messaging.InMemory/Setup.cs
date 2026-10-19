@@ -14,7 +14,9 @@ namespace Headless.Messaging;
 /// no external broker is available. Messages are exchanged within the same process using
 /// <c>System.Threading.Channels</c>; no serialization or network I/O occurs.
 /// <para/>
-/// This transport does not persist messages: any message in transit at process shutdown is lost.
+/// This transport does not persist messages: any message in transit at process shutdown is lost. Outside the
+/// Development and Test environments the host logs a warning at start (event <c>3013</c>) so a forgotten broker
+/// configuration does not go unnoticed.
 /// Both a bus (fan-out) and a queue (point-to-point) transport are registered.
 /// </remarks>
 public static class SetupMessagingInMemory
@@ -58,6 +60,7 @@ public static class SetupMessagingInMemory
             services.AddSingleton<InMemoryQueueTransport>();
             services.AddSingleton<IQueueTransport>(sp => sp.GetRequiredService<InMemoryQueueTransport>());
             services.AddSingleton<IReplyTransport, InMemoryReplyTransport>();
+            services.AddHostedService<InMemoryTransportEnvironmentWarning>();
         }
     }
 }

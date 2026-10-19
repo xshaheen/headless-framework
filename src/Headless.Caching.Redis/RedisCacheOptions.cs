@@ -10,9 +10,11 @@ namespace Headless.Caching;
 public sealed class RedisCacheOptions : CacheOptions
 {
     /// <summary>
-    /// Gets or sets the StackExchange.Redis connection multiplexer used for all cache operations. Required.
+    /// Gets or sets the StackExchange.Redis connection multiplexer used for all cache operations. Left unset, it
+    /// resolves to the <see cref="IConnectionMultiplexer"/> registered in the service collection, the same one the
+    /// Redis distributed-lock provider uses.
     /// </summary>
-    public required IConnectionMultiplexer ConnectionMultiplexer { get; set; }
+    public IConnectionMultiplexer ConnectionMultiplexer { get; set; } = null!;
 
     /// <summary>
     /// Gets or sets the StackExchange.Redis command flags applied to all read operations (for example
@@ -43,7 +45,9 @@ internal sealed class RedisCacheOptionsValidator : AbstractValidator<RedisCacheO
     public RedisCacheOptionsValidator()
     {
         RuleFor(x => x.KeyPrefix).NotNull();
-        RuleFor(x => x.ConnectionMultiplexer).NotNull();
+        RuleFor(x => x.ConnectionMultiplexer)
+            .NotNull()
+            .WithMessage("Set ConnectionMultiplexer or register an IConnectionMultiplexer in the service collection.");
         RuleFor(x => x.ReadMode).IsInEnum();
         RuleFor(x => x.TagMarkerRefreshWindow).GreaterThan(TimeSpan.Zero);
     }

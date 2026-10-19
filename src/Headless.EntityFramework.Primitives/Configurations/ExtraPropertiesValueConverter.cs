@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Collections;
 using Headless.Primitives;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -32,36 +31,27 @@ public sealed class ExtraPropertiesValueConverter()
 }
 
 /// <summary>
-/// EF Core value comparer for <c>ExtraProperties</c> that performs entry-by-entry key and value
-/// equality so EF Core can detect which dictionary instances actually changed and avoid spurious
-/// updates.
+/// EF Core value comparer for <c>ExtraProperties</c>. Two bags are equal when they hold the same keys with values
+/// that store the same JSON, regardless of insertion order or boxing, so EF Core saves only bags that actually
+/// changed. The snapshot copies the bag, and copies any value that is not a simple immutable value.
 /// </summary>
 [PublicAPI]
 public sealed class ExtraPropertiesValueComparer()
     : ValueComparer<ExtraProperties>(
-        equalsExpression: (a, b) => _Equal(a, b),
-        hashCodeExpression: dictionary => _HashCode(dictionary),
-        snapshotExpression: d => new ExtraProperties(d)
+        equalsExpression: (a, b) => HeadlessJsonValueEquality.AreEqual(a, b),
+        hashCodeExpression: dictionary => HeadlessJsonValueEquality.GetHashCode(dictionary),
+        snapshotExpression: d => _Snapshot(d)
     )
 {
-    private static readonly IEqualityComparer<KeyValuePair<string, object?>> _KeyValuePairComparer =
-        ComparerFactory.Create<KeyValuePair<string, object?>>(
-            (p1, p2) => string.Equals(p1.Key, p2.Key, StringComparison.Ordinal) && p1.Value == p2.Value,
-            pair => HashCode.Combine(pair.Key, pair.Value)
-        );
-
-    private static bool _Equal(ExtraProperties? dictionary1, ExtraProperties? dictionary2)
+    private static ExtraProperties _Snapshot(ExtraProperties extraProperties)
     {
-        return (dictionary1 is null && dictionary2 is null)
-            || (
-                dictionary1 is not null
-                && dictionary2 is not null
-                && dictionary1.SequenceEqual(dictionary2, _KeyValuePairComparer)
-            );
-    }
+        var snapshot = new ExtraProperties();
 
-    private static int _HashCode(ExtraProperties dictionary)
-    {
-        return dictionary.Aggregate(0, (key, pair) => HashCode.Combine(key, _KeyValuePairComparer.GetHashCode(pair)));
+        foreach (var (key, value) in extraProperties)
+        {
+            snapshot[key] = HeadlessJsonValueEquality.Snapshot(value);
+        }
+
+        return snapshot;
     }
 }

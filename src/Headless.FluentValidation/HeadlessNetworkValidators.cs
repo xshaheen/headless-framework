@@ -21,7 +21,7 @@ public static class HeadlessNetworkValidators
         /// <returns>The rule builder options for chaining.</returns>
         public IRuleBuilderOptions<T, string> Ipv4()
         {
-            return rule.Must(_IsIpv4).WithErrorDescriptor(FluentValidatorErrorDescriber.Network.InvalidIpv4());
+            return rule.Must(_IsIpv4).WithErrorDescriptor(FluentValidatorErrorDescriber.Network.InvalidIpv4);
         }
 
         /// <summary>
@@ -31,7 +31,7 @@ public static class HeadlessNetworkValidators
         /// <returns>The rule builder options for chaining.</returns>
         public IRuleBuilderOptions<T, string> Ipv6()
         {
-            return rule.Must(_IsIpv6).WithErrorDescriptor(FluentValidatorErrorDescriber.Network.InvalidIpv6());
+            return rule.Must(_IsIpv6).WithErrorDescriptor(FluentValidatorErrorDescriber.Network.InvalidIpv6);
         }
 
         /// <summary>
@@ -41,7 +41,7 @@ public static class HeadlessNetworkValidators
         /// <returns>The rule builder options for chaining.</returns>
         public IRuleBuilderOptions<T, string> IpAddress()
         {
-            return rule.Must(_IsIp).WithErrorDescriptor(FluentValidatorErrorDescriber.Network.InvalidIp());
+            return rule.Must(_IsIp).WithErrorDescriptor(FluentValidatorErrorDescriber.Network.InvalidIp);
         }
     }
 

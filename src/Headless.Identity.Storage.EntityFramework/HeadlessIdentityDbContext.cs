@@ -88,6 +88,14 @@ public abstract class HeadlessIdentityDbContext<
 /// <c>AddHeadlessDbContextPool&lt;TDbContext,...&gt;</c> (pooled) from <c>SetupIdentityEntityFramework</c>,
 /// not <c>AddDbContext</c> directly, which misses the Headless wiring (scope binding, interceptors, factory).
 /// </para>
+/// <para>
+/// <b>The model is built in this constructor.</b> Attaching the change-tracker handlers reads the change tracker and
+/// the model, so <c>OnModelCreating</c> runs before a derived constructor's body, and EF Core caches the model per
+/// context type for the life of the process. State that shapes the model (a schema or table name, a feature flag, a
+/// tenant-specific mapping) must come from a primary-constructor parameter, a field initializer, an overridden
+/// property that returns a constant, or the options; a value assigned in a derived constructor body is not yet set
+/// when the model is built.
+/// </para>
 /// </remarks>
 public abstract class HeadlessIdentityDbContext<
     TUser,
@@ -255,7 +263,7 @@ public abstract class HeadlessIdentityDbContext<
     }
 
     /// <summary>
-    /// Applies Headless-specific model conventions (for example, value-object conversions) in
+    /// Applies Headless-specific model conventions (value-object conversions, entity mappings, query filters) in
     /// addition to the Identity schema conventions supplied by the base class.
     /// </summary>
     /// <param name="configurationBuilder">The builder used to configure model conventions.</param>
@@ -296,9 +304,9 @@ public abstract class HeadlessIdentityDbContext<
     }
 
     /// <summary>
-    /// Configures the EF Core model for this context, applying <see cref="DefaultSchema"/> when set,
-    /// then delegating to the base Identity model builder and the Headless runtime for additional
-    /// configurations such as query filters and audit-entity mappings.
+    /// Configures the EF Core model for this context, applying <see cref="DefaultSchema"/> when set, then delegating to
+    /// the base Identity model builder. The Headless query filters and entity mappings are model conventions registered
+    /// by <see cref="ConfigureConventions"/>.
     /// </summary>
     /// <param name="builder">The builder used to construct the model for this context.</param>
     protected override void OnModelCreating(ModelBuilder builder)
@@ -309,6 +317,5 @@ public abstract class HeadlessIdentityDbContext<
         }
 
         base.OnModelCreating(builder);
-        HeadlessDbContextRuntime.ProcessModelCreating(builder);
     }
 }

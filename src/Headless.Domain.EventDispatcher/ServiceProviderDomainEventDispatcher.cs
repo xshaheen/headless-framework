@@ -81,6 +81,48 @@ internal sealed class ServiceProviderDomainEventDispatcher(IServiceProvider serv
         }
     }
 
+    /// <summary>
+    /// Whether dispatching a payload of <paramref name="payloadType"/> could reach a handler: a registration of
+    /// <c>IDomainEventHandler&lt;payloadType&gt;</c>, closed or through an open generic, exists in the container.
+    /// </summary>
+    /// <remarks>
+    /// Dispatch resolves handlers for the exact runtime payload type, so the same question decides whether the event
+    /// has any observer. A container that cannot answer it reports every payload as handled. Answers are cached per
+    /// container, because registrations are fixed once the container is built.
+    /// </remarks>
+    internal bool HasHandler(Type payloadType)
+    {
+        // Resolved once per dispatcher: the save pipeline asks for every pending occurrence. A racing first call
+        // resolves the same answer twice at most.
+        if (!_handlerQueryResolved)
+        {
+            _handlerQuery = services.GetService<IServiceProviderIsService>() is { } isService
+                ? new HandlerQuery(isService, _HandlerPresence.GetValue(isService, _CreateHandlerPresence))
+                : null;
+            _handlerQueryResolved = true;
+        }
+
+        return _handlerQuery is not { } query || query.Answers.GetOrAdd(payloadType, _IsHandled, query.IsService);
+    }
+
+    private HandlerQuery? _handlerQuery;
+    private bool _handlerQueryResolved;
+
+    private sealed record HandlerQuery(IServiceProviderIsService IsService, ConcurrentDictionary<Type, bool> Answers);
+
+    private static readonly ConditionalWeakTable<
+        IServiceProviderIsService,
+        ConcurrentDictionary<Type, bool>
+    > _HandlerPresence = [];
+
+    private static readonly ConditionalWeakTable<
+        IServiceProviderIsService,
+        ConcurrentDictionary<Type, bool>
+    >.CreateValueCallback _CreateHandlerPresence = static _ => new();
+
+    private static readonly Func<Type, IServiceProviderIsService, bool> _IsHandled = static (payloadType, isService) =>
+        payloadType.IsValueType || isService.IsService(typeof(IDomainEventHandler<>).MakeGenericType(payloadType));
+
     #region Helpers
 
     private static int _GetHandlerOrder(Type handlerType)

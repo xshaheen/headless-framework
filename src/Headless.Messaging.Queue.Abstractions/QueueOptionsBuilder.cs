@@ -19,6 +19,7 @@ public sealed class QueueOptionsBuilder
     private string? _tenantId;
     private TimeSpan? _delay;
     private DateTimeOffset? _scheduledAt;
+    private TimeSpan? _deliverWithin;
 
     /// <summary>Creates an empty builder that preserves the canonical options defaults.</summary>
     public QueueOptionsBuilder() { }
@@ -92,6 +93,16 @@ public sealed class QueueOptionsBuilder
         return this;
     }
 
+    /// <summary>
+    /// Sets the period within which the message must be delivered; null removes it. The publisher validates that
+    /// supplied periods are positive and rejects a delay or schedule whose due time lands at or after the deadline.
+    /// </summary>
+    public QueueOptionsBuilder WithDeliverWithin(TimeSpan? deliverWithin)
+    {
+        _deliverWithin = deliverWithin;
+        return this;
+    }
+
     /// <summary>Creates a canonical options snapshot with its own independently mutable headers.</summary>
     public QueueOptions Build() =>
         new()
@@ -103,5 +114,6 @@ public sealed class QueueOptionsBuilder
             TenantId = _tenantId,
             Delay = _delay,
             ScheduledAt = _scheduledAt,
+            DeliverWithin = _deliverWithin,
         };
 }

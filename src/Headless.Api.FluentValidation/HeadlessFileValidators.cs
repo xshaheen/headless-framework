@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FileSignatures;
+using Headless.FluentValidation;
 using Headless.FluentValidation.Resources;
 using Microsoft.AspNetCore.Http;
 
@@ -34,8 +35,8 @@ public static class HeadlessFileValidators
         public IRuleBuilderOptions<T, IFormFile?> FileNotEmpty()
         {
             return builder
-                .Must((_, file) => file is null || file.Length > 0)
-                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileNotEmpty());
+                .SetValidator(new FormFileSizeValidator<T>(minBytes: 1, maxBytes: null, formatSizes: false))
+                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileNotEmpty);
         }
 
         /// <summary>Validates that the uploaded file size is at least <paramref name="minBytes"/> bytes.</summary>
@@ -48,28 +49,8 @@ public static class HeadlessFileValidators
         public IRuleBuilderOptions<T, IFormFile?> GreaterThanOrEqualTo(int minBytes)
         {
             return builder
-                .Must(
-                    (_, file, context) =>
-                    {
-                        if (file is null || file.Length >= minBytes)
-                        {
-                            return true;
-                        }
-
-                        context
-                            .MessageFormatter.AppendArgument(
-                                "MinSize",
-                                (minBytes / 1048576d).ToString("N1", CultureInfo.CurrentCulture)
-                            )
-                            .AppendArgument(
-                                "TotalLength",
-                                (file.Length / 1048576d).ToString("N1", CultureInfo.CurrentCulture)
-                            );
-
-                        return false;
-                    }
-                )
-                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileGreaterThanOrEqualToValidator());
+                .SetValidator(new FormFileSizeValidator<T>(minBytes, maxBytes: null, formatSizes: true))
+                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileGreaterThanOrEqualToValidator);
         }
 
         /// <summary>Validates that the uploaded file size does not exceed <paramref name="maxBytes"/> bytes.</summary>
@@ -82,28 +63,8 @@ public static class HeadlessFileValidators
         public IRuleBuilderOptions<T, IFormFile?> LessThanOrEqualTo(int maxBytes)
         {
             return builder
-                .Must(
-                    (_, file, context) =>
-                    {
-                        if (file is null || file.Length <= maxBytes)
-                        {
-                            return true;
-                        }
-
-                        context
-                            .MessageFormatter.AppendArgument(
-                                "MaxSize",
-                                (maxBytes / 1048576d).ToString("N1", CultureInfo.CurrentCulture)
-                            )
-                            .AppendArgument(
-                                "TotalLength",
-                                (file.Length / 1048576d).ToString("N1", CultureInfo.CurrentCulture)
-                            );
-
-                        return false;
-                    }
-                )
-                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileLessThanOrEqualToValidator());
+                .SetValidator(new FormFileSizeValidator<T>(minBytes: null, maxBytes, formatSizes: true))
+                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileLessThanOrEqualToValidator);
         }
     }
 
@@ -127,28 +88,8 @@ public static class HeadlessFileValidators
         public IRuleBuilderOptions<T, TIFormFile?> ContentTypes(IReadOnlyList<string> contentTypes)
         {
             return builder
-                .Must(
-                    (_, file, context) =>
-                    {
-                        if (
-                            file is null
-                            || contentTypes.Any(contentType =>
-                                file.ContentType.Equals(contentType, StringComparison.OrdinalIgnoreCase)
-                            )
-                        )
-                        {
-                            return true;
-                        }
-
-                        context.MessageFormatter.AppendArgument(
-                            "ContentTypes",
-                            string.Join(", ", contentTypes.Select(c => $"'{c}'"))
-                        );
-
-                        return false;
-                    }
-                )
-                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileContentTypeValidator());
+                .SetValidator(new FormFileContentTypeValidator<T, TIFormFile>(contentTypes))
+                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileContentTypeValidator);
         }
 
         /// <summary>
@@ -189,7 +130,7 @@ public static class HeadlessFileValidators
                         return predicate(format);
                     }
                 )
-                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileSignatureValidator());
+                .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileSignatureValidator);
         }
     }
 }

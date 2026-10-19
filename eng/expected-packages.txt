@@ -137,8 +137,7 @@ Headless.MultiTenancy
 Headless.MultiTenancy.Abstractions
 Headless.MultiTenancy.Storage.EntityFramework
 Headless.NetTopologySuite
-Headless.OpenApi.Nswag
-Headless.OpenApi.Nswag.OData
+Headless.OpenApi
 Headless.OpenApi.Scalar
 Headless.Payments.Paymob
 Headless.Payments.Paymob.CashIn

@@ -12,16 +12,18 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using Testcontainers.PostgreSql;
 using Tests.Capabilities;
 
 namespace Tests;
 
 /// <summary>
 /// Integration tests for PostgreSQL data storage using real PostgreSQL container.
-/// Inherits from <see cref="DataStorageTestsBase"/> to run standard storage tests.
+/// Inherits from <see cref="DataStorageTestsBase"/> to run standard storage tests. Left unsealed so the EF Core leaf
+/// runs every one of them against storage configured from a context.
 /// </summary>
 [Collection<PostgreSqlTestFixture>]
-public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : DataStorageTestsBase
+public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : DataStorageTestsBase
 {
     [Theory]
     [InlineData(MessageLane.Bus, 0L)]
@@ -239,10 +241,10 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         );
     }
 
-    private IDataStorage _CreateStorage(TimeProvider timeProvider)
+    private IDataStorage _CreateStorage(TimeProvider timeProvider, PostgreSqlOptions? storageOptions = null)
     {
         return new RelationalDataStorage(
-            _postgreSqlOptions!.Value.ToStorage(),
+            (storageOptions ?? _postgreSqlOptions!.Value).ToStorage(),
             _messagingOptions!,
             TestStorageOptions.For(),
             _tableNames!,
@@ -253,6 +255,35 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             NullLogger<RelationalDataStorage>.Instance
         );
     }
+
+    /// <inheritdoc />
+    protected override int? DatabaseHostPort => fixture.Container.GetMappedPublicPort(PostgreSqlBuilder.PostgreSqlPort);
+
+    /// <inheritdoc />
+    protected override IDataStorage CreateStorageThrough(string host, int port)
+    {
+        _EnsureInitialized();
+        var connectionString = new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
+        {
+            Host = host,
+            Port = port,
+            // A cut route can leave a connection attempt unanswered; fail it well inside the test's own timeout.
+            Timeout = 5,
+            CommandTimeout = 5,
+        }.ConnectionString;
+
+        return _CreateStorage(TimeProvider.System, new PostgreSqlOptions { ConnectionString = connectionString });
+    }
+
+    /// <summary>
+    /// Resolves the connection settings the storage under test is built on. The EF Core leaf reads them from a context
+    /// registration instead.
+    /// </summary>
+    protected virtual IOptions<PostgreSqlOptions> ResolveStorageOptions() =>
+        Options.Create(new PostgreSqlOptions { ConnectionString = fixture.ConnectionString });
+
+    /// <summary>Gets the database the suite runs against.</summary>
+    protected PostgreSqlTestFixture Fixture => fixture;
 
     /// <inheritdoc />
     protected override IDataStorage CreateStorageWithRetryBatchSize(int retryBatchSize)
@@ -341,7 +372,6 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         var services = new ServiceCollection();
         services.AddOptions();
         services.AddLogging();
-        services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.ConnectionString);
         services.Configure<MessagingOptions>(x =>
         {
             x.Version = "v1";
@@ -354,7 +384,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
 
         var provider = services.BuildServiceProvider();
 
-        _postgreSqlOptions = provider.GetRequiredService<IOptions<PostgreSqlOptions>>();
+        _postgreSqlOptions = ResolveStorageOptions();
         _messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
         _serializer = provider.GetRequiredService<IMessageSerializer>();
 
@@ -1096,6 +1126,40 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     public override Task should_stamp_owner_on_claim()
     {
         return base.should_stamp_owner_on_claim();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_restamp_the_lease_when_an_attempt_is_reserved_late_in_a_claimed_batch(bool published)
+    {
+        return base.should_restamp_the_lease_when_an_attempt_is_reserved_late_in_a_claimed_batch(published);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_renew_only_the_live_lease_generation_the_caller_holds(bool published)
+    {
+        return base.should_renew_only_the_live_lease_generation_the_caller_holds(published);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_not_renew_a_lease_that_lapsed_and_another_node_took(bool published)
+    {
+        return base.should_not_renew_a_lease_that_lapsed_and_another_node_took(published);
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public override Task should_stamp_reserved_and_renewed_leases_from_the_database_clock(bool published, bool renew)
+    {
+        return base.should_stamp_reserved_and_renewed_leases_from_the_database_clock(published, renew);
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Dapper;
+using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Npgsql;
@@ -20,6 +21,9 @@ public sealed class PostgreSqlDeadOwnerReclaimConformanceTests(PostgreSqlTestFix
         setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
         setup.UsePostgreSql(fixture.ConnectionString);
     }
+
+    protected override Action<HeadlessCoordinationSetupBuilder> CoordinationProvider =>
+        setup => setup.UsePostgreSql(fixture.ConnectionString);
 
     protected override async Task ResetStorageAsync(IDataStorage storage)
     {

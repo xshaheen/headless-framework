@@ -46,6 +46,9 @@ internal sealed class MessageSender : IMessageSender
     private readonly Lazy<IBusTransport?> _busTransport;
     private readonly Lazy<IQueueTransport?> _queueTransport;
     private readonly TimeProvider _timeProvider;
+
+    // The publish timeout and the lease-renewal timeout wait out a broker or store that stopped answering.
+    private readonly TimeProvider _backoffClock;
     private readonly MessagingTelemetry _telemetry;
     private readonly RetryPolicyOptions _retryPolicy;
     private readonly MessagingPublishRetryPipeline _retryPipeline;
@@ -61,6 +64,7 @@ internal sealed class MessageSender : IMessageSender
         _busTransport = new Lazy<IBusTransport?>(serviceProvider.GetService<IBusTransport>);
         _queueTransport = new Lazy<IQueueTransport?>(serviceProvider.GetService<IQueueTransport>);
         _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
+        _backoffClock = BackoffClock.Resolve(serviceProvider);
         _telemetry = serviceProvider.GetService<MessagingTelemetry>() ?? MessagingTelemetry.Default;
         var opts = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
         _options = opts;
@@ -169,6 +173,13 @@ internal sealed class MessageSender : IMessageSender
                 return MessagingRetryAttempt.Completed(OperateResult.Success);
             }
 
+            // The recovery transition would exhaust the row and fire the exhausted callback for a message nobody may
+            // deliver anymore; past its deadline it ends as expired instead, as at any other dispatch.
+            if (DeliverByEnvelope.IsExpired(message.Origin.Headers, _timeProvider.GetUtcNow()))
+            {
+                return await _EndDeliverByExceededAsync(message, executionState).ConfigureAwait(false);
+            }
+
             return recoveryAttempt;
         }
 
@@ -186,6 +197,13 @@ internal sealed class MessageSender : IMessageSender
             return MessagingRetryAttempt.Completed(OperateResult.Success);
         }
 
+        // Checked at every dispatch, persisted pickups and delayed rows included: a message whose delivery deadline
+        // passed can never be delivered, so it ends here instead of spending a transport attempt.
+        if (DeliverByEnvelope.IsExpired(message.Origin.Headers, _timeProvider.GetUtcNow()))
+        {
+            return await _EndDeliverByExceededAsync(message, executionState).ConfigureAwait(false);
+        }
+
         var transportMsg = await _serializer
             .SerializeToTransportMessageAsync(message.Origin, cancellationToken)
             .ConfigureAwait(false);
@@ -199,17 +217,43 @@ internal sealed class MessageSender : IMessageSender
         var brokerAddress = transport.BrokerAddress;
         var traceHandle = _TracingBefore(transportMsg, message.Lane, brokerAddress);
 
-        // With no host lifetime to observe (test and non-hosted contexts) the shutdown token can never
-        // fire, so a linked source would only wrap a plain timeout source in extra registration state.
-        using var publishCts = _shutdownToken.CanBeCanceled
-            ? CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken)
-            : new CancellationTokenSource();
-        publishCts.CancelAfter(_options.TransportPublishTimeout);
+        // The timer is declared first so the linked source over it is disposed first, unregistering from a live token.
+        var publishTimeout = _CreatePublishTimeoutSources();
+        using var publishTimerCts = publishTimeout.Timer;
+        using var publishCts = publishTimeout.Publish;
         OperateResult result;
 
+        // Slides the lease forward while the send runs, so a send that outlasts DispatchTimeout keeps its row.
+        var renewal = _StartLeaseRenewal(message, publishCts.Token);
         try
         {
-            result = await transport.SendAsync(transportMsg, publishCts.Token).ConfigureAwait(false);
+            try
+            {
+                result = await transport.SendAsync(transportMsg, renewal.AttemptToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                // The state write below fences on the lease identity, which a renewal in flight could still move.
+                await renewal.StopAsync().ConfigureAwait(false);
+            }
+
+            renewal.ThrowIfLost();
+        }
+        catch (Exception ex) when (renewal.IsLost)
+        {
+            // Another node may own the row now, so the attempt writes nothing: any write would carry a lease identity
+            // the row no longer has. The broker may still have taken the send, so the row's next dispatch can duplicate
+            // it, as after a crash at this point.
+            MessagingTelemetry.PublishAmbiguous(
+                traceHandle.Activity,
+                transportMsg,
+                brokerAddress,
+                ex,
+                traceHandle.ElapsedMs(_NowMs()),
+                message.Lane
+            );
+
+            return MessagingRetryAttempt.Completed(OperateResult.Failed(ex));
         }
         catch (OperationCanceledException ex)
         {
@@ -254,6 +298,10 @@ internal sealed class MessageSender : IMessageSender
             // path below; the exception then propagates unchanged.
             _TracingError(traceHandle, transportMsg, message.Lane, brokerAddress, OperateResult.Failed(ex));
             throw;
+        }
+        finally
+        {
+            await renewal.DisposeAsync().ConfigureAwait(false);
         }
 
         if (result.Succeeded)
@@ -304,6 +352,45 @@ internal sealed class MessageSender : IMessageSender
         {
             _connectivity.ReportBrokerFailure();
         }
+    }
+
+    // Returns the source that bounds the send, cancelled by the publish timeout or host shutdown, and the back-off
+    // clock's timer source when it is a separate object the caller must also dispose.
+    private (CancellationTokenSource Publish, CancellationTokenSource? Timer) _CreatePublishTimeoutSources()
+    {
+        // With no host lifetime to observe (test and non-hosted contexts) the shutdown token can never fire, so no
+        // linked source wraps the timeout in extra registration state.
+        if (ReferenceEquals(_backoffClock, TimeProvider.System))
+        {
+            // A source's own timer already runs on the system clock, so one source carries both the timeout and
+            // shutdown: the hot path allocates a single source per send.
+            var publish = _shutdownToken.CanBeCanceled
+                ? CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken)
+                : new CancellationTokenSource();
+            publish.CancelAfter(_options.TransportPublishTimeout);
+
+            return (publish, null);
+        }
+
+        // Any other back-off clock needs a timer source of its own, so a test steps through a broker that never answers.
+        var timer = new CancellationTokenSource(_options.TransportPublishTimeout, _backoffClock);
+
+        return _shutdownToken.CanBeCanceled
+            ? (CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken, timer.Token), timer)
+            : (timer, null);
+    }
+
+    private MessageLeaseRenewal _StartLeaseRenewal(MediumMessage message, CancellationToken cancellationToken)
+    {
+        return MessageLeaseRenewal.Start(
+            message,
+            _StorageOf(message).RenewPublishLeaseAsync,
+            _retryPolicy,
+            clock: _timeProvider,
+            backoffClock: _backoffClock,
+            _logger,
+            cancellationToken
+        );
     }
 
     private async Task<(ITransport? Transport, OperateResult? Result)> _ResolveTransportAsync(
@@ -376,6 +463,61 @@ internal sealed class MessageSender : IMessageSender
         executionState?.RecordLeaseTransition(affected, lockedUntil);
 
         _logger.StoredMessageMissingLaneTransport(ex, message.StorageId, message.Lane.ToString("D"));
+    }
+
+    /// <summary>
+    /// Ends a published row whose delivery deadline passed: terminal <see cref="StatusName.Failed"/> with the expiry
+    /// reason on the envelope, no transport attempt, no retry, and no exhausted callback. Retention follows
+    /// <see cref="MessagingOptions.FailedMessageExpiredAfter"/> like any terminal publish failure.
+    /// </summary>
+    private async Task<MessagingRetryAttempt> _EndDeliverByExceededAsync(
+        MediumMessage message,
+        RetryExecutionState? executionState
+    )
+    {
+        var deadline = DeliverByEnvelope.GetDeadline(message.Origin.Headers);
+        var expired = new MessageDeliverByExceededException(deadline);
+
+        // The sole write site for a delivery deadline reached in the relay, so a future dedicated terminal state
+        // (instead of Failed-with-reason) is a change to this one method.
+        var originalInlineAttempts = message.InlineAttempts;
+        message.Origin.AddOrUpdateException(expired);
+        message.ExceptionInfo = expired.ExpandMessage();
+        message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
+        message.NextRetryAt = null;
+        DateTimeOffset? lockedUntil = null;
+
+        var affected = await _StorageOf(message)
+            .ChangePublishRetryStateAsync(
+                message,
+                StatusName.Failed,
+                // The expiry reason is stamped onto Origin above, so the stored envelope must be refreshed with it.
+                MessageContentWrite.Refresh,
+                retryDelay: null,
+                lockedUntil,
+                originalRetries: message.Retries,
+                originalInlineAttempts,
+                cancellationToken: CancellationToken.None
+            )
+            .ConfigureAwait(false);
+        executionState?.RecordLeaseTransition(affected, lockedUntil);
+
+        // A write the storage guard refused means another worker already settled the row, so this drop is not ours to
+        // count; the attempt still ends without sending.
+        if (affected)
+        {
+            MessagingMetrics.RecordSendExpired(message.Lane);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.StoredMessageDeliverByExceeded(
+                    message.StorageId,
+                    LogSanitizer.Sanitize(message.Origin.Name),
+                    deadline
+                );
+            }
+        }
+
+        return MessagingRetryAttempt.Completed(OperateResult.Failed(expired));
     }
 
     private async Task _SetSuccessfulState(

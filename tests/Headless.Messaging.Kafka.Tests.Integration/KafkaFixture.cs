@@ -16,7 +16,8 @@ public sealed class KafkaFixture : HeadlessKafkaFixture
         string? destination = null,
         string? group = null,
         bool createReplacement = true,
-        Action<KafkaMessagingOptions>? configure = null
+        Action<KafkaMessagingOptions>? configure = null,
+        byte concurrency = 2
     )
     {
         destination ??= $"conf-{Guid.NewGuid():N}";
@@ -36,7 +37,7 @@ public sealed class KafkaFixture : HeadlessKafkaFixture
 #pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.
         var producers = new KafkaProducerProvider(NullLogger<KafkaProducerProvider>.Instance, options);
         var producer = new KafkaTransport(NullLogger<KafkaTransport>.Instance, producers);
-        var consumer = new KafkaConsumerClient(group, 2, options, services);
+        var consumer = new KafkaConsumerClient(group, concurrency, options, services);
 #pragma warning restore CA2000
 
         try
@@ -62,7 +63,8 @@ public sealed class KafkaFixture : HeadlessKafkaFixture
                             destination,
                             group,
                             createReplacement: false,
-                            configure
+                            configure,
+                            concurrency
                         )
                     : null
             );

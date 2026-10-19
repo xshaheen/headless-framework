@@ -27,6 +27,17 @@ public sealed class HeadlessDbContextOptions
         typeof(HeadlessMessageCollectorSaveEntryProcessor),
     ];
 
+    // The default chain, in order. The constructor registers exactly these, so the chain and the built-in check
+    // cannot disagree: a type registered but not listed would keep a change-detection pass it does not need, and a
+    // listed type that writes CLR members behind the tracker's back would let a save skip the audit recapture.
+    private static readonly Type[] _BuiltInProcessorTypes =
+    [
+        typeof(HeadlessEntitySaveEntryProcessor),
+        typeof(HeadlessAuditSaveEntryProcessor),
+        typeof(HeadlessLocalEventSaveEntryProcessor),
+        typeof(HeadlessMessageCollectorSaveEntryProcessor),
+    ];
+
     private readonly List<SaveEntryProcessorRegistration> _saveEntryProcessors = [];
 
     /// <summary>
@@ -35,10 +46,10 @@ public sealed class HeadlessDbContextOptions
     /// </summary>
     public HeadlessDbContextOptions()
     {
-        AddSaveEntryProcessor<HeadlessEntitySaveEntryProcessor>(ServiceLifetime.Singleton);
-        AddSaveEntryProcessor<HeadlessAuditSaveEntryProcessor>(ServiceLifetime.Singleton);
-        AddSaveEntryProcessor<HeadlessLocalEventSaveEntryProcessor>(ServiceLifetime.Singleton);
-        AddSaveEntryProcessor<HeadlessMessageCollectorSaveEntryProcessor>(ServiceLifetime.Singleton);
+        foreach (var type in _BuiltInProcessorTypes)
+        {
+            _InsertSaveEntryProcessor(new(type, ServiceLifetime.Singleton));
+        }
     }
 
     /// <summary>
@@ -93,11 +104,21 @@ public sealed class HeadlessDbContextOptions
         }
     }
 
-    internal IReadOnlyList<IHeadlessSaveEntryProcessor> ResolveSaveEntryProcessors(IServiceProvider serviceProvider)
+    /// <summary>
+    /// Whether the chain holds only the framework's processors, which write every stamp through the change tracker.
+    /// A consumer processor may write CLR members that only a change-detection pass reveals.
+    /// </summary>
+    internal bool HasOnlyBuiltInSaveEntryProcessors =>
+        _saveEntryProcessors.TrueForAll(static x => Array.IndexOf(_BuiltInProcessorTypes, x.ImplementationType) >= 0);
+
+    internal IHeadlessSaveEntryProcessor[] ResolveSaveEntryProcessors(IServiceProvider serviceProvider)
     {
-        return _saveEntryProcessors
-            .Select(x => (IHeadlessSaveEntryProcessor)serviceProvider.GetRequiredService(x.ImplementationType))
-            .ToArray();
+        return
+        [
+            .. _saveEntryProcessors.Select(x =>
+                (IHeadlessSaveEntryProcessor)serviceProvider.GetRequiredService(x.ImplementationType)
+            ),
+        ];
     }
 
     private void _InsertSaveEntryProcessor(SaveEntryProcessorRegistration registration)

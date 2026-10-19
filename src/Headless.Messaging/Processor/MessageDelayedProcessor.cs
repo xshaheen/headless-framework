@@ -130,7 +130,7 @@ internal sealed class MessageDelayedProcessor(
 internal static partial class MessageDelayedProcessorLog
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 124,
         EventName = "GetDelayedMessagesFailed",
         Level = LogLevel.Warning,
         Message = "Get delayed messages from storage failed. Retrying..."
@@ -138,7 +138,7 @@ internal static partial class MessageDelayedProcessorLog
     public static partial void LogGetDelayedMessagesFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
-        EventId = 2,
+        EventId = 127,
         EventName = "ScheduleDelayedMessageFailed",
         Level = LogLevel.Error,
         Message = "Schedule delayed message failed!"

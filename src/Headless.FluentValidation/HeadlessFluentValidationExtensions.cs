@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation.Results;
+using Headless.Checks;
 using Headless.Primitives;
 
 namespace FluentValidation;
@@ -13,23 +14,39 @@ public static class HeadlessFluentValidationExtensions
     /// Applies an <see cref="ErrorDescriptor"/> to the rule, setting the error code, error message,
     /// and severity in a single call.
     /// </summary>
+    /// <remarks>
+    /// The factory is called again for every failure, so a description read from a localized resource follows the
+    /// culture of the request being validated. Validators are commonly registered as singletons and built once, so
+    /// a description captured at construction would answer every later request in the language of the first. The
+    /// code and severity are read once, when the rule is built, and must not depend on the culture.
+    /// </remarks>
     /// <typeparam name="T">The type being validated.</typeparam>
     /// <typeparam name="TProperty">The property type being validated.</typeparam>
     /// <param name="rule">The rule builder options to configure.</param>
-    /// <param name="errorDescriptor">The descriptor whose code and description are applied to the rule.</param>
+    /// <param name="errorDescriptorFactory">
+    /// Creates the descriptor whose code, description, and severity are applied to the rule, for example a describer
+    /// method group such as <c>FluentValidatorErrorDescriber.Strings.InvalidSlug</c>.
+    /// </param>
     /// <returns>The same rule builder options for chaining.</returns>
     public static IRuleBuilderOptions<T, TProperty> WithErrorDescriptor<T, TProperty>(
         this IRuleBuilderOptions<T, TProperty> rule,
-        ErrorDescriptor errorDescriptor
+        Func<ErrorDescriptor> errorDescriptorFactory
     )
     {
-        var description = string.IsNullOrWhiteSpace(errorDescriptor.Description)
-            ? errorDescriptor.Code
-            : errorDescriptor.Description;
+        Argument.IsNotNull(errorDescriptorFactory);
+
+        var errorDescriptor = errorDescriptorFactory();
 
         return rule.WithErrorCode(errorDescriptor.Code)
-            .WithMessage(description)
+            .WithMessage(_ => _Describe(errorDescriptorFactory()))
             .WithSeverity(errorDescriptor.Severity.ToSeverity());
+    }
+
+    private static string _Describe(ErrorDescriptor errorDescriptor)
+    {
+        return string.IsNullOrWhiteSpace(errorDescriptor.Description)
+            ? errorDescriptor.Code
+            : errorDescriptor.Description;
     }
 
     /// <summary>Converts a FluentValidation <see cref="ValidationSeverity"/> to the Headless <see cref="Severity"/> equivalent.</summary>

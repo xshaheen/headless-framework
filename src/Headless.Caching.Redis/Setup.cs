@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace Headless.Caching;
 
@@ -21,7 +22,8 @@ public static class SetupRedisCache
         /// <summary>
         /// Uses the Redis cache as the default (unkeyed) <see cref="ICache"/> and <see cref="IRemoteCache"/>.
         /// Also registers the <see cref="CacheConstants.RemoteCacheProvider"/> role key and the Lua scripts
-        /// preload initializer. <see cref="RedisCacheOptions.ConnectionMultiplexer"/> is required.
+        /// preload initializer. <see cref="RedisCacheOptions.ConnectionMultiplexer"/> defaults to the registered
+        /// <see cref="IConnectionMultiplexer"/>.
         /// </summary>
         /// <param name="setupAction">Configuration action for <see cref="RedisCacheOptions"/>.</param>
         /// <returns>The setup builder for chaining.</returns>
@@ -65,8 +67,8 @@ public static class SetupRedisCache
 
         /// <summary>
         /// Uses the Redis cache as the default (unkeyed) <see cref="ICache"/>, binding
-        /// <see cref="RedisCacheOptions"/> from configuration. The multiplexer must still be supplied
-        /// (for example through an additional <c>Configure</c> call), as it cannot be bound from configuration.
+        /// <see cref="RedisCacheOptions"/> from configuration. Configuration cannot bind the multiplexer, so it
+        /// comes from the registered <see cref="IConnectionMultiplexer"/>.
         /// </summary>
         /// <param name="configuration">The configuration section to bind.</param>
         /// <returns>The setup builder for chaining.</returns>
@@ -167,6 +169,7 @@ public static class SetupRedisCache
         // Surface the registered instance name on the headless.cache.name telemetry dimension (unless the user
         // set one explicitly). Runs after the user's configure action.
         services.PostConfigure<RedisCacheOptions>(name, options => options.CacheName ??= name);
+        services.AddOptions<RedisCacheOptions>(name).PostConfigure<IServiceProvider>(_UseRegisteredMultiplexer);
 
         var loaderKey = RedisCacheServiceKeys.NamedScriptsLoader(name);
         var initializerKey = RedisCacheServiceKeys.NamedScriptsInitializer(name);
@@ -236,6 +239,14 @@ public static class SetupRedisCache
         return services;
     }
 
+    private static void _UseRegisteredMultiplexer(RedisCacheOptions options, IServiceProvider services)
+    {
+        if (options.ConnectionMultiplexer is null && services.GetService<IConnectionMultiplexer>() is { } multiplexer)
+        {
+            options.ConnectionMultiplexer = multiplexer;
+        }
+    }
+
     private static IServiceCollection _AddSerializerCore(IServiceCollection services)
     {
         // Defensive: this package RESOLVES TimeProvider, so it must also guarantee one exists. Without this,
@@ -256,6 +267,7 @@ public static class SetupRedisCache
         _AddSerializerCore(services);
         services.AddCacheProvider();
 
+        services.AddOptions<RedisCacheOptions>().PostConfigure<IServiceProvider>(_UseRegisteredMultiplexer);
         services.AddSingletonOptionValue<RedisCacheOptions>();
         services.TryAddKeyedSingleton(
             RedisCacheServiceKeys.ScriptsLoader,

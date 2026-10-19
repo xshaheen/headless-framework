@@ -1288,6 +1288,7 @@ Read [dashboards.md](dashboards.md) for the shared authentication modes and prod
 
 - **Contract and lineage visibility**: function descriptors expose `ContractVersion`; time-job, cron-definition, and occurrence views show version, correlation, causation, and tenant fields. Occurrences show their own snapshotted function. Add/update forms submit the selected descriptor version, and request inspection reports an unsupported stored version before attempting deserialization. Live occurrence updates retain the same metadata.
 - **Embedded SPA**: served from the host process, no separate deployment.
+- **Hidden from application API documents**: every dashboard endpoint is excluded from API Explorer (`ExcludeFromDescription()`), because the dashboard runs in an `app.Map(basePath)` branch and a host's OpenAPI document would list its routes without the base path. The dashboard SPA is their only client.
 - **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(policy?)` (delegates to host app's auth), or explicit no-auth mode for isolated development dashboards.
 - **Safe host-auth handoff**: fragment-delivered access tokens are removed from the URL, then validated only after the SPA initializes the host authentication configuration.
 - **Predictable timestamp display**: explicit ISO UTC offsets are preserved, zone-less values are treated as UTC, and invalid values render empty instead of `NaN`.
@@ -1481,7 +1482,7 @@ Emits `JobsModule.g.cs` at compile time. The generated file:
 
 ### Health checks
 
-Jobs contributes readiness checks automatically; there is no `AddJobsHealthChecks()` call. Each carries the `ready`, `headless`, and `jobs` (`HeadlessHealthCheckTags.Jobs`) tags, follows the rules in [Health checks](utilities.md#health-checks), and is removed with `RemoveHealthChecks`.
+Jobs contributes readiness checks automatically; there is no `AddJobsHealthChecks()` call. Each carries the `ready`, `headless`, and `jobs` (`HeadlessHealthCheckTags.Jobs`) tags; `jobs` and `jobs-scheduler` also carry `host-state` (`HeadlessHealthCheckTags.HostState`), so the [`check` command](utilities.md#health-check-command) skips them before the host starts. Each follows the rules in [Health checks](utilities.md#health-checks), and is removed with `RemoveHealthChecks`.
 
 | Check | Registered when | Failure status | Fails when |
 | --- | --- | --- | --- |

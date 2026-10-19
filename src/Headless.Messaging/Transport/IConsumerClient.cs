@@ -110,6 +110,40 @@ public interface IConsumerClient : IAsyncDisposable
     ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Rejects the message so the broker hands it out again no sooner than <paramref name="redeliveryDelay"/>. The core
+    /// calls it for a delivery it could not take in, because its store failed or its consumer's circuit refused it, so
+    /// that delivery does not come straight back and spend the broker's delivery limit while the cause lasts.
+    /// </summary>
+    /// <remarks>
+    /// The default holds the delivery for <paramref name="redeliveryDelay"/> in real time, then calls
+    /// <see cref="RejectAsync(object?, CancellationToken)"/>. Override it when the broker can delay the redelivery itself,
+    /// such as with a NAK delay, a visibility timeout, a negative-acknowledge delay, or a pending-entry idle time, so the
+    /// delivery is released at once.
+    /// </remarks>
+    /// <param name="sender">
+    /// The transport-specific settlement token, exactly as passed to <see cref="OnMessageCallback"/>; see
+    /// <see cref="RejectAsync(object?, CancellationToken)"/>.
+    /// </param>
+    /// <param name="redeliveryDelay">The shortest time before the broker should deliver the message again.</param>
+    /// <param name="cancellationToken">
+    /// Ends the wait early, so a stopping host does not wait out the delay. The reject itself always runs, because
+    /// settlement is must-complete.
+    /// </param>
+    /// <returns>A task that represents the asynchronous reject operation.</returns>
+    ValueTask RejectAsync(object? sender, TimeSpan redeliveryDelay, CancellationToken cancellationToken)
+    {
+        // A default member cannot resolve the messaging back-off clock, so the hold waits real time; a test transport
+        // that steps through the delay overrides this member, as the in-memory transport does.
+        return RedeliveryBackoff.DelayThenRejectAsync(
+            this,
+            sender,
+            redeliveryDelay,
+            TimeProvider.System,
+            cancellationToken
+        );
+    }
+
+    /// <summary>
     /// Settles a message the core will never deliver to a consumer, such as one no consumer handles or one that cannot
     /// be read, by moving it to the broker's dead-letter destination with a reason. The core calls it after it recorded
     /// the message as poisoned on arrival.
@@ -158,7 +192,7 @@ public interface IConsumerClient : IAsyncDisposable
     /// <summary>
     /// Gets the callback invoked when a message is received from the broker. The second argument is
     /// the transport-specific settlement token to round-trip into <see cref="CommitAsync"/> or
-    /// <see cref="RejectAsync"/>. Attached via <see cref="AttachCallbacks"/>.
+    /// <see cref="RejectAsync(object?, CancellationToken)"/>. Attached via <see cref="AttachCallbacks"/>.
     /// </summary>
     Func<TransportMessage, object?, Task>? OnMessageCallback { get; }
 

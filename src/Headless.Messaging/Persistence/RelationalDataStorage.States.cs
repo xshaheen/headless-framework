@@ -422,7 +422,9 @@ internal sealed partial class RelationalDataStorage
     )
     {
         // Durable attempt reservation: the counter is a compare-and-set on the attempt the caller read, and only the
-        // live lease holder may move it.
+        // live lease holder may move it. The claim leased a whole batch at once and its rows run one after another, so
+        // the reservation also re-stamps the lease from the same clock reading: a row reserved late in the batch starts
+        // its attempt with a full lease instead of whatever the batch lease has left.
         var received = _IsReceived(table);
         var fence =
             $"{_terminalGuardWithRetries} AND {_Same(_t.LockedUntil, "LockedUntil")} AND {_Same(_t.Owner, "CurrentOwner")} AND {_t.LockedUntil} > {SqlDialectTokens.Now}";
@@ -431,13 +433,13 @@ internal sealed partial class RelationalDataStorage
             fence += $" AND {_InboxAttemptGuard(matchStorageId: true)}";
         }
 
-        return await _TransitionAsync(
+        var lease = await _TransitionAsync(
                 operation,
                 transaction: null,
                 table,
                 fence,
-                $"{_t.InlineAttempts}=@InlineAttempts",
-                [_t.Id],
+                $"{_t.InlineAttempts}=@InlineAttempts, {_t.LockedUntil}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "Lease")}",
+                [_t.LockedUntil, _t.Owner],
                 command =>
                 {
                     _dialect.AddParameter(command, "Id", SqlColumnType.Guid, message.StorageId);
@@ -451,16 +453,128 @@ internal sealed partial class RelationalDataStorage
                     );
                     _dialect.AddParameter(command, "LockedUntil", SqlColumnType.Timestamp, message.LockedUntil);
                     _dialect.AddParameter(command, "CurrentOwner", _ownerType, message.Owner);
+                    _dialect.AddDuration(command, "Lease", Options.RetryPolicy.DispatchTimeout);
 
                     if (received)
                     {
                         _BindInboxAttempt(command, message.InboxAttemptFence, matchStorageId: true);
                     }
                 },
-                _ReadAppliedAsync,
+                (reader, ct) => _ReadLeaseAsync(reader, readsAttempt: false, ct),
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        if (lease is not { } stored)
+        {
+            return false;
+        }
+
+        _AdoptLease(message, stored.LockedUntil, stored.Owner);
+        return true;
+    }
+
+    public ValueTask<bool> RenewPublishLeaseAsync(
+        MediumMessage message,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken
+    )
+    {
+        return _RenewLeaseAsync(
+            "messaging.renew_publish_lease",
+            _publishedTable,
+            message,
+            leaseDuration,
+            cancellationToken
+        );
+    }
+
+    public ValueTask<bool> RenewReceiveLeaseAsync(
+        MediumMessage message,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken
+    )
+    {
+        return _RenewLeaseAsync(
+            "messaging.renew_receive_lease",
+            _receivedTable,
+            message,
+            leaseDuration,
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// Slides a held lease forward while its attempt runs. Fenced on the exact lease generation the caller holds and on
+    /// that lease still being live, and stamped from the same database-clock reading, so a renewal can never revive a
+    /// lease that lapsed or take one another node now holds.
+    /// </summary>
+    private async ValueTask<bool> _RenewLeaseAsync(
+        string operation,
+        string table,
+        MediumMessage message,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken
+    )
+    {
+        if (message.LockedUntil is null)
+        {
+            return false;
+        }
+
+        var received = _IsReceived(table);
+        var fence =
+            $"{_terminalGuard} AND {_t.LockedUntil}=@LockedUntil AND {_Same(_t.Owner, "CurrentOwner")} AND {_t.LockedUntil} > {SqlDialectTokens.Now}";
+        if (received)
+        {
+            fence += $" AND {_InboxAttemptGuard(matchStorageId: true)}";
+        }
+
+        var lease = await _TransitionAsync(
+                operation,
+                transaction: null,
+                table,
+                fence,
+                $"{_t.LockedUntil}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "Lease")}",
+                [_t.LockedUntil, _t.Owner],
+                command =>
+                {
+                    _dialect.AddParameter(command, "Id", SqlColumnType.Guid, message.StorageId);
+                    _dialect.AddParameter(command, "LockedUntil", SqlColumnType.Timestamp, message.LockedUntil);
+                    _dialect.AddParameter(command, "CurrentOwner", _ownerType, message.Owner);
+                    _dialect.AddDuration(command, "Lease", leaseDuration);
+
+                    if (received)
+                    {
+                        _BindInboxAttempt(command, message.InboxAttemptFence, matchStorageId: true);
+                    }
+                },
+                (reader, ct) => _ReadLeaseAsync(reader, readsAttempt: false, ct),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (lease is not { } stored)
+        {
+            return false;
+        }
+
+        _AdoptLease(message, stored.LockedUntil, stored.Owner);
+        return true;
+    }
+
+    /// <summary>
+    /// Copies a re-stamped lease onto the caller's message, inbox attempt fence included, so every later fenced write
+    /// matches the durable row.
+    /// </summary>
+    private static void _AdoptLease(MediumMessage message, DateTimeOffset lockedUntil, string? owner)
+    {
+        message.LockedUntil = lockedUntil;
+        message.Owner = owner;
+        if (message.InboxAttemptFence is { } fence)
+        {
+            message.InboxAttemptFence = fence with { LockedUntil = lockedUntil, Owner = owner };
+        }
     }
 
     /// <summary>

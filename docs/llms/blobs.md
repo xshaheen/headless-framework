@@ -50,7 +50,7 @@ The default store registers as a plain (unkeyed) `IBlobStorage` singleton; named
 - Bulk operations return `IReadOnlyList<BlobBulkResult>` — each item carries the raw `Container` + `Path`, an optional validated `Location`, and a `Result<bool, Exception>` (`Ok(true)` success, `Ok(false)` not-found for delete, `Fail(ex)` on error). Invalid per-entry paths return `Location: null` but still preserve raw identity. Correlate by identity, not position; a per-entry failure does not abort the batch.
 - Always dispose the result of `OpenReadStreamAsync()` (a `BlobDownloadResult`) promptly with `await using` — holding it may exhaust connection pools or SFTP pool slots.
 - Non-seekable upload streams are handled per-provider, not uniformly: AWS/R2 stream them through a pooled multipart upload (S3 assembles the parts, so no whole-content buffer exists); Redis buffers to memory under its cap; Azure, FileSystem, and SFTP stream through. Seekable streams are always rewound to position 0 first.
-- Redis blob storage (`Blobs.Redis`) is for small blobs only (metadata, thumbnails, temporary uploads); the default `MaxBlobSizeBytes` is 10 MB. For large files use S3 or Azure. The `UseRedis(IConfiguration)` overload cannot bind the required `IConnectionMultiplexer` property — use the `Action<RedisBlobStorageOptions>` overload to set it.
+- Redis blob storage (`Blobs.Redis`) is for small blobs only (metadata, thumbnails, temporary uploads); the default `MaxBlobSizeBytes` is 10 MB. For large files use S3 or Azure. Configuration cannot bind its `IConnectionMultiplexer` property, so an unset `ConnectionMultiplexer` falls back to the registered `IConnectionMultiplexer`.
 - A default store is optional and there is at most one (injected as plain `IBlobStorage`); a named-only configuration is valid and leaves plain `IBlobStorage` unregistered. The same provider may back multiple named stores with isolated config. Resolve named stores with `IBlobStorageProvider.GetStorage("name")` or `[FromKeyedServices("name")] IBlobStorage`. Calling `AddHeadlessBlobs` more than once on the same service collection throws.
 - In a multi-tenant host, install `Headless.Blobs.MultiTenancy` and scope blobs by tenant with `builder.AddHeadlessTenancy(t => t.Blobs(b => b.ScopeByTenant()))` rather than building tenant ids into paths by hand. It wraps every store registered through `AddHeadlessBlobs`, rewrites each location with the ambient tenant (default: `avatars:acme/1.png` for `BlobLocation("avatars", "1.png")`), and refuses an operation with no ambient tenant (`MissingTenantContextException`). Keep blobs every tenant shares in a named store listed in `TenantBlobScopingOptions.UnscopedStores`, and run cross-tenant work inside `currentTenant.Change(tenantId)`. See [Tenant scoping](#tenant-scoping).
 
@@ -857,19 +857,19 @@ dotnet add package Headless.Blobs.Redis
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// The IConnectionMultiplexer must be set in code — it cannot be bound from appsettings.json.
-builder.Services.AddHeadlessBlobs(blobs =>
-    blobs.UseRedis(options => options.ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost:6379"))
-);
+builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect("localhost:6379"));
+
+// ConnectionMultiplexer is left unset, so the store uses the registered IConnectionMultiplexer.
+builder.Services.AddHeadlessBlobs(blobs => blobs.UseRedis(options => options.MaxBlobSizeBytes = 5 * 1024 * 1024));
 ```
 
 ### Configuration
 
-`RedisBlobStorageOptions` requires an `IConnectionMultiplexer` instance. The `UseRedis(IConfiguration)` overload cannot bind this interface property — options validation fails at startup if `ConnectionMultiplexer` is not set via the `Action<RedisBlobStorageOptions>` overload.
+`RedisBlobStorageOptions` needs an `IConnectionMultiplexer`. Set `ConnectionMultiplexer` to give the store its own connection; left unset, every `UseRedis` shape, including `UseRedis(IConfiguration)`, uses the registered `IConnectionMultiplexer`. Options validation fails at startup when neither exists.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `ConnectionMultiplexer` | *(required)* | `IConnectionMultiplexer` instance for Redis. |
+| `ConnectionMultiplexer` | the registered `IConnectionMultiplexer` | `IConnectionMultiplexer` instance for Redis. |
 | `MaxBlobSizeBytes` | 10 MB | Maximum blob size in bytes. Set to `0` to disable the limit. |
 | `MaxBulkParallelism` | 10 | Maximum parallelism for bulk operations. |
 

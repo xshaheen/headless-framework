@@ -25,6 +25,7 @@ namespace Headless.Primitives;
 
 [UnderlyingPrimitiveType(typeof(bool))]
 [global::System.Diagnostics.DebuggerDisplay("{_value}")]
+[global::System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1036:Override methods on comparable types", Justification = "Primitives are sortable through IComparable; ordering operators are generated only for numeric, char, and date/time types.")]
 [global::System.Text.Json.Serialization.JsonConverter(typeof(BoolPrimitiveJsonConverter))]
 [global::System.ComponentModel.TypeConverter(typeof(BoolPrimitiveTypeConverter))]
 public readonly partial struct BoolPrimitive : global::System.IEquatable<BoolPrimitive>
