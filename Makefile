@@ -148,14 +148,19 @@ PROOF = $(PYTHON) scripts/proof.py
 # bundle.
 PROOF_KEEP ?= 3
 # Heavy gates share one machine with every other worktree and session, so each one runs its recipe (the gated-<name>
-# target) only while it holds one of GATE_SLOTS machine-wide slots; scripts/gate-slot.py waits for a free slot and
-# names who holds each busy one. GATE_SLOTS=0 skips the limit, and a gate nested in another holds no second slot.
+# target) only while it holds a machine-wide slot; scripts/gate-slot.py waits for a free slot and names who holds
+# each busy one. Build-and-unit gates share GATE_SLOTS slots. test-affected-integration takes one of
+# GATE_INTEGRATION_SLOTS instead: TEST_MAX_PARALLEL stays at 3 because six integration modules at once broke
+# timing-sensitive suites, and two integration gates side by side would be six. GATE_SLOTS=0 skips every limit, and
+# a gate nested in another holds no second slot.
 GATE_SLOTS ?= 2
-export GATE_SLOTS
+GATE_INTEGRATION_SLOTS ?= 1
+export GATE_SLOTS GATE_INTEGRATION_SLOTS
 # $(MAKE) stays in each recipe line, not in these variables, so `make -n` still runs the sub-make and prints the recipe.
 GATE_SLOT = $(PYTHON) scripts/gate-slot.py --label '$@ in $(CURDIR)' --
+GATE_SLOT_INTEGRATION = $(PYTHON) scripts/gate-slot.py --pool integration --label '$@ in $(CURDIR)' --
 # A benchmark's timings mean nothing beside another gate, so it waits for the whole machine.
-GATE_SLOT_EXCLUSIVE = $(PYTHON) scripts/gate-slot.py --exclusive --label '$@ in $(CURDIR)' --
+GATE_SLOT_EXCLUSIVE = $(PYTHON) scripts/gate-slot.py --exclusive --pool gate --pool integration --label '$@ in $(CURDIR)' --
 # One timestamp per make invocation, so every stage of a target writes into the same bundle.
 PROOF_RUN := $(ARTIFACTS_DIR)/proof/$(shell date -u +%Y%m%dT%H%M%SZ)
 # Coverage costs ~0.4 s per test module plus a merge (~20 s on a whole-solution run), so the inner loop skips
@@ -964,7 +969,7 @@ gated-test-affected:
 # the affected integration suites, both with coverage, and holds those packages' changed lines to the floors. With no
 # such package edited (a build-wide change, say) it runs the integration suites without coverage, which costs less.
 test-affected-integration: ## Build the affected set, run its integration tests, and gate the changed lines of edited packages that own an integration project on merged unit + integration coverage (needs Docker; local only).
-	@$(GATE_SLOT) $(MAKE) --no-print-directory gated-$@
+	@$(GATE_SLOT_INTEGRATION) $(MAKE) --no-print-directory gated-$@
 
 .PHONY: gated-test-affected-integration
 gated-test-affected-integration:
