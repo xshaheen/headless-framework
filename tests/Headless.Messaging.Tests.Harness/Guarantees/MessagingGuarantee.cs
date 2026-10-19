@@ -658,12 +658,7 @@ public static class MessagingGuarantees
             GuaranteeArea.Observability,
             realSystem: false,
             "Log event IDs are unique across the messaging assemblies."
-        ) with
-        {
-            Status = GuaranteeStatus.Unsupported,
-            Rationale = "Eleven event IDs in Headless.Messaging are each declared for two different events.",
-            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1281",
-        },
+        ),
     ];
 
     /// <summary>Returns the catalogued guarantee with <paramref name="id"/>, or <see langword="null"/>.</summary>
