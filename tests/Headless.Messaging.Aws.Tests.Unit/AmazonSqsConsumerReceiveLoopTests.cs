@@ -191,6 +191,40 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("handler failed");
     }
 
+    [Fact]
+    public async Task should_give_back_messages_a_long_poll_returns_after_the_consumer_paused()
+    {
+        // given: a long poll is in flight when the consumer pauses, and returns a message only after the pause
+        var inFlightPoll = new TaskCompletionSource<ReceiveMessageResponse>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        _sqs.ReceiveMessageAsync(
+                Arg.Is<ReceiveMessageRequest>(request => request.QueueUrl == _BusyUrl),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ =>
+            {
+                _polls.AddOrUpdate(_BusyUrl, 1, static (_, count) => count + 1);
+                return inFlightPoll.Task;
+            });
+        await using var client = _CreateClient(concurrency: 1, _BusyUrl);
+        client.OnMessageCallback = _CommitAndRecord(client);
+        using var cts = new CancellationTokenSource();
+        var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
+        await _WaitForPollAsync(_BusyUrl);
+        await client.PauseAsync(AbortToken);
+
+        // when
+        inFlightPoll.SetResult(new ReceiveMessageResponse { Messages = [_Message("late-1")] });
+
+        // then: the message goes back to the queue at once instead of reaching the handler
+        await _WaitForVisibilityResetAsync("late-1");
+        _handled.Should().BeEmpty();
+
+        await cts.CancelAsync();
+        await _IgnoreCancellationAsync(listening);
+    }
+
     private Func<TransportMessage, object?, Task> _CommitAndRecord(AmazonSqsConsumerClient client)
     {
         return async (message, sender) =>
@@ -280,6 +314,22 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
         }
 
         _handled.Count.Should().BeGreaterThanOrEqualTo(count, "the messages are handled without waiting for a poll");
+    }
+
+    private async Task _WaitForVisibilityResetAsync(string receiptHandle)
+    {
+        bool released() =>
+            _sqs.ReceivedCalls()
+                .Where(call => call.GetMethodInfo().Name == nameof(IAmazonSQS.ChangeMessageVisibilityBatchAsync))
+                .SelectMany(call => (List<ChangeMessageVisibilityBatchRequestEntry>)call.GetArguments()[1]!)
+                .Any(entry => entry.ReceiptHandle == receiptHandle && entry.VisibilityTimeout == 0);
+
+        for (var i = 0; i < 500 && !released(); i++)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken);
+        }
+
+        released().Should().BeTrue("a paused consumer hands a late-arriving message back to the queue");
     }
 
     private async Task _WaitForPollAsync(string queueUrl, int count = 1)
