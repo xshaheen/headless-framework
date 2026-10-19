@@ -203,13 +203,18 @@ AFFECTED_INTEGRATION_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$
 		$(COVERAGE_ARGS_FN) \
 		$(PROOF) run --dir "$$run" --name integration-tests -- $(DOTNET) test --solution "$$run/integration.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/integration-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
 	else printf '\033[33m[affected]\033[0m no integration-test project covers the affected set; nothing ran.\n'; fi;
-# One merged report over whichever suites ran, so the gate reads a line as covered when any test reached it.
+# One merged report over whichever suites ran, so the gate reads a line as covered when any test reached it. MTP
+# writes each module's report at the results root and the TRX reporter copies it under _<machine>_<time>/In/, so the
+# merge reads the root copies only. After a successful merge the per-module reports go: the summary reads the merged
+# report, and the per-module copies were ~85% of an integration bundle (650 of 766 MB). A failed merge keeps them.
 AFFECTED_COVERAGE_MERGE_STAGE = reports=(); \
 	for suite in unit-tests integration-tests; do \
-		if [ -n "$$(find "$$run/$$suite" -name '*.cobertura.xml' -print -quit 2>/dev/null)" ]; then reports+=("$$run/$$suite/**/*.cobertura.xml"); fi; \
+		if [ -n "$$(find "$$run/$$suite" -maxdepth 1 -name '*.cobertura.xml' -print -quit 2>/dev/null)" ]; then reports+=("$$run/$$suite/*.cobertura.xml"); fi; \
 	done; \
 	if [ $${\#reports[@]} -gt 0 ]; then \
-		$(PROOF) run --dir "$$run" --name coverage-merge -- $(DOTNET) dotnet-coverage merge --nologo --output "$$run/coverage/merged.cobertura.xml" --output-format cobertura "$${reports[@]}" || status=1; \
+		if $(PROOF) run --dir "$$run" --name coverage-merge -- $(DOTNET) dotnet-coverage merge --nologo --output "$$run/coverage/merged.cobertura.xml" --output-format cobertura "$${reports[@]}"; then \
+			find "$$run/unit-tests" "$$run/integration-tests" -name '*.cobertura.xml' -delete 2>/dev/null || true; \
+		else status=1; fi; \
 	fi;
 # The pre-commit hook rewrites staged C# with CSharpier, so a proof that skipped formatting proved bytes the commit
 # then changed. The format stage checks the same changed files format-check-changed does, and fails the bundle
