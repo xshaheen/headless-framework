@@ -393,13 +393,7 @@ public static class MessagingGuarantees
             GuaranteeArea.CircuitBreaker,
             realSystem: false,
             "An open circuit pauses every client of its consumer identity and lane, and a client added while it half-opens ends resumed."
-        ) with
-        {
-            Status = GuaranteeStatus.Unsupported,
-            Rationale =
-                "SubscriptionHandle.AddClientAsync applies the pause it read outside the circuit's apply gate, so a client added while the circuit half-opens stays paused after the resume.",
-            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1244",
-        },
+        ),
         _Bound(
             "MSG-CB-04",
             GuaranteeArea.CircuitBreaker,

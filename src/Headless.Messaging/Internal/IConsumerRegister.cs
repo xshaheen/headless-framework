@@ -1536,15 +1536,35 @@ internal sealed partial class ConsumerRegister(
                 return;
             }
 
-            if (shouldPause)
+            // The client is already in the list, so a circuit transition that runs while its pause is in flight reaches
+            // it, and a resume can complete before that pause does. Applying only the state read above would then leave
+            // the client paused under a resumed circuit, so re-read the state after each change until it holds still;
+            // the last change always follows the last transition's own call on this client.
+            var applied = false;
+            while (shouldPause != applied)
             {
                 try
                 {
-                    await client.PauseAsync().ConfigureAwait(false);
+                    if (shouldPause)
+                    {
+                        await client.PauseAsync().ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await client.ResumeAsync().ConfigureAwait(false);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogPauseNewlyAddedClientFailed(ex, SubscriptionName);
+                    if (shouldPause)
+                    {
+                        Logger.LogPauseNewlyAddedClientFailed(ex, SubscriptionName);
+                    }
+                    else
+                    {
+                        Logger.ResumeConsumerClientFailed(ex, SubscriptionName);
+                    }
+
                     lock (_clientsLock)
                     {
                         _clients.Remove(client);
@@ -1552,6 +1572,18 @@ internal sealed partial class ConsumerRegister(
 
                     await client.DisposeAsync().ConfigureAwait(false);
                     throw;
+                }
+
+                applied = shouldPause;
+
+                lock (_clientsLock)
+                {
+                    if (_disposing)
+                    {
+                        return;
+                    }
+
+                    shouldPause = _isPaused;
                 }
             }
         }

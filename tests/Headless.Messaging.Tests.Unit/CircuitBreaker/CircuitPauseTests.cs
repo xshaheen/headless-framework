@@ -15,6 +15,7 @@ namespace Tests.CircuitBreaker;
 public sealed class CircuitPauseTests : TestBase
 {
     private const string _OrderId = "order-1";
+    private const string _NextOrderId = "order-2";
     private static readonly TimeSpan _OpenDuration = TimeSpan.FromMinutes(2);
 
     // The transport check runs every 30 seconds; a little more than one interval covers the next check.
@@ -46,8 +47,6 @@ public sealed class CircuitPauseTests : TestBase
     [Guarantee("MSG-CB-03")]
     public async Task should_end_a_client_added_while_the_circuit_is_open_resumed_when_the_circuit_half_opens()
     {
-        MessagingGuarantees.RequireSupport("MSG-CB-03");
-
         // given: an open circuit holding the subscription's one client
         var probe = new PipelineProbe { Behavior = _FailFirstAttempt };
         await using var host = await PipelineHosts.StartAsync(probe, AbortToken, static setup => _Configure(setup, 1));
@@ -71,8 +70,12 @@ public sealed class CircuitPauseTests : TestBase
         );
         host.Broker.Faults.ReleaseHeldPauses();
 
-        // then: the rebuilt client ends resumed, as the half-open circuit expects
-        await host.WaitUntilAsync(() => host.Broker.ClientsOf(subscription) is [{ IsPaused: false }], AbortToken);
+        // then: the rebuilt client ends resumed, as the half-open circuit expects, so it takes the next delivery. The
+        // delivery is the signal to wait on: the client joins its broker group without a broker event, so a wait on
+        // its pause state alone can wake before the client is listed and never wake again.
+        await host.EnqueueAsync(_NextOrderId, AbortToken);
+        await host.WithinBoundAsync(probe.WhenCompletedAsync(_NextOrderId, 1), AbortToken);
+        host.Broker.ClientsOf(subscription).Should().ContainSingle().Which.IsPaused.Should().BeFalse();
     }
 
     private static void _Configure(MessagingSetupBuilder setup, int clients)
@@ -87,5 +90,7 @@ public sealed class CircuitPauseTests : TestBase
         host.Broker.SubscriptionsFor(MessageLane.Queue, PipelineOrder.Name).Should().ContainSingle().Subject;
 
     private static ValueTask _FailFirstAttempt(string id, int attempt, CancellationToken cancellationToken) =>
-        attempt == 1 ? throw new TimeoutException("The dependency timed out.") : ValueTask.CompletedTask;
+        string.Equals(id, _OrderId, StringComparison.Ordinal) && attempt == 1
+            ? throw new TimeoutException("The dependency timed out.")
+            : ValueTask.CompletedTask;
 }
