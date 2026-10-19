@@ -30,7 +30,7 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
 
         var initializer = host
             .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .Single(x => x is IHostedLifecycleService);
+            .Single(x => x is HostedInitializer);
         initializer.IsInitialized.Should().BeFalse();
 
         // The schema runner names the features whose connection failed and keeps the driver error as the cause.
@@ -62,7 +62,7 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
             hosts
                 .Select(h =>
                     h.Services.GetRequiredService<IEnumerable<IInitializer>>()
-                        .Single(x => x is IHostedLifecycleService)
+                        .Single(x => x is HostedInitializer)
                         .IsInitialized
                 )
                 .Should()

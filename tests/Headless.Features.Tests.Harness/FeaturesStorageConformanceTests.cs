@@ -105,7 +105,7 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
         await host.StartAsync(AbortToken);
         var initializer = host
             .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .Single(x => x is IHostedLifecycleService);
+            .Single(x => x is HostedInitializer);
         var valueRepository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
         var definitionRepository = host.Services.GetRequiredService<IFeatureDefinitionRecordRepository>();
         var record = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "true", "Edition", "pro");

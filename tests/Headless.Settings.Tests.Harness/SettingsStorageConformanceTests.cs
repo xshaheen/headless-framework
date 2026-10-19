@@ -99,7 +99,7 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
         await host.StartAsync(AbortToken);
         var initializer = host
             .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .Single(x => x is IHostedLifecycleService);
+            .Single(x => x is HostedInitializer);
         var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
         var record = new SettingValueRecord(Guid.NewGuid(), "Theme", "Dark", "Global");
         await repository.InsertAsync(record, AbortToken);

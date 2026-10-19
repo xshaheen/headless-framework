@@ -30,7 +30,7 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
         await host.StartAsync(AbortToken);
         var initializer = host
             .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .Single(x => x is IHostedLifecycleService);
+            .Single(x => x is HostedInitializer);
         var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
         var definitionRepository = host.Services.GetRequiredService<IPermissionDefinitionRecordRepository>();
         var record = new PermissionGrantRecord(Guid.NewGuid(), "Users.Create", "Role", "admin", isGranted: true);
