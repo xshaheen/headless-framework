@@ -187,3 +187,9 @@ Consumers and their agents read `docs/llms/`, so a package change is not done un
 - Adds or removes a configuration option.
 
 The "Change routing" table in [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md#change-routing) lists every file each kind of change touches. For example, an added package also touches `README.md`, `README.ar.md`, and `eng/expected-packages.txt`. Internal refactors and perf-only, test-only, or formatting changes need no docs update.
+
+## Pull requests
+
+- **Fill the template's Review guide first.** `.github/PULL_REQUEST_TEMPLATE.md` opens with the decisions the reviewer must make, each linked to its hunk, then what is safe to skim and where you are least sure. A reviewer reads that and the hunks it points to, not every line. Keep the visible text under ~400 words (~700 for a large PR); proof summaries and branch history go in collapsed blocks.
+- **Split by kind of change.** Package deletions, renames, lockfiles, and generated code go in their own PR, stacked under the behavior change, so the behavior change reads on its own.
+- **This repository is public.** A title, description, commit message, or comment never names a private repository, a client or consumer app, or a local path such as an agent's scratch folder. Write "a consumer app" and state the fact: the call, the input, and the wrong result.
