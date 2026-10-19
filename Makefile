@@ -142,6 +142,10 @@ SOLUTION_PROJECTS = sed -n 's/.*<Project Path="\([^"]*\)".*/\1/p' "$(SOLUTION)" 
 PYTHON ?= python3
 GRAPH = $(PYTHON) scripts/project-graph.py
 PROOF = $(PYTHON) scripts/proof.py
+# Each proof target keeps the newest PROOF_KEEP bundles of its own kind (-verify, -integration, ...), counting the one
+# it starts, and deletes the older ones; nothing else ever removed a bundle, and one worktree had 52 of them (22 GB).
+# test-failed reads the newest -verify or -test bundle, which is always kept. PROOF_KEEP=0 keeps every bundle.
+PROOF_KEEP ?= 3
 # Heavy gates share one machine with every other worktree and session, so each one runs its recipe (the gated-<name>
 # target) only while it holds one of GATE_SLOTS machine-wide slots; scripts/gate-slot.py waits for a free slot and
 # names who holds each busy one. GATE_SLOTS=0 skips the limit, and a gate nested in another holds no second slot.
@@ -174,22 +178,22 @@ COVERAGE_ARGS_FN = coverage_args=(); \
 		settings="$$($(DOTNET) msbuild "$(COVERAGE_SETTINGS_PROJECT)" -getProperty:HeadlessCoverageSettingsPath -nologo -v:quiet)"; \
 		coverage_args=(--coverage --coverage-output-format cobertura --coverage-settings "$$settings"); \
 	fi;
-# `dotnet format` spends ~10 s loading a solution filter before it analyzes anything (measured: 16 s
-# through a one-project filter, 6 s on the project file), but one load per project does not scale.
-# Up to this many changed projects it runs per project file; above it, once over the filter.
-FORMAT_PER_PROJECT_MAX ?= 2
+# The proof builds pass eng/ProofErrorLog.targets, so every compile writes its diagnostics, info level included, to
+# obj/<configuration>/<tfm>/analyzers.sarif. The analyzer stage reads the changed projects' logs instead of compiling
+# them again under `dotnet format analyzers` (which spent ~10 s loading a solution filter before analyzing anything,
+# and a 74 s median per verify-affected run); a project whose log is older than its assembly, because something built
+# it since without the log, falls back to `dotnet format analyzers` on that project.
+# RunAnalyzers=true because the stage trusts these logs: a build under the SDK's local RunAnalyzersDuringBuild=false
+# opt-out would still write a log, empty of analyzer results, and the stage would pass on it.
+PROOF_ERROR_LOG_ARGS = -p:CustomAfterMicrosoftCommonTargets="$(CURDIR)/eng/ProofErrorLog.targets" -p:RunAnalyzers=true
 AFFECTED_ANALYZER_STAGE = if [ -s "$$run/changed.txt" ]; then \
-		Configuration="$(CONFIGURATION)" $(PROOF) run --dir "$$run" --name analyzers -- bash -c ' \
-			run="$$1"; shift; worst=0; \
-			if [ "$$(wc -l < "$$run/changed.txt")" -le $(FORMAT_PER_PROJECT_MAX) ]; then \
-				i=0; while IFS= read -r project; do i=$$((i + 1)); \
-					$(DOTNET) format analyzers "$$project" "$$@" --report "$$run/analyzers/$$i" || { rc=$$?; [ $$rc -gt $$worst ] && worst=$$rc; }; \
-				done < "$$run/changed.txt"; \
-			else $(DOTNET) format analyzers "$$run/changed.slnf" "$$@" --report "$$run/analyzers" || worst=$$?; fi; \
-			exit $$worst' bash "$$run" --no-restore --verify-no-changes --severity "$(QUALITY_SEVERITY)" -v minimal $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),) || true; \
+		Configuration="$(CONFIGURATION)" $(PROOF) run --dir "$$run" --name analyzers -- $(PYTHON) scripts/proof.py analyzers --dir "$$run" --configuration "$(CONFIGURATION)" \
+			--severity "$(QUALITY_SEVERITY)" $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),) \
+			-- $(DOTNET) format analyzers --no-restore --verify-no-changes --severity "$(QUALITY_SEVERITY)" -v minimal $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),) || true; \
 	fi;
 AFFECTED_PREPARE = $(ASSERT_RESTORED); $(MARK_RESTORED); prepare() { \
 	git rev-parse --verify -q "$(AFFECTED_BASE)^{commit}" >/dev/null || { printf 'ERROR: AFFECTED_BASE=%s does not resolve to a commit. Fetch it, or pass AFFECTED_BASE=<ref>.\n' "$(AFFECTED_BASE)" >&2; return 2; }; \
+	$(PROOF) prune --root "$${1%/*}" --keep "$(PROOF_KEEP)" --starting "$$1"; \
 	rm -rf "$$1"; $(GRAPH) affected --base "$(AFFECTED_BASE)" $(AFFECTED_SCOPE_ARGS) --out-dir "$$1"; }; prepare
 # Restore is asserted, not repeated: the solution-filter restore runs only when a selected project's
 # assets are missing or older than Directory.Packages.props or its lock file.
@@ -200,7 +204,7 @@ AFFECTED_BUILD_STAGES = if [ -s "$$run/build.txt" ]; then \
 				while IFS= read -r project; do mark_restored "$$project"; done < "$$run/build.txt"; \
 			else status=1; fi; \
 		fi; \
-		$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/build.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo $(MSBUILD_ARGS) || status=1; \
+		$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/build.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo $(PROOF_ERROR_LOG_ARGS) $(MSBUILD_ARGS) || status=1; \
 	fi;
 # An analyzer finding sends the change back for an edit, and that edit re-runs every suite, so the integration gate
 # analyzes right after the build (about a minute) and skips its suites on a finding instead of finding out from
@@ -221,13 +225,18 @@ AFFECTED_INTEGRATION_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$
 		$(COVERAGE_ARGS_FN) \
 		$(PROOF) run --dir "$$run" --name integration-tests -- $(DOTNET) test --solution "$$run/integration.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/integration-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) --timeout $(TEST_TIMEOUT) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
 	else printf '\033[33m[affected]\033[0m no integration-test project covers the affected set; nothing ran.\n'; fi;
-# One merged report over whichever suites ran, so the gate reads a line as covered when any test reached it.
+# One merged report over whichever suites ran, so the gate reads a line as covered when any test reached it. MTP
+# writes each module's report at the results root and the TRX reporter copies it under _<machine>_<time>/In/, so the
+# merge reads the root copies only. After a successful merge the per-module reports go: the summary reads the merged
+# report, and the per-module copies were ~85% of an integration bundle (650 of 766 MB). A failed merge keeps them.
 AFFECTED_COVERAGE_MERGE_STAGE = reports=(); \
 	for suite in unit-tests integration-tests; do \
-		if [ -n "$$(find "$$run/$$suite" -name '*.cobertura.xml' -print -quit 2>/dev/null)" ]; then reports+=("$$run/$$suite/**/*.cobertura.xml"); fi; \
+		if [ -n "$$(find "$$run/$$suite" -maxdepth 1 -name '*.cobertura.xml' -print -quit 2>/dev/null)" ]; then reports+=("$$run/$$suite/*.cobertura.xml"); fi; \
 	done; \
 	if [ $${\#reports[@]} -gt 0 ]; then \
-		$(PROOF) run --dir "$$run" --name coverage-merge -- $(DOTNET) dotnet-coverage merge --nologo --output "$$run/coverage/merged.cobertura.xml" --output-format cobertura "$${reports[@]}" || status=1; \
+		if $(PROOF) run --dir "$$run" --name coverage-merge -- $(DOTNET) dotnet-coverage merge --nologo --output "$$run/coverage/merged.cobertura.xml" --output-format cobertura "$${reports[@]}"; then \
+			find "$$run/unit-tests" "$$run/integration-tests" -name '*.cobertura.xml' -delete 2>/dev/null || true; \
+		else status=1; fi; \
 	fi;
 # The pre-commit hook rewrites staged C# with CSharpier, so a proof that skipped formatting proved bytes the commit
 # then changed. The format stage checks the same changed files format-check-changed does, and fails the bundle
@@ -610,17 +619,18 @@ quality-analyzers-project: ## Report build warnings/errors and analyzer suggesti
 		if [ $$format_status -ne 0 ] && [ $$format_status -ne 2 ]; then cat "$(QUALITY_FORMAT_LOG)"; exit $$format_status; fi
 
 # quality-analyzers rebuilds all ~430 projects --no-incremental and then formats the whole solution.
-# This runs the same gate over only the projects the branch changed: an incremental build for compiler
-# errors, then `dotnet format analyzers`, which runs every analyzer itself at every severity, so a
-# separate --no-incremental analyzer build would repeat its work. The result is a proof bundle with every
-# finding grouped by rule. An analyzer finding in an untouched project still needs `make quality-analyzers`.
+# This runs the same gate over only the projects the branch changed: one incremental build that reports compiler
+# errors and writes each compile's analyzer findings, every severity, to analyzers.sarif (PROOF_ERROR_LOG_ARGS), then
+# an analyzer stage that reads those logs instead of analyzing again; a project with a missing or stale log falls back
+# to `dotnet format analyzers`. The result is a proof bundle with every finding grouped by rule. An analyzer finding
+# in an untouched project still needs `make quality-analyzers`.
 .PHONY: quality-analyzers-affected
 quality-analyzers-affected: ## Analyze the projects changed vs AFFECTED_BASE; writes a proof bundle under artifacts/proof/.
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-quality"; \
 	run="$(PROOF_RUN)-quality"; status=0; \
 	if [ ! -s "$$run/changed.txt" ]; then printf '\033[33m[quality-analyzers-affected]\033[0m no changed project vs %s; nothing analyzed.\n' "$(AFFECTED_BASE)"; exit 0; fi; \
 	$(PROOF) run --dir "$$run" --name restore -- $(DOTNET) restore "$$run/changed.slnf" --locked-mode -v:q -nologo || status=1; \
-	$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/changed.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:minimal -nologo $(MSBUILD_ARGS) || status=1; \
+	$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/changed.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:minimal -nologo $(PROOF_ERROR_LOG_ARGS) $(MSBUILD_ARGS) || status=1; \
 	$(AFFECTED_ANALYZER_STAGE) \
 	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status

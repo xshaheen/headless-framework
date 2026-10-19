@@ -71,6 +71,15 @@ jobs:
       - name: "Verify messaging integration workflow logic"
         run: bash tests/scripts/test-messaging-integration.sh
 
+      - name: "Verify proof bundle pruning"
+        run: bash tests/scripts/test-proof-prune.sh
+
+      - name: "Verify package-version scoping"
+        run: bash tests/scripts/test-affected-package-versions.sh
+
+      - name: "Verify proof analyzer stage"
+        run: bash tests/scripts/test-proof-analyzers.sh
+
       - name: "Verify gate slot limit"
         run: bash tests/scripts/test-gate-slot.sh
 
