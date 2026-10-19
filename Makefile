@@ -144,7 +144,8 @@ GRAPH = $(PYTHON) scripts/project-graph.py
 PROOF = $(PYTHON) scripts/proof.py
 # Each proof target keeps the newest PROOF_KEEP bundles of its own kind (-verify, -integration, ...), counting the one
 # it starts, and deletes the older ones; nothing else ever removed a bundle, and one worktree had 52 of them (22 GB).
-# test-failed reads the newest -verify or -test bundle, which is always kept. PROOF_KEEP=0 keeps every bundle.
+# test-failed reads the newest -verify, -test, or -integration bundle, which is always kept. PROOF_KEEP=0 keeps every
+# bundle.
 PROOF_KEEP ?= 3
 # Heavy gates share one machine with every other worktree and session, so each one runs its recipe (the gated-<name>
 # target) only while it holds one of GATE_SLOTS machine-wide slots; scripts/gate-slot.py waits for a free slot and
@@ -399,9 +400,9 @@ test-query: ## Run tests matching QUERY (MTP --filter-query). Solution-wide unle
 	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-query "$(QUERY)"'
 
 # A narrow fix after a failed verify-affected proves itself on the modules that failed, in seconds to a minute,
-# instead of the whole gate again (one Jobs module alone takes ~4 min). It reads the latest -verify or -test
-# bundle's summary.json; the other failed stages are named with the target that repeats them. The final proof
-# is still one full verify-affected.
+# instead of the whole gate again (one Jobs module alone takes ~4 min). It reads the latest -verify, -test, or
+# -integration bundle's summary.json; the other failed stages are named with the target that repeats them. The final
+# proof is still one full run of the gate that failed.
 .PHONY: test-failed
 test-failed: ## Re-run only the test projects whose modules failed in the last verify-affected, test-affected, or test-affected-integration proof (PROOF_BUNDLE=<dir> picks another).
 	@projects="$$($(PROOF) failed --root "$(ARTIFACTS_DIR)/proof" $(if $(PROOF_BUNDLE),--dir "$(PROOF_BUNDLE)",))"; \

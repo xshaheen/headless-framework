@@ -943,7 +943,7 @@ def main() -> int:
     retry.add_argument("--dotnet", default="dotnet", help="the dotnet executable the stage used")
     retry.add_argument("test_args", nargs=argparse.REMAINDER, help="dotnet test arguments after --")
     failed = commands.add_parser("failed", help="print the test projects that failed in a bundle")
-    failed.add_argument("--dir", type=Path, help="bundle to read (default: the latest -verify or -test bundle under --root)")
+    failed.add_argument("--dir", type=Path, help="bundle to read (default: the latest -verify, -test, or -integration bundle under --root)")
     failed.add_argument("--root", type=Path, default=REPO_ROOT / "artifacts" / "proof", help="where the bundles live")
     prune = commands.add_parser("prune", help="delete all but the newest bundles of each kind")
     prune.add_argument("--root", type=Path, default=REPO_ROOT / "artifacts" / "proof", help="where the bundles live")
