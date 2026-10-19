@@ -167,17 +167,23 @@ AFFECTED_BUILD_STAGES = if [ -s "$$run/build.txt" ]; then \
 		fi; \
 		$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/build.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo $(MSBUILD_ARGS) || status=1; \
 	fi;
+# A failed test stage whose every failure is listed in tests/known-flakes.txt retries those modules once
+# (scripts/proof.py retry-flakes), without coverage, and the summary names each flake with its issue; any other
+# failure fails the stage as before. The retry runs the binaries the stage just tested.
+FLAKE_RETRY_ARGS = --configuration "$(CONFIGURATION)" --no-build --no-restore $(TEST_ARGS) $(TEST_FILTER)
 # The unit stage runs the list the target names in `units` (unit by default; test-affected-integration narrows it).
 AFFECTED_UNIT_STAGE = units="$${units:-unit}"; \
 	if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name unit-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
 	elif [ -s "$$run/$$units.txt" ]; then \
 		$(COVERAGE_ARGS_FN) \
-		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/$$units.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
+		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/$$units.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} \
+			|| $(PROOF) retry-flakes --dir "$$run" --stage unit-tests --projects "$$run/$$units.txt" --dotnet $(DOTNET) -- $(FLAKE_RETRY_ARGS) || status=1; \
 	else printf '\033[33m[affected]\033[0m %s.txt selects no unit-test project; no unit tests ran.\n' "$$units"; fi;
 AFFECTED_INTEGRATION_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name integration-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
 	elif [ -s "$$run/integration.txt" ]; then \
 		$(COVERAGE_ARGS_FN) \
-		$(PROOF) run --dir "$$run" --name integration-tests -- $(DOTNET) test --solution "$$run/integration.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/integration-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
+		$(PROOF) run --dir "$$run" --name integration-tests -- $(DOTNET) test --solution "$$run/integration.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/integration-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} \
+			|| $(PROOF) retry-flakes --dir "$$run" --stage integration-tests --projects "$$run/integration.txt" --dotnet $(DOTNET) -- $(FLAKE_RETRY_ARGS) || status=1; \
 	else printf '\033[33m[affected]\033[0m no integration-test project covers the affected set; nothing ran.\n'; fi;
 # One merged report over whichever suites ran, so the gate reads a line as covered when any test reached it.
 AFFECTED_COVERAGE_MERGE_STAGE = reports=(); \

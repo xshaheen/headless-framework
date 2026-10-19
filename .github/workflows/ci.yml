@@ -68,6 +68,9 @@ jobs:
       - name: "Verify proof coverage gate"
         run: bash tests/scripts/test-proof-coverage-gate.sh
 
+      - name: "Verify known-flake retry"
+        run: bash tests/scripts/test-proof-known-flakes.sh
+
       # Stdlib Python over tracked files, under a second, so it runs on every event here instead of in a
       # job of its own; ci-changes.sh skips docs-only changes for the .NET jobs, and this is the only
       # check a docs-only change gets.
