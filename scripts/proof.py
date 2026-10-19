@@ -843,7 +843,7 @@ def main() -> int:
     clean = commands.add_parser("analyzers-clean", help="exit 1 when the bundle's analyzer stage reported a visible finding")
     clean.add_argument("--dir", required=True, type=Path)
     failed = commands.add_parser("failed", help="print the test projects that failed in a bundle")
-    failed.add_argument("--dir", type=Path, help="bundle to read (default: the latest -verify or -test bundle under --root)")
+    failed.add_argument("--dir", type=Path, help="bundle to read (default: the latest -verify, -test, or -integration bundle under --root)")
     failed.add_argument("--root", type=Path, default=REPO_ROOT / "artifacts" / "proof", help="where the bundles live")
     prune = commands.add_parser("prune", help="delete all but the newest bundles of each kind")
     prune.add_argument("--root", type=Path, default=REPO_ROOT / "artifacts" / "proof", help="where the bundles live")
