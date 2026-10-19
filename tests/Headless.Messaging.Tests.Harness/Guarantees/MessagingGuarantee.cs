@@ -27,17 +27,6 @@ public enum GuaranteeArea
     Observability,
 }
 
-/// <summary>How much a broken guarantee costs a consumer.</summary>
-[PublicAPI]
-public enum GuaranteeCriticality
-{
-    /// <summary>Breaking it loses, duplicates, or misroutes a message, or leaks across tenants.</summary>
-    Critical,
-
-    /// <summary>Breaking it misleads an operator but does not change what is delivered.</summary>
-    Standard,
-}
-
 /// <summary>Where a guarantee stands in its lifecycle: no test yet, bound to a passing test, or quarantined.</summary>
 [PublicAPI]
 public enum GuaranteeStatus
@@ -56,7 +45,6 @@ public enum GuaranteeStatus
 /// <param name="Id">Stable ID of the form <c>MSG-AREA-NN</c>; never reuse a retired ID.</param>
 /// <param name="Area">The behavior area.</param>
 /// <param name="Statement">The guarantee in one line, phrased as what a consumer can rely on.</param>
-/// <param name="Criticality">What a break costs.</param>
 /// <param name="RequiresRealSystem">
 /// <see langword="true"/> when only a real broker or database shows the behavior, so a simulator or fake cannot stand as
 /// its evidence.
@@ -67,7 +55,6 @@ public sealed record MessagingGuarantee(
     string Id,
     GuaranteeArea Area,
     string Statement,
-    GuaranteeCriticality Criticality,
     bool RequiresRealSystem,
     GuaranteeStatus Status
 )
@@ -673,7 +660,6 @@ public static class MessagingGuarantees
             "Log event IDs are unique across the messaging assemblies."
         ) with
         {
-            Criticality = GuaranteeCriticality.Standard,
             Status = GuaranteeStatus.Unsupported,
             Rationale = "Eleven event IDs in Headless.Messaging are each declared for two different events.",
             IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1281",
@@ -704,7 +690,7 @@ public static class MessagingGuarantees
     }
 
     private static MessagingGuarantee _Bound(string id, GuaranteeArea area, bool realSystem, string statement) =>
-        new(id, area, statement, GuaranteeCriticality.Critical, realSystem, GuaranteeStatus.Bound);
+        new(id, area, statement, realSystem, GuaranteeStatus.Bound);
 
     private static MessagingGuarantee _Scenarios(
         string id,
@@ -719,9 +705,5 @@ public static class MessagingGuarantees
         bool realSystem,
         string statement,
         string issueUrl = FillIssueUrl
-    ) =>
-        new(id, area, statement, GuaranteeCriticality.Critical, realSystem, GuaranteeStatus.NoTestYet)
-        {
-            IssueUrl = issueUrl,
-        };
+    ) => new(id, area, statement, realSystem, GuaranteeStatus.NoTestYet) { IssueUrl = issueUrl };
 }

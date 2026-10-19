@@ -3,7 +3,7 @@
 namespace Tests.Guarantees;
 
 /// <summary>
-/// Marks a test as evidence for a catalogued messaging guarantee, so the catalogue policy can prove every critical
+/// Marks a test as evidence for a catalogued messaging guarantee, so the catalogue policy can prove every
 /// guarantee is exercised by a test that runs.
 /// </summary>
 /// <remarks>

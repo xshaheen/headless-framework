@@ -263,7 +263,7 @@ public static partial class GuaranteeBindings
         if (bindings.Count == 0 && guarantee.ManifestScenarios.Count == 0)
         {
             errors.Add(
-                $"{id} ({guarantee.Criticality}) has no bound test and no 'no test yet' entry; "
+                $"{id} has no bound test and no 'no test yet' entry; "
                     + $"add [Guarantee(\"{id}\")] to a test or mark it NoTestYet with an issue."
             );
             return;

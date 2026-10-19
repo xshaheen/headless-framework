@@ -219,7 +219,7 @@ public sealed class GuaranteeCatalogueTests : TestBase
         new Dictionary<string, TransportConformanceProfile>(StringComparer.Ordinal);
 
     private static MessagingGuarantee _Guarantee(string id, GuaranteeStatus status, bool requiresRealSystem = false) =>
-        new(id, GuaranteeArea.Storage, "A test guarantee.", GuaranteeCriticality.Critical, requiresRealSystem, status);
+        new(id, GuaranteeArea.Storage, "A test guarantee.", requiresRealSystem, status);
 
     // The policy fixtures below are deliberately invalid, so the scans of this assembly leave them out.
     private static IEnumerable<Type> _FastTierTypes() =>
