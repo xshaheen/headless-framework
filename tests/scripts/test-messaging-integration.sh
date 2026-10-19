@@ -2,7 +2,7 @@
 # Copyright (c) Mahmoud Shaheen. All rights reserved.
 # Exercises the messaging integration workflow's logic against scratch inputs: the quarantine check against a fake gh
 # that serves issue states, the drift report against TRX files and conformance exports shaped like the ones the
-# integration suites write, the scope selection that decides which legs a run pays for, and the workflow's place
+# integration suites write, the scope selection that decides whether a run takes the legs, and the workflow's place
 # outside the required CI checks.
 set -euo pipefail
 
@@ -231,38 +231,41 @@ head_sha=$(git -C "$repo_root" rev-parse HEAD)
 leg_count=$("${scope[@]}" select --event workflow_dispatch | sed -n 's/^legs=//p' | python3 -I -c 'import json, sys; print(len(json.load(sys.stdin)))')
 [[ "$leg_count" -gt 0 ]] || fail "scope: a dispatched run selects no legs"
 
+# legs_selected: how many legs the last selection chose.
+legs_selected() {
+  value legs | python3 -I -c 'import json, sys; print(len(json.load(sys.stdin)))'
+}
+
 expect "scope runs everything on dispatch" 0 "${scope[@]}" select --event workflow_dispatch --chaos-profile smoke
 [[ "$(value mode)" == "full" && "$(value run_legs)" == "true" && "$(value run_quarantine)" == "true" ]] || fail "scope: dispatch is not a full run"
 [[ "$(value chaos_profile)" == "smoke" ]] || fail "scope: dispatch ignores the requested chaos sizes"
 pass "a dispatched run runs every leg, chaos at the requested sizes, and the quarantine check"
 
-expect "scope skips an unchanged week" 0 "${scope[@]}" select --event schedule --base "$head_sha"
-[[ "$(value mode)" == "unchanged" && "$(value run_legs)" == "false" && "$(value run_chaos)" == "false" ]] || fail "scope: an unchanged week still runs legs"
-[[ "$(value run_quarantine)" == "true" ]] || fail "scope: an unchanged week skips the quarantine check"
-pass "a scheduled run with main unmoved since the last green full run runs only the quarantine check"
+expect "scope runs the full week" 0 "${scope[@]}" select --event schedule --base "$head_sha"
+[[ "$(value mode)" == "full" && "$(value run_chaos)" == "true" && "$(value chaos_profile)" == "full" && "$(value run_quarantine)" == "true" ]] || fail "scope: a scheduled run is not a full run"
+[[ "$(legs_selected)" == "$leg_count" ]] || fail "scope: a scheduled run skips legs"
+pass "a scheduled run runs every leg, chaos at full sizes, and the quarantine check"
 
-expect "scope runs the full week" 0 "${scope[@]}" select --event schedule --base ""
-[[ "$(value mode)" == "full" && "$(value chaos_profile)" == "full" && "$(value run_quarantine)" == "true" ]] || fail "scope: a changed week is not a full run"
-pass "a scheduled run with no earlier green full run runs everything at full sizes"
-
-expect "scope runs everything on the first push" 0 "${scope[@]}" select --event push --base ""
-[[ "$(value mode)" == "full" && "$(value chaos_profile)" == "smoke" && "$(value run_quarantine)" == "false" ]] || fail "scope: a push with no green run is not a full smoke run"
-pass "a push with no green run to diff against runs every leg, chaos at smoke sizes, and no quarantine check"
+expect "scope runs every leg without a base" 0 "${scope[@]}" select --event push --base ""
+[[ "$(legs_selected)" == "$leg_count" && "$(value run_chaos)" == "false" && "$(value run_quarantine)" == "false" ]] || fail "scope: a push with no base is not every leg alone"
+pass "a push with no base to diff against runs every leg, without chaos or the quarantine check"
 
 kafka=tests/Headless.Messaging.Kafka.Tests.Integration/Headless.Messaging.Kafka.Tests.Integration.csproj
-chaos_project=tests/Headless.Messaging.Tests.Chaos/Headless.Messaging.Tests.Chaos.csproj
-printf '{"integration_tests": ["%s", "tests/Headless.Features.Tests.Integration/Headless.Features.Tests.Integration.csproj"], "affected_projects": ["%s"]}\n' "$kafka" "$chaos_project" > "$scratch/affected.json"
-expect "scope narrows a push to its affected legs" 0 "${scope[@]}" select --event push --base "$head_sha" --affected-report "$scratch/affected.json"
-[[ "$(value mode)" == "affected" && "$(value run_chaos)" == "true" && "$(value chaos_profile)" == "smoke" ]] || fail "scope: an affected push does not run chaos at smoke sizes"
-[[ "$(value legs)" == "[{\"name\":\"kafka\",\"project\":\"$kafka\",\"tz\":\"UTC\"}]" ]] || fail "scope: an affected push selects legs beyond the affected messaging suites: $(value legs)"
-pass "a push runs only the legs it affects, ignoring affected suites that are not legs, and chaos when it reaches it"
+printf '{"integration_tests": ["%s", "tests/Headless.Features.Tests.Integration/Headless.Features.Tests.Integration.csproj"]}\n' "$kafka" > "$scratch/affected.json"
+for event in pull_request push; do
+  expect "scope runs every leg when $event reaches one" 0 "${scope[@]}" select --event "$event" --base "$head_sha" --affected-report "$scratch/affected.json"
+  [[ "$(value mode)" == "legs" && "$(legs_selected)" == "$leg_count" ]] || fail "scope: a $event reaching one suite does not run every leg: $(value legs)"
+  [[ "$(value run_chaos)" == "false" && "$(value run_quarantine)" == "false" ]] || fail "scope: a $event runs chaos or the quarantine check"
+  contains "scope names the affected leg" "reason=affected since ${head_sha:0:12}: kafka"
+done
+pass "a pull request or push that reaches one messaging suite runs every leg, so the drift report can judge each cell"
 
-printf '{"integration_tests": [], "affected_projects": []}\n' > "$scratch/affected.json"
-expect "scope skips an unrelated push" 0 "${scope[@]}" select --event push --base "$head_sha" --affected-report "$scratch/affected.json"
-[[ "$(value run_legs)" == "false" && "$(value run_chaos)" == "false" && "$(value legs)" == "[]" ]] || fail "scope: a push affecting no messaging suite still runs legs"
-pass "a push that affects no messaging suite runs nothing"
+printf '{"integration_tests": ["tests/Headless.Features.Tests.Integration/Headless.Features.Tests.Integration.csproj"]}\n' > "$scratch/affected.json"
+expect "scope skips an unrelated pull request" 0 "${scope[@]}" select --event pull_request --base "$head_sha" --affected-report "$scratch/affected.json"
+[[ "$(value run_legs)" == "false" && "$(value run_chaos)" == "false" && "$(value legs)" == "[]" ]] || fail "scope: a pull request affecting no messaging suite still runs legs"
+pass "a pull request that affects no messaging suite runs nothing"
 
-expect "scope rejects an unknown event" 2 "${scope[@]}" select --event pull_request
+expect "scope rejects an unknown event" 2 "${scope[@]}" select --event merge_group
 pass "the scope selection rejects an event the workflow does not run on"
 
 # The Makefile reads the leg projects from the scope script, so a local run and the workflow run the same suites.
@@ -276,18 +279,20 @@ pass "the Makefile runs the same integration projects the workflow's legs do"
 # --- Workflow placement -----------------------------------------------------------------------------------------
 
 workflow="$repo_root/.github/workflows/messaging-integration.yml"
-# A pull request can only wait on this workflow if ci.yml calls it or it runs on pull-request events.
+# A pull request waits only on checks that ci.yml's "CI status" needs; this workflow must never become one of them.
 if grep -qF 'messaging-integration.yml' "$repo_root/.github/workflows/ci.yml"; then
   fail "ci.yml must not call the messaging integration workflow"
 fi
-if grep -qE '^\s+(pull_request|pull_request_target|workflow_call|merge_group):' "$workflow"; then
-  fail "the messaging integration workflow must not run on pull-request events"
+# pull_request_target would run a fork's code with this repository's token and secrets.
+if grep -qE '^\s+(pull_request_target|workflow_call|merge_group):' "$workflow"; then
+  fail "the messaging integration workflow must not run on pull_request_target, workflow_call, or merge_group"
 fi
-# The only push it takes is a push to main; a branch push would run real-broker suites for unmerged work.
+grep -A1 -E '^  pull_request:' "$workflow" | grep -qE '^\s+branches: \[main\]$' || fail "the messaging integration workflow must run on pull requests to main"
+# The only push it takes is a push to main; a branch push would run real-broker suites for unmerged work twice.
 grep -A1 -E '^  push:' "$workflow" | grep -qE '^\s+branches: \[main\]$' || fail "the messaging integration workflow must run on push to main only"
 grep -qE '^\s+schedule:' "$workflow" || fail "the messaging integration workflow must keep its weekly schedule"
-# Cancelling a running run would drop results already paid for; each run diffs against the last green one instead.
-grep -qE '^\s+cancel-in-progress: false$' "$workflow" || fail "the messaging integration workflow must queue runs, not cancel them"
+# A new commit supersedes a pull request's run; a run on main is the only real-broker result for its commit.
+grep -qF "cancel-in-progress: \${{ github.event_name == 'pull_request' }}" "$workflow" || fail "the messaging integration workflow must cancel only stale pull-request runs"
 if grep -qE '^\s+[a-z-]+:\s*write\s*$' "$workflow"; then
   fail "the messaging integration workflow must not request a write permission"
 fi
@@ -295,4 +300,4 @@ fi
 if grep -hvE '^\s*#' "$workflow" "$repo_root/Makefile" | grep -qF -- '--retry-failed-tests'; then
   fail "the messaging integration workflow must run without retries"
 fi
-pass "the workflow runs on push to main, weekly, or on dispatch, outside CI status, read-only, queued, without retries"
+pass "the workflow runs on pull requests and pushes to main, weekly, or on dispatch, outside CI status, read-only, without retries"

@@ -1024,7 +1024,7 @@ test-messaging-integration: ## Run the messaging integration suites with no retr
 
 # Prints what messaging-integration.yml would run for one event, as key=value lines; the workflow's scope job calls it.
 .PHONY: messaging-integration-scope
-messaging-integration-scope: ## Print the messaging integration run's selection for EVENT (push|schedule|workflow_dispatch) against BASE, the last green run's head.
+messaging-integration-scope: ## Print the messaging integration run's selection for EVENT (pull_request|push|schedule|workflow_dispatch); a pull request or push diffs against BASE.
 	@$(PYTHON) -I scripts/messaging-integration-scope.py select --event "$(EVENT)" --base "$(BASE)" $(if $(CHAOS_PROFILE),--chaos-profile "$(CHAOS_PROFILE)",)
 
 .PHONY: messaging-drift-report

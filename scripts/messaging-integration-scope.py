@@ -2,18 +2,19 @@
 # Copyright (c) Mahmoud Shaheen. All rights reserved.
 """Choose what the messaging integration workflow runs for one event.
 
-The messaging integration suites need Docker, brokers, and minutes per suite, so pull-request CI never runs them. This
-script decides how much of them a run of messaging-integration.yml pays for:
+The messaging integration suites need Docker, brokers, and minutes per suite, so the required pull-request checks never
+run them. messaging-integration.yml runs them beside those checks, and this script decides each run:
 
-- push to main: only the legs whose integration project the change affects, through every transitive dependent, since
-  the last green run. Chaos runs at smoke sizes when the change reaches the chaos project. No quarantine check.
-- schedule (weekly): every leg, chaos at full sizes, and the quarantine check. When main has not moved since the last
-  green scheduled or dispatched run, the legs and chaos are skipped and only the quarantine check runs: an unchanged
-  tree with digest-pinned images re-proves nothing, but an issue can still close.
+- pull_request and push to main: every leg when the change reaches any leg's integration project through the
+  transitive project graph, else none. A change to a shared package messaging builds on reaches the legs as surely as
+  a change to messaging itself, which a path filter would miss. A run takes every leg rather than the affected ones
+  because the drift report can only judge a simulator cell once every real broker behind it has run. No chaos and no
+  quarantine check.
+- schedule (weekly): every leg, chaos at full sizes, and the quarantine check.
 - workflow_dispatch: everything, at the requested chaos sizes.
 
 The leg list lives here, once: the Makefile reads it through `projects`, and the workflow takes its matrix from
-`select`. A base that is empty or does not resolve to a commit (no green run yet, history rewritten) selects every leg.
+`select`. A base that is empty or does not resolve to a commit (a new branch, history rewritten) selects every leg.
 
 Exit codes: 0 selection printed; 1 the affected-set computation failed; 2 usage error.
 """
@@ -28,7 +29,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CHAOS_PROJECT = "tests/Headless.Messaging.Tests.Chaos/Headless.Messaging.Tests.Chaos.csproj"
 
 
 @dataclass(frozen=True)
@@ -118,29 +118,25 @@ def _affected_report(base: str) -> dict:
     return json.loads(result.stdout)
 
 
-def select(event: str, base: str, head: str, chaos_profile: str, affected: dict | None) -> Selection:
-    """Decides the run. `affected` is the transitive affected report against `base`; push computes it when absent."""
+def select(event: str, base: str, chaos_profile: str, affected: dict | None) -> Selection:
+    """Decides the run. `affected` is the transitive affected report against `base`; a change event computes it when absent."""
     if event == "workflow_dispatch":
         return Selection("full", "dispatched", LEGS, True, chaos_profile or "full", True)
 
-    base_commit = _resolves(base)
-    head_commit = _resolves(head)
-
     if event == "schedule":
-        if base_commit and base_commit == head_commit:
-            return Selection("unchanged", f"main has not moved since the last green full run at {base_commit[:12]}", (), False, "full", True)
         return Selection("full", "weekly full run", LEGS, True, "full", True)
 
-    # push
+    # pull_request or push
+    base_commit = _resolves(base)
     if base_commit is None:
-        return Selection("full", "no green run to diff against", LEGS, True, "smoke", False)
+        return Selection("legs", "no base commit to diff against", LEGS, False, "smoke", False)
     if affected is None:
         affected = _affected_report(base_commit)
     tests = set(affected.get("integration_tests", []))
-    legs = tuple(leg for leg in LEGS if leg.project in tests)
-    run_chaos = CHAOS_PROJECT in set(affected.get("affected_projects", []))
-    reason = f"affected since {base_commit[:12]}: {len(legs)} of {len(LEGS)} legs" + (", chaos at smoke sizes" if run_chaos else "")
-    return Selection("affected", reason, legs, run_chaos, "smoke", False)
+    reached = [leg.name for leg in LEGS if leg.project in tests]
+    if not reached:
+        return Selection("none", f"no messaging suite affected since {base_commit[:12]}", (), False, "smoke", False)
+    return Selection("legs", f"affected since {base_commit[:12]}: {', '.join(reached)}", LEGS, False, "smoke", False)
 
 
 def main(argv: list[str]) -> int:
@@ -148,9 +144,10 @@ def main(argv: list[str]) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("projects", help="print each distinct leg project, one per line")
     chooser = commands.add_parser("select", help="print the run's selection as key=value lines for $GITHUB_OUTPUT")
-    chooser.add_argument("--event", required=True, choices=("push", "schedule", "workflow_dispatch"))
-    chooser.add_argument("--base", default="", help="head commit of the last green run this event compares with")
-    chooser.add_argument("--head", default="HEAD")
+    chooser.add_argument("--event", required=True, choices=("pull_request", "push", "schedule", "workflow_dispatch"))
+    chooser.add_argument(
+        "--base", default="", help="commit a change event diffs against: the pull request's base, or the push's previous head"
+    )
     chooser.add_argument("--chaos-profile", default="", choices=("", "full", "smoke"))
     chooser.add_argument(
         "--affected-report",
@@ -166,7 +163,7 @@ def main(argv: list[str]) -> int:
 
     affected = json.loads(args.affected_report.read_text(encoding="utf-8")) if args.affected_report else None
     try:
-        selection = select(args.event, args.base, args.head, args.chaos_profile, affected)
+        selection = select(args.event, args.base, args.chaos_profile, affected)
     except RuntimeError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1

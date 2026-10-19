@@ -1,16 +1,15 @@
 name: "Messaging integration"
 
 # The messaging fast tier proves delivery guarantees against an in-process simulator; this workflow keeps that honest
-# against real containers, and reports two things a pull request never sees: a simulator cell that every real broker
-# backing it now fails (simulator drift), and a quarantined cell whose linked issue is already closed. Nothing gates on
-# it and it stays outside the required "CI status", so a red run never blocks a pull request.
+# against real containers, and reports two things the required checks never see: a simulator cell that every real
+# broker backing it now fails (simulator drift), and a quarantined cell whose linked issue is already closed. Nothing
+# gates on it and it stays outside the required "CI status", so a red run never blocks a pull request; on a pull
+# request it is evidence from real brokers that the author did not produce on their own machine.
 #
-# It pays only for what changed. scripts/messaging-integration-scope.py decides each run:
-# - push to main: the legs whose integration project the change affects, through every transitive dependent, since the
-#   last green run, and chaos at smoke sizes when the change reaches it. A push that touches no messaging code runs
-#   only the scope job.
-# - weekly schedule: every leg, chaos at full sizes, and the quarantine check; with main unmoved since the last green
-#   full run, only the quarantine check, since an issue can close while the code stands still.
+# scripts/messaging-integration-scope.py decides each run:
+# - pull request and push to main: every leg when the change reaches any messaging integration suite through the
+#   transitive project graph, else only the scope job. No chaos and no quarantine check.
+# - weekly schedule: every leg, chaos at full sizes, and the quarantine check.
 # - dispatch: everything, at the requested chaos sizes, for a run before a release.
 #
 # Retries are off: no step passes --retry-failed-tests, so a guarantee that fails once shows as a failure. Azure Service
@@ -19,6 +18,8 @@ name: "Messaging integration"
 # here, on fixed entities, because the run step sets HEADLESS_ACCEPT_SERVICEBUS_EMULATOR_EULA; without it every emulator
 # test skips with that reason.
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
   schedule:
@@ -38,11 +39,11 @@ on:
         required: false
         type: string
 
-# Queue rather than cancel: each run diffs against the last green run, so a later push covers a queued one it replaces,
-# but cancelling a running one would drop a result already paid for.
+# A new commit on a pull request makes its running run stale, so it cancels it. Runs on main queue instead: each one
+# is the only real-broker result for its commit, and a scheduled run must not cancel a push run or the reverse.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -62,10 +63,6 @@ jobs:
     name: "Messaging integration · scope"
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: read
-      # Reads this workflow's own run history to find the last green run; it changes nothing.
-      actions: read
     outputs:
       legs: ${{ steps.select.outputs.legs }}
       run_legs: ${{ steps.select.outputs.run_legs }}
@@ -77,35 +74,16 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: false
-          # The affected set diffs against the last green run's head, which may be many commits back.
+          # The affected set diffs against the base commit, which a long-lived pull request may leave far behind.
           fetch-depth: 0
           persist-credentials: false
 
-      # A push compares with the last green run of any kind, so a failed or queued-and-replaced run's changes are
-      # tested again. The schedule compares with the last green full run only: a green push run covers just the legs
-      # it selected.
-      - name: "Find the last green run"
-        id: base
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          set -euo pipefail
-          if [[ "$EVENT" == "push" ]]; then
-            filter='.[0].headSha // ""'
-          else
-            filter='[.[] | select(.event == "schedule" or .event == "workflow_dispatch")][0].headSha // ""'
-          fi
-          base=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow messaging-integration.yml --branch main \
-            --status success --limit 50 --json headSha,event --jq "$filter")
-          echo "sha=$base" >> "$GITHUB_OUTPUT"
-          echo "Last green run: ${base:-none}"
-
+      # A pull request diffs against its base; a push against the head main had before it.
       - name: "Choose the legs"
         id: select
         env:
           EVENT: ${{ github.event_name }}
-          BASE: ${{ steps.base.outputs.sha }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           CHAOS_PROFILE: ${{ inputs.chaos_profile }}
         run: |
           set -euo pipefail
@@ -165,7 +143,7 @@ jobs:
           TZ: ${{ matrix.leg.tz }}
           PROJECT: ${{ matrix.leg.project }}
           LEG: ${{ matrix.leg.name }}
-          # Empty on every push and scheduled run, so the drill never fails a real run.
+          # Empty on every pull request, push, and scheduled run, so the drill never fails a real run.
           HEADLESS_CONFORMANCE_DRIFT_DRILL: ${{ inputs.drift_drill }}
           # The repository owner accepted the Azure Service Bus emulator EULA for test runs; only the emulator fixture reads this.
           HEADLESS_ACCEPT_SERVICEBUS_EMULATOR_EULA: "Y"
