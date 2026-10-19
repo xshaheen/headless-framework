@@ -379,7 +379,7 @@ internal static partial class LoggerExtensions
     public static partial void ReplayedRequestRunsWithoutCaller(this ILogger logger, Guid storageId, long generation);
 
     [LoggerMessage(
-        EventId = 4121,
+        EventId = 4129,
         EventName = "MessageLeaseRenewalFailed",
         Level = LogLevel.Warning,
         Message = "Renewing the lease on message {StorageId} failed; the lease it last confirmed is still live, so the renewal is retried on the next tick."
@@ -387,7 +387,7 @@ internal static partial class LoggerExtensions
     public static partial void MessageLeaseRenewalFailed(this ILogger logger, Exception exception, Guid storageId);
 
     [LoggerMessage(
-        EventId = 4123,
+        EventId = 4130,
         EventName = "MessageLeaseRenewalFailedPastLease",
         Level = LogLevel.Warning,
         Message = "Renewing the lease on message {StorageId} failed and the lease it last confirmed could lapse before the next tick; the attempt is cancelled."
@@ -399,7 +399,7 @@ internal static partial class LoggerExtensions
     );
 
     [LoggerMessage(
-        EventId = 4122,
+        EventId = 4131,
         EventName = "MessageLeaseLost",
         Level = LogLevel.Warning,
         Message = "The lease on message {StorageId} was lost while its attempt ran; the attempt is cancelled and writes no state, and the row is recovered like a crashed attempt."
@@ -447,6 +447,19 @@ internal static partial class LoggerExtensions
         Message = "Direct send of message {MessageId} (name '{MessageName}') passed its delivery deadline before reaching the transport; it is dropped without being sent."
     )]
     public static partial void DirectSendDeliverByExceeded(this ILogger logger, string? messageId, string? messageName);
+
+    [LoggerMessage(
+        EventId = 4132,
+        EventName = "MessageDeliverByExceededWhileThrottled",
+        Level = LogLevel.Information,
+        Message = "Message {MessageId} (name '{MessageName}', consumer '{Consumer}') passed its delivery deadline while waiting for its consumer's rate limit; it is dropped without running the consumer."
+    )]
+    public static partial void MessageDeliverByExceededWhileThrottled(
+        this ILogger logger,
+        string? messageId,
+        string? messageName,
+        string? consumer
+    );
 
     [LoggerMessage(EventId = 42, Level = LogLevel.Warning, Message = "RabbitMQ consumer cancelled. --> {Reason}")]
     public static partial void RabbitMqConsumerCancelled(this ILogger logger, string reason);
@@ -517,7 +530,7 @@ internal static partial class LoggerExtensions
     public static partial void TransportSettlementFailed(this ILogger logger, string reason);
 
     [LoggerMessage(
-        EventId = 122,
+        EventId = 132,
         EventName = "TransportBrokerUnreachable",
         Level = LogLevel.Warning,
         Message = "The transport could not reach the broker and keeps retrying. --> {Reason}"

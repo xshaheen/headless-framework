@@ -359,6 +359,27 @@ internal sealed partial class ConsumerRegister
             if (_rateLimiters is not null)
             {
                 await _rateLimiters.WaitAsync(executor, hostShutdownToken).ConfigureAwait(false);
+
+                // The receive check ran before the wait, and a throttled delivery can wait past its deadline.
+                if (DeliverByEnvelope.IsExpired(transportMessage.Headers, _timeProvider.GetUtcNow()))
+                {
+                    if (_logger.IsEnabled(LogLevel.Information))
+                    {
+                        _logger.MessageDeliverByExceededWhileThrottled(
+                            LogSanitizer.Sanitize(transportMessage.Id),
+                            LogSanitizer.Sanitize(transportMessage.Name),
+                            LogSanitizer.Sanitize(consumerIdentity)
+                        );
+                    }
+
+                    MessagingMetrics.RecordEveryInstanceDelivery(
+                        consumerIdentity,
+                        "dropped",
+                        typeof(MessageDeliverByExceededException).FullName
+                    );
+                    _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                    return true;
+                }
             }
 
             // The invoker opens a fresh scope and runs the consume middleware, then the generated dispatch or the

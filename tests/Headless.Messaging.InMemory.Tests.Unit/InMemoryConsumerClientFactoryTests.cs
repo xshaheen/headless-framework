@@ -4,12 +4,16 @@ using Headless.Messaging;
 using Headless.Messaging.InMemory;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
 public sealed class InMemoryConsumerClientFactoryTests : TestBase
 {
+    private static readonly TimeSpan _CoreRedeliveryDelay = TimeSpan.FromMinutes(5);
+
     private readonly MemoryQueue _queue;
     private readonly InMemoryConsumerClientFactory _factory;
 
@@ -17,7 +21,7 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
     {
         var logger = Substitute.For<ILogger<MemoryQueue>>();
         _queue = new MemoryQueue(logger);
-        _factory = new InMemoryConsumerClientFactory(_queue);
+        _factory = new InMemoryConsumerClientFactory(_queue, TimeProvider.System);
     }
 
     [Fact]
@@ -226,6 +230,70 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
         {
             await client.DisposeAsync();
         }
+    }
+
+    [Fact]
+    public async Task should_redeliver_a_rejected_message_on_the_registered_backoff_clock()
+    {
+        // given: a host whose back-off clock a test steps through
+        var backoffClock = new FakeTimeProvider();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup => setup.UseInMemory());
+        services.AddKeyedSingleton<TimeProvider>(MessagingOptions.BackoffClockServiceKey, backoffClock);
+        await using var provider = services.BuildServiceProvider();
+
+        await using var client = await provider
+            .GetRequiredService<IConsumerClientFactory>()
+            .CreateAsync(new ConsumerClientRequest("backoff-group", 1, MessageLane.Bus), AbortToken);
+        await client.SubscribeAsync(["backoff-messageName"], AbortToken);
+
+        var deliveries = 0;
+        var rejected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var redelivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.AttachCallbacks(
+            onMessage: async (_, sender) =>
+            {
+                if (Interlocked.Increment(ref deliveries) == 1)
+                {
+                    // A delay no test run outlasts in real time, so only the back-off clock can end it.
+                    await client.RejectAsync(sender, _CoreRedeliveryDelay, AbortToken);
+                    rejected.SetResult();
+                    return;
+                }
+
+                await client.CommitAsync(sender, AbortToken);
+                redelivered.TrySetResult();
+            },
+            onLog: null
+        );
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listening = Task.Run(() => client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask(), AbortToken);
+        provider
+            .GetRequiredService<MemoryQueue>()
+            .SendBus(
+                new TransportMessage(
+                    new Dictionary<string, string?>(StringComparer.Ordinal)
+                    {
+                        [Headers.MessageId] = "backoff-1",
+                        [Headers.MessageName] = "backoff-messageName",
+                    },
+                    ReadOnlyMemory<byte>.Empty
+                )
+            );
+        await rejected.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        backoffClock.Advance(_CoreRedeliveryDelay - TimeSpan.FromSeconds(1));
+        Volatile.Read(ref deliveries).Should().Be(1);
+
+        // when
+        backoffClock.Advance(TimeSpan.FromSeconds(1));
+
+        // then
+        await redelivered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        Volatile.Read(ref deliveries).Should().Be(2);
+        await cts.CancelAsync();
+        await listening.ContinueWith(static _ => { }, TaskScheduler.Default);
     }
 
     [Fact]

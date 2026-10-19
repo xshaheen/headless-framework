@@ -566,11 +566,6 @@
         "resolved": "0.11.6",
         "contentHash": "f33RkDtZO8VlGXCtmQIviOtxgnUdym9xx/b1p9h91CRGOsJFxCFOFK1FDbVt1OCf1aWwYejUFa2MOQyFWTFjbA=="
       },
-      "Namotion.Reflection": {
-        "type": "Transitive",
-        "resolved": "3.5.0",
-        "contentHash": "FnASiAaTGSmB4SaSroIwnK4ph9noFIXZpPOMezDqWw5S/TNakzSnawPeM7u0Auq1/EqJXeqG4s6UjfrGBH33Ow=="
-      },
       "Nito.AsyncEx.Context": {
         "type": "Transitive",
         "resolved": "5.1.2",
@@ -624,75 +619,6 @@
         "type": "Transitive",
         "resolved": "1.1.1",
         "contentHash": "CU0/Iuv5VDynK8I8pDLwkgF0rZhbQoZahtodfL0M3x2gFkpBRApKs8RyMyNlAi1mwExE4gsmqQXk4aFVvW9a4Q=="
-      },
-      "NJsonSchema.Annotations": {
-        "type": "Transitive",
-        "resolved": "11.6.1",
-        "contentHash": "WA4z8iK+0SOh2/qoo7rtEanj/LjJZ8oWWoXI8u1xcYMk6VzHONqpabJBYGrzqDO41ld+VQHOFL+B8MXncIVSSA=="
-      },
-      "NJsonSchema.NewtonsoftJson": {
-        "type": "Transitive",
-        "resolved": "11.6.1",
-        "contentHash": "yuGwViKjNT7BAosX1UAl2asAczupUS0v1IZ0/cO5UXonhjUgE1LmAjAMqHjpbaXiDM+HrQIkJh3bv/2faY2aJg==",
-        "dependencies": {
-          "NJsonSchema": "11.6.1",
-          "Newtonsoft.Json": "13.0.3"
-        }
-      },
-      "NJsonSchema.Yaml": {
-        "type": "Transitive",
-        "resolved": "11.6.1",
-        "contentHash": "3jH3tupVurenoO+bnp9BWR5G46caNqXSWSMGuwb403F7a9vkO13LycuyjD9ohpZHI9crFY8EUWco+pL7eTUxdg==",
-        "dependencies": {
-          "NJsonSchema": "11.6.1",
-          "YamlDotNet": "16.3.0"
-        }
-      },
-      "NSwag.Core": {
-        "type": "Transitive",
-        "resolved": "14.7.1",
-        "contentHash": "iwwAeMZ3kugAKCokuOdHzKK/OHdp19vUP/B32CJO10HHzVgC+O4M7HXtHuDf9tloC3OEJ2wkUV4/cYrX4Mr98g==",
-        "dependencies": {
-          "NJsonSchema": "11.6.1",
-          "Namotion.Reflection": "3.5.0",
-          "Newtonsoft.Json": "13.0.3"
-        }
-      },
-      "NSwag.Core.Yaml": {
-        "type": "Transitive",
-        "resolved": "14.7.1",
-        "contentHash": "C6nkmDBI/Ps54kilnIgq3S9KQnj4IWvncD4xyYolukueqNSTH8gLgPleff0XAgVWZEvFSIKKSTD4q6rxrpkp2w==",
-        "dependencies": {
-          "NJsonSchema": "11.6.1",
-          "NJsonSchema.Yaml": "11.6.1",
-          "NSwag.Core": "14.7.1",
-          "Namotion.Reflection": "3.5.0",
-          "Newtonsoft.Json": "13.0.3"
-        }
-      },
-      "NSwag.Generation": {
-        "type": "Transitive",
-        "resolved": "14.7.1",
-        "contentHash": "+c7KhqBYoDkuEwuzkTG2FYYX6IuBRsXhOVuzO4QcFCwLXqNIzN1v+zAAdNjpd751I8jurpIes4Y7FoFuei/Uag==",
-        "dependencies": {
-          "NJsonSchema": "11.6.1",
-          "NJsonSchema.NewtonsoftJson": "11.6.1",
-          "NSwag.Core": "14.7.1",
-          "Namotion.Reflection": "3.5.0",
-          "Newtonsoft.Json": "13.0.3"
-        }
-      },
-      "NSwag.Generation.AspNetCore": {
-        "type": "Transitive",
-        "resolved": "14.7.1",
-        "contentHash": "nd1DXN9SwnzdJKtR+EqXHGE6cbkbKjo3AViwpGIBurrLEnYevC8vqkRSKdfhuHViSsihqWXF+Q9rR19yyNFiOA==",
-        "dependencies": {
-          "NJsonSchema": "11.6.1",
-          "NJsonSchema.NewtonsoftJson": "11.6.1",
-          "NSwag.Generation": "14.7.1",
-          "Namotion.Reflection": "3.5.0",
-          "Newtonsoft.Json": "13.0.3"
-        }
       },
       "OpenTelemetry.Api.ProviderBuilderExtensions": {
         "type": "Transitive",
@@ -758,11 +684,6 @@
           "xunit.v3.runner.common": "[4.0.2]"
         }
       },
-      "YamlDotNet": {
-        "type": "Transitive",
-        "resolved": "16.3.0",
-        "contentHash": "SgMOdxbz8X65z8hraIs6hOEdnkH6hESTAIUa7viEngHOYaH+6q5XJmwr1+yb9vJpNQ19hCQY69xbFsLtXpobQA=="
-      },
       "headless.api": {
         "type": "Project",
         "dependencies": {
@@ -793,8 +714,7 @@
         "dependencies": {
           "Headless.Api.MinimalApi": "[1.0.0, )",
           "Headless.Api.Mvc": "[1.0.0, )",
-          "Headless.Api.ServiceDefaults": "[1.0.0, )",
-          "Headless.OpenApi.Nswag": "[1.0.0, )"
+          "Headless.Api.ServiceDefaults": "[1.0.0, )"
         }
       },
       "headless.api.minimalapi": {
@@ -817,6 +737,7 @@
           "Headless.Api": "[1.0.0, )",
           "Headless.Context": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.OpenApi": "[1.0.0, )",
           "Headless.Security": "[1.0.0, )",
           "Microsoft.AspNetCore.OpenApi": "[10.0.13, )",
           "Microsoft.Extensions.Http.Resilience": "[10.11.0, )",
@@ -944,12 +865,11 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.13, )"
         }
       },
-      "headless.openapi.nswag": {
+      "headless.openapi": {
         "type": "Project",
         "dependencies": {
-          "Asp.Versioning.Mvc.ApiExplorer": "[10.2.1, )",
           "Headless.Api": "[1.0.0, )",
-          "NSwag.AspNetCore": "[14.7.1, )"
+          "Microsoft.AspNetCore.OpenApi": "[10.0.13, )"
         }
       },
       "headless.primitives": {
@@ -1022,24 +942,6 @@
         "contentHash": "tx/OIyp39OP2uM57MHn8GqRSCi7+XYFU3/KqcPeiqt8rQE+oiK4bRcMXZvShtiS+SbtifqXy4zg6vr5+LPubNQ==",
         "dependencies": {
           "Asp.Versioning.Abstractions": "10.2.1"
-        }
-      },
-      "Asp.Versioning.Mvc": {
-        "type": "CentralTransitive",
-        "requested": "[10.2.1, )",
-        "resolved": "10.2.1",
-        "contentHash": "fMzUraYZOAobKQn2PffrgPsULbCWFeWroYRYndPasxPsiQl1+i8x5qYRuMYZAbzDrBnymPUMBxT2gZG2PwbkcQ==",
-        "dependencies": {
-          "Asp.Versioning.Http": "10.2.1"
-        }
-      },
-      "Asp.Versioning.Mvc.ApiExplorer": {
-        "type": "CentralTransitive",
-        "requested": "[10.2.1, )",
-        "resolved": "10.2.1",
-        "contentHash": "Tv1megkpUy+3FN9yfVJKIcYMLXTe5CPs4zftBxGaZhADJe6h9CJZ2Okh5cG4PoE7wzHTef+AK++8IuZta3Ppog==",
-        "dependencies": {
-          "Asp.Versioning.Mvc": "10.2.1"
         }
       },
       "FileSignatures": {
@@ -1362,39 +1264,6 @@
         "requested": "[2.5.0, )",
         "resolved": "2.5.0",
         "contentHash": "l0OuzZ2T/botMbOvPGY6yp3v+69aMrt+wzST/tFdGnHEFVXbbdOFxu3bfo9XH1N1H0LCQlA3RmFvlPO8zA+faw=="
-      },
-      "NJsonSchema": {
-        "type": "CentralTransitive",
-        "requested": "[11.6.1, )",
-        "resolved": "11.6.1",
-        "contentHash": "miqvNY4OSXCWVqaMqt0A8VUkij0UH1oPosHMLP+t6/nWNSSzWDPmm7G2DjVW7M9evy0x5DE2pS/DDTtKCpbzSQ==",
-        "dependencies": {
-          "NJsonSchema.Annotations": "11.6.1",
-          "Namotion.Reflection": "3.5.0",
-          "Newtonsoft.Json": "13.0.3"
-        }
-      },
-      "NSwag.Annotations": {
-        "type": "CentralTransitive",
-        "requested": "[14.7.1, )",
-        "resolved": "14.7.1",
-        "contentHash": "4McUe39+UXcJc0fk+ZfUy87cy3Myh89/EaGgQwnBKKUsNMc5WEbP+TVk0ByHKGQf9hoO9ouaOGCGeJD0EVQkjg=="
-      },
-      "NSwag.AspNetCore": {
-        "type": "CentralTransitive",
-        "requested": "[14.7.1, )",
-        "resolved": "14.7.1",
-        "contentHash": "dL25k8teUyyCDsfRRzezRE++yruSLmsPuGwyl6cHBJQa+ivp0MgQ20VONJ33wzHHLediMTW6X18hKu8qP2Vbmg==",
-        "dependencies": {
-          "NJsonSchema": "11.6.1",
-          "NJsonSchema.NewtonsoftJson": "11.6.1",
-          "NJsonSchema.Yaml": "11.6.1",
-          "NSwag.Annotations": "14.7.1",
-          "NSwag.Core.Yaml": "14.7.1",
-          "NSwag.Generation.AspNetCore": "14.7.1",
-          "Namotion.Reflection": "3.5.0",
-          "Newtonsoft.Json": "13.0.3"
-        }
       },
       "OpenMcdf": {
         "type": "CentralTransitive",

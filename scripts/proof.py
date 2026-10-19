@@ -548,9 +548,15 @@ def render_markdown(summary: dict) -> str:
         lines.append(f"`{file}` changed only package versions: {', '.join(f'`{p}`' for p in packages) or 'none'}.")
 
     lines += ["", f"### Tests: {tests['passed']} passed, {tests['failed']} failed, {tests['skipped']} skipped", ""]
-    if tests["modules"]:
+    # A whole-solution run lists 130+ modules; a reviewer acts only on the ones that failed or skipped,
+    # so the clean ones fold into a count and summary.json keeps the full list.
+    noteworthy = [m for m in tests["modules"] if m["failed"] or m["skipped"]]
+    clean = len(tests["modules"]) - len(noteworthy)
+    if noteworthy:
         lines += ["| Module | Passed | Failed | Skipped |", "| --- | --- | --- | --- |"]
-        lines += [f"| {m['module']} | {m['passed']} | {m['failed']} | {m['skipped']} |" for m in tests["modules"]]
+        lines += [f"| {m['module']} | {m['passed']} | {m['failed']} | {m['skipped']} |" for m in noteworthy]
+    if clean:
+        lines += ([""] if noteworthy else []) + [f"{clean} other module{'s' if clean != 1 else ''} passed with no skips; summary.json lists every module.", ""]
     failures = [(m["module"], f) for m in tests["modules"] for f in m["failures"]]
     for module, failure in failures[:MAX_LISTED]:
         lines.append(f"- `{module}` `{failure['test']}`: {failure['message']}")

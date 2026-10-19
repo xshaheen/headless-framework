@@ -18,14 +18,15 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        // New authentication endpoints
+        // New authentication endpoints. Every dashboard endpoint is excluded from API descriptions: see the API group.
         endpoints
             .MapGet("/api/auth/info", _GetAuthInfo)
             .WithName("GetAuthInfo")
             .WithSummary("Get authentication configuration")
             .WithTags("Jobs Dashboard")
             .RequireCors("HeadlessJobsDashboardCORS")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .ExcludeFromDescription();
 
         endpoints
             .MapPost("/api/auth/validate", _ValidateAuth)
@@ -33,9 +34,16 @@ internal static class DashboardEndpoints
             .WithSummary("Validate authentication credentials")
             .WithTags("Jobs Dashboard")
             .RequireCors("HeadlessJobsDashboardCORS")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .ExcludeFromDescription();
 
-        var apiGroup = endpoints.MapGroup("/api").WithTags("Jobs Dashboard").RequireCors("HeadlessJobsDashboardCORS");
+        // The dashboard runs in an app.Map(basePath) branch, so an application document would list these under the wrong
+        // path (/api/... instead of {basePath}/api/...); the dashboard SPA is their only client.
+        var apiGroup = endpoints
+            .MapGroup("/api")
+            .WithTags("Jobs Dashboard")
+            .RequireCors("HeadlessJobsDashboardCORS")
+            .ExcludeFromDescription();
 
         // Apply authentication if configured
         if (config.Auth.Mode == AuthMode.Host)

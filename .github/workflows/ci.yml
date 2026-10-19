@@ -68,6 +68,12 @@ jobs:
       - name: "Verify proof coverage gate"
         run: bash tests/scripts/test-proof-coverage-gate.sh
 
+      - name: "Verify messaging integration workflow logic"
+        run: bash tests/scripts/test-messaging-integration.sh
+
+      - name: "Verify gate slot limit"
+        run: bash tests/scripts/test-gate-slot.sh
+
       - name: "Verify proof re-run scope"
         run: bash tests/scripts/test-proof-reruns.sh
 

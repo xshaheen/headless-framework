@@ -10,14 +10,12 @@ namespace Tests;
 
 public sealed class PrimitiveGeneratorTests
 {
-    private const int _GenerateAllFileCounts = 9;
+    private const int _GenerateAllFileCounts = 7;
 
     private readonly PrimitiveGlobalOptions _generateAllOptions = new()
     {
         GenerateJsonConverters = true, // generate 1 files
         GenerateTypeConverters = true, // generate 1 files
-        GenerateSwashbuckleSwaggerConverters = true, // generate 1 files
-        GenerateNswagSwaggerConverters = true, // generate 1 files
         GenerateXmlConverters = true, // generate methods for XML serialization
         GenerateEntityFrameworkValueConverters = true, // generate 2 files
         GenerateDapperConverters = true, // generate 2 files

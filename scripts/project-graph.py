@@ -630,7 +630,28 @@ def main() -> int:
 
     commands.add_parser("layering", help="check package dependency direction and public namespace names under src/")
 
+    solution_filter = commands.add_parser(
+        "solution-filter",
+        help="write a solution filter of every solution project except those whose name ends with an excluded suffix",
+    )
+    solution_filter.add_argument("--out", required=True, metavar="PATH", help="where to write the .slnf")
+    solution_filter.add_argument(
+        "--exclude-suffix", action="append", default=[], metavar="SUFFIX", help="leave out projects named *SUFFIX; repeatable"
+    )
+    solution_filter.add_argument("--solution", default="headless-framework.slnx", help="solution the filter points at")
+
     args = parser.parse_args()
+
+    if args.command == "solution-filter":
+        solution = REPO_ROOT / args.solution
+        kept = sorted(
+            project
+            for project in solution_projects(solution)
+            if not PurePosixPath(project).stem.endswith(tuple(args.exclude_suffix))
+        )
+        write_solution_filter(Path(args.out), solution, kept)
+        return 0
+
     projects = load_graph()
 
     if args.command == "layering":
