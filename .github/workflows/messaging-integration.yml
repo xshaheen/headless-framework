@@ -1,0 +1,309 @@
+name: "Messaging integration"
+
+# The messaging fast tier proves delivery guarantees against an in-process simulator; this workflow keeps that honest
+# against real containers, and reports two things the required checks never see: a simulator cell that every real
+# broker backing it now fails (simulator drift), and a quarantined cell whose linked issue is already closed. Nothing
+# gates on it and it stays outside the required "CI status", so a red run never blocks a pull request; on a pull
+# request it is evidence from real brokers that the author did not produce on their own machine.
+#
+# scripts/messaging-integration-scope.py decides each run:
+# - pull request and push to main: every leg when the change reaches any messaging integration suite through the
+#   transitive project graph, else only the scope job. No chaos and no quarantine check.
+# - weekly schedule: every leg, chaos at full sizes, and the quarantine check.
+# - dispatch: everything, at the requested chaos sizes, for a run before a release.
+#
+# Retries are off: no step passes --retry-failed-tests, so a guarantee that fails once shows as a failure. Azure Service
+# Bus has two profiles. The real namespace needs a credential and keeps its own dispatch-only workflow
+# (messaging-azure-service-bus-conformance.yml); the drift report does not wait for its cells. The emulator profile runs
+# here, on fixed entities, because the run step sets HEADLESS_ACCEPT_SERVICEBUS_EMULATOR_EULA; without it every emulator
+# test skips with that reason.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 1 * * 0"
+  workflow_dispatch:
+    inputs:
+      chaos_profile:
+        description: "Chaos and soak sizes: full (the scheduled sizes) or smoke"
+        required: false
+        type: choice
+        default: full
+        options:
+          - full
+          - smoke
+      drift_drill:
+        description: "Drill only: a TransportConformanceScenario (e.g. EmptyBodyDispatch) whose real-broker leaves fail on purpose, to prove the report labels drift. Leave empty for a real run."
+        required: false
+        type: string
+
+# A new commit on a pull request makes its running run stale, so it cancels it. Runs on main queue instead: each one
+# is the only real-broker result for its commit, and a scheduled run must not cancel a push run or the reverse.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  CONFIGURATION: Release
+
+jobs:
+  scope:
+    name: "Messaging integration · scope"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      legs: ${{ steps.select.outputs.legs }}
+      run_legs: ${{ steps.select.outputs.run_legs }}
+      run_chaos: ${{ steps.select.outputs.run_chaos }}
+      chaos_profile: ${{ steps.select.outputs.chaos_profile }}
+      run_quarantine: ${{ steps.select.outputs.run_quarantine }}
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          # The affected set diffs against the base commit, which a long-lived pull request may leave far behind.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # A pull request diffs against its base; a push against the head main had before it.
+      - name: "Choose the legs"
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CHAOS_PROFILE: ${{ inputs.chaos_profile }}
+        run: |
+          set -euo pipefail
+          make --no-print-directory messaging-integration-scope EVENT="$EVENT" BASE="$BASE" CHAOS_PROFILE="$CHAOS_PROFILE" > selection.txt
+          cat selection.txt >> "$GITHUB_OUTPUT"
+          {
+            echo "### Messaging integration scope"
+            grep -E '^(mode|reason|run_legs|run_chaos|chaos_profile|run_quarantine)=' selection.txt | sed 's/^/- /'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  integration:
+    name: "Messaging integration · ${{ matrix.leg.name }}"
+    needs: scope
+    if: needs.scope.outputs.run_legs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      # Six container stacks at a time leave the account's other workflows room to start while a full run is going.
+      max-parallel: 6
+      matrix:
+        leg: ${{ fromJSON(needs.scope.outputs.legs) }}
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          # MinVer derives the version from tags and commit height.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Set up .NET SDK"
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: "./global.json"
+
+      # CI's primary build leg owns the cache writes; this workflow only reads.
+      - name: "Restore NuGet cache"
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', 'global.json', 'dotnet-tools.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: "Restore the integration project"
+        env:
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROJECT: ${{ matrix.leg.project }}
+        run: make restore-project PROJECT="$PROJECT"
+
+      - name: "Run the integration suite"
+        env:
+          TZ: ${{ matrix.leg.tz }}
+          PROJECT: ${{ matrix.leg.project }}
+          LEG: ${{ matrix.leg.name }}
+          # Empty on every pull request, push, and scheduled run, so the drill never fails a real run.
+          HEADLESS_CONFORMANCE_DRIFT_DRILL: ${{ inputs.drift_drill }}
+          # The repository owner accepted the Azure Service Bus emulator EULA for test runs; only the emulator fixture reads this.
+          HEADLESS_ACCEPT_SERVICEBUS_EMULATOR_EULA: "Y"
+        run: >-
+          make test-messaging-integration
+          MESSAGING_INTEGRATION_PROJECTS="$PROJECT"
+          MESSAGING_INTEGRATION_RESULTS_DIR="artifacts/test-results/messaging-integration/$LEG"
+          MESSAGING_INTEGRATION_REPORT=false
+
+      - name: "Upload test results"
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: messaging-integration-${{ matrix.leg.name }}
+          path: |
+            artifacts/test-results/messaging-integration/**/*.trx
+            artifacts/test-results/messaging-integration/**/*.json
+            artifacts/test-results/messaging-integration/**/*.dmp
+            artifacts/test-results/messaging-integration/**/*.crash.sequence.log
+          if-no-files-found: warn
+          retention-days: 30
+
+  chaos:
+    name: "Messaging integration · chaos and soak"
+    needs: scope
+    if: needs.scope.outputs.run_chaos == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Set up .NET SDK"
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: "./global.json"
+
+      - name: "Restore NuGet cache"
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', 'global.json', 'dotnet-tools.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: "Restore the chaos project"
+        env:
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make restore-project PROJECT=tests/Headless.Messaging.Tests.Chaos/Headless.Messaging.Tests.Chaos.csproj
+
+      - name: "Run the chaos and soak suite"
+        env:
+          HEADLESS_CHAOS_PROFILE: ${{ needs.scope.outputs.chaos_profile }}
+        run: make test-messaging-chaos
+
+      - name: "Publish the chaos summary"
+        if: always()
+        run: |
+          set -euo pipefail
+          summary=artifacts/test-results/messaging-chaos/summary.md
+          if [[ -f "$summary" ]]; then cat "$summary" >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: "Upload chaos results"
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: messaging-integration-chaos
+          path: |
+            artifacts/test-results/messaging-chaos/**/*.trx
+            artifacts/test-results/messaging-chaos/**/*.md
+            artifacts/test-results/messaging-chaos/**/*.dmp
+          if-no-files-found: warn
+          retention-days: 30
+
+  quarantine:
+    name: "Messaging integration · quarantine check"
+    needs: scope
+    if: needs.scope.outputs.run_quarantine == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+      # Reads each linked issue's state; the check never writes to an issue.
+      issues: read
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Set up .NET SDK"
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: "./global.json"
+
+      - name: "Restore NuGet cache"
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', 'global.json', 'dotnet-tools.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: "Restore the messaging unit-test project"
+        env:
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make restore-project PROJECT=tests/Headless.Messaging.Tests.Unit/Headless.Messaging.Tests.Unit.csproj
+
+      - name: "Check that every quarantine links an open issue"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          make messaging-quarantine-check | tee -a "$GITHUB_STEP_SUMMARY"
+
+  report:
+    name: "Messaging integration · drift report"
+    needs: [scope, integration, chaos]
+    # Runs whenever legs ran, pass or fail; a run with no legs has no results to judge.
+    if: always() && needs.scope.outputs.run_legs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          persist-credentials: false
+
+      - name: "Download every leg's results"
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: messaging-integration-*
+          path: artifacts/test-results/messaging-integration-all
+
+      - name: "Label simulator drift and provider failures"
+        run: |
+          set -euo pipefail
+          status=0
+          make messaging-drift-report MESSAGING_DRIFT_REPORT_ROOT=artifacts/test-results/messaging-integration-all || status=$?
+          if [[ -f artifacts/test-results/messaging-integration-all/summary.md ]]; then
+            cat artifacts/test-results/messaging-integration-all/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
+
+      - name: "Upload the per-cell summary"
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: messaging-integration-summary
+          path: artifacts/test-results/messaging-integration-all/summary.md
+          if-no-files-found: warn
+          retention-days: 30

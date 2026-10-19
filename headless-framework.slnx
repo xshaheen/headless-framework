@@ -442,14 +442,23 @@
         <Project Path="tests/Headless.Messaging.Storage.SqlServer.EntityFramework.Tests.Unit/Headless.Messaging.Storage.SqlServer.EntityFramework.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.AzureServiceBus.Tests.Unit/Headless.Messaging.AzureServiceBus.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Tests.Harness/Headless.Messaging.Tests.Harness.csproj" />
+        <Project Path="tests/Headless.Messaging.Tests.Chaos/Headless.Messaging.Tests.Chaos.csproj" />
         <Project Path="tests/Headless.Messaging.Tests.Unit/Headless.Messaging.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.SourceGenerator.Tests.Unit/Headless.Messaging.SourceGenerator.Tests.Unit.csproj" />
         <Project Path="test-assets/Headless.Messaging.GeneratedModuleFixture/Headless.Messaging.GeneratedModuleFixture.csproj" />
+        <Project Path="tests/Headless.Messaging.Storage.PostgreSql.Tests.Harness/Headless.Messaging.Storage.PostgreSql.Tests.Harness.csproj" />
         <Project Path="tests/Headless.Messaging.Storage.PostgreSql.Tests.Integration/Headless.Messaging.Storage.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Storage.SqlServer.Tests.Integration/Headless.Messaging.Storage.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Redis.Tests.Unit/Headless.Messaging.Redis.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Redis.Tests.Integration/Headless.Messaging.Redis.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.NatsPostgreSql.Tests.Integration/Headless.Messaging.NatsPostgreSql.Tests.Integration.csproj" />
+        <Project Path="tests/Headless.Messaging.RabbitMqPostgreSql.Tests.Integration/Headless.Messaging.RabbitMqPostgreSql.Tests.Integration.csproj" />
+        <Project Path="tests/Headless.Messaging.RabbitMqSqlServer.Tests.Integration/Headless.Messaging.RabbitMqSqlServer.Tests.Integration.csproj" />
+        <Project Path="tests/Headless.Messaging.KafkaPostgreSql.Tests.Integration/Headless.Messaging.KafkaPostgreSql.Tests.Integration.csproj" />
+        <Project Path="tests/Headless.Messaging.PulsarPostgreSql.Tests.Integration/Headless.Messaging.PulsarPostgreSql.Tests.Integration.csproj" />
+        <Project Path="tests/Headless.Messaging.RedisPostgreSql.Tests.Integration/Headless.Messaging.RedisPostgreSql.Tests.Integration.csproj" />
+        <Project Path="tests/Headless.Messaging.AwsPostgreSql.Tests.Integration/Headless.Messaging.AwsPostgreSql.Tests.Integration.csproj" />
+        <Project Path="tests/Headless.Messaging.AzureServiceBusPostgreSql.Tests.Integration/Headless.Messaging.AzureServiceBusPostgreSql.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/MultiTenancy/">
         <Project Path="src\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />

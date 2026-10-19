@@ -2,11 +2,16 @@
 
 using Headless.Testing.Tests;
 using Tests.Capabilities;
+using Tests.Guarantees;
 
 namespace Tests;
 
 public sealed class ProviderConformanceEvidenceTests : TestBase
 {
+    [Fact]
+    public void should_run_every_guarantee_this_provider_inherits() =>
+        GuaranteeBindings.GetLeafErrors(typeof(ProviderConformanceEvidenceTests).Assembly).Should().BeEmpty();
+
     [Fact]
     public void should_bind_every_supported_manifest_scenario_to_an_existing_test()
     {

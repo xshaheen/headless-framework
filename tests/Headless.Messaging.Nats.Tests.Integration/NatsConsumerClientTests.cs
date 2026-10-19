@@ -34,6 +34,20 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         return fixture.CreateConformanceSessionAsync(cancellationToken);
     }
 
+    protected override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
+        TransportConformanceSessionOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        return fixture.CreateConformanceSessionAsync(cancellationToken, options: options);
+    }
+
+    /// <summary>
+    /// The server's 1 MiB <c>max_payload</c>, which counts the header block too: the conformance envelope's headers take
+    /// 226 bytes of it, and the client refuses a larger message before sending it.
+    /// </summary>
+    protected override int MaximumBodySize => (1024 * 1024) - 226;
+
     [Fact]
     public override Task should_round_trip_queue_message_body_and_headers()
     {
@@ -475,6 +489,18 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
     public override Task should_reject_real_delivery_and_observe_redelivery()
     {
         return base.should_reject_real_delivery_and_observe_redelivery();
+    }
+
+    [Fact]
+    public override Task should_not_settle_another_delivery_when_a_settled_value_is_used_again()
+    {
+        return base.should_not_settle_another_delivery_when_a_settled_value_is_used_again();
+    }
+
+    [Fact]
+    public override Task should_keep_the_delivery_and_the_listener_when_the_callback_throws()
+    {
+        return base.should_keep_the_delivery_and_the_listener_when_the_callback_throws();
     }
 
     [Fact]

@@ -2,11 +2,13 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
+using Tests.Guarantees;
 
 namespace Tests;
 
 public abstract partial class DataStorageTestsBase
 {
+    [Guarantee("MSG-STORE-04")]
     public virtual async Task should_revoke_delayed_message_and_prevent_reservation_and_shutdown_resurrection()
     {
         var storage = GetStorage();
@@ -32,6 +34,7 @@ public abstract partial class DataStorageTestsBase
             .Be(MessageRevocationResult.Revoked);
     }
 
+    [Guarantee("MSG-RETRY-09")]
     public virtual async Task should_reject_revocation_after_attempt_reservation()
     {
         var storage = GetStorage();
@@ -93,6 +96,7 @@ public abstract partial class DataStorageTestsBase
         (await storage.GetMonitoringApi().GetPublishedMessageAsync(message.StorageId, AbortToken)).Should().NotBeNull();
     }
 
+    [Guarantee("MSG-RETRY-09")]
     public virtual async Task should_have_one_winner_when_revocation_races_first_reservation()
     {
         var storage = GetStorage();

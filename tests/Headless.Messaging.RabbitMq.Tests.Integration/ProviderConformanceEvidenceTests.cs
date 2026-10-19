@@ -2,12 +2,17 @@
 
 using Headless.Testing.Tests;
 using Tests.Capabilities;
+using Tests.Guarantees;
 
 namespace Tests;
 
 [Collection<RabbitMqFixture>]
 public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : TestBase
 {
+    [Fact]
+    public void should_run_every_guarantee_this_provider_inherits() =>
+        GuaranteeBindings.GetLeafErrors(typeof(ProviderConformanceEvidenceTests).Assembly).Should().BeEmpty();
+
     [Fact]
     public Task should_prove_routing_affinity_mapping_or_rejection() =>
         TransportRoutingAffinityConformance.AssertAsync(new RabbitMqProviderConformanceDriver(fixture), AbortToken);
@@ -18,6 +23,11 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
         var profile = TransportConformanceManifest.Providers["RabbitMQ"];
         TransportConformanceTestBinding[] bindings =
         [
+            new(
+                TransportConformanceScenario.ConnectionDropRecovery,
+                typeof(RabbitMqNetworkFaultTests),
+                nameof(RabbitMqNetworkFaultTests.should_resume_delivery_once_after_the_connection_is_dropped)
+            ),
             new(
                 TransportConformanceScenario.RawPayloadConsumption,
                 typeof(RabbitMqRawPayloadTests),
@@ -85,6 +95,34 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
                 TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                 nameof(
                     RabbitMqConsumerClientConformanceTests.should_terminally_reject_malformed_envelope_across_consumer_restart
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+                nameof(
+                    RabbitMqConsumerClientConformanceTests.should_redeliver_then_give_up_when_the_header_builder_fails_transiently
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.DeadLetterSingleCopy,
+                nameof(
+                    RabbitMqConsumerClientConformanceTests.should_keep_one_dead_letter_copy_and_settle_the_original_once
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.StandardHeaderRoundTrip,
+                nameof(RabbitMqConsumerClientConformanceTests.should_round_trip_every_standard_header_unchanged)
+            ),
+            _Bind(
+                TransportConformanceScenario.HandlerConcurrencyCap,
+                nameof(
+                    RabbitMqConsumerClientConformanceTests.should_never_hand_over_more_deliveries_at_once_than_the_requested_concurrency
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.MessageExpiry,
+                nameof(
+                    RabbitMqConsumerClientConformanceTests.should_not_deliver_a_message_that_expired_before_it_was_consumed
                 )
             ),
             _BindRequestReply(

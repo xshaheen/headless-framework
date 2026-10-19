@@ -70,6 +70,9 @@ internal sealed class SubscribeExecutor(
 
     private readonly MessagingOptions _options = options.Value;
 
+    // The lease-renewal timeout waits out a store that stopped answering, so it runs apart from the app clock.
+    private readonly TimeProvider _backoffClock = BackoffClock.Resolve(provider);
+
     private readonly InboxMetricPolicy _inboxMetricPolicy =
         provider.GetService<InboxMetricPolicy>() ?? new InboxMetricPolicy(TenantTagName: null);
 
@@ -636,7 +639,8 @@ internal sealed class SubscribeExecutor(
             message,
             dataStorage.RenewReceiveLeaseAsync,
             _retryPolicy,
-            timeProvider,
+            clock: timeProvider,
+            backoffClock: _backoffClock,
             logger,
             cancellationToken
         );

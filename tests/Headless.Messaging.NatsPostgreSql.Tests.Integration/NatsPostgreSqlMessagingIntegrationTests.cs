@@ -1,9 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Messaging;
 using Headless.Messaging.Nats;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using NATS.Client.JetStream.Models;
+using Npgsql;
 using Tests.Helpers;
 
 namespace Tests;
@@ -43,6 +46,21 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
         setup.Options.MessageNamePrefix = _topicPrefix;
         setup.Options.RetryProcessor.BaseInterval = TimeSpan.FromSeconds(1);
     }
+
+    protected override DbConnection CreateStorageConnection() =>
+        new NpgsqlConnection(fixture.PostgreSqlConnectionString);
+
+    protected override ValueTask<IUnitOfWork> BeginUnitOfWorkAsync(
+        IUnitOfWorkFactory factory,
+        DbConnection connection,
+        CancellationToken cancellationToken
+    ) => factory.BeginAsync((NpgsqlConnection)connection, cancellationToken);
+
+    protected override Task InterruptBrokerAsync(CancellationToken cancellationToken) =>
+        fixture.PauseBrokerAsync(cancellationToken);
+
+    protected override Task RestoreBrokerAsync(CancellationToken cancellationToken) =>
+        fixture.UnpauseBrokerAsync(cancellationToken);
 
     [Fact]
     public override Task should_publish_and_consume_message_end_to_end()

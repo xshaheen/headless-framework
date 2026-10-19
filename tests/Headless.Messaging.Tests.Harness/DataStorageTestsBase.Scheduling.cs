@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
+using Tests.Guarantees;
 
 namespace Tests;
 
@@ -21,6 +22,7 @@ public abstract partial class DataStorageTestsBase
         throw new NotSupportedException("The store decides due time on a clock the test cannot control.");
     }
 
+    [Guarantee("MSG-STORE-04")]
     public virtual async Task should_preserve_schedules_and_revocation_across_restart_and_clock_steps()
     {
         var clock = new SchedulingTestClock(DateTimeOffset.UtcNow);

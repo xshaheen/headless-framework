@@ -16,10 +16,11 @@ namespace Tests;
 
 /// <summary>
 /// Integration tests for SQL Server data storage using real SQL Server container.
-/// Inherits from <see cref="DataStorageTestsBase"/> to run standard storage tests.
+/// Inherits from <see cref="DataStorageTestsBase"/> to run standard storage tests. Left unsealed so the EF Core leaf
+/// runs every one of them against storage configured from a context.
 /// </summary>
 [Collection<SqlServerTestFixture>]
-public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataStorageTestsBase
+public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataStorageTestsBase
 {
     [Theory]
     [InlineData(MessageLane.Bus, 0L)]
@@ -234,10 +235,10 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         );
     }
 
-    private IDataStorage _CreateStorage(TimeProvider timeProvider)
+    private IDataStorage _CreateStorage(TimeProvider timeProvider, SqlServerOptions? storageOptions = null)
     {
         return new RelationalDataStorage(
-            _sqlServerOptions!.Value.ToStorage(),
+            (storageOptions ?? _sqlServerOptions!.Value).ToStorage(),
             _messagingOptions!,
             TestStorageOptions.For(),
             _tableNames!,
@@ -248,6 +249,34 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
             NullLogger<RelationalDataStorage>.Instance
         );
     }
+
+    /// <inheritdoc />
+    protected override int? DatabaseHostPort => fixture.HostPort;
+
+    /// <inheritdoc />
+    protected override IDataStorage CreateStorageThrough(string host, int port)
+    {
+        _EnsureInitialized();
+        var connectionString = new SqlConnectionStringBuilder(fixture.ConnectionString)
+        {
+            DataSource = $"{host},{port}",
+            // A cut route can leave a connection attempt unanswered; fail it well inside the test's own timeout.
+            ConnectTimeout = 5,
+            CommandTimeout = 5,
+        }.ConnectionString;
+
+        return _CreateStorage(TimeProvider.System, new SqlServerOptions { ConnectionString = connectionString });
+    }
+
+    /// <summary>
+    /// Resolves the connection settings the storage under test is built on. The EF Core leaf reads them from a context
+    /// registration instead.
+    /// </summary>
+    protected virtual IOptions<SqlServerOptions> ResolveStorageOptions() =>
+        Options.Create(new SqlServerOptions { ConnectionString = fixture.ConnectionString });
+
+    /// <summary>Gets the database the suite runs against.</summary>
+    protected SqlServerTestFixture Fixture => fixture;
 
     /// <inheritdoc />
     protected override IDataStorage CreateStorageWithRetryBatchSize(int retryBatchSize)
@@ -306,10 +335,6 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         var services = new ServiceCollection();
         services.AddOptions();
         services.AddLogging();
-        services.Configure<SqlServerOptions>(x =>
-        {
-            x.ConnectionString = fixture.ConnectionString;
-        });
         services.Configure<MessagingOptions>(x =>
         {
             x.Version = "v1";
@@ -322,7 +347,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
 
         var provider = services.BuildServiceProvider();
 
-        _sqlServerOptions = provider.GetRequiredService<IOptions<SqlServerOptions>>();
+        _sqlServerOptions = ResolveStorageOptions();
         _messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
         _serializer = provider.GetRequiredService<IMessageSerializer>();
 
