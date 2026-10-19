@@ -167,19 +167,16 @@ COVERAGE_ARGS_FN = coverage_args=(); \
 		settings="$$($(DOTNET) msbuild "$(COVERAGE_SETTINGS_PROJECT)" -getProperty:HeadlessCoverageSettingsPath -nologo -v:quiet)"; \
 		coverage_args=(--coverage --coverage-output-format cobertura --coverage-settings "$$settings"); \
 	fi;
-# `dotnet format` spends ~10 s loading a solution filter before it analyzes anything (measured: 16 s
-# through a one-project filter, 6 s on the project file), but one load per project does not scale.
-# Up to this many changed projects it runs per project file; above it, once over the filter.
-FORMAT_PER_PROJECT_MAX ?= 2
+# The proof builds pass eng/ProofErrorLog.targets, so every compile writes its diagnostics, info level included, to
+# obj/<configuration>/<tfm>/analyzers.sarif. The analyzer stage reads the changed projects' logs instead of compiling
+# them again under `dotnet format analyzers` (which spent ~10 s loading a solution filter before analyzing anything,
+# and a 74 s median per verify-affected run); a project whose log is older than its assembly, because something built
+# it since without the log, falls back to `dotnet format analyzers` on that project.
+PROOF_ERROR_LOG_ARGS = -p:CustomAfterMicrosoftCommonTargets="$(CURDIR)/eng/ProofErrorLog.targets"
 AFFECTED_ANALYZER_STAGE = if [ -s "$$run/changed.txt" ]; then \
-		Configuration="$(CONFIGURATION)" $(PROOF) run --dir "$$run" --name analyzers -- bash -c ' \
-			run="$$1"; shift; worst=0; \
-			if [ "$$(wc -l < "$$run/changed.txt")" -le $(FORMAT_PER_PROJECT_MAX) ]; then \
-				i=0; while IFS= read -r project; do i=$$((i + 1)); \
-					$(DOTNET) format analyzers "$$project" "$$@" --report "$$run/analyzers/$$i" || { rc=$$?; [ $$rc -gt $$worst ] && worst=$$rc; }; \
-				done < "$$run/changed.txt"; \
-			else $(DOTNET) format analyzers "$$run/changed.slnf" "$$@" --report "$$run/analyzers" || worst=$$?; fi; \
-			exit $$worst' bash "$$run" --no-restore --verify-no-changes --severity "$(QUALITY_SEVERITY)" -v minimal $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),) || true; \
+		$(PROOF) run --dir "$$run" --name analyzers -- $(PYTHON) scripts/proof.py analyzers --dir "$$run" --configuration "$(CONFIGURATION)" \
+			--severity "$(QUALITY_SEVERITY)" $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),) \
+			-- $(DOTNET) format analyzers --no-restore --verify-no-changes --severity "$(QUALITY_SEVERITY)" -v minimal $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),) || true; \
 	fi;
 AFFECTED_PREPARE = $(ASSERT_RESTORED); $(MARK_RESTORED); prepare() { \
 	git rev-parse --verify -q "$(AFFECTED_BASE)^{commit}" >/dev/null || { printf 'ERROR: AFFECTED_BASE=%s does not resolve to a commit. Fetch it, or pass AFFECTED_BASE=<ref>.\n' "$(AFFECTED_BASE)" >&2; return 2; }; \
@@ -194,7 +191,7 @@ AFFECTED_BUILD_STAGES = if [ -s "$$run/build.txt" ]; then \
 				while IFS= read -r project; do mark_restored "$$project"; done < "$$run/build.txt"; \
 			else status=1; fi; \
 		fi; \
-		$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/build.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo $(MSBUILD_ARGS) || status=1; \
+		$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/build.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo $(PROOF_ERROR_LOG_ARGS) $(MSBUILD_ARGS) || status=1; \
 	fi;
 # The unit stage runs the list the target names in `units` (unit by default; test-affected-integration narrows it).
 AFFECTED_UNIT_STAGE = units="$${units:-unit}"; \
@@ -612,7 +609,7 @@ quality-analyzers-affected: ## Analyze the projects changed vs AFFECTED_BASE; wr
 	run="$(PROOF_RUN)-quality"; status=0; \
 	if [ ! -s "$$run/changed.txt" ]; then printf '\033[33m[quality-analyzers-affected]\033[0m no changed project vs %s; nothing analyzed.\n' "$(AFFECTED_BASE)"; exit 0; fi; \
 	$(PROOF) run --dir "$$run" --name restore -- $(DOTNET) restore "$$run/changed.slnf" --locked-mode -v:q -nologo || status=1; \
-	$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/changed.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:minimal -nologo $(MSBUILD_ARGS) || status=1; \
+	$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/changed.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:minimal -nologo $(PROOF_ERROR_LOG_ARGS) $(MSBUILD_ARGS) || status=1; \
 	$(AFFECTED_ANALYZER_STAGE) \
 	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status
