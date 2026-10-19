@@ -167,14 +167,21 @@ AFFECTED_BUILD_STAGES = if [ -s "$$run/build.txt" ]; then \
 		fi; \
 		$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/build.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo $(MSBUILD_ARGS) || status=1; \
 	fi;
+# An analyzer finding sends the change back for an edit, and that edit re-runs every suite, so the integration gate
+# analyzes right after the build (about a minute) and skips its suites on a finding instead of finding out from
+# verify-affected after the suites already ran. The skip goes through `status`, as a failed build's does.
+AFFECTED_INTEGRATION_ANALYZER_STAGE = if [ $$status -eq 0 ]; then \
+		$(AFFECTED_ANALYZER_STAGE) \
+		$(PROOF) analyzers-clean --dir "$$run" || { status=1; printf '\033[31m[affected]\033[0m analyzer findings in the changed projects; fix them before the suites run.\n' >&2; }; \
+	fi;
 # The unit stage runs the list the target names in `units` (unit by default; test-affected-integration narrows it).
 AFFECTED_UNIT_STAGE = units="$${units:-unit}"; \
-	if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name unit-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
+	if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name unit-tests --reason "an earlier stage (build or analyzers) failed; fix it first, since the fix re-runs these tests anyway"; \
 	elif [ -s "$$run/$$units.txt" ]; then \
 		$(COVERAGE_ARGS_FN) \
 		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/$$units.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
 	else printf '\033[33m[affected]\033[0m %s.txt selects no unit-test project; no unit tests ran.\n' "$$units"; fi;
-AFFECTED_INTEGRATION_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name integration-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
+AFFECTED_INTEGRATION_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name integration-tests --reason "an earlier stage (build or analyzers) failed; fix it first, since the fix re-runs these tests anyway"; \
 	elif [ -s "$$run/integration.txt" ]; then \
 		$(COVERAGE_ARGS_FN) \
 		$(PROOF) run --dir "$$run" --name integration-tests -- $(DOTNET) test --solution "$$run/integration.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/integration-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
@@ -346,7 +353,7 @@ test-query: ## Run tests matching QUERY (MTP --filter-query). Solution-wide unle
 # bundle's summary.json; the other failed stages are named with the target that repeats them. The final proof
 # is still one full verify-affected.
 .PHONY: test-failed
-test-failed: ## Re-run only the unit-test projects whose modules failed in the last verify-affected or test-affected proof (PROOF_BUNDLE=<dir> picks another).
+test-failed: ## Re-run only the test projects whose modules failed in the last verify-affected, test-affected, or test-affected-integration proof (PROOF_BUNDLE=<dir> picks another).
 	@projects="$$($(PROOF) failed --root "$(ARTIFACTS_DIR)/proof" $(if $(PROOF_BUNDLE),--dir "$(PROOF_BUNDLE)",))"; \
 	if [ -z "$$projects" ]; then exit 0; fi; failed=""; \
 	for project in $$projects; do \
@@ -906,6 +913,7 @@ test-affected-integration: ## Build the affected set, run its integration tests,
 	run="$(PROOF_RUN)-integration"; status=0; units=integration-unit; coverage="$(INTEGRATION_COVERAGE)"; \
 	if [ ! -s "$$run/integration-packages.txt" ]; then coverage=false; fi; \
 	$(AFFECTED_BUILD_STAGES) \
+	$(AFFECTED_INTEGRATION_ANALYZER_STAGE) \
 	$(AFFECTED_UNIT_STAGE) \
 	$(AFFECTED_INTEGRATION_STAGE) \
 	$(AFFECTED_COVERAGE_MERGE_STAGE) \
