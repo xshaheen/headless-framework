@@ -363,20 +363,8 @@ public static class TransportConformanceManifest
                         "https://github.com/xshaheen/headless-framework/issues/1243"
                     )
                 )
-                .WithScenario(
-                    TransportConformanceScenario.StaleSettlement,
-                    ConformanceSupport.Unsupported(
-                        "Settling a delivery tag a second time closes the channel with PRECONDITION_FAILED, and the competing consumer stops receiving.",
-                        "https://github.com/xshaheen/headless-framework/issues/1267"
-                    )
-                )
-                .WithScenario(
-                    TransportConformanceScenario.HandlerFailureRedelivery,
-                    ConformanceSupport.Unsupported(
-                        "A delivery whose callback throws stays unacknowledged on the open channel, so it is never redelivered and the prefetch slot stays taken.",
-                        "https://github.com/xshaheen/headless-framework/issues/1268"
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HandlerFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusConsumerIdentityFanOut, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)

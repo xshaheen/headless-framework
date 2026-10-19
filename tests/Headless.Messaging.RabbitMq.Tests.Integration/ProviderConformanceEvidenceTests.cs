@@ -72,6 +72,18 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
                 nameof(RabbitMqConsumerClientConformanceTests.should_shutdown_idle_consumer_within_bound)
             ),
             _Bind(
+                TransportConformanceScenario.StaleSettlement,
+                nameof(
+                    RabbitMqConsumerClientConformanceTests.should_not_settle_another_delivery_when_a_settled_value_is_used_again
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.HandlerFailureRedelivery,
+                nameof(
+                    RabbitMqConsumerClientConformanceTests.should_keep_the_delivery_and_the_listener_when_the_callback_throws
+                )
+            ),
+            _Bind(
                 TransportConformanceScenario.BusConsumerIdentityFanOut,
                 nameof(
                     RabbitMqConsumerClientConformanceTests.should_fan_out_one_bus_copy_per_consumer_identity_while_replicas_compete
