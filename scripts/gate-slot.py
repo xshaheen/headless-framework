@@ -13,15 +13,22 @@ it is released the moment this process exits for any reason, and a dotnet build 
 running cannot keep a slot. A nested gate (`make check` running `verify-affected`) sees GATE_SLOT_HELD
 and runs without taking a second slot, which would otherwise deadlock at GATE_SLOTS=1.
 
-A benchmark needs the machine to itself, so --exclusive takes every slot. It takes them in index order and
-keeps each one while it waits for the next, so two exclusive runs cannot each hold half the slots forever.
+Slots come in pools, each with its own size. `gate` limits the build-and-unit-test gates. `integration` limits
+the gates that start containers: TEST_MAX_PARALLEL stays at 3 because six integration modules at once broke
+timing-sensitive suites, so two integration gates side by side would recreate that. A gate names the pools it
+needs; they are always taken in POOLS order, so no two gates can each hold what the other waits for.
 
-Usage: gate-slot.py [--exclusive] --label <name> -- <command> [args...]
+A benchmark needs the machine to itself, so --exclusive takes every slot of every pool it names. It takes them
+in index order and keeps each one while it waits for the next, so two exclusive runs cannot each hold half the
+slots forever.
+
+Usage: gate-slot.py [--exclusive] [--pool gate|integration]... --label <name> -- <command> [args...]
 
 Environment:
-  GATE_SLOTS      slots per machine (default 2); 0 runs the command with no slot
-  GATE_SLOT_DIR   the shared lock directory (default ~/.cache/headless-framework/gate-slots)
-  GATE_SLOT_POLL  seconds between attempts while every slot is taken (default 2)
+  GATE_SLOTS              slots in the gate pool (default 2); 0 runs every command with no slot at all
+  GATE_INTEGRATION_SLOTS  slots in the integration pool (default 1)
+  GATE_SLOT_DIR           the shared lock directory (default ~/.cache/headless-framework/gate-slots)
+  GATE_SLOT_POLL          seconds between attempts while every slot is taken (default 2)
 
 Standard library only; exits with the command's status (128 + signal when a signal ended it).
 """
@@ -39,6 +46,8 @@ import time
 from pathlib import Path
 
 REPORT_EVERY_SECONDS = 60.0
+# Acquisition order and each pool's size variable and default.
+POOLS = {"gate": ("GATE_SLOTS", 2), "integration": ("GATE_INTEGRATION_SLOTS", 1)}
 
 
 def _env_int(name: str, default: int) -> int:
@@ -137,8 +146,8 @@ def _acquire(directory: Path, slots: int, label: str, poll: float, exclusive: bo
             last_report = now
             holders = "\n  ".join(_holders(directory, slots)) or "(holders exited; retrying)"
             print(
-                f"[gate-slot] {label}: waiting for {'every' if exclusive else 'one'} of {slots} gate slots "
-                f"(GATE_SLOTS=<n> changes the limit, GATE_SLOTS=0 skips it):\n  {holders}",
+                f"[gate-slot] {label}: waiting for {'every' if exclusive else 'one'} of {slots} {directory.name} slots "
+                f"({POOLS[directory.name][0]}=<n> changes the limit, GATE_SLOTS=0 skips every limit):\n  {holders}",
                 file=sys.stderr,
                 flush=True,
             )
@@ -161,6 +170,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run a command while holding a machine-wide gate slot.")
     parser.add_argument("--label", required=True, help="the gate's name, shown to anyone waiting for a slot")
     parser.add_argument("--exclusive", action="store_true", help="hold every slot, for a run that needs the machine")
+    parser.add_argument("--pool", action="append", choices=list(POOLS), help="a pool to take a slot from (default: gate)")
     parser.add_argument("command", nargs=argparse.REMAINDER, help="the command after --")
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
@@ -168,11 +178,16 @@ def main() -> int:
         parser.error("no command given after --")
 
     env = dict(os.environ)
-    slots = _env_int("GATE_SLOTS", 2)
-    if slots == 0 or env.get("GATE_SLOT_HELD"):
+    if _env_int("GATE_SLOTS", 2) == 0 or env.get("GATE_SLOT_HELD"):
         return _run(command, env)
 
-    held = _acquire(_slot_dir(), slots, args.label, float(_env_int("GATE_SLOT_POLL", 2)), args.exclusive)
+    wanted = set(args.pool or ["gate"])
+    poll = float(_env_int("GATE_SLOT_POLL", 2))
+    held: list[int] = []
+    for pool, (variable, default) in POOLS.items():
+        slots = _env_int(variable, default)
+        if pool in wanted and slots > 0:
+            held += _acquire(_slot_dir() / pool, slots, args.label, poll, args.exclusive)
     env["GATE_SLOT_HELD"] = "1"
     try:
         return _run(command, env)
