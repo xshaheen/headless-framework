@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -645,6 +646,35 @@ def failed_projects(bundle: Path | None, root: Path) -> int:
     return 0
 
 
+BUNDLE_NAME = re.compile(r"^\d{8}T\d{6}Z-(?P<kind>[a-z][a-z0-9-]*)$")
+
+
+def prune_bundles(root: Path, keep: int, starting: Path | None) -> int:
+    """Keep the newest `keep` bundles of each kind, counting the run about to start, and delete the older ones.
+
+    Every proof target writes a new bundle and nothing else removed one, so a long-lived worktree piled up tens of
+    gigabytes of results nobody reads again. Only directories named like a bundle are touched.
+    """
+    if keep <= 0 or not root.is_dir():
+        return 0
+    by_kind: dict[str, list[Path]] = {}
+    for path in root.iterdir():
+        match = BUNDLE_NAME.match(path.name)
+        if match and path.is_dir() and (starting is None or path.name != starting.name):
+            by_kind.setdefault(match["kind"], []).append(path)
+    starting_kind = BUNDLE_NAME.match(starting.name)["kind"] if starting and BUNDLE_NAME.match(starting.name) else None
+    removed = 0
+    for kind, bundles in by_kind.items():
+        # Bundle names start with a UTC timestamp, so name order is run order.
+        allowed = keep - 1 if kind == starting_kind else keep
+        for stale in sorted(bundles, reverse=True)[allowed:]:
+            shutil.rmtree(stale, ignore_errors=True)
+            removed += 1
+    if removed:
+        print(f"[proof] removed {removed} older proof bundle(s) under {root}; PROOF_KEEP={keep} per kind", file=sys.stderr)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -676,6 +706,10 @@ def main() -> int:
     failed = commands.add_parser("failed", help="print the test projects that failed in a bundle")
     failed.add_argument("--dir", type=Path, help="bundle to read (default: the latest -verify or -test bundle under --root)")
     failed.add_argument("--root", type=Path, default=REPO_ROOT / "artifacts" / "proof", help="where the bundles live")
+    prune = commands.add_parser("prune", help="delete all but the newest bundles of each kind")
+    prune.add_argument("--root", type=Path, default=REPO_ROOT / "artifacts" / "proof", help="where the bundles live")
+    prune.add_argument("--keep", type=int, required=True, help="bundles to keep per kind, counting --starting; 0 keeps all")
+    prune.add_argument("--starting", type=Path, help="the bundle about to be written; it counts toward its kind's quota")
     args = parser.parse_args()
 
     if args.command == "run":
@@ -685,6 +719,8 @@ def main() -> int:
         return run_stage(args.dir, args.name, command)
     if args.command == "skip":
         return skip_stage(args.dir, args.name, args.reason)
+    if args.command == "prune":
+        return prune_bundles(args.root, args.keep, args.starting)
     if args.command == "failed":
         return failed_projects(args.dir, args.root)
     floors = {"unit": args.unit_floor, "line": args.line_floor, "branch": args.branch_floor}

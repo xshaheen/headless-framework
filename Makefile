@@ -140,6 +140,10 @@ SOLUTION_PROJECTS = sed -n 's/.*<Project Path="\([^"]*\)".*/\1/p' "$(SOLUTION)" 
 PYTHON ?= python3
 GRAPH = $(PYTHON) scripts/project-graph.py
 PROOF = $(PYTHON) scripts/proof.py
+# Each proof target keeps the newest PROOF_KEEP bundles of its own kind (-verify, -integration, ...), counting the one
+# it starts, and deletes the older ones; nothing else ever removed a bundle, and one worktree had 52 of them (22 GB).
+# test-failed reads the newest -verify or -test bundle, which is always kept. PROOF_KEEP=0 keeps every bundle.
+PROOF_KEEP ?= 3
 # One timestamp per make invocation, so every stage of a target writes into the same bundle.
 PROOF_RUN := $(ARTIFACTS_DIR)/proof/$(shell date -u +%Y%m%dT%H%M%SZ)
 # Coverage costs ~0.4 s per test module plus a merge (~20 s on a whole-solution run), so the inner loop skips
@@ -179,6 +183,7 @@ AFFECTED_ANALYZER_STAGE = if [ -s "$$run/changed.txt" ]; then \
 	fi;
 AFFECTED_PREPARE = $(ASSERT_RESTORED); $(MARK_RESTORED); prepare() { \
 	git rev-parse --verify -q "$(AFFECTED_BASE)^{commit}" >/dev/null || { printf 'ERROR: AFFECTED_BASE=%s does not resolve to a commit. Fetch it, or pass AFFECTED_BASE=<ref>.\n' "$(AFFECTED_BASE)" >&2; return 2; }; \
+	$(PROOF) prune --root "$${1%/*}" --keep "$(PROOF_KEEP)" --starting "$$1"; \
 	rm -rf "$$1"; $(GRAPH) affected --base "$(AFFECTED_BASE)" $(AFFECTED_SCOPE_ARGS) --out-dir "$$1"; }; prepare
 # Restore is asserted, not repeated: the solution-filter restore runs only when a selected project's
 # assets are missing or older than Directory.Packages.props or its lock file.
