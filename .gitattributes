@@ -19,6 +19,13 @@
 *.verified.xml text eol=lf working-tree-encoding=UTF-8
 *.verified.json text eol=lf working-tree-encoding=UTF-8
 
+# Tool-written files GitHub collapses in a pull request diff, so review attention lands on hand-written code.
+# Verify snapshots (*.verified.*) stay visible: they are the generator output a reviewer has to check.
+packages.lock.json linguist-generated=true
+package-lock.json linguist-generated=true
+*.Designer.cs linguist-generated=true
+*ModelSnapshot.cs linguist-generated=true
+
 ### Binary Files ###
 
 *.snk binary

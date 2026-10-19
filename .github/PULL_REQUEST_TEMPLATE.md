@@ -1,7 +1,28 @@
 <!-- Title: type(scope)!: the outcome, not the mechanism. The ! marks a breaking change.
-     Write in plain words: no filler, no internal jargon, no plan, review, or finding IDs. -->
+     Write in plain words: no filler, no internal jargon, no plan, review, or finding IDs.
+     Budget: everything outside <details> stays under ~400 words, ~700 for a large PR. A reviewer reads the visible
+     text; anything that only backs up a claim goes in a collapsed block. Mechanical changes (package deletions,
+     renames, lockfiles, generated code) belong in their own PR, stacked under the behavior change. -->
 
-<!-- Two sentences a reviewer can stop after: what is different now, and what was wrong before. -->
+<!-- TL;DR, at most 35 words: what is different now, and what was wrong before. -->
+
+**Review:** <!-- ~N min · risk low, medium, or high · authored by a human, by an agent and read by a human, or by an
+agent only; name what a human read line by line -->
+
+## Review guide
+
+<!-- The questions you want the reviewer to answer, most consequential first, each linked to the hunk that carries
+     it (Files changed, line number, Copy permalink). Ask for a decision, not a reading order: "Is a 30 s lease the
+     right default for a cold start?", not "start in LeaseStore.cs". Three to six rows. -->
+
+| Decide | Where |
+| --- | --- |
+| | |
+
+**Skim:** <!-- what is mechanical and why it is safe to skim, with file counts: moved files, renames, tests that only
+follow a signature change, generated code, lockfiles. Delete if nothing. -->
+
+**Least sure about:** <!-- the one or two places the author would check first if this broke after merge. -->
 
 ## Problem
 
@@ -15,8 +36,8 @@ Fixes #
 ## Solution
 
 <!-- One sentence on what is different now. Then, when behavior changed, one row per behavior a consumer or operator
-     can observe, each backed by a test. Add a diagram only for a mechanism a table cannot show. Don't restate the
-     diff. -->
+     can observe, each backed by a test. When the change moves a flow, a lifecycle, or a dependency direction, add a
+     mermaid diagram of the new shape. Don't restate the diff. -->
 
 | Situation | Before | After |
 | --- | --- | --- |
@@ -46,6 +67,9 @@ Fixes #
 
 ## Verification
 
+<!-- The state on the head commit only. How the branch got there (checks run on earlier commits, reruns, merges
+     from main) goes in the collapsed Branch history block, never in these lines. -->
+
 | Check | Result on `<head commit>` |
 | --- | --- |
 | `make verify-affected` | |
@@ -55,8 +79,15 @@ Fixes #
 - **Not verified:** <!-- each claim no check covers, and why. Delete if none. -->
 - **Coverage below floor:** <!-- each warning the proof's coverage gate lists, with its reason (glue code,
   integration-only behavior, unreachable branch, cost above risk; see AGENTS.md). Delete if none. -->
+- **Unrelated failures:** <!-- each test that failed, with the evidence it also fails on main. Delete if none. -->
 
 <!-- Paste each proof's artifacts/proof/<run>/summary.md here, each inside its own collapsed <details> block. -->
+
+<details><summary>Branch history</summary>
+
+<!-- Delete if the branch has one commit worth describing. What each later commit added, and the checks run on it. -->
+
+</details>
 
 ## Left out
 
