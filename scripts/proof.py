@@ -15,8 +15,10 @@ Commands:
   retry-flakes
              After a failed test stage, re-run once the modules whose every failed test is listed in
              tests/known-flakes.txt, into <stage>-retry; exit 0 when the retry passed.
-  failed     Print the test projects whose modules failed in a bundle (the latest verify or test
-             bundle by default), one per line, and name the other failed stages on stderr.
+  failed     Print the test projects whose modules failed in a bundle (the latest verify, test, or
+             integration bundle by default), one per line, and name the other failed stages on stderr.
+  analyzers-clean
+             Exit 1 when a bundle's analyzer stage reported a visible finding in a changed project.
 """
 
 from __future__ import annotations
@@ -456,6 +458,32 @@ def coverage_gate(
     return stage, report
 
 
+# The branch every pull request merges into; the empty-selection check measures the change against it.
+DEFAULT_BRANCH = "origin/main"
+
+
+def empty_selection_stage(affected: dict) -> Stage | None:
+    """Fail a bundle that selected no project while HEAD changes src/ against the default branch.
+
+    A base that resolves to the branch's own pushed copy leaves only the unpushed edits to select, so a gate
+    once passed with zero tests on a branch full of source changes. The selection, not the tests, was wrong.
+    """
+    if not affected or affected.get("changed_projects"):
+        return None
+    merge_base = git("merge-base", DEFAULT_BRANCH, "HEAD")
+    if not merge_base:
+        return None
+    source = [line for line in git("diff", "--name-only", merge_base, "--", "src").splitlines() if line]
+    if not source:
+        return None
+    note = (
+        f"no project selected against base {affected.get('base')}, but HEAD changes {len(source)} file(s) under src/ "
+        f"against {DEFAULT_BRANCH}; re-run with AFFECTED_BASE={DEFAULT_BRANCH} (a stacked branch whose own commits "
+        "change no src/ can ignore this)"
+    )
+    return Stage("affected-selection", [], 1, 0.0, "", note)
+
+
 def apply_flake_retries(directory: Path, stages: list[Stage], modules: list[TestModule]) -> set[str]:
     """Clear a failed stage whose failures were all known flakes that passed on their one retry."""
     flakes = known_flakes()
@@ -511,6 +539,9 @@ def summarize(
     )
     if gate_stage is not None:
         stages.append(gate_stage)
+    selection_stage = empty_selection_stage(affected)
+    if selection_stage is not None:
+        stages.append(selection_stage)
     failed_stages = [stage.name for stage in stages if stage.exit_code > 0]
 
     summary = {
@@ -520,7 +551,10 @@ def summarize(
         "base": affected.get("base"),
         "verdict": "fail" if failed_stages else "pass",
         "stages": [asdict(stage) for stage in stages],
-        "affected": {key: affected.get(key, []) for key in ("changed_projects", "unit_tests", "integration_tests", "global_triggers", "unmapped_files")},
+        "affected": {
+            **{key: affected.get(key, []) for key in ("changed_projects", "unit_tests", "integration_tests", "global_triggers", "unmapped_files")},
+            "package_triggers": affected.get("package_triggers", {}),
+        },
         "tests": {
             "passed": sum(m.passed for m in modules),
             "failed": sum(m.failed for m in modules),
@@ -570,11 +604,19 @@ def render_markdown(summary: dict) -> str:
     ]
     if affected["global_triggers"]:
         lines.append(f"Build-wide files changed: {', '.join(f'`{f}`' for f in affected['global_triggers'])}.")
+    for file, packages in affected.get("package_triggers", {}).items():
+        lines.append(f"`{file}` changed only package versions: {', '.join(f'`{p}`' for p in packages) or 'none'}.")
 
     lines += ["", f"### Tests: {tests['passed']} passed, {tests['failed']} failed, {tests['skipped']} skipped", ""]
-    if tests["modules"]:
+    # A whole-solution run lists 130+ modules; a reviewer acts only on the ones that failed or skipped,
+    # so the clean ones fold into a count and summary.json keeps the full list.
+    noteworthy = [m for m in tests["modules"] if m["failed"] or m["skipped"]]
+    clean = len(tests["modules"]) - len(noteworthy)
+    if noteworthy:
         lines += ["| Module | Passed | Failed | Skipped |", "| --- | --- | --- | --- |"]
-        lines += [f"| {m['module']} | {m['passed']} | {m['failed']} | {m['skipped']} |" for m in tests["modules"]]
+        lines += [f"| {m['module']} | {m['passed']} | {m['failed']} | {m['skipped']} |" for m in noteworthy]
+    if clean:
+        lines += ([""] if noteworthy else []) + [f"{clean} other module{'s' if clean != 1 else ''} passed with no skips; summary.json lists every module.", ""]
     failures = [(m["module"], f) for m in tests["modules"] for f in m["failures"]]
     for module, failure in failures[:MAX_LISTED]:
         lines.append(f"- `{module}` `{failure['test']}`: {failure['message']}")
@@ -652,8 +694,19 @@ STAGE_RERUN = {
     "build": "make build-affected",
     "analyzers": "make quality-analyzers-affected",
     "coverage-merge": "make verify-affected",
+    "affected-selection": "make verify-affected AFFECTED_BASE=origin/main",
+    "integration-tests": "make test-affected-integration",
     "coverage-gate": "add tests for the uncovered changed lines summary.md lists, then make verify-affected (or make test-affected-integration for a package with an integration project)",
 }
+
+
+def analyzers_clean(directory: Path) -> int:
+    affected_path = directory / "affected.json"
+    affected = json.loads(affected_path.read_text(encoding="utf-8")) if affected_path.exists() else {}
+    findings = analyzer_findings(directory, [str(Path(p).parent) + "/" for p in affected.get("changed_projects", [])])
+    for finding in findings[:20]:
+        print(f"[proof] {finding['severity']} {finding['id']} {finding['file']}:{finding['line']} {finding['message']}", file=sys.stderr)
+    return 1 if findings else 0
 
 
 def retry_flakes(directory: Path, stage: str, project_lists: list[Path], test_args: list[str], dotnet: str = "dotnet") -> int:
@@ -689,7 +742,9 @@ def retry_flakes(directory: Path, stage: str, project_lists: list[Path], test_ar
 def latest_bundle(root: Path) -> Path | None:
     # Bundle names start with a UTC timestamp, so name order is run order.
     bundles = sorted(
-        path for path in root.glob("*") if path.name.endswith(("-verify", "-test")) and (path / "summary.json").is_file()
+        path
+        for path in root.glob("*")
+        if path.name.endswith(("-verify", "-test", "-integration")) and (path / "summary.json").is_file()
     )
     return bundles[-1] if bundles else None
 
@@ -699,11 +754,18 @@ def failed_projects(bundle: Path | None, root: Path) -> int:
     if bundle is None:
         bundle = latest_bundle(root)
         if bundle is None:
-            print(f"[proof] no verify-affected or test-affected bundle under {root}. Run: make verify-affected", file=sys.stderr)
+            print(
+                f"[proof] no verify-affected, test-affected, or test-affected-integration bundle under {root}. Run: make verify-affected",
+                file=sys.stderr,
+            )
             return 1
     summary = json.loads((bundle / "summary.json").read_text(encoding="utf-8"))
-    unit_list = bundle / "unit.txt"
-    by_module = {Path(line).stem: line for line in unit_list.read_text(encoding="utf-8").split()} if unit_list.exists() else {}
+    # An integration bundle runs integration-unit.txt and integration.txt; the others run unit.txt.
+    by_module: dict[str, str] = {}
+    for listing in ("unit.txt", "integration-unit.txt", "integration.txt"):
+        path = bundle / listing
+        if path.exists():
+            by_module.update({Path(line).stem: line for line in path.read_text(encoding="utf-8").split()})
     projects: list[str] = []
     for module in summary["tests"]["modules"]:
         if not module["failed"]:
@@ -716,14 +778,17 @@ def failed_projects(bundle: Path | None, root: Path) -> int:
         projects.append(project)
 
     stages = {stage["name"]: stage["exit_code"] for stage in summary["stages"]}
-    others = [name for name, code in stages.items() if code > 0 and name != "unit-tests"]
+    test_stages = ("unit-tests", "integration-tests")
+    others = [name for name, code in stages.items() if code > 0 and name not in test_stages]
     print(f"[proof] {bundle}: verdict {summary['verdict']}, {len(projects)} failed test module(s)", file=sys.stderr)
     for name in others:
         rerun = STAGE_RERUN.get(name, f"make {name}-test" if name.startswith("dashboard-") else "make verify-affected")
         print(f"[proof]   stage {name} failed; re-run it with: {rerun}", file=sys.stderr)
-    if stages.get("unit-tests", 0) > 0 and not projects:
+    crashed = [name for name in test_stages if stages.get(name, 0) > 0]
+    if crashed and not projects:
         # A module that crashed or timed out leaves no failed result to select.
-        print("[proof]   unit-tests failed without a failed test result (crash or timeout); read unit-tests.log", file=sys.stderr)
+        for name in crashed:
+            print(f"[proof]   {name} failed without a failed test result (crash or timeout); read {name}.log", file=sys.stderr)
         return 1
     if not projects:
         if not others:
@@ -761,6 +826,8 @@ def main() -> int:
         default="warn",
         help="warn: report a miss and keep the proof passing (comply or explain); fail: a miss fails the proof",
     )
+    clean = commands.add_parser("analyzers-clean", help="exit 1 when the bundle's analyzer stage reported a visible finding")
+    clean.add_argument("--dir", required=True, type=Path)
     retry = commands.add_parser("retry-flakes", help="retry once the modules whose failures are all known flakes")
     retry.add_argument("--dir", required=True, type=Path)
     retry.add_argument("--stage", required=True, choices=("unit-tests", "integration-tests"))
@@ -784,6 +851,8 @@ def main() -> int:
         return retry_flakes(args.dir, args.stage, args.projects, extra, args.dotnet)
     if args.command == "failed":
         return failed_projects(args.dir, args.root)
+    if args.command == "analyzers-clean":
+        return analyzers_clean(args.dir)
     floors = {"unit": args.unit_floor, "line": args.line_floor, "branch": args.branch_floor}
     return summarize(args.dir, args.coverage_gate, floors, args.coverage_gate_mode == "fail")
 

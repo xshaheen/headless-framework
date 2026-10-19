@@ -11,6 +11,7 @@ using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Tests.Guarantees;
 using Tests.Helpers;
 
 namespace Tests;
@@ -42,6 +43,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
     [InlineData(true, true, true, null, false, MessageLane.Queue)]
     [InlineData(false, false, false, "dispatch-tenant", false, MessageLane.Queue)]
     [InlineData(false, false, true, "dispatch-tenant", true, MessageLane.Queue)]
+    [Guarantee("MSG-CONSUME-08")]
     public async Task should_commit_or_rollback_handler_state_and_outbox_in_the_attempt_scope(
         bool explicitSave,
         bool rejectFence,

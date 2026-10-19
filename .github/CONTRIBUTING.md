@@ -74,8 +74,9 @@ When multiple providers share a behavior contract, prefer a shared `*.Tests.Harn
 - Open the description with a minimal, clear explanation of the problem, followed by how the change solves it.
 - Link the related issue when one exists.
 - Call out consumer impact and migration steps when the change is breaking.
-- When the change adds, changes, or removes public API, show it in the template's **Public API** section: the declarations as C# (before and after for a changed member), a short consumer snippet for the main scenario, and the contract a signature can't show. A reviewer should understand the API from the PR without reading the diff.
-- Keep PRs reviewable. Separate refactors from behavior changes when possible.
+- When the change adds, changes, or removes public API, show it in the template's **Contract changes** section: one row per affected surface with its migration, then the declarations as C# (before and after for a changed member) and a short consumer snippet for the main scenario in the collapsed **Full public API** block. A reviewer should understand the API from the PR without reading the diff.
+- Fill the template's **Review guide**: the decisions you want the reviewer to make, each linked to its hunk, and what is safe to skim. Reviewers read the guide and the hunks it points to, not every line.
+- Keep PRs reviewable. Put mechanical changes (package deletions, renames, lockfiles, generated code) in their own PR, stacked under the behavior change.
 - Let CI report routine automated checks. Mention manual verification or known validation gaps only when they help the reviewer.
 
 ## Releasing

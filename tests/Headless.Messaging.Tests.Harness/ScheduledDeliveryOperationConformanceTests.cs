@@ -6,6 +6,7 @@ using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Tests.Guarantees;
 
 namespace Tests;
 
@@ -134,6 +135,16 @@ public abstract class ScheduledDeliveryOperationConformanceTests : TestBase
         var due = clock.GetUtcNow().AddHours(2);
         var stored = await _StoreScheduledAsync(storage, "orders.active_attempt", due, MessageLane.Bus);
 
+        // The store keeps its own precision (microseconds on PostgreSQL), so the operator's expected due time is the one
+        // the store reports, not the instant the test asked for.
+        var view = (
+            await operations.QueryAsync(
+                new ScheduledDeliveryQuery { StorageIds = [stored.StorageId] },
+                _Authorization(),
+                AbortToken
+            )
+        ).Items.Single();
+
         // Reserve attempt
         stored.InlineAttempts = 1;
         (await storage.LeasePublishAndReserveAttemptAsync(stored, TimeSpan.FromMinutes(1), 0, AbortToken))
@@ -143,7 +154,7 @@ public abstract class ScheduledDeliveryOperationConformanceTests : TestBase
         var request = new ScheduledDeliveryOperationRequest(
             Guid.NewGuid(),
             stored.StorageId,
-            due,
+            view.ExpectedDueAt,
             "revoke active attempt",
             _Authorization()
         );
@@ -410,6 +421,7 @@ public abstract class ScheduledDeliveryOperationConformanceTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-DASH-02")]
     public async Task should_allow_exactly_one_action_when_concurrent_revoke_and_dispatch_now_race()
     {
         await using var provider = _CreateProvider();

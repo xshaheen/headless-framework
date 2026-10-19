@@ -455,6 +455,14 @@ internal sealed class AmazonSqsConsumerClient(
         {
             for (; dispatched < messages.Count; dispatched++)
             {
+                // A long poll that started before a pause still returns messages, and a pause can land mid-batch: give
+                // the rest back so a paused consumer dispatches nothing new, and the loop then waits on the gate.
+                if (_pauseGate.IsPaused)
+                {
+                    await _ReleaseAsync(received[dispatched..]).ConfigureAwait(false);
+                    return;
+                }
+
                 var sqsMessage = messages[dispatched];
                 var inflight = received[dispatched];
 

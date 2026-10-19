@@ -99,6 +99,26 @@ public sealed class DashboardEndpointMetadataTests : TestBase
         names.Should().Contain("GetJobRequest");
     }
 
+    [Fact]
+    public async Task should_exclude_every_dashboard_api_endpoint_from_application_api_descriptions()
+    {
+        // The dashboard runs in an app.Map(basePath) branch, so a host document would list these under the wrong path.
+        await using var app = _CreateApp(new DashboardOptionsBuilder().WithHostAuthentication());
+
+        var api = _Endpoints(app)
+            .OfType<RouteEndpoint>()
+            .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/api", StringComparison.Ordinal) is true)
+            .ToArray();
+
+        api.Should()
+            .Contain(endpoint => endpoint.Metadata.GetMetadata<IEndpointNameMetadata>()!.EndpointName == "GetAuthInfo");
+        api.Should()
+            .OnlyContain(endpoint =>
+                endpoint.Metadata.GetMetadata<IExcludeFromDescriptionMetadata>() != null
+                && endpoint.Metadata.GetMetadata<IExcludeFromDescriptionMetadata>()!.ExcludeFromDescription
+            );
+    }
+
     [Theory]
     [InlineData("RequeueJob", "/api/job/requeue")]
     [InlineData("RequeueCronJobOccurrence", "/api/cron-job-occurrence/requeue")]

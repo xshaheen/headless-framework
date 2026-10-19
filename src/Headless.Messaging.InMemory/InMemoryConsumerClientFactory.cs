@@ -2,13 +2,22 @@
 
 using Headless.Checks;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.InMemory;
 
 /// <summary>
 /// Factory for creating in-memory consumer clients.
 /// </summary>
-internal sealed class InMemoryConsumerClientFactory(MemoryQueue queue) : IConsumerClientFactory
+/// <param name="queue">The queue every client of the host shares.</param>
+/// <param name="redeliveryClock">
+/// The clock a rejected message's redelivery delay runs on: the back-off clock, which waits real time unless a test
+/// replaces it.
+/// </param>
+internal sealed class InMemoryConsumerClientFactory(
+    MemoryQueue queue,
+    [FromKeyedServices(MessagingOptions.BackoffClockServiceKey)] TimeProvider redeliveryClock
+) : IConsumerClientFactory
 {
     /// <summary>Creates a new consumer client for the requested subscription.</summary>
     /// <remarks>
@@ -24,7 +33,13 @@ internal sealed class InMemoryConsumerClientFactory(MemoryQueue queue) : IConsum
         Argument.IsNotNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var client = new InMemoryConsumerClient(queue, GroupId(request), request.Concurrency, request.Lane);
+        var client = new InMemoryConsumerClient(
+            queue,
+            GroupId(request),
+            request.Concurrency,
+            request.Lane,
+            redeliveryClock
+        );
         return Task.FromResult<IConsumerClient>(client);
     }
 

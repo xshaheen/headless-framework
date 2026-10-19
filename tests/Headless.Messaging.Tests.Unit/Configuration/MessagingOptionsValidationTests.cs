@@ -4,6 +4,7 @@ using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Polly;
+using Tests.Guarantees;
 
 namespace Tests.Configuration;
 
@@ -750,6 +751,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-REG-01")]
     public void should_reject_dispatch_timeout_shorter_than_the_inline_publish_burst()
     {
         // given — three attempts of up to 2 minutes each plus 1 s and 2 s of exponential backoff take 6:03

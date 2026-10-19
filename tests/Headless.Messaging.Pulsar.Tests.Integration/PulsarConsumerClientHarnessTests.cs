@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Pulsar;
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Pulsar.Client.Common;
 using MessagingHeaders = Headless.Messaging.Headers;
@@ -24,6 +25,44 @@ public sealed class PulsarConsumerClientHarnessTests(PulsarFixture fixture) : Tr
     {
         return fixture.CreateQueueSessionAsync(cancellationToken);
     }
+
+    protected override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
+        TransportConformanceSessionOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        // Key_Shared sends every message of one key to one consumer in publish order, and a dead-letter policy is how
+        // the client stops redelivering a message after its budget; Pulsar counts the redeliveries, not the first one.
+        var consumerConfig =
+            options.RoutingAffinity || options.DeliveryLimit is not null
+                ? new PulsarConsumerConfig(options.RoutingAffinity, options.DeliveryLimit - 1)
+                : null;
+
+        return PulsarFixture.CreateSessionAsync(
+            fixture.ConnectionString,
+            MessageLane.Queue,
+            cancellationToken,
+            request: new ConsumerClientRequest($"group-{Guid.NewGuid():N}", options.Concurrency, MessageLane.Queue),
+            configureOptions: pulsar =>
+            {
+                if (options.HeaderBuilder is { } headerBuilder)
+                {
+                    pulsar.CustomHeadersBuilder = (message, _) =>
+                    {
+                        headerBuilder(message.Properties.GetValueOrDefault(MessagingHeaders.MessageId));
+                        return [];
+                    };
+                }
+            },
+            consumerConfig: consumerConfig
+        );
+    }
+
+    /// <summary>
+    /// The broker's default <c>maxMessageSize</c> of 5 MiB, which counts the message metadata too: the conformance
+    /// envelope's properties take 218 bytes of it, and the client refuses a larger message before sending it.
+    /// </summary>
+    protected override int MaximumBodySize => (5 * 1024 * 1024) - 218;
 
     [Fact]
     public override Task should_round_trip_queue_message_body_and_headers()
@@ -122,6 +161,18 @@ public sealed class PulsarConsumerClientHarnessTests(PulsarFixture fixture) : Tr
     public override Task should_reject_real_delivery_and_observe_redelivery()
     {
         return base.should_reject_real_delivery_and_observe_redelivery();
+    }
+
+    [Fact]
+    public override Task should_not_settle_another_delivery_when_a_settled_value_is_used_again()
+    {
+        return base.should_not_settle_another_delivery_when_a_settled_value_is_used_again();
+    }
+
+    [Fact]
+    public override Task should_keep_the_delivery_and_the_listener_when_the_callback_throws()
+    {
+        return base.should_keep_the_delivery_and_the_listener_when_the_callback_throws();
     }
 
     [Fact]

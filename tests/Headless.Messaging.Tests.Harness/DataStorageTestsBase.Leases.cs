@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
+using Tests.Guarantees;
 
 namespace Tests;
 
@@ -53,6 +54,7 @@ public abstract partial class DataStorageTestsBase
         reclaimed.Should().Contain(early.StorageId).And.NotContain(late.StorageId);
     }
 
+    [Guarantee("MSG-LEASE-02")]
     public virtual async Task should_renew_only_the_live_lease_generation_the_caller_holds(bool published)
     {
         // given: an attempt holds a two-second lease
@@ -87,6 +89,7 @@ public abstract partial class DataStorageTestsBase
         (await _PickUpRetriesAsync(storage, published)).Should().NotContain(m => m.StorageId == message.StorageId);
     }
 
+    [Guarantee("MSG-LEASE-02")]
     public virtual async Task should_not_renew_a_lease_that_lapsed_and_another_node_took(bool published)
     {
         // given: an attempt's lease lapsed and another node took the row

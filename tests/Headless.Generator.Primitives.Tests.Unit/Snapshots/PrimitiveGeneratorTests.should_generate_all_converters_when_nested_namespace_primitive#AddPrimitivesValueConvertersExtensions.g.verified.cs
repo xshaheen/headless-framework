@@ -12,6 +12,7 @@ using Headless.Primitives.Outer.Nested;
 using Headless.Primitives.Outer.Nested.Converters;
 using Microsoft.EntityFrameworkCore;
 
+[assembly: Headless.Generator.Primitives.PrimitiveAssemblyAttribute]
 namespace generator_Test.Converters.Extensions;
 
 /// <summary>Helper class providing methods to configure Entity Framework Value Converters for Primitive types of generator_Test</summary>

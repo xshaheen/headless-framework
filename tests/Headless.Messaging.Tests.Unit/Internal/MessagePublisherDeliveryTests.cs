@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using Headless;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
@@ -9,8 +11,10 @@ using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using Tests.Helpers;
 
 namespace Tests.Internal;
 
@@ -964,7 +968,37 @@ public sealed class MessagePublisherDeliveryTests : TestBase
                 clock.Advance(TimeSpan.FromSeconds(2));
                 return real.SerializeToTransportMessageAsync(call.Arg<Message>(), call.Arg<CancellationToken>());
             });
-        await using var harness = _CreateHarness(clock, serializer: slowSerializer);
+        var logs = new List<(LogLevel Level, EventId EventId, string Message)>();
+        using var loggerProvider = new CapturingLoggerProvider(logs);
+        var expiredLanes = new ConcurrentQueue<string?>();
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (string.Equals(instrument.Name, MessagingMetrics.SendExpiredName, StringComparison.Ordinal))
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        listener.SetMeasurementEventCallback<long>(
+            (_, _, tags, _) =>
+            {
+                foreach (var tag in tags)
+                {
+                    if (string.Equals(tag.Key, MessagingTags.Lane, StringComparison.Ordinal))
+                    {
+                        expiredLanes.Enqueue(tag.Value?.ToString());
+                    }
+                }
+            }
+        );
+        listener.Start();
+        await using var harness = _CreateHarness(
+            clock,
+            serializer: slowSerializer,
+            logger: loggerProvider.CreateLogger(nameof(MessagePublisher))
+        );
 
         // when
         var receipt = await harness.Publisher.PublishAsync(
@@ -980,6 +1014,11 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         harness.TransportMessages.Should().BeEmpty();
         receipt.MessageId.Should().NotBeNullOrWhiteSpace();
         receipt.StorageId.Should().BeNull();
+        expiredLanes.Should().Contain("queue");
+        lock (logs)
+        {
+            logs.Should().ContainSingle(x => x.EventId.Id == 4128);
+        }
     }
 
     [Fact]
@@ -1355,7 +1394,8 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         Func<IDeliveryCoordinationResolver?>? coordinationResolver = null,
         DeliveryMode defaultDeliveryMode = DeliveryMode.Durable,
         IPublishMiddleware<PublishContext>? middleware = null,
-        IEnumerable<Headless.Messaging.MessageRegistration>? registrations = null
+        IEnumerable<Headless.Messaging.MessageRegistration>? registrations = null,
+        ILogger? logger = null
     )
     {
         timeProvider ??= TimeProvider.System;
@@ -1443,7 +1483,8 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             telemetry: null,
             transportPublishTimeout,
             defaultDeliveryMode,
-            registrations
+            registrations,
+            logger
         );
 
         return new MessagePublisherHarness(
