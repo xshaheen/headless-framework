@@ -2,7 +2,7 @@
 # Copyright (c) Mahmoud Shaheen. All rights reserved.
 # Exercises scripts/gate-slot.py against a scratch lock directory: a full machine makes the next gate wait and names
 # the holder, a free slot lets gates overlap, a nested gate takes no second slot, a killed holder frees its slot,
-# --exclusive waits for every slot, and the command's exit status passes through.
+# --exclusive waits for every slot, integration gates queue on their own pool, and the exit status passes through.
 set -euo pipefail
 
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -34,9 +34,10 @@ record() { printf 'python3 %q %q %q' "$scratch/record.py" "$1" "$2"; }
 # overlap <a> <b>: true when the two recorded runs overlapped in time.
 overlap() { python3 -c 'import sys; a=list(map(float,open(sys.argv[1]).read().split())); b=list(map(float,open(sys.argv[2]).read().split())); sys.exit(0 if a[0] < b[1] and b[0] < a[1] else 1)' "$1" "$2"; }
 
+# wait_for_slot_holder [pool]: until slot 0 of the pool (gate by default) carries a holder record.
 wait_for_slot_holder() {
   for _ in $(seq 1 50); do
-    if [ -s "$GATE_SLOT_DIR/slot-0.lock" ]; then return 0; fi
+    if [ -s "$GATE_SLOT_DIR/${1:-gate}/slot-0.lock" ]; then return 0; fi
     python3 -c 'import time; time.sleep(0.1)'
   done
   fail "the first gate never took a slot"
@@ -84,6 +85,27 @@ wait_for_slot_holder
 GATE_SLOTS=2 python3 "$gate" --exclusive --label bench -- bash -c "$(record "$scratch/b" 0)" 2> /dev/null
 wait "${pids[0]}"
 if overlap "$scratch/a" "$scratch/b"; then fail "an exclusive run started beside another gate"; fi
+
+# Integration gates queue on their own one-slot pool, so a second one waits while a build gate still runs beside it.
+rm -rf "$GATE_SLOT_DIR" "$scratch/a" "$scratch/b" "$scratch/c"; pids=()
+GATE_SLOTS=2 python3 "$gate" --pool integration --label first-integration -- bash -c "$(record "$scratch/a" 3)" &
+pids+=($!)
+wait_for_slot_holder integration
+GATE_SLOTS=2 python3 "$gate" --label build -- bash -c "$(record "$scratch/c" 0)"
+GATE_SLOTS=2 python3 "$gate" --pool integration --label second-integration -- bash -c "$(record "$scratch/b" 0)" 2> "$scratch/integration.err"
+wait "${pids[0]}"
+overlap "$scratch/a" "$scratch/c" || fail "a build gate waited for an integration gate"
+if overlap "$scratch/a" "$scratch/b"; then fail "two integration gates ran at once"; fi
+grep -q 'integration slots' "$scratch/integration.err" || fail "the waiting integration gate did not name its pool: $(cat "$scratch/integration.err")"
+
+# A benchmark that needs both pools waits for an integration gate too.
+rm -rf "$GATE_SLOT_DIR" "$scratch/a" "$scratch/b"; pids=()
+GATE_SLOTS=2 python3 "$gate" --pool integration --label integration -- bash -c "$(record "$scratch/a" 3)" &
+pids+=($!)
+wait_for_slot_holder integration
+GATE_SLOTS=2 python3 "$gate" --exclusive --pool gate --pool integration --label bench -- bash -c "$(record "$scratch/b" 0)" 2> /dev/null
+wait "${pids[0]}"
+if overlap "$scratch/a" "$scratch/b"; then fail "a benchmark started beside an integration gate"; fi
 
 # The gate's exit status passes through; GATE_SLOTS=0 runs the command with no slot at all.
 rm -rf "$GATE_SLOT_DIR"
