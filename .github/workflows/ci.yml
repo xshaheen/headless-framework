@@ -74,6 +74,9 @@ jobs:
       - name: "Verify proof bundle pruning"
         run: bash tests/scripts/test-proof-prune.sh
 
+      - name: "Verify package-version scoping"
+        run: bash tests/scripts/test-affected-package-versions.sh
+
       # Stdlib Python over tracked files, under a second, so it runs on every event here instead of in a
       # job of its own; ci-changes.sh skips docs-only changes for the .NET jobs, and this is the only
       # check a docs-only change gets.

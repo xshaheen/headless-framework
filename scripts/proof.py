@@ -461,7 +461,8 @@ def summarize(
         "base": affected.get("base"),
         "verdict": "fail" if failed_stages else "pass",
         "stages": [asdict(stage) for stage in stages],
-        "affected": {key: affected.get(key, []) for key in ("changed_projects", "unit_tests", "integration_tests", "global_triggers", "unmapped_files")},
+        "affected": {key: affected.get(key, []) for key in ("changed_projects", "unit_tests", "integration_tests", "global_triggers", "unmapped_files")}
+        | {"package_version_changes": affected.get("package_version_changes", {})},
         "tests": {
             "passed": sum(m.passed for m in modules),
             "failed": sum(m.failed for m in modules),
@@ -511,6 +512,8 @@ def render_markdown(summary: dict) -> str:
     ]
     if affected["global_triggers"]:
         lines.append(f"Build-wide files changed: {', '.join(f'`{f}`' for f in affected['global_triggers'])}.")
+    for file, packages in affected.get("package_version_changes", {}).items():
+        lines.append(f"Package versions changed in `{file}`; selected by lock file: {', '.join(f'`{p}`' for p in packages)}.")
 
     lines += ["", f"### Tests: {tests['passed']} passed, {tests['failed']} failed, {tests['skipped']} skipped", ""]
     # A whole-solution run lists 130+ modules; a reviewer acts only on the ones that failed or skipped,
