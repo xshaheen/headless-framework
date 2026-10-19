@@ -411,13 +411,7 @@ public static class MessagingGuarantees
             GuaranteeArea.CircuitBreaker,
             realSystem: true,
             "A message store that becomes unreachable fails admission with a fault the default classifier counts as transient, so the consumer's circuit opens at its threshold on every relational provider."
-        ) with
-        {
-            Status = GuaranteeStatus.Unsupported,
-            Rationale =
-                "SqlClient reports a dropped or refused connection as SqlException number 0, which the relational classifier does not count as transient, so a SQL Server outage never opens the circuit.",
-            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1278",
-        },
+        ),
         // Shutdown and drain
         _Bound(
             "MSG-SHUT-01",

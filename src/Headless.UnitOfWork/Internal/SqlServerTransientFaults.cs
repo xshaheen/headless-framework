@@ -4,6 +4,7 @@ using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Data.Common;
+using System.Net.Sockets;
 using System.Reflection;
 
 namespace Headless.UnitOfWork.Internal;
@@ -215,6 +216,66 @@ internal static class SqlServerTransientFaults
     // would hurt, so the lookups are cached per exception (and per error) type.
     private static readonly ConcurrentDictionary<Type, PropertyInfo?> _ErrorsProperties = new();
     private static readonly ConcurrentDictionary<Type, PropertyInfo?> _NumberProperties = new();
+    private static readonly ConcurrentDictionary<Type, PropertyInfo?> _ClassProperties = new();
+
+    // SqlClient raises its own connection-layer failures, with no server error behind them, as number 0.
+    private const int _ClientConnectionErrorNumber = 0;
+
+    // From severity 20 up, SQL Server and SqlClient close the connection: the error ended the session, not a statement.
+    private const byte _ConnectionClosingSeverity = 20;
+
+    /// <summary>
+    /// Whether <paramref name="exception" /> reports a broken or unreachable connection, which a fresh connection
+    /// may cure: SqlClient reports a refused connection, a failed pre-login handshake, and a connection terminated
+    /// mid-read as error number 0 at a connection-closing severity, usually over the <see cref="IOException" /> or
+    /// <see cref="SocketException" /> that caused it, and none of those carries a number in the transient set. An
+    /// error number 0 below that severity is a client-side failure of the statement, not of the connection, so it
+    /// stays permanent. Whether a replay is safe is not decided here: the transaction a dropped connection held is
+    /// rolled back by the server, and every replayer refuses to replay once the commit started.
+    /// </summary>
+    public static bool IsConnectionFailure(DbException exception)
+    {
+        for (Exception? current = exception.InnerException; current is not null; current = current.InnerException)
+        {
+            if (current is IOException or SocketException)
+            {
+                return true;
+            }
+        }
+
+        var exceptionSeverity = _ReadClass(exception);
+        var any = false;
+
+        if (
+            _ErrorsProperties
+                .GetOrAdd(exception.GetType(), static type => type.GetProperty("Errors"))
+                ?.GetValue(exception)
+            is IEnumerable errors
+        )
+        {
+            foreach (var error in errors)
+            {
+                if (error is null || _ReadNumber(error) is not { } number)
+                {
+                    continue;
+                }
+
+                any = true;
+
+                if (
+                    number == _ClientConnectionErrorNumber
+                    && (_ReadClass(error) ?? exceptionSeverity) >= _ConnectionClosingSeverity
+                )
+                {
+                    return true;
+                }
+            }
+        }
+
+        return !any
+            && _ReadNumber(exception) == _ClientConnectionErrorNumber
+            && exceptionSeverity >= _ConnectionClosingSeverity;
+    }
 
     /// <summary>Whether <paramref name="exception" /> is SqlClient's exception, matched by type name.</summary>
     public static bool IsSqlClientException(DbException exception)
@@ -228,7 +289,10 @@ internal static class SqlServerTransientFaults
         return number is { } value && _TransientNumbers.Contains(value);
     }
 
-    /// <summary>Whether any error <paramref name="exception" /> carries is a SQL Server error a replay may cure.</summary>
+    /// <summary>
+    /// Whether any error <paramref name="exception" /> carries is a SQL Server error a replay may cure, or the
+    /// exception reports a broken or unreachable connection (<see cref="IsConnectionFailure" />).
+    /// </summary>
     public static bool HasTransientError(DbException exception)
     {
         foreach (var number in GetErrorNumbers(exception))
@@ -239,7 +303,7 @@ internal static class SqlServerTransientFaults
             }
         }
 
-        return false;
+        return IsConnectionFailure(exception);
     }
 
     /// <summary>
@@ -289,5 +353,11 @@ internal static class SqlServerTransientFaults
     {
         return _NumberProperties.GetOrAdd(source.GetType(), static type => type.GetProperty("Number"))?.GetValue(source)
             as int?;
+    }
+
+    private static byte? _ReadClass(object source)
+    {
+        return _ClassProperties.GetOrAdd(source.GetType(), static type => type.GetProperty("Class"))?.GetValue(source)
+            as byte?;
     }
 }
