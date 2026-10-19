@@ -27,6 +27,26 @@ namespace Headless.Messaging;
 [PublicAPI]
 public sealed class MessagingOptions
 {
+    /// <summary>
+    /// The DI key of the <see cref="TimeProvider"/> that messaging's failure waits run on: the in-process retries of a
+    /// failed inbox admission, the in-memory transport's redelivery delay, the timeout around each lease renewal, and
+    /// the transport publish timeout (<see cref="TransportPublishTimeout"/>).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// These waits ride out a store or broker that stopped answering, so they must pass in real time even when a test
+    /// host registers a fake app <see cref="TimeProvider"/> and never advances it. <c>AddHeadlessMessaging</c> therefore
+    /// registers <see cref="TimeProvider.System"/> under this key, separate from the app clock, and production code
+    /// never needs to touch it.
+    /// </para>
+    /// <para>
+    /// A test that wants to step through these waits instead of sleeping registers its own clock under the key, such
+    /// as <c>services.AddKeyedSingleton&lt;TimeProvider&gt;(MessagingOptions.BackoffClockServiceKey, fakeClock)</c>.
+    /// It replaces the default whether it comes before or after <c>AddHeadlessMessaging</c>.
+    /// </para>
+    /// </remarks>
+    public const string BackoffClockServiceKey = "Headless:Messaging:BackoffClock";
+
     internal MessagingConventions Conventions { get; set; } = new();
 
     /// <summary>

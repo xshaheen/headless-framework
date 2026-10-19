@@ -78,12 +78,6 @@ internal static class TestHelpers
                     case "build_property.PrimitiveXmlConverters":
                         value = options.GenerateXmlConverters.ToString();
                         return true;
-                    case "build_property.PrimitiveNswagSwaggerConverters":
-                        value = options.GenerateNswagSwaggerConverters.ToString();
-                        return true;
-                    case "build_property.PrimitiveSwashbuckleSwaggerConverters":
-                        value = options.GenerateSwashbuckleSwaggerConverters.ToString();
-                        return true;
                     case "build_property.PrimitiveEntityFrameworkValueConverters":
                         value = options.GenerateEntityFrameworkValueConverters.ToString();
                         return true;

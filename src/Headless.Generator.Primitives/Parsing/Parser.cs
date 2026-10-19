@@ -499,8 +499,6 @@ internal static class Parser
         {
             GenerateJsonConverters = parseBool(provider, "PrimitiveJsonConverters"),
             GenerateTypeConverters = parseBool(provider, "PrimitiveTypeConverters"),
-            GenerateSwashbuckleSwaggerConverters = parseBool(provider, "PrimitiveSwashbuckleSwaggerConverters"),
-            GenerateNswagSwaggerConverters = parseBool(provider, "PrimitiveNswagSwaggerConverters"),
             GenerateXmlConverters = parseBool(provider, "PrimitiveXmlConverters"),
             GenerateEntityFrameworkValueConverters = parseBool(provider, "PrimitiveEntityFrameworkValueConverters"),
             GenerateDapperConverters = parseBool(provider, "PrimitiveDapperConverters"),

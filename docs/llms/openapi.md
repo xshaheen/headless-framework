@@ -1,242 +1,239 @@
 ---
 domain: OpenAPI
-packages: OpenApi.Nswag, OpenApi.Nswag.OData, OpenApi.Scalar
+packages: OpenApi, OpenApi.Scalar
 ---
 
 # OpenAPI
 
-> OpenAPI document generation via NSwag (with FluentValidation schema integration and framework processors) plus OData query-parameter documentation and Scalar UI rendering.
+> OpenAPI 3.1 documents from the native `Microsoft.AspNetCore.OpenApi` generator, enriched by Headless transformers, plus Scalar UI rendering.
 
 ## Orientation
 
-These three packages are **complementary**, not competing. Each has a distinct role:
-
 | Package | Role | When you need it |
 |---|---|---|
-| `Headless.OpenApi.Nswag` | **Generates** the OpenAPI JSON document — wires processors, security schemes, and primitive type mappings onto NSwag | Every API that wants an OpenAPI spec |
-| `Headless.OpenApi.Nswag.OData` | **Extends** the generated spec with OData query parameters (`$filter`, `$orderby`, `$top`, `$skip`, `$select`, `$expand`, `$search`) | Only when endpoints accept `ODataQueryOptions` or `[EnableQuery]` |
-| `Headless.OpenApi.Scalar` | **Renders** the generated spec as an interactive docs UI using Scalar | When you want a docs UI (replaces Swagger UI bundled in NSwag) |
+| `Headless.OpenApi` | **Enriches** the native ASP.NET Core OpenAPI documents through document, operation, and schema transformers | Every API that publishes an OpenAPI document. `Headless.Api.ServiceDefaults` already depends on it |
+| `Headless.OpenApi.Scalar` | **Renders** the served documents as an interactive UI | When you want a docs UI |
 
-Typical full setup uses Nswag + Scalar together:
+With `AddHeadless()` there is nothing to add: it registers the `v1` document, or one document per API surface, with the Headless transformers, and `MapHeadlessEndpoints()` serves them at `/openapi/{documentName}.json`.
 
 ```csharp
-// Services
-builder.Services.AddNswagOpenApi(options =>
-{
-    options.AddBearerSecurity = true;
-    options.AddPrimitiveMappings = true;
-});
+builder.AddHeadless();
+builder.Services.ConfigureHeadlessOpenApi(options => options.AddApiKeySecurity = true);
 
-// Middleware — Nswag for the spec, Scalar for the UI
+var app = builder.Build();
+app.UseHeadless();
 app.UseRouting();
 app.UseAuthentication();
-app.UseNswagOpenApi(); // middleware: before UseAuthorization
 app.UseAuthorization();
+app.MapHeadlessEndpoints(); // serves /openapi/{documentName}.json
+app.MapScalarOpenApi();     // serves /scalar
+```
+
+Without `AddHeadless()`:
+
+```csharp
+builder.Services.AddHeadlessOpenApi(); // the "v1" document
+var app = builder.Build();
+app.MapOpenApi("/openapi/{documentName}.json");
 app.MapScalarOpenApi();
 ```
 
-For versioned APIs, replace `app.UseNswagOpenApi()` with `app.UseNswagOpenApiVersions()`.
-
 ## Agent Rules
 
-- `UseNswagOpenApi()`, `UseNswagOpenApiVersions()`, and `UseNswagApiSurfaceDocuments()` add path-matched middleware, not endpoints. Call them before `UseAuthorization()`. Placed after it, or after mapping endpoints, a fallback authorization policy rejects the documents and Swagger UI with 401, and `AllowAnonymous()` cannot exempt them because they have no endpoint.
-- Call `AddNswagOpenApi()` to register OpenAPI document generation. Do NOT call NSwag's `AddOpenApiDocument()` directly — the framework wires all processors in the correct order.
-- **Processor registration order matters**: `GenericNullabilitySchemaProcessor` is registered before `NullabilityAsRequiredSchemaProcessor` intentionally. If you inject processors via `setupGeneratorActions`, add them after the framework processors (they run last) unless the intent is to override defaults.
-- `AddNswagOpenApi` takes an optional `setupGeneratorActions` callback that receives the NSwag `AspNetCoreOpenApiDocumentGeneratorSettings`. The framework processors are added first (in `_ConfigureGeneratorSettings`), then your callback runs, then security/primitive-mapping finalisation runs. Use this ordering to avoid conflicts.
-- For OData endpoints: add `ODataOperationProcessor` inside `setupGeneratorActions`, not as a standalone service. Detection is automatic — any endpoint with an `ODataQueryOptions` parameter or `[EnableQuery]` attribute will have the seven OData parameters injected.
-- Do NOT call `app.UseSwaggerUi()` separately — `UseNswagOpenApi()` and `UseNswagOpenApiVersions()` both call it internally. If you also call `MapScalarOpenApi()`, Swagger UI and Scalar UI will both be served; pick one or the other unless you explicitly want both.
-- `HeadlessNswagOptions.AddBearerSecurity` defaults to `true`. If your API uses no auth, set it to `false` to remove the security scheme from the spec.
-- `HeadlessNswagOptions.AddPrimitiveMappings` defaults to `true`. It maps `Money`, `Month`, `AccountId`, and `UserId` from `Headless.Primitives`. Disable only if your API does not expose those types.
-- `HeadlessNswagOptions.ThrowOnSchemaProcessingError` defaults to `false` — schema errors are logged and skipped. Set to `true` in development to surface FluentValidation configuration mistakes early.
-- `MapScalarOpenApi` sets `OpenApiRoutePattern` to `/openapi/{documentName}.json` which matches the path that `UseNswagOpenApi`/`UseNswagOpenApiVersions` expose. If you change the NSwag document path, update Scalar's `OpenApiRoutePattern` accordingly via the `setupAction` callback.
-- The `ApiKeyHeaderName` default is `"X-API-Key"` (note: the old docs showed `"X-Api-Key"` — the actual default is `"X-API-Key"`).
+- Register documents with `AddHeadlessOpenApi(documentName, configure)`, `AddHeadlessApiSurfaceDocuments(...)`, or native `AddOpenApi(name, options => options.AddHeadlessTransformers())`. A native `AddOpenApi(...)` without `AddHeadlessTransformers()` publishes an unenriched document.
+- Do not register a document name twice. `AddHeadless()` already registers `v1` or the surface documents; to register them yourself, set `options.OpenApi.Enabled = false` first. `AddHeadlessTransformers()` itself is idempotent per document, so calling it inside `AddHeadlessOpenApi`'s callback adds nothing twice.
+- Configure the enrichment once, with `ConfigureHeadlessOpenApi(...)`. The options are shared by every Headless document and validated at startup. Call order relative to the document registrations does not matter.
+- Call `AddHeadlessTransformers()` before adding your own transformers in the same callback. Transformers run in registration order, so yours then see the Headless output and can override it. `AddHeadlessOpenApi`'s `configure` callback and `AddHeadlessApiSurfaceDocuments`' per-surface callback already run after the Headless transformers.
+- `MapOpenApi()` and `MapHeadlessEndpoints()` map endpoints, so authorization applies to the documents. Under a fallback authorization policy they answer 401; chain `.AllowAnonymous()` on `MapOpenApi()` to publish them. There is no middleware ordering rule any more.
+- The document is OpenAPI 3.1. Exclusive bounds are numbers (`exclusiveMinimum: 1`), nullability is a `null` type or a `oneOf` with `null`, and examples are JSON values. Do not set `OpenApiOptions.OpenApiVersion` to 3.0 unless a client generator requires it.
+- XML documentation of your own types reaches the document only when your project calls `AddOpenApi(...)` itself. The native XML-comment source generator intercepts `AddOpenApi` call sites in the compiling project, so a document registered through `AddHeadlessOpenApi` or `AddHeadless()` carries the Headless types' comments but not yours. To include yours, reference `Microsoft.AspNetCore.OpenApi` directly, set `GenerateDocumentationFile`, disable the `AddHeadless()` registration, and register `builder.Services.AddOpenApi("v1", options => options.AddHeadlessTransformers())`.
+- A project that calls `AddOpenApi(...)` while referencing `Microsoft.AspNetCore.OpenApi` only transitively fails with CS9137 (interceptors not enabled), because the package's build targets do not flow transitively. Reference the package directly.
+- Swagger UI is gone. Use `MapScalarOpenApi()` or any UI that reads `/openapi/{documentName}.json`.
 
 ## Core Concepts
 
-**Two roles, three packages.** NSwag fills the *generation* role: it inspects ASP.NET Core routing metadata and produces an OpenAPI JSON document. The framework adds *processors* — NSwag extension points — to enrich that document automatically. Scalar fills the *rendering* role: it consumes the generated JSON document and renders a browser-based interactive UI. The OData package adds to generation by injecting extra parameters on eligible endpoints.
+**Transformers, in order.** `AddHeadlessTransformers()` adds them in an order that matters:
 
-**Schema processors vs operation processors.** NSwag distinguishes two extension points:
+| Kind | Transformer behavior |
+|---|---|
+| Schema | Headless primitives (`IPrimitive<T>`: `MoneyAmount`, `Month`, `AccountId`, `UserId`, and every generated primitive) become their underlying JSON type, inlined rather than published as components |
+| Schema | Numbers become plain `integer`/`number`. The Headless web JSON options read numbers from strings, so the native generator writes `["integer", "string"]` plus a digits pattern; the string alternative and its pattern are removed, except where `JsonNumberHandling.WriteAsString` applies (property, declaring type, or options), because those numbers are written as strings |
+| Schema | FluentValidation rules become constraints (see below) |
+| Schema | Every non-nullable property joins the object's `required` set |
+| Operation | Operation ids for operations the native generator leaves unnamed |
+| Operation | `deprecated` from `[Obsolete]` or an Asp.Versioning deprecated version; parameter descriptions from model metadata |
+| Operation | Query parameter names in camelCase, except names starting with `$` |
+| Operation | 401 when the endpoint requires authentication, including through the fallback policy; 403 when its named policy, roles, required tenant, or applied policy requirements can refuse an authenticated user |
+| Operation | `If-Match` header plus 400, 409, and 428 on `[RequireIfMatch]` endpoints; a header the endpoint binds itself is marked required instead of repeated |
+| Operation | The rate limiter's rejection status (429 under `UseHeadlessProblemDetails()`, else 503) on endpoints a limiter applies to |
+| Operation | `ETag` header on 2xx responses whose body type implements `IHasEntityTag` |
+| Operation | 400 on operations that bind a body or a route, query, header, or form value; 413 on operations with a request body; the antiforgery token header and its 400 on endpoints that validate one |
+| Operation | The multipart encoding `contentType` and a description of each file part a form's `ContentTypes`, `FileNotEmpty`, `GreaterThanOrEqualTo`, or `LessThanOrEqualTo` rule constrains |
+| Operation | Security requirements on operations that require authentication |
+| Operation | Typed problem-details schema and example under `application/problem+json` for 400, 401, 403, 404, 408, 409, 413, 422, 428, 429, 500, 501, 503, plus the `Retry-After` header on 429 and 503 |
+| Operation | `tenantRequired` 403 example on endpoints that require a tenant |
+| Operation | Under tenant catalog resolution: the tenant header, and the 400, 404, and (with detailed errors) 403 rejections with their examples and `Cache-Control` header |
+| Document | Title `{Entry assembly product} API` and the framework response-conventions description |
+| Document | Every configured security scheme, and one per credential of each authentication scheme that describes its credentials, under `components.securitySchemes` |
+| Document | A `servers` entry with a `tenant` variable per tenant host template |
+| Document | Duplicate operation ids numbered (`Orders_Find`, `Orders_Find2`) |
+| Document | Native `ProblemDetails`, `HttpValidationProblemDetails`, and `ValidationProblemDetails` components removed once no response references them |
 
-- *Schema processors* (`ISchemaProcessor`) run per-type and modify JSON schema definitions. The framework registers three: `FluentValidationSchemaProcessor` (pulls validation rules from DI-registered `IValidator<T>` instances), `GenericNullabilitySchemaProcessor` (fixes `T?` nullability on generic types — a known NSwag limitation), and `NullabilityAsRequiredSchemaProcessor` (promotes non-nullable properties to `required`).
-- *Operation processors* (`IOperationProcessor`) run per-endpoint and modify individual operation objects. The framework registers four: `ApiExtraInformationOperationProcessor` (mirrors deprecation flags, response content types, and parameter defaults from API Explorer metadata), `CamelCaseQueryParameterOperationProcessor` (normalises query parameter casing; `$`-prefixed OData parameters are exempt), `UnauthorizedResponseOperationProcessor` (injects a 401 response on endpoints with `[Authorize]` or `DenyAnonymousAuthorizationRequirement`), `ForbiddenResponseOperationProcessor` (injects a 403 response when an endpoint has a policy, role, or claim requirement).
+Before any transformer runs, an endpoint whose `IEnvironmentRestrictionMetadata` (`Headless.Api.Abstractions`) says it answers 404 in the current host environment is left out of every Headless document, path and schemas alike.
 
-**ProblemDetails enrichment.** `ProblemDetailsOperationProcessor` pre-registers concrete `ProblemDetails` schemas (`BadRequestProblemDetails`, `UnprocessableEntityProblemDetails`, `ConflictProblemDetails`, etc.) in the document definitions and sets typed schema references plus worked examples on the matching response entries (400, 401, 403, 404, 409, 422, 429). This makes error responses self-documenting without any per-endpoint annotation.
+**What the native generator already does.** Response content types come from API Explorer's supported formats, parameter defaults and `required` come from binding metadata, inheritance is flattened, and string enums list their names. The transformers do not repeat that work.
 
-**FluentValidation schema integration.** `FluentValidationSchemaProcessor` resolves `IValidator<T>` from DI at document-generation time (using a scoped service provider) and applies validation rules (min/max length, range, required, pattern, etc.) as JSON Schema constraints. If a type has no registered validator, it is skipped silently (or throws if `ThrowOnSchemaProcessingError = true`). Include-rule chains are traversed recursively.
+**The transformers read the metadata of the endpoint that serves the operation.** MVC's API Explorer describes an action from its descriptor, which holds only the controller and action attributes, so `Headless.OpenApi` also registers an API Explorer provider that attaches the metadata of the route endpoint MVC builds for the action. A convention on `MapControllers()` (`RequireAuthorization(...)`, `RequireRateLimiting(...)`, `WithMetadata(...)`, `RequireIdempotencyKey()`) then documents a controller action the way the matching attribute or Minimal API call does. `AddHeadlessOpenApi()`, `AddHeadlessApiSurfaceDocuments()`, and `ConfigureHeadlessOpenApi(...)` register the provider; a document built with the native `AddOpenApi()` and only `AddHeadlessTransformers()` reads the action attributes alone. The native generator's own parameters and responses still come from the action descriptor.
 
 ---
-## Headless.OpenApi.Nswag
+## Headless.OpenApi
 
-NSwag OpenAPI document generation with framework processors, FluentValidation schema integration, security schemes, and primitive type mappings.
+Headless document, operation, and schema transformers for the native ASP.NET Core OpenAPI generator.
 
 ### API and behavior
 
-- `AddNswagOpenApi(Action<HeadlessNswagOptions>?, Action<AspNetCoreOpenApiDocumentGeneratorSettings>?)` — registers NSwag with all framework processors; accepts optional per-doc generator customisation
-- `AddNswagOpenApi(Action<HeadlessNswagOptions>?, Action<AspNetCoreOpenApiDocumentGeneratorSettings, IServiceProvider>?)` — same with service-provider access in the generator callback
-- `UseNswagOpenApi(...)` — adds middleware serving the OpenAPI JSON (`/openapi/{documentName}.json`) and Swagger UI (`/swagger`)
-- `UseNswagOpenApiVersions(...)` — adds middleware serving one OpenAPI JSON document per API version and a unified Swagger UI
-- `AddBuildingBlocksPrimitiveMappings(JsonSchemaGeneratorSettings)` — extension on `JsonSchemaGeneratorSettings` to add `Money`, `Month`, `AccountId`, `UserId` type mappers
-- `AddPrimitivesSwaggerMappings(JsonSchemaGeneratorSettings, Assembly[])` — discovers and applies primitive mappings from specific assemblies via `[PrimitiveAssembly]`
-- `AddAllPrimitivesSwaggerMappings(JsonSchemaGeneratorSettings)` — discovers and applies primitive mappings from all loaded assemblies marked with `[PrimitiveAssembly]`
-- Schema processors: `FluentValidationSchemaProcessor`, `GenericNullabilitySchemaProcessor`, `NullabilityAsRequiredSchemaProcessor`
-- Operation processors: `ApiExtraInformationOperationProcessor`, `CamelCaseQueryParameterOperationProcessor`, `UnauthorizedResponseOperationProcessor`, `ForbiddenResponseOperationProcessor`, `ProblemDetailsOperationProcessor`
-
-### Design constraints
-
-**Schema processor ordering is load-bearing.** `GenericNullabilitySchemaProcessor` must run before `NullabilityAsRequiredSchemaProcessor`. The generic nullability processor writes `IsNullableRaw = true` on properties whose generic type argument is annotated `T?`; the required processor then reads that flag to determine which properties are required. Reversing the order causes non-nullable generic type properties to be incorrectly marked required when the instantiation uses a nullable argument (e.g., `DataEnvelope<string?>`).
-
-**User `setupGeneratorActions` runs between the two framework configuration passes** (see `_ConfigureGeneratorSettings` then user callback then `_ConfigureHeadlessGeneratorSettings`). Security scheme registration and primitive mappings are applied after the user callback, so custom processors added in `setupGeneratorActions` run before security scope processors but after the core schema/operation processors.
-
-**`UseNswagOpenApi` also mounts Swagger UI.** If you call `MapScalarOpenApi()` from `Headless.OpenApi.Scalar` on the same app, both UIs are served. This is intentional (you may want Swagger UI for internal tooling and Scalar for external docs), but if you want only Scalar, you can use NSwag's lower-level `app.UseOpenApi(...)` to expose only the JSON endpoint without the Swagger UI.
-
-**Exclusive numeric bounds are written in the OpenAPI 3.0 form, never the JSON Schema draft-6 one.** NSwag emits `openapi: 3.0.0`, where `exclusiveMinimum`/`exclusiveMaximum` are *booleans* that modify `minimum`/`maximum`. NJsonSchema exposes both dialects on the same `JsonSchema` object — `ExclusiveMinimum` (draft-6 numeric) alongside `IsExclusiveMinimum` (the boolean 3.0 adopted) — and writing the numeric form leaves the document with no `minimum` at all, so 3.0 tooling drops the bound and strict client generators reject the schema. `ComparisonRule` and `BetweenRule` go through `SetMinimum`/`SetMaximum`, which always write the boolean form and clear the numeric one. Custom rules that set bounds should use those helpers rather than assigning the NJsonSchema properties directly.
-
-**`RuleForEach` constraints land on `items`, not on the array.** FluentValidation reports a collection rule under the collection property's own name, exactly like a non-collection rule, so `RuleContext` carries `IsCollectionRule` and `PropertySchema` resolves to the property's item schema when it is set. Without that redirect a `RuleForEach(x => x.Scores).GreaterThan(0)` writes `minimum` onto the array — where JSON Schema sizes arrays with `minItems`/`maxItems` and `minimum`/`maxLength`/`pattern` have no meaning — and generators emit nonsense such as `z.array(...).gt(0)`. A plain `RuleFor` on a collection property still targets the array itself.
-
-**Problem-details schemas declare every member the response actually carries.** `IProblemDetailsCreator` writes an `error` descriptor on 400/401/403/404/429 responses (the framework's own tenant-required 403 emits `g:tenant_required` there) and a `retryAfter` on 429, so `BadRequestProblemDetails`, `UnauthorizedProblemDetails`, `ForbiddenProblemDetails`, `EntityNotFoundProblemDetails`, and `TooManyRequestsProblemDetails` declare those members — `error` optional, `retryAfter` required. This matters because `SetupNswag` sets `FlattenInheritanceHierarchy = true` and NJsonSchema defaults `AlwaysAllowAdditionalObjectProperties` to `false`: each problem definition is one flat object with `additionalProperties: false`, so an undeclared member makes a real response fail validation against the schema this package published for it. When adding a creator method that writes a new extension member, add the matching property to its model in the same change.
+- `AddHeadlessOpenApi(string documentName = "v1", Action<OpenApiOptions>? configure = null)` — registers one native document with the Headless transformers, then `configure`.
+- `AddHeadlessApiSurfaceDocuments(IEnumerable<string>? documentNames = null, Action<OpenApiOptions, ApiSurfaceDescriptor>? configure = null)` — registers one document per API surface, filtered to that surface's endpoints, titled from `surface.OpenApi.Title`.
+- `ConfigureHeadlessOpenApi(Action<HeadlessOpenApiOptions>)` and `ConfigureHeadlessOpenApi(Action<HeadlessOpenApiOptions, IServiceProvider>)` — configure the shared enrichment.
+- `OpenApiOptions.AddHeadlessTransformers()` — adds the transformers to a natively registered document.
+- `FluentValidationRule`, `RuleContext` — extension points for FluentValidation-to-schema rules.
+- Contracts it reads, so a feature describes itself without a reference to this package: from `Headless.Api.Abstractions`, `HttpContractMetadata` (endpoint headers and responses), `IEnvironmentRestrictionMetadata` (environment-restricted endpoints), `IHttpCredentialSchemeOptions` (credentials an authentication scheme reads), and `TenantCatalogResolutionDescription` (tenant catalog resolution); from `Headless.Api`, `IFormFileSizeValidator` / `IFormFileContentTypeValidator` (file rules).
+- Problem-details schema types: `HeadlessProblemDetails`, `BadRequestProblemDetails`, `BadRequestValidationProblemDetails`, `UnauthorizedProblemDetails`, `ForbiddenProblemDetails`, `EntityNotFoundProblemDetails`, `RequestTimeoutProblemDetails`, `ConflictProblemDetails`, `PayloadTooLargeProblemDetails`, `UnprocessableEntityProblemDetails`, `PreconditionRequiredProblemDetails`, `TooManyRequestsProblemDetails`, `InternalServerErrorProblemDetails`, `NotImplementedProblemDetails`, `ServiceUnavailableProblemDetails`.
 
 ### Install
 
 ```bash
-dotnet add package Headless.OpenApi.Nswag
+dotnet add package Headless.OpenApi
 ```
 
 ### Setup and use
 
+Versioned documents use the native group filter. Asp.Versioning's API Explorer sets each description's group name; the native default `ShouldInclude` keeps the descriptions whose group matches the document name:
+
 ```csharp
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddNswagOpenApi(options =>
-{
-    options.AddBearerSecurity = true;
-    options.AddPrimitiveMappings = true;
-});
-
-var app = builder.Build();
-
-app.UseNswagOpenApi(); // before UseAuthorization()
-
-// or for versioned APIs:
-app.UseNswagOpenApiVersions();
+builder.Services.AddHeadlessOpenApi("v1");
+builder.Services.AddHeadlessOpenApi("v2");
 ```
 
-Custom generator settings (e.g., add a custom operation processor):
+Per-document customization runs after the Headless transformers:
 
 ```csharp
-builder.Services.AddNswagOpenApi(
-    setupHeadlessAction: options =>
-    {
-        options.AddBearerSecurity = true;
-        options.AddApiKeySecurity = true;
-        options.ApiKeyHeaderName = "X-API-Key";
-    },
-    setupGeneratorActions: (settings, serviceProvider) =>
-    {
-        settings.Title = "My API";
-        settings.Version = "v1";
-    }
+builder.Services.AddHeadlessOpenApi(
+    configure: options =>
+        options.AddDocumentTransformer(
+            (document, _, _) =>
+            {
+                document.Info.Version = "2024-01";
+                document.Servers = [new OpenApiServer { Url = "https://api.example.com" }];
+                return Task.CompletedTask;
+            }
+        )
 );
 ```
-
-### Configuration
 
 #### API surfaces
 
-`AddNswagApiSurfaceDocuments()` infers all document names from surfaces registered with `AddHeadlessApiSurface(...)`. Surface definitions are finalized during registration. Inference closes surface registration, so later additions throw. An optional document list publishes only the selected names and may precede surface registration; each name must match a configured `OpenApi.DocumentName`. No surfaces or an explicit empty list registers no documents.
+`AddHeadlessApiSurfaceDocuments()` infers every surface registered before it and closes surface registration, so later additions throw. An explicit list publishes only the named documents; each name must match a configured `OpenApi.DocumentName`, and an unknown name fails startup. The surface filter runs before schema generation, so another surface's paths and schemas cannot leak into a document. It is independent of API Explorer groups: narrow a surface to one version with `ShouldInclude` in the callback, which composes with the surface filter.
 
 ```csharp
-builder.Services.AddNswagApiSurfaceDocuments(
-    setupGeneratorActions: (settings, surface) => settings.Version = "v1"
+builder.Services.AddHeadlessApiSurfaceDocuments(
+    configure: (options, surface) =>
+    {
+        options.ShouldInclude = description => description.GroupName is null or "v1";
+        options.AddDocumentTransformer(
+            (document, _, _) =>
+            {
+                document.Info.Description = $"The {surface.SurfaceName} API.";
+                return Task.CompletedTask;
+            }
+        );
+    }
 );
-// After building the application, before UseAuthorization():
-app.UseNswagApiSurfaceDocuments();
 ```
 
-Configure document identity through `surface.OpenApi.DocumentName` and `.Title`. The generator callback cannot rename the document. Surface metadata filters operations before schema generation, excluding other surfaces' paths and schemas. API Explorer groups remain available independently through `settings.ApiGroupNames`; surface registration does not overwrite version groups.
+#### Security schemes
 
-Extra documents can use either `AddNswagOpenApi(...)` or native NSwag `AddOpenApiDocument(...)`. Surface documents use ordinary NSwag registrations without replacing its services. Register each document once across calls. `UseNswagApiSurfaceDocuments()` serves `/openapi/{documentName}.json` and the shared Swagger UI at `/swagger`.
+`AddBearerSecurity` (default `true`) publishes an HTTP bearer scheme named `Bearer`; `AddApiKeySecurity` publishes an API-key scheme named `ApiKey` that reads `ApiKeyHeaderName`. `SecuritySchemes` adds any number of named schemes. Each registered authentication scheme whose options implement `IHttpCredentialSchemeOptions` also publishes one scheme per credential: the first under the authentication scheme's name, each further one under that name plus its location. The `Headless.Api.Identity` handlers implement it, so `AddApiKey()` publishes `ApiKey` (the configured `ApiKeyHeaderName` header) and, with `AllowApiKeyInQueryString`, `ApiKeyQuery` (the `ApiKeyParamName` query parameter), and `AddBasicSchema()` publishes `Basic` (HTTP `basic`). Leave `AddApiKeySecurity` off with those handlers; a configured scheme wins over a discovered one with the same name. Every operation that requires authentication gets one security requirement per accepted scheme, so a client may satisfy any one of them. `SecuritySchemeSelector` chooses the accepted schemes per operation; without it, every registered scheme is accepted.
 
-`TenantRequiredExampleOperationProcessor` adds the `tenantRequired` 403 example only for effective `RequireTenant` endpoint metadata. Optional-tenant and anonymous endpoints do not receive it. It also runs for ordinary documents. Authorization responses are created per operation so examples and schemas cannot leak between documents.
+```csharp
+builder.Services.ConfigureHeadlessOpenApi(options =>
+{
+    options.AddBearerSecurity = false;
+    options.SecuritySchemes["TenantBearer"] = new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        Description = "Tenant access token.",
+    };
+    options.SecuritySchemes["AdministratorBearer"] = new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+    };
+    options.SecuritySchemeSelector = description =>
+        description
+            .ActionDescriptor.EndpointMetadata.OfType<IAuthorizeData>()
+            .Any(data => data.Policy?.StartsWith("Administrator", StringComparison.Ordinal) == true)
+            ? ["AdministratorBearer"]
+            : ["TenantBearer"];
+});
+```
 
-Operation IDs use named MVC HTTP attributes and native Minimal API route-name metadata. `UseRouteNameAsOperationId` defaults to `false` because NSwag 14.7.1 dereferences MVC-only route information on Minimal APIs; `UseHttpAttributeNameAsOperationId` defaults to `true`.
-
-`HeadlessNswagOptions` properties (all have defaults — only set what differs):
+`HeadlessOpenApiOptions`:
 
 | Property | Default | Description |
 |---|---|---|
-| `AddBearerSecurity` | `true` | Registers JWT Bearer security scheme and scope processor |
-| `AddApiKeySecurity` | `false` | Registers API Key security scheme |
-| `ApiKeyHeaderName` | `"X-API-Key"` | Header name for the API key scheme |
-| `AddPrimitiveMappings` | `true` | Maps `Money`, `Month`, `AccountId`, `UserId` to primitive OpenAPI types |
-| `ThrowOnSchemaProcessingError` | `false` | Throw on FluentValidation schema errors instead of logging |
+| `AddBearerSecurity` | `true` | Publishes the `Bearer` HTTP bearer (JWT) scheme |
+| `AddApiKeySecurity` | `false` | Publishes the `ApiKey` header scheme |
+| `ApiKeyHeaderName` | `"X-Api-Key"` | Header the built-in `ApiKey` scheme reads, the `Headless.Api.Identity` handler's default |
+| `SecuritySchemes` | empty | Additional schemes by component name |
+| `SecuritySchemeSelector` | `null` | Per-operation accepted scheme names; `null` accepts every registered scheme |
+| `FluentValidationRules` | empty | Rules that add to or replace `FluentValidationRule.DefaultRules` by `RuleName` |
+| `ThrowOnSchemaProcessingError` | `false` | Fail generation when a FluentValidation rule throws, instead of logging and skipping it |
+
+Startup validation rejects an empty `ApiKeyHeaderName` when the API-key scheme is on, an empty or `null` scheme entry, and a custom scheme named `Bearer` or `ApiKey` while the matching built-in scheme is on.
+
+### Design constraints
+
+**Authorization responses follow the policies the middleware applies.** 401 and the security requirement need `[Authorize]`/`RequireAuthorization()` data, an `AuthorizationPolicy` or `IAuthorizationRequirementData` in the metadata, an MVC authorization filter that denies anonymous users, or a `FallbackPolicy` (which applies to every endpoint with no authorization data or policy); `[AllowAnonymous]` removes them. 403 additionally needs a named policy, roles, an effective `RequireTenant`, or a claims, name, operation, roles, assertion, or `TenantRequirement` requirement in an applied policy or requirement data. A bare `[Authorize]` or `RequireAuthorization()` applies `DefaultPolicy`, so with the default `DefaultPolicy` it only authenticates and produces 401 but not 403; a `DefaultPolicy` or `FallbackPolicy` holding `TenantRequirement` adds 403 and the `tenantRequired` example unless the endpoint's later tenancy metadata is `AllowMissingTenant`. Policies come from `AuthorizationOptions`; named policies are not resolved and always count as able to refuse, and a custom `IAuthorizationPolicyProvider` that builds its default or fallback policy elsewhere is not seen. The roles of `[Authorize(Roles = ...)]` become the requirement's scopes, which OpenAPI 3.1 allows for any scheme type. A selector that returns an unregistered scheme name fails generation, because the requirement would reference a missing component.
+
+**Errors are documented where the framework writes them.** An operation documents the error responses it declares, those its metadata and options show (authorization, `If-Match`, rate limits, feature contracts, tenancy), and two the server writes for an operation's shape before any handler runs. A 400 goes on every operation that binds a body, route, query, header, form, or model-bound value, because a value that fails to bind raises `BadHttpRequestException`, which the Headless exception handler writes as a 400 problem. A 413 goes on every operation with a request body, because the server's body size limit applies to it; an endpoint whose `IRequestSizeLimitMetadata` (`[RequestSizeLimit]`) sets a limit names it, and one that lifts the limit (`[DisableRequestSizeLimit]`) gets no 413. An endpoint whose last `IAntiforgeryMetadata` requires validation, in an app that registers antiforgery, gets an optional `AntiforgeryOptions.HeaderName` header parameter (the token may come in the `FormFieldName` form field instead) and the token reason in its 400: an invalid token ends the request with 400, which the status-codes rewriter writes as a problem. A status the operation already documents keeps its description. Other statuses, such as 500, appear only when declared.
+
+**Tenant catalog resolution documents what it does before authentication.** It applies when the tenant posture records the catalog resolution capability and an identifier source is registered (`Http(http => http.ResolveFromCatalog(...))`), as the `TenantCatalogResolutionDescription` that call registers reports, read from registrations so a document generated without running the pipeline is the same; an endpoint with `[SkipTenantResolution]` gets none of it. Each `HeaderTenantIdentifierSourceOptions.HeaderNames` entry becomes an optional header parameter; a single header becomes required when the endpoint requires a tenant and no other identifier source is registered. Every resolving operation documents 400 `g:tenant_identifier_invalid` and, as `TenantCatalogOptions.DetailedResolutionErrors` decides, either the collapsed 404 `g:tenant_resolution_failed` or 404 `g:tenant_unknown` plus 403 `g:tenant_disabled` and `g:tenant_identifier_mismatch`, each with an optional `Cache-Control` header (`no-store`). A status the operation already documents keeps its example under a name (`badRequest`, `notFound`, `forbidden`) beside the tenant examples; a 400 declared as a validation problem gets no tenant example, because its schema has no `error` member. Each host template of `AddHostSource` without a `?` or `*` label adds a server `https://{template}` with a `tenant` variable after the servers the document already lists.
+
+**Rate-limit and entity-tag responses follow metadata and options.** A limiter applies when the endpoint carries `EnableRateLimitingAttribute` (`RequireRateLimiting(...)`, `[EnableRateLimiting]`) or `RateLimiterOptions.GlobalLimiter` is set; `DisableRateLimiting` anywhere in the metadata removes it, as in the middleware. The documented status is `RateLimiterOptions.RejectionStatusCode`: 429 after `UseHeadlessProblemDetails()`, the native 503 otherwise. The document cannot see whether `UseRateLimiter()` runs. A 2xx response whose body type implements `IHasEntityTag` documents an optional `ETag` header: the body type decides, because the document cannot see whether the entity-tag profile (`AddHeadlessMvcEntityTagConcurrency()`, or `AddHeadlessMinimalApiEntityTagConcurrency()` with `.WithEntityTag()`) is on.
+
+**Feature contracts render without feature references.** An endpoint's `HttpContractMetadata` (`Headless.Api.Abstractions`) becomes header parameters, responses, and response headers: each request header a `header` parameter with a `string` schema, each response an operation response whose error statuses then get their typed problem-details schema and example, and each response header a `string` header on every documented response whose status falls in its range. An entry the operation already has keeps its own description: a header the handler binds is reused and only becomes required when the metadata requires it, and a declared response or response header is not replaced. `.RequireIdempotencyKey()` and `.WithIdempotency(...)` attach it, so an idempotent endpoint documents its key header and rejections; see [Headless.Idempotency.ResponseReplay](idempotency.md#headlessidempotencyresponsereplay). A controller action renders the metadata a `MapControllers()` convention attaches (`MapControllers().WithMetadata(...)`, `.RequireIdempotencyKey()`) as well as its attributes.
+
+**MVC actions returning `ApiActionResult<T>` document the ApiResult contract.** An action declared as `ApiActionResult<T>` or `ApiActionResult` (what `ApiResult.ToActionResult(...)` returns in `Headless.Api.Mvc`) publishes 200 with `T` (or a bodyless 204) and problem-details 401, 403, 404, 409, and 422, the set a Minimal API `ApiResultHttpResult` publishes, and each error gets its typed Headless schema here.
+
+**Every non-nullable property is required.** The native generator requires only `required` members and constructor parameters. Headless treats a non-nullable property as always present, so a generated client gets a non-optional member for it, and a request body must send it. A generic type shares one schema across its instantiations (`DataEnvelope<string>` and `DataEnvelope<string?>` are one runtime type, published as one `DataEnvelopeOfstring` component), and the native generator describes an unconstrained `T` property as nullable in both; a constructor parameter keeps it in `required`. A nullable property of a component type (`Address? ShippingAddress`) stays out of `required` and is published as `oneOf: [null, $ref]`.
+
+**Primitives are inlined.** A type implementing `IPrimitive<T>` serializes as its underlying value through its own converter, which the native generator cannot see through. Its schema becomes the underlying JSON type and format (`MoneyAmount` is `number`/`decimal`, `Month` `integer`/`int32`, `AccountId` and `UserId` `string`), nullable for `T?`, and it gets no component. A string primitive with `[StringLength(min, max)]` (`Headless.Generator.Primitives`) also gets `minLength`/`maxLength`, unless the attribute sets `validate: false`; nothing else is generated for OpenAPI, since the primitives generator emits no schema mapping. Primitives from every assembly need no registration: the interface identifies them.
+
+**FluentValidation rules.** The type's `IValidator<T>` is resolved from the document-generation scope. `NotNull`/`NotEmpty` add the property to `required` and remove nullability (a nullable reference collapses from `oneOf: [null, $ref]` to the reference); `NotEmpty` also sets `minLength: 1`, or `minItems: 1` on an array; `Length`, `MinimumLength`, `MaximumLength`, and `ExactLength` set `minLength`/`maxLength`; `Matches` sets `pattern`; comparisons and `InclusiveBetween` set `minimum`/`maximum`, and `GreaterThan`, `LessThan`, and `ExclusiveBetween` set the 3.1 numeric `exclusiveMinimum`/`exclusiveMaximum` with no `minimum`/`maximum`; the ASP.NET Core-compatible `EmailAddress` sets `pattern: ^[^@]+@[^@]+$`. Unconditional `Include()` chains are followed. A rule or component under `When`/`Unless` is skipped, because it does not hold for every request. `RuleForEach` constraints land on `items`, and a `RuleForEach` `NotNull`/`NotEmpty` never makes the collection itself required, because FluentValidation skips a null collection. A parameter bound from one property of an `[AsParameters]` or `[FromQuery]` type takes that type's rules for the property. The `Headless.Api.FluentValidation` file rules on a form model (`[FromForm]` in a Minimal API, or the type declaring an MVC form property) describe its file parts: `ContentTypes` sets the part's multipart encoding `contentType` (several rules intersect), and the accepted types and the size bounds of `FileNotEmpty`, `GreaterThanOrEqualTo`, and `LessThanOrEqualTo` (the tightest win) join the part's description, beside its `$ref` so the shared `IFormFile` component stays unchanged. OpenAPI has no keyword for the size of a binary part, since `maxLength` counts characters, so the bounds are text only. A custom rule takes part by implementing `IFormFileSizeValidator` or `IFormFileContentTypeValidator`.
+
+**Problem-details schemas describe what the response carries.** Each known status gets its typed schema as a shared component, referenced from every operation, with a nested `ErrorDescriptor` component. The `error` member of 400, 401, 403, 404, 408, 429, 501, and 503 is optional and nullable; `retryAfter` on 429 is required and on 503 optional, matching the `Retry-After` header (required on 429, optional on 503). 413 and 500 carry no `error`. A 400 declared as `HttpValidationProblemDetails` (`ProducesValidationProblem()`, or the .NET `AddValidation()` filter) gets `BadRequestValidationProblemDetails` instead: the native title, no `detail`, and `errors` as member names mapped to plain message arrays, plus the Headless diagnostics members. The native `ProblemDetails` and `HttpValidationProblemDetails` components a declaration published are removed when no response references them any more. Other media types the endpoint declared for an error response keep their schema; only `application/problem+json` is typed, and only when the endpoint declared no problem type of its own there: `Produces<SeatTakenProblem>(409, "application/problem+json")` keeps the `SeatTakenProblem` schema and gets no example, while the native `ProblemDetails` and `HttpValidationProblemDetails` that `ProducesProblem()`, `ProducesValidationProblem()`, and `[ProducesResponseType<ProblemDetails>]` declare are replaced. Example text is English, because a cached document is served to readers of every culture.
+
+**Operation ids.** A route or endpoint name wins (`WithName`, `[HttpGet(Name = ...)]`). An unnamed MVC action becomes `{Controller}_{Action}` without an `Async` suffix; an unnamed Minimal API endpoint becomes its method plus its path segments. A literal segment adds its words; a segment that is only a parameter adds `By` and the parameter name, with its constraint, default, optional, and catch-all markers dropped, so the list and the item of one resource get distinct ids whatever order they are mapped in (`GET /things` is `GetThings`, `GET /things/{id:guid}` is `GetThingsById`, `GET /orders/{orderId}/items/{itemId?}` is `GetOrdersByOrderIdItemsByItemId`, `GET /files/{**path}` is `GetFilesByPath`). A parameter that shares its segment with literal text adds nothing: it is a prefix every operation of a group shares, such as an API version, so `GET /v{version}/things` is `GetVThings` and `GET /v{version}/things/{id}` is `GetVThingsById`. Ids that still repeat are numbered in path order, as a last resort; name the endpoint (`WithName`) for an id that must not depend on the path.
 
 ### Runtime behavior
 
-- Surface registration supplies a singleton aggregate NSwag document collection from the finalized surface registry.
-- Registers NSwag OpenAPI document generator via `services.AddOpenApiDocument(...)`
-- `UseNswagOpenApi()` serves the OpenAPI JSON at `/openapi/{documentName}.json` and Swagger UI at `/swagger` as middleware, ahead of authorization
-- `UseNswagOpenApiVersions()` serves one OpenAPI JSON document per API version at `/openapi/{groupName}.json` and a single Swagger UI at `/swagger` as middleware, ahead of authorization
-
----
-## Headless.OpenApi.Nswag.OData
-
-NSwag operation filter that injects OData query parameters into the OpenAPI spec for endpoints that support OData queries.
-
-### API and behavior
-
-- `ODataOperationProcessor : IOperationProcessor` — detects endpoints via `ODataQueryOptions` parameter type or `[EnableQuery]` attribute and injects seven OData parameters: `$select`, `$expand`, `$filter`, `$search`, `$top`, `$skip`, `$orderby`
-- The raw `ODataQueryOptions` parameter is removed from the operation so it does not appear as an undocumented parameter alongside the injected ones
-- Detection works on both the method and the declaring controller type for `[EnableQuery]`
-
-### Install
-
-```bash
-dotnet add package Headless.OpenApi.Nswag.OData
-```
-
-### Setup and use
-
-```csharp
-builder.Services.AddNswagOpenApi(
-    setupHeadlessAction: null,
-    setupGeneratorActions: settings =>
-    {
-        settings.OperationProcessors.Add(new ODataOperationProcessor());
-    }
-);
-```
-
-With access to the service provider:
-
-```csharp
-builder.Services.AddNswagOpenApi(
-    setupHeadlessAction: options =>
-    {
-        options.AddBearerSecurity = true;
-    },
-    setupGeneratorActions: (settings, serviceProvider) =>
-    {
-        settings.OperationProcessors.Add(new ODataOperationProcessor());
-    }
-);
-```
-
-### Configuration
-
-None.
-
-### Runtime behavior
-
-None. `ODataOperationProcessor` is instantiated and registered manually inside `setupGeneratorActions`; no DI registrations are made.
+- `AddHeadlessOpenApi` and `AddHeadlessApiSurfaceDocuments` call native `AddOpenApi` and register `HeadlessOpenApiOptions` with startup validation.
+- `AddHeadlessOpenApi`, `AddHeadlessApiSurfaceDocuments`, and `ConfigureHeadlessOpenApi` register the environment filter, which wraps each Headless document's `ShouldInclude` after every configure callback ran. A document registered with native `AddOpenApi(...)` and `AddHeadlessTransformers()` alone gets it only once one of them is called.
+- Authentication schemes are read on every generation, so a scheme added at run time appears in the next document generated rather than served from a cache.
+- The native generator builds the document per request. `MapHeadlessEndpoints()` caches the response with output caching unless `OpenApi.CacheDocument` is `false`.
 
 ---
 ## Headless.OpenApi.Scalar
 
-Scalar API documentation UI integration — renders the OpenAPI document generated by `Headless.OpenApi.Nswag` as an interactive browser-based UI.
+Scalar API documentation UI integration — renders the OpenAPI documents served by `MapOpenApi()` as an interactive browser-based UI.
 
 ### API and behavior
 
-- `MapScalarOpenApi(Action<ScalarOptions>?, string endpointPrefix)` — mounts Scalar at the given prefix (default `/scalar`), connected to the NSwag JSON endpoint pattern `/openapi/{documentName}.json`
+- `MapScalarOpenApi(Action<ScalarOptions>?, string endpointPrefix)` — mounts Scalar at the given prefix (default `/scalar`), reading documents from `/openapi/{documentName}.json`
 - Dark mode enabled by default with toggle visible
 - Layout: `ScalarLayout.Modern`
 - Tag sort: alphabetical (`TagSorter.Alpha`)
@@ -247,9 +244,9 @@ Scalar API documentation UI integration — renders the OpenAPI document generat
 
 ### Design constraints
 
-**Route pattern coupling.** `MapScalarOpenApi` hard-codes `options.OpenApiRoutePattern = "/openapi/{documentName}.json"` before passing control to the user callback. This matches what `UseNswagOpenApi` and `UseNswagOpenApiVersions` expose. If you change the NSwag JSON path (via `documentSettings` on those methods), you must override `OpenApiRoutePattern` in the Scalar `setupAction` or the UI will point at a 404.
+**Route pattern coupling.** `MapScalarOpenApi` sets `options.OpenApiRoutePattern = "/openapi/{documentName}.json"` before passing control to the user callback. This matches `MapHeadlessEndpoints()`'s default `OpenApi.RoutePattern` and `MapOpenApi("/openapi/{documentName}.json")`. Native `MapOpenApi()` without a pattern serves `/openapi/{documentName}.json` too. If you change the document route, override `OpenApiRoutePattern` in `setupAction` or the UI points at a 404.
 
-**No `AddNswagOpenApi` dependency at runtime.** The `Headless.OpenApi.Scalar` package does not reference `Headless.OpenApi.Nswag`. It calls `Scalar.AspNetCore`'s `MapScalarApiReference` which works with any OpenAPI JSON source. You can pair it with a different generator as long as the JSON endpoint path matches.
+**No generator dependency.** The package does not reference `Headless.OpenApi`. It calls `Scalar.AspNetCore`'s `MapScalarApiReference`, which works with any OpenAPI JSON source served at the route pattern. Add one Scalar document per surface with `options.AddDocument(surface.OpenApi.DocumentName, surface.OpenApi.Title)`.
 
 ### Install
 
@@ -262,10 +259,7 @@ dotnet add package Headless.OpenApi.Scalar
 ```csharp
 var app = builder.Build();
 
-// Serve the OpenAPI JSON (from Headless.OpenApi.Nswag); middleware, so before UseAuthorization()
-app.UseNswagOpenApi();
-
-// Serve the Scalar UI
+app.MapOpenApi("/openapi/{documentName}.json");
 app.MapScalarOpenApi();
 ```
 

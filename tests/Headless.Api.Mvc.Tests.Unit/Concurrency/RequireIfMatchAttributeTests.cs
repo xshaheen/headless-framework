@@ -35,6 +35,20 @@ public sealed class RequireIfMatchAttributeTests : TestBase
     }
 
     [Fact]
+    public async Task should_require_the_header_when_a_controller_convention_adds_the_metadata()
+    {
+        var (context, _) = _CreateContext(requiresIfMatch: false);
+        // MapControllers().WithMetadata(...) adds to the routed endpoint only, never to the action descriptor.
+        context.HttpContext.SetEndpoint(
+            new Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(new RequireIfMatchAttribute()), "PUT")
+        );
+
+        await new IfMatchActionFilter().OnActionExecutionAsync(context, _Next);
+
+        context.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(428);
+    }
+
+    [Fact]
     public async Task should_expose_valid_strong_tag_through_scoped_context()
     {
         var (context, ifMatch) = _CreateContext("\"revision-42\"");

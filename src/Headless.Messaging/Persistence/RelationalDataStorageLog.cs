@@ -7,7 +7,7 @@ namespace Headless.Messaging.Persistence;
 internal static partial class RelationalDataStorageLog
 {
     [LoggerMessage(
-        EventId = 2,
+        EventId = 128,
         EventName = "PoisonMessageSkipped",
         Level = LogLevel.Warning,
         Message = "Skipping un-deserializable message {StorageId} during retry pickup from {Table}; the batch proceeds and the row stays leased until its lease expires."
@@ -20,7 +20,7 @@ internal static partial class RelationalDataStorageLog
     );
 
     [LoggerMessage(
-        EventId = 4,
+        EventId = 129,
         EventName = "SchedulerBatchFetched",
         Level = LogLevel.Debug,
         Message = "Fetched {Count} delayed/queued message(s) for scheduling from {Table}."
@@ -28,7 +28,7 @@ internal static partial class RelationalDataStorageLog
     public static partial void LogSchedulerBatchFetched(this ILogger logger, int count, string table);
 
     [LoggerMessage(
-        EventId = 5,
+        EventId = 130,
         EventName = "PoisonMessageTerminalMarkFailed",
         Level = LogLevel.Warning,
         Message = "Failed to mark poison message {StorageId} terminal in {Table}; the batch proceeds and the row stays leased until its lease expires."
@@ -41,7 +41,7 @@ internal static partial class RelationalDataStorageLog
     );
 
     [LoggerMessage(
-        EventId = 8,
+        EventId = 131,
         EventName = "InboxCommitProbeFailed",
         Level = LogLevel.Warning,
         Message = "Could not reconcile an ambiguous transactional inbox commit; recovery will treat the outcome as indeterminate."

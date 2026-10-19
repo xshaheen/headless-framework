@@ -7,7 +7,7 @@ using Microsoft.Data.SqlClient;
 
 namespace Tests;
 
-public sealed partial class SqlServerStorageTests
+public partial class SqlServerStorageTests
 {
     protected override (IDataStorage Storage, MessagingOptions Options) CreateSchedulingTestStorage(TimeProvider clock)
     {

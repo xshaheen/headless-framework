@@ -29,9 +29,29 @@ TEST_PROJECT ?=
 TEST_FILTER ?=
 TEST_ARGS ?= --no-progress
 COVERAGE_SETTINGS_PROJECT ?= tests/Headless.Domain.Tests.Unit/Headless.Domain.Tests.Unit.csproj
-TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.*.dll
+TEST_MODULES ?= $(UNIT_TEST_MODULES) $(INTEGRATION_TEST_MODULES)
 UNIT_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Unit.dll
 INTEGRATION_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Integration.dll
+# The chaos and soak tier (*.Tests.Chaos) runs for minutes against real containers, so it runs only on purpose:
+# through test-messaging-chaos or the scheduled run. The whole-solution test targets run this solution filter
+# instead of the bare solution, so they build that tier with everything else but never execute it.
+CHAOS_TEST_SUFFIX ?= .Tests.Chaos
+NO_CHAOS_SOLUTION ?= $(ARTIFACTS_DIR)/solution-filters/headless-framework.no-chaos.slnf
+WRITE_NO_CHAOS_SOLUTION = $(GRAPH) solution-filter --exclude-suffix "$(CHAOS_TEST_SUFFIX)" --out "$(NO_CHAOS_SOLUTION)" --solution "$(SOLUTION)"
+MESSAGING_CHAOS_PROJECT ?= tests/Headless.Messaging.Tests.Chaos/Headless.Messaging.Tests.Chaos.csproj
+MESSAGING_CHAOS_RESULTS_DIR ?= $(TEST_RESULTS_DIR)/messaging-chaos
+# The messaging integration tier (messaging-integration.yml): every broker, broker-plus-database, and relational
+# storage integration suite, listed once in scripts/messaging-integration-scope.py. The Azure Service Bus project runs
+# for its emulator profile, which skips unless HEADLESS_ACCEPT_SERVICEBUS_EMULATOR_EULA=Y accepts the emulator's
+# license; its real-namespace tests need a credential and skip here, running in their own dispatch-only workflow.
+MESSAGING_INTEGRATION_PROJECTS ?= $(shell $(PYTHON) -I scripts/messaging-integration-scope.py projects)
+MESSAGING_INTEGRATION_RESULTS_DIR ?= $(TEST_RESULTS_DIR)/messaging-integration
+MESSAGING_INTEGRATION_REPORT ?= true
+MESSAGING_DRIFT_REPORT_ROOT ?= $(MESSAGING_INTEGRATION_RESULTS_DIR)
+# Providers whose real-broker leaves the integration tier does not run; the drift report does not wait for their cells.
+MESSAGING_DRIFT_EXCLUDED_PROVIDERS ?= Azure Service Bus
+MESSAGING_QUARANTINE_DIR ?= $(TEST_RESULTS_DIR)/messaging-quarantine
+MESSAGING_UNIT_PROJECT ?= tests/Headless.Messaging.Tests.Unit/Headless.Messaging.Tests.Unit.csproj
 MESSAGING_CONFORMANCE_PROVIDERS ?= Aws Kafka Nats Pulsar RabbitMq Redis
 MESSAGING_CONFORMANCE_EVIDENCE_PROJECTS ?= $(foreach provider,$(MESSAGING_CONFORMANCE_PROVIDERS),tests/Headless.Messaging.$(provider).Tests.Integration/Headless.Messaging.$(provider).Tests.Integration.csproj)
 MESSAGING_CONFORMANCE_EVIDENCE_MODULES ?= $(foreach provider,$(MESSAGING_CONFORMANCE_PROVIDERS),tests/Headless.Messaging.$(provider).Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.$(provider).Tests.Integration.dll)
@@ -87,6 +107,10 @@ AFFECTED_UPSTREAM := $(shell git rev-parse --abbrev-ref --symbolic-full-name '@{
 AFFECTED_OWN_COPY := origin/$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 AFFECTED_BASE := $(or $(filter-out $(AFFECTED_OWN_COPY),$(AFFECTED_UPSTREAM)),origin/main)
 endif
+# The affected set takes only the direct dependents of a changed project, so the local loop stays short; pull-request
+# CI still runs every transitive dependent. AFFECTED_TRANSITIVE=true widens a local run to match CI.
+AFFECTED_TRANSITIVE ?= false
+AFFECTED_SCOPE_ARGS = $(if $(filter true,$(AFFECTED_TRANSITIVE)),--transitive,)
 # Filter targets scope to one project when TEST_PROJECT is set and fall back to the whole solution.
 TEST_SCOPE_TARGET = $(if $(TEST_PROJECT),test-project,test)
 # repeated <cmd...>: run the command REPEAT times (a flake loop) and report how many runs failed; with REPEAT=1 it
@@ -166,7 +190,7 @@ AFFECTED_ANALYZER_STAGE = if [ -s "$$run/changed.txt" ]; then \
 	fi;
 AFFECTED_PREPARE = $(ASSERT_RESTORED); $(MARK_RESTORED); prepare() { \
 	git rev-parse --verify -q "$(AFFECTED_BASE)^{commit}" >/dev/null || { printf 'ERROR: AFFECTED_BASE=%s does not resolve to a commit. Fetch it, or pass AFFECTED_BASE=<ref>.\n' "$(AFFECTED_BASE)" >&2; return 2; }; \
-	rm -rf "$$1"; $(GRAPH) affected --base "$(AFFECTED_BASE)" --out-dir "$$1"; }; prepare
+	rm -rf "$$1"; $(GRAPH) affected --base "$(AFFECTED_BASE)" $(AFFECTED_SCOPE_ARGS) --out-dir "$$1"; }; prepare
 # Restore is asserted, not repeated: the solution-filter restore runs only when a selected project's
 # assets are missing or older than Directory.Packages.props or its lock file.
 AFFECTED_BUILD_STAGES = if [ -s "$$run/build.txt" ]; then \
@@ -816,14 +840,16 @@ format-check: tools ## Check C# formatting without writing changes.
 	$(DOTNET) csharpier check .
 
 .PHONY: test
-test: build ## Build, then run all tests. Use TEST_FILTER='--filter-class X' for MTP filters.
+test: build ## Build, then run all tests except the chaos tier. Use TEST_FILTER='--filter-class X' for MTP filters.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
-	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
+	@$(WRITE_NO_CHAOS_SOLUTION)
+	$(DOTNET) test --solution "$(NO_CHAOS_SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
 
 .PHONY: test-fast
-test-fast: ## Run all tests without restore/build. Requires existing $(CONFIGURATION) build outputs.
+test-fast: ## Run all tests except the chaos tier without restore/build. Requires existing $(CONFIGURATION) build outputs.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
-	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
+	@$(WRITE_NO_CHAOS_SOLUTION)
+	$(DOTNET) test --solution "$(NO_CHAOS_SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
 
 .PHONY: ci-test
 ci-test: ## Run prebuilt unit tests with TRX and Cobertura coverage (CI_COVERAGE=false skips coverage; CI_TEST_SOLUTION=<slnf> limits the modules). Requires existing $(CONFIGURATION) build outputs.
@@ -862,9 +888,11 @@ build-messaging-conformance-evidence: ## Restore and build only the messaging co
 	done
 
 .PHONY: test-modules
-test-modules: build ## Run prebuilt test DLLs via MTP --test-modules. Override TEST_MODULES if needed.
+test-modules: build ## Run prebuilt unit and integration test DLLs via MTP --test-modules, one run per glob. Override TEST_MODULES (space-separated globs) if needed.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
-	$(DOTNET) test --test-modules "$(TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
+	@set -f; status=0; for modules in $(TEST_MODULES); do \
+		$(DOTNET) test --test-modules "$$modules" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) || status=1; \
+	done; exit $$status
 
 .PHONY: test-project
 test-project: ## Run one test project (builds it, asserts restore instead of restoring): make test-project TEST_PROJECT=tests/.../*.csproj
@@ -880,14 +908,15 @@ test-project-fast: ## Run one prebuilt test project without restore/build.
 	$(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
 
 # The affected set comes from the ProjectReference graph (scripts/project-graph.py), not from
-# directory names: changed projects plus their direct dependents, and every unit- or integration-test
-# project that is in that set or references a member of it directly. A change to a build-wide file
-# (global.json, Directory.*.props, .editorconfig, eng/DashboardSpa.targets) selects every project below it.
+# directory names: changed projects plus their direct dependents (every transitive one with
+# AFFECTED_TRANSITIVE=true), and every unit- or integration-test project that is in that set or
+# references a member of it directly. A change to a build-wide file (global.json, Directory.*.props,
+# .editorconfig, eng/DashboardSpa.targets) selects every project below it.
 # All selected projects build in one invocation of a generated solution filter, all test modules run
 # to completion (one failure no longer hides the rest), and the results land in a proof bundle.
 .PHONY: affected
 affected: ## Print the projects and test projects affected by changes vs AFFECTED_BASE (JSON).
-	@$(GRAPH) affected --base "$(AFFECTED_BASE)"
+	@$(GRAPH) affected --base "$(AFFECTED_BASE)" $(AFFECTED_SCOPE_ARGS)
 
 .PHONY: build-affected
 build-affected: ## Build the affected projects (changed + direct dependents + their tests) in one solution-filter build.
@@ -990,10 +1019,55 @@ test-integration: build ## Run every *.Tests.Integration module (honors TEST_MAX
 	@mkdir -p "$(TEST_RESULTS_DIR)/integration"
 	$(DOTNET) test --test-modules "$(INTEGRATION_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)/integration" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
 
+# The chaos tier is the one place multi-host delivery guarantees meet real faults, so no other target runs it: the
+# affected targets never select a *.Tests.Chaos project to execute, and the whole-solution targets filter it out.
+.PHONY: test-messaging-chaos
+test-messaging-chaos: ## Run the messaging chaos and soak suite on PostgreSQL and SQL Server (needs Docker; minutes). HEADLESS_CHAOS_PROFILE=full runs the full sizes; HEADLESS_CHAOS_SEED=<n> replays a soak; writes summary.md to MESSAGING_CHAOS_RESULTS_DIR.
+	@mkdir -p "$(MESSAGING_CHAOS_RESULTS_DIR)"
+	@rm -f "$(MESSAGING_CHAOS_RESULTS_DIR)/summary.md"
+	@$(ASSERT_RESTORED); assert_restored "$(MESSAGING_CHAOS_PROJECT)"
+	HEADLESS_CHAOS_SUMMARY_DIR="$(abspath $(MESSAGING_CHAOS_RESULTS_DIR))" $(DOTNET) test --project "$(MESSAGING_CHAOS_PROJECT)" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_CHAOS_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
+
+# The integration tier runs each suite once, with no --retry-failed-tests, so a flaky guarantee shows as a failure
+# rather than a pass on the second try. Every suite runs to completion, and the evidence tests export the manifest and
+# their scenario bindings beside the TRX files so the drift report can tell a simulator that drifted from the real
+# brokers apart from one provider failing. The results directory is cleared first: a stale TRX would be judged as this
+# run's.
+.PHONY: test-messaging-integration
+test-messaging-integration: ## Run the messaging integration suites with no retries, then the drift report (needs Docker; long). MESSAGING_INTEGRATION_PROJECTS narrows the set; MESSAGING_INTEGRATION_REPORT=false skips the report.
+	@$(ASSERT_RESTORED); for project in $(MESSAGING_INTEGRATION_PROJECTS); do assert_restored "$$project"; done
+	@test -n "$(MESSAGING_INTEGRATION_RESULTS_DIR)" || { echo "MESSAGING_INTEGRATION_RESULTS_DIR is empty." >&2; exit 2; }; rm -rf "$(MESSAGING_INTEGRATION_RESULTS_DIR)"; mkdir -p "$(MESSAGING_INTEGRATION_RESULTS_DIR)"
+	@status=0; for project in $(MESSAGING_INTEGRATION_PROJECTS); do \
+		printf '\033[36m[integration]\033[0m %s\n' "$$project"; \
+		HEADLESS_CONFORMANCE_EXPORT_DIR="$(abspath $(MESSAGING_INTEGRATION_RESULTS_DIR))/conformance" \
+			$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_INTEGRATION_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER) || status=1; \
+	done; \
+	if [ "$(MESSAGING_INTEGRATION_REPORT)" = "true" ]; then $(MAKE) --no-print-directory messaging-drift-report MESSAGING_DRIFT_REPORT_ROOT="$(MESSAGING_INTEGRATION_RESULTS_DIR)" || status=1; fi; \
+	exit $$status
+
+# Prints what messaging-integration.yml would run for one event, as key=value lines; the workflow's scope job calls it.
+.PHONY: messaging-integration-scope
+messaging-integration-scope: ## Print the messaging integration run's selection for EVENT (pull_request|push|schedule|workflow_dispatch); a pull request or push diffs against BASE.
+	@$(PYTHON) -I scripts/messaging-integration-scope.py select --event "$(EVENT)" --base "$(BASE)" $(if $(CHAOS_PROFILE),--chaos-profile "$(CHAOS_PROFILE)",)
+
+.PHONY: messaging-drift-report
+messaging-drift-report: ## Label simulator drift apart from provider failures in a messaging integration run's TRX files and conformance export under MESSAGING_DRIFT_REPORT_ROOT; writes summary.md there and exits 3 on drift.
+	@$(PYTHON) -I scripts/messaging-drift-report.py --results "$(MESSAGING_DRIFT_REPORT_ROOT)" --exclude-providers "$(MESSAGING_DRIFT_EXCLUDED_PROVIDERS)" --out "$(MESSAGING_DRIFT_REPORT_ROOT)/summary.md"
+
+# A quarantined cell skips its test until someone marks it Supported, and closing the linked issue does not do that,
+# so the scheduled run asks GitHub (read-only, through gh) whether each linked issue is still open.
+.PHONY: messaging-quarantine-check
+messaging-quarantine-check: ## Fail when a quarantined messaging manifest cell or guarantee links a closed issue (needs an authenticated gh; read-only).
+	@$(ASSERT_RESTORED); assert_restored "$(MESSAGING_UNIT_PROJECT)"
+	@test -n "$(MESSAGING_QUARANTINE_DIR)" || { echo "MESSAGING_QUARANTINE_DIR is empty." >&2; exit 2; }; rm -rf "$(MESSAGING_QUARANTINE_DIR)"; mkdir -p "$(MESSAGING_QUARANTINE_DIR)"
+	@HEADLESS_CONFORMANCE_EXPORT_DIR="$(abspath $(MESSAGING_QUARANTINE_DIR))" $(DOTNET) test --project "$(MESSAGING_UNIT_PROJECT)" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_QUARANTINE_DIR)" $(TEST_ARGS) --filter-class '*ConformanceEvidenceExportTests' > "$(MESSAGING_QUARANTINE_DIR)/snapshot-test.log" 2>&1 || { cat "$(MESSAGING_QUARANTINE_DIR)/snapshot-test.log" >&2; exit 1; }
+	@$(PYTHON) -I scripts/quarantine-check.py --snapshot "$(MESSAGING_QUARANTINE_DIR)/snapshot.json"
+
 .PHONY: coverage
-coverage: tools build ## Collect Cobertura coverage via MTP's in-process coverage extension. TEST_MAX_PARALLEL caps concurrent modules (default 3).
+coverage: tools build ## Collect Cobertura coverage via MTP's in-process coverage extension, chaos tier excluded. TEST_MAX_PARALLEL caps concurrent modules (default 3).
 	@mkdir -p "$(COVERAGE_DIR)" "$(TEST_RESULTS_DIR)"
-	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build \
+	@$(WRITE_NO_CHAOS_SOLUTION)
+	$(DOTNET) test --solution "$(NO_CHAOS_SOLUTION)" --configuration "$(CONFIGURATION)" --no-build \
 		--results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) \
 		$(TEST_ARGS) $(TEST_FILTER) $(COVERAGE_ARGS)
 

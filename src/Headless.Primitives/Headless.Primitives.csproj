@@ -24,8 +24,6 @@
     <PrimitiveTypeConverters>true</PrimitiveTypeConverters>
     <PrimitiveJsonConverters>true</PrimitiveJsonConverters>
     <PrimitiveXmlConverters>false</PrimitiveXmlConverters>
-    <PrimitiveNswagSwaggerConverters>false</PrimitiveNswagSwaggerConverters>
-    <PrimitiveSwashbuckleSwaggerConverters>false</PrimitiveSwashbuckleSwaggerConverters>
     <PrimitiveEntityFrameworkValueConverters>false</PrimitiveEntityFrameworkValueConverters>
     <PrimitiveDapperConverters>false</PrimitiveDapperConverters>
   </PropertyGroup>
@@ -34,8 +32,6 @@
     <CompilerVisibleProperty Include="PrimitiveJsonConverters" />
     <CompilerVisibleProperty Include="PrimitiveXmlConverters" />
     <CompilerVisibleProperty Include="PrimitiveTypeConverters" />
-    <CompilerVisibleProperty Include="PrimitiveSwashbuckleSwaggerConverters" />
-    <CompilerVisibleProperty Include="PrimitiveNswagSwaggerConverters" />
     <CompilerVisibleProperty Include="PrimitiveEntityFrameworkValueConverters" />
     <CompilerVisibleProperty Include="PrimitiveDapperConverters" />
   </ItemGroup>

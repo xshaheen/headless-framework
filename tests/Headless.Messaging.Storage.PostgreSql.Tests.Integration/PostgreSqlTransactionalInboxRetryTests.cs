@@ -2,6 +2,8 @@
 
 using Headless.Messaging;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using Testcontainers.PostgreSql;
 
 namespace Tests;
 
@@ -22,4 +24,16 @@ public sealed class PostgreSqlTransactionalInboxRetryTests(PostgreSqlTestFixture
 
     protected override string CreateEffectsTableSql =>
         "CREATE TABLE IF NOT EXISTS \"InboxScopeEffects\" (\"Id\" uuid PRIMARY KEY);";
+
+    protected override int? DatabaseHostPort => fixture.Container.GetMappedPublicPort(PostgreSqlBuilder.PostgreSqlPort);
+
+    protected override void ConfigureContextThrough(DbContextOptionsBuilder options, string host, int port) =>
+        options.UseNpgsql(
+            new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
+            {
+                Host = host,
+                Port = port,
+                Timeout = 5,
+            }.ConnectionString
+        );
 }

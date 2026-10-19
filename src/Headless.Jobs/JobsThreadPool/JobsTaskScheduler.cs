@@ -32,6 +32,10 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     private readonly Lock _workerSlotsLock = new();
     private readonly Task?[] _workerTasks;
 
+    // Idle workers that decided to retire but have not left their slot yet, guarded by _workerSlotsLock. Counting them
+    // keeps two workers that time out together from both seeing the other and retiring the pool down to zero.
+    private int _retiringWorkers;
+
     // Per-slot consecutive-fault counter; slot-partitioned (one worker task per index at a time) but written via
     // Interlocked so the reset on the restarting task always observes the prior task's increment.
     private readonly int[] _workerFaultCounts;
@@ -396,6 +400,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     private async Task _WorkerLoopAsync(int workerId)
     {
         var permanentlyDegraded = false;
+        var retired = false;
 
         try
         {
@@ -404,7 +409,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
                 await _workerStartGate(workerId, _shutdownCts.Token).ConfigureAwait(false);
             }
 
-            await _WorkerLoopCoreAsync(workerId).ConfigureAwait(false);
+            retired = await _WorkerLoopCoreAsync(workerId).ConfigureAwait(false);
 
             // A clean exit (idle-timeout retirement) clears the consecutive-fault streak so a recovered slot gets a
             // full backoff budget next time it faults.
@@ -452,6 +457,11 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             {
                 _workerTasks[workerId] = null;
                 activeWorkers = Interlocked.Decrement(ref _activeWorkers);
+                if (retired)
+                {
+                    _retiringWorkers--;
+                }
+
                 restartWorker =
                     !permanentlyDegraded
                     && _totalQueuedTasks > 0
@@ -479,7 +489,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         return TimeSpan.FromMilliseconds(cappedMs);
     }
 
-    private async Task _WorkerLoopCoreAsync(int workerId)
+    // Returns true when the worker retired idle, holding a retirement reservation the caller releases.
+    private async Task<bool> _WorkerLoopCoreAsync(int workerId)
     {
         var lastWorkTime = _timeProvider.GetUtcNow().UtcDateTime;
         var localQueue = _workerQueues[workerId];
@@ -530,9 +541,9 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
                     }
 
                     // Only exit if there's really no work and we have minimum workers
-                    if (!anyWorkRemaining && _totalQueuedTasks == 0 && _activeWorkers > 1)
+                    if (!anyWorkRemaining && _totalQueuedTasks == 0 && _TryReserveRetirement())
                     {
-                        break; // Exit this worker
+                        return true;
                     }
 
                     // Reset timer if we need to stay
@@ -548,6 +559,23 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
                     await Task.Yield();
                 }
             }
+        }
+
+        return false;
+    }
+
+    // The pool keeps at least one worker: a worker may retire only while another stays that is not retiring too.
+    private bool _TryReserveRetirement()
+    {
+        lock (_workerSlotsLock)
+        {
+            if (_activeWorkers - _retiringWorkers <= 1)
+            {
+                return false;
+            }
+
+            _retiringWorkers++;
+            return true;
         }
     }
 

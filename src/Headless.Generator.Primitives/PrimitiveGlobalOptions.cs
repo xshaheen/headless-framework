@@ -24,18 +24,6 @@ internal sealed record PrimitiveGlobalOptions
     public bool GenerateTypeConverters { get; set; } = true;
 
     /// <summary>
-    /// Gets or sets a value indicating whether to generate Swagger converters for Primitive types.
-    /// </summary>
-    /// <value><see langword="true"/> if Swagger converters should be generated; otherwise, <see langword="false"/>.</value>
-    public bool GenerateSwashbuckleSwaggerConverters { get; set; }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether to generate Swagger converters for Primitive types.
-    /// </summary>
-    /// <value><see langword="true"/> if Swagger converters should be generated; otherwise, <see langword="false"/>.</value>
-    public bool GenerateNswagSwaggerConverters { get; set; }
-
-    /// <summary>
     /// Gets or sets a value indicating whether XML serialization should be generated for Primitive types.
     /// The default value is false.
     /// </summary>

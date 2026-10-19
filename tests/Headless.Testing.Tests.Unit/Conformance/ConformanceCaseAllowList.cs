@@ -261,5 +261,115 @@ internal static class ConformanceCaseAllowList
             "should_skip_a_lease_another_unit_claimed_when_claiming_inside_a_unit",
             "The case keeps two claiming units open at once, and SQLite admits one write transaction per database file, so the second unit's begin waits for the first to end."
         ),
+        new(
+            "AwsPostgreSqlMessagingIntegrationTests",
+            "should_publish_headers_only_callback_response",
+            "The case's callback response has an empty body, and Amazon SNS rejects an empty message body at the protocol boundary."
+        ),
+        new(
+            "AwsPostgreSqlMessagingIntegrationTests",
+            "should_publish_typed_null_callback_response",
+            "The case's callback response has an empty body, and Amazon SNS rejects an empty message body at the protocol boundary."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_chain_callback_when_response_sets_next_callback_header",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_complete_message_lifecycle",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_drop_set_response_when_callback_name_is_absent",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_fail_consume_when_callback_response_cannot_serialize",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_handle_consumer_exception",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_invoke_consumer_handler_on_message",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_isolate_callback_controls_between_fanout_subscribers",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_process_multiple_messages_concurrently",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_publish_and_consume_message_end_to_end",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_publish_callback_response_for_bus_request",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_publish_callback_response_for_queue_request",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_publish_delayed_message",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_publish_headers_only_callback_response",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_publish_message_with_headers",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_publish_one_callback_response_per_fanout_subscriber",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_publish_typed_null_callback_response",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_remove_callback_even_when_response_is_set",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_retry_failed_message",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_rewrite_callback_when_response_is_set",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
+        new(
+            "KafkaPostgreSqlMessagingIntegrationTests",
+            "should_store_received_message_in_storage",
+            "Kafka offers only the Queue lane, and the case publishes on the Bus lane through IBus; the suite's own [Fact] scenarios cover Kafka end to end on the Queue lane."
+        ),
     ];
 }

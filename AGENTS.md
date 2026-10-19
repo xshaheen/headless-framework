@@ -50,7 +50,7 @@ The solution has ~430 projects. A full build takes a long time, and the integrat
 2. The projects whose behavior depends on the code you changed. For example, a change to `Headless.Caching.Abstractions` affects every `Headless.Caching.*` provider.
 3. The unit and integration test projects of the projects in 1 and 2.
 
-`make affected` prints that set, computed from the `ProjectReference` graph (`scripts/project-graph.py`) against the branch's upstream when that is another branch (a stacked branch), else `origin/main`, uncommitted and untracked files included. A change to a build-wide file (`global.json`, `Directory.*.props`, `.editorconfig`, `eng/DashboardSpa.targets`) selects every project below it. It adds only the direct dependents of a changed project. A pull request's CI run adds every transitive dependent (`scripts/project-graph.py affected --transitive`), so CI can build and test a dependent of a dependent that the local run skipped.
+`make affected` prints that set, computed from the `ProjectReference` graph (`scripts/project-graph.py`) against the branch's upstream when that is another branch (a stacked branch), else `origin/main`, uncommitted and untracked files included. A change to a build-wide file (`global.json`, `Directory.*.props`, `.editorconfig`, `eng/DashboardSpa.targets`) selects every project below it. It adds only the direct dependents of a changed project. A pull request's CI run adds every transitive dependent (`scripts/project-graph.py affected --transitive`), so CI can build and test a dependent of a dependent that the local run skipped; `AFFECTED_TRANSITIVE=true` widens a local run to match.
 
 Use the affected and project-scoped targets: `test-class` with `TEST_PROJECT`, `test-project`, `build-project`, `build-affected`, `test-affected`, `test-failed`, `verify-affected`, `test-affected-integration`, and `quality-analyzers-affected`. Run a solution-wide target (`build`, `rebuild`, `test`, `test-unit`, `test-integration`, `coverage`, `quality-analyzers`) only when the user asks for it, or when the change touches shared build files such as `Directory.Build.props`, `Directory.Packages.props`, or `eng/`.
 
@@ -96,7 +96,7 @@ Use the affected and project-scoped targets: `test-class` with `TEST_PROJECT`, `
 - **Mutation testing runs weekly.** `mutation.yml` runs Stryker.NET (`make mutation`) on the foundation packages every Monday and reports each score in the run summary. It never gates. Stryker.NET's Microsoft Testing Platform runner is in preview, so check the report before you act on a score.
 - **CodeQL does not compile.** It uses build-mode none, so it does not analyze code that source generators emit.
 - **`main` requires only the `CI status` job in `ci.yml`.** A skipped job passes. Add every new CI job to the `needs` list of `CI status`. When you change a trigger on a required workflow, change branch protection in the same change.
-- **CI runs no integration suite.** See [Work in the affected scope](#work-in-the-affected-scope).
+- **The required checks run no integration suite.** See [Work in the affected scope](#work-in-the-affected-scope). `messaging-integration.yml` runs the messaging integration and chaos suites outside `CI status`, so its failures never block a pull request: every messaging integration suite on each pull request and push to `main` that reaches one through the project graph, and a full run with chaos weekly. Its result on a pull request is real-broker evidence beside the `summary.md` the author pastes.
 - **Every CI run checks layering.** The `changes` job runs `make check-layering` (an Abstractions package references only Abstractions or foundation packages; a family's root package never references that family's providers; no public namespace or source folder is named after a kind of type).
 - **Some legs run only on a release.** Pack and SBOM, the Africa/Cairo test leg, and the messaging and R2 conformance legs run only for a published release or a `workflow_dispatch` with `release_checks`. Before you tag a change to packaging or time handling, rehearse that path.
 - **Packages publish only from a published GitHub Release.** Release Drafter never publishes. A release pushes to GitHub Packages, then to nuget.org. To stop at GitHub Packages, set the repository variable `PUBLISH_NUGET_ORG` to `false` before you publish the release (`gh variable set PUBLISH_NUGET_ORG --body false`); delete it to publish to nuget.org again. Before 1.0, Release Drafter resolves the `major` label to a minor bump.
@@ -111,12 +111,15 @@ The solution file is [headless-framework.slnx](headless-framework.slnx). [dotnet
 | `*.Tests.Unit` | Isolated and mocked. No external dependencies. |
 | `*.Tests.Integration` | Real dependencies through Testcontainers. |
 | `*.Tests.Harness` | Shared fixtures, builders, and cross-provider conformance suites. |
+| `*.Tests.Chaos` | Multi-host chaos and soak suites. Affected runs build them but never run them; their own `make` target and a scheduled workflow do. |
 
 The stack is xUnit v3 on Microsoft Testing Platform, AwesomeAssertions (a FluentAssertions fork), NSubstitute, and Bogus.
 
 Derive test classes from `TestBase` (`Headless.Testing.Tests`). Pass its `protected static CancellationToken AbortToken` to async calls, and never reference `TestContext.Current.CancellationToken` directly. [docs/llms/testing.md](docs/llms/testing.md) documents the rest of the `Headless.Testing` API, including the Testcontainers fixtures.
 
 To add a second provider-integration project for one feature, extract a shared `*.Tests.Harness` project first instead of copying the fixture; match an existing harness project.
+
+Messaging has a tiered suite: a fast in-process simulator tier in its unit projects, real-broker and real-database suites, and a workflow (`messaging-integration.yml`) that runs them on pull requests and after merge, adds weekly chaos runs, and reports simulator drift. Before you change a messaging package or its tests, read the tier map and the guarantee and quarantine rules in [tests/Headless.Messaging.Tests.Harness/README.md](tests/Headless.Messaging.Tests.Harness/README.md).
 
 ## Conventions
 
@@ -188,3 +191,9 @@ Consumers and their agents read `docs/llms/`, so a package change is not done un
 - Adds or removes a configuration option.
 
 The "Change routing" table in [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md#change-routing) lists every file each kind of change touches. For example, an added package also touches `README.md`, `README.ar.md`, and `eng/expected-packages.txt`. Internal refactors and perf-only, test-only, or formatting changes need no docs update.
+
+## Pull requests
+
+- **Fill the template's Review guide first.** `.github/PULL_REQUEST_TEMPLATE.md` opens with the decisions the reviewer must make, each linked to its hunk, then what is safe to skim and where you are least sure. A reviewer reads that and the hunks it points to, not every line. Keep the visible text under ~400 words (~700 for a large PR); proof summaries and branch history go in collapsed blocks.
+- **Split by kind of change.** Package deletions, renames, lockfiles, and generated code go in their own PR, stacked under the behavior change, so the behavior change reads on its own.
+- **This repository is public.** A title, description, commit message, or comment never names a private repository, a client or consumer app, or a local path such as an agent's scratch folder. Write "a consumer app" and state the fact: the call, the input, and the wrong result.

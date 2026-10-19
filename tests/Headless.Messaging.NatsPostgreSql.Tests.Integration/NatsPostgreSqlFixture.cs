@@ -47,6 +47,11 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
         return _postgreSql.ResetAsync();
     }
 
+    /// <summary>Freezes the NATS server, so the host's connections stay open but nothing reaches it.</summary>
+    public Task PauseBrokerAsync(CancellationToken cancellationToken) => _nats.PauseAsync(cancellationToken);
+
+    public Task UnpauseBrokerAsync(CancellationToken cancellationToken) => _nats.UnpauseAsync(cancellationToken);
+
     private sealed class NatsStackComponent : IAsyncLifetime
     {
         private const int _ConnectionAttempts = 10;
@@ -65,6 +70,10 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
         private NatsConnection? _connection;
 
         public string ConnectionString => _container.GetConnectionString();
+
+        public Task PauseAsync(CancellationToken cancellationToken) => _container.PauseAsync(cancellationToken);
+
+        public Task UnpauseAsync(CancellationToken cancellationToken) => _container.UnpauseAsync(cancellationToken);
 
         public async ValueTask InitializeAsync()
         {

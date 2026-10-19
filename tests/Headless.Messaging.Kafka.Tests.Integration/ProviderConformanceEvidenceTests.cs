@@ -5,6 +5,7 @@ using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Capabilities;
+using Tests.Guarantees;
 using Tests.RequestReply;
 
 namespace Tests;
@@ -12,6 +13,10 @@ namespace Tests;
 [Collection("Kafka")]
 public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : TestBase
 {
+    [Fact]
+    public void should_run_every_guarantee_this_provider_inherits() =>
+        GuaranteeBindings.GetLeafErrors(typeof(ProviderConformanceEvidenceTests).Assembly).Should().BeEmpty();
+
     [Fact]
     public Task should_prove_routing_affinity_mapping_or_rejection() =>
         TransportRoutingAffinityConformance.AssertAsync(new KafkaProviderConformanceDriver(fixture), AbortToken);
@@ -29,6 +34,21 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
         var profile = TransportConformanceManifest.Providers["Kafka"];
         TransportConformanceTestBinding[] bindings =
         [
+            new(
+                TransportConformanceScenario.ConnectionDropRecovery,
+                typeof(KafkaNetworkFaultTests),
+                nameof(KafkaNetworkFaultTests.should_stop_consuming_while_the_proxy_is_cut_and_resume_once_after)
+            ),
+            new(
+                TransportConformanceScenario.ConnectionDropRecovery,
+                typeof(KafkaNetworkFaultTests),
+                nameof(KafkaNetworkFaultTests.should_resume_delivery_once_after_the_connection_is_dropped)
+            ),
+            new(
+                TransportConformanceScenario.PublishDuringOutage,
+                typeof(KafkaNetworkFaultTests),
+                nameof(KafkaNetworkFaultTests.should_keep_consuming_after_publishes_during_an_outage)
+            ),
             new(
                 TransportConformanceScenario.RawPayloadConsumption,
                 typeof(KafkaRawPayloadTests),
@@ -62,6 +82,17 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
                 typeof(KafkaBrokerFaultTests),
                 nameof(KafkaBrokerFaultTests.should_resume_delivery_once_after_consumer_pause)
             ),
+            new(
+                TransportConformanceScenario.BrokerInterruptionRecovery,
+                typeof(KafkaBrokerFaultTests),
+                nameof(KafkaBrokerFaultTests.should_resume_delivery_once_after_broker_restart)
+            ),
+            _Bind(
+                TransportConformanceScenario.StaleSettlement,
+                nameof(
+                    KafkaConsumerClientConformanceTests.should_not_settle_another_delivery_when_a_settled_value_is_used_again
+                )
+            ),
             _Bind(
                 TransportConformanceScenario.BoundedGracefulShutdown,
                 nameof(KafkaConsumerClientConformanceTests.should_shutdown_idle_consumer_within_bound)
@@ -84,6 +115,26 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
                 TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                 nameof(
                     KafkaConsumerClientConformanceTests.should_terminally_commit_missing_required_headers_across_consumer_restart
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.StandardHeaderRoundTrip,
+                nameof(KafkaConsumerClientConformanceTests.should_round_trip_every_standard_header_unchanged)
+            ),
+            _Bind(
+                TransportConformanceScenario.HandlerConcurrencyCap,
+                nameof(
+                    KafkaConsumerClientConformanceTests.should_never_hand_over_more_deliveries_at_once_than_the_requested_concurrency
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.PerKeyOrdering,
+                nameof(KafkaConsumerClientConformanceTests.should_deliver_the_messages_of_one_key_in_publish_order)
+            ),
+            _Bind(
+                TransportConformanceScenario.BodySizeLimit,
+                nameof(
+                    KafkaConsumerClientConformanceTests.should_round_trip_a_body_at_the_size_limit_and_refuse_one_byte_more
                 )
             ),
         ];
