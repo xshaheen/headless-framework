@@ -36,11 +36,6 @@ GLOBAL_FILES = {"global.json", "dotnet-tools.json", "nuget.config"}
 GLOBAL_PREFIXES = ("eng/DashboardSpa.targets",)
 # A change to one of these reaches every project in and under its directory.
 SCOPED_BUILD_FILES = {"Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props", ".editorconfig"}
-# The central version file. An edit that only moves package versions reaches the projects that resolve one of those
-# packages, which each project's packages.lock.json names (direct, transitive pin, or GlobalPackageReference alike).
-# Any other edit to it (a property, a condition, an added global reference) still reaches every project below it.
-CENTRAL_PACKAGES_FILE = "Directory.Packages.props"
-VERSIONED_ITEMS = {"PackageVersion", "GlobalPackageReference"}
 
 # Packages every Abstractions package may reference. Headless.Serializer.Json is foundation by
 # decision: Blobs, Features and Settings abstractions expose its JSON options in their contracts.
@@ -150,65 +145,6 @@ def changed_files(base: str) -> list[str]:
     return sorted(set(diff) | set(untracked))
 
 
-def _versions_and_rest(document: bytes) -> tuple[dict[str, str], str]:
-    """The package versions a central version file sets, and everything else in it, in canonical form."""
-    root = ET.fromstring(document)
-    versions: dict[str, str] = {}
-    for parent in root.iter():
-        for item in [child for child in parent if child.tag in VERSIONED_ITEMS]:
-            key = f"{item.tag}|{(item.get('Include') or '').lower()}|{parent.get('Condition', '')}"
-            version = item.get("Version") or item.findtext("Version") or ""
-            versions[key] = version.strip()
-            # The version is compared above; what is left of the item (metadata such as PrivateAssets) stays in the
-            # remainder, so editing it still counts as a change to the file's structure.
-            item.attrib.pop("Version", None)
-            for element in item.findall("Version"):
-                item.remove(element)
-    return versions, ET.canonicalize(ET.tostring(root, encoding="unicode"), strip_text=True)
-
-
-def changed_package_ids(base: str, file: str) -> set[str] | None:
-    """Lower-cased ids of the packages whose central version changed against the merge base, or None when anything
-    besides versions changed (or either side cannot be read), so the caller falls back to the file's whole scope."""
-    try:
-        merge_base = git_lines("merge-base", base, "HEAD")[0]
-        before = subprocess.run(
-            ["git", "show", f"{merge_base}:{file}"], cwd=REPO_ROOT, check=True, capture_output=True
-        ).stdout
-        old_versions, old_rest = _versions_and_rest(before)
-        new_versions, new_rest = _versions_and_rest((REPO_ROOT / file).read_bytes())
-    except (subprocess.CalledProcessError, IndexError, OSError, ET.ParseError):
-        return None
-    if old_rest != new_rest:
-        return None
-    # Adding or dropping a global reference changes what every project restores before any lock file says so.
-    if {key for key in old_versions if key.startswith("GlobalPackageReference|")} != {
-        key for key in new_versions if key.startswith("GlobalPackageReference|")
-    }:
-        return None
-    return {
-        key.split("|", 2)[1]
-        for key in old_versions.keys() | new_versions.keys()
-        if old_versions.get(key) != new_versions.get(key)
-    }
-
-
-def projects_resolving(packages: set[str], projects: dict[str, Project]) -> set[str]:
-    """Projects whose lock file resolves one of the packages; a project with no lock file is assumed to."""
-    hits: set[str] = set()
-    for key, project in projects.items():
-        lock = REPO_ROOT / project.directory / "packages.lock.json"
-        try:
-            frameworks = json.loads(lock.read_text(encoding="utf-8")).get("dependencies", {})
-        except (OSError, ValueError):
-            hits.add(key)
-            continue
-        resolved = {name.lower() for entries in frameworks.values() for name in entries}
-        if resolved & packages:
-            hits.add(key)
-    return hits
-
-
 def projects_by_directory(projects: dict[str, Project]) -> dict[str, list[str]]:
     index: dict[str, list[str]] = {}
     for key, project in projects.items():
@@ -224,12 +160,73 @@ def owning_projects(file: str, by_directory: dict[str, list[str]]) -> set[str]:
     return owners
 
 
+def _canonical_props(
+    xml: str,
+) -> tuple[list[tuple[str, tuple[tuple[str, str], ...], str]], dict[str, list[tuple[tuple[str, ...], str]]]] | None:
+    """Split a central package file into its version map and everything else, or None when it does not parse.
+
+    A <PackageVersion> that carries only Include and Version goes into the map; every other element, attribute and
+    text stays in the returned sequence, so two files with the same sequence differ only in package versions. Each
+    map entry keeps the Conditions of its enclosing elements: moving an entry into or out of a conditioned ItemGroup
+    changes which projects can resolve the package, so it must read as a change to that package.
+    """
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError:
+        return None
+    rest: list[tuple[str, tuple[tuple[str, str], ...], str]] = []
+    versions: dict[str, list[tuple[tuple[str, ...], str]]] = {}
+
+    def visit(element: ET.Element, conditions: tuple[str, ...]) -> None:
+        attributes = dict(element.attrib)
+        if element.tag == "PackageVersion" and set(attributes) == {"Include", "Version"} and not (element.text or "").strip():
+            versions.setdefault(attributes["Include"].lower(), []).append((conditions, attributes["Version"]))
+            return
+        rest.append((element.tag, tuple(sorted(attributes.items())), (element.text or "").strip()))
+        inner = (*conditions, attributes["Condition"]) if "Condition" in attributes else conditions
+        for child in element:
+            visit(child, inner)
+
+    visit(root, ())
+    return rest, {package: sorted(entries) for package, entries in versions.items()}
+
+
+def package_version_changes(base: str, file: str) -> set[str] | None:
+    """The package ids whose central version a change adds, removes or moves, or None when it changes anything else.
+
+    A version bump in Directory.Packages.props reaches only the projects that resolve that package, but the file
+    also holds properties, conditions and GlobalPackageReference items that reach every project under it. Anything
+    besides plain <PackageVersion Include Version> entries keeps the whole-directory selection.
+    """
+    merge_base = git_lines("merge-base", base, "HEAD")[0]
+    old = subprocess.run(["git", "show", f"{merge_base}:{file}"], cwd=REPO_ROOT, capture_output=True, text=True)
+    current = REPO_ROOT / file
+    if old.returncode != 0 or not current.is_file():
+        return None
+    before = _canonical_props(old.stdout)
+    after = _canonical_props(current.read_text(encoding="utf-8"))
+    if before is None or after is None or before[0] != after[0]:
+        return None
+    old_versions, new_versions = before[1], after[1]
+    return {package for package in old_versions.keys() | new_versions.keys() if old_versions.get(package) != new_versions.get(package)}
+
+
+def resolved_packages(project: Project) -> set[str] | None:
+    """Every package id the project's lock file resolves, directly or transitively, or None without a lock file."""
+    lock = REPO_ROOT / project.directory / "packages.lock.json"
+    if not lock.is_file():
+        return None
+    data = json.loads(lock.read_text(encoding="utf-8"))
+    return {package.lower() for frameworks in data.get("dependencies", {}).values() for package in frameworks}
+
+
 def select_affected(
     base: str,
     projects: dict[str, Project],
     files: list[str] | None = None,
     *,
     transitive: bool = False,
+    narrow_package_versions: bool = False,
 ) -> dict[str, object]:
     if files is None:
         files = changed_files(base)
@@ -238,9 +235,7 @@ def select_affected(
     edited: set[str] = set()
     unmapped: list[str] = []
     global_triggers: list[str] = []
-    # Central version files whose edit only moved versions, with the packages it moved. CI still runs everything for
-    # one, because a version bump can change behavior the project graph cannot see; the local gates narrow to it.
-    package_triggers: dict[str, list[str]] = {}
+    package_versions: dict[str, list[str]] = {}
     by_directory = projects_by_directory(projects)
     by_linked_input: dict[str, set[str]] = {}
     for key, project in projects.items():
@@ -253,16 +248,16 @@ def select_affected(
             global_triggers.append(file)
             changed.update(projects)
             continue
-        if path.name == CENTRAL_PACKAGES_FILE and path.parent == PurePosixPath("."):
-            packages = changed_package_ids(base, file)
-            if packages is not None:
-                package_triggers[file] = sorted(packages)
-                changed.update(projects_resolving(packages, projects))
-                continue
         if path.name in SCOPED_BUILD_FILES:
             scope = path.parent
             hits = {key for key, project in projects.items() if scope == PurePosixPath(".") or scope in project.path.parents}
-            global_triggers.append(file)
+            packages = package_version_changes(base, file) if narrow_package_versions and path.name == "Directory.Packages.props" else None
+            if packages is not None:
+                # A project without a lock file cannot say what it resolves, so it stays selected.
+                hits = {key for key in hits if (resolved := resolved_packages(projects[key])) is None or resolved & packages}
+                package_versions[file] = sorted(packages)
+            else:
+                global_triggers.append(file)
             changed.update(hits)
             continue
         owners = owning_projects(file, by_directory) | by_linked_input.get(file, set())
@@ -311,7 +306,7 @@ def select_affected(
         "transitive": transitive,
         "changed_files": len(files),
         "global_triggers": global_triggers,
-        "package_triggers": package_triggers,
+        "package_version_changes": package_versions,
         "unmapped_files": unmapped,
         "changed_projects": sorted(changed),
         "affected_projects": sorted(affected),
@@ -552,8 +547,6 @@ def ci_scope(event: str, base: str, head: str, out_dir: Path, solution: str, pro
     triggers: list[str] = report["global_triggers"]  # type: ignore[assignment]
     if triggers:
         return fall_back("build-wide file changed: " + ", ".join(triggers))
-    if report["package_triggers"]:
-        return fall_back("package versions changed: " + ", ".join(report["package_triggers"]))  # type: ignore[arg-type]
     outside = [file for file in report["unmapped_files"] if not is_documentation(file)]  # type: ignore[union-attr]
     if outside:
         return fall_back("path outside every project: " + ", ".join(outside[:10]) + (" ..." if len(outside) > 10 else ""))
@@ -674,7 +667,9 @@ def main() -> int:
         stream = sys.stdin if args.files_from == "-" else open(args.files_from, encoding="utf-8")
         with stream:
             files = sorted({line.strip() for line in stream if line.strip()})
-    report = select_affected(args.base, projects, files, transitive=args.transitive)
+    # Local gates narrow a version-only central package change to the projects that resolve those packages; CI's
+    # ci-scope keeps the full run for any build-wide file.
+    report = select_affected(args.base, projects, files, transitive=args.transitive, narrow_package_versions=True)
     if args.out_dir:
         write_category_files(Path(args.out_dir), report, REPO_ROOT / args.solution)
         print(
@@ -686,8 +681,8 @@ def main() -> int:
         for label, key in (("build-wide file changed", "global_triggers"), ("not in any project", "unmapped_files")):
             for item in report[key]:  # type: ignore[union-attr]
                 print(f"[affected]   {label}: {item}", file=sys.stderr)
-        for file, packages in report["package_triggers"].items():  # type: ignore[union-attr]
-            print(f"[affected]   {file} changed only versions of: {', '.join(packages) or '(none)'}", file=sys.stderr)
+        for file, packages in report["package_version_changes"].items():  # type: ignore[union-attr]
+            print(f"[affected]   package versions changed in {file}, selected by lock file: {', '.join(packages)}", file=sys.stderr)
         return 0
     if args.list == "json":
         json.dump(report, sys.stdout, indent=2)

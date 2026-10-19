@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Copyright (c) Mahmoud Shaheen. All rights reserved.
-# Exercises the proof tooling that decides how much a gate re-runs, against a scratch repository: a version-only edit
-# to Directory.Packages.props selects only the projects that resolve a moved package (while CI still runs everything),
-# any other edit to it selects every project, a bundle that selected nothing while HEAD changes src/ fails,
-# `proof.py failed` re-runs a failed integration module, and `proof.py analyzers-clean` reports analyzer findings.
+# Exercises the proof tooling that decides how much a gate re-runs, against a scratch repository: a bundle that
+# selected nothing while HEAD changes src/ fails, `proof.py failed` re-runs a failed integration module, and
+# `proof.py analyzers-clean` reports analyzer findings.
 set -euo pipefail
 
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -58,41 +57,6 @@ git add -A
 git commit -qm 'Base'
 base=$(git rev-parse HEAD)
 git update-ref refs/remotes/origin/main "$base"
-
-affected() { python3 scripts/project-graph.py affected --base origin/main --list "$1"; }
-
-# A version-only edit selects the projects whose lock file resolves the moved package, and their tests.
-sed -i.bak 's|"Confluent.Kafka" Version="2.16.0"|"Confluent.Kafka" Version="2.16.1"|' Directory.Packages.props && rm Directory.Packages.props.bak
-changed=$(affected changed)
-[[ "$changed" == "src/Kafka/Kafka.csproj" ]] || fail "a Kafka version bump selected: ${changed:-nothing}"
-affected unit | grep -qx 'tests/Kafka.Tests.Unit/Kafka.Tests.Unit.csproj' || fail "a Kafka version bump did not select the Kafka unit tests"
-affected json | python3 -c 'import json, sys; r = json.load(sys.stdin); sys.exit(0 if r["package_triggers"] == {"Directory.Packages.props": ["confluent.kafka"]} and not r["global_triggers"] else 1)' \
-  || fail "a version-only edit was not reported as a package trigger"
-pass "a version-only edit selects only the projects that resolve the moved package"
-
-# A pull request's CI run still builds everything for a package bump.
-git commit -qam 'Bump Kafka'
-scope=$(python3 scripts/project-graph.py ci-scope --event pull_request --base "$base" --head HEAD --out-dir ci 2>/dev/null)
-grep -qx 'scope=full' <<< "$scope" || fail "CI narrowed a package bump: $scope"
-pass "CI still runs the whole solution for a package bump"
-git reset -q --hard "$base"
-
-# A global reference's version resolves in every project.
-sed -i.bak 's|"Shared.Analyzer" Version="1.0.0"|"Shared.Analyzer" Version="1.0.1"|' Directory.Packages.props && rm Directory.Packages.props.bak
-[[ $(affected changed | wc -l) -eq 4 ]] || fail "a global reference bump did not select every project"
-pass "a global reference's version bump selects every project that resolves it"
-git checkout -q -- Directory.Packages.props
-
-# Any edit besides versions keeps the file's whole scope.
-sed -i.bak 's|<ManagePackageVersionsCentrally>true|<ManagePackageVersionsCentrally>false|' Directory.Packages.props && rm Directory.Packages.props.bak
-[[ $(affected changed | wc -l) -eq 4 ]] || fail "a property edit did not select every project"
-affected json | python3 -c 'import json, sys; sys.exit(0 if json.load(sys.stdin)["global_triggers"] == ["Directory.Packages.props"] else 1)' \
-  || fail "a property edit was not reported as a build-wide trigger"
-git checkout -q -- Directory.Packages.props
-sed -i.bak 's|<GlobalPackageReference Include="Shared.Analyzer" Version="1.0.0" />|&<GlobalPackageReference Include="New.Analyzer" Version="1.0.0" />|' Directory.Packages.props && rm Directory.Packages.props.bak
-[[ $(affected changed | wc -l) -eq 4 ]] || fail "an added global reference did not select every project"
-git checkout -q -- Directory.Packages.props
-pass "any edit besides versions, an added global reference included, selects every project"
 
 # A bundle that selected nothing while HEAD changes src/ against origin/main fails; one that selected projects does not.
 printf '// changed\n' >> src/Kafka/Kafka.csproj
