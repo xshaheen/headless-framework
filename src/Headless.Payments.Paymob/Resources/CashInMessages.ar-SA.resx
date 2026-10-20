@@ -1,0 +1,47 @@
+﻿<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>1.3</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="CashNoEtisalatCash" xml:space="preserve">
+		<value>تعذّر إتمام العملية. هذا الرقم غير مشترك في خدمة اتصالات كاش، وللاشتراك يُرجى زيارة أقرب فرع لاتصالات مع الشريحة وبطاقة الهوية الوطنية.</value>
+	</data>
+  <data name="CashNoVodafoneCash" xml:space="preserve">
+		<value>تعذّر إتمام العملية. هذا الرقم غير مشترك في خدمة فودافون كاش، وللاشتراك يُرجى زيارة أقرب فرع لفودافون مع الشريحة وبطاقة الهوية الوطنية.</value>
+	</data>
+  <data name="CashProviderConnectionFailed" xml:space="preserve">
+		<value>تعذّر بدء عملية الدفع مع مزود الخدمة. حاول مرة ثانية لاحقاً.</value>
+	</data>
+  <data name="CashInvalidEtisalatNumber" xml:space="preserve">
+		<value>رقم جوال اتصالات غير صحيح. أدخل رقماً صحيحاً من 11 خانة يبدأ بـ 011.</value>
+	</data>
+  <data name="CashInvalidOrangeNumber" xml:space="preserve">
+		<value>رقم جوال أورانج غير صحيح. أدخل رقماً صحيحاً من 11 خانة يبدأ بـ 012.</value>
+	</data>
+  <data name="CashInvalidVodafoneNumber" xml:space="preserve">
+		<value>رقم جوال فودافون غير صحيح. أدخل رقماً صحيحاً من 11 خانة يبدأ بـ 010.</value>
+	</data>
+  <data name="CashNotValidWalletPhoneNumber" xml:space="preserve">
+		<value>الرقم غير صحيح. أدخل رقم محفظة مصرياً صحيحاً من 11 خانة يبدأ بـ 010 أو 011 أو 012 أو 015.</value>
+	</data>
+  <data name="CashInProviderConnectionFailed" xml:space="preserve">
+    <value>تعذّر الاتصال بشركة الدفع.</value>
+  </data>
+  <data name="CashOutInsufficientFunds" xml:space="preserve">
+    <value>الرصيد غير كافٍ.</value>
+  </data>
+  <data name="CashOutInvalidRequest" xml:space="preserve">
+		<value>البيانات غير صحيحة. تأكد من إدخال بيانات صحيحة.</value>
+	</data>
+  <data name="CashOutProviderIsDown" xml:space="preserve">
+    <value>خادم مزود الدفع غير متاح حالياً. حاول مرة ثانية لاحقاً.</value>
+  </data>
+</root>

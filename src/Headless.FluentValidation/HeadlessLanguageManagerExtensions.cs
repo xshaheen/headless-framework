@@ -9,6 +9,7 @@ namespace FluentValidation.Resources;
 public static class HeadlessLanguageManagerExtensions
 {
     private const string _EgyptianArabic = "ar-EG";
+    private const string _SaudiArabic = "ar-SA";
 
     // Keys are FluentValidation's built-in message keys. IsEnumName has no key of its own: it reads EnumValidator.
     private static readonly (string Key, string Message)[] _EgyptianArabicMessages =
@@ -47,6 +48,47 @@ public static class HeadlessLanguageManagerExtensions
         ),
     ];
 
+    // The same keys as the Egyptian set. Counts read "عدد الأحرف" rather than "{n} حرف" because Arabic number agreement
+    // changes the noun's form with the value, which a fixed template cannot follow.
+    private static readonly (string Key, string Message)[] _SaudiArabicMessages =
+    [
+        ("NotNullValidator", "هذا الحقل مطلوب."),
+        ("NotEmptyValidator", "هذا الحقل مطلوب."),
+        ("EmptyValidator", "يجب أن يكون هذا الحقل فارغاً."),
+        ("NullValidator", "يجب أن يكون هذا الحقل فارغاً."),
+        ("EmailValidator", "البريد الإلكتروني غير صحيح."),
+        ("RegularExpressionValidator", "الصيغة غير صحيحة."),
+        ("CreditCardValidator", "رقم البطاقة غير صحيح."),
+        ("EnumValidator", "القيمة \"{PropertyValue}\" ليست من الخيارات المتاحة."),
+        ("PredicateValidator", "القيمة لا تطابق الشروط المطلوبة."),
+        ("AsyncPredicateValidator", "القيمة لا تطابق الشروط المطلوبة."),
+        ("EqualValidator", "يجب أن تساوي القيمة {ComparisonValue}."),
+        ("NotEqualValidator", "يجب ألا تساوي القيمة {ComparisonValue}."),
+        ("GreaterThanValidator", "يجب أن تكون القيمة أكبر من {ComparisonValue}."),
+        ("GreaterThanOrEqualValidator", "يجب أن تكون القيمة {ComparisonValue} أو أكثر."),
+        ("LessThanValidator", "يجب أن تكون القيمة أقل من {ComparisonValue}."),
+        ("LessThanOrEqualValidator", "يجب أن تكون القيمة {ComparisonValue} أو أقل."),
+        ("InclusiveBetweenValidator", "يجب أن تكون القيمة بين {From} و{To} (القيمة الحالية {PropertyValue})."),
+        ("InclusiveBetween_Simple", "يجب أن تكون القيمة بين {From} و{To}."),
+        (
+            "ExclusiveBetweenValidator",
+            "يجب أن تكون القيمة أكبر من {From} وأقل من {To} (القيمة الحالية {PropertyValue})."
+        ),
+        ("LengthValidator", "يجب أن يكون عدد الأحرف بين {MinLength} و{MaxLength} (عدد الأحرف الحالي {TotalLength})."),
+        ("Length_Simple", "يجب أن يكون عدد الأحرف بين {MinLength} و{MaxLength}."),
+        ("MinimumLengthValidator", "يجب ألا يقل عدد الأحرف عن {MinLength} (عدد الأحرف الحالي {TotalLength})."),
+        ("MinimumLength_Simple", "يجب ألا يقل عدد الأحرف عن {MinLength}."),
+        ("MaximumLengthValidator", "يجب ألا يزيد عدد الأحرف عن {MaxLength} (عدد الأحرف الحالي {TotalLength})."),
+        ("MaximumLength_Simple", "يجب ألا يزيد عدد الأحرف عن {MaxLength}."),
+        ("ExactLengthValidator", "يجب أن يكون عدد الأحرف {MaxLength} بالضبط (عدد الأحرف الحالي {TotalLength})."),
+        ("ExactLength_Simple", "يجب أن يكون عدد الأحرف {MaxLength} بالضبط."),
+        (
+            "ScalePrecisionValidator",
+            "يجب ألا يزيد عدد خانات الرقم عن {ExpectedPrecision}، منها {ExpectedScale} بعد الفاصلة العشرية. "
+                + "عدد خانات الرقم الحالي {Digits}، منها {ActualScale} بعد الفاصلة العشرية."
+        ),
+    ];
+
     /// <summary>
     /// Adds Egyptian Arabic (<c>ar-EG</c>) wording for every FluentValidation built-in message, so a request whose UI
     /// culture is <c>ar-EG</c> reads Egyptian Arabic while a plain <c>ar</c> request keeps the library's formal Arabic.
@@ -69,10 +111,43 @@ public static class HeadlessLanguageManagerExtensions
     public static void AddHeadlessEgyptianArabicTranslations(this LanguageManager languageManager)
     {
         Argument.IsNotNull(languageManager);
+        _AddTranslations(languageManager, _EgyptianArabic, _EgyptianArabicMessages);
+    }
 
-        foreach (var (key, message) in _EgyptianArabicMessages)
+    /// <summary>
+    /// Adds Saudi Arabic (<c>ar-SA</c>) wording for every FluentValidation built-in message, so a request whose UI
+    /// culture is <c>ar-SA</c> reads Saudi Arabic while a plain <c>ar</c> request keeps the library's formal Arabic.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The language manager tries the specific culture before its parent, so these entries win over the formal
+    /// Arabic FluentValidation ships under <c>ar</c>, and any other <c>ar-*</c> culture still falls back to it.
+    /// </para>
+    /// <para>
+    /// The messages leave out <c>{PropertyName}</c>: it resolves to the property's English display name, which reads
+    /// badly inside an Arabic sentence, and clients show a field error next to the field it belongs to.
+    /// </para>
+    /// <para>
+    /// A translation added for the same culture and key afterwards replaces the one added here.
+    /// </para>
+    /// </remarks>
+    /// <param name="languageManager">The language manager to add the translations to.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="languageManager"/> is <see langword="null"/>.</exception>
+    public static void AddHeadlessSaudiArabicTranslations(this LanguageManager languageManager)
+    {
+        Argument.IsNotNull(languageManager);
+        _AddTranslations(languageManager, _SaudiArabic, _SaudiArabicMessages);
+    }
+
+    private static void _AddTranslations(
+        LanguageManager languageManager,
+        string culture,
+        (string Key, string Message)[] messages
+    )
+    {
+        foreach (var (key, message) in messages)
         {
-            languageManager.AddTranslation(_EgyptianArabic, key, message);
+            languageManager.AddTranslation(culture, key, message);
         }
     }
 }

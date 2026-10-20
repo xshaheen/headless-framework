@@ -53,7 +53,7 @@ Extension library for FluentValidation providing additional validators and utili
 - Enum-name and markup-rejection (`NoScripts`) validators
 - `ErrorDescriptor` integration for structured API responses
 - Automatic camelCase property path normalization
-- Messages in English, formal Arabic (`ar`), and Egyptian Arabic (`ar-EG`), including Egyptian wording for FluentValidation's own built-in messages
+- Messages in English, formal Arabic (`ar`), Egyptian Arabic (`ar-EG`), and Saudi Arabic (`ar-SA`), including regional wording for FluentValidation's own built-in messages
 
 ### Install
 
@@ -103,11 +103,17 @@ a lambda such as `() => new ErrorDescriptor("order:total_invalid", "Total must b
 var errors = result.Errors.ToErrorDescriptors(); // IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>
 ```
 
-#### Egyptian Arabic
+#### Regional Arabic
 
-Every package that ships Arabic messages ships them twice: formal Arabic under `ar` and Egyptian Arabic under `ar-EG`. .NET resource fallback runs `ar-EG` → `ar` → English, so a request whose UI culture is `ar-EG` reads Egyptian Arabic, a plain `ar` request keeps formal Arabic, and any other `ar-*` region gets formal Arabic.
+Every package that ships Arabic messages ships them three times: formal Arabic under `ar`, Egyptian Arabic under `ar-EG`, and Saudi Arabic under `ar-SA`. .NET resource fallback runs from the region to `ar`, then to English, so an `ar-EG` request reads Egyptian Arabic, an `ar-SA` request reads Saudi Arabic, a plain `ar` request keeps formal Arabic, and any other `ar-*` region gets formal Arabic.
 
-FluentValidation's built-in messages (`NotEmpty`, `EmailAddress`, `Length`, and the rest) come from its `LanguageManager`, which ships formal Arabic only. `languageManager.AddHeadlessEgyptianArabicTranslations()` adds `ar-EG` wording for every built-in key. `AddHeadless()` applies it to `ValidatorOptions.Global.LanguageManager` through `SetupApi.ConfigureGlobalSettings()`; an application without `Headless.Api.ServiceDefaults` calls it once at startup:
+| Culture | Register | Example (`g:rate_limit_exceeded`) |
+| --- | --- | --- |
+| `ar` | Formal Arabic | `عدد الطلبات كبير جدًا. حاول مرة أخرى لاحقًا.` |
+| `ar-EG` | Professional Egyptian Arabic | `عدد الطلبات كتير. جرّب تاني بعد شوية.` |
+| `ar-SA` | Professional Saudi Arabic, close to formal | `عدد الطلبات كبير. حاول مرة ثانية بعد قليل.` |
+
+FluentValidation's built-in messages (`NotEmpty`, `EmailAddress`, `Length`, and the rest) come from its `LanguageManager`, which ships formal Arabic only. `languageManager.AddHeadlessEgyptianArabicTranslations()` adds `ar-EG` wording for every built-in key, and `languageManager.AddHeadlessSaudiArabicTranslations()` adds `ar-SA` wording. `AddHeadless()` applies both to `ValidatorOptions.Global.LanguageManager` through `SetupApi.ConfigureGlobalSettings()`; an application without `Headless.Api.ServiceDefaults` calls the ones it needs once at startup:
 
 ```csharp
 using FluentValidation;
@@ -116,12 +122,13 @@ using FluentValidation.Resources;
 if (ValidatorOptions.Global.LanguageManager is LanguageManager languageManager)
 {
     languageManager.AddHeadlessEgyptianArabicTranslations();
+    languageManager.AddHeadlessSaudiArabicTranslations();
 }
 ```
 
-- The Egyptian messages leave out `{PropertyName}`: it resolves to the property's English name, which reads badly inside an Arabic sentence, so a client shows the message next to its field. Formal Arabic and English keep the library's text, property name included.
-- A translation the application adds afterwards for the same culture and key replaces the Headless one. An application that assigns its own `ILanguageManager` that does not derive from `LanguageManager` gets no Egyptian built-ins.
-- `ar-EG` must be one of the request localization's `SupportedUICultures`. With only `ar` listed, an `ar-EG` request resolves to `ar` and reads formal Arabic. An application that sets `SatelliteResourceLanguages` must list `ar-EG` too, or the build drops the Egyptian satellite assemblies.
+- The Egyptian and Saudi built-in messages leave out `{PropertyName}`: it resolves to the property's English name, which reads badly inside an Arabic sentence, so a client shows the message next to its field. Formal Arabic and English keep the library's text, property name included.
+- A translation the application adds afterwards for the same culture and key replaces the Headless one. An application that assigns its own `ILanguageManager` that does not derive from `LanguageManager` gets no regional built-ins.
+- Each region must be one of the request localization's `SupportedUICultures`. With only `ar` listed, an `ar-EG` or `ar-SA` request resolves to `ar` and reads formal Arabic. An application that sets `SatelliteResourceLanguages` must list `ar-EG` and `ar-SA` too, or the build drops those satellite assemblies.
 
 ### Available Validators
 

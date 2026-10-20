@@ -50,7 +50,8 @@ public static class SetupApi
 
     /// <summary>
     /// Applies one-time process-wide defaults: regex timeout, FluentValidation cascade mode, and the Egyptian Arabic
-    /// (<c>ar-EG</c>) wording of FluentValidation's built-in messages. Idempotent — subsequent calls are no-ops.
+    /// (<c>ar-EG</c>) and Saudi Arabic (<c>ar-SA</c>) wording of FluentValidation's built-in messages. Idempotent —
+    /// subsequent calls are no-ops.
     /// </summary>
     public static void ConfigureGlobalSettings()
     {
@@ -66,6 +67,7 @@ public static class SetupApi
         if (ValidatorOptions.Global.LanguageManager is LanguageManager languageManager)
         {
             languageManager.AddHeadlessEgyptianArabicTranslations();
+            languageManager.AddHeadlessSaudiArabicTranslations();
         }
 
         ValidatorOptions.Global.DefaultRuleLevelCascadeMode = CascadeMode.Stop;

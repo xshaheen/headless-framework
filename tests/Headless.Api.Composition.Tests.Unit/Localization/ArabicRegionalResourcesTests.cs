@@ -13,26 +13,34 @@ using Humanizer;
 namespace Tests.Localization;
 
 /// <summary>
-/// Every package that ships formal Arabic (<c>ar</c>) also ships Egyptian Arabic (<c>ar-EG</c>) with the same keys and
-/// placeholders, so a request under <c>ar-EG</c> never mixes registers or prints a raw placeholder.
+/// Every package that ships formal Arabic (<c>ar</c>) also ships Egyptian Arabic (<c>ar-EG</c>) and Saudi Arabic
+/// (<c>ar-SA</c>) with the same keys and placeholders, so a regional request never mixes registers or prints a raw
+/// placeholder.
 /// </summary>
-public sealed partial class EgyptianArabicResourcesTests : TestBase
+public sealed partial class ArabicRegionalResourcesTests : TestBase
 {
     private static readonly CultureInfo _EgyptianArabic = CultureInfo.GetCultureInfo("ar-EG");
+    private static readonly CultureInfo _SaudiArabic = CultureInfo.GetCultureInfo("ar-SA");
     private static readonly CultureInfo _Arabic = CultureInfo.GetCultureInfo("ar");
 
-    public static TheoryData<string> ArabicResourceFiles =>
-        [
-            .. Directory
-                .EnumerateFiles(Path.Combine(_RepositoryRoot(), "src"), "*.ar.resx", SearchOption.AllDirectories)
-                .Where(path => !_IsBuildOutput(path))
-                .Select(path => Path.GetRelativePath(_RepositoryRoot(), path).Replace('\\', '/'))
-                .Order(StringComparer.Ordinal),
-        ];
+    private static readonly string[] _RegionalCultures = ["ar-EG", "ar-SA"];
 
-    // The packages this project references that ship Arabic resources; each must deploy an ar-EG satellite assembly.
-    public static TheoryData<string> ReferencedLocalizedAssemblies =>
-        ["Headless.Api", "Headless.Api.Identity", "Headless.FluentValidation", "Headless.MultiTenancy"];
+    public static TheoryData<string> ArabicResourceFiles => [.. _ArabicResourceFiles()];
+
+    public static TheoryData<string, string> RegionalResourceFiles =>
+        [.. _ArabicResourceFiles().SelectMany(file => _RegionalCultures.Select(culture => (file, culture)))];
+
+    // The packages this project references that ship Arabic resources; each must deploy every regional satellite.
+    public static TheoryData<string, string> ReferencedLocalizedAssemblies =>
+        [
+            .. new[]
+            {
+                "Headless.Api",
+                "Headless.Api.Identity",
+                "Headless.FluentValidation",
+                "Headless.MultiTenancy",
+            }.SelectMany(assembly => _RegionalCultures.Select(culture => (assembly, culture))),
+        ];
 
     [Fact]
     public void should_find_the_arabic_resources()
@@ -41,26 +49,26 @@ public sealed partial class EgyptianArabicResourcesTests : TestBase
     }
 
     [Theory]
-    [MemberData(nameof(ArabicResourceFiles))]
-    public void should_ship_an_egyptian_variant_with_the_same_keys_and_placeholders(string arabicFile)
+    [MemberData(nameof(RegionalResourceFiles))]
+    public void should_ship_a_regional_variant_with_the_same_keys_and_placeholders(string arabicFile, string culture)
     {
         // given
         var arabicPath = Path.Combine(_RepositoryRoot(), arabicFile);
-        var egyptianPath = arabicPath[..^".ar.resx".Length] + ".ar-EG.resx";
+        var regionalPath = arabicPath[..^".ar.resx".Length] + $".{culture}.resx";
 
         // when
-        File.Exists(egyptianPath).Should().BeTrue($"{arabicFile} needs an ar-EG sibling");
+        File.Exists(regionalPath).Should().BeTrue($"{arabicFile} needs an {culture} sibling");
         var arabic = _ReadValues(arabicPath);
-        var egyptian = _ReadValues(egyptianPath);
+        var regional = _ReadValues(regionalPath);
 
         // then
-        egyptian.Keys.Should().BeEquivalentTo(arabic.Keys);
+        regional.Keys.Should().BeEquivalentTo(arabic.Keys);
 
         foreach (var (key, arabicValue) in arabic)
         {
-            var egyptianValue = egyptian[key];
-            egyptianValue.Should().NotBeNullOrWhiteSpace($"{key} needs Egyptian text");
-            _Placeholders(egyptianValue)
+            var regionalValue = regional[key];
+            regionalValue.Should().NotBeNullOrWhiteSpace($"{key} needs {culture} text");
+            _Placeholders(regionalValue)
                 .Should()
                 .BeEquivalentTo(_Placeholders(arabicValue), $"{key} must fill the same placeholders as formal Arabic");
         }
@@ -68,33 +76,38 @@ public sealed partial class EgyptianArabicResourcesTests : TestBase
 
     [Theory]
     [MemberData(nameof(ReferencedLocalizedAssemblies))]
-    public void should_deploy_an_egyptian_satellite_assembly(string assemblyName)
+    public void should_deploy_a_regional_satellite_assembly(string assemblyName, string culture)
     {
         // when
-        var satellite = Assembly.Load(assemblyName).GetSatelliteAssembly(_EgyptianArabic);
+        var satellite = Assembly.Load(assemblyName).GetSatelliteAssembly(CultureInfo.GetCultureInfo(culture));
 
         // then
-        satellite.GetName().CultureName.Should().Be("ar-EG");
+        satellite.GetName().CultureName.Should().Be(culture);
         satellite.GetManifestResourceNames().Should().NotBeEmpty();
     }
 
     [Fact]
-    public void should_resolve_egyptian_text_under_ar_eg_and_formal_text_under_ar()
+    public void should_resolve_each_register_under_its_own_culture()
     {
         // when
         var egyptian = _InCulture(_EgyptianArabic, GeneralMessageDescriber.RateLimitExceeded);
+        var saudi = _InCulture(_SaudiArabic, GeneralMessageDescriber.RateLimitExceeded);
         var arabic = _InCulture(_Arabic, GeneralMessageDescriber.RateLimitExceeded);
-        var gulfArabic = _InCulture(CultureInfo.GetCultureInfo("ar-SA"), GeneralMessageDescriber.RateLimitExceeded);
+        var emirati = _InCulture(CultureInfo.GetCultureInfo("ar-AE"), GeneralMessageDescriber.RateLimitExceeded);
 
         // then
         egyptian.Code.Should().Be(arabic.Code);
+        saudi.Code.Should().Be(arabic.Code);
         egyptian.Description.Should().Be("عدد الطلبات كتير. جرّب تاني بعد شوية.");
+        saudi.Description.Should().Be("عدد الطلبات كبير. حاول مرة ثانية بعد قليل.");
         arabic.Description.Should().Be("عدد الطلبات كبير جدًا. حاول مرة أخرى لاحقًا.");
-        gulfArabic.Description.Should().Be(arabic.Description, "another Arabic region falls back to formal Arabic");
+        emirati.Description.Should().Be(arabic.Description, "an Arabic region without its own file falls back to ar");
     }
 
-    [Fact]
-    public void should_humanize_throttling_durations_in_arabic_under_ar_eg()
+    [Theory]
+    [InlineData("ar-EG", "ينفع تطلب استعادة كلمة السر")]
+    [InlineData("ar-SA", "يمكنك طلب استعادة كلمة المرور")]
+    public void should_humanize_throttling_durations_in_arabic_under_a_regional_culture(string culture, string prefix)
     {
         // given
         var cooldown = TimeSpan.FromMinutes(10);
@@ -102,19 +115,21 @@ public sealed partial class EgyptianArabicResourcesTests : TestBase
 
         // when
         var descriptor = _InCulture(
-            _EgyptianArabic,
+            CultureInfo.GetCultureInfo(culture),
             () => IdentityMessageDescriber.Passwords.RequestForgetCooldown(remaining, cooldown)
         );
 
-        // then: Humanizer falls back from ar-EG to the Arabic resources the package ships
-        var arabicRemaining = remaining.Humanize(culture: _Arabic);
-        descriptor.Description.Should().StartWith("ينفع تطلب استعادة كلمة السر");
-        descriptor.Description.Should().Contain(arabicRemaining).And.Contain(cooldown.Humanize(culture: _Arabic));
+        // then: Humanizer falls back from the region to the Arabic resources the package ships
+        descriptor.Description.Should().StartWith(prefix);
+        descriptor
+            .Description.Should()
+            .Contain(remaining.Humanize(culture: _Arabic))
+            .And.Contain(cooldown.Humanize(culture: _Arabic));
         descriptor.Description.Should().NotContainAny("minute", "Minute");
     }
 
     [Fact]
-    public void should_add_egyptian_validation_messages_when_configuring_global_settings()
+    public void should_add_regional_validation_messages_when_configuring_global_settings()
     {
         // when: no reset, since SetupApiTests toggles the same process-wide guard in parallel; the first call in the
         // process ran the full body, so the translations are in place either way
@@ -123,7 +138,17 @@ public sealed partial class EgyptianArabicResourcesTests : TestBase
         // then
         var manager = ValidatorOptions.Global.LanguageManager;
         manager.GetString("NotEmptyValidator", _EgyptianArabic).Should().Be("الحقل ده مطلوب.");
+        manager.GetString("NotEmptyValidator", _SaudiArabic).Should().Be("هذا الحقل مطلوب.");
         manager.GetString("NotEmptyValidator", _Arabic).Should().Contain("{PropertyName}");
+    }
+
+    private static IEnumerable<string> _ArabicResourceFiles()
+    {
+        return Directory
+            .EnumerateFiles(Path.Combine(_RepositoryRoot(), "src"), "*.ar.resx", SearchOption.AllDirectories)
+            .Where(path => !_IsBuildOutput(path))
+            .Select(path => Path.GetRelativePath(_RepositoryRoot(), path).Replace('\\', '/'))
+            .Order(StringComparer.Ordinal);
     }
 
     private static Dictionary<string, string> _ReadValues(string path)
