@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -460,7 +461,8 @@ def summarize(
         "base": affected.get("base"),
         "verdict": "fail" if failed_stages else "pass",
         "stages": [asdict(stage) for stage in stages],
-        "affected": {key: affected.get(key, []) for key in ("changed_projects", "unit_tests", "integration_tests", "global_triggers", "unmapped_files")},
+        "affected": {key: affected.get(key, []) for key in ("changed_projects", "unit_tests", "integration_tests", "global_triggers", "unmapped_files")}
+        | {"package_version_changes": affected.get("package_version_changes", {})},
         "tests": {
             "passed": sum(m.passed for m in modules),
             "failed": sum(m.failed for m in modules),
@@ -510,6 +512,8 @@ def render_markdown(summary: dict) -> str:
     ]
     if affected["global_triggers"]:
         lines.append(f"Build-wide files changed: {', '.join(f'`{f}`' for f in affected['global_triggers'])}.")
+    for file, packages in affected.get("package_version_changes", {}).items():
+        lines.append(f"Package versions changed in `{file}`; selected by lock file: {', '.join(f'`{p}`' for p in packages)}.")
 
     lines += ["", f"### Tests: {tests['passed']} passed, {tests['failed']} failed, {tests['skipped']} skipped", ""]
     # A whole-solution run lists 130+ modules; a reviewer acts only on the ones that failed or skipped,
@@ -645,6 +649,115 @@ def failed_projects(bundle: Path | None, root: Path) -> int:
     return 0
 
 
+BUNDLE_NAME = re.compile(r"^\d{8}T\d{6}Z-(?P<kind>[a-z][a-z0-9-]*)$")
+
+
+def prune_bundles(root: Path, keep: int, starting: Path | None) -> int:
+    """Keep the newest `keep` bundles of each kind, counting the run about to start, and delete the older ones.
+
+    Every proof target writes a new bundle and nothing else removed one, so a long-lived worktree piled up tens of
+    gigabytes of results nobody reads again. Only directories named like a bundle are touched.
+    """
+    if keep <= 0 or not root.is_dir():
+        return 0
+    by_kind: dict[str, list[Path]] = {}
+    for path in root.iterdir():
+        match = BUNDLE_NAME.match(path.name)
+        if match and path.is_dir() and (starting is None or path.name != starting.name):
+            by_kind.setdefault(match["kind"], []).append(path)
+    starting_kind = BUNDLE_NAME.match(starting.name)["kind"] if starting and BUNDLE_NAME.match(starting.name) else None
+    removed = 0
+    for kind, bundles in by_kind.items():
+        # Bundle names start with a UTC timestamp, so name order is run order.
+        allowed = keep - 1 if kind == starting_kind else keep
+        for stale in sorted(bundles, reverse=True)[allowed:]:
+            shutil.rmtree(stale, ignore_errors=True)
+            removed += 1
+    if removed:
+        print(f"[proof] removed {removed} older proof bundle(s) under {root}; PROOF_KEEP={keep} per kind", file=sys.stderr)
+    return 0
+
+
+# SARIF levels the compiler writes, by the dotnet format severity they match; "none" is hidden and never reported.
+SARIF_SEVERITY = {"error": "error", "warning": "warning", "note": "info"}
+SEVERITY_RANK = {"hidden": 0, "info": 1, "warn": 2, "warning": 2, "error": 3}
+# A log written by the compile that produced the assembly lands within moments of it; a later compile that ran
+# without the log (a plain `make build`) leaves the assembly newer than this.
+ERROR_LOG_SLACK_SECONDS = 5.0
+
+
+def build_error_logs(project: Path, configuration: str) -> list[Path] | None:
+    """The compiler logs of the project's last compile, or None when any is missing or older than its assembly."""
+    logs = sorted((project.parent / "obj" / configuration).glob("*/analyzers.sarif"))
+    if not logs:
+        return None
+    for log in logs:
+        assemblies = [path.stat().st_mtime for path in log.parent.glob("*.dll")]
+        if not assemblies or max(assemblies) - log.stat().st_mtime > ERROR_LOG_SLACK_SECONDS:
+            return None
+    return logs
+
+
+def error_log_findings(logs: list[Path], severity: str, diagnostics: set[str]) -> list[dict[str, object]]:
+    """Unsuppressed results of the given compiler logs, shaped like dotnet format's report so summarize reads both."""
+    floor = SEVERITY_RANK.get(severity, 0)
+    documents: dict[str, list[dict[str, object]]] = {}
+    seen: set[tuple[str, int, int, str]] = set()
+    for log in logs:
+        for run in json.loads(log.read_text(encoding="utf-8")).get("runs", []):
+            for result in run.get("results", []):
+                level = SARIF_SEVERITY.get(result.get("level", "warning"))
+                rule = result.get("ruleId", "")
+                # Compiler diagnostics (CS*) are the build stage's to report; this stage reports analyzers only.
+                if level is None or result.get("suppressions") or SEVERITY_RANK[level] < floor or rule.startswith("CS"):
+                    continue
+                if diagnostics and rule not in diagnostics:
+                    continue
+                locations = result.get("locations") or [{}]
+                physical = locations[0].get("physicalLocation", {})
+                uri = physical.get("artifactLocation", {}).get("uri", "")
+                file = uri.removeprefix("file://")
+                region = physical.get("region", {})
+                line, column = int(region.get("startLine", 0)), int(region.get("startColumn", 0))
+                if (file, line, column, rule) in seen:
+                    continue
+                seen.add((file, line, column, rule))
+                message = result.get("message", {}).get("text", "")
+                documents.setdefault(file, []).append(
+                    {"LineNumber": line, "CharNumber": column, "DiagnosticId": rule, "FormatDescription": f"{level} {rule}: {message}"}
+                )
+    return [{"FilePath": file, "FileChanges": changes} for file, changes in sorted(documents.items())]
+
+
+def analyze_changed(run: Path, configuration: str, severity: str, diagnostics: list[str], fallback: list[str]) -> int:
+    """Report the changed projects' analyzer findings from their build's compiler logs.
+
+    The build stage already ran every analyzer on these projects, so reading its logs replaces a second compile
+    under dotnet format. A project whose logs are missing or older than its assembly (built outside the proof
+    targets since) is analyzed with the fallback command instead. Exits 2 on any finding, as dotnet format does.
+    """
+    projects = [REPO_ROOT / line for line in (run / "changed.txt").read_text(encoding="utf-8").split()]
+    wanted = {rule for item in diagnostics for rule in item.replace(",", " ").split()}
+    findings: list[dict[str, object]] = []
+    stale: list[Path] = []
+    for project in projects:
+        logs = build_error_logs(project, configuration)
+        if logs is None:
+            stale.append(project)
+        else:
+            findings.extend(error_log_findings(logs, severity, wanted))
+    report_dir = run / "analyzers" / "build"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    (report_dir / "format-report.json").write_text(json.dumps(findings, indent=1), encoding="utf-8")
+    print(f"[analyzers] {len(projects) - len(stale)} project(s) read from the build's compiler logs", file=sys.stderr)
+    worst = 2 if any(document["FileChanges"] for document in findings) else 0
+    for index, project in enumerate(stale, start=1):
+        print(f"[analyzers] {project.relative_to(REPO_ROOT)}: no current compiler log; running dotnet format analyzers", file=sys.stderr)
+        command = [*fallback, str(project), "--report", str(run / "analyzers" / f"fallback-{index}")]
+        worst = max(worst, subprocess.run(command, cwd=REPO_ROOT, check=False).returncode)
+    return worst
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -676,6 +789,16 @@ def main() -> int:
     failed = commands.add_parser("failed", help="print the test projects that failed in a bundle")
     failed.add_argument("--dir", type=Path, help="bundle to read (default: the latest -verify or -test bundle under --root)")
     failed.add_argument("--root", type=Path, default=REPO_ROOT / "artifacts" / "proof", help="where the bundles live")
+    prune = commands.add_parser("prune", help="delete all but the newest bundles of each kind")
+    prune.add_argument("--root", type=Path, default=REPO_ROOT / "artifacts" / "proof", help="where the bundles live")
+    prune.add_argument("--keep", type=int, required=True, help="bundles to keep per kind, counting --starting; 0 keeps all")
+    prune.add_argument("--starting", type=Path, help="the bundle about to be written; it counts toward its kind's quota")
+    analyzers = commands.add_parser("analyzers", help="report the changed projects' analyzer findings from their build's compiler logs")
+    analyzers.add_argument("--dir", required=True, type=Path)
+    analyzers.add_argument("--configuration", required=True)
+    analyzers.add_argument("--severity", default="hidden", help="lowest severity reported: hidden, info, warn or error")
+    analyzers.add_argument("--diagnostics", nargs="*", default=[], help="report only these diagnostic ids")
+    analyzers.add_argument("fallback", nargs=argparse.REMAINDER, help="after --: the dotnet format analyzers command a project without a current log runs")
     args = parser.parse_args()
 
     if args.command == "run":
@@ -685,6 +808,13 @@ def main() -> int:
         return run_stage(args.dir, args.name, command)
     if args.command == "skip":
         return skip_stage(args.dir, args.name, args.reason)
+    if args.command == "analyzers":
+        fallback = args.fallback[1:] if args.fallback[:1] == ["--"] else args.fallback
+        if not fallback:
+            parser.error("analyzers needs the fallback command after --")
+        return analyze_changed(args.dir, args.configuration, args.severity, args.diagnostics, fallback)
+    if args.command == "prune":
+        return prune_bundles(args.root, args.keep, args.starting)
     if args.command == "failed":
         return failed_projects(args.dir, args.root)
     floors = {"unit": args.unit_floor, "line": args.line_floor, "branch": args.branch_floor}
