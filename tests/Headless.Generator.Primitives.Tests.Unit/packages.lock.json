@@ -219,15 +219,15 @@
       },
       "Verify.XunitV3": {
         "type": "Direct",
-        "requested": "[33.3.3, )",
-        "resolved": "33.3.3",
-        "contentHash": "AECKE1GC84NNrvUH9PUd/sZlR6rwswbT5Ej27hshALVFxXM8o9b56Dd3VjWyo5I2zANgRcdpP0enTsA7anM9cw==",
+        "requested": "[33.3.4, )",
+        "resolved": "33.3.4",
+        "contentHash": "2bEFSlKjrg785+wbN9FZky9o1tu2M4ZeAPdYHPSRw8xG2JEJfCte+egTXli+KvwYAec+35i3qNtlLqFRLKGh+w==",
         "dependencies": {
           "Argon": "0.38.2",
-          "DiffEngine": "20.8.1",
-          "Microsoft.Bcl.AsyncInterfaces": "10.0.12",
+          "DiffEngine": "20.8.2",
+          "Microsoft.Bcl.AsyncInterfaces": "10.0.13",
           "SimpleInfoName": "3.2.1",
-          "Verify": "33.3.3",
+          "Verify": "33.3.4",
           "xunit.v3.extensibility.core": "4.0.2"
         }
       },
@@ -257,8 +257,8 @@
       },
       "DiffEngine": {
         "type": "Transitive",
-        "resolved": "20.8.1",
-        "contentHash": "vfBch+CoUIPSfWk5nfEkzRZjWEHzAnGrvSj6SDH5vbFAAqMpXd/vJfBAd9WXlilTyCk4BYwO5U+P7con7NS3Gg==",
+        "resolved": "20.8.2",
+        "contentHash": "913FZh0PW/wL53zdx+go/doxQuulU8C6SSgmAHMAuVS/mF1JCYcBgg29F8XkpWEGW0JotbIscsifjlaLwE71bw==",
         "dependencies": {
           "EmptyFiles": "8.20.1"
         }
@@ -275,8 +275,8 @@
       },
       "Microsoft.Bcl.AsyncInterfaces": {
         "type": "Transitive",
-        "resolved": "10.0.12",
-        "contentHash": "vHPomsJPqUvf1ExdzCCSEUMQqloONPTBMGqNqBUdr4UgSTs9bCzH1oLkuS6WgUgIu+xqWngQbjelUBNlDuzLWQ=="
+        "resolved": "10.0.13",
+        "contentHash": "PEC80XidOaP1vyHWiSIOHOfh6MpkFln/gkLXKaSmjrAdBSwcAaowvOaVBKvnb+HAb2UTGrZqROajIKMVFu2jdw=="
       },
       "Microsoft.Diagnostics.NETCore.Client": {
         "type": "Transitive",
@@ -429,11 +429,11 @@
       },
       "Verify": {
         "type": "Transitive",
-        "resolved": "33.3.3",
-        "contentHash": "oGoHHLmnvdJgyBWzg2321osBmOcposRX7R4ZvYX8ELLrIzojNLMdL+ff5nzsV4tX2Q+Iyae4AcE6YwPVttrvVQ==",
+        "resolved": "33.3.4",
+        "contentHash": "0Fz2d9Ta0A5lg12V8t3rrEFDEAnJLp8HAMCCQZA6ur3ZLfWlZvah9b2dXZr9H5TipjW+8NEYlie9bsHhKFe+ig==",
         "dependencies": {
           "Argon": "0.38.2",
-          "DiffEngine": "20.8.1",
+          "DiffEngine": "20.8.2",
           "SimpleInfoName": "3.2.1"
         }
       },
