@@ -281,8 +281,10 @@ public static class TransportRequestReplyConformance
 
         sent.Succeeded.Should().BeTrue();
         await RequestReplyConformanceWait.UntilAsync(
-            () => drops.Reasons.Contains(MessagingMetrics.DropReasonInvalidReplyAddress),
-            "the responder refused the forged reply address",
+            () =>
+                responder.Probe.Handled.Contains("quote:forged")
+                && drops.Reasons.Contains(MessagingMetrics.DropReasonInvalidReplyAddress),
+            "the responder handled the forged request and refused its reply address",
             cancellationToken
         );
         responder.Probe.Handled.Should().Equal("quote:genuine", "quote:forged");
