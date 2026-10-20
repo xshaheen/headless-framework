@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FileSignatures;
 using FluentValidation;
 using Headless.FluentValidation.Resources;
 
@@ -8,8 +7,9 @@ namespace Headless.FluentValidation;
 
 /// <summary>
 /// Builds the file rules once for every file type: each entry point (<c>IUploadedFile</c> here, ASP.NET Core
-/// <c>IFormFile</c> in Headless.Api.FluentValidation) passes how to read the size, the declared content type, and the
-/// content, so the checks, error descriptors, and documented bounds cannot drift between them.
+/// <c>IFormFile</c> in Headless.Api.FluentValidation) passes how to read the size and the declared content type, so the
+/// checks, error descriptors, and documented bounds cannot drift between them. The signature rule lives in
+/// Headless.FluentValidation.FileSignatures, which carries the file-format dependency.
 /// </summary>
 internal static class FileRules
 {
@@ -58,31 +58,5 @@ internal static class FileRules
         return builder
             .SetValidator(new FileContentTypeValidator<T, TFile>(getContentType, contentTypes))
             .WithErrorDescriptor(FluentValidatorErrorDescriber.Files.UnexpectedContentType);
-    }
-
-    public static IRuleBuilderOptions<T, TFile?> Signatures<T, TFile>(
-        IRuleBuilder<T, TFile?> builder,
-        Func<TFile, Stream> openReadStream,
-        IFileFormatInspector inspector,
-        Func<FileFormat?, bool> predicate
-    )
-        where TFile : class
-    {
-        return builder
-            .MustAsync(
-                async (file, _) =>
-                {
-                    if (file is null)
-                    {
-                        return true;
-                    }
-
-                    await using var stream = openReadStream(file);
-                    var format = inspector.DetermineFileFormat(stream);
-
-                    return predicate(format);
-                }
-            )
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.Files.UnexpectedSignature);
     }
 }

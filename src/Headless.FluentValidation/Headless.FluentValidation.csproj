@@ -6,7 +6,6 @@
     <RootNamespace>Headless.FluentValidation</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="FileSignatures" />
     <PackageReference Include="FluentValidation" />
   </ItemGroup>
   <ItemGroup>

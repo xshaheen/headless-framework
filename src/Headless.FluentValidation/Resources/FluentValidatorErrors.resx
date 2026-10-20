@@ -133,4 +133,7 @@
   <data name="g:file_less_than_or_equal_to" xml:space="preserve">
     <value>The size of '{PropertyName}' must be at most {MaxSize} MB. You uploaded {TotalLength} MB.</value>
   </data>
+  <data name="g:file_unexpected_content_type" xml:space="preserve">
+    <value>The content type of '{PropertyName}' must be one of {ContentTypes}.</value>
+  </data>
 </root>

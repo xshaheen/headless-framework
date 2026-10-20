@@ -130,4 +130,7 @@
   <data name="g:file_unexpected_signature" xml:space="preserve">
     <value>نوع الملف غير مسموح به.</value>
   </data>
+  <data name="g:file_unexpected_content_type" xml:space="preserve">
+    <value>يجب أن يكون نوع محتوى الملف '{PropertyName}' أحد الأنواع التالية: {ContentTypes}.</value>
+  </data>
 </root>

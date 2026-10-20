@@ -801,10 +801,10 @@ FluentValidation extensions for ASP.NET Core file uploads and reusable Headless 
 - `FileNotEmpty()` — validates file has content
 - `GreaterThanOrEqualTo(bytes)` — minimum file size validation
 - `LessThanOrEqualTo(bytes)` — maximum file size validation
-- `ContentTypes(list)` — MIME type allowlist validation; the rule copies the list when it is built
-- `HaveSignatures(inspector, predicate)` — magic bytes/file signature validation
+- `ContentTypes(list)` — MIME type allowlist validation; the rule copies the list when it is built. A failure reports `g:file_unexpected_content_type` and lists the accepted types
+- `HaveSignatures(inspector, predicate)` — magic bytes/file signature validation, reporting `g:file_unexpected_signature`; it is the `Headless.FluentValidation.FileSignatures` rule, which this package references
 - The size and content-type rules are typed validators implementing `IFileSizeValidator` and `IFileContentTypeValidator` (`Headless.FluentValidation`), so Headless.OpenApi documents a form's accepted part types and size bounds; `HaveSignatures` is a predicate and documents nothing
-- To keep a command free of ASP.NET Core, give it an `IUploadedFile` property, build it at the endpoint with `IFormFile.ToUploadedFile()`, and validate it with the same rules from `Headless.FluentValidation` (see [utilities.md](utilities.md#headlessfluentvalidation))
+- To keep a command free of ASP.NET Core, give it an `IUploadedFile` property, build it at the endpoint with `IFormFile.ToUploadedFile()`, and validate it with the same rules from `Headless.FluentValidation` and `Headless.FluentValidation.FileSignatures` (see [utilities.md](utilities.md#headlessfluentvalidation))
 - `PhoneNumber()` — validates `PhoneNumberRequest` country code and local subscriber number
 - `GeoCoordinate()` — validates `GeoCoordinateRequest` latitude/longitude ranges
 - `PageMetadata()` — validates `PageMetadataRequest` SEO field length and element-count limits

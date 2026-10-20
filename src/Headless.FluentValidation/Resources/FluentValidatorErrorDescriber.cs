@@ -358,15 +358,12 @@ public static class FluentValidatorErrorDescriber
             );
         }
 
-        /// <summary>
-        /// Returns the descriptor for a file whose declared content type is not in the allowed list (code
-        /// <c>g:file_unexpected_signature</c>, shared with <see cref="UnexpectedSignature"/> on purpose).
-        /// </summary>
+        /// <summary>Returns the descriptor for a file whose declared content type is not in the allowed list (code <c>g:file_unexpected_content_type</c>).</summary>
         public static ErrorDescriptor UnexpectedContentType()
         {
             return new(
-                code: FluentValidatorErrorCodes.FileUnexpectedSignature,
-                description: FluentValidatorErrors.g_file_unexpected_signature
+                code: FluentValidatorErrorCodes.FileUnexpectedContentType,
+                description: FluentValidatorErrors.g_file_unexpected_content_type
             );
         }
 

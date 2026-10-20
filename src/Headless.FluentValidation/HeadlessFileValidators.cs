@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FileSignatures;
 using Headless.FluentValidation;
 using Headless.IO;
 
@@ -8,21 +7,22 @@ namespace FluentValidation;
 
 /// <summary>
 /// FluentValidation rules for a file property typed as <see cref="IUploadedFile"/> or one of its implementations, so a
-/// command or message that carries a file validates it without depending on ASP.NET Core.
+/// command or request handled in process validates a file without depending on ASP.NET Core.
 /// </summary>
 /// <remarks>
 /// <para>
 /// An ASP.NET Core request model whose property is an <c>IFormFile</c> uses the same rules from
 /// <c>Headless.Api.FluentValidation</c>; both emit the same error codes and messages. Adapt an <c>IFormFile</c> to an
-/// <see cref="IUploadedFile"/> at the edge with <c>IFormFile.ToUploadedFile()</c>.
+/// <see cref="IUploadedFile"/> at the edge with <c>IFormFile.ToUploadedFile()</c>. The binary signature rule,
+/// <c>HaveSignatures</c>, lives in <c>Headless.FluentValidation.FileSignatures</c>, so this package carries no file-format
+/// dependency.
 /// </para>
 /// <para>
 /// Every rule treats a <see langword="null"/> file as passing (the rule is skipped). Combine with FluentValidation's
 /// built-in <c>.NotNull()</c> if the file is required.
 /// </para>
 /// <para>
-/// <b>Security note:</b> these rules check size, declared content type, and binary file signatures, but they do not
-/// scan for malware. A virus/malware scanner API <b>MUST</b> be invoked before the file is made available to users or
+/// <b>Security note:</b> these rules check size and declared content type, but they do not scan for malware. A virus/malware scanner API <b>MUST</b> be invoked before the file is made available to users or
 /// other systems.
 /// </para>
 /// </remarks>
@@ -73,37 +73,13 @@ public static class HeadlessFileValidators
         /// <returns>Rule builder options for further chaining.</returns>
         /// <remarks>
         /// This rule validates only the <em>declared</em> content type sent by the client and can be spoofed. Use
-        /// <c>HaveSignatures</c> in addition to verify the actual binary signature. The validation error message
-        /// includes a <c>{ContentTypes}</c> placeholder listing the allowed types.
+        /// <c>HaveSignatures</c> from Headless.FluentValidation.FileSignatures in addition to verify the actual binary
+        /// signature. The validation error message includes a <c>{ContentTypes}</c> placeholder listing the allowed
+        /// types.
         /// </remarks>
         public IRuleBuilderOptions<T, TFile?> ContentTypes(IReadOnlyList<string> contentTypes)
         {
             return FileRules.ContentTypes(builder, static file => file.ContentType, contentTypes);
-        }
-
-        /// <summary>
-        /// Validates the file's binary signature (magic bytes) using the provided <paramref name="inspector"/> and
-        /// <paramref name="predicate"/>.
-        /// </summary>
-        /// <param name="inspector">
-        /// The <see cref="IFileFormatInspector"/> used to determine the actual file format by inspecting the file's
-        /// binary content.
-        /// </param>
-        /// <param name="predicate">
-        /// A delegate that receives the detected <see cref="FileFormat"/> (or <see langword="null"/> if the format
-        /// could not be identified) and returns <see langword="true"/> when the format is acceptable.
-        /// </param>
-        /// <returns>Rule builder options for further chaining.</returns>
-        /// <remarks>
-        /// The rule opens its own stream with <see cref="IUploadedFile.OpenReadStream"/> and disposes it after
-        /// inspection, so the code that stores the file can still read the whole content.
-        /// </remarks>
-        public IRuleBuilderOptions<T, TFile?> HaveSignatures(
-            IFileFormatInspector inspector,
-            Func<FileFormat?, bool> predicate
-        )
-        {
-            return FileRules.Signatures(builder, static file => file.OpenReadStream(), inspector, predicate);
         }
     }
 }

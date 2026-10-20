@@ -631,7 +631,7 @@ public sealed class FileValidatorsTests : TestBase
         var result = validator.TestValidate(new FileUploadTestModel { UploadedFile = file });
 
         // then
-        result.Errors.Should().ContainSingle().Which.ErrorCode.Should().Be("g:file_unexpected_signature");
+        result.Errors.Should().ContainSingle().Which.ErrorCode.Should().Be("g:file_unexpected_content_type");
     }
 
     #endregion

@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FileSignatures;
-using FileSignatures.Formats;
 using FluentValidation;
 using FluentValidation.TestHelper;
 using Headless.FluentValidation;
@@ -15,8 +13,6 @@ public sealed class FileValidatorsTests : TestBase
     private const int _OneMegabyte = 1024 * 1024;
 
     private static readonly byte[] _PngBytes = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00];
-
-    private static readonly IFileFormatInspector _Inspector = new FileFormatInspector();
 
     [Fact]
     public void should_reject_with_not_empty_code_when_file_has_no_bytes()
@@ -32,11 +28,7 @@ public sealed class FileValidatorsTests : TestBase
     public async Task should_pass_every_rule_when_file_is_null()
     {
         var validator = _Validator(rule =>
-            rule.FileNotEmpty()
-                .GreaterThanOrEqualTo(10)
-                .LessThanOrEqualTo(20)
-                .ContentTypes(["image/png"])
-                .HaveSignatures(_Inspector, format => format is Png)
+            rule.FileNotEmpty().GreaterThanOrEqualTo(10).LessThanOrEqualTo(20).ContentTypes(["image/png"])
         );
 
         var result = await validator.TestValidateAsync(new Command(null), cancellationToken: AbortToken);
@@ -90,45 +82,8 @@ public sealed class FileValidatorsTests : TestBase
         var result = validator.TestValidate(new Command(new BytesFile(_PngBytes, contentType: "application/pdf")));
 
         var error = result.Errors.Should().ContainSingle().Subject;
-        error.ErrorCode.Should().Be("g:file_unexpected_signature");
+        error.ErrorCode.Should().Be("g:file_unexpected_content_type");
         error.FormattedMessagePlaceholderValues["ContentTypes"].Should().Be("'image/png', 'image/jpeg'");
-    }
-
-    [Fact]
-    public async Task should_accept_when_content_signature_matches()
-    {
-        var validator = _Validator(rule => rule.HaveSignatures(_Inspector, format => format is Png));
-
-        var result = await validator.TestValidateAsync(
-            new Command(new BytesFile(_PngBytes)),
-            cancellationToken: AbortToken
-        );
-
-        result.IsValid.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task should_reject_when_content_signature_does_not_match_declared_type()
-    {
-        var validator = _Validator(rule => rule.HaveSignatures(_Inspector, format => format is Png));
-        var notAnImage = new BytesFile("plain text, renamed"u8.ToArray(), contentType: "image/png", fileName: "a.png");
-
-        var result = await validator.TestValidateAsync(new Command(notAnImage), cancellationToken: AbortToken);
-
-        result.Errors.Should().ContainSingle().Which.ErrorCode.Should().Be("g:file_unexpected_signature");
-    }
-
-    [Fact]
-    public async Task should_leave_the_content_readable_when_signature_rule_has_run()
-    {
-        var file = new BytesFile(_PngBytes);
-        var validator = _Validator(rule => rule.HaveSignatures(_Inspector, format => format is Png));
-
-        await validator.TestValidateAsync(new Command(file), cancellationToken: AbortToken);
-
-        file.Opened.Should().Be(1);
-        await using var stream = file.OpenReadStream();
-        stream.GetAllBytes().Should().Equal(_PngBytes);
     }
 
     [Fact]
@@ -178,20 +133,13 @@ public sealed class FileValidatorsTests : TestBase
     private sealed class BytesFile(byte[] content, string contentType = "image/png", string fileName = "avatar.png")
         : IUploadedFile
     {
-        public int Opened { get; private set; }
-
         public string FileName => fileName;
 
         public string ContentType => contentType;
 
         public long Length => content.Length;
 
-        public Stream OpenReadStream()
-        {
-            Opened++;
-
-            return new MemoryStream(content, writable: false);
-        }
+        public Stream OpenReadStream() => new MemoryStream(content, writable: false);
     }
 
     private sealed class InvariantCultureScope : IDisposable

@@ -142,9 +142,9 @@ public static class FluentValidatorErrorCodes
     /// <summary>A file whose size exceeds the allowed maximum.</summary>
     public const string FileLessThanOrEqualTo = "g:file_less_than_or_equal_to";
 
-    /// <summary>
-    /// A file whose declared content type or binary signature does not match the expected format. Both failures share
-    /// this code intentionally.
-    /// </summary>
+    /// <summary>A file whose declared content type is not in the accepted list.</summary>
+    public const string FileUnexpectedContentType = "g:file_unexpected_content_type";
+
+    /// <summary>A file whose binary signature does not match an accepted format.</summary>
     public const string FileUnexpectedSignature = "g:file_unexpected_signature";
 }
