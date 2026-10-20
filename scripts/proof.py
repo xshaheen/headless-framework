@@ -12,9 +12,6 @@ Commands:
              exit with the command's status.
   summarize  Write <dir>/summary.json and <dir>/summary.md from what the stages left in <dir>. With
              --coverage-gate, also hold the change to the coverage floors and fail the bundle below them.
-  retry-flakes
-             After a failed test stage, re-run once the modules whose every failed test is listed in
-             tests/known-flakes.txt, into <stage>-retry; exit 0 when the retry passed.
   failed     Print the test projects whose modules failed in a bundle (the latest verify, test, or
              integration bundle by default), one per line, and name the other failed stages on stderr.
   analyzers-clean
@@ -24,7 +21,6 @@ Commands:
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import json
 import re
 import shutil
@@ -37,10 +33,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-# Tests known to fail intermittently, each tied to the issue that tracks its fix. A stage whose every failure is listed
-# retries those modules once instead of sending the author to re-run the whole gate; an unlisted failure still fails.
-KNOWN_FLAKES = REPO_ROOT / "tests" / "known-flakes.txt"
-RETRY_SUFFIX = "-retry"
 TRX_NS = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
 # MSBuild canonical diagnostic: path(line,col): warning CODE: message [project]
 DIAGNOSTIC = re.compile(
@@ -67,42 +59,6 @@ class TestModule:
     failed: int = 0
     skipped: int = 0
     failures: list[dict[str, str]] = field(default_factory=list)
-    # Failures of listed known flakes that passed when the module was retried, with the issue tracking each.
-    flaky: list[dict[str, str]] = field(default_factory=list)
-
-
-@dataclass
-class KnownFlake:
-    module: str
-    test: str  # fnmatch pattern over the TRX testName
-    issue: str
-
-
-def known_flakes(path: Path = KNOWN_FLAKES) -> list[KnownFlake]:
-    """`<module> <test pattern> <issue>` per line; `#` starts a comment line.
-
-    A line that does not parse, or that names a messaging integration module, is reported and ignored: the messaging
-    integration tier runs without retries on purpose and quarantines a defect through its harness instead.
-    """
-    if not path.exists():
-        return []
-    flakes = []
-    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        fields = line.split()
-        if not fields or fields[0].startswith("#"):
-            continue
-        if len(fields) != 3:
-            print(f"[proof] {path.name}:{number} ignored: expected <module> <test pattern> <issue>", file=sys.stderr)
-            continue
-        if fields[0].startswith("Headless.Messaging") and fields[0].endswith(".Tests.Integration"):
-            print(f"[proof] {path.name}:{number} ignored: messaging integration tests are never retried", file=sys.stderr)
-            continue
-        flakes.append(KnownFlake(*fields))
-    return flakes
-
-
-def flake_issue(module: str, test: str, flakes: list[KnownFlake]) -> str | None:
-    return next((f.issue for f in flakes if f.module == module and fnmatch.fnmatchcase(test, f.test)), None)
 
 
 _ROOT_PREFIX = REPO_ROOT.as_posix() + "/"
@@ -196,12 +152,9 @@ def analyzer_findings(directory: Path, project_dirs: list[str]) -> list[dict[str
     return findings
 
 
-def test_modules(directory: Path, retried: bool = False) -> list[TestModule]:
-    """Modules from the stage results, or with retried=True from the known-flake retries only."""
+def test_modules(directory: Path) -> list[TestModule]:
     modules: list[TestModule] = []
     for trx in sorted(directory.rglob("*.trx")):
-        if any(part.endswith(RETRY_SUFFIX) for part in trx.relative_to(directory).parts) != retried:
-            continue
         root = ET.parse(trx).getroot()
         module = TestModule(module=re.sub(r"_net[\d.]+_\w+$", "", trx.stem))
         for result in root.iterfind(".//t:Results/t:UnitTestResult", TRX_NS):
@@ -501,30 +454,6 @@ def empty_selection_stage(affected: dict) -> Stage | None:
     return Stage("affected-selection", [], 1, 0.0, "", note)
 
 
-def apply_flake_retries(directory: Path, stages: list[Stage], modules: list[TestModule]) -> set[str]:
-    """Clear a failed stage whose failures were all known flakes that passed on their one retry."""
-    flakes = known_flakes()
-    retry_passed = {stage.name.removesuffix(RETRY_SUFFIX) for stage in stages if stage.name.endswith(RETRY_SUFFIX) and stage.exit_code == 0}
-    if not retry_passed:
-        return set()
-    retried = {m.module: m for m in test_modules(directory, retried=True)}
-    for module in modules:
-        again = retried.get(module.module)
-        if again is None or again.failed or not module.failures:
-            continue
-        issues = [flake_issue(module.module, f["test"], flakes) for f in module.failures]
-        if all(issues):
-            module.flaky = [{**f, "issue": issue or ""} for f, issue in zip(module.failures, issues, strict=True)]
-            module.passed += len(module.failures)
-            module.failed, module.failures = 0, []
-    cleared = set()
-    for stage in stages:
-        if stage.name in retry_passed and stage.exit_code > 0 and not any(m.failed for m in modules):
-            stage.exit_code, stage.note = 0, "passed on retry of known flakes"
-            cleared.add(stage.name)
-    return cleared
-
-
 def summarize(
     directory: Path, gate_scope: str = "none", floors: dict[str, float] | None = None, strict: bool = False
 ) -> int:
@@ -536,7 +465,6 @@ def summarize(
     diagnostics = compiler_diagnostics(directory)
     findings = analyzer_findings(directory, [str(Path(p).parent) + "/" for p in affected.get("changed_projects", [])])
     modules = test_modules(directory)
-    apply_flake_retries(directory, stages, modules)
     report = merged_coverage(directory)
     coverage_rows = coverage(report, changed_assemblies)
     # `dotnet format --verify-no-changes` exits 2 for hidden-severity findings too, which the gate
@@ -636,10 +564,6 @@ def render_markdown(summary: dict) -> str:
     failures = [(m["module"], f) for m in tests["modules"] for f in m["failures"]]
     for module, failure in failures[:MAX_LISTED]:
         lines.append(f"- `{module}` `{failure['test']}`: {failure['message']}")
-    flaky = [(m["module"], f) for m in tests["modules"] for f in m.get("flaky", [])]
-    if flaky:
-        lines += ["", "Known flakes that failed, then passed on their one retry (not counted as failures):", ""]
-        lines += [f"- `{module}` `{f['test']}` ({f['issue']}): {f['message']}" for module, f in flaky]
 
     for title, key in (("Compiler diagnostics", "compiler_diagnostics"), ("Analyzer findings", "analyzer_findings")):
         items = summary[key]
@@ -722,60 +646,6 @@ def analyzers_clean(directory: Path) -> int:
     for finding in findings[:20]:
         print(f"[proof] {finding['severity']} {finding['id']} {finding['file']}:{finding['line']} {finding['message']}", file=sys.stderr)
     return 1 if findings else 0
-
-
-def unfinished_modules(results: Path, expected: list[str]) -> list[str]:
-    """Modules of the stage that did not finish with a readable result: no TRX (a timeout or a crash leaves none),
-    an outcome other than Completed or Failed, or no test run at all."""
-    finished: dict[str, bool] = {}
-    for trx in sorted(results.rglob("*.trx")) if results.exists() else []:
-        if any(part.endswith(RETRY_SUFFIX) for part in trx.relative_to(results).parts):
-            continue
-        root = ET.parse(trx).getroot()
-        summary = root.find("t:ResultSummary", TRX_NS)
-        counters = root.find("t:ResultSummary/t:Counters", TRX_NS)
-        total = int(counters.get("total", "0")) if counters is not None else 0
-        ok = summary is not None and summary.get("outcome") in ("Completed", "Failed") and total > 0
-        module = re.sub(r"_net[\d.]+_\w+$", "", trx.stem)
-        finished[module] = finished.get(module, True) and ok
-    return [module for module in expected if not finished.get(module, False)]
-
-
-def retry_flakes(directory: Path, stage: str, project_lists: list[Path], test_args: list[str], dotnet: str = "dotnet") -> int:
-    """Re-run once, into <stage>-retry, the failed modules, but only when listed known flakes explain the whole
-    stage failure: every module of the stage finished with a readable result, and every failed result is listed.
-    A module that timed out or crashed leaves no failed result, so retrying around it would turn the stage green."""
-    flakes = known_flakes()
-    results = directory / stage
-    by_module: dict[str, str] = {}
-    for listing in project_lists:
-        if listing.exists():
-            by_module.update({Path(line).stem: line for line in listing.read_text(encoding="utf-8").split()})
-    unfinished = unfinished_modules(results, sorted(by_module))
-    if unfinished:
-        for module in unfinished[:10]:
-            print(f"[proof] {module} did not finish (timeout, crash, or no tests); no retry", file=sys.stderr)
-        return 1
-    failed = [m for m in test_modules(results) if m.failed] if results.exists() else []
-    if not failed:
-        print(f"[proof] {stage} failed without a failed test result; nothing to retry", file=sys.stderr)
-        return 1
-    unknown = [(m.module, f["test"]) for m in failed for f in m.failures if not flake_issue(m.module, f["test"], flakes)]
-    if unknown:
-        for module, test in unknown[:10]:
-            print(f"[proof] {module} {test} is not a known flake; no retry", file=sys.stderr)
-        return 1
-    worst = 0
-    for module in failed:
-        project = by_module.get(module.module)
-        if project is None:
-            print(f"[proof] no project listed for {module.module}; cannot retry it", file=sys.stderr)
-            return 1
-        names = ", ".join(f"{f['test']} ({flake_issue(module.module, f['test'], flakes)})" for f in module.failures)
-        print(f"[proof] retrying {module.module} once for known flakes: {names}", file=sys.stderr)
-        command = [dotnet, "test", "--project", project, "--results-directory", str(directory / f"{stage}{RETRY_SUFFIX}"), *test_args]
-        worst = max(worst, run_stage(directory, f"{stage}{RETRY_SUFFIX}", command))
-    return 1 if worst else 0
 
 
 def latest_bundle(root: Path) -> Path | None:
@@ -976,12 +846,6 @@ def main() -> int:
     )
     clean = commands.add_parser("analyzers-clean", help="exit 1 when the bundle's analyzer stage reported a visible finding")
     clean.add_argument("--dir", required=True, type=Path)
-    retry = commands.add_parser("retry-flakes", help="retry once the modules whose failures are all known flakes")
-    retry.add_argument("--dir", required=True, type=Path)
-    retry.add_argument("--stage", required=True, choices=("unit-tests", "integration-tests"))
-    retry.add_argument("--projects", required=True, type=Path, action="append", help="project list of the stage (repeatable)")
-    retry.add_argument("--dotnet", default="dotnet", help="the dotnet executable the stage used")
-    retry.add_argument("test_args", nargs=argparse.REMAINDER, help="dotnet test arguments after --")
     failed = commands.add_parser("failed", help="print the test projects that failed in a bundle")
     failed.add_argument("--dir", type=Path, help="bundle to read (default: the latest -verify, -test, or -integration bundle under --root)")
     failed.add_argument("--root", type=Path, default=REPO_ROOT / "artifacts" / "proof", help="where the bundles live")
@@ -1011,9 +875,6 @@ def main() -> int:
         return analyze_changed(args.dir, args.configuration, args.severity, args.diagnostics, fallback)
     if args.command == "prune":
         return prune_bundles(args.root, args.keep, args.starting)
-    if args.command == "retry-flakes":
-        extra = args.test_args[1:] if args.test_args[:1] == ["--"] else args.test_args
-        return retry_flakes(args.dir, args.stage, args.projects, extra, args.dotnet)
     if args.command == "failed":
         return failed_projects(args.dir, args.root)
     if args.command == "analyzers-clean":
