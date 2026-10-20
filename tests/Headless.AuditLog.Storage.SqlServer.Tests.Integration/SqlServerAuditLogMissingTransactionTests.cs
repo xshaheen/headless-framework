@@ -223,7 +223,7 @@ public sealed class SqlServerAuditLogMissingTransactionTests(SqlServerAuditLogFi
             setup.UseSqlServer(fixture.ConnectionString);
         });
 
-        builder.Services.AddDeployStepsOnStartup();
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         var host = builder.Build();
         await host.StartAsync(AbortToken);
 

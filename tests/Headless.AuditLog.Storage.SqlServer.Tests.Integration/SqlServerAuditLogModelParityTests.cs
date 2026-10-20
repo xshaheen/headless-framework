@@ -82,7 +82,7 @@ public sealed class SqlServerAuditLogModelParityTests(SqlServerAuditLogFixture f
             setup.UseSqlServer(fixture.ConnectionString);
         });
 
-        builder.Services.AddDeployStepsOnStartup();
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         return builder.Build();
     }
 

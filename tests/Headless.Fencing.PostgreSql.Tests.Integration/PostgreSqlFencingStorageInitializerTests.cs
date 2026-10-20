@@ -166,7 +166,7 @@ public sealed class PostgreSqlFencingStorageInitializerTests(PostgreSqlFencingFi
 
         if (setupResources)
         {
-            builder.Services.AddDeployStepsOnStartup();
+            builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         }
 
         builder.Services.AddHeadlessFencing(setup =>

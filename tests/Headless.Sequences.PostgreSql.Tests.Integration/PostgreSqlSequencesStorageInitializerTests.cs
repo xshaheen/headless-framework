@@ -169,7 +169,7 @@ public sealed class PostgreSqlSequencesStorageInitializerTests(PostgreSqlSequenc
 
         if (setupResources)
         {
-            builder.Services.AddDeployStepsOnStartup();
+            builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         }
 
         builder.Services.AddHeadlessSequences(setup => setup.UsePostgreSql(configure));

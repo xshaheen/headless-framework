@@ -168,7 +168,7 @@ public sealed class SqliteSequencesStorageInitializerTests(SqliteSequencesFixtur
 
         if (setupResources)
         {
-            builder.Services.AddDeployStepsOnStartup();
+            builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         }
 
         builder.Services.AddHeadlessSequences(setup => setup.UseSqlite(configure));
