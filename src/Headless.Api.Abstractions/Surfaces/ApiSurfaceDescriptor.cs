@@ -23,11 +23,7 @@ public sealed class ApiSurfaceDescriptor(
 
 /// <summary>Immutable document identity for a surface; API version groups remain independent.</summary>
 [PublicAPI]
-public sealed class ApiSurfaceOpenApiDescriptor(
-    string documentName,
-    string title,
-    bool? standardProblemResponses = null
-)
+public sealed class ApiSurfaceOpenApiDescriptor(string documentName, string title)
 {
     public string DocumentName { get; } = Argument.IsNotNullOrWhiteSpace(documentName);
     public string Title { get; } = Argument.IsNotNullOrWhiteSpace(title);
@@ -37,5 +33,5 @@ public sealed class ApiSurfaceOpenApiDescriptor(
     /// <see langword="null"/> to inherit the API-wide setting. An endpoint, route group, controller, or action marked
     /// with <see cref="StandardProblemResponsesAttribute"/> overrides it.
     /// </summary>
-    public bool? StandardProblemResponses { get; } = standardProblemResponses;
+    public bool? StandardProblemResponses { get; init; }
 }

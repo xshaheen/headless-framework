@@ -225,13 +225,47 @@ public sealed class StandardProblemResponseDocumentTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_apply_a_registered_surface_setting_to_minimal_api_and_mvc_endpoints()
+    {
+        // given a surface registered with the standard problems off, reached through MapApiSurface and [ApiSurface]
+        var document = await OpenApiTestHost.GetDocumentAsync(
+            builder =>
+            {
+                builder.Services.AddHeadlessApiSurface("ops", ops => ops.OpenApi.StandardProblemResponses = false);
+                builder.Services.AddHeadlessMvcApiSurfaces();
+                builder
+                    .Services.AddControllers()
+                    .ConfigureApplicationPartManager(manager =>
+                        manager.FeatureProviders.Add(new SingleControllerFeatureProvider(typeof(OpsSurfaceController)))
+                    );
+                builder.Services.AddHeadlessOpenApi();
+            },
+            app =>
+            {
+                app.MapControllers();
+                app.MapApiSurface("ops", ops => ops.MapGet("/ops/minimal", () => "ok").AllowAnonymous());
+            },
+            "v1",
+            AbortToken
+        );
+
+        // then both operations drop 404/409/422 and keep the ranges
+        foreach (var path in new[] { "/ops/minimal", "/mvc/ops" })
+        {
+            var responses = document.Operation(path, "get")["responses"]!;
+            responses.ExactStatusCodes().Should().NotContain(["404", "409", "422"], path);
+            responses.AsObject().Select(x => x.Key).Should().Contain(["4XX", "5XX"], path);
+        }
+    }
+
     private static ApiSurfaceDescriptor _Surface(string name, bool? standardProblemResponses) =>
         new(
             name,
             routePrefix: null,
             defaultAuthorizationPolicy: null,
             ApiSurfaceTenancyMode.Unspecified,
-            new ApiSurfaceOpenApiDescriptor(name, $"{name} API", standardProblemResponses)
+            new ApiSurfaceOpenApiDescriptor(name, $"{name} API") { StandardProblemResponses = standardProblemResponses }
         );
 
     private static string[] _ResponseCodes(JsonNode operation) => operation["responses"]!.ExactStatusCodes();
@@ -248,6 +282,17 @@ public sealed class PlainResultController : ControllerBase
     [HttpGet("{id:int}")]
     [AllowAnonymous]
     public ActionResult<int> Get(int id) => id;
+}
+
+[NonController]
+[ApiController]
+[ApiSurface("ops")]
+[Route("mvc/ops")]
+public sealed class OpsSurfaceController : ControllerBase
+{
+    [HttpGet]
+    [AllowAnonymous]
+    public ActionResult<int> Get() => 1;
 }
 
 [NonController]

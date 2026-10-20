@@ -25,7 +25,10 @@ public sealed class ApiSurfaceBuilder(string surfaceName)
             string.IsNullOrWhiteSpace(RoutePrefix) ? null : RoutePrefix.Trim('/'),
             DefaultAuthorizationPolicy,
             DefaultTenancyMode,
-            new ApiSurfaceOpenApiDescriptor(OpenApi.DocumentName, OpenApi.Title, OpenApi.StandardProblemResponses)
+            new ApiSurfaceOpenApiDescriptor(OpenApi.DocumentName, OpenApi.Title)
+            {
+                StandardProblemResponses = OpenApi.StandardProblemResponses,
+            }
         );
 }
 
