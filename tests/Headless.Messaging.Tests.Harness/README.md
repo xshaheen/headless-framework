@@ -158,7 +158,7 @@ That policy holds only while the real brokers keep passing, so `.github/workflow
 | `RequestReplyCallerCleanup` | S | S | N/A | N/A | U | U | U | S | S | S |
 | `RequestReplyStartupRejection` | N/A | N/A | S | S | S | S† | U | N/A | N/A | N/A |
 | `RawPayloadConsumption` | S | S | S | S | S | S† | U | N/A | S | N/A |
-| `HeaderBuilderFailureRedelivery` | S | S | U | U | U | U | U | N/A | U | N/A |
+| `HeaderBuilderFailureRedelivery` | S | S | S | U | U | U | U | N/A | U | N/A |
 | `DeadLetterSingleCopy` | N/A | S | N/A | N/A | N/A | U | U | U | N/A | S |
 | `StandardHeaderRoundTrip` | S | S | S | S | S | U | U | U | S | S |
 | `HandlerConcurrencyCap` | S | S | S | S | S | U | U | U | S | S |

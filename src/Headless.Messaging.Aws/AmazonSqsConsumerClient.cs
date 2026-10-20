@@ -522,7 +522,7 @@ internal sealed class AmazonSqsConsumerClient(
     {
         try
         {
-            TransportMessage message;
+            TransportMessage? message;
             try
             {
                 message = _CreateTransportMessage(sqsMessage, inflight.QueueUrl);
@@ -540,7 +540,15 @@ internal sealed class AmazonSqsConsumerClient(
                 return;
             }
 
-            await OnMessageCallback!(message, inflight).ConfigureAwait(false);
+            if (message is not { } transportMessage)
+            {
+                // A builder failure is no verdict on the message: the builder's own lookup may be briefly down. The
+                // message goes back to SQS, and the queue's redrive policy bounds how often it is handed out again.
+                await RejectAsync(inflight, CancellationToken.None).ConfigureAwait(false);
+                return;
+            }
+
+            await OnMessageCallback!(transportMessage, inflight).ConfigureAwait(false);
         }
         finally
         {
@@ -982,8 +990,9 @@ internal sealed class AmazonSqsConsumerClient(
 
     // Both lanes read one envelope: the Queue lane sends the header bag itself, and the Bus lane's SNS subscriptions use
     // raw message delivery, which hands the published body and its one bag attribute to SQS unchanged. A JsonException
-    // means the bag is unreadable and an InvalidDataException that the envelope is malformed; both settle terminally.
-    private TransportMessage _CreateTransportMessage(Amazon.SQS.Model.Message sqsMessage, string queueUrl)
+    // means the bag is unreadable and an InvalidDataException that the envelope is malformed; both settle terminally. A
+    // custom headers builder failure is logged and returns no message, so it is never taken for either.
+    private TransportMessage? _CreateTransportMessage(Amazon.SQS.Model.Message sqsMessage, string queueUrl)
     {
         var arrivalName =
             lane == MessageLane.Queue
@@ -996,7 +1005,10 @@ internal sealed class AmazonSqsConsumerClient(
             allowMissingBag: _envelopeGate.IsRaw(lane, arrivalName)
         );
 
-        _ApplyCustomHeaders(sqsMessage, headers);
+        if (!_TryApplyCustomHeaders(sqsMessage, headers))
+        {
+            return null;
+        }
 
         // Stamped after the custom headers builder so neither the wire nor the builder can choose the address.
         headers[Headers.TransportAddress] = queueUrl;
@@ -1012,11 +1024,11 @@ internal sealed class AmazonSqsConsumerClient(
         return new TransportMessage(headers, body is not null ? Encoding.UTF8.GetBytes(body) : null);
     }
 
-    private void _ApplyCustomHeaders(Amazon.SQS.Model.Message sqsMessage, Dictionary<string, string?> headers)
+    private bool _TryApplyCustomHeaders(Amazon.SQS.Model.Message sqsMessage, Dictionary<string, string?> headers)
     {
         if (_amazonSqsOptions.CustomHeadersBuilder is not { } builder)
         {
-            return;
+            return true;
         }
 
         List<KeyValuePair<string, string>> customHeaders;
@@ -1031,18 +1043,17 @@ internal sealed class AmazonSqsConsumerClient(
         }
         catch (Exception exception)
         {
-            // A builder is user code that may throw anything; every failure settles the message as malformed instead of
-            // escaping the handler.
-            throw new InvalidDataException(
-                $"The SQS custom headers builder failed: {exception.GetType().Name}.",
-                exception
-            );
+            // A builder is user code that may throw anything; the caller releases the message for redelivery.
+            _logger.SqsCustomHeadersBuilderFailed(exception, subscriptionName);
+            return false;
         }
 
         foreach (var customHeader in customHeaders)
         {
             headers[customHeader.Key] = customHeader.Value;
         }
+
+        return true;
     }
 
     /// <summary>
@@ -1316,5 +1327,16 @@ internal static partial class AmazonSqsConsumerClientLog
         Exception exception,
         string subscriptionName,
         int handlerCount
+    );
+
+    [LoggerMessage(
+        EventId = 4209,
+        Level = LogLevel.Warning,
+        Message = "The SQS custom headers builder failed for subscription {SubscriptionName}; the message was released for redelivery."
+    )]
+    public static partial void SqsCustomHeadersBuilderFailed(
+        this ILogger logger,
+        Exception exception,
+        string subscriptionName
     );
 }

@@ -456,13 +456,7 @@ public static class TransportConformanceManifest
                     )
                 )
                 .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.HeaderBuilderFailureRedelivery,
-                    ConformanceSupport.Unsupported(
-                        "A header builder failure settles the message as malformed and deletes it, so the message is lost instead of redelivered.",
-                        _HeaderBuilderIssueUrl
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.HeaderBuilderFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.DeadLetterSingleCopy,
                     ConformanceSupport.NotApplicable(
