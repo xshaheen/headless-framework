@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 
 namespace Tests;
 
@@ -150,6 +151,74 @@ public sealed class ConnectionChannelPoolTests : TestBase
 
         // then
         pool.MaxMessageBodySize.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(ShutdownInitiator.Library, 541)] // the socket closed: a network blip or a broker that went away
+    [InlineData(ShutdownInitiator.Peer, 320)] // CONNECTION_FORCED: a broker restart or an operator's close
+    public async Task should_keep_the_shared_connection_while_the_client_recovers_it(
+        ShutdownInitiator initiator,
+        ushort replyCode
+    )
+    {
+        // given
+        var connection = Substitute.For<IConnection>();
+        connection.IsOpen.Returns(true);
+        var activations = 0;
+        await using var pool = new ConnectionChannelPool(
+            _logger,
+            _capOptions,
+            _rabbitOptions,
+            _ =>
+            {
+                activations++;
+                return Task.FromResult(connection);
+            }
+        );
+        var opened = await pool.GetConnectionAsync(AbortToken);
+
+        // when — the client recovers this connection, and disposing it would cancel the recovery of every consumer on it
+        connection.IsOpen.Returns(false);
+        connection.CloseReason.Returns(new ShutdownEventArgs(initiator, replyCode, "connection lost"));
+        var duringRecovery = await pool.GetConnectionAsync(AbortToken);
+
+        // then
+        duringRecovery.Should().BeSameAs(opened);
+        activations.Should().Be(1);
+        connection.DidNotReceive().Dispose();
+        await connection.DidNotReceive().DisposeAsync();
+    }
+
+    [Theory]
+    [InlineData(ShutdownInitiator.Application, 200)] // closed by this process, which the client never recovers
+    [InlineData(ShutdownInitiator.Peer, 403)] // ACCESS_REFUSED, which the client does not recover either
+    public async Task should_replace_the_shared_connection_when_the_client_does_not_recover_it(
+        ShutdownInitiator initiator,
+        ushort replyCode
+    )
+    {
+        // given
+        var lost = Substitute.For<IConnection>();
+        lost.IsOpen.Returns(true);
+        var replacement = Substitute.For<IConnection>();
+        replacement.IsOpen.Returns(true);
+        var connections = new Queue<IConnection>([lost, replacement]);
+        await using var pool = new ConnectionChannelPool(
+            _logger,
+            _capOptions,
+            _rabbitOptions,
+            _ => Task.FromResult(connections.Dequeue())
+        );
+        await pool.GetConnectionAsync(AbortToken);
+
+        // when
+        lost.IsOpen.Returns(false);
+        lost.CloseReason.Returns(new ShutdownEventArgs(initiator, replyCode, "connection closed"));
+        var current = await pool.GetConnectionAsync(AbortToken);
+
+        // then
+        current.Should().BeSameAs(replacement);
+        lost.Received(1).Dispose();
     }
 
     [Fact]
