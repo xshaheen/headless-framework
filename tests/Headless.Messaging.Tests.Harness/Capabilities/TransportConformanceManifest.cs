@@ -593,18 +593,12 @@ public static class TransportConformanceManifest
                 .WithScenario(
                     TransportConformanceScenario.BrokerInterruptionRecovery,
                     ConformanceSupport.Unsupported(
-                        "Delivery resumes after a broker restart, but stopping the consumer afterwards can overrun the shutdown timeout, so the scenario fails intermittently.",
+                        "After a broker restart the producer does not recover within a minute, so the scenario cannot reach the consumer's bounded shutdown.",
                         "https://github.com/xshaheen/headless-framework/issues/1269"
                     )
                 )
                 .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.HandlerFailureRedelivery,
-                    ConformanceSupport.Unsupported(
-                        "A message whose callback throws is neither acknowledged nor negatively acknowledged, so the live subscription never redelivers it.",
-                        "https://github.com/xshaheen/headless-framework/issues/1268"
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.HandlerFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
@@ -627,13 +621,7 @@ public static class TransportConformanceManifest
                     )
                 )
                 .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.HeaderBuilderFailureRedelivery,
-                    ConformanceSupport.Unsupported(
-                        "A header builder failure settles the message as malformed and acknowledges it, so the message is lost instead of redelivered.",
-                        _HeaderBuilderIssueUrl
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.HeaderBuilderFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.DeadLetterSingleCopy,
                     ConformanceSupport.NotApplicable(

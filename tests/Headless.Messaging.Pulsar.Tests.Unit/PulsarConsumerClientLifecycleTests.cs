@@ -252,6 +252,148 @@ public sealed class PulsarConsumerClientLifecycleTests : TestBase
         cts.Dispose();
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task should_negatively_acknowledge_and_keep_receiving_when_the_callback_throws(byte concurrency)
+    {
+        // given
+        await using var client = new PulsarConsumerClient(
+            Options.Create(new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" }),
+            client: null!,
+            new ConsumerClientRequest("callback-failure-test", concurrency, MessageLane.Bus)
+        );
+        var properties = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "msg-1",
+            [Headers.MessageName] = "TestEvent",
+        };
+        var failing = _CreateMessage("persistent://public/default/orders.created", properties, entryId: 1);
+        var next = _CreateMessage("persistent://public/default/orders.created", properties, entryId: 2);
+
+        var consumer = Substitute.For<IConsumer<byte[]>>();
+        var receiveCount = 0;
+        consumer
+            .ReceiveAsync(Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                switch (Interlocked.Increment(ref receiveCount))
+                {
+                    case 1:
+                        return failing;
+                    case 2:
+                        return next;
+                    default:
+                        await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>());
+                        return next;
+                }
+            });
+        var negativelyAcknowledged = new TaskCompletionSource<MessageId>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        consumer
+            .NegativeAcknowledge(Arg.Any<MessageId>())
+            .Returns(call =>
+            {
+                negativelyAcknowledged.TrySetResult(call.Arg<MessageId>());
+                return Task.FromResult<Microsoft.FSharp.Core.Unit>(null!);
+            });
+        _SetField(client, "_consumerClient", consumer);
+
+        var secondDelivered = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var logs = new ConcurrentQueue<LogMessageEventArgs>();
+        var calls = 0;
+        client.AttachCallbacks(
+            (_, sender) =>
+            {
+                if (Interlocked.Increment(ref calls) == 1)
+                {
+                    throw new InvalidOperationException("callback failure");
+                }
+
+                secondDelivered.TrySetResult(sender);
+                return Task.CompletedTask;
+            },
+            logs.Enqueue
+        );
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        // when
+        var rejected = await negativelyAcknowledged.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        var nextSender = await secondDelivered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await cts.CancelAsync();
+        await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        rejected.Should().Be(failing.MessageId, "only the client can make a delivery whose callback threw available");
+        nextSender.Should().Be(next.MessageId, "the listener must survive a callback failure");
+        await consumer.Received(1).NegativeAcknowledge(Arg.Any<MessageId>());
+        logs.Should().Contain(log => log.Reason!.Contains("callback failure", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task should_return_within_the_budget_when_closing_the_consumer_hangs()
+    {
+        // given
+        var logs = new ConcurrentQueue<LogMessageEventArgs>();
+        await using var client = new PulsarConsumerClient(
+            Options.Create(new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" }),
+            client: null!,
+            new ConsumerClientRequest("close-hang-test", concurrency: 1, MessageLane.Bus)
+        );
+        client.AttachCallbacks((_, _) => Task.CompletedTask, logs.Enqueue);
+        var neverClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var consumer = Substitute.For<IConsumer<byte[]>>();
+        consumer.DisposeAsync().Returns(new ValueTask(neverClosed.Task));
+        _SetField(client, "_consumerClient", consumer);
+
+        // when: a close the broker never answers, as after a broker restart
+        var shutdown = client.ShutdownAsync(TimeSpan.FromMilliseconds(200), AbortToken).AsTask();
+
+        // then
+        await shutdown.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await consumer.Received(1).DisposeAsync();
+        logs.Should().Contain(log => log.Reason!.Contains("close", StringComparison.Ordinal));
+        neverClosed.TrySetResult();
+    }
+
+    [Fact]
+    public async Task should_stop_listening_when_canceled_while_the_receive_ignores_cancellation()
+    {
+        // given: the consumer's mailbox stalls, as it can after a broker restart, so neither the receive nor the
+        // monitor's probes honor cancellation
+        await using var client = new PulsarConsumerClient(
+            Options.Create(new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" }),
+            client: null!,
+            new ConsumerClientRequest("stalled-receive-test", concurrency: 1, MessageLane.Bus)
+        );
+        var receiveStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var consumer = Substitute.For<IConsumer<byte[]>>();
+        consumer
+            .ReceiveAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                receiveStarted.TrySetResult();
+                return new TaskCompletionSource<Message<byte[]>>().Task;
+            });
+        consumer.IsConnected().Returns(new TaskCompletionSource<bool>().Task);
+        consumer.LastDisconnectedTimestamp().Returns(new TaskCompletionSource<long>().Task);
+        _SetField(client, "_consumerClient", consumer);
+        client.AttachCallbacks((_, _) => Task.CompletedTask, _ => { });
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+        await receiveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        await cts.CancelAsync();
+
+        // then
+        await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+    }
+
     private async Task<(
         PulsarConsumerClient Client,
         IConsumer<byte[]> Consumer,
@@ -310,9 +452,13 @@ public sealed class PulsarConsumerClientLifecycleTests : TestBase
     }
 
     // Pulsar.Client builds Message<T> only on receipt and exposes no public constructor or factory for it.
-    private static Message<byte[]> _CreateMessage(string topic, IReadOnlyDictionary<string, string> properties)
+    private static Message<byte[]> _CreateMessage(
+        string topic,
+        IReadOnlyDictionary<string, string> properties,
+        long entryId = 1
+    )
     {
-        var messageId = new MessageId(1, 1, MessageIdType.Single, -1, topic, chunkMessageIds: null);
+        var messageId = new MessageId(1, entryId, MessageIdType.Single, -1, topic, chunkMessageIds: null);
         var constructor = typeof(Message<byte[]>)
             .GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic)
             .Single(candidate => candidate.GetParameters().Length == 17);
