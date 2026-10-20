@@ -248,9 +248,6 @@ public static class TransportConformanceManifest
     private const string _AzureServiceBusReplyChannelIssueUrl =
         "https://github.com/xshaheen/headless-framework/issues/1070";
 
-    /// <summary>The open issue that tracks settling a custom headers builder failure the same way on every provider.</summary>
-    private const string _HeaderBuilderIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1199";
-
     /// <summary>The open issue that tracks a delivery budget for the brokers that have none, Kafka and Redis.</summary>
     private const string _DeliveryBudgetIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1288";
 

@@ -969,6 +969,10 @@ public sealed class KafkaConsumerClientTests : TestBase
                     ? _CreateConsumeResult(5)
                     : null
             );
+        var seeks = 0;
+        consumer
+            .When(instance => instance.Seek(Arg.Any<TopicPartitionOffset>()))
+            .Do(_ => Interlocked.Increment(ref seeks));
 
         await using var client = new KafkaConsumerClient(
             "test-group",
@@ -990,8 +994,9 @@ public sealed class KafkaConsumerClientTests : TestBase
             AbortToken
         );
 
-        // when
-        await _WaitUntilAsync(() => Volatile.Read(ref attempts) >= 2, AbortToken);
+        // when: with two handlers the redelivered record can reach its callback before the failed one seeks back, so
+        // the wait covers both
+        await _WaitUntilAsync(() => Volatile.Read(ref attempts) >= 2 && Volatile.Read(ref seeks) >= 1, AbortToken);
 
         // then
         consumer.Received(1).Seek(Arg.Is<TopicPartitionOffset>(offset => offset.Offset == 5));
