@@ -55,7 +55,7 @@ public sealed class FeatureDefinitionsSeederTests : TestBase
     public async Task should_report_current_without_writing_or_locking_when_the_store_holds_every_definition()
     {
         // given: the stored records carry other ids, which the comparison ignores
-        var store = new VerifiableStore();
+        using var store = new VerifiableStore();
         store.Declare([_Group("Checkout")], [_Feature("Checkout", "Checkout.Enabled")]);
         store.Store([_Group("Checkout")], [_Feature("Checkout", "Checkout.Enabled")]);
 
@@ -70,7 +70,7 @@ public sealed class FeatureDefinitionsSeederTests : TestBase
     [Fact]
     public async Task should_report_stale_when_a_declared_feature_is_not_stored()
     {
-        var store = new VerifiableStore();
+        using var store = new VerifiableStore();
         store.Declare([_Group("Checkout")], [_Feature("Checkout", "Checkout.Enabled")]);
         store.Store([_Group("Checkout")], []);
 
@@ -83,7 +83,7 @@ public sealed class FeatureDefinitionsSeederTests : TestBase
     [Fact]
     public async Task should_report_stale_when_a_stored_group_differs_from_its_declaration()
     {
-        var store = new VerifiableStore();
+        using var store = new VerifiableStore();
         store.Declare([_Group("Checkout", "Checkout")], []);
         store.Store([_Group("Checkout", "Old checkout")], []);
 
@@ -95,7 +95,7 @@ public sealed class FeatureDefinitionsSeederTests : TestBase
     [Fact]
     public async Task should_report_stale_when_a_feature_configured_as_deleted_is_still_stored()
     {
-        var store = new VerifiableStore();
+        using var store = new VerifiableStore();
         store.Providers.DeletedFeatures.Add("Checkout.Legacy");
         store.Declare([_Group("Checkout")], []);
         store.Store([_Group("Checkout")], [_Feature("Checkout", "Checkout.Legacy")]);
@@ -123,19 +123,24 @@ public sealed class FeatureDefinitionsSeederTests : TestBase
         new(Guid.NewGuid(), group, name, parentName: null, displayName: name, defaultValue: "false");
 
     /// <summary>A real dynamic store over substituted records, so the seeder's comparison runs as it does in a host.</summary>
-    private sealed class VerifiableStore
+    private sealed class VerifiableStore : IDisposable
     {
+        private readonly DynamicFeatureDefinitionStore _store;
+
         private readonly IFeatureDefinitionRecordRepository _repository =
             Substitute.For<IFeatureDefinitionRecordRepository>();
+
         private readonly IFeatureDefinitionSerializer _serializer = Substitute.For<IFeatureDefinitionSerializer>();
+
         private readonly ICache _cache = Substitute.For<ICache>();
+
         private readonly IDistributedLock _lock = Substitute.For<IDistributedLock>();
 
         public VerifiableStore()
         {
             var application = Substitute.For<IHostIdentityAccessor>();
             application.ApplicationName.Returns("TestApp");
-            var store = new DynamicFeatureDefinitionStore(
+            _store = new DynamicFeatureDefinitionStore(
                 _repository,
                 Substitute.For<IStaticFeatureDefinitionStore>(),
                 _serializer,
@@ -148,7 +153,7 @@ public sealed class FeatureDefinitionsSeederTests : TestBase
                 TimeProvider.System
             );
             var services = Substitute.For<IServiceProvider>();
-            services.GetService(typeof(IDynamicFeatureDefinitionStore)).Returns(store);
+            services.GetService(typeof(IDynamicFeatureDefinitionStore)).Returns(_store);
             Seeder = new FeatureDefinitionsSeeder(
                 services,
                 Options.Create(new FeatureManagementOptions { SaveStaticFeaturesToDatabase = true }),
@@ -169,6 +174,8 @@ public sealed class FeatureDefinitionsSeederTests : TestBase
             _repository.GetGroupsListAsync(Arg.Any<CancellationToken>()).Returns(groups);
             _repository.GetFeaturesListAsync(Arg.Any<CancellationToken>()).Returns(features);
         }
+
+        public void Dispose() => _store.Dispose();
 
         public void AssertNothingWrittenOrLocked()
         {

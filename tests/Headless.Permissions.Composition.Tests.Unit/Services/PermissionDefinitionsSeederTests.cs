@@ -56,7 +56,7 @@ public sealed class PermissionDefinitionsSeederTests : TestBase
     public async Task should_report_current_without_writing_or_locking_when_the_store_holds_every_definition()
     {
         // given: the stored records carry other ids, which the comparison ignores
-        var store = new VerifiableStore();
+        using var store = new VerifiableStore();
         store.Declare([_Group("Users")], [_Permission("Users", "Users.Create")]);
         store.Store([_Group("Users")], [_Permission("Users", "Users.Create")]);
 
@@ -71,7 +71,7 @@ public sealed class PermissionDefinitionsSeederTests : TestBase
     [Fact]
     public async Task should_report_stale_when_a_declared_group_is_not_stored()
     {
-        var store = new VerifiableStore();
+        using var store = new VerifiableStore();
         store.Declare([_Group("Users")], []);
         store.Store([], []);
 
@@ -84,7 +84,7 @@ public sealed class PermissionDefinitionsSeederTests : TestBase
     [Fact]
     public async Task should_report_stale_when_a_stored_permission_differs_from_its_declaration()
     {
-        var store = new VerifiableStore();
+        using var store = new VerifiableStore();
         store.Declare([_Group("Users")], [_Permission("Users", "Users.Create", "Create users")]);
         store.Store([_Group("Users")], [_Permission("Users", "Users.Create", "Add users")]);
 
@@ -96,7 +96,7 @@ public sealed class PermissionDefinitionsSeederTests : TestBase
     [Fact]
     public async Task should_report_stale_when_a_group_configured_as_deleted_is_still_stored()
     {
-        var store = new VerifiableStore();
+        using var store = new VerifiableStore();
         store.Providers.DeletedPermissionGroups.Add("Legacy");
         store.Declare([_Group("Users")], []);
         store.Store([_Group("Users"), _Group("Legacy")], []);
@@ -123,21 +123,27 @@ public sealed class PermissionDefinitionsSeederTests : TestBase
         new(Guid.NewGuid(), group, name, parentName: null, displayName ?? name);
 
     /// <summary>A real dynamic store over substituted records, so the seeder's comparison runs as it does in a host.</summary>
-    private sealed class VerifiableStore
+    private sealed class VerifiableStore : IDisposable
     {
+        private readonly DynamicPermissionDefinitionStore _store;
+
         private readonly IPermissionDefinitionRecordRepository _repository =
             Substitute.For<IPermissionDefinitionRecordRepository>();
+
         private readonly IPermissionDefinitionSerializer _serializer =
             Substitute.For<IPermissionDefinitionSerializer>();
+
         private readonly ICache _cache = Substitute.For<ICache>();
+
         private readonly IDistributedLock _lock = Substitute.For<IDistributedLock>();
+
         private readonly IBus _bus = Substitute.For<IBus>();
 
         public VerifiableStore()
         {
             var application = Substitute.For<IHostIdentityAccessor>();
             application.ApplicationName.Returns("TestApp");
-            var store = new DynamicPermissionDefinitionStore(
+            _store = new DynamicPermissionDefinitionStore(
                 _repository,
                 Substitute.For<IStaticPermissionDefinitionStore>(),
                 _serializer,
@@ -151,7 +157,7 @@ public sealed class PermissionDefinitionsSeederTests : TestBase
                 _bus
             );
             var services = Substitute.For<IServiceProvider>();
-            services.GetService(typeof(IDynamicPermissionDefinitionStore)).Returns(store);
+            services.GetService(typeof(IDynamicPermissionDefinitionStore)).Returns(_store);
             Seeder = new PermissionDefinitionsSeeder(
                 services,
                 Options.Create(new PermissionManagementOptions { SaveStaticPermissionsToDatabase = true }),
@@ -174,6 +180,8 @@ public sealed class PermissionDefinitionsSeederTests : TestBase
             _repository.GetGroupsListAsync(Arg.Any<CancellationToken>()).Returns(groups);
             _repository.GetPermissionsListAsync(Arg.Any<CancellationToken>()).Returns(permissions);
         }
+
+        public void Dispose() => _store.Dispose();
 
         public void AssertNothingWrittenOrLocked()
         {

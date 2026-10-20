@@ -82,13 +82,13 @@ public sealed class RabbitMqTopologyProvisionerTests(RabbitMqFixture fixture) : 
     }
 
     [Fact]
-    public async Task should_hold_the_topology_warmup_naming_the_missing_queue_until_resources_setup_runs()
+    public async Task should_hold_the_resources_warmup_naming_the_missing_queue_until_resources_provision_runs()
     {
         // given
         var (provider, name, exchange) = _Build();
         await using var _ = provider;
         var queue = RabbitMqPhysicalAddress.Queue(MessageLane.Queue, name, name);
-        var warmup = provider.GetServices<IWarmup>().Should().ContainSingle(w => w.Name == "MessagingTopology").Which;
+        var warmup = provider.GetServices<IWarmup>().Should().ContainSingle(w => w.Name == "Resources").Which;
 
         // The lane exchanges exist, as another service's setup leaves them, so the queue is what is missing.
         var connection = await fixture.GetConnectionAsync();
@@ -112,7 +112,7 @@ public sealed class RabbitMqTopologyProvisionerTests(RabbitMqFixture fixture) : 
         await beforeSetup
             .Should()
             .ThrowAsync<ResourceProvisioningException>()
-            .WithMessage($"RabbitMQ queue '{queue}' does not exist. Run 'resources provision'*");
+            .WithMessage($"*RabbitMQ queue '{queue}' does not exist. Run 'resources provision'*");
 
         // and when - the deployment creates the topology
         await provider.ProvisionResourcesAsync(AbortToken);

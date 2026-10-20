@@ -73,7 +73,7 @@ internal sealed partial class SchemaProvisionerSource(
             lock (_gate)
             {
                 // A canceled or faulted pass is not cached, so the next caller (a retried readiness check) runs it again.
-                if (_pass is null || _pass.IsCanceled || _pass.IsFaulted)
+                if (_pass is not { IsCanceled: false, IsFaulted: false })
                 {
                     _pass = _RunAsync(cancellationToken);
                 }

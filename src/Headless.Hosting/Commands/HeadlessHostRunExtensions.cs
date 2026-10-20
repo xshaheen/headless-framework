@@ -143,13 +143,16 @@ public static class HeadlessHostRunExtensions
 
             // Counted when the host starts stopping, not after: a service that throws while it shuts down (a disposed
             // client, say) must not turn a clean rollout into a failed exit.
-            using var stopping = host
+            var stopping = host
                 .Services.GetRequiredService<IHostApplicationLifetime>()
                 .ApplicationStopping.Register(() =>
                     faulted.AddRange(backgroundServices.Where(static s => s.ExecuteTask?.IsFaulted == true))
                 );
 
-            await host.RunAsync(cancellationToken).ConfigureAwait(false);
+            await using (stopping.ConfigureAwait(false))
+            {
+                await host.RunAsync(cancellationToken).ConfigureAwait(false);
+            }
 
             foreach (var service in faulted)
             {

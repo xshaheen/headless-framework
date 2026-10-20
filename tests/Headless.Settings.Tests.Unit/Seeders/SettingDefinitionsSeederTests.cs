@@ -55,7 +55,7 @@ public sealed class SettingDefinitionsSeederTests : TestBase
     public async Task should_report_current_without_writing_or_locking_when_the_store_holds_every_definition()
     {
         // given: the stored records carry other ids, which the comparison ignores
-        var store = new VerifiableStore();
+        using var store = new VerifiableStore();
         store.Declare([_Setting("Smtp.Host")]);
         store.Store([_Setting("Smtp.Host")]);
 
@@ -70,7 +70,7 @@ public sealed class SettingDefinitionsSeederTests : TestBase
     [Fact]
     public async Task should_report_stale_when_a_declared_setting_is_not_stored()
     {
-        var store = new VerifiableStore();
+        using var store = new VerifiableStore();
         store.Declare([_Setting("Smtp.Host")]);
         store.Store([]);
 
@@ -83,7 +83,7 @@ public sealed class SettingDefinitionsSeederTests : TestBase
     [Fact]
     public async Task should_report_stale_when_a_stored_setting_differs_from_its_declaration()
     {
-        var store = new VerifiableStore();
+        using var store = new VerifiableStore();
         store.Declare([_Setting("Smtp.Host", defaultValue: "smtp.example.com")]);
         store.Store([_Setting("Smtp.Host", defaultValue: "localhost")]);
 
@@ -95,7 +95,7 @@ public sealed class SettingDefinitionsSeederTests : TestBase
     [Fact]
     public async Task should_report_stale_when_a_setting_configured_as_deleted_is_still_stored()
     {
-        var store = new VerifiableStore();
+        using var store = new VerifiableStore();
         store.Providers.DeletedSettings.Add("Smtp.Legacy");
         store.Declare([_Setting("Smtp.Host")]);
         store.Store([_Setting("Smtp.Host"), _Setting("Smtp.Legacy")]);
@@ -130,19 +130,24 @@ public sealed class SettingDefinitionsSeederTests : TestBase
         );
 
     /// <summary>A real dynamic store over substituted records, so the seeder's comparison runs as it does in a host.</summary>
-    private sealed class VerifiableStore
+    private sealed class VerifiableStore : IDisposable
     {
+        private readonly DynamicSettingDefinitionStore _store;
+
         private readonly ISettingDefinitionRecordRepository _repository =
             Substitute.For<ISettingDefinitionRecordRepository>();
+
         private readonly ISettingDefinitionSerializer _serializer = Substitute.For<ISettingDefinitionSerializer>();
+
         private readonly ICache _cache = Substitute.For<ICache>();
+
         private readonly IDistributedLock _lock = Substitute.For<IDistributedLock>();
 
         public VerifiableStore()
         {
             var application = Substitute.For<IHostIdentityAccessor>();
             application.ApplicationName.Returns("TestApp");
-            var store = new DynamicSettingDefinitionStore(
+            _store = new DynamicSettingDefinitionStore(
                 _repository,
                 Substitute.For<IStaticSettingDefinitionStore>(),
                 _serializer,
@@ -155,7 +160,7 @@ public sealed class SettingDefinitionsSeederTests : TestBase
                 TimeProvider.System
             );
             var services = Substitute.For<IServiceProvider>();
-            services.GetService(typeof(IDynamicSettingDefinitionStore)).Returns(store);
+            services.GetService(typeof(IDynamicSettingDefinitionStore)).Returns(_store);
             Seeder = new SettingDefinitionsSeeder(
                 services,
                 Options.Create(new SettingManagementOptions { SaveStaticSettingsToDatabase = true }),
@@ -173,6 +178,8 @@ public sealed class SettingDefinitionsSeederTests : TestBase
 
         public void Store(List<SettingDefinitionRecord> settings) =>
             _repository.GetListAsync(Arg.Any<CancellationToken>()).Returns(settings);
+
+        public void Dispose() => _store.Dispose();
 
         public void AssertNothingWrittenOrLocked()
         {

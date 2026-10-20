@@ -321,7 +321,7 @@ public sealed class SchemaProvisionerTests : TestBase, IDisposable
             await deploy.ProvisionResourcesAsync(AbortToken);
         }
 
-        var logs = new CapturingLoggerProvider();
+        using var logs = new CapturingLoggerProvider();
         var builder = Host.CreateApplicationBuilder();
         builder.Logging.AddProvider(logs);
         var contribution = _db.Contribution("Widgets", "s", _CreateWidgets);
