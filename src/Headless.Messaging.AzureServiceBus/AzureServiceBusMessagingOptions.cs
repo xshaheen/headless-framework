@@ -157,8 +157,10 @@ public sealed class AzureServiceBusMessagingOptions
     /// <remarks>
     /// A header the callback returns overwrites the application property of the same name, so the callback can correct a
     /// value the producer sent. It cannot set <c>headless-transport-address</c>, which the consumer stamps afterwards. An
-    /// exception from the callback dead-letters the message as a malformed envelope, with the reason
-    /// <c>MalformedEnvelope</c>.
+    /// exception from the callback is a retryable failure, such as a lookup service the callback depends on being briefly
+    /// down: the consumer abandons the message without running a handler, so Service Bus delivers it again, and once the
+    /// entity's max delivery count is spent Service Bus dead-letters it. A message whose envelope is malformed after the
+    /// callback ran is dead-lettered at once, with the reason <c>MalformedEnvelope</c>.
     /// </remarks>
     public Func<
         ServiceBusReceivedMessage,

@@ -180,7 +180,7 @@ public sealed class AzureServiceBusRawPayloadTests : TestBase
     }
 
     [Fact]
-    public async Task should_dead_letter_as_malformed_when_the_custom_headers_builder_throws_on_a_session_processor()
+    public async Task should_abandon_for_redelivery_when_the_custom_headers_builder_throws_on_a_session_processor()
     {
         // given
         await using var client = await _SubscribeAsync(
@@ -203,10 +203,13 @@ public sealed class AzureServiceBusRawPayloadTests : TestBase
         _received.Should().BeEmpty();
         await receiver
             .Received(1)
+            .AbandonMessageAsync(message, Arg.Any<IDictionary<string, object>>(), Arg.Any<CancellationToken>());
+        await receiver
+            .DidNotReceive()
             .DeadLetterMessageAsync(
-                message,
-                "MalformedEnvelope",
-                nameof(InvalidOperationException),
+                Arg.Any<ServiceBusReceivedMessage>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
                 Arg.Any<CancellationToken>()
             );
     }

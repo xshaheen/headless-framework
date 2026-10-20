@@ -665,13 +665,7 @@ public static class TransportConformanceManifest
                     )
                 )
                 .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.HeaderBuilderFailureRedelivery,
-                    ConformanceSupport.Unsupported(
-                        "A header builder failure dead-letters the message at once, so it is never redelivered and only a manual replay recovers it.",
-                        _HeaderBuilderIssueUrl
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.HeaderBuilderFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.DeadLetterSingleCopy, _AzureWorkflowGap)
                 .WithScenario(TransportConformanceScenario.StandardHeaderRoundTrip, _AzureWorkflowGap)
                 .WithScenario(TransportConformanceScenario.HandlerConcurrencyCap, _AzureWorkflowGap)
@@ -1050,6 +1044,8 @@ public static class TransportConformanceManifest
             TransportConformanceScenario.BrokerInterruptionRecovery,
             TransportConformanceScenario.StaleSettlement,
             TransportConformanceScenario.HandlerFailureRedelivery,
+            TransportConformanceScenario.BoundedGracefulShutdown,
+            TransportConformanceScenario.HeaderBuilderFailureRedelivery,
         ];
 
         TransportConformanceScenario[] provisioned =
@@ -1086,27 +1082,12 @@ public static class TransportConformanceManifest
             );
         }
 
-        return profile
-            .WithRequestReplyScenarios(
-                ConformanceSupport.Unsupported(
-                    "The Azure Service Bus reply channel is not built yet, so the provider rejects request/reply at startup.",
-                    _AzureServiceBusReplyChannelIssueUrl
-                )
+        return profile.WithRequestReplyScenarios(
+            ConformanceSupport.Unsupported(
+                "The Azure Service Bus reply channel is not built yet, so the provider rejects request/reply at startup.",
+                _AzureServiceBusReplyChannelIssueUrl
             )
-            .WithScenario(
-                TransportConformanceScenario.HeaderBuilderFailureRedelivery,
-                ConformanceSupport.Unsupported(
-                    "A header builder failure dead-letters the message at once, so it is never redelivered and only a manual replay recovers it.",
-                    _HeaderBuilderIssueUrl
-                )
-            )
-            .WithScenario(
-                TransportConformanceScenario.BoundedGracefulShutdown,
-                ConformanceSupport.Unsupported(
-                    "Stopping a consumer while a handler runs waits for the handler, because the processor drains in-flight handlers without the shutdown budget.",
-                    "https://github.com/xshaheen/headless-framework/issues/1282"
-                )
-            );
+        );
     }
 
     private static void _ValidateLaneRoundTrip(
