@@ -251,6 +251,9 @@ public static class TransportConformanceManifest
     /// <summary>The open issue that tracks settling a custom headers builder failure the same way on every provider.</summary>
     private const string _HeaderBuilderIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1199";
 
+    /// <summary>The open issue that tracks a delivery budget for the brokers that have none, Kafka and Redis.</summary>
+    private const string _DeliveryBudgetIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1288";
+
     /// <summary>An Azure Service Bus cell that only the protected, credential-gated workflow can prove.</summary>
     private static readonly ConformanceSupport _AzureWorkflowGap = ConformanceSupport.Unsupported(
         "Needs the protected Azure workflow to execute; no run has proven it yet.",
@@ -823,8 +826,8 @@ public static class TransportConformanceManifest
                 .WithScenario(
                     TransportConformanceScenario.HeaderBuilderFailureRedelivery,
                     ConformanceSupport.Unsupported(
-                        "A header builder failure settles the entry as malformed and acknowledges it, so the message is lost instead of redelivered.",
-                        _HeaderBuilderIssueUrl
+                        "A header builder failure leaves the entry pending, and the claim pass redelivers it without end: Redis has no delivery budget and the provider adds none.",
+                        _DeliveryBudgetIssueUrl
                     )
                 )
                 .WithScenario(
