@@ -42,7 +42,7 @@ public sealed class PostgreSqlForeignSchemaCreatorTests(PostgreSqlSharedSchemaFi
             await using var provider = services.BuildServiceProvider();
 
             // when
-            await _RaceForeignSchemaCreatorAsync(connectionString, () => provider.SetupResourcesAsync(AbortToken));
+            await _RaceForeignSchemaCreatorAsync(connectionString, () => provider.ProvisionResourcesAsync(AbortToken));
 
             // then
             (await _RelationExistsAsync(connectionString, $"\"{HeadlessStorageDefaults.Schema}\".\"sequences\""))
@@ -71,7 +71,7 @@ public sealed class PostgreSqlForeignSchemaCreatorTests(PostgreSqlSharedSchemaFi
             await using var provider = services.BuildServiceProvider();
 
             // when: setup creates the fencing sequence, racing the foreign schema creator
-            await _RaceForeignSchemaCreatorAsync(connectionString, () => provider.SetupResourcesAsync(AbortToken));
+            await _RaceForeignSchemaCreatorAsync(connectionString, () => provider.ProvisionResourcesAsync(AbortToken));
 
             // then: a token is issued only by a nextval on the sequence, so this proves the sequence exists
             var handle = await provider

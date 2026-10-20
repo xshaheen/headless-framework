@@ -23,8 +23,8 @@ internal static class DestructiveOperationGuard
         }
 
         var allowed =
-            services.GetService<IOptions<StatefulResourceOptions>>()?.Value.DestructiveEnvironments
-            ?? new StatefulResourceOptions().DestructiveEnvironments;
+            services.GetService<IOptions<ResourceProvisioningOptions>>()?.Value.DestructiveEnvironments
+            ?? new ResourceProvisioningOptions().DestructiveEnvironments;
 
         if (allowed.Exists(environment.IsEnvironment))
         {
@@ -33,6 +33,6 @@ internal static class DestructiveOperationGuard
 
         return $"Refusing to run {operation} in the '{environment.EnvironmentName}' environment: it deletes data, and only "
             + $"{string.Join(", ", allowed)} allow that without confirmation. {remedy}, or add the environment to "
-            + "StatefulResourceOptions.DestructiveEnvironments.";
+            + "ResourceProvisioningOptions.DestructiveEnvironments.";
     }
 }

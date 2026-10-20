@@ -77,8 +77,8 @@ public sealed class PostgreSqlSequencesStorageInitializerTests(PostgreSqlSequenc
         const string schema = "sequences_pg_rerun";
         await _DropSchemaAsync(schema);
         using var host = _CreateHost(schema: schema);
-        await host.Services.SetupResourcesAsync(AbortToken);
-        await host.Services.SetupResourcesAsync(AbortToken);
+        await host.Services.ProvisionResourcesAsync(AbortToken);
+        await host.Services.ProvisionResourcesAsync(AbortToken);
 
         (await _CountTablesAsync(schema)).Should().Be(1);
         (await _CountPrimaryKeysAsync(schema)).Should().Be(1);
@@ -124,7 +124,7 @@ public sealed class PostgreSqlSequencesStorageInitializerTests(PostgreSqlSequenc
             .Awaiting(() => host.StartAsync(AbortToken))
             .Should()
             .ThrowAsync<SchemaRunnerException>()
-            .WithMessage("*resources setup*");
+            .WithMessage("*resources provision*");
 
         (await _CountTablesAsync(schema)).Should().Be(0);
     }
@@ -169,7 +169,7 @@ public sealed class PostgreSqlSequencesStorageInitializerTests(PostgreSqlSequenc
 
         if (setupResources)
         {
-            builder.Services.AddHeadlessResourceSetupOnStartup();
+            builder.Services.AddDeployStepsOnStartup();
         }
 
         builder.Services.AddHeadlessSequences(setup => setup.UsePostgreSql(configure));

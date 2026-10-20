@@ -1,5 +1,6 @@
 using Dapper;
 using Demo;
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Headless.UnitOfWork;
@@ -70,8 +71,8 @@ builder.Services.AddUnitOfWork();
 builder.Services.AddControllers();
 
 // The host start only verifies its tables and queues, so this demo creates them as it starts; a deployed app runs
-// `dotnet <app>.dll resources setup` instead.
-builder.Services.AddHeadlessResourceSetupOnStartup();
+// `dotnet <app>.dll resources provision` instead.
+builder.Services.AddDeployStepsOnStartup();
 
 var app = builder.Build();
 

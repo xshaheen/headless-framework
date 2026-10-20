@@ -42,7 +42,7 @@ public static class SetupFencingSqlServer
         /// <param name="connectionString">The SqlClient connection string.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The lease table is created by <c>resources setup</c> and verified at host start.
+        /// The lease table is created by <c>resources provision</c> and verified at host start.
         /// An enlisted call is accepted only on a unit whose SqlClient connection reaches this same database.
         /// </remarks>
         /// <exception cref="ArgumentException"><paramref name="connectionString" /> is <see langword="null" /> or whitespace.</exception>
@@ -60,7 +60,7 @@ public static class SetupFencingSqlServer
         /// <param name="configuration">The configuration section bound to the provider options.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The lease table is created by <c>resources setup</c> and verified at host start.
+        /// The lease table is created by <c>resources provision</c> and verified at host start.
         /// An enlisted call is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configuration" /> is <see langword="null" />.</exception>
@@ -77,7 +77,7 @@ public static class SetupFencingSqlServer
         /// <param name="configure">Delegate that configures the provider options.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The lease table is created by <c>resources setup</c> and verified at host start.
+        /// The lease table is created by <c>resources provision</c> and verified at host start.
         /// An enlisted call is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
@@ -97,7 +97,7 @@ public static class SetupFencingSqlServer
         /// <param name="configure">Delegate that configures the provider options with service resolution.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The lease table is created by <c>resources setup</c> and verified at host start.
+        /// The lease table is created by <c>resources provision</c> and verified at host start.
         /// An enlisted call is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>

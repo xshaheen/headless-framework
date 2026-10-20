@@ -25,8 +25,8 @@ builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<AppDbC
 
 Provider packages:
 - `Headless.Permissions.Storage.EntityFramework` — EF Core, schema via migrations
-- `Headless.Permissions.Storage.PostgreSql` — raw ADO.NET, schema created by `resources setup`
-- `Headless.Permissions.Storage.SqlServer` — raw ADO.NET, schema created by `resources setup`
+- `Headless.Permissions.Storage.PostgreSql` — raw ADO.NET, schema created by `resources provision`
+- `Headless.Permissions.Storage.SqlServer` — raw ADO.NET, schema created by `resources provision`
 
 ## Agent Rules
 
@@ -158,7 +158,7 @@ When a save adds or updates definitions, the dynamic store publishes `DynamicPer
 
 `AddHeadlessPermissions` registers an `ISeeder` named `PermissionDefinitions`. When `SaveStaticPermissionsToDatabase` is true, it saves the static permission definitions through `IDynamicPermissionDefinitionStore.SaveAsync` (idempotent and guarded by a distributed lock), with up to 10 jittered exponential-back-off retries capped at 30 seconds. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; any other failure surfaces from the seed run after the last retry. The back-off waits run on the system clock, not the registered `TimeProvider`, so a host that registers a `FakeTimeProvider` still retries in real time.
 
-The host start does not seed. In production, run the `seed` verb in the deployment (`dotnet app.dll seed`); in development, call `services.AddHeadlessSeedOnStartup()`. `HeadlessTestServer` seeds by default. See [Database Seeders](utilities.md#database-seeders).
+The host start does not seed. In production, run the `seed` verb in the deployment (`dotnet app.dll seed`); in development, call `services.AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`. `HeadlessTestServer` seeds by default. See [Database Seeders](utilities.md#database-seeders).
 
 A host that never seeds still serves its static definitions from memory, and the dynamic store loads on its first read. But:
 
@@ -171,8 +171,8 @@ A host that never seeds still serves its static definitions from memory, and the
 | Provider | Use when | Avoid when | Trade-off |
 |---|---|---|---|
 | `Headless.Permissions.Storage.EntityFramework` | You already use EF Core and want schema managed via EF migrations | You need to avoid an EF dependency or want zero-overhead ADO.NET | Portable across any EF-supported DB; startup validates that all permissions entities are in the EF model before hosted services start |
-| `Headless.Permissions.Storage.PostgreSql` | You use PostgreSQL and want no EF Core dependency | You run SQL Server or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources setup`; identifier names are validated against PostgreSQL naming rules |
-| `Headless.Permissions.Storage.SqlServer` | You use SQL Server and want no EF Core dependency | You run PostgreSQL or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources setup`; identifier names are validated against SQL Server naming rules |
+| `Headless.Permissions.Storage.PostgreSql` | You use PostgreSQL and want no EF Core dependency | You run SQL Server or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources provision`; identifier names are validated against PostgreSQL naming rules |
+| `Headless.Permissions.Storage.SqlServer` | You use SQL Server and want no EF Core dependency | You run PostgreSQL or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources provision`; identifier names are validated against SQL Server naming rules |
 
 ---
 
@@ -302,7 +302,7 @@ The always-allow test doubles (`AlwaysAllowPermissionManager` / `AlwaysAllowAuth
 - **Policy catalog limits.** ASP.NET Core exposes no listing of registered policies, so `IAuthorizationPolicyCatalog.GetRegisteredPolicyNamesAsync()` reads the private map on `AuthorizationOptions` through `[UnsafeAccessor]`; an ASP.NET Core release that renames or removes it makes the call throw `MissingMethodException`, and a unit test pins it so an upgrade fails CI first. Policies a custom `IAuthorizationPolicyProvider` produces on demand have no list and are not included.
 - **Keys must be text every provider keeps unchanged.** Every `IPermissionGrantStore` entry point throws `ArgumentException` before touching storage when a permission name, provider name, provider key, or explicit tenant id starts or ends with white space, on reads as well as writes. SQL Server ignores trailing spaces when it compares keys, so `"acme "` would read and overwrite the `"acme"` row there while PostgreSQL keeps the two apart. Every provider must keep a key unchanged, so the store also refuses a NUL character (PostgreSQL cannot store it) and an unpaired UTF-16 surrogate (SqlClient sends it as U+FFFD, so SQL Server would merge keys that differ only in which lone surrogate they carry). The rule is `Argument.IsPortableKey`. Normalize keys at your own boundary; the store refuses rather than trims. `IPermissionManager.DeleteAsync` and `GrantPermissionsSeedHelper` apply the same rule; the ambient `ICurrentTenant.Id` is not checked here.
 - The grant cache is tenant-scoped (`ScopedCache<PermissionGrantCacheItem>` keyed on `ICurrentTenant.Id`). A permission check for tenant A never returns a cached result for tenant B.
-- Nothing writes definitions at startup unless the host opts in to seeding; see [Definition Seeding](#definition-seeding). A failed `PermissionDefinitions` seed fails the `seed` verb, or the host start under `AddHeadlessSeedOnStartup()`.
+- Nothing writes definitions at startup unless the host opts in to seeding; see [Definition Seeding](#definition-seeding). A failed `PermissionDefinitions` seed fails the `seed` verb, or the host start under `AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`.
 - `PermissionGrantRecord` implements `ICreateAudit` / `IUpdateAudit` and carries `CreatedAt` (non-null) and `UpdatedAt` (nullable) audit timestamps. Grants are insert-only — a revoke deletes the row and inserts a replacement rather than updating — so `UpdatedAt` is normally null. The EF provider stamps `CreatedAt` through the audit save-processor; the raw-SQL providers stamp it from the injected `TimeProvider`. Hydrate from storage with the `PermissionGrantRecord.FromStorage(...)` factory, which sets the audit fields.
 - **Tenancy divergence (intentional).** `PermissionGrantRecord` keeps a first-class `TenantId` column and implements `IMultiTenant`, unlike `SettingValueRecord` / `FeatureValueRecord`, which scope tenancy through `ProviderName`/`ProviderKey` and have no tenant column. Grants need tenant-scoped uniqueness expressed directly in the `(Name, ProviderName, ProviderKey, TenantId)` unique index so the same grant can coexist per tenant and for the host. Because `TenantId` is nullable and PostgreSQL treats NULLs as distinct, every storage provider (EF, PostgreSQL, SQL Server) declares that constraint as a pair of filtered unique indexes — one `WHERE "TenantId" IS NOT NULL`, one over `(Name, ProviderName, ProviderKey)` `WHERE "TenantId" IS NULL` — so host-level grants are covered too. This is a deliberate design decision, not drift.
 
@@ -500,7 +500,7 @@ builder.Services.AddHeadlessPermissions(setup =>
 
 Every object follows its database's naming convention. On PostgreSQL the tables, columns, primary keys, and indexes are snake_case (`permission_grants`, `provider_key`, `pk_permission_grants`, `ix_permission_grants_name_provider_name_provider_key_no_tenant`); on SQL Server and other databases they are PascalCase (`PermissionGrants`, `ProviderKey`, `PK_PermissionGrants`, `IX_PermissionGrants_Name_ProviderName_ProviderKey_NoTenant`). A table-name option left `null` takes that convention's default. A table name you set is used verbatim, and its key and index names derive from it (`pk_MyGrants`). The raw providers and the EF mapping produce the same names on the same database. Because PostgreSQL silently truncates identifiers longer than 63 bytes, every provider refuses a configured table name whose longest derived PostgreSQL key or index name would exceed that: at most 18 characters for the grants table, 49 for definitions, and 55 for groups.
 
-The raw providers write no DDL when the host starts: `resources setup` creates their tables at deploy time, also when a migration tool owns the schema, and a host start only verifies them (see [Stateful resources](utilities.md#stateful-resources)). The EF provider uses migrations.
+The raw providers write no DDL when the host starts: `resources provision` creates their tables at deploy time, also when a migration tool owns the schema, and a host start only verifies them (see [Resource provisioning](utilities.md#resource-provisioning)). The EF provider uses migrations.
 
 ### Runtime behavior
 
@@ -603,7 +603,7 @@ PostgreSQL raw-DDL storage for permission management.
 - `setup.UsePostgreSql(Action<PostgreSqlPermissionsOptions> configure)` — full option control
 - `setup.UsePostgreSql(Action<PostgreSqlPermissionsOptions, IServiceProvider> configure)` — with resolved services
 - `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Table and index creation as schema steps (`Permissions/1` tables, `Permissions/2` indexes) that `resources setup` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with snake_case tables, columns, keys, and indexes (`permission_grants`, `tenant_id`, `ix_permission_grants_tenant_id_name_provider_name_provider_key`)
+- Table and index creation as schema steps (`Permissions/1` tables, `Permissions/2` indexes) that `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with snake_case tables, columns, keys, and indexes (`permission_grants`, `tenant_id`, `ix_permission_grants_tenant_id_name_provider_name_provider_key`)
 - `PostgreSqlPermissionsOptions` — `ConnectionString` and `CommandTimeout` (default 30 seconds), inherited from `RelationalPermissionsOptions`
 - Shares `PermissionsStorageOptions` with the EF provider (schema, table names)
 - Identifier names validated against PostgreSQL naming rules
@@ -655,7 +655,7 @@ Configure schema and table names through `PermissionsStorageOptions` via `setup.
 
 ### Runtime behavior
 
-- Registers the permissions schema contribution; `resources setup` applies it, and a host start only verifies it
+- Registers the permissions schema contribution; `resources provision` applies it, and a host start only verifies it
 - Registers the shared relational repositories from `Headless.Permissions`, over the PostgreSQL dialect, as `IPermissionGrantRepository` and `IPermissionDefinitionRecordRepository` (singletons)
 
 ---
@@ -671,7 +671,7 @@ SQL Server raw-DDL storage for permission management.
 - `setup.UseSqlServer(Action<SqlServerPermissionsOptions> configure)` — full option control
 - `setup.UseSqlServer(Action<SqlServerPermissionsOptions, IServiceProvider> configure)` — with resolved services
 - `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Table, index, and table-type creation as one schema step (`Permissions/1`) that `resources setup` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with PascalCase tables, columns, keys, and indexes (`PermissionGrants`, `TenantId`, `IX_PermissionGrants_TenantId_Name_ProviderName_ProviderKey`)
+- Table, index, and table-type creation as one schema step (`Permissions/1`) that `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with PascalCase tables, columns, keys, and indexes (`PermissionGrants`, `TenantId`, `IX_PermissionGrants_TenantId_Name_ProviderName_ProviderKey`)
 - `SqlServerPermissionsOptions` — `ConnectionString` and `CommandTimeout` (default 30 seconds), inherited from `RelationalPermissionsOptions`
 - Shares `PermissionsStorageOptions` with the EF provider (schema, table names)
 - Identifier names validated against SQL Server naming rules
@@ -723,7 +723,7 @@ Configure schema and table names through `PermissionsStorageOptions` via `setup.
 
 ### Runtime behavior
 
-- Registers the permissions schema contribution; `resources setup` applies it, and a host start only verifies it
+- Registers the permissions schema contribution; `resources provision` applies it, and a host start only verifies it
 - Registers the shared relational repositories from `Headless.Permissions`, over the SQL Server dialect, as `IPermissionGrantRepository` and `IPermissionDefinitionRecordRepository` (singletons)
 
 ---

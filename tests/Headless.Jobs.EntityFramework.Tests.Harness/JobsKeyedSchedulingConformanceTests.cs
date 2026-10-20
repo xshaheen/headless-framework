@@ -395,8 +395,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
             fixture.ConfigureUnitOfWork(builder.Services);
         }
 
-        builder.Services.AddHeadlessResourceSetupOnStartup();
-        builder.Services.AddHeadlessSeedOnStartup();
+        builder.Services.AddDeployStepsOnStartup();
         return builder.Build();
     }
 

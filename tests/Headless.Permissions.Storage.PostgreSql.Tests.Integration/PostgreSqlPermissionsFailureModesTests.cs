@@ -105,7 +105,7 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
 
         if (setupResources)
         {
-            builder.Services.AddHeadlessResourceSetupOnStartup();
+            builder.Services.AddDeployStepsOnStartup();
         }
 
         return builder.Build();

@@ -4,31 +4,31 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Hosting;
 
-/// <summary>Collects the registered resources in dependency order and runs one operation over them.</summary>
-internal static class StatefulResourceRunner
+/// <summary>Collects the registered provisioners in dependency order and runs one operation over them.</summary>
+internal static class ResourceProvisioningRunner
 {
     /// <summary>
     /// Returns every registered resource, direct registrations first and then each source's, ordered so that every
     /// resource follows the resources it depends on. Otherwise registration order holds.
     /// </summary>
     /// <exception cref="InvalidOperationException">Two resources depend on each other.</exception>
-    public static async Task<IReadOnlyList<IStatefulResource>> GetResourcesAsync(
+    public static async Task<IReadOnlyList<IResourceProvisioner>> GetProvisionersAsync(
         IServiceProvider services,
         CancellationToken cancellationToken
     )
     {
-        List<IStatefulResource> resources = [.. services.GetServices<IStatefulResource>()];
+        List<IResourceProvisioner> resources = [.. services.GetServices<IResourceProvisioner>()];
 
-        foreach (var source in services.GetServices<IStatefulResourceSource>())
+        foreach (var source in services.GetServices<IResourceProvisionerSource>())
         {
-            resources.AddRange(await source.GetResourcesAsync(cancellationToken).ConfigureAwait(false));
+            resources.AddRange(await source.GetProvisionersAsync(cancellationToken).ConfigureAwait(false));
         }
 
         return _Order(resources);
     }
 
     /// <summary>
-    /// Runs <paramref name="operation" /> over <paramref name="resources" /> one at a time: teardown in reverse order,
+    /// Runs <paramref name="operation" /> over <paramref name="resources" /> one at a time: delete in reverse order,
     /// every other operation in the given order. A failure does not stop the run, so the report names every resource.
     /// </summary>
     /// <param name="resources">The resources, in dependency order.</param>
@@ -36,28 +36,35 @@ internal static class StatefulResourceRunner
     /// <param name="timeout">The budget of the whole run; resources not reached in time are reported as timed out.</param>
     /// <param name="cancellationToken">Abandons the run.</param>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken" /> was canceled.</exception>
-    public static async Task<IReadOnlyList<StatefulResourceOutcome>> RunAsync(
-        IReadOnlyList<IStatefulResource> resources,
-        StatefulResourceOperation operation,
+    public static async Task<IReadOnlyList<ResourceOutcome>> RunAsync(
+        IReadOnlyList<IResourceProvisioner> resources,
+        ResourceOperation operation,
         TimeSpan? timeout,
         CancellationToken cancellationToken
     )
     {
         using var budget = BudgetedStep.CreateBudget(timeout, cancellationToken);
 
-        var ordered = operation == StatefulResourceOperation.Teardown ? resources.Reverse() : resources;
-        var outcomes = new List<StatefulResourceOutcome>(resources.Count);
+        var ordered = operation == ResourceOperation.Delete ? resources.Reverse() : resources;
+        var outcomes = new List<ResourceOutcome>(resources.Count);
 
         foreach (var resource in ordered)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            if (!_Supports(resource, operation))
+            {
+                outcomes.Add(new(resource, ResourceOutcomeStatus.Unsupported, TimeSpan.Zero, Error: null, []));
+
+                continue;
+            }
 
             if (budget.IsCancellationRequested)
             {
                 outcomes.Add(
                     new(
                         resource,
-                        StatefulResourceOutcomeStatus.TimedOut,
+                        ResourceOutcomeStatus.TimedOut,
                         TimeSpan.Zero,
                         new TimeoutException("Not run: the timeout elapsed before this resource was reached."),
                         []
@@ -81,10 +88,9 @@ internal static class StatefulResourceRunner
                     resource,
                     result.Status switch
                     {
-                        BudgetedStepStatus.Ok => StatefulResourceOutcomeStatus.Ok,
-                        BudgetedStepStatus.Unsupported => StatefulResourceOutcomeStatus.Unsupported,
-                        BudgetedStepStatus.TimedOut => StatefulResourceOutcomeStatus.TimedOut,
-                        _ => StatefulResourceOutcomeStatus.Failed,
+                        BudgetedStepStatus.Ok => ResourceOutcomeStatus.Ok,
+                        BudgetedStepStatus.TimedOut => ResourceOutcomeStatus.TimedOut,
+                        _ => ResourceOutcomeStatus.Failed,
                     },
                     result.Duration,
                     result.Error,
@@ -97,11 +103,8 @@ internal static class StatefulResourceRunner
     }
 
     /// <summary>Throws when any outcome failed or timed out; an unsupported operation is not a failure.</summary>
-    /// <exception cref="StatefulResourceException">At least one outcome failed or timed out.</exception>
-    public static void ThrowIfFailed(
-        IReadOnlyList<StatefulResourceOutcome> outcomes,
-        StatefulResourceOperation operation
-    )
+    /// <exception cref="ResourceProvisioningException">At least one outcome failed or timed out.</exception>
+    public static void ThrowIfFailed(IReadOnlyList<ResourceOutcome> outcomes, ResourceOperation operation)
     {
         var failures = outcomes.Where(static outcome => outcome.IsFailure).ToList();
 
@@ -113,12 +116,12 @@ internal static class StatefulResourceRunner
         var details = string.Join(
             "; ",
             failures.Select(static outcome =>
-                $"{outcome.Resource.Type} {outcome.Resource.Name}: {outcome.Error?.Message ?? outcome.Status.ToString()}"
+                $"{outcome.Resource.Kind} {outcome.Resource.Name}: {outcome.Error?.Message ?? outcome.Status.ToString()}"
             )
         );
 
-        throw new StatefulResourceException(
-            $"Stateful resource {operation.ToString().ToLowerInvariant()} failed for {failures.Count} resource(s): {details}",
+        throw new ResourceProvisioningException(
+            $"Resource {operation.ToString().ToLowerInvariant()} failed for {failures.Count} resource(s): {details}",
             failures[0].Error
         )
         {
@@ -126,43 +129,51 @@ internal static class StatefulResourceRunner
         };
     }
 
+    private static bool _Supports(IResourceProvisioner resource, ResourceOperation operation) =>
+        operation switch
+        {
+            ResourceOperation.Purge => resource.CanPurge,
+            ResourceOperation.Delete => resource.CanDelete,
+            _ => true,
+        };
+
     private static async Task<IReadOnlyList<KeyValuePair<string, string>>> _InvokeAsync(
-        IStatefulResource resource,
-        StatefulResourceOperation operation,
+        IResourceProvisioner resource,
+        ResourceOperation operation,
         CancellationToken cancellationToken
     )
     {
         switch (operation)
         {
-            case StatefulResourceOperation.Setup:
-                await resource.SetupAsync(cancellationToken).ConfigureAwait(false);
+            case ResourceOperation.Provision:
+                await resource.ProvisionAsync(cancellationToken).ConfigureAwait(false);
 
                 return [];
-            case StatefulResourceOperation.Check:
-                await resource.CheckAsync(cancellationToken).ConfigureAwait(false);
+            case ResourceOperation.Verify:
+                await resource.VerifyAsync(cancellationToken).ConfigureAwait(false);
 
                 return [];
-            case StatefulResourceOperation.Clear:
-                await resource.ClearStateAsync(cancellationToken).ConfigureAwait(false);
+            case ResourceOperation.Purge:
+                await resource.PurgeAsync(cancellationToken).ConfigureAwait(false);
 
                 return [];
-            case StatefulResourceOperation.Teardown:
-                await resource.TeardownAsync(cancellationToken).ConfigureAwait(false);
+            case ResourceOperation.Delete:
+                await resource.DeleteAsync(cancellationToken).ConfigureAwait(false);
 
                 return [];
-            case StatefulResourceOperation.Statistics:
+            case ResourceOperation.Status:
                 return await resource.GetStatusAsync(cancellationToken).ConfigureAwait(false);
             default:
                 throw new ArgumentOutOfRangeException(nameof(operation), operation, "Unknown resource operation.");
         }
     }
 
-    private static List<IStatefulResource> _Order(List<IStatefulResource> resources)
+    private static List<IResourceProvisioner> _Order(List<IResourceProvisioner> resources)
     {
-        var ordered = new List<IStatefulResource>(resources.Count);
-        var registered = new HashSet<IStatefulResource>(resources, ReferenceEqualityComparer.Instance);
-        var done = new HashSet<IStatefulResource>(ReferenceEqualityComparer.Instance);
-        var visiting = new List<IStatefulResource>();
+        var ordered = new List<IResourceProvisioner>(resources.Count);
+        var registered = new HashSet<IResourceProvisioner>(resources, ReferenceEqualityComparer.Instance);
+        var done = new HashSet<IResourceProvisioner>(ReferenceEqualityComparer.Instance);
+        var visiting = new List<IResourceProvisioner>();
 
         foreach (var resource in resources)
         {
@@ -171,7 +182,7 @@ internal static class StatefulResourceRunner
 
         return ordered;
 
-        void visit(IStatefulResource resource)
+        void visit(IResourceProvisioner resource)
         {
             if (done.Contains(resource))
             {
@@ -183,22 +194,19 @@ internal static class StatefulResourceRunner
                 var cycle = visiting
                     .SkipWhile(x => !ReferenceEquals(x, resource))
                     .Append(resource)
-                    .Select(static x => $"{x.Type} {x.Name}");
+                    .Select(static x => $"{x.Kind} {x.Name}");
 
                 throw new InvalidOperationException(
-                    $"Stateful resources depend on each other: {string.Join(" -> ", cycle)}."
+                    $"Resource provisioners depend on each other: {string.Join(" -> ", cycle)}."
                 );
             }
 
             visiting.Add(resource);
 
-            if (resource is IStatefulResourceWithDependencies dependent)
+            // A dependency that is not registered is not this host's to provision, so it does not join the order.
+            foreach (var dependency in resource.DependsOn(resources).Where(registered.Contains))
             {
-                // A dependency that is not registered is not this host's to set up, so it does not join the order.
-                foreach (var dependency in dependent.GetDependencies(resources).Where(registered.Contains))
-                {
-                    visit(dependency);
-                }
+                visit(dependency);
             }
 
             visiting.RemoveAt(visiting.Count - 1);
@@ -209,17 +217,17 @@ internal static class StatefulResourceRunner
 }
 
 /// <summary>An operation the resource runner applies to every selected resource.</summary>
-internal enum StatefulResourceOperation
+internal enum ResourceOperation
 {
-    Setup = 0,
-    Check = 1,
-    Clear = 2,
-    Teardown = 3,
-    Statistics = 4,
+    Provision = 0,
+    Verify = 1,
+    Purge = 2,
+    Delete = 3,
+    Status = 4,
 }
 
 /// <summary>How one resource's operation ended.</summary>
-internal enum StatefulResourceOutcomeStatus
+internal enum ResourceOutcomeStatus
 {
     Ok = 0,
     Failed = 1,
@@ -228,13 +236,13 @@ internal enum StatefulResourceOutcomeStatus
 }
 
 /// <summary>What one operation did to one resource.</summary>
-internal sealed record StatefulResourceOutcome(
-    IStatefulResource Resource,
-    StatefulResourceOutcomeStatus Status,
+internal sealed record ResourceOutcome(
+    IResourceProvisioner Resource,
+    ResourceOutcomeStatus Status,
     TimeSpan Duration,
     Exception? Error,
     IReadOnlyList<KeyValuePair<string, string>> Properties
 )
 {
-    public bool IsFailure => Status is StatefulResourceOutcomeStatus.Failed or StatefulResourceOutcomeStatus.TimedOut;
+    public bool IsFailure => Status is ResourceOutcomeStatus.Failed or ResourceOutcomeStatus.TimedOut;
 }

@@ -255,9 +255,9 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
 
         // The deploy step reaches every database it can and names the one it cannot.
         await FluentActions
-            .Awaiting(() => host.Services.SetupResourcesAsync(AbortToken))
+            .Awaiting(() => host.Services.ProvisionResourcesAsync(AbortToken))
             .Should()
-            .ThrowAsync<StatefulResourceException>();
+            .ThrowAsync<ResourceProvisioningException>();
 
         // when
         await _StartAsync(host);
@@ -272,7 +272,7 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
 
         // and when — the shipping database comes back, the deployment sets it up, and a unit on it publishes
         await CreateDatabaseAsync(shipping.Name);
-        await host.Services.SetupResourcesAsync(AbortToken);
+        await host.Services.ProvisionResourcesAsync(AbortToken);
         var shippingMarker = $"shipping-{Guid.NewGuid():N}";
         await _PublishAsync<ShippingOutboxDbContext>(host.Services, shippingMarker);
 
@@ -325,7 +325,7 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
 
         if (setupResources)
         {
-            services.AddHeadlessResourceSetupOnStartup();
+            services.AddDeployStepsOnStartup();
         }
 
         services.AddSingleton<ProbeInbox>();
@@ -355,7 +355,7 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
     private async Task _InitializeAllOutboxesAsync(IHost host)
     {
         // The deploy step: creates the primary's and every additional outbox's tables, which the initializers verify.
-        await host.Services.SetupResourcesAsync(AbortToken);
+        await host.Services.ProvisionResourcesAsync(AbortToken);
         foreach (var outbox in host.Services.GetRequiredService<MessagingOutboxes>().Secondaries)
         {
             await outbox.Initializer.InitializeAsync(AbortToken);

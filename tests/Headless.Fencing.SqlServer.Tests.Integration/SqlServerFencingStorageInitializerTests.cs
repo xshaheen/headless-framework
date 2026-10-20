@@ -76,8 +76,8 @@ public sealed class SqlServerFencingStorageInitializerTests(SqlServerFencingFixt
         const string schema = "fencing_mssql_rerun";
         await _DropStorageAsync(schema);
         using var host = _CreateHost(schema);
-        await host.Services.SetupResourcesAsync(AbortToken);
-        await host.Services.SetupResourcesAsync(AbortToken);
+        await host.Services.ProvisionResourcesAsync(AbortToken);
+        await host.Services.ProvisionResourcesAsync(AbortToken);
 
         await _AssertObjectsAsync(schema);
     }
@@ -118,7 +118,7 @@ public sealed class SqlServerFencingStorageInitializerTests(SqlServerFencingFixt
             .Awaiting(() => host.StartAsync(AbortToken))
             .Should()
             .ThrowAsync<SchemaRunnerException>()
-            .WithMessage("*resources setup*");
+            .WithMessage("*resources provision*");
 
         (await _CountTablesAsync(schema)).Should().Be(0);
     }
@@ -166,7 +166,7 @@ public sealed class SqlServerFencingStorageInitializerTests(SqlServerFencingFixt
 
         if (setupResources)
         {
-            builder.Services.AddHeadlessResourceSetupOnStartup();
+            builder.Services.AddDeployStepsOnStartup();
         }
 
         builder.Services.AddHeadlessFencing(setup =>

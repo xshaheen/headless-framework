@@ -9,8 +9,7 @@ internal enum BudgetedStepStatus
 {
     Ok = 0,
     Failed = 1,
-    Unsupported = 2,
-    TimedOut = 3,
+    TimedOut = 2,
 }
 
 /// <summary>One step's result: its status, how long it ran, and its error when it did not succeed.</summary>
@@ -34,9 +33,8 @@ internal static class BudgetedStep
     }
 
     /// <summary>
-    /// Runs <paramref name="step"/> with the budget's token. A <see cref="StatefulResourceUnsupportedException"/> is
-    /// unsupported, any exception thrown once the budget has elapsed is a timeout, and any other exception is a failure;
-    /// only the caller's own cancellation propagates.
+    /// Runs <paramref name="step"/> with the budget's token. Any exception thrown once the budget has elapsed is a
+    /// timeout, and any other exception is a failure; only the caller's own cancellation propagates.
     /// </summary>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was canceled.</exception>
     public static async Task<BudgetedStepResult> RunAsync(
@@ -52,10 +50,6 @@ internal static class BudgetedStep
             await step(budgetToken).ConfigureAwait(false);
 
             return new(BudgetedStepStatus.Ok, Stopwatch.GetElapsedTime(started), Error: null);
-        }
-        catch (StatefulResourceUnsupportedException exception)
-        {
-            return new(BudgetedStepStatus.Unsupported, Stopwatch.GetElapsedTime(started), exception);
         }
 #pragma warning disable CA1031, EPC12 // False positive: one step's failure is recorded in the report so the run can decide what to do next; the caller's own cancellation still propagates.
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)

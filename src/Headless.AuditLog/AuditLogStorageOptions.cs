@@ -12,7 +12,7 @@ namespace Headless.AuditLog;
 /// Configure these options via <c>HeadlessAuditLogSetupBuilder.ConfigureStorage</c> inside
 /// the <c>AddHeadlessAuditLog(setup =&gt; …)</c> lambda. The EF Core provider validates the schema
 /// and table name at startup; for the raw-SQL providers (PostgreSql, SqlServer) the deployment creates the table with
-/// <c>resources setup</c>, and a host start verifies it.
+/// <c>resources provision</c>, and a host start verifies it.
 /// </remarks>
 [PublicAPI]
 public sealed class AuditLogStorageOptions

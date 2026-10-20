@@ -9,19 +9,19 @@ using Microsoft.Extensions.Options;
 namespace Headless.Hosting.Initialization.Schema;
 
 /// <summary>
-/// Offers every registered schema contribution as one stateful resource, so <c>resources setup</c> applies the same
+/// Offers every registered schema contribution as one resource provisioner, so <c>resources provision</c> applies the same
 /// steps the deploy script holds, export-only contributions included.
 /// </summary>
-internal sealed class SchemaResourceSource(
+internal sealed class SchemaProvisionerSource(
     IEnumerable<SchemaContribution> contributions,
     IOptions<SchemaRunnerOptions> options,
     ILogger<SchemaRunner>? logger = null,
     TimeProvider? timeProvider = null
-) : IStatefulResourceSource
+) : IResourceProvisionerSource
 {
-    public async Task<IReadOnlyList<IStatefulResource>> GetResourcesAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<IResourceProvisioner>> GetProvisionersAsync(CancellationToken cancellationToken)
     {
-        // The runner applies a feature registered twice for one schema of one database once; so does the resource list.
+        // The runner applies a feature registered twice for one schema of one database once; so does the provisioner list.
         var seen = new HashSet<(string Dialect, string Database, string Schema, string Feature)>();
         var distinct = new List<(SchemaContribution Contribution, string Database)>();
 
@@ -39,31 +39,31 @@ internal sealed class SchemaResourceSource(
         // The same feature in the same schema of two databases (an additional outbox on its own database, say) would
         // otherwise share one name, and '--name' could not tell them apart; only those names carry the database.
         var shared = distinct
-            .GroupBy(x => SchemaContributionResource.BaseName(x.Contribution), StringComparer.OrdinalIgnoreCase)
+            .GroupBy(x => SchemaContributionProvisioner.BaseName(x.Contribution), StringComparer.OrdinalIgnoreCase)
             .Where(g => g.Skip(1).Any())
             .Select(g => g.Key)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return
         [
-            .. distinct.Select(x => new SchemaContributionResource(
+            .. distinct.Select(x => new SchemaContributionProvisioner(
                 x.Contribution,
                 options.Value,
                 logger,
                 timeProvider,
-                shared.Contains(SchemaContributionResource.BaseName(x.Contribution)) ? x.Database : null
+                shared.Contains(SchemaContributionProvisioner.BaseName(x.Contribution)) ? x.Database : null
             )),
         ];
     }
 }
 
 /// <summary>One feature's schema steps in one database, applied and verified by a runner of its own.</summary>
-internal sealed class SchemaContributionResource : IStatefulResource
+internal sealed class SchemaContributionProvisioner : IResourceProvisioner
 {
     private readonly SchemaRunner _runner;
     private readonly SchemaContribution _contribution;
 
-    public SchemaContributionResource(
+    public SchemaContributionProvisioner(
         SchemaContribution contribution,
         SchemaRunnerOptions options,
         ILogger<SchemaRunner>? logger,
@@ -98,16 +98,21 @@ internal sealed class SchemaContributionResource : IStatefulResource
     public static string BaseName(SchemaContribution contribution) =>
         $"{contribution.Dialect.Name}/{contribution.Schema}/{contribution.Feature}";
 
-    public string Type => "Schema";
+    public string Kind => "Schema";
 
     public string Name { get; }
 
-    public async Task SetupAsync(CancellationToken cancellationToken)
+    // Without declared objects the tables are unknown, so there is nothing this provisioner can safely purge or delete.
+    public bool CanPurge => _contribution.Objects.Count > 0;
+
+    public bool CanDelete => _contribution.Objects.Count > 0;
+
+    public async Task ProvisionAsync(CancellationToken cancellationToken)
     {
         await _runner.RunAsync(SchemaRunnerMode.Apply, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task CheckAsync(CancellationToken cancellationToken)
+    public async Task VerifyAsync(CancellationToken cancellationToken)
     {
         var mismatches = await _runner.VerifyAsync(cancellationToken).ConfigureAwait(false);
         var missing = mismatches.Where(static m => m.Kind == SchemaMismatchKind.Missing).ToList();
@@ -115,7 +120,7 @@ internal sealed class SchemaContributionResource : IStatefulResource
 
         if (changed.Count > 0)
         {
-            throw new StatefulResourceException(
+            throw new ResourceProvisioningException(
                 $"Steps {_Versions(changed)} of {_contribution.Feature} were applied with different SQL than this "
                     + "build holds. A released step was edited: add a new step instead."
             );
@@ -123,8 +128,8 @@ internal sealed class SchemaContributionResource : IStatefulResource
 
         if (missing.Count > 0)
         {
-            throw new StatefulResourceException(
-                $"Steps {_Versions(missing)} of {_contribution.Feature} are not applied. Run 'resources setup', or "
+            throw new ResourceProvisioningException(
+                $"Steps {_Versions(missing)} of {_contribution.Feature} are not applied. Run 'resources provision', or "
                     + "apply the exported schema script."
             );
         }
@@ -132,26 +137,14 @@ internal sealed class SchemaContributionResource : IStatefulResource
 
     // Host-state tables keep their rows: the running host wrote them at startup or keeps them live, and never writes
     // them again. Sequences keep their position, so a generation they issue never repeats.
-    public async Task ClearStateAsync(CancellationToken cancellationToken)
+    public async Task PurgeAsync(CancellationToken cancellationToken)
     {
-        _EnsureObjectsDeclared();
-        await _runner.ClearAsync(cancellationToken).ConfigureAwait(false);
+        await _runner.PurgeAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task TeardownAsync(CancellationToken cancellationToken)
+    public async Task DeleteAsync(CancellationToken cancellationToken)
     {
-        _EnsureObjectsDeclared();
-        await _runner.TeardownAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private void _EnsureObjectsDeclared()
-    {
-        if (_contribution.Objects.Count == 0)
-        {
-            throw new StatefulResourceUnsupportedException(
-                $"{_contribution.Feature} declares no schema objects (SchemaContribution.Objects), so its tables are unknown."
-            );
-        }
+        await _runner.DeleteAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<KeyValuePair<string, string>>> GetStatusAsync(CancellationToken cancellationToken)

@@ -43,9 +43,9 @@ namespace Headless.Testing.AspNetCore;
 /// </param>
 /// <param name="initializerTimeout">How long each <see cref="IInitializer"/> may take. Defaults to 60 seconds.</param>
 /// <param name="setupResources">
-/// Whether the host sets up its stateful resources (tables, queues, containers) when it starts, as
-/// <c>AddHeadlessResourceSetupOnStartup</c> does. Defaults to <see langword="true"/>, because a host start otherwise
-/// only verifies them. An application that registers startup setup itself keeps its own action. Pass
+/// Whether the host provisions its resources (tables, queues, containers) when it starts, as
+/// <c>AddDeployStepsOnStartup</c> does. Defaults to <see langword="true"/>, because a host start otherwise
+/// only verifies them. An application that registers the startup deploy steps itself keeps its own choice. Pass
 /// <see langword="false"/> for a test whose resources already exist or that tests the check.
 /// </param>
 /// <param name="seed">
@@ -644,16 +644,17 @@ public sealed class HeadlessTestServer<TProgram>(
                     services.AddTestTimeProvider();
                 }
 
-                // A TryAdd, so the startup action the application registered (ResetState, say) stays; and before
-                // configureTestServices, so a test that asks for another action replaces this one.
-                if (setupResources)
+                // A TryAdd, so the deploy steps the application registered (ProvisionAndPurge, say) stay; and before
+                // configureTestServices, so a test that asks for other steps replaces these.
+                if (setupResources || seed)
                 {
-                    services.TryAddHeadlessResourceSetupOnStartup();
-                }
-
-                if (seed)
-                {
-                    services.AddHeadlessSeedOnStartup();
+                    services.TryAddDeployStepsOnStartup(options =>
+                    {
+                        options.Resources = setupResources
+                            ? ResourceStartupAction.Provision
+                            : ResourceStartupAction.None;
+                        options.Seed = seed;
+                    });
                 }
 
                 configureTestServices?.Invoke(services);

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Hosting;
 using Headless.Idempotency;
 using Headless.MultiTenancy;
 using Headless.UnitOfWork;
@@ -112,7 +113,7 @@ public static class IdempotencyFixtureExtensions
         });
 
         // A host start only verifies the schema, so the test host creates it first, as a development host does.
-        services.AddHeadlessResourceSetupOnStartup();
+        services.AddDeployStepsOnStartup();
 
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 

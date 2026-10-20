@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Messaging;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,7 +15,7 @@ namespace Tests;
 public static class MessagingSchemaTestExtensions
 {
     /// <summary>
-    /// Sets up every registered stateful resource (a broker's shared topology, a storage's tables), as the deployment
+    /// Sets up every registered provisioned resource (a broker's shared topology, a storage's tables), as the deployment
     /// would, then bootstraps messaging: what a bare service provider needs before it consumes, since no host start
     /// runs the setup for it.
     /// </summary>
@@ -23,7 +24,7 @@ public static class MessagingSchemaTestExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await provider.SetupResourcesAsync(cancellationToken);
+        await provider.ProvisionResourcesAsync(cancellationToken);
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(cancellationToken);
     }
 

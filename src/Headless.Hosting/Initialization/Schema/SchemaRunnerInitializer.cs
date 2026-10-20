@@ -7,13 +7,13 @@ namespace Headless.Hosting.Initialization.Schema;
 
 /// <summary>
 /// Verifies the registered schema once at host startup, before any hosted service can reach its objects, and fails the
-/// start when a step is missing. The host never writes DDL: the deployment runs <c>resources setup</c>, and a
-/// development host registers <c>AddHeadlessResourceSetupOnStartup</c>, whose setup runs before this check.
+/// start when a step is missing. The host never writes DDL: the deployment runs <c>resources provision</c>, and a
+/// development host registers <c>AddDeployStepsOnStartup</c>, whose setup runs before this check.
 /// </summary>
 internal sealed partial class SchemaRunnerInitializer(
     SchemaRunner runner,
     ILogger<SchemaRunnerInitializer>? logger = null,
-    StatefulResourceStartupService? resourceSetup = null
+    ResourceProvisioningStartupService? resourceSetup = null
 ) : HostedInitializer
 {
     private readonly ILogger _logger = logger ?? (ILogger)NullLogger.Instance;
@@ -47,7 +47,7 @@ internal sealed partial class SchemaRunnerInitializer(
 [PublicAPI]
 public enum SchemaRunnerMode
 {
-    /// <summary>Apply every missing step. What <c>resources setup</c> does for each feature.</summary>
+    /// <summary>Apply every missing step. What <c>resources provision</c> does for each feature.</summary>
     Apply = 0,
 
     /// <summary>

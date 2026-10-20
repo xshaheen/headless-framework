@@ -31,7 +31,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly ConsumerSubscriptionKind _kind;
 
-    // Shared topology is the deployment's (resources setup), so the client only proves it exists; a runtime subscription,
+    // Shared topology is the deployment's (resources provision), so the client only proves it exists; a runtime subscription,
     // which no deploy step knows, creates its own.
     private readonly bool _provisionsTopology;
     private readonly TransportEnvelopeGate _envelopeGate;
@@ -152,7 +152,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                 _queueNames.Add(queueName);
             }
 
-            // A registered subscription's bindings are the deployment's, made by resources setup.
+            // A registered subscription's bindings are the deployment's, made by resources provision.
             if (_provisionsTopology)
             {
                 await RabbitMqQueueTopology

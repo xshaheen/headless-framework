@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using Headless.Coordination;
+using Headless.Hosting;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Idempotency;
 using Headless.Sequences;
@@ -70,7 +71,7 @@ public sealed class PostgreSqlSchemaRunnerFixture
 
         if (setupResources)
         {
-            builder.Services.AddHeadlessResourceSetupOnStartup();
+            builder.Services.AddDeployStepsOnStartup();
         }
 
         return builder.Build();

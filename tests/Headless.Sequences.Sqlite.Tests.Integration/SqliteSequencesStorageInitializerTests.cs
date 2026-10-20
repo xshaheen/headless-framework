@@ -73,8 +73,8 @@ public sealed class SqliteSequencesStorageInitializerTests(SqliteSequencesFixtur
     {
         const string schema = "sequences_sqlite_rerun";
         using var host = _CreateHost(schema: schema);
-        await host.Services.SetupResourcesAsync(AbortToken);
-        await host.Services.SetupResourcesAsync(AbortToken);
+        await host.Services.ProvisionResourcesAsync(AbortToken);
+        await host.Services.ProvisionResourcesAsync(AbortToken);
 
         (await _CountTablesAsync(schema)).Should().Be(1);
     }
@@ -117,7 +117,7 @@ public sealed class SqliteSequencesStorageInitializerTests(SqliteSequencesFixtur
             .Awaiting(() => host.StartAsync(AbortToken))
             .Should()
             .ThrowAsync<SchemaRunnerException>()
-            .WithMessage("*resources setup*");
+            .WithMessage("*resources provision*");
 
         (await _CountTablesAsync(schema)).Should().Be(0);
     }
@@ -168,7 +168,7 @@ public sealed class SqliteSequencesStorageInitializerTests(SqliteSequencesFixtur
 
         if (setupResources)
         {
-            builder.Services.AddHeadlessResourceSetupOnStartup();
+            builder.Services.AddDeployStepsOnStartup();
         }
 
         builder.Services.AddHeadlessSequences(setup => setup.UseSqlite(configure));

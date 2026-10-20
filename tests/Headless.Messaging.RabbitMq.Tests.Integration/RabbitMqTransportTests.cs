@@ -19,7 +19,7 @@ public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportT
     private readonly string _exchange = $"test-exchange-{Guid.NewGuid():N}";
     private IConnectionChannelPool? _connectionChannelPool;
 
-    // The transport only checks that the lane exchanges exist; the deployment's resources setup creates them.
+    // The transport only checks that the lane exchanges exist; the deployment's resources provision creates them.
     public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
@@ -29,7 +29,7 @@ public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportT
             Options.Create(new MessagingOptions { Version = "v1" }),
             Options.Create(options)
         );
-        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).SetupAsync(
+        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).ProvisionAsync(
             MessagingTopology.Empty,
             AbortToken
         );

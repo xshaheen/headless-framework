@@ -56,7 +56,7 @@ public sealed class ConnectionChannelPoolTests : TestBase
         var rented = await ((IConnectionChannelPool)pool).Rent(AbortToken);
 
         rented.Should().BeSameAs(channel);
-        // The deployment's resources setup created them; a publisher only proves they exist.
+        // The deployment's resources provision created them; a publisher only proves they exist.
         await channel.Received(1).ExchangeDeclarePassiveAsync("test.exchange.bus", AbortToken);
         await channel.Received(1).ExchangeDeclarePassiveAsync("test.exchange.queue", AbortToken);
         ((IConnectionChannelPool)pool).Return(rented);

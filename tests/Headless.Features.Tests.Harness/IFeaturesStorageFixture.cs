@@ -78,7 +78,7 @@ public static class FeaturesStorageFixtureExtensions
 
         if (setupResources)
         {
-            builder.Services.AddHeadlessResourceSetupOnStartup();
+            builder.Services.AddDeployStepsOnStartup();
         }
 
         return builder.Build();

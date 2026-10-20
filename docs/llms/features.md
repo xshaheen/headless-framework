@@ -53,7 +53,7 @@ builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbCont
 - `SetAsync` with `forceToSet: false` (default) skips the write when the supplied value equals the fallback value of the next lower-priority provider. Set `forceToSet: true` when you must persist the value explicitly (e.g., `GrantAsync`/`RevokeAsync` always use `forceToSet: true`).
 - To write several features at once, call `SetAsync(values, providerName, providerKey)` with an `IReadOnlyDictionary<string, string?>` keyed by feature name; a `null` value clears that feature. It checks every name, the provider, and its writability before writing anything, so an undefined name or a read-only provider rejects the whole batch with `ConflictException` and changes nothing. The built-in stores (EF, PostgreSQL, SQL Server) then write the batch in one transaction, so a failed write leaves every value as it was, and a successful one publishes a single `FeatureChangedMessage` listing every name. `forceToSet` applies to each value as it does for the single-name call. An empty dictionary writes and announces nothing. The single-name `SetAsync` is the one-entry case of this call. Clearing a value removes only the row stored under the exact provider key the provider resolves, not that feature under every key of the provider. Atomicity holds per provider: when several registered providers share `providerName`, each writes the batch in its own transaction. The store-backed providers open their own connection and transaction, so the write does not join a unit of work the caller has open, and rolling that unit back does not undo it. When a concurrent writer inserts or deletes one of the batch's rows between the store's read and its save, the store reads again and retries (up to three attempts); the last writer's value wins.
 - `DeleteAsync` removes all feature values for a given provider and key (e.g., all tenant overrides for a deleted tenant). It silently skips read-only providers.
-- The raw-DDL providers (PostgreSQL / SqlServer) never write DDL when the host starts: they only verify the schema and fail fast when a step is missing. Create the tables by running `resources setup` at deploy time, also when a migrations job owns the schema, because every step is idempotent; see [Stateful resources](utilities.md#stateful-resources). EF storage uses migrations.
+- The raw-DDL providers (PostgreSQL / SqlServer) never write DDL when the host starts: they only verify the schema and fail fast when a step is missing. Create the tables by running `resources provision` at deploy time, also when a migrations job owns the schema, because every step is idempotent; see [Resource provisioning](utilities.md#resource-provisioning). EF storage uses migrations.
 
 ## Core Concepts
 
@@ -130,7 +130,7 @@ The two messages travel on separate subscriptions, and nothing orders them. With
 
 `AddHeadlessFeatures` registers an `ISeeder` named `FeatureDefinitions`. When `SaveStaticFeaturesToDatabase` is true, it saves the static feature definitions through `IDynamicFeatureDefinitionStore.SaveAsync` (idempotent and guarded by a distributed lock), with up to 10 jittered exponential-back-off retries capped at 30 seconds. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; any other failure surfaces from the seed run after the last retry. The back-off waits run on the system clock, not the registered `TimeProvider`, so a host that registers a `FakeTimeProvider` still retries in real time.
 
-The host start does not seed. In production, run the `seed` verb in the deployment (`dotnet app.dll seed`); in development, call `services.AddHeadlessSeedOnStartup()`. `HeadlessTestServer` seeds by default. See [Database Seeders](utilities.md#database-seeders).
+The host start does not seed. In production, run the `seed` verb in the deployment (`dotnet app.dll seed`); in development, call `services.AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`. `HeadlessTestServer` seeds by default. See [Database Seeders](utilities.md#database-seeders).
 
 A host that never seeds still serves its static definitions from memory, and the dynamic store loads on its first read. But:
 
@@ -142,8 +142,8 @@ A host that never seeds still serves its static definitions from memory, and the
 | Provider | Use when | Avoid when | Trade-off |
 |---|---|---|---|
 | `Headless.Features.Storage.EntityFramework` | You already use EF Core and want schema managed via EF migrations | You need to avoid an EF dependency or want zero-overhead ADO.NET | Portable across any EF-supported DB; startup validates that all feature entities are in the EF model before hosted services start |
-| `Headless.Features.Storage.PostgreSql` | You use PostgreSQL and want no EF Core dependency | You run SQL Server or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources setup`; identifier names are validated against PostgreSQL naming rules |
-| `Headless.Features.Storage.SqlServer` | You use SQL Server and want no EF Core dependency | You run PostgreSQL or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources setup`; identifier names are validated against SQL Server naming rules |
+| `Headless.Features.Storage.PostgreSql` | You use PostgreSQL and want no EF Core dependency | You run SQL Server or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources provision`; identifier names are validated against PostgreSQL naming rules |
+| `Headless.Features.Storage.SqlServer` | You use SQL Server and want no EF Core dependency | You run PostgreSQL or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources provision`; identifier names are validated against SQL Server naming rules |
 
 ---
 
@@ -274,7 +274,7 @@ Core implementation of feature management with caching, value providers, and def
 - `TenantFeatureValueProvider` and `EditionFeatureValueProvider` resolve their store key as `providerKey ?? ambient` — an explicit key (e.g. `GetForTenantAsync(name, tenantId)`) always wins, and a `null` key falls back to `ICurrentTenant.Id` / the principal's edition claim. The same rule applies to reads and writes, so a value written for one tenant is read back for that tenant only.
 - **Keys must be text every provider keeps unchanged.** Every `IFeatureValueStore` entry point throws `ArgumentException` before touching storage when a feature name, provider name, or provider key starts or ends with white space, on reads as well as writes. SQL Server ignores trailing spaces when it compares keys, so `"acme "` would read and overwrite the `"acme"` row there while PostgreSQL keeps the two apart. Every provider must keep a key unchanged, so the store also refuses a NUL character (PostgreSQL cannot store it) and an unpaired UTF-16 surrogate (SqlClient sends it as U+FFFD, so SQL Server would merge keys that differ only in which lone surrogate they carry). The rule is `Argument.IsPortableKey`. Normalize keys at your own boundary; the store refuses rather than trims.
 - `AddHeadlessFeatures` is guarded on `IFeatureManager` so it is safe to call more than once (only the first call registers the core; the storage extension always applies). However, only one storage provider extension may be registered — a second call with a different provider throws at startup.
-- Nothing writes definitions at startup unless the host opts in to seeding; see [Definition Seeding](#definition-seeding). A failed `FeatureDefinitions` seed fails the `seed` verb, or the host start under `AddHeadlessSeedOnStartup()`.
+- Nothing writes definitions at startup unless the host opts in to seeding; see [Definition Seeding](#definition-seeding). A failed `FeatureDefinitions` seed fails the `seed` verb, or the host start under `AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`.
 - `FeatureValueRecord` implements `ICreateAudit` / `IUpdateAudit`, carrying `CreatedAt` (stamped on insert) and `UpdatedAt` (stamped on update). On the EF path these are populated by the Headless audit save-processor; the raw-SQL PostgreSQL / SQL Server providers stamp them from the registered `TimeProvider`. Features scope tenancy through `ProviderName`/`ProviderKey` (e.g. `ProviderName == "Tenant"` with the tenant id in `ProviderKey`) — there is deliberately no first-class `TenantId` column nor `IMultiTenant`; a scoping value provider expresses tenant, edition, and other scopes uniformly. This is an intentional divergence from `PermissionGrantRecord`, not drift.
 
 ### Install
@@ -506,7 +506,7 @@ PostgreSQL raw-DDL storage for feature management.
 - `setup.UsePostgreSql(Action<PostgreSqlFeaturesOptions> configure)` — overload for full option control
 - `setup.UsePostgreSql(Action<PostgreSqlFeaturesOptions, IServiceProvider> configure)` — overload with service-provider access for late-bound configuration
 - `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Table and index creation as schema steps (`Features/1` tables, `Features/2` indexes) that `resources setup` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with snake_case tables, columns, keys, and indexes (`feature_values`, `provider_key`, `ix_feature_values_provider_name_provider_key`)
+- Table and index creation as schema steps (`Features/1` tables, `Features/2` indexes) that `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with snake_case tables, columns, keys, and indexes (`feature_values`, `provider_key`, `ix_feature_values_provider_name_provider_key`)
 - Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
 - `PostgreSqlFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds), inherited from `RelationalFeaturesOptions`
 - Shares `FeaturesStorageOptions` with the EF provider (schema, table names)
@@ -561,7 +561,7 @@ Configure schema and table names through `FeaturesStorageOptions` via `setup.Con
 
 ### Runtime behavior
 
-- Registers the features schema contribution; `resources setup` applies it, and a host start only verifies it
+- Registers the features schema contribution; `resources provision` applies it, and a host start only verifies it
 - Registers the shared relational repositories from `Headless.Features`, over the PostgreSQL dialect, as `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository` (singletons)
 
 ---
@@ -577,7 +577,7 @@ SQL Server raw-DDL storage for feature management.
 - `setup.UseSqlServer(Action<SqlServerFeaturesOptions> configure)` — overload for full option control
 - `setup.UseSqlServer(Action<SqlServerFeaturesOptions, IServiceProvider> configure)` — overload with service-provider access for late-bound configuration
 - `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Table, index, and table-type creation as one schema step (`Features/1`) that `resources setup` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts)
+- Table, index, and table-type creation as one schema step (`Features/1`) that `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts)
 - Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
 - `SqlServerFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds), inherited from `RelationalFeaturesOptions`
 - Shares `FeaturesStorageOptions` with the EF provider (schema, table names)
@@ -632,5 +632,5 @@ Configure schema and table names through `FeaturesStorageOptions` via `setup.Con
 
 ### Runtime behavior
 
-- Registers the features schema contribution; `resources setup` applies it, and a host start only verifies it
+- Registers the features schema contribution; `resources provision` applies it, and a host start only verifies it
 - Registers the shared relational repositories from `Headless.Features`, over the SQL Server dialect, as `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository` (singletons)

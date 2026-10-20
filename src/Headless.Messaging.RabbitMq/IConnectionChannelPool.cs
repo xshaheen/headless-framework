@@ -70,12 +70,12 @@ internal interface IConnectionChannelPool
     bool Return(IChannel context);
 
     /// <summary>
-    /// Proves the Queue-lane queue of <paramref name="messageName"/> exists, once per process; <c>resources setup</c>
+    /// Proves the Queue-lane queue of <paramref name="messageName"/> exists, once per process; <c>resources provision</c>
     /// created and bound it. A failed attempt is forgotten, so the next call tries again.
     /// </summary>
     /// <remarks>
     /// A Queue-lane message goes to a direct exchange, which drops a message no queue is bound for, so a publish to a
-    /// missing queue fails here, naming <c>resources setup</c>, instead of losing the message.
+    /// missing queue fails here, naming <c>resources provision</c>, instead of losing the message.
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     Task EnsureQueueForPublishAsync(string messageName, CancellationToken cancellationToken);

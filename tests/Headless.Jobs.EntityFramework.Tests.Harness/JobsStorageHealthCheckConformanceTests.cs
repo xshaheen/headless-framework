@@ -3,6 +3,7 @@
 using System.Data.Common;
 using Headless.Context;
 using Headless.Coordination;
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -66,8 +67,7 @@ public abstract class JobsStorageHealthCheckConformanceTests<TFixture>(TFixture 
                 )
         );
 
-        builder.Services.AddHeadlessResourceSetupOnStartup();
-        builder.Services.AddHeadlessSeedOnStartup();
+        builder.Services.AddDeployStepsOnStartup();
         return builder.Build();
     }
 

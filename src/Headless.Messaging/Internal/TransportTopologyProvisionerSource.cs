@@ -6,23 +6,23 @@ using Headless.Messaging.Transport;
 namespace Headless.Messaging.Internal;
 
 /// <summary>
-/// Offers each registered <see cref="ITransportTopologyProvisioner"/> as one stateful resource, over the topology the
+/// Offers each registered <see cref="ITransportTopologyProvisioner"/> as one resource provisioner, over the topology the
 /// registered consumers and messages describe.
 /// </summary>
-internal sealed class TransportTopologyResourceSource(
+internal sealed class TransportTopologyProvisionerSource(
     IEnumerable<ITransportTopologyProvisioner> provisioners,
     MethodMatcherCache selector,
     IMessageMetadataRegistry? messages = null
-) : IStatefulResourceSource
+) : IResourceProvisionerSource
 {
-    // Built once per lookup and shared by every resource of the run: it reads only registrations frozen with the
+    // Built once per lookup and shared by every provisioner of the run: it reads only registrations frozen with the
     // container, and runtime subscriptions are never in it, so it cannot change while a run lasts.
-    public Task<IReadOnlyList<IStatefulResource>> GetResourcesAsync(CancellationToken cancellationToken)
+    public Task<IReadOnlyList<IResourceProvisioner>> GetProvisionersAsync(CancellationToken cancellationToken)
     {
         var topology = new Lazy<MessagingTopology>(_BuildTopology);
-        IReadOnlyList<IStatefulResource> resources =
+        IReadOnlyList<IResourceProvisioner> resources =
         [
-            .. provisioners.Select(p => new TransportTopologyResource(p, topology)),
+            .. provisioners.Select(p => new TransportTopologyResourceProvisioner(p, topology)),
         ];
 
         return Task.FromResult(resources);
@@ -69,27 +69,31 @@ internal sealed class TransportTopologyResourceSource(
     }
 }
 
-/// <summary>One transport's shared topology as a stateful resource.</summary>
-internal sealed class TransportTopologyResource(
+/// <summary>One transport's shared topology as a resource provisioner.</summary>
+internal sealed class TransportTopologyResourceProvisioner(
     ITransportTopologyProvisioner provisioner,
     Lazy<MessagingTopology> topology
-) : IStatefulResource
+) : IResourceProvisioner
 {
-    public string Type => provisioner.Broker;
+    public string Kind => provisioner.Kind;
 
     public string Name => "topology";
 
-    public Task SetupAsync(CancellationToken cancellationToken) =>
-        provisioner.SetupAsync(topology.Value, cancellationToken);
+    public bool CanPurge => provisioner.CanPurge;
 
-    public Task CheckAsync(CancellationToken cancellationToken) =>
-        provisioner.CheckAsync(topology.Value, cancellationToken);
+    public bool CanDelete => provisioner.CanDelete;
 
-    public Task ClearStateAsync(CancellationToken cancellationToken) =>
-        provisioner.ClearAsync(topology.Value, cancellationToken);
+    public Task ProvisionAsync(CancellationToken cancellationToken) =>
+        provisioner.ProvisionAsync(topology.Value, cancellationToken);
 
-    public Task TeardownAsync(CancellationToken cancellationToken) =>
-        provisioner.TeardownAsync(topology.Value, cancellationToken);
+    public Task VerifyAsync(CancellationToken cancellationToken) =>
+        provisioner.VerifyAsync(topology.Value, cancellationToken);
+
+    public Task PurgeAsync(CancellationToken cancellationToken) =>
+        provisioner.PurgeAsync(topology.Value, cancellationToken);
+
+    public Task DeleteAsync(CancellationToken cancellationToken) =>
+        provisioner.DeleteAsync(topology.Value, cancellationToken);
 
     public Task<IReadOnlyList<KeyValuePair<string, string>>> GetStatusAsync(CancellationToken cancellationToken) =>
         provisioner.GetStatusAsync(topology.Value, cancellationToken);

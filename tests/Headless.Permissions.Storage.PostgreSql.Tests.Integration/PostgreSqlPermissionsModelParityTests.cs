@@ -87,7 +87,7 @@ public sealed class PostgreSqlPermissionsModelParityTests(PostgreSqlPermissionsF
             setup.UsePostgreSql(fixture.ConnectionString);
         });
 
-        builder.Services.AddHeadlessResourceSetupOnStartup();
+        builder.Services.AddDeployStepsOnStartup();
         return builder.Build();
     }
 

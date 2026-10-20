@@ -52,7 +52,7 @@ internal sealed class RabbitMqConsumerClientFactory(
 
             return client;
         }
-        catch (StatefulResourceException)
+        catch (ResourceProvisioningException)
         {
             // Reachable broker, missing topology: a deployment fault to fail on, not an outage to retry through.
             await client.DisposeAsync().ConfigureAwait(false);

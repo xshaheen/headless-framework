@@ -157,7 +157,7 @@ public sealed class RateLimitPartitioner(ISettingsSnapshot<RateLimitPolicy> poli
 
 `AddHeadlessSettings` registers an `ISeeder` named `SettingDefinitions`. When `SaveStaticSettingsToDatabase` is true, it saves the static setting definitions through `IDynamicSettingDefinitionStore.SaveAsync` (idempotent and guarded by a distributed lock), with up to 10 jittered exponential-back-off retries capped at 30 seconds. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; any other failure surfaces from the seed run after the last retry. The back-off waits run on the system clock, not the registered `TimeProvider`, so a host that registers a `FakeTimeProvider` still retries in real time.
 
-The host start does not seed. In production, run the `seed` verb in the deployment (`dotnet app.dll seed`); in development, call `services.AddHeadlessSeedOnStartup()`. `HeadlessTestServer` seeds by default. See [Database Seeders](utilities.md#database-seeders).
+The host start does not seed. In production, run the `seed` verb in the deployment (`dotnet app.dll seed`); in development, call `services.AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`. `HeadlessTestServer` seeds by default. See [Database Seeders](utilities.md#database-seeders).
 
 A host that never seeds still serves its static definitions from memory, and the dynamic store loads on its first read. But:
 
@@ -169,8 +169,8 @@ A host that never seeds still serves its static definitions from memory, and the
 | Provider | Use when | Avoid when | Trade-off |
 |---|---|---|---|
 | `Headless.Settings.Storage.EntityFramework` | You already use EF Core and want schema managed via EF migrations | You need to avoid an EF dependency or want zero-overhead ADO.NET | Portable across any EF-supported DB; startup validates that all settings entities are in the EF model before hosted services start |
-| `Headless.Settings.Storage.PostgreSql` | You use PostgreSQL and want no EF Core dependency | You run SQL Server or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources setup`; identifier names are validated against PostgreSQL naming rules |
-| `Headless.Settings.Storage.SqlServer` | You use SQL Server and want no EF Core dependency | You run PostgreSQL or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources setup`; identifier names are validated against SQL Server naming rules |
+| `Headless.Settings.Storage.PostgreSql` | You use PostgreSQL and want no EF Core dependency | You run SQL Server or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources provision`; identifier names are validated against PostgreSQL naming rules |
+| `Headless.Settings.Storage.SqlServer` | You use SQL Server and want no EF Core dependency | You run PostgreSQL or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources provision`; identifier names are validated against SQL Server naming rules |
 
 ---
 
@@ -298,7 +298,7 @@ Encrypted settings (`isEncrypted: true`) are decrypted only when the resolving p
 
 `AddHeadlessSettings` is guarded on `ISettingManager` so it is safe to call more than once (only the first call registers the core). However, only one storage provider extension may be registered — a second call with a different provider throws at startup.
 
-Nothing writes definitions at startup unless the host opts in to seeding; see [Definition Seeding](#definition-seeding). A failed `SettingDefinitions` seed fails the `seed` verb, or the host start under `AddHeadlessSeedOnStartup()`.
+Nothing writes definitions at startup unless the host opts in to seeding; see [Definition Seeding](#definition-seeding). A failed `SettingDefinitions` seed fails the `seed` verb, or the host start under `AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`.
 
 ### Install
 
@@ -564,7 +564,7 @@ PostgreSQL raw-DDL storage for settings management.
 - `setup.UsePostgreSql(Action<PostgreSqlSettingsOptions> configure)` — overload for full option control
 - `setup.UsePostgreSql(Action<PostgreSqlSettingsOptions, IServiceProvider> configure)` — overload for late-bound configuration
 - `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Table and index creation as schema steps (`Settings/1` tables, `Settings/2` indexes) that `resources setup` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with snake_case tables, columns, keys, and indexes (`setting_values`, `provider_key`, `ix_setting_values_name_provider_name_provider_key`)
+- Table and index creation as schema steps (`Settings/1` tables, `Settings/2` indexes) that `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with snake_case tables, columns, keys, and indexes (`setting_values`, `provider_key`, `ix_setting_values_name_provider_name_provider_key`)
 - Raw ADO.NET repositories for setting values and definitions
 - `PostgreSqlSettingsOptions` — connection string and command timeout, inherited from `RelationalSettingsOptions`
 - Shares `SettingsStorageOptions` with the EF provider (schema, table names)
@@ -624,7 +624,7 @@ Configure schema and table names through `SettingsStorageOptions` via `setup.Con
 
 ### Runtime behavior
 
-- Registers the settings schema contribution; `resources setup` applies it, and a host start only verifies it and fails fast when a step is missing (see [Stateful resources](utilities.md#stateful-resources))
+- Registers the settings schema contribution; `resources provision` applies it, and a host start only verifies it and fails fast when a step is missing (see [Resource provisioning](utilities.md#resource-provisioning))
 - Registers the shared relational repositories from `Headless.Settings`, over the PostgreSQL dialect, as `ISettingValueRecordRepository` and `ISettingDefinitionRecordRepository` (singletons)
 
 ---
@@ -640,7 +640,7 @@ SQL Server raw-DDL storage for settings management.
 - `setup.UseSqlServer(Action<SqlServerSettingsOptions> configure)` — overload for full option control
 - `setup.UseSqlServer(Action<SqlServerSettingsOptions, IServiceProvider> configure)` — overload for late-bound configuration
 - `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Table and index creation as schema steps (`Settings/1` tables, `Settings/2` indexes) that `resources setup` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with PascalCase tables, columns, keys, and indexes (`SettingValues`, `ProviderKey`, `IX_SettingValues_Name_ProviderName_ProviderKey`)
+- Table and index creation as schema steps (`Settings/1` tables, `Settings/2` indexes) that `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with PascalCase tables, columns, keys, and indexes (`SettingValues`, `ProviderKey`, `IX_SettingValues_Name_ProviderName_ProviderKey`)
 - Raw ADO.NET repositories for setting values and definitions
 - `SqlServerSettingsOptions` — connection string and command timeout, inherited from `RelationalSettingsOptions`
 - Shares `SettingsStorageOptions` with the EF provider (schema, table names)
@@ -700,7 +700,7 @@ Configure schema and table names through `SettingsStorageOptions` via `setup.Con
 
 ### Runtime behavior
 
-- Registers the settings schema contribution; `resources setup` applies it, and a host start only verifies it
+- Registers the settings schema contribution; `resources provision` applies it, and a host start only verifies it
 - Registers the shared relational repositories from `Headless.Settings`, over the SQL Server dialect, as `ISettingValueRecordRepository` and `ISettingDefinitionRecordRepository` (singletons)
 
 ---

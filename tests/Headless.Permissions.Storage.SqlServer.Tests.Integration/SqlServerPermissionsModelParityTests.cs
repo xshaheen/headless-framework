@@ -93,7 +93,7 @@ public sealed class SqlServerPermissionsModelParityTests(SqlServerPermissionsFix
             setup.UseSqlServer(fixture.ConnectionString);
         });
 
-        builder.Services.AddHeadlessResourceSetupOnStartup();
+        builder.Services.AddDeployStepsOnStartup();
         return builder.Build();
     }
 
