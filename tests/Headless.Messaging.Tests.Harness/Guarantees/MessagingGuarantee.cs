@@ -614,13 +614,7 @@ public static class MessagingGuarantees
             GuaranteeArea.Dashboard,
             realSystem: false,
             "Requeue of a Succeeded published row is refused, and requeue of a Failed row sends it once."
-        ) with
-        {
-            Status = GuaranteeStatus.Unsupported,
-            Rationale =
-                "The store refuses to lease a terminal published row, so a requeued Failed row is ended silently without a send.",
-            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1241",
-        },
+        ),
         // Registration and options
         _Bound(
             "MSG-REG-01",
