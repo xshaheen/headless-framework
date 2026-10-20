@@ -131,8 +131,8 @@ public sealed class RabbitMqQueueTopologyTests : TestBase
         var act = () => RabbitMqQueueTopology.RequireQueueAsync(channel, _Queue, AbortToken);
 
         await act.Should()
-            .ThrowAsync<StatefulResourceException>()
-            .WithMessage($"RabbitMQ queue '{_Queue}' does not exist. Run 'resources setup'*");
+            .ThrowAsync<ResourceProvisioningException>()
+            .WithMessage($"RabbitMQ queue '{_Queue}' does not exist. Run 'resources provision'*");
     }
 
     [Fact]

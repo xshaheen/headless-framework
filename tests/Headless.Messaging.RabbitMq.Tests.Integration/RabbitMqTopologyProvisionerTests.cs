@@ -17,7 +17,7 @@ namespace Tests;
 /// the host only checks it, clear purges it, and teardown deletes it.
 /// </summary>
 [Collection<RabbitMqFixture>]
-public sealed class RabbitMqTopologyResourceTests(RabbitMqFixture fixture) : TestBase
+public sealed class RabbitMqTopologyProvisionerTests(RabbitMqFixture fixture) : TestBase
 {
     [Fact]
     public async Task should_set_up_check_clear_and_tear_down_the_shared_topology()
@@ -26,23 +26,23 @@ public sealed class RabbitMqTopologyResourceTests(RabbitMqFixture fixture) : Tes
         var (provider, name, exchange) = _Build();
         await using var _ = provider;
         var queue = RabbitMqPhysicalAddress.Queue(MessageLane.Queue, name, name);
-        var topology = (await _ResourcesAsync(provider)).Should().ContainSingle(r => r.Type == "RabbitMQ").Which;
+        var topology = (await _ResourcesAsync(provider)).Should().ContainSingle(r => r.Kind == "RabbitMQ").Which;
         topology.Name.Should().Be("topology");
 
         // when
-        await provider.SetupResourcesAsync(AbortToken);
+        await provider.ProvisionResourcesAsync(AbortToken);
 
         // then
         (await fixture.QueueExistsAsync(queue, AbortToken))
             .Should()
             .BeTrue();
         (await fixture.QueueExistsAsync(queue + ".dlq", AbortToken)).Should().BeTrue();
-        await topology.CheckAsync(AbortToken);
+        await topology.VerifyAsync(AbortToken);
 
         // and when — a message waits in the queue, then the state is cleared
         await _PublishAsync(exchange, name);
-        (await _MessageCountAsync(queue)).Should().Be(1, "setup bound the queue to its routing key");
-        await provider.ResetResourceStateAsync(AbortToken);
+        (await _MessageCountAsync(queue)).Should().Be(1, "provision bound the queue to its routing key");
+        await provider.PurgeResourcesAsync(AbortToken);
 
         // then
         (await _MessageCountAsync(queue))
@@ -50,7 +50,7 @@ public sealed class RabbitMqTopologyResourceTests(RabbitMqFixture fixture) : Tes
             .Be(0);
 
         // and when
-        await provider.TeardownResourcesAsync(AbortToken);
+        await provider.DeleteResourcesAsync(AbortToken);
 
         // then
         (await fixture.QueueExistsAsync(queue, AbortToken))
@@ -61,10 +61,10 @@ public sealed class RabbitMqTopologyResourceTests(RabbitMqFixture fixture) : Tes
             .Should()
             .BeTrue("the lane exchanges are shared by every service on the broker, so teardown keeps them");
         await FluentActions
-            .Awaiting(() => topology.CheckAsync(AbortToken))
+            .Awaiting(() => topology.VerifyAsync(AbortToken))
             .Should()
-            .ThrowAsync<StatefulResourceException>()
-            .WithMessage("*does not exist. Run 'resources setup'*");
+            .ThrowAsync<ResourceProvisioningException>()
+            .WithMessage("*does not exist. Run 'resources provision'*");
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public sealed class RabbitMqTopologyResourceTests(RabbitMqFixture fixture) : Tes
         var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
         // then — a reachable broker without the topology is a deployment fault, not an outage to retry through
-        await act.Should().ThrowAsync<StatefulResourceException>().WithMessage("*Run 'resources setup'*");
+        await act.Should().ThrowAsync<ResourceProvisioningException>().WithMessage("*Run 'resources provision'*");
     }
 
     [Fact]
@@ -111,11 +111,11 @@ public sealed class RabbitMqTopologyResourceTests(RabbitMqFixture fixture) : Tes
         // then
         await beforeSetup
             .Should()
-            .ThrowAsync<StatefulResourceException>()
-            .WithMessage($"RabbitMQ queue '{queue}' does not exist. Run 'resources setup'*");
+            .ThrowAsync<ResourceProvisioningException>()
+            .WithMessage($"RabbitMQ queue '{queue}' does not exist. Run 'resources provision'*");
 
         // and when - the deployment creates the topology
-        await provider.SetupResourcesAsync(AbortToken);
+        await provider.ProvisionResourcesAsync(AbortToken);
 
         // then
         await warmup.WarmUpAsync(AbortToken);
@@ -127,7 +127,7 @@ public sealed class RabbitMqTopologyResourceTests(RabbitMqFixture fixture) : Tes
         // given
         var (provider, name, exchange) = _Build();
         await using var _ = provider;
-        await provider.SetupResourcesAsync(AbortToken);
+        await provider.ProvisionResourcesAsync(AbortToken);
 
         // when
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
@@ -147,12 +147,12 @@ public sealed class RabbitMqTopologyResourceTests(RabbitMqFixture fixture) : Tes
         await using var _ = first;
         var (second, secondName, _) = _Build(exchange: exchange);
         await using var __ = second;
-        await first.SetupResourcesAsync(AbortToken);
-        await second.SetupResourcesAsync(AbortToken);
+        await first.ProvisionResourcesAsync(AbortToken);
+        await second.ProvisionResourcesAsync(AbortToken);
         var secondQueue = RabbitMqPhysicalAddress.Queue(MessageLane.Queue, secondName, secondName);
 
         // when
-        await first.TeardownResourcesAsync(AbortToken);
+        await first.DeleteResourcesAsync(AbortToken);
 
         // then — the first service's queues are gone; the shared exchanges, including the Bus lane's that nothing
         // binds here but every host requires, and the second service's binding stay
@@ -174,8 +174,8 @@ public sealed class RabbitMqTopologyResourceTests(RabbitMqFixture fixture) : Tes
             .BeTrue();
         (await _ExchangeExistsAsync(RabbitMqPhysicalAddress.Exchange(exchange, MessageLane.Bus))).Should().BeTrue();
         await (await _ResourcesAsync(second))
-            .Single(r => string.Equals(r.Type, "RabbitMQ", StringComparison.Ordinal))
-            .CheckAsync(AbortToken);
+            .Single(r => string.Equals(r.Kind, "RabbitMQ", StringComparison.Ordinal))
+            .VerifyAsync(AbortToken);
         await _PublishAsync(exchange, secondName);
         (await _MessageCountAsync(secondQueue)).Should().Be(1, "the second service's binding survived the teardown");
 
@@ -184,7 +184,7 @@ public sealed class RabbitMqTopologyResourceTests(RabbitMqFixture fixture) : Tes
         await second.GetRequiredService<OrderConsumer>().Received.Task.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
 
         // and when — the last service tears down
-        await second.TeardownResourcesAsync(AbortToken);
+        await second.DeleteResourcesAsync(AbortToken);
 
         // then — its queue goes; the shared exchanges stay
         (await fixture.QueueExistsAsync(secondQueue, AbortToken))
@@ -202,13 +202,13 @@ public sealed class RabbitMqTopologyResourceTests(RabbitMqFixture fixture) : Tes
         var (publisher, _, _) = _Build(name, exchange, consume: false);
         await using var __ = publisher;
         var queue = RabbitMqPhysicalAddress.Queue(MessageLane.Queue, name, name);
-        await consumer.SetupResourcesAsync(AbortToken);
-        await publisher.SetupResourcesAsync(AbortToken);
+        await consumer.ProvisionResourcesAsync(AbortToken);
+        await publisher.ProvisionResourcesAsync(AbortToken);
         await _PublishAsync(exchange, name);
 
         // when
-        await publisher.ResetResourceStateAsync(AbortToken);
-        await publisher.TeardownResourcesAsync(AbortToken);
+        await publisher.PurgeResourcesAsync(AbortToken);
+        await publisher.DeleteResourcesAsync(AbortToken);
 
         // then
         (await fixture.QueueExistsAsync(queue + ".dlq", AbortToken))
@@ -258,13 +258,13 @@ public sealed class RabbitMqTopologyResourceTests(RabbitMqFixture fixture) : Tes
         return (services.BuildServiceProvider(), name, exchange);
     }
 
-    private static async Task<List<IStatefulResource>> _ResourcesAsync(IServiceProvider provider)
+    private static async Task<List<IResourceProvisioner>> _ResourcesAsync(IServiceProvider provider)
     {
-        var resources = new List<IStatefulResource>();
+        var resources = new List<IResourceProvisioner>();
 
-        foreach (var source in provider.GetServices<IStatefulResourceSource>())
+        foreach (var source in provider.GetServices<IResourceProvisionerSource>())
         {
-            resources.AddRange(await source.GetResourcesAsync(AbortToken));
+            resources.AddRange(await source.GetProvisionersAsync(AbortToken));
         }
 
         return resources;

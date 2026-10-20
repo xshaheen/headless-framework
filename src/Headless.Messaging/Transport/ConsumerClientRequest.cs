@@ -80,7 +80,7 @@ public sealed record ConsumerClientRequest
     /// <summary>
     /// Whether the client creates the shared broker objects its competing subscription needs, such as a durable queue
     /// and its bindings. <see langword="false"/> for a consumer registered before the host was built: the deployment
-    /// created its objects with <c>resources setup</c>, so the client only checks they exist. <see langword="true"/>
+    /// created its objects with <c>resources provision</c>, so the client only checks they exist. <see langword="true"/>
     /// when the subscription includes one an <c>IRuntimeSubscriber</c> added while the host runs, which no deploy step
     /// knows about. Per-process objects, such as an every-instance subscription's, are always the client's to create.
     /// </summary>

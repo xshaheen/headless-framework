@@ -3,6 +3,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Headless.Coordination;
+using Headless.Hosting;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Idempotency;
 using Headless.Sequences;
@@ -80,7 +81,7 @@ public sealed partial class SqlServerSchemaRunnerFixture
 
         if (setupResources)
         {
-            builder.Services.AddHeadlessResourceSetupOnStartup();
+            builder.Services.AddDeployStepsOnStartup();
         }
 
         return builder.Build();

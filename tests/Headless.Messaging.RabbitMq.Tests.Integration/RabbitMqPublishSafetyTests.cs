@@ -29,7 +29,7 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
         var options = _CreateOptions();
         var name = $"orders-{Guid.NewGuid():N}";
         await using var pool = _CreatePool(options);
-        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).SetupAsync(
+        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).ProvisionAsync(
             new MessagingTopology([], [new TopologyMessage(name, MessageLane.Queue)]),
             AbortToken
         );
@@ -54,7 +54,7 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
         var options = _CreateOptions();
         await _DeclareExchangesAsOperatorAsync(options.ExchangeName);
         await using var pool = _CreatePool(options);
-        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).SetupAsync(
+        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).ProvisionAsync(
             MessagingTopology.Empty,
             AbortToken
         );
@@ -70,8 +70,8 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
 
         // then — the passive declare proved nothing would receive it, said how to fix it, and created nothing
         result.Succeeded.Should().BeFalse();
-        result.Exception!.InnerException.Should().BeOfType<StatefulResourceException>();
-        result.Exception.InnerException!.Message.Should().Contain("resources setup");
+        result.Exception!.InnerException.Should().BeOfType<ResourceProvisioningException>();
+        result.Exception.InnerException!.Message.Should().Contain("resources provision");
         (await fixture.QueueExistsAsync($"queue.{name}", AbortToken)).Should().BeFalse();
     }
 
@@ -84,7 +84,7 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
         var name = $"orders-{Guid.NewGuid():N}";
         await _DeclareQueueAsOperatorAsync($"queue.{name}");
         await using var pool = _CreatePool(options);
-        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).SetupAsync(
+        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).ProvisionAsync(
             MessagingTopology.Empty,
             AbortToken
         );
@@ -112,7 +112,7 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
         options.CustomHeadersBuilder = static (_, _) => [new(MessagingHeaders.MessageId, string.Empty)];
         var name = $"orders-{Guid.NewGuid():N}";
         await using var pool = _CreatePool(options);
-        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).SetupAsync(
+        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).ProvisionAsync(
             MessagingTopology.Empty,
             AbortToken
         );
@@ -163,7 +163,7 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
         options.QueueArguments.EnableDeadLettering = true;
         var name = $"orders-{Guid.NewGuid():N}";
         await using var pool = _CreatePool(options);
-        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).SetupAsync(
+        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).ProvisionAsync(
             MessagingTopology.Empty,
             AbortToken
         );
@@ -217,7 +217,7 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
         var options = _CreateOptions();
         var name = $"orders-{Guid.NewGuid():N}";
         await using var pool = _CreatePool(options);
-        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).SetupAsync(
+        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).ProvisionAsync(
             MessagingTopology.Empty,
             AbortToken
         );

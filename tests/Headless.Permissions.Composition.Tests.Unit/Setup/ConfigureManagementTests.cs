@@ -123,7 +123,7 @@ public sealed class ConfigureManagementTests
         services.AddHeadlessPermissions(setup => setup.UseEntityFramework<OptionsTestDbContext>());
 
         // then - seeding is opt-in: the seeder is registered, but the startup seed runner that
-        // AddHeadlessSeedOnStartup adds is not, so nothing seeds when the host starts
+        // AddDeployStepsOnStartup adds is not, so nothing seeds when the host starts
         services.Should().Contain(d => d.ServiceType == typeof(ISeeder));
         using var provider = services.BuildServiceProvider();
         provider

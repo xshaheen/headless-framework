@@ -31,7 +31,7 @@ internal sealed class OutboxSchemaInitializer(
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        // Verify only, like the host's runner: the deployment creates the tables with 'resources setup', which covers
+        // Verify only, like the host's runner: the deployment creates the tables with 'resources provision', which covers
         // this outbox through its export-only contribution.
         await _runner.RunAsync(SchemaRunnerMode.Verify, cancellationToken).ConfigureAwait(false);
     }

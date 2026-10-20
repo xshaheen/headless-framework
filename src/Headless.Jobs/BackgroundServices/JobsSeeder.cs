@@ -11,7 +11,7 @@ namespace Headless.Jobs.BackgroundServices;
 
 /// <summary>
 /// Writes the code-declared cron jobs into the store, then runs the application's <c>UseJobsSeeder</c> delegates. It
-/// runs only when the application opts in: the deployment's <c>seed</c> verb, or <c>AddHeadlessSeedOnStartup</c>, whose
+/// runs only when the application opts in: the deployment's <c>seed</c> verb, or <c>AddDeployStepsOnStartup</c>, whose
 /// startup seeding finishes before the scheduler's activation barrier opens.
 /// </summary>
 /// <remarks>

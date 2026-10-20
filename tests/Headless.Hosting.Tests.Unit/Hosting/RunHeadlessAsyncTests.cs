@@ -235,7 +235,7 @@ public sealed class RunHeadlessAsyncTests : TestBase
         {
             await Task.Yield();
 
-            throw new InvalidOperationException("The queue is missing. Run 'resources setup'.");
+            throw new InvalidOperationException("The queue is missing. Run 'resources provision'.");
         }
     }
 

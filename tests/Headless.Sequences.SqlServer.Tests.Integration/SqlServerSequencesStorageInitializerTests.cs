@@ -77,8 +77,8 @@ public sealed class SqlServerSequencesStorageInitializerTests(SqlServerSequences
         const string schema = "sequences_mssql_rerun";
         await _DropSchemaAsync(schema);
         using var host = _CreateHost(schema: schema);
-        await host.Services.SetupResourcesAsync(AbortToken);
-        await host.Services.SetupResourcesAsync(AbortToken);
+        await host.Services.ProvisionResourcesAsync(AbortToken);
+        await host.Services.ProvisionResourcesAsync(AbortToken);
 
         (await _CountTablesAsync(schema)).Should().Be(1);
         (await _CountPrimaryKeysAsync(schema)).Should().Be(1);
@@ -170,7 +170,7 @@ public sealed class SqlServerSequencesStorageInitializerTests(SqlServerSequences
             .Awaiting(() => host.StartAsync(AbortToken))
             .Should()
             .ThrowAsync<SchemaRunnerException>()
-            .WithMessage("*resources setup*");
+            .WithMessage("*resources provision*");
 
         (await _CountTablesAsync(schema)).Should().Be(0);
     }
@@ -229,7 +229,7 @@ public sealed class SqlServerSequencesStorageInitializerTests(SqlServerSequences
 
         if (setupResources)
         {
-            builder.Services.AddHeadlessResourceSetupOnStartup();
+            builder.Services.AddDeployStepsOnStartup();
         }
 
         builder.Services.AddHeadlessSequences(setup => setup.UseSqlServer(configure));

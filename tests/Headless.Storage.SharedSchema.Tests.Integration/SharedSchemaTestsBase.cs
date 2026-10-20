@@ -466,8 +466,7 @@ public abstract class SharedSchemaTestsBase : TestBase
             });
         }
 
-        builder.Services.AddHeadlessResourceSetupOnStartup();
-        builder.Services.AddHeadlessSeedOnStartup();
+        builder.Services.AddDeployStepsOnStartup();
         return builder.Build();
     }
 }

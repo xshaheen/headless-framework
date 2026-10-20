@@ -2,6 +2,7 @@
 
 using Headless.Context;
 using Headless.Coordination;
+using Headless.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -142,7 +143,7 @@ public static class CoordinationFixtureExtensions
         });
 
         // A host start only verifies the schema, so the test host creates it first, as a development host does.
-        services.AddHeadlessResourceSetupOnStartup();
+        services.AddDeployStepsOnStartup();
 
         var provider = services.BuildServiceProvider();
 

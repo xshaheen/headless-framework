@@ -8,7 +8,7 @@ namespace Headless.Messaging.Internal;
 
 /// <summary>
 /// Checks once per host, after it starts, that every registered transport's broker holds the shared topology the
-/// registered consumers and messages need, so the host is not ready while a queue <c>resources setup</c> should have
+/// registered consumers and messages need, so the host is not ready while a queue <c>resources provision</c> should have
 /// created is missing.
 /// </summary>
 /// <remarks>
@@ -31,12 +31,12 @@ internal sealed class TransportTopologyWarmup(
 
         foreach (var provisioner in provisioners)
         {
-            topology ??= TransportTopologyResourceSource.BuildTopology(selector, messages);
+            topology ??= TransportTopologyProvisionerSource.BuildTopology(selector, messages);
 
 #pragma warning disable CA1031 // False positive: each failure is collected and rethrown below, so one transport's fault does not hide another's.
             try
             {
-                await provisioner.CheckAsync(topology, cancellationToken).ConfigureAwait(false);
+                await provisioner.VerifyAsync(topology, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {

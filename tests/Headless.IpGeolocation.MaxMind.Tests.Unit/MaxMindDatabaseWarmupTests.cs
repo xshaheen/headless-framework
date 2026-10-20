@@ -158,11 +158,11 @@ public sealed class MaxMindDatabaseWarmupTests : MaxMindTestBase
         await warmup.Invoking(w => w.WarmUpAsync(AbortToken)).Should().ThrowAsync<InvalidOperationException>();
         Handler.Publish(TestDatabases.AsnEdition, TestDatabases.Archive(TestDatabases.AsnEdition), _ReleaseDate);
         var resource = provider
-            .GetServices<IStatefulResource>()
-            .Single(r => string.Equals(r.Type, "MaxMind", StringComparison.Ordinal));
+            .GetServices<IResourceProvisioner>()
+            .Single(r => string.Equals(r.Kind, "MaxMind", StringComparison.Ordinal));
 
         // when
-        await resource.SetupAsync(AbortToken);
+        await resource.ProvisionAsync(AbortToken);
 
         // then: the successful download also lifts the delay for the warm-up
         Handler.Downloads.Should().Be(2);

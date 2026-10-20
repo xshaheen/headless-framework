@@ -3,31 +3,38 @@
 using Headless.Hosting.Initialization.Schema;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Hosting;
 
 /// <summary>
-/// Runs every seeder in <see cref="IHostedLifecycleService.StartingAsync"/>, after the stateful resources are set up
-/// and verified and before any hosted service's <c>StartAsync</c>, so a scheduler or a consumer starts on seeded data.
+/// Runs every seeder in <see cref="IHostedLifecycleService.StartingAsync"/>, after the resources are provisioned and
+/// verified and before any hosted service's <c>StartAsync</c>, so a scheduler or a consumer starts on seeded data.
 /// </summary>
 internal sealed class SeedStartupService(
     IServiceProvider services,
+    IOptions<DeployStepsOnStartupOptions> options,
     SchemaRunner? schemaRunner = null,
-    StatefulResourceStartupService? resourceSetup = null
+    ResourceProvisioningStartupService? resourceSetup = null
 ) : IHostedLifecycleService
 {
     public async Task StartingAsync(CancellationToken cancellationToken)
     {
+        if (!options.Value.Seed)
+        {
+            return;
+        }
+
         if (resourceSetup is not null)
         {
-            // Seeders write into the tables the setup creates; a concurrently started host runs both at once.
+            // Seeders write into the tables the provisioning creates; a concurrently started host runs both at once.
             await resourceSetup.WaitForInitializationAsync(cancellationToken).ConfigureAwait(false);
         }
 
         if (schemaRunner is not null)
         {
             // The host's own verification may start after this service, so check here too: a missing table then fails
-            // with the message that names 'resources setup', not with a seeder's raw database error. Cheap on a warm
+            // with the message that names 'resources provision', not with a seeder's raw database error. Cheap on a warm
             // database: one history read per schema.
             await schemaRunner.RunAsync(SchemaRunnerMode.Verify, cancellationToken).ConfigureAwait(false);
         }

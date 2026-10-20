@@ -113,7 +113,7 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
 
         if (setupResources)
         {
-            builder.Services.AddHeadlessResourceSetupOnStartup();
+            builder.Services.AddDeployStepsOnStartup();
         }
 
         return builder.Build();

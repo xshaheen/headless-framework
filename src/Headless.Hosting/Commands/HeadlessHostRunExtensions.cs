@@ -17,7 +17,7 @@ namespace Microsoft.Extensions.Hosting;
 public static class HeadlessHostRunExtensions
 {
     private const string _DescribeCommand = "describe";
-    private const string _ResourcesCommand = StatefulResourcesCommand.Name;
+    private const string _ResourcesCommand = ResourcesCommand.Name;
     private const string _SeedCommand = SeedCommand.Name;
     private const string _CheckCommand = "check";
 
@@ -26,8 +26,8 @@ public static class HeadlessHostRunExtensions
         /// <summary>
         /// Runs the host until shutdown, or answers a command about it without starting it: when the first argument is
         /// <c>describe</c>, prints the host manifest as JSON to standard output; when it is <c>check</c>, runs the
-        /// host's health checks once and prints one line per check; when it is <c>resources</c>, sets up, checks,
-        /// clears, tears down, or lists the host's stateful resources and prints one line per resource; when it is
+        /// host's health checks once and prints one line per check; when it is <c>resources</c>, provisions, verifies,
+        /// purges, deletes, or lists the host's provisioned resources and prints one line per resource; when it is
         /// <c>seed</c>, runs or lists the host's seeders and prints one line per seeder.
         /// </summary>
         /// <param name="args">
@@ -56,11 +56,11 @@ public static class HeadlessHostRunExtensions
         /// build time, so its log lines can still reach standard output.
         /// </para>
         /// <para>
-        /// <c>resources</c> takes a subcommand (<c>setup</c>, the default, <c>check</c>, <c>clear</c>, <c>teardown</c>,
-        /// <c>statistics</c>, or <c>list</c>), <c>--type</c> and <c>--name</c> filters, an optional <c>--timeout</c> in
+        /// <c>resources</c> takes a required subcommand (<c>provision</c>, <c>verify</c>, <c>purge</c>, <c>delete</c>,
+        /// <c>status</c>, or <c>list</c>), <c>--kind</c> and <c>--name</c> filters, an optional <c>--timeout</c> in
         /// seconds for the whole run (none by default, so each resource's own timeouts govern), and <c>--force</c>,
-        /// which <c>clear</c> and <c>teardown</c> need in the Production environment. See
-        /// <see cref="IStatefulResource" />.
+        /// which <c>purge</c> and <c>delete</c> need outside the destructive environments. See
+        /// <see cref="IResourceProvisioner" />.
         /// </para>
         /// <para>
         /// <c>seed</c> runs every seeder in priority order, or <c>list</c>s them, with <c>--name</c> filters and a
@@ -100,7 +100,7 @@ public static class HeadlessHostRunExtensions
                 return await _RunCommandAsync(
                         host,
                         (services, stdout, stderr, token) =>
-                            StatefulResourcesCommand.RunAsync(
+                            ResourcesCommand.RunAsync(
                                 args[1..],
                                 services,
                                 stdout,

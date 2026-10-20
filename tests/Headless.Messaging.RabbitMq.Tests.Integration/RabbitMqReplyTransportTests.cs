@@ -187,7 +187,7 @@ public sealed class RabbitMqReplyTransportTests(RabbitMqFixture fixture) : TestB
         await base.DisposeAsyncCore();
     }
 
-    // The transport only checks the lane exchanges exist; the deployment's resources setup creates them.
+    // The transport only checks the lane exchanges exist; the deployment's resources provision creates them.
     private async Task<RabbitMqReplyTransport> _CreateTransportAsync(bool publishConfirms)
     {
         var options = new RabbitMqMessagingOptions
@@ -205,7 +205,7 @@ public sealed class RabbitMqReplyTransportTests(RabbitMqFixture fixture) : TestB
             Options.Create(options)
         );
         _pools.Add(pool);
-        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).SetupAsync(
+        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).ProvisionAsync(
             MessagingTopology.Empty,
             AbortToken
         );

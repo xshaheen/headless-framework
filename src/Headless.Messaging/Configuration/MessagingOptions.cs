@@ -186,7 +186,7 @@ public sealed class MessagingOptions
     /// registered consumers and messages need: every registered transport's <c>ITransportTopologyProvisioner</c> checks
     /// it in one pass, behind the <c>warmup</c> readiness check, which stays <c>Unhealthy</c> and names the first missing
     /// object until the check passes. Consumer clients do not check that topology themselves; a consumer started against
-    /// a missing queue fails when it consumes, naming <c>resources setup</c>.
+    /// a missing queue fails when it consumes, naming <c>resources provision</c>.
     /// Turn it off to skip the check and leave readiness to the consumers alone.
     /// Default is <see langword="true"/>.
     /// </summary>

@@ -2,10 +2,10 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
-using Headless.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Hosting;
 
 /// <summary>Registers <see cref="IWarmup" />s, which the host runs in the background once it has started.</summary>
 [PublicAPI]

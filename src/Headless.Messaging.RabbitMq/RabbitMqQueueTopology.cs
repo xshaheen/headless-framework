@@ -11,8 +11,8 @@ namespace Headless.Messaging.RabbitMq;
 /// so a publisher and a consumer always ask the broker for the same queue with the same arguments.
 /// </summary>
 /// <remarks>
-/// The <c>Ensure*</c> methods create, for <c>resources setup</c> and runtime subscriptions; the <c>Require*</c> methods
-/// only prove an object exists and fail with <see cref="StatefulResourceException"/> naming <c>resources setup</c> when it
+/// The <c>Ensure*</c> methods create, for <c>resources provision</c> and runtime subscriptions; the <c>Require*</c> methods
+/// only prove an object exists and fail with <see cref="ResourceProvisioningException"/> naming <c>resources provision</c> when it
 /// does not. A redeclare whose arguments differ from the broker's queue fails with
 /// <c>PRECONDITION_FAILED</c>, which is why every side builds the arguments here.
 /// </remarks>
@@ -76,7 +76,7 @@ internal static class RabbitMqQueueTopology
         return arguments;
     }
 
-    /// <summary>Declares a lane exchange: what <c>resources setup</c> and a runtime subscription do.</summary>
+    /// <summary>Declares a lane exchange: what <c>resources provision</c> and a runtime subscription do.</summary>
     public static Task EnsureExchangeAsync(
         IChannel channel,
         string exchange,
@@ -97,7 +97,7 @@ internal static class RabbitMqQueueTopology
     }
 
     /// <summary>Proves a lane exchange exists, creating nothing.</summary>
-    /// <exception cref="StatefulResourceException">The exchange does not exist.</exception>
+    /// <exception cref="ResourceProvisioningException">The exchange does not exist.</exception>
     public static Task RequireExchangeAsync(IChannel channel, string exchange, CancellationToken cancellationToken)
     {
         return RequireAsync(
@@ -109,7 +109,7 @@ internal static class RabbitMqQueueTopology
 
     /// <summary>
     /// Declares a shared queue, its dead-letter topology when enabled, and (when <paramref name="routingKey"/> is set)
-    /// its binding to <paramref name="laneExchange"/>: what <c>resources setup</c> and a runtime subscription do.
+    /// its binding to <paramref name="laneExchange"/>: what <c>resources provision</c> and a runtime subscription do.
     /// </summary>
     public static async Task EnsureQueueAsync(
         IChannel channel,
@@ -129,7 +129,7 @@ internal static class RabbitMqQueueTopology
         await channel
             .QueueDeclareAsync(
                 queueName,
-                // A shared queue outlives the process that declares it: 'resources setup' creates it, and every host
+                // A shared queue outlives the process that declares it: 'resources provision' creates it, and every host
                 // start expects it, so it must survive the declaring connection, its last consumer, and a broker
                 // restart.
                 durable: true,
@@ -147,7 +147,7 @@ internal static class RabbitMqQueueTopology
     }
 
     /// <summary>Proves a shared queue exists, creating nothing, and returns its message and consumer counts.</summary>
-    /// <exception cref="StatefulResourceException">The queue does not exist.</exception>
+    /// <exception cref="ResourceProvisioningException">The queue does not exist.</exception>
     public static Task<QueueDeclareOk> RequireQueueAsync(
         IChannel channel,
         string queueName,
@@ -174,7 +174,7 @@ internal static class RabbitMqQueueTopology
     /// <paramref name="name"/>, turning the broker's <c>NOT_FOUND</c> into an error that names the fix. The broker closes
     /// the channel on any refused call, so run it on a channel of its own.
     /// </summary>
-    /// <exception cref="StatefulResourceException">The broker reports the object does not exist.</exception>
+    /// <exception cref="ResourceProvisioningException">The broker reports the object does not exist.</exception>
     public static Task RequireAsync(string kind, string name, Func<Task> call)
     {
         return RequireAsync(
@@ -198,9 +198,9 @@ internal static class RabbitMqQueueTopology
         }
         catch (OperationInterruptedException ex) when (ex.ShutdownReason?.ReplyCode == Constants.NotFound)
         {
-            throw new StatefulResourceException(
-                $"RabbitMQ {kind} '{name}' does not exist. Run 'resources setup' (dotnet <app>.dll resources setup) in "
-                    + "the deployment, or call AddHeadlessResourceSetupOnStartup() in development.",
+            throw new ResourceProvisioningException(
+                $"RabbitMQ {kind} '{name}' does not exist. Run 'resources provision' (dotnet <app>.dll resources provision) in "
+                    + "the deployment, or call AddDeployStepsOnStartup() in development.",
                 ex
             );
         }

@@ -11,10 +11,10 @@ using Tests.Registration;
 namespace Tests.Transport;
 
 /// <summary>
-/// A transport's <see cref="ITransportTopologyProvisioner"/> as a stateful resource: one resource per transport, fed the
+/// A transport's <see cref="ITransportTopologyProvisioner"/> as a provisioned resource: one resource per transport, fed the
 /// topology the registered consumers and messages describe.
 /// </summary>
-public sealed class TransportTopologyResourceTests : TestBase
+public sealed class TransportTopologyProvisionerTests : TestBase
 {
     [Fact]
     public async Task should_offer_one_resource_per_provisioner_and_pass_it_the_registered_topology()
@@ -25,10 +25,10 @@ public sealed class TransportTopologyResourceTests : TestBase
 
         // when
         var resource = (await _ResourcesAsync(provider)).Should().ContainSingle().Which;
-        await resource.SetupAsync(AbortToken);
+        await resource.ProvisionAsync(AbortToken);
 
         // then
-        resource.Type.Should().Be("Recording");
+        resource.Kind.Should().Be("Recording");
         resource.Name.Should().Be("topology");
         var topology = provisioner.Calls.Should().ContainSingle().Which.Topology;
         // A Bus subscription is the consumer identity; a Queue subscription is the message it consumes.
@@ -46,18 +46,33 @@ public sealed class TransportTopologyResourceTests : TestBase
     }
 
     [Fact]
+    public async Task should_report_the_provisioner_capabilities_with_purge_and_delete_supported_by_default()
+    {
+        await using var defaults = _Build(new RecordingProvisioner());
+        await using var limited = _Build(new LimitedProvisioner());
+
+        var supported = (await _ResourcesAsync(defaults)).Single();
+        var unsupported = (await _ResourcesAsync(limited)).Single();
+
+        supported.CanPurge.Should().BeTrue();
+        supported.CanDelete.Should().BeTrue();
+        unsupported.CanPurge.Should().BeFalse();
+        unsupported.CanDelete.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_route_every_operation_to_the_provisioner()
     {
         var provisioner = new RecordingProvisioner();
         await using var provider = _Build(provisioner);
         var resource = (await _ResourcesAsync(provider)).Single();
 
-        await resource.CheckAsync(AbortToken);
-        await resource.ClearStateAsync(AbortToken);
-        await resource.TeardownAsync(AbortToken);
+        await resource.VerifyAsync(AbortToken);
+        await resource.PurgeAsync(AbortToken);
+        await resource.DeleteAsync(AbortToken);
         var status = await resource.GetStatusAsync(AbortToken);
 
-        provisioner.Calls.Select(c => c.Operation).Should().Equal("check", "clear", "teardown", "status");
+        provisioner.Calls.Select(c => c.Operation).Should().Equal("verify", "purge", "delete", "status");
         status.Should().ContainSingle().Which.Key.Should().Be("queues");
     }
 
@@ -90,35 +105,35 @@ public sealed class TransportTopologyResourceTests : TestBase
     }
 
     // Only the transport topology resources: the in-memory storage registers none of its own.
-    private static async Task<List<IStatefulResource>> _ResourcesAsync(IServiceProvider provider)
+    private static async Task<List<IResourceProvisioner>> _ResourcesAsync(IServiceProvider provider)
     {
-        var resources = new List<IStatefulResource>();
+        var resources = new List<IResourceProvisioner>();
 
-        foreach (var source in provider.GetServices<IStatefulResourceSource>())
+        foreach (var source in provider.GetServices<IResourceProvisionerSource>())
         {
-            resources.AddRange(await source.GetResourcesAsync(AbortToken));
+            resources.AddRange(await source.GetProvisionersAsync(AbortToken));
         }
 
         return resources;
     }
 
-    private sealed class RecordingProvisioner : ITransportTopologyProvisioner
+    private class RecordingProvisioner : ITransportTopologyProvisioner
     {
         public List<(string Operation, MessagingTopology Topology)> Calls { get; } = [];
 
-        public string Broker => "Recording";
+        public string Kind => "Recording";
 
-        public Task SetupAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
-            _Record("setup", topology);
+        public Task ProvisionAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
+            _Record("provision", topology);
 
-        public Task CheckAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
-            _Record("check", topology);
+        public Task VerifyAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
+            _Record("verify", topology);
 
-        public Task ClearAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
-            _Record("clear", topology);
+        public Task PurgeAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
+            _Record("purge", topology);
 
-        public Task TeardownAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
-            _Record("teardown", topology);
+        public Task DeleteAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
+            _Record("delete", topology);
 
         public async Task<IReadOnlyList<KeyValuePair<string, string>>> GetStatusAsync(
             MessagingTopology topology,
@@ -136,5 +151,13 @@ public sealed class TransportTopologyResourceTests : TestBase
 
             return Task.CompletedTask;
         }
+    }
+
+    // Re-implements the interface so the capability flags override the defaults the base class inherits.
+    private sealed class LimitedProvisioner : RecordingProvisioner, ITransportTopologyProvisioner
+    {
+        public bool CanPurge => false;
+
+        public bool CanDelete => false;
     }
 }

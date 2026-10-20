@@ -1583,12 +1583,12 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         // then
         await listening
             .Should()
-            .ThrowAsync<StatefulResourceException>()
-            .WithMessage("RabbitMQ queue 'queue.orders.created' does not exist. Run 'resources setup'*");
+            .ThrowAsync<ResourceProvisioningException>()
+            .WithMessage("RabbitMQ queue 'queue.orders.created' does not exist. Run 'resources provision'*");
         await FluentActions
             .Awaiting(() => client.WaitUntilReadyAsync(AbortToken).AsTask())
             .Should()
-            .ThrowAsync<StatefulResourceException>();
+            .ThrowAsync<ResourceProvisioningException>();
         _channel
             .ReceivedCalls()
             .Should()

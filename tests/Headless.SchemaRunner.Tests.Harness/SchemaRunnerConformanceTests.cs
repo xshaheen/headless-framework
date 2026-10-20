@@ -213,10 +213,10 @@ public abstract class SchemaRunnerConformanceTests(ISchemaRunnerFixture fixture)
         var schema = _Schema("resources");
         await fixture.DropSchemaAsync(schema, AbortToken);
         using var host = fixture.CreateHost(schema, setupResources: false);
-        await host.Services.SetupResourcesAsync(AbortToken);
+        await host.Services.ProvisionResourcesAsync(AbortToken);
 
         // when
-        await host.Services.ResetResourceStateAsync(AbortToken);
+        await host.Services.PurgeResourcesAsync(AbortToken);
 
         // then: clear deletes rows only, so every table and every history row is still there
         (await fixture.CountTablesAsync(schema, AbortToken))
@@ -225,7 +225,7 @@ public abstract class SchemaRunnerConformanceTests(ISchemaRunnerFixture fixture)
         (await fixture.CountHistoryRowsAsync(schema, AbortToken)).Should().Be(fixture.ExpectedStepCount);
 
         // and when
-        await host.Services.TeardownResourcesAsync(AbortToken);
+        await host.Services.DeleteResourcesAsync(AbortToken);
 
         // then: only the history table is left, and it no longer records the features
         (await fixture.CountTablesAsync(schema, AbortToken))
@@ -234,7 +234,7 @@ public abstract class SchemaRunnerConformanceTests(ISchemaRunnerFixture fixture)
         (await fixture.CountHistoryRowsAsync(schema, AbortToken)).Should().Be(0);
 
         // and when: the next setup trusts the emptied history and creates everything again
-        await host.Services.SetupResourcesAsync(AbortToken);
+        await host.Services.ProvisionResourcesAsync(AbortToken);
 
         // then
         (await fixture.CountTablesAsync(schema, AbortToken))
@@ -251,11 +251,11 @@ public abstract class SchemaRunnerConformanceTests(ISchemaRunnerFixture fixture)
         var schema = _Schema("foreign");
         await fixture.DropSchemaAsync(schema, AbortToken);
         using var host = fixture.CreateHost(schema, setupResources: false);
-        await host.Services.SetupResourcesAsync(AbortToken);
+        await host.Services.ProvisionResourcesAsync(AbortToken);
         await fixture.AddForeignStateAsync(schema, AbortToken);
 
         // when
-        await host.Services.ResetResourceStateAsync(AbortToken);
+        await host.Services.PurgeResourcesAsync(AbortToken);
 
         // then
         (await fixture.CountForeignRowsAsync(schema, AbortToken))
@@ -265,7 +265,7 @@ public abstract class SchemaRunnerConformanceTests(ISchemaRunnerFixture fixture)
         (await fixture.CountHistoryRowsAsync(schema, AbortToken)).Should().Be(fixture.ExpectedStepCount + 1);
 
         // and when
-        await host.Services.TeardownResourcesAsync(AbortToken);
+        await host.Services.DeleteResourcesAsync(AbortToken);
 
         // then — the catalog, not the declared objects, proves nothing the features created is left
         (await fixture.ListObjectsAsync(schema, AbortToken))
@@ -286,7 +286,7 @@ public abstract class SchemaRunnerConformanceTests(ISchemaRunnerFixture fixture)
 
         var act = () => host.StartAsync(AbortToken);
 
-        (await act.Should().ThrowAsync<SchemaRunnerException>().WithMessage("*resources setup*"))
+        (await act.Should().ThrowAsync<SchemaRunnerException>().WithMessage("*resources provision*"))
             .Which.Mismatches.Should()
             .HaveCount(fixture.ExpectedStepCount)
             .And.OnlyContain(m => m.Kind == SchemaMismatchKind.Missing);

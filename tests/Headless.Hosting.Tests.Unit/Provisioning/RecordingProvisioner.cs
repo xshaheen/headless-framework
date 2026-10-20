@@ -2,20 +2,24 @@
 
 using Headless.Hosting;
 
-namespace Tests.StatefulResources;
+namespace Tests.Provisioning;
 
-/// <summary>A resource that records each operation in a shared log and fails or stalls on request.</summary>
-internal class RecordingResource(string type, string name, List<string> log) : IStatefulResource
+/// <summary>A provisioner that records each operation in a shared log and fails or stalls on request.</summary>
+internal class RecordingProvisioner(string kind, string name, List<string> log) : IResourceProvisioner
 {
-    public string Type => type;
+    public string Kind => kind;
 
     public string Name => name;
 
     /// <summary>Operations that throw <see cref="InvalidOperationException" /> with <see cref="FailureMessage" />.</summary>
     public HashSet<string> Failing { get; } = new(StringComparer.Ordinal);
 
-    /// <summary>Operations that throw <see cref="StatefulResourceUnsupportedException" />.</summary>
+    /// <summary>Operations the provisioner reports it cannot run: <c>purge</c> or <c>delete</c>.</summary>
     public HashSet<string> Unsupported { get; } = new(StringComparer.Ordinal);
+
+    public bool CanPurge => !Unsupported.Contains("purge");
+
+    public bool CanDelete => !Unsupported.Contains("delete");
 
     /// <summary>Operations that throw a plain <see cref="NotSupportedException" />, as a driver would.</summary>
     public HashSet<string> DriverNotSupported { get; } = new(StringComparer.Ordinal);
@@ -30,17 +34,19 @@ internal class RecordingResource(string type, string name, List<string> log) : I
 
     public IReadOnlyList<KeyValuePair<string, string>> Status { get; init; } = [new("queues", "2")];
 
-    public Task SetupAsync(CancellationToken cancellationToken) => _RunAsync("setup", cancellationToken);
+    public Task ProvisionAsync(CancellationToken cancellationToken) => _RunAsync("provision", cancellationToken);
 
-    public Task CheckAsync(CancellationToken cancellationToken) => _RunAsync("check", cancellationToken);
+    public Task VerifyAsync(CancellationToken cancellationToken) => _RunAsync("verify", cancellationToken);
 
-    public Task ClearStateAsync(CancellationToken cancellationToken) => _RunAsync("clear", cancellationToken);
+    public Task PurgeAsync(CancellationToken cancellationToken) => _RunAsync("purge", cancellationToken);
 
-    public Task TeardownAsync(CancellationToken cancellationToken) => _RunAsync("teardown", cancellationToken);
+    public Task DeleteAsync(CancellationToken cancellationToken) => _RunAsync("delete", cancellationToken);
+
+    public virtual IEnumerable<IResourceProvisioner> DependsOn(IReadOnlyList<IResourceProvisioner> provisioners) => [];
 
     public async Task<IReadOnlyList<KeyValuePair<string, string>>> GetStatusAsync(CancellationToken cancellationToken)
     {
-        await _RunAsync("statistics", cancellationToken);
+        await _RunAsync("status", cancellationToken);
 
         return Status;
     }
@@ -48,11 +54,6 @@ internal class RecordingResource(string type, string name, List<string> log) : I
     private async Task _RunAsync(string operation, CancellationToken cancellationToken)
     {
         log.Add($"{operation} {name}");
-
-        if (Unsupported.Contains(operation))
-        {
-            throw new StatefulResourceUnsupportedException("Not here.");
-        }
 
         if (DriverNotSupported.Contains(operation))
         {
@@ -80,20 +81,18 @@ internal class RecordingResource(string type, string name, List<string> log) : I
     }
 }
 
-/// <summary>A recording resource that must follow the resources named in <see cref="DependsOn" />.</summary>
-internal sealed class DependentResource(string type, string name, List<string> log, params string[] dependsOn)
-    : RecordingResource(type, name, log),
-        IStatefulResourceWithDependencies
+/// <summary>A recording provisioner that must follow the provisioners named in its constructor.</summary>
+internal sealed class DependentProvisioner(string kind, string name, List<string> log, params string[] dependsOn)
+    : RecordingProvisioner(kind, name, log)
 {
-    public IEnumerable<IStatefulResource> GetDependencies(IReadOnlyList<IStatefulResource> resources) =>
-        resources.Where(x => dependsOn.Contains(x.Name, StringComparer.Ordinal));
-
-    public IReadOnlyList<string> DependsOn => dependsOn;
+    public override IEnumerable<IResourceProvisioner> DependsOn(IReadOnlyList<IResourceProvisioner> provisioners) =>
+        provisioners.Where(x => dependsOn.Contains(x.Name, StringComparer.Ordinal));
 }
 
-/// <summary>A source that offers a fixed set of resources.</summary>
-internal sealed class FixedResourceSource(IReadOnlyList<IStatefulResource> resources) : IStatefulResourceSource
+/// <summary>A source that offers a fixed set of provisioners.</summary>
+internal sealed class FixedProvisionerSource(IReadOnlyList<IResourceProvisioner> provisioners)
+    : IResourceProvisionerSource
 {
-    public Task<IReadOnlyList<IStatefulResource>> GetResourcesAsync(CancellationToken cancellationToken) =>
-        Task.FromResult(resources);
+    public Task<IReadOnlyList<IResourceProvisioner>> GetProvisionersAsync(CancellationToken cancellationToken) =>
+        Task.FromResult(provisioners);
 }

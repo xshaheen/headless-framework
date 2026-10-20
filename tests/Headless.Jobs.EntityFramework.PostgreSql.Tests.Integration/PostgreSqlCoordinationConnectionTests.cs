@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -46,8 +47,7 @@ public sealed class PostgreSqlCoordinationConnectionTests(PostgreSqlJobsCoordina
             );
         });
 
-        builder.Services.AddHeadlessResourceSetupOnStartup();
-        builder.Services.AddHeadlessSeedOnStartup();
+        builder.Services.AddDeployStepsOnStartup();
         using var host = builder.Build();
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync<DataSourceApplicationContext>(host, AbortToken);
         await host.StartAsync(AbortToken);

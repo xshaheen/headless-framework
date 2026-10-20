@@ -1,4 +1,5 @@
 using Headless.Coordination;
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Api.Demo;
 using Microsoft.EntityFrameworkCore;
@@ -30,11 +31,10 @@ builder.Services.AddHeadlessJobs(options =>
 });
 
 // The host start only verifies its tables and queues, so this demo creates them as it starts; a deployed app runs
-// `dotnet <app>.dll resources setup` instead.
-builder.Services.AddHeadlessResourceSetupOnStartup();
+// `dotnet <app>.dll resources provision` instead.
+builder.Services.AddDeployStepsOnStartup();
 
 // Nothing seeds on its own, so this demo seeds as it starts; a deployed app runs `dotnet <app>.dll seed` instead.
-builder.Services.AddHeadlessSeedOnStartup();
 
 var app = builder.Build();
 

@@ -4,12 +4,12 @@ namespace Headless.Hosting;
 
 /// <summary>
 /// Writes data the application's code declares, such as definitions or scheduled jobs, into its stores. Unlike a
-/// stateful resource, a seeder writes rows, not structure, and must run again whenever the declarations change.
+/// provisioned resource, a seeder writes rows, not structure, and must run again whenever the declarations change.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The host start never seeds by default: the deployment runs the <c>seed</c> verb of <c>RunHeadlessAsync</c>, and a
-/// development or test host that should seed as it starts calls <c>AddHeadlessSeedOnStartup</c>.
+/// development or test host that should seed as it starts calls <c>AddDeployStepsOnStartup</c>.
 /// </para>
 /// <para>
 /// Seeders run one at a time, ordered by <see cref="SeederPriorityAttribute"/> (lower first), each resolved from one

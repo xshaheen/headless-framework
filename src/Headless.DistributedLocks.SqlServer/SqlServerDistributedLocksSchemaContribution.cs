@@ -53,7 +53,7 @@ internal static class SqlServerDistributedLocksSchemaContribution
             schema: schema,
             steps: [new SchemaStep(StepVersion, "Create the fence sequence.", sql)],
             // Without fencing nothing reads the sequence, so the host does not verify it; the deploy script and
-            // 'resources setup' still create it, which costs one unused sequence.
+            // 'resources provision' still create it, which costs one unused sequence.
             exportOnly: !options.EnableFencing,
             objects: [SchemaObject.Sequence(sequenceName)]
         );

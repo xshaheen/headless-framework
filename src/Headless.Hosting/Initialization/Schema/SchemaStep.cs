@@ -73,8 +73,8 @@ public sealed record SchemaContribution
     /// running host never writes them again. Omit for a feature whose tables hold only application data.
     /// </param>
     /// <param name="objects">
-    /// The tables and sequences the steps create, in creation order: <c>resources clear</c> deletes the tables' rows
-    /// and <c>resources teardown</c> drops the objects, both in reverse order so a foreign key never blocks them. Names
+    /// The tables and sequences the steps create, in creation order: <c>resources purge</c> deletes the tables' rows
+    /// and <c>resources delete</c> drops the objects, both in reverse order so a foreign key never blocks them. Names
     /// come from the same options as the steps, so a configured name is honored. Omit only for a contribution that
     /// cannot be cleared or torn down; those operations then report it as unsupported.
     /// </param>

@@ -8,24 +8,27 @@ using Microsoft.Extensions.Options;
 namespace Headless.IpGeolocation.Internal;
 
 /// <summary>
-/// Offers the database files as a stateful resource, so an image build or a deploy step can download them with
-/// <c>resources setup -t MaxMind</c> and a new host starts with them on disk.
+/// Offers the database files as a provisioned resource, so an image build or a deploy step can download them with
+/// <c>resources provision -k MaxMind</c> and a new host starts with them on disk.
 /// </summary>
-internal sealed class MaxMindDatabaseResource(
+internal sealed class MaxMindDatabaseProvisioner(
     MaxMindDatabases databases,
     MaxMindDatabaseSync sync,
     IOptions<MaxMindOptions> options
-) : IStatefulResource
+) : IResourceProvisioner
 {
     private readonly MaxMindOptions _options = options.Value;
 
-    public string Type => "MaxMind";
+    public string Kind => "MaxMind";
 
     public string Name => "databases";
 
+    // The files are the only data, so there is nothing to purge apart from deleting them.
+    public bool CanPurge => false;
+
     // Without credentials the files are the application's own to place, so there is nothing to download. An operator
-    // runs setup on purpose, so it tries a download that failed recently again instead of waiting out the retry delay.
-    public async Task SetupAsync(CancellationToken cancellationToken)
+    // runs provision on purpose, so it tries a download that failed recently again instead of waiting out the retry delay.
+    public async Task ProvisionAsync(CancellationToken cancellationToken)
     {
         if (!_options.HasCredentials)
         {
@@ -40,7 +43,7 @@ internal sealed class MaxMindDatabaseResource(
         }
     }
 
-    public Task CheckAsync(CancellationToken cancellationToken)
+    public Task VerifyAsync(CancellationToken cancellationToken)
     {
         var missing = new List<string>();
         var unreadable = new List<string>();
@@ -78,18 +81,18 @@ internal sealed class MaxMindDatabaseResource(
         }
 
         var fix = _options.HasCredentials
-            ? "Run 'resources setup -t MaxMind' to download them."
+            ? "Run 'resources provision -k MaxMind' to download them."
             : "Place each one in the database directory as <EditionId>.mmdb, or set AccountId and LicenseKey to download them.";
 
-        throw new StatefulResourceException($"MaxMind databases {string.Join("; ", problems)}. {fix}");
+        throw new ResourceProvisioningException($"MaxMind databases {string.Join("; ", problems)}. {fix}");
     }
 
-    public Task ClearStateAsync(CancellationToken cancellationToken) =>
-        throw new StatefulResourceUnsupportedException(
-            "The MaxMind databases hold no data apart from the files themselves; run 'resources teardown' to delete them."
+    public Task PurgeAsync(CancellationToken cancellationToken) =>
+        throw new NotSupportedException(
+            "The MaxMind databases hold no data apart from the files themselves; run 'resources delete' to delete them."
         );
 
-    public Task TeardownAsync(CancellationToken cancellationToken) => sync.DeleteAllAsync(cancellationToken);
+    public Task DeleteAsync(CancellationToken cancellationToken) => sync.DeleteAllAsync(cancellationToken);
 
     public Task<IReadOnlyList<KeyValuePair<string, string>>> GetStatusAsync(CancellationToken cancellationToken)
     {

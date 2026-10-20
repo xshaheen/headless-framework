@@ -13,7 +13,7 @@ Install all three packages:
 
 - `Headless.IpGeolocation.Abstractions`: `IIpGeolocator` and the `IpLocation` result
 - `Headless.IpGeolocation`: registration through `AddHeadlessIpGeolocation(geo => …)`
-- `Headless.IpGeolocation.MaxMind`: the MaxMind provider, chosen with `geo.UseMaxMind(…)`, its database updater, its readiness warm-up, and the `MaxMind` stateful resource
+- `Headless.IpGeolocation.MaxMind`: the MaxMind provider, chosen with `geo.UseMaxMind(…)`, its database updater, its readiness warm-up, and the `MaxMind` provisioned resource
 
 Typical registration:
 
@@ -57,7 +57,7 @@ public sealed class SessionLocationReader(IIpGeolocator geolocator)
 - Set `AccountId` and `LicenseKey` together, from a secret store, never in committed configuration. A GeoLite2 key is free with a MaxMind account. One without the other fails options validation at first resolution.
 - Without a license key, place the `.mmdb` files in `DatabaseDirectory` yourself, named `<EditionId>.mmdb` (for example `GeoLite2-City.mmdb`). Nothing refreshes them, and the provider logs a warning at startup when one is more than 30 days old.
 - Do not commit MaxMind databases to source control or ship them in a package. The GeoLite license requires using each new release within 30 days of it; the updater meets that, and a committed copy goes stale.
-- Give each host a writable `DatabaseDirectory`. A directory that survives restarts, such as a mounted volume, or one an image build filled with `dotnet MyApp.dll resources setup -t MaxMind`, lets a new host report ready at once; an empty one keeps it not ready until the first download finishes. A baked-in copy still needs credentials at run time, so the updater replaces it before it goes stale.
+- Give each host a writable `DatabaseDirectory`. A directory that survives restarts, such as a mounted volume, or one an image build filled with `dotnet MyApp.dll resources provision -k MaxMind`, lets a new host report ready at once; an empty one keeps it not ready until the first download finishes. A baked-in copy still needs credentials at run time, so the updater replaces it before it goes stale.
 
 ---
 
@@ -77,7 +77,7 @@ With credentials, the `MaxMindDatabases` warm-up makes a host that started witho
 
 ### Downloading ahead of time
 
-The provider registers a stateful resource of type `MaxMind`, named `databases` ([Stateful resources](utilities.md#stateful-resources)). Run `dotnet MyApp.dll resources setup -t MaxMind` in an image build or a deploy step, with the account credentials available to that step, to download every missing or outdated edition into `DatabaseDirectory` before a host starts.
+The provider registers a resource provisioner of kind `MaxMind`, named `databases` ([Resource provisioning](utilities.md#resource-provisioning)). Run `dotnet MyApp.dll resources provision -k MaxMind` in an image build or a deploy step, with the account credentials available to that step, to download every missing or outdated edition into `DatabaseDirectory` before a host starts.
 
 ### Failure keeps the last good database
 
@@ -145,14 +145,14 @@ MaxMind GeoIP2 and GeoLite2 provider with automatic database updates.
 
 - `UseMaxMind(IConfiguration)`, `UseMaxMind(Action<MaxMindOptions>)`, and `UseMaxMind(Action<MaxMindOptions, IServiceProvider>)` choose the provider.
 - `MaxMindOptions.HttpClientName` names the `HttpClient` that downloads updates, so an application can add a proxy or a handler: `services.AddHttpClient(MaxMindOptions.HttpClientName).ConfigurePrimaryHttpMessageHandler(...)`.
-- `UseMaxMind` also registers the `MaxMindDatabases` warm-up and the `MaxMind` stateful resource. The resource's operations:
+- `UseMaxMind` also registers the `MaxMindDatabases` warm-up and the `MaxMind` resource provisioner. Its operations:
 
 | Operation | Behavior |
 | --- | --- |
-| `setup` | With credentials, checks every edition and downloads each one that is missing or older than MaxMind's release, even inside the `RetryDelay` after a failed download; fails naming each edition it could not update. Without credentials, does nothing. |
-| `check` | Reads only the disk. Fails with `StatefulResourceException` naming each edition whose file is missing or is not a readable database. |
-| `clear` | Unsupported: the files are the only state. |
-| `teardown` | Deletes every edition's file, and the running host stops answering from it. |
+| `provision` | With credentials, checks every edition and downloads each one that is missing or older than MaxMind's release, even inside the `RetryDelay` after a failed download; fails naming each edition it could not update. Without credentials, does nothing. |
+| `verify` | Reads only the disk. Fails with `ResourceProvisioningException` naming each edition whose file is missing or is not a readable database. |
+| `purge` | Unsupported (`CanPurge` is `false`): the files are the only state. |
+| `delete` | Deletes every edition's file, and the running host stops answering from it. |
 | `status` | Each edition's build date (`built yyyy-MM-dd`) or `missing`, then whether downloads are enabled. |
 
 ### Design constraints
@@ -207,7 +207,7 @@ An empty `AsnEditionId` or `LocationEditionId` turns that edition off; configura
 | `AccountId`, `LicenseKey` | none | Both or neither. Neither means local files only. |
 | `Locales` | `["en"]` | Name languages in order of preference. |
 | `UpdateCheckInterval` | 12 hours | At least 1 hour. GeoLite accounts may download 30 databases a day; HEAD checks do not count. |
-| `RetryDelay` | 30 minutes | Wait after a failed check, and the least time before an edition whose download failed is downloaded again (`resources setup` excepted); at least 1 minute. |
+| `RetryDelay` | 30 minutes | Wait after a failed check, and the least time before an edition whose download failed is downloaded again (`resources provision` excepted); at least 1 minute. |
 | `DownloadEndpoint` | `https://download.maxmind.com/` | HTTPS, or HTTP on loopback for tests. |
 | `DownloadTimeout` | 10 minutes | Per request. |
 

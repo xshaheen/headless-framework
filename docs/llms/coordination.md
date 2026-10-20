@@ -279,7 +279,7 @@ The schema is not a provider option: set it with `setup.ConfigureStorage(storage
 
 ### Runtime behavior
 
-Registers the core membership services, the PostgreSQL membership store, and the membership schema contribution; `resources setup` applies it, and a host start only verifies it (see [Stateful resources](utilities.md#stateful-resources)). Creates snake_case tables and columns. Requires PostgreSQL DDL permission for the identity that runs `resources setup`.
+Registers the core membership services, the PostgreSQL membership store, and the membership schema contribution; `resources provision` applies it, and a host start only verifies it (see [Resource provisioning](utilities.md#resource-provisioning)). Creates snake_case tables and columns. Requires PostgreSQL DDL permission for the identity that runs `resources provision`.
 
 ---
 
@@ -389,7 +389,7 @@ The schema is not a provider option: set it with `setup.ConfigureStorage(storage
 
 ### Runtime behavior
 
-Registers the core membership services, the SQL Server membership store, and the membership schema contribution; `resources setup` applies it, and a host start only verifies it. Creates PascalCase tables and columns. Requires SQL Server DDL permission for the identity that runs `resources setup`.
+Registers the core membership services, the SQL Server membership store, and the membership schema contribution; `resources provision` applies it, and a host start only verifies it. Creates PascalCase tables and columns. Requires SQL Server DDL permission for the identity that runs `resources provision`.
 
 ---
 
@@ -431,5 +431,5 @@ The schema is set with `setup.ConfigureStorage(storage => storage.Schema = "…"
 
 ### Runtime behavior
 
-Registers the core membership services, the SQLite membership store, and the membership schema contribution; `resources setup` applies it, and a host start only verifies it. Creates snake_case tables and columns.
+Registers the core membership services, the SQLite membership store, and the membership schema contribution; `resources provision` applies it, and a host start only verifies it. Creates snake_case tables and columns.
 

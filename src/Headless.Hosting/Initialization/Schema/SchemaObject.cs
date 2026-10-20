@@ -5,8 +5,8 @@ using Headless.Checks;
 namespace Headless.Hosting.Initialization.Schema;
 
 /// <summary>
-/// A database object a schema contribution creates and owns: what <c>resources clear</c> empties and
-/// <c>resources teardown</c> drops. Indexes, constraints, and triggers belong to their table and go with it.
+/// A database object a schema contribution creates and owns: what <c>resources purge</c> empties and
+/// <c>resources delete</c> drops. Indexes, constraints, and triggers belong to their table and go with it.
 /// </summary>
 [PublicAPI]
 public sealed record SchemaObject

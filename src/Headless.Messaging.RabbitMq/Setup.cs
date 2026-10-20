@@ -132,7 +132,7 @@ public static class SetupMessagingRabbitMq
             services.AddSingleton<IConsumerClientFactory, RabbitMqConsumerClientFactory>();
             services.AddSingleton<IConnectionChannelPool, ConnectionChannelPool>();
 
-            // The shared topology is the deployment's: resources setup creates it, and the transport only checks it.
+            // The shared topology is the deployment's: resources provision creates it, and the transport only checks it.
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<ITransportTopologyProvisioner, RabbitMqTopologyProvisioner>()
             );

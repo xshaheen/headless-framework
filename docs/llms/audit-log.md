@@ -5,7 +5,7 @@ packages: AuditLog.Abstractions, AuditLog, AuditLog.Storage.EntityFramework, Aud
 
 # Audit Log
 
-> Property-level audit logging for entity mutations and explicit business events (PII reveals, cross-tenant access, etc.). EF Core implementation persists audit rows atomically with the originating `SaveChanges`. Raw ADO.NET providers (PostgreSql, SqlServer) own the audit table, which `resources setup` creates at deploy time.
+> Property-level audit logging for entity mutations and explicit business events (PII reveals, cross-tenant access, etc.). EF Core implementation persists audit rows atomically with the originating `SaveChanges`. Raw ADO.NET providers (PostgreSql, SqlServer) own the audit table, which `resources provision` creates at deploy time.
 
 ## Orientation
 
@@ -28,7 +28,7 @@ Code against `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAudit
 - Apply property policy in this order: framework default exclusions, explicit `ExcludeFromAudit()`, and `PropertyFilter` veto before sensitive handling. A strategy passed to `IsAuditSensitive(...)` overrides the global `AuditLogOptions.SensitiveDataStrategy`.
 - Register the audit log with exactly one `services.AddHeadlessAuditLog(setup => setup.Use...)` call. Put global audit options in `setup.ConfigureOptions(...)` and storage-table options in `setup.ConfigureStorage(...)`.
 - For EF storage, call `setup.UseEntityFramework<TContext>()`, register the same context with EF Core, register a singleton `IDbContextFactory<TContext>` (`AddDbContextFactory<TContext>()` or `AddPooledDbContextFactory<TContext>()` for a plain `DbContext`, or `AddHeadlessDbContext<TContext>()` or `AddHeadlessDbContextPool<TContext>()` for a `HeadlessDbContext`; both Headless registrations add the factory) for read-back, and call `modelBuilder.ConfigureHeadlessAuditLog(this)` inside `OnModelCreating`, which reads the storage options from the context's services and names every object in the database's convention (snake_case on PostgreSQL, PascalCase elsewhere). A startup gate validates this at boot and throws if it is missing. The factory must be a singleton (the default lifetime of all four registrations): the EF reader and startup gate are singletons that would capture a scoped or transient factory for the life of the host, so startup refuses one with `InvalidServiceLifetimeException`.
-- For raw storage, call `setup.UsePostgreSql(connectionString)` or `setup.UseSqlServer(connectionString)`, or the parameterless `UsePostgreSql()` / `UseSqlServer()` to reuse the connection registered by `AddPostgreSqlSql` / `AddSqlServerSql`; `resources setup` creates the audit table, a host start only verifies it, and the provider writes over its own connection.
+- For raw storage, call `setup.UsePostgreSql(connectionString)` or `setup.UseSqlServer(connectionString)`, or the parameterless `UsePostgreSql()` / `UseSqlServer()` to reuse the connection registered by `AddPostgreSqlSql` / `AddSqlServerSql`; `resources provision` creates the audit table, a host start only verifies it, and the provider writes over its own connection.
 - Raw PostgreSQL and SQL Server packages provide storage only. Automatic change capture and the fluent metadata policy are EF-specific; there is no parallel provider-neutral policy registry.
 - Use `IAuditLog<TContext>` for explicit events (reads, reveals, failures) — do not insert `AuditLogEntry` rows directly. Multi-context applications resolve a distinct logger per owning context via the `TContext` type parameter.
 - Use `IReadAuditLog<TContext>` to query audit history. Do not couple callers to `AuditLogEntry` or EF types directly.
@@ -170,7 +170,7 @@ All string fields are silently truncated to column limits before persistence (`A
 
 ### Schema setup
 
-Raw providers (`PostgreSql`, `SqlServer`) contribute the audit table (step `AuditLog/1`) and its indexes (step `AuditLog/2`) to the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). The deployment creates them with `resources setup`; a host start only verifies them and fails fast when a step is missing (see [Stateful resources](utilities.md#stateful-resources)). A configured `TableName` is part of the history id (`AuditLog:<table>`). `JsonColumnType` and `CreatedAtColumnType` shape the DDL, so changing either after the table exists fails startup with a checksum mismatch. When a migration tool owns the schema, run `resources setup` anyway: every step is idempotent, so the runner only records history for objects that already exist.
+Raw providers (`PostgreSql`, `SqlServer`) contribute the audit table (step `AuditLog/1`) and its indexes (step `AuditLog/2`) to the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). The deployment creates them with `resources provision`; a host start only verifies them and fails fast when a step is missing (see [Resource provisioning](utilities.md#resource-provisioning)). A configured `TableName` is part of the history id (`AuditLog:<table>`). `JsonColumnType` and `CreatedAtColumnType` shape the DDL, so changing either after the table exists fails startup with a checksum mismatch. When a migration tool owns the schema, run `resources provision` anyway: every step is idempotent, so the runner only records history for objects that already exist.
 
 ## Choosing a Provider
 
@@ -179,7 +179,7 @@ Raw providers (`PostgreSql`, `SqlServer`) contribute the audit table (step `Audi
 | **Use when** | Already using EF Core; want atomic commit with entity changes; migrations managed by EF. | Pure PostgreSQL shop; no EF dependency desired; want `jsonb` native columns. | SQL Server shop; no EF dependency desired. |
 | **Avoid when** | Not using EF Core; or need to avoid EF dependency in the audit service layer. | Not on PostgreSQL; or need EF-managed migrations. | Not on SQL Server; or need EF-managed migrations. |
 | **Atomicity** | Always — same `DbContext`, same transaction. | When the saving context uses Npgsql; `IAuditLog` only inside a caller transaction. Otherwise a separate connection, or an exception with `MissingTransactionStrategy.Throw`. | When the saving context uses SqlClient; `IAuditLog` only inside a caller transaction. Otherwise a separate connection, or an exception with `MissingTransactionStrategy.Throw`. |
-| **Schema management** | EF migrations. | `resources setup` at deploy time, or the exported deploy script. | `resources setup` at deploy time, or the exported deploy script. |
+| **Schema management** | EF migrations. | `resources provision` at deploy time, or the exported deploy script. | `resources provision` at deploy time, or the exported deploy script. |
 | **JSON columns** | String columns by default; opt into native `jsonb`/`json` via `AuditLogJsonColumnType`. | `jsonb` by default (native JSONB type; `Json` or `NvarcharMax` also accepted). | `nvarchar(max)` only. |
 | **Extra dependencies** | `Microsoft.EntityFrameworkCore` | `Npgsql` | `Microsoft.Data.SqlClient` |
 | **Change capture** | Built-in via `EfAuditChangeCapture` scanning `ChangeTracker` and reading EF model policy. | Storage only; pair with `Headless.EntityFramework` for built-in automatic capture, or log explicit events. | Same as PostgreSql. |
@@ -564,7 +564,7 @@ setup.UsePostgreSql((options, sp) =>
 
 ### Runtime behavior
 
-- Registers the audit-log schema contribution; `resources setup` creates the table and indexes, and a host start verifies them.
+- Registers the audit-log schema contribution; `resources provision` creates the table and indexes, and a host start verifies them.
 - Registers the shared relational writer from `Headless.AuditLog`, over the PostgreSQL dialect, as singleton.
 - Registers `IAuditLogStore` as scoped, and `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAuditLog<TContext>` as singletons, all from `Headless.AuditLog`.
 - Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
@@ -656,7 +656,7 @@ setup.UseSqlServer((options, sp) =>
 
 ### Runtime behavior
 
-- Registers the audit-log schema contribution; `resources setup` creates the table and indexes, and a host start verifies them.
+- Registers the audit-log schema contribution; `resources provision` creates the table and indexes, and a host start verifies them.
 - Registers the shared relational writer from `Headless.AuditLog`, over the SQL Server dialect, as singleton.
 - Registers `IAuditLogStore` as scoped, and `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAuditLog<TContext>` as singletons, all from `Headless.AuditLog`.
 - Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.

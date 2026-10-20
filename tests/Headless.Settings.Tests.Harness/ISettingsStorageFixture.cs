@@ -90,7 +90,7 @@ public static class SettingsStorageFixtureExtensions
 
         if (setupResources)
         {
-            builder.Services.AddHeadlessResourceSetupOnStartup();
+            builder.Services.AddDeployStepsOnStartup();
         }
 
         return builder.Build();

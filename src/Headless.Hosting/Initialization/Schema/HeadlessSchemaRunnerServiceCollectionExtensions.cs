@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Hosting;
 using Headless.Hosting.Initialization.Schema;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -36,8 +37,8 @@ public static class HeadlessSchemaRunnerServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Adds the schema runner, the hosted initializer that verifies the schema at startup, and one stateful resource
-    /// per contribution, which <c>resources setup</c> or <c>AddHeadlessResourceSetupOnStartup</c> applies. Idempotent.
+    /// Adds the schema runner, the hosted initializer that verifies the schema at startup, and one provisioned resource
+    /// per contribution, which <c>resources provision</c> or <c>AddDeployStepsOnStartup</c> applies. Idempotent.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optionally configures the runner's timeouts.</param>
@@ -65,7 +66,7 @@ public static class HeadlessSchemaRunnerServiceCollectionExtensions
             sp.GetRequiredService<IOptions<SchemaRunnerOptions>>().Value.CommandTimeout
         ));
         services.AddInitializerHostedService<SchemaRunnerInitializer>();
-        services.AddHeadlessStatefulResourceSource<SchemaResourceSource>();
+        services.AddResourceProvisionerSource<SchemaProvisionerSource>();
 
         return services;
     }

@@ -229,7 +229,7 @@ public static class SetupJobs
         services.TryAddKeyedSingleton<IDistributedLock, NullDistributedLock>(JobsKeys.LockProvider);
 
         // Code-declared cron rows and the UseJobsSeeder delegates: written only when the application opts in to
-        // seeding (the seed verb or AddHeadlessSeedOnStartup), never by the activation pipeline below.
+        // seeding (the seed verb or AddDeployStepsOnStartup), never by the activation pipeline below.
         services.AddSeeder<JobsSeeder>();
 
         // The activation gate itself — registered before every service that signals or waits on it. Registration order

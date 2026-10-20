@@ -168,9 +168,9 @@ public static class SetupMessaging
         services.TryAddSingleton<ISubscribeInvoker, SubscribeInvoker>();
         services.TryAddSingleton<MethodMatcherCache>();
 
-        // Each transport's ITransportTopologyProvisioner becomes one stateful resource, so the deployment's
-        // resources setup creates the broker topology the registered consumers and messages need.
-        services.AddHeadlessStatefulResourceSource<TransportTopologyResourceSource>();
+        // Each transport's ITransportTopologyProvisioner becomes one provisioned resource, so the deployment's
+        // resources provision creates the broker topology the registered consumers and messages need.
+        services.AddResourceProvisionerSource<TransportTopologyProvisionerSource>();
 
         // The running host checks that topology once, in one batch per transport after it starts, instead of each
         // consumer client checking its own objects as it connects; readiness waits for the check.

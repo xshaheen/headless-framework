@@ -105,7 +105,7 @@ public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFi
 
         if (setupResources)
         {
-            builder.Services.AddHeadlessResourceSetupOnStartup();
+            builder.Services.AddDeployStepsOnStartup();
         }
 
         return builder.Build();

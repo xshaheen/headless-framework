@@ -24,9 +24,9 @@ internal sealed class RabbitMqTopologyProvisioner(
 
     private readonly RabbitMqMessagingOptions _options = options.Value;
 
-    public string Broker => "RabbitMQ";
+    public string Kind => "RabbitMQ";
 
-    public Task SetupAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
+    public Task ProvisionAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
         _RunAsync(
             async channel =>
             {
@@ -70,7 +70,7 @@ internal sealed class RabbitMqTopologyProvisioner(
 
     // AMQP has no passive check for a binding, so the check proves the exchanges and queues exist; setup re-binds
     // idempotently.
-    public Task CheckAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
+    public Task VerifyAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
         _RunAsync(
             async channel =>
             {
@@ -91,7 +91,7 @@ internal sealed class RabbitMqTopologyProvisioner(
             cancellationToken
         );
 
-    public Task ClearAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
+    public Task PurgeAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
         _RunAsync(
             async channel =>
             {
@@ -110,7 +110,7 @@ internal sealed class RabbitMqTopologyProvisioner(
     // ExchangeName is shared by every service on the broker by default, every host requires both lane exchanges, and a
     // publisher binds nothing, so no broker-side check (if-unused sees bindings only) can prove another service is not
     // using one.
-    public Task TeardownAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
+    public Task DeleteAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
         _RunAsync(
             async channel =>
             {

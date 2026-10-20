@@ -5,7 +5,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Tests.Hosting;
-using Tests.StatefulResources;
+using Tests.Provisioning;
 
 namespace Tests.Seeders;
 
@@ -87,7 +87,7 @@ public sealed class SeedVerbTests : TestBase
 public sealed class SeedOnStartupTests : TestBase
 {
     [Fact]
-    public async Task should_seed_after_resource_setup_and_before_hosted_services_start()
+    public async Task should_seed_after_resource_provisioning_and_before_hosted_services_start()
     {
         // given
         var log = new List<string>();
@@ -95,9 +95,8 @@ public sealed class SeedOnStartupTests : TestBase
         builder.Services.AddHostedService(_ => new StartLogger(log));
         builder.Services.AddSingleton(log);
         builder.Services.AddSeeder<ListSeeder>();
-        builder.Services.AddHeadlessSeedOnStartup();
-        builder.Services.AddHeadlessStatefulResource(_ => new RecordingResource("Schema", "definitions", log));
-        builder.Services.AddHeadlessResourceSetupOnStartup();
+        builder.Services.AddResourceProvisioner(_ => new RecordingProvisioner("Schema", "definitions", log));
+        builder.Services.AddDeployStepsOnStartup();
         using var host = builder.Build();
 
         // when
@@ -105,7 +104,7 @@ public sealed class SeedOnStartupTests : TestBase
         await host.StopAsync(AbortToken);
 
         // then
-        log.Should().Equal("setup definitions", "seed", "start");
+        log.Should().Equal("provision definitions", "seed", "start");
     }
 
     [Fact]
@@ -115,7 +114,7 @@ public sealed class SeedOnStartupTests : TestBase
         var log = new List<string>();
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddSeeder<FailingSeeder>();
-        builder.Services.AddHeadlessSeedOnStartup();
+        builder.Services.AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None);
         builder.Services.AddHostedService(_ => new StartLogger(log));
         using var host = builder.Build();
 
@@ -175,15 +174,15 @@ public sealed class SeedOnStartupTests : TestBase
     }
 
     [Fact]
-    public async Task should_verify_the_schema_before_seeding_so_a_missing_table_names_resources_setup()
+    public async Task should_verify_the_schema_before_seeding_so_a_missing_table_names_resources_provision()
     {
-        // given — a host that seeds on startup but never set its tables up
+        // given — a host that seeds on startup but never provisioned its tables
         using var db = new Tests.Initialization.SqliteSchemaDatabase();
         var log = new List<string>();
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddSingleton(log);
         builder.Services.AddSeeder<ListSeeder>();
-        builder.Services.AddHeadlessSeedOnStartup();
+        builder.Services.AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None);
         var contribution = db.Contribution(
             "Widgets",
             "s",
@@ -202,7 +201,7 @@ public sealed class SeedOnStartupTests : TestBase
         // then
         await act.Should()
             .ThrowAsync<Headless.Hosting.Initialization.Schema.SchemaRunnerException>()
-            .WithMessage("*'resources setup'*");
+            .WithMessage("*'resources provision'*");
         log.Should().BeEmpty("no seeder runs against a schema that is not set up");
     }
 

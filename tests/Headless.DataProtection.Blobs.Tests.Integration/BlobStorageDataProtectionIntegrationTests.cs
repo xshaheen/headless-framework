@@ -6,6 +6,7 @@ using Azure.Storage.Blobs.Models;
 using Headless.Blobs;
 using Headless.Blobs.Azure;
 using Headless.DataProtection;
+using Headless.Hosting;
 using Headless.IO;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.DataProtection;

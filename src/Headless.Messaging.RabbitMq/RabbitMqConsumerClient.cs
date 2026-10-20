@@ -32,9 +32,9 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly ConsumerSubscriptionKind _kind;
 
-    // Shared topology is the deployment's (resources setup), and the host checks it once in its topology warm-up, so a
-    // client declares nothing for it and a missing queue surfaces when the client consumes. A runtime subscription, which
-    // no deploy step knows, creates its own.
+    // Shared topology is the deployment's (resources provision), and the host checks it once in its topology warm-up, so
+    // a client declares nothing for it and a missing queue surfaces when the client consumes. A runtime subscription,
+    // which no deploy step knows, creates its own.
     private readonly bool _provisionsTopology;
     private readonly TransportEnvelopeGate _envelopeGate;
 
@@ -154,7 +154,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                 _queueNames.Add(queueName);
             }
 
-            // A registered subscription's bindings are the deployment's, made by resources setup.
+            // A registered subscription's bindings are the deployment's, made by resources provision.
             if (_provisionsTopology)
             {
                 await RabbitMqQueueTopology
@@ -219,7 +219,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
             _ready.TrySetResult();
         }
-        catch (StatefulResourceException ex)
+        catch (ResourceProvisioningException ex)
         {
             _ready.TrySetException(ex);
             throw;
@@ -573,7 +573,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                     continue;
                 }
 
-                // The first call that names a shared queue the client never declared: a queue resources setup did not
+                // The first call that names a shared queue the client never declared: a queue resources provision did not
                 // create fails here naming the fix, not as a bare NOT_FOUND.
                 var consumerTag = await RabbitMqQueueTopology
                     .RequireAsync(

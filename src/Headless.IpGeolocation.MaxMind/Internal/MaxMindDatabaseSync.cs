@@ -71,7 +71,7 @@ internal sealed partial class MaxMindDatabaseSync : IDisposable
 
     /// <summary>
     /// Checks every edition once like <see cref="UpdateAllAsync" />, but tries a download that failed recently again:
-    /// an operator who runs <c>resources setup</c> asked for it explicitly.
+    /// an operator who runs <c>resources provision</c> asked for it explicitly.
     /// </summary>
     /// <returns>Each edition whose check failed, with the error; empty when every check succeeded.</returns>
     public Task<IReadOnlyList<(string EditionId, Exception Error)>> UpdateAllNowAsync(

@@ -262,7 +262,7 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         try
         {
             // A session stands in for a deployed host: the shared exchanges exist before any publish checks them.
-            await new RabbitMqTopologyProvisioner(pool, rabbitOptions).SetupAsync(
+            await new RabbitMqTopologyProvisioner(pool, rabbitOptions).ProvisionAsync(
                 MessagingTopology.Empty,
                 cancellationToken
             );

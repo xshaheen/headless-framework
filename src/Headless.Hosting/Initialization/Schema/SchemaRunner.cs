@@ -163,7 +163,7 @@ public sealed partial class SchemaRunner(
         {
             throw new SchemaRunnerException(
                 $"Headless schema runner ({mode} mode): the database history disagrees with the registered steps: "
-                    + $"{string.Join("; ", failures)}. A missing step needs 'resources setup' (dotnet <app>.dll resources setup), the exported deploy script, or AddHeadlessResourceSetupOnStartup() in development; a "
+                    + $"{string.Join("; ", failures)}. A missing step needs 'resources provision' (dotnet <app>.dll resources provision), the exported deploy script, or AddDeployStepsOnStartup() in development; a "
                     + "changed checksum means a released step was edited, so add a new step instead."
             )
             {
@@ -664,7 +664,7 @@ public sealed partial class SchemaRunner(
     /// the history. Runs under the database's schema lock, so it never interleaves with a runner applying steps.
     /// </summary>
     /// <exception cref="SchemaRunnerException">A connection or the lock could not be taken, or a delete failed.</exception>
-    internal async Task ClearAsync(CancellationToken cancellationToken)
+    internal async Task PurgeAsync(CancellationToken cancellationToken)
     {
         foreach (var group in await _GroupByDatabaseAsync(includeExportOnly: true).ConfigureAwait(false))
         {
@@ -692,7 +692,7 @@ public sealed partial class SchemaRunner(
     /// applying runner reads.
     /// </summary>
     /// <exception cref="SchemaRunnerException">A connection or the lock could not be taken, or a statement failed.</exception>
-    internal async Task TeardownAsync(CancellationToken cancellationToken)
+    internal async Task DeleteAsync(CancellationToken cancellationToken)
     {
         foreach (var group in await _GroupByDatabaseAsync(includeExportOnly: true).ConfigureAwait(false))
         {

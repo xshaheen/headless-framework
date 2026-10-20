@@ -26,7 +26,7 @@ public static class SetupAuditLogEntityFramework
         /// application startup.
         /// </typeparam>
         /// <remarks>
-        /// This overload uses EF Core migrations for schema management, so it registers no stateful resource. A startup gate validates that the registered
+        /// This overload uses EF Core migrations for schema management, so it registers no provisioned resource. A startup gate validates that the registered
         /// <typeparamref name="TContext"/> fully configured <c>AuditLogEntry</c> through
         /// <c>modelBuilder.ConfigureHeadlessAuditLog(...)</c> and throws <see cref="InvalidOperationException"/>
         /// when the model did not run that configuration.
