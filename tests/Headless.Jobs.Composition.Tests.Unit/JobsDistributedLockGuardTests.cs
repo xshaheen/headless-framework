@@ -452,7 +452,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     [Fact]
     public async Task seed_run_fails_when_the_jobs_seeder_cannot_acquire_the_lock()
     {
-        // given — the whole seed run, as the seed verb and AddHeadlessSeedOnStartup run it
+        // given — the whole seed run, as the seed verb and AddDeployStepsOnStartup run it
         var faultingLock = Substitute.For<IDistributedLock>();
         faultingLock
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())

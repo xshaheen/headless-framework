@@ -49,7 +49,7 @@ namespace Headless.Testing.AspNetCore;
 /// <see langword="false"/> for a test whose resources already exist or that tests the check.
 /// </param>
 /// <param name="seed">
-/// Whether the host runs its seeders when it starts, as <c>AddHeadlessSeedOnStartup</c> does, so definitions and
+/// Whether the host runs its seeders when it starts, as <c>AddDeployStepsOnStartup</c> does, so definitions and
 /// scheduled jobs exist before the tests run. Defaults to <see langword="true"/>.
 /// </param>
 [PublicAPI]
