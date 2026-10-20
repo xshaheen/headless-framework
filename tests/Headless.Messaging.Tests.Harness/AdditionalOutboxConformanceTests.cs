@@ -325,7 +325,7 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
 
         if (setupResources)
         {
-            services.AddDeployStepsOnStartup();
+            services.AddDeployStepsOnStartup(o => o.Seed = false);
         }
 
         services.AddSingleton<ProbeInbox>();

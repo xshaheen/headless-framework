@@ -77,7 +77,7 @@ public sealed class SqliteSchemaRunnerFixture
 
         if (setupResources)
         {
-            builder.Services.AddDeployStepsOnStartup();
+            builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         }
 
         return builder.Build();

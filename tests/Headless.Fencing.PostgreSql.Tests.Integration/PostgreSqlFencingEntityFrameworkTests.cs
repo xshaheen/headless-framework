@@ -81,7 +81,7 @@ public sealed class PostgreSqlFencingEntityFrameworkTests(PostgreSqlFencingFixtu
         services.AddHeadlessFencing(fixture.ConfigureProvider);
 
         // A host start only verifies the schema, so the test host creates it first, as a development host does.
-        services.AddDeployStepsOnStartup();
+        services.AddDeployStepsOnStartup(o => o.Seed = false);
 
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 

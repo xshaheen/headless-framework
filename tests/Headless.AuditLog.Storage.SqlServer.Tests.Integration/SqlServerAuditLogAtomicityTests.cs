@@ -258,7 +258,7 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
             setup.ConfigureStorage(options => options.Schema = _Schema);
             setup.UseSqlServer(fixture.ConnectionString);
         });
-        builder.Services.AddDeployStepsOnStartup();
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         using var host = builder.Build();
 
         // when
@@ -293,7 +293,7 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         });
         builder.Services.AddSingleton(accessor);
 
-        builder.Services.AddDeployStepsOnStartup();
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         return builder.Build();
     }
 

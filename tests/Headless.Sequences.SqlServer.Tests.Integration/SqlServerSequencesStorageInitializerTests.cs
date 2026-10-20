@@ -229,7 +229,7 @@ public sealed class SqlServerSequencesStorageInitializerTests(SqlServerSequences
 
         if (setupResources)
         {
-            builder.Services.AddDeployStepsOnStartup();
+            builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         }
 
         builder.Services.AddHeadlessSequences(setup => setup.UseSqlServer(configure));

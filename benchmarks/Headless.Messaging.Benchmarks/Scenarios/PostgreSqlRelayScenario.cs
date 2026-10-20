@@ -52,7 +52,7 @@ internal static class PostgreSqlRelayScenario
             setup.UsePostgreSql(connectionString);
         });
 
-        builder.Services.AddDeployStepsOnStartup();
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         using var host = builder.Build();
         await host.StartAsync();
 

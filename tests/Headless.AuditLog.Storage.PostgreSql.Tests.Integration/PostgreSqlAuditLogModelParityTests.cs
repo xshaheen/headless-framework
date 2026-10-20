@@ -76,7 +76,7 @@ public sealed class PostgreSqlAuditLogModelParityTests(PostgreSqlAuditLogFixture
             setup.UsePostgreSql(fixture.ConnectionString);
         });
 
-        builder.Services.AddDeployStepsOnStartup();
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         return builder.Build();
     }
 

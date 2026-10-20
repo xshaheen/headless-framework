@@ -78,7 +78,7 @@ public static class FeaturesStorageFixtureExtensions
 
         if (setupResources)
         {
-            builder.Services.AddDeployStepsOnStartup();
+            builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         }
 
         return builder.Build();
