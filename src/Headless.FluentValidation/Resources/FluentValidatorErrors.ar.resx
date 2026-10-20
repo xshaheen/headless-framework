@@ -118,4 +118,19 @@
   <data name="g:minimum_age" xml:space="preserve">
     <value>يجب ألا يقل عدد السنوات منذ {PropertyName} عن {MinimumAge}.</value>
   </data>
+  <data name="g:file_not_empty" xml:space="preserve">
+    <value>لا يمكن أن يكون الملف فارغاً.</value>
+  </data>
+  <data name="g:file_greater_than_or_equal_to" xml:space="preserve">
+    <value>الحد الأدنى لحجم الملف '{PropertyName}' هو {MinSize} MB، وحجم الملف المرفوع {TotalLength} MB.</value>
+  </data>
+  <data name="g:file_less_than_or_equal_to" xml:space="preserve">
+    <value>الحد الأقصى لحجم الملف '{PropertyName}' هو {MaxSize} MB، وحجم الملف المرفوع {TotalLength} MB.</value>
+  </data>
+  <data name="g:file_unexpected_signature" xml:space="preserve">
+    <value>نوع الملف غير مسموح به.</value>
+  </data>
+  <data name="g:file_unexpected_content_type" xml:space="preserve">
+    <value>يجب أن يكون نوع محتوى الملف '{PropertyName}' أحد الأنواع التالية: {ContentTypes}.</value>
+  </data>
 </root>

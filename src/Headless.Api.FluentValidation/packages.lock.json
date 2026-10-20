@@ -14,15 +14,6 @@
         "resolved": "0.1.2",
         "contentHash": "RQdzUtFVhwLwisP2Du7Ugm7ldwAzc+QJrlZWNIwHXcgq4b5fLwZgdN1203RdYiHS8OOALophC6yWekxu3UgN2g=="
       },
-      "FileSignatures": {
-        "type": "Direct",
-        "requested": "[7.3.0, )",
-        "resolved": "7.3.0",
-        "contentHash": "jFvEf1Orm5VMH9gZ9aM7Rlu762CBm3zjYApaA9E/EkvO6CnvcDjbgRowmyk2c3y6LtI3D6DpYaU8y9+0lt0BuQ==",
-        "dependencies": {
-          "OpenMcdf": "3.1.4"
-        }
-      },
       "JetBrains.Annotations": {
         "type": "Direct",
         "requested": "[2026.2.0, )",
@@ -256,6 +247,13 @@
           "Headless.Extensions": "[1.0.0, )"
         }
       },
+      "headless.fluentvalidation.filesignatures": {
+        "type": "Project",
+        "dependencies": {
+          "FileSignatures": "[7.3.0, )",
+          "Headless.FluentValidation": "[1.0.0, )"
+        }
+      },
       "headless.generator.primitives.abstractions": {
         "type": "Project"
       },
@@ -323,6 +321,15 @@
         "contentHash": "tx/OIyp39OP2uM57MHn8GqRSCi7+XYFU3/KqcPeiqt8rQE+oiK4bRcMXZvShtiS+SbtifqXy4zg6vr5+LPubNQ==",
         "dependencies": {
           "Asp.Versioning.Abstractions": "10.2.1"
+        }
+      },
+      "FileSignatures": {
+        "type": "CentralTransitive",
+        "requested": "[7.3.0, )",
+        "resolved": "7.3.0",
+        "contentHash": "jFvEf1Orm5VMH9gZ9aM7Rlu762CBm3zjYApaA9E/EkvO6CnvcDjbgRowmyk2c3y6LtI3D6DpYaU8y9+0lt0BuQ==",
+        "dependencies": {
+          "OpenMcdf": "3.1.4"
         }
       },
       "FluentValidation": {

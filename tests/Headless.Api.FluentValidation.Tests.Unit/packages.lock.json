@@ -470,9 +470,8 @@
       "headless.api.fluentvalidation": {
         "type": "Project",
         "dependencies": {
-          "FileSignatures": "[7.3.0, )",
           "Headless.Api": "[1.0.0, )",
-          "Headless.FluentValidation": "[1.0.0, )",
+          "Headless.FluentValidation.FileSignatures": "[1.0.0, )",
           "Headless.PhoneNumbers": "[1.0.0, )"
         }
       },
@@ -524,6 +523,13 @@
         "dependencies": {
           "FluentValidation": "[12.2.0, )",
           "Headless.Extensions": "[1.0.0, )"
+        }
+      },
+      "headless.fluentvalidation.filesignatures": {
+        "type": "Project",
+        "dependencies": {
+          "FileSignatures": "[7.3.0, )",
+          "Headless.FluentValidation": "[1.0.0, )"
         }
       },
       "headless.generator.primitives.abstractions": {

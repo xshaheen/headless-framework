@@ -7,14 +7,10 @@
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="FileSignatures" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Api\Headless.Api.csproj" />
-    <ProjectReference Include="..\Headless.FluentValidation\Headless.FluentValidation.csproj" />
+    <ProjectReference Include="..\Headless.FluentValidation.FileSignatures\Headless.FluentValidation.FileSignatures.csproj" />
     <ProjectReference Include="..\Headless.PhoneNumbers\Headless.PhoneNumbers.csproj" />
-  </ItemGroup>
-  <ItemGroup Label="Resources">
-    <EmbeddedResource Update="Resources\FluentValidatorErrors.resx" />
   </ItemGroup>
 </Project>

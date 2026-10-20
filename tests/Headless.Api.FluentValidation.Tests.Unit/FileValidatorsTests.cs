@@ -3,7 +3,7 @@
 using FileSignatures;
 using FluentValidation;
 using FluentValidation.TestHelper;
-using Headless.Api;
+using Headless.FluentValidation;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 
@@ -588,7 +588,7 @@ public sealed class FileValidatorsTests : TestBase
             .CreateDescriptor()
             .GetValidatorsForMember(nameof(FileUploadTestModel.UploadedFile))
             .Select(x => x.Validator)
-            .OfType<IFormFileSizeValidator>()
+            .OfType<IFileSizeValidator>()
             .Select(x => (x.MinBytes, x.MaxBytes));
 
         // then
@@ -609,7 +609,7 @@ public sealed class FileValidatorsTests : TestBase
             .CreateDescriptor()
             .GetValidatorsForMember(nameof(FileUploadTestModel.UploadedFile))
             .Select(x => x.Validator)
-            .OfType<IFormFileContentTypeValidator>()
+            .OfType<IFileContentTypeValidator>()
             .Single();
 
         // then
@@ -631,7 +631,7 @@ public sealed class FileValidatorsTests : TestBase
         var result = validator.TestValidate(new FileUploadTestModel { UploadedFile = file });
 
         // then
-        result.Errors.Should().ContainSingle().Which.ErrorCode.Should().Be("g:file_unexpected_signature");
+        result.Errors.Should().ContainSingle().Which.ErrorCode.Should().Be("g:file_unexpected_content_type");
     }
 
     #endregion
