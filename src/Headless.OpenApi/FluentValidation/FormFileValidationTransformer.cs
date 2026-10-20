@@ -3,6 +3,7 @@
 using FluentValidation;
 using FluentValidation.Validators;
 using Headless.Api;
+using Headless.FluentValidation;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
@@ -21,7 +22,7 @@ namespace Headless.OpenApi;
 /// </summary>
 /// <remarks>
 /// <para>
-/// It reads the rules through <see cref="IFormFileContentTypeValidator"/> and <see cref="IFormFileSizeValidator"/>, from
+/// It reads the rules through <see cref="IFileContentTypeValidator"/> and <see cref="IFileSizeValidator"/>, from
 /// the validator of the form model a Minimal API binds with <c>[FromForm]</c>, or of the type that declares a property
 /// MVC binds from the form. Several rules on one part narrow each other: the types are intersected, and the tightest
 /// bounds win. Conditional rules are skipped, as they are for schemas.
@@ -152,7 +153,7 @@ internal sealed class FormFileValidationTransformer : IOpenApiOperationTransform
     {
         foreach (var (validator, _) in validators)
         {
-            if (validator is not (IFormFileContentTypeValidator or IFormFileSizeValidator))
+            if (validator is not (IFileContentTypeValidator or IFileSizeValidator))
             {
                 continue;
             }
@@ -225,13 +226,13 @@ internal sealed class FormFileValidationTransformer : IOpenApiOperationTransform
         {
             switch (validator)
             {
-                case IFormFileContentTypeValidator contentTypes:
+                case IFileContentTypeValidator contentTypes:
                     // Every rule must pass, so a second list narrows the first.
                     _contentTypes = _contentTypes is null
                         ? [.. contentTypes.ContentTypes.Distinct(StringComparer.OrdinalIgnoreCase)]
                         : [.. _contentTypes.Intersect(contentTypes.ContentTypes, StringComparer.OrdinalIgnoreCase)];
                     break;
-                case IFormFileSizeValidator size:
+                case IFileSizeValidator size:
                     if (size.MinBytes is { } min)
                     {
                         MinBytes = MinBytes is { } current ? Math.Max(current, min) : min;

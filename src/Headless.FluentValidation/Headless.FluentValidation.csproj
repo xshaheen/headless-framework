@@ -9,6 +9,10 @@
     <PackageReference Include="FluentValidation" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The IFormFile file rules build on the same internal FileRules as the IUploadedFile ones, so both stay one implementation. -->
+    <InternalsVisibleTo Include="Headless.Api.FluentValidation" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
   </ItemGroup>
   <ItemGroup Label="Resources">

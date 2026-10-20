@@ -326,4 +326,54 @@ public static class FluentValidatorErrorDescriber
             );
         }
     }
+
+    /// <summary>Error descriptors for file validation failures.</summary>
+    [PublicAPI]
+    public static class Files
+    {
+        /// <summary>Returns the descriptor for a file that has zero bytes (code <c>g:file_not_empty</c>).</summary>
+        public static ErrorDescriptor NotEmpty()
+        {
+            return new(
+                code: FluentValidatorErrorCodes.FileNotEmpty,
+                description: FluentValidatorErrors.g_file_not_empty
+            );
+        }
+
+        /// <summary>Returns the descriptor for a file whose size is below the required minimum (code <c>g:file_greater_than_or_equal_to</c>).</summary>
+        public static ErrorDescriptor GreaterThanOrEqualTo()
+        {
+            return new(
+                code: FluentValidatorErrorCodes.FileGreaterThanOrEqualTo,
+                description: FluentValidatorErrors.g_file_greater_than_or_equal_to
+            );
+        }
+
+        /// <summary>Returns the descriptor for a file whose size exceeds the allowed maximum (code <c>g:file_less_than_or_equal_to</c>).</summary>
+        public static ErrorDescriptor LessThanOrEqualTo()
+        {
+            return new(
+                code: FluentValidatorErrorCodes.FileLessThanOrEqualTo,
+                description: FluentValidatorErrors.g_file_less_than_or_equal_to
+            );
+        }
+
+        /// <summary>Returns the descriptor for a file whose declared content type is not in the allowed list (code <c>g:file_unexpected_content_type</c>).</summary>
+        public static ErrorDescriptor UnexpectedContentType()
+        {
+            return new(
+                code: FluentValidatorErrorCodes.FileUnexpectedContentType,
+                description: FluentValidatorErrors.g_file_unexpected_content_type
+            );
+        }
+
+        /// <summary>Returns the descriptor for a file whose binary signature does not match the expected format (code <c>g:file_unexpected_signature</c>).</summary>
+        public static ErrorDescriptor UnexpectedSignature()
+        {
+            return new(
+                code: FluentValidatorErrorCodes.FileUnexpectedSignature,
+                description: FluentValidatorErrors.g_file_unexpected_signature
+            );
+        }
+    }
 }

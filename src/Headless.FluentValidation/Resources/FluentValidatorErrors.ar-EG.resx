@@ -118,4 +118,19 @@
   <data name="g:minimum_age" xml:space="preserve">
     <value>{PropertyName} لازم يكون قبل {MinimumAge} سنة على الأقل.</value>
   </data>
+  <data name="g:file_not_empty" xml:space="preserve">
+    <value>الملف مينفعش يكون فاضي.</value>
+  </data>
+  <data name="g:file_greater_than_or_equal_to" xml:space="preserve">
+    <value>حجم الملف '{PropertyName}' لازم يكون {MinSize} MB على الأقل. حجم الملف اللي اترفع {TotalLength} MB.</value>
+  </data>
+  <data name="g:file_less_than_or_equal_to" xml:space="preserve">
+    <value>حجم الملف '{PropertyName}' لازم ميزيدش عن {MaxSize} MB. حجم الملف اللي اترفع {TotalLength} MB.</value>
+  </data>
+  <data name="g:file_unexpected_signature" xml:space="preserve">
+    <value>نوع الملف ده مش مسموح بيه.</value>
+  </data>
+  <data name="g:file_unexpected_content_type" xml:space="preserve">
+    <value>نوع محتوى الملف '{PropertyName}' لازم يكون واحد من دول: {ContentTypes}.</value>
+  </data>
 </root>
