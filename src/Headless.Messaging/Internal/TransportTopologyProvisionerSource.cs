@@ -83,6 +83,8 @@ internal sealed class TransportTopologyResourceProvisioner(
 
     public string Name => "topology";
 
+    public ResourceStartupCheck StartupCheck => provisioner.StartupCheck;
+
     public bool CanPurge => provisioner.CanPurge;
 
     public bool CanDelete => provisioner.CanDelete;

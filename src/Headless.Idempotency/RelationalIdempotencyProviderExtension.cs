@@ -2,7 +2,7 @@
 
 using System.Data.Common;
 using FluentValidation;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sql;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Configuration;

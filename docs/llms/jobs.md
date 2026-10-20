@@ -682,9 +682,8 @@ scheduler, the fallback loop, and the post-commit worker wait on it whether or n
 provider-time exponential retry (`FingerprintFailureCount` / `FingerprintRetryAfterUtc`, capped at 24h). Storage,
 provider, and unknown failures fail closed without stopping the host: the barrier stays shut, nothing is selected, the
 `jobs` readiness check stays `Unhealthy`, and the drain is logged (`WarmupFailed`) and retried with the warm-up
-back-off until it succeeds or the host stops. The warm-up does not gate the `warmup` readiness check, because the `jobs`
-check already reports it. Activation is also an `IInitializer`, so `HeadlessTestServer` returns only once the drain has
-opened the loops, and a failed activation fails that wait. The periodic sweep runs every `FingerprintSweepInterval`
+back-off until it succeeds or the host stops. The warm-up gates the `warmup` readiness check like any other, so a host
+is ready, and `HeadlessTestServer` returns, only once the drain has opened the loops. The periodic sweep runs every `FingerprintSweepInterval`
 (default 1h; rejected at setup above 24h, because it is also the *initial* delay of that capped defer backoff) in
 `FingerprintSweepBatchSize` pages (default 100), drains up to 100 consecutive full pages, performs one bounded keyset
 wrap, and retains its cursor when that pass bound is reached. Custom providers must implement the stale-page,

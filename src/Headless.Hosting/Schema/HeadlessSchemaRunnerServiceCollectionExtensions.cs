@@ -2,12 +2,12 @@
 
 using Headless.Checks;
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Hosting.Schema;
 
 /// <summary>Registers schema contributions and the one hosted runner that verifies them at startup.</summary>
 [PublicAPI]
@@ -37,8 +37,8 @@ public static class HeadlessSchemaRunnerServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Adds the schema runner, the hosted initializer that verifies the schema at startup, and one provisioned resource
-    /// per contribution, which <c>resources provision</c> or <c>AddDeployStepsOnStartup</c> applies. Idempotent.
+    /// Adds the schema runner and one resource provisioner per contribution: <c>resources provision</c> or
+    /// <c>AddDeployStepsOnStartup</c> applies it, and a host start verifies it and fails when a step is missing. Idempotent.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optionally configures the runner's timeouts.</param>
@@ -65,7 +65,6 @@ public static class HeadlessSchemaRunnerServiceCollectionExtensions
             sp.GetRequiredService<IOptions<SchemaRunnerOptions>>().Value.LockTimeout,
             sp.GetRequiredService<IOptions<SchemaRunnerOptions>>().Value.CommandTimeout
         ));
-        services.AddInitializerHostedService<SchemaRunnerInitializer>();
         services.AddResourceProvisionerSource<SchemaProvisionerSource>();
 
         return services;

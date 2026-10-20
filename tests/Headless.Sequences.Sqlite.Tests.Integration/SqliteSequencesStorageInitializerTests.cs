@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sequences;
 using Headless.Sequences.Sqlite;
 using Headless.Testing.Tests;
@@ -20,26 +20,22 @@ namespace Tests;
 public sealed class SqliteSequencesStorageInitializerTests(SqliteSequencesFixture fixture) : TestBase
 {
     [Fact]
-    public async Task should_throw_and_keep_initializer_unmarked_when_database_unreachable()
+    public async Task should_fail_the_start_with_the_driver_error_when_database_unreachable()
     {
         // A file in a directory that does not exist cannot be created, so the open fails.
         var unreachable = $"Data Source={Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "x.db")}";
         using var host = _CreateHost(options => options.ConnectionString = unreachable, setupResources: false);
 
-        await FluentActions
-            .Awaiting(() => host.StartAsync(AbortToken))
-            .Should()
-            .ThrowAsync<Exception>()
-            .Where(e => e is SqliteException || e.InnerException is SqliteException);
-
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
-        initializer.IsInitialized.Should().BeFalse();
-
-        await FluentActions
-            .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
-            .Should()
-            .ThrowAsync<SchemaRunnerException>()
-            .WithInnerException(typeof(SqliteException));
+        // The startup check fails the start; the schema runner names the features whose connection failed and keeps
+        // the driver error as the cause.
+        (
+            await FluentActions
+                .Awaiting(() => host.StartAsync(AbortToken))
+                .Should()
+                .ThrowAsync<ResourceProvisioningException>()
+        )
+            .WithInnerException<SchemaRunnerException>()
+            .WithInnerException<SqliteException>();
     }
 
     [Fact]
@@ -52,10 +48,6 @@ public sealed class SqliteSequencesStorageInitializerTests(SqliteSequencesFixtur
         {
             await Task.WhenAll(hosts.Select(h => h.StartAsync(AbortToken)));
 
-            hosts
-                .Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized)
-                .Should()
-                .AllSatisfy(initialized => initialized.Should().BeTrue());
             (await _CountTablesAsync(schema)).Should().Be(1);
             (await _CountHistoryRowsAsync(schema)).Should().Be(1);
         }
@@ -116,7 +108,7 @@ public sealed class SqliteSequencesStorageInitializerTests(SqliteSequencesFixtur
         await FluentActions
             .Awaiting(() => host.StartAsync(AbortToken))
             .Should()
-            .ThrowAsync<SchemaRunnerException>()
+            .ThrowAsync<ResourceProvisioningException>()
             .WithMessage("*resources provision*");
 
         (await _CountTablesAsync(schema)).Should().Be(0);

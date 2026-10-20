@@ -11,6 +11,8 @@ internal class RecordingProvisioner(string kind, string name, List<string> log) 
 
     public string Name => name;
 
+    public ResourceStartupCheck StartupCheck { get; init; } = ResourceStartupCheck.GateReadiness;
+
     /// <summary>Operations that throw <see cref="InvalidOperationException" /> with <see cref="FailureMessage" />.</summary>
     public HashSet<string> Failing { get; } = new(StringComparer.Ordinal);
 

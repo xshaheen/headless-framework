@@ -26,7 +26,7 @@ internal sealed class JobsSeeder(
 {
     public string Name => "Jobs";
 
-    public async ValueTask SeedAsync(CancellationToken cancellationToken = default)
+    public async Task SeedAsync(CancellationToken cancellationToken)
     {
         var executionContext = serviceProvider.GetRequiredService<JobsExecutionContext>();
         var schedulerOptions = serviceProvider.GetRequiredService<SchedulerOptionsBuilder>();

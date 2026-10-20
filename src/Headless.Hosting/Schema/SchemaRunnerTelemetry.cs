@@ -3,7 +3,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
-namespace Headless.Hosting.Initialization.Schema;
+namespace Headless.Hosting.Schema;
 
 /// <summary>
 /// The spans and metrics of <see cref="SchemaRunner" />, registered on <see cref="SchemaRunnerDiagnostics" />.

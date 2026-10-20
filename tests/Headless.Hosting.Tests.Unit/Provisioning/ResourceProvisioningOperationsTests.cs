@@ -209,11 +209,7 @@ public sealed class ResourceProvisioningOperationsTests : TestBase
         services.AddResourceProvisioner(_ => flaky);
         services.AddDeployStepsOnStartup();
         await using var provider = services.BuildServiceProvider();
-        var startup = provider
-            .GetServices<IHostedService>()
-            .OfType<IInitializer>()
-            .Cast<IHostedLifecycleService>()
-            .Single();
+        var startup = provider.GetServices<IHostedService>().OfType<ResourceProvisioningStartupService>().Single();
         var initializer = (IInitializer)startup;
 
         // when

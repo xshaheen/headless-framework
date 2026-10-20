@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Tests.Initialization;
 
 namespace Tests.Provisioning;
@@ -259,7 +260,9 @@ public sealed class SchemaProvisionerTests : TestBase, IDisposable
         var act = () => host.StartAsync(AbortToken);
 
         // then
-        await act.Should().ThrowAsync<SchemaRunnerException>().WithMessage("*'resources provision'*");
+        (await act.Should().ThrowAsync<ResourceProvisioningException>().WithMessage("*Schema Sqlite/s/Widgets*"))
+            .WithInnerException<ResourceProvisioningException>()
+            .WithMessage("Steps 1 of Widgets are not applied. Run 'resources provision'*");
     }
 
     [Fact]
@@ -280,6 +283,68 @@ public sealed class SchemaProvisionerTests : TestBase, IDisposable
         _db.Execute("INSERT INTO s_widgets (id) VALUES (1)");
         await host.StopAsync(AbortToken);
     }
+
+    [Fact]
+    public async Task should_verify_every_feature_of_one_database_in_one_pass_when_the_host_starts()
+    {
+        // given two provisioned features in one schema of one database
+        var widgets = _db.Contribution("Widgets", "s", _CreateWidgets);
+        var gadgets = _db.Contribution("Gadgets", "s", _CreateGadgets);
+        await using (var deploy = _Provider(widgets, gadgets))
+        {
+            await deploy.ProvisionResourcesAsync(AbortToken);
+        }
+
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddHeadlessSchemaContribution(_ => widgets);
+        builder.Services.AddHeadlessSchemaContribution(_ => gadgets);
+        using var host = builder.Build();
+        var before = _db.ConnectionsOpened;
+
+        // when
+        await host.StartAsync(AbortToken);
+
+        // then: one history read answers both features, not one per feature
+        (_db.ConnectionsOpened - before)
+            .Should()
+            .Be(1);
+        await host.StopAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_start_and_log_a_step_this_host_does_not_register()
+    {
+        // given a newer deployment applied a second step of a feature this host knows
+        var newer = new SchemaStep("2", "widget names", "CREATE TABLE IF NOT EXISTS s_widget_names (id INTEGER)");
+        await using (var deploy = _Provider(_db.Contribution("Widgets", "s", _CreateWidgets, newer)))
+        {
+            await deploy.ProvisionResourcesAsync(AbortToken);
+        }
+
+        var logs = new CapturingLoggerProvider();
+        var builder = Host.CreateApplicationBuilder();
+        builder.Logging.AddProvider(logs);
+        var contribution = _db.Contribution("Widgets", "s", _CreateWidgets);
+        builder.Services.AddHeadlessSchemaContribution(_ => contribution);
+        using var host = builder.Build();
+
+        // when: an older replica starts during a rolling deploy
+        await host.StartAsync(AbortToken);
+        await host.StopAsync(AbortToken);
+
+        // then
+        logs.Entries.Should()
+            .ContainSingle(e => e.EventId.Id == 10)
+            .Which.Should()
+            .Match<CapturedLog>(e =>
+                e.EventId.Name == "SchemaRunnerUnknownStep"
+                && e.Level == LogLevel.Warning
+                && e.Message.Contains("Widgets/2", StringComparison.Ordinal)
+            );
+    }
+
+    private static SchemaStep _CreateGadgets =>
+        new("1", "gadgets", "CREATE TABLE IF NOT EXISTS s_gadgets (id INTEGER)");
 
     private static SchemaStep _CreateWidgets =>
         new("1", "widgets", "CREATE TABLE IF NOT EXISTS s_widgets (id INTEGER)");
@@ -307,4 +372,39 @@ public sealed class SchemaProvisionerTests : TestBase, IDisposable
             .Should()
             .ContainSingle()
             .Which;
+
+    private sealed record CapturedLog(string Category, LogLevel Level, EventId EventId, string Message);
+
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<CapturedLog> _entries = new();
+
+        public IReadOnlyList<CapturedLog> Entries => [.. _entries];
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(categoryName, _entries);
+
+        public void Dispose() { }
+
+        private sealed class CapturingLogger(
+            string category,
+            System.Collections.Concurrent.ConcurrentQueue<CapturedLog> entries
+        ) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                entries.Enqueue(new CapturedLog(category, logLevel, eventId, formatter(state, exception)));
+            }
+        }
+    }
 }

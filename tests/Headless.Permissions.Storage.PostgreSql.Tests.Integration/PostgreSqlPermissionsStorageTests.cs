@@ -28,9 +28,6 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
 
         // when
         await host.StartAsync(AbortToken);
-        var initializer = host
-            .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .Single(x => x is HostedInitializer);
         var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
         var definitionRepository = host.Services.GetRequiredService<IPermissionDefinitionRecordRepository>();
         var record = new PermissionGrantRecord(Guid.NewGuid(), "Users.Create", "Role", "admin", isGranted: true);
@@ -44,8 +41,9 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         var storedPermissions = await definitionRepository.GetPermissionsListAsync(AbortToken);
 
         // then
-        initializer.IsInitialized.Should().BeTrue();
-        (await _TableExistsAsync("permission_grants")).Should().BeTrue();
+        (await _TableExistsAsync("permission_grants"))
+            .Should()
+            .BeTrue();
         (await _TableExistsAsync("permission_definitions")).Should().BeTrue();
         (await _TableExistsAsync("permission_group_definitions")).Should().BeTrue();
         stored.Should().NotBeNull();

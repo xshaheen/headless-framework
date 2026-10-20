@@ -145,7 +145,7 @@ MaxMind GeoIP2 and GeoLite2 provider with automatic database updates.
 
 - `UseMaxMind(IConfiguration)`, `UseMaxMind(Action<MaxMindOptions>)`, and `UseMaxMind(Action<MaxMindOptions, IServiceProvider>)` choose the provider.
 - `MaxMindOptions.HttpClientName` names the `HttpClient` that downloads updates, so an application can add a proxy or a handler: `services.AddHttpClient(MaxMindOptions.HttpClientName).ConfigurePrimaryHttpMessageHandler(...)`.
-- `UseMaxMind` also registers the `MaxMindDatabases` warm-up and the `MaxMind` resource provisioner. Its operations:
+- `UseMaxMind` also registers the `MaxMindDatabases` warm-up and the `MaxMind` resource provisioner. Its startup check is `None`, because the warm-up already holds readiness until the files are on disk. Its operations:
 
 | Operation | Behavior |
 | --- | --- |

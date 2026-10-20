@@ -10,11 +10,11 @@ namespace Headless.DataProtection;
 public sealed class DataProtectionKeyRingValidationOptions
 {
     /// <summary>
-    /// How a validation failure affects the host. Defaults to <see cref="KeyRingValidationMode.GateReadiness"/>, which
-    /// keeps the host unready and retries until the key store works; <see cref="KeyRingValidationMode.LogOnly"/> runs
+    /// How a validation failure affects the host. Defaults to <see cref="KeyRingCheck.GateReadiness"/>, which
+    /// keeps the host unready and retries until the key store works; <see cref="KeyRingCheck.LogOnly"/> runs
     /// once, logs a failure at <c>Critical</c> level, and never gates readiness.
     /// </summary>
-    public KeyRingValidationMode Mode { get; set; } = KeyRingValidationMode.GateReadiness;
+    public KeyRingCheck Check { get; set; } = KeyRingCheck.GateReadiness;
 
     /// <summary>
     /// Whether to verify write access with a real write on each validation by uploading and deleting a reserved

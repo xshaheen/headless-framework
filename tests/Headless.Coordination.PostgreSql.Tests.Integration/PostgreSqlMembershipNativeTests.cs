@@ -3,6 +3,7 @@
 using Headless.Context;
 using Headless.Coordination;
 using Headless.Hosting;
+using Headless.Hosting.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -160,7 +161,7 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
     }
 
     [Fact]
-    public async Task should_wrap_initialization_failure_in_invalid_operation_exception()
+    public async Task should_name_the_feature_and_keep_the_driver_error_when_provisioning_cannot_connect()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -181,13 +182,13 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
         });
 
         await using var provider = services.BuildServiceProvider();
-        var initializer = provider.GetServices<IInitializer>().OfType<HostedInitializer>().Single();
 
-        var act = async () => await initializer.InitializeAsync(AbortToken);
+        var act = () => provider.ProvisionResourcesAsync(AbortToken);
 
         // The schema runner reports which features' connection failed, so the operator sees Coordination named.
-        var thrown = await act.Should().ThrowAsync<InvalidOperationException>();
-        thrown.WithMessage("*schema runner*Coordination*");
+        var thrown = (await act.Should().ThrowAsync<ResourceProvisioningException>())
+            .WithInnerException<SchemaRunnerException>()
+            .WithMessage("*schema runner*Coordination*");
         // The original transport error must be preserved as the inner exception so the cause is not lost.
         thrown.Which.InnerException.Should().NotBeNull();
     }

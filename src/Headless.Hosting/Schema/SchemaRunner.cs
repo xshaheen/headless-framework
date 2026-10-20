@@ -7,7 +7,7 @@ using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Headless.Hosting.Initialization.Schema;
+namespace Headless.Hosting.Schema;
 
 /// <summary>
 /// Applies, verifies, and exports the schema steps every registered feature contributes. Contributions that reach

@@ -5,7 +5,7 @@ using Headless.Context;
 using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Jobs;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;

@@ -2,7 +2,7 @@
 
 using System.Data.Common;
 using System.Diagnostics;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Time.Testing;
 
@@ -16,6 +16,7 @@ internal sealed class SqliteSchemaDatabase : IDisposable
 {
     private readonly SqliteConnection _keepAlive;
     private int _racesLeft;
+    private int _opened;
 
     public SqliteSchemaDatabase()
     {
@@ -40,6 +41,9 @@ internal sealed class SqliteSchemaDatabase : IDisposable
     /// <summary>The span the last <c>SELECT capture_activity()</c> statement ran under.</summary>
     public Activity? CapturedActivity { get; private set; }
 
+    /// <summary>How many connections the runner has opened; the database's own keep-alive connection is not counted.</summary>
+    public int ConnectionsOpened => Volatile.Read(ref _opened);
+
     /// <summary>Makes the next <paramref name="count" /> <c>SELECT race_once()</c> statements fail as a lost race.</summary>
     public void RaceNext(int count) => _racesLeft = count;
 
@@ -63,6 +67,13 @@ internal sealed class SqliteSchemaDatabase : IDisposable
         connection.CreateFunction<string, bool>("try_lock", _ => _TryLock());
         connection.CreateFunction("race_once", _RaceOnce);
         connection.CreateFunction("capture_activity", _CaptureActivity);
+        connection.StateChange += (_, change) =>
+        {
+            if (change.CurrentState == System.Data.ConnectionState.Open)
+            {
+                Interlocked.Increment(ref _opened);
+            }
+        };
 
         return connection;
     }

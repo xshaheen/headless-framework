@@ -24,4 +24,17 @@ internal sealed class SettingDefinitionsSeeder(
 
     protected override Task SaveAsync(CancellationToken cancellationToken) =>
         services.GetRequiredService<IDynamicSettingDefinitionStore>().SaveAsync(cancellationToken);
+
+    protected override async Task<SeedState> VerifyStoreAsync(CancellationToken cancellationToken)
+    {
+        // A store the application replaced has no comparison this seeder knows, so it cannot tell.
+        if (services.GetRequiredService<IDynamicSettingDefinitionStore>() is not DynamicSettingDefinitionStore store)
+        {
+            return SeedState.Unknown;
+        }
+
+        return await store.HoldsStaticDefinitionsAsync(cancellationToken).ConfigureAwait(false)
+            ? SeedState.Current
+            : SeedState.Stale;
+    }
 }

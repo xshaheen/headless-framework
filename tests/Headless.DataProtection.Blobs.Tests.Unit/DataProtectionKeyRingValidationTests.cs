@@ -102,7 +102,7 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
         services
             .AddDataProtection()
             .PersistKeysToBlobStorage(_CreateFailingStorage(), Substitute.For<IBlobContainerManager>())
-            .ValidateKeyRing(options => options.Mode = KeyRingValidationMode.LogOnly);
+            .ValidateKeyRing(options => options.Check = KeyRingCheck.LogOnly);
 
         await using var provider = services.BuildServiceProvider();
         var sut = _GetWarmup(provider);
@@ -174,7 +174,7 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
         services
             .AddDataProtection()
             .PersistKeysToBlobStorage(_CreateWorkingStorage(), Substitute.For<IBlobContainerManager>())
-            .ValidateKeyRing(options => options.Mode = KeyRingValidationMode.LogOnly);
+            .ValidateKeyRing(options => options.Check = KeyRingCheck.LogOnly);
         services.Configure<KeyManagementOptions>(options => options.AutoGenerateKeys = false);
 
         await using var provider = services.BuildServiceProvider();
@@ -259,7 +259,7 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
         services
             .AddDataProtection()
             .PersistKeysToBlobStorage(_CreateWorkingStorage(), Substitute.For<IBlobContainerManager>())
-            .ValidateKeyRing(options => options.Mode = KeyRingValidationMode.LogOnly);
+            .ValidateKeyRing(options => options.Check = KeyRingCheck.LogOnly);
 
         await using var provider = services.BuildServiceProvider();
         using var stopping = new CancellationTokenSource();
@@ -284,7 +284,7 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
 
         // when
         builder.ValidateKeyRing();
-        builder.ValidateKeyRing(options => options.Mode = KeyRingValidationMode.LogOnly);
+        builder.ValidateKeyRing(options => options.Check = KeyRingCheck.LogOnly);
 
         // then: one warm-up, nothing that runs during the host start, and the second call's configure applied.
         services
@@ -298,8 +298,8 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
         using var provider = services.BuildServiceProvider();
         provider
             .GetRequiredService<IOptions<DataProtectionKeyRingValidationOptions>>()
-            .Value.Mode.Should()
-            .Be(KeyRingValidationMode.LogOnly);
+            .Value.Check.Should()
+            .Be(KeyRingCheck.LogOnly);
     }
 
     #endregion
@@ -381,7 +381,7 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
             builder
                 .Services.AddDataProtection()
                 .PersistKeysToBlobStorage(storage, _Manager())
-                .ValidateKeyRing(options => options.Mode = KeyRingValidationMode.LogOnly);
+                .ValidateKeyRing(options => options.Check = KeyRingCheck.LogOnly);
         });
 
         // when
@@ -451,16 +451,11 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
         var report = await services
             .GetRequiredService<HealthCheckService>()
             .CheckHealthAsync(
-                r =>
-                    string.Equals(
-                        r.Name,
-                        HeadlessWarmupServiceCollectionExtensions.HealthCheckName,
-                        StringComparison.Ordinal
-                    ),
+                r => string.Equals(r.Name, HeadlessHealthCheckNames.Warmup, StringComparison.Ordinal),
                 AbortToken
             );
 
-        return report.Entries[HeadlessWarmupServiceCollectionExtensions.HealthCheckName];
+        return report.Entries[HeadlessHealthCheckNames.Warmup];
     }
 
     private static async Task<HealthReportEntry> _WaitForReadinessAsync(
@@ -486,11 +481,7 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
 
     private static Task _WaitUntilWarmAsync(IServiceProvider services)
     {
-        return services
-            .GetServices<IInitializer>()
-            .Single()
-            .WaitForInitializationAsync(AbortToken)
-            .WaitAsync(_WaitLimit);
+        return services.WaitForWarmupAsync(AbortToken).WaitAsync(_WaitLimit, AbortToken);
     }
 
     /// <summary>Registers a substitute logger factory whose logger records Critical-level calls.</summary>

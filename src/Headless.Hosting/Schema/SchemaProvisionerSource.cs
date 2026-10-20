@@ -6,15 +6,16 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Hosting.Initialization.Schema;
+namespace Headless.Hosting.Schema;
 
 /// <summary>
 /// Offers every registered schema contribution as one resource provisioner, so <c>resources provision</c> applies the same
 /// steps the deploy script holds, export-only contributions included.
 /// </summary>
-internal sealed class SchemaProvisionerSource(
+internal sealed partial class SchemaProvisionerSource(
     IEnumerable<SchemaContribution> contributions,
     IOptions<SchemaRunnerOptions> options,
+    SchemaRunner hostRunner,
     ILogger<SchemaRunner>? logger = null,
     TimeProvider? timeProvider = null
 ) : IResourceProvisionerSource
@@ -44,6 +45,10 @@ internal sealed class SchemaProvisionerSource(
             .Select(g => g.Key)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        // One verify pass of the host's own runner answers every provisioner of this lookup, so a host start reads each
+        // schema's history once, not once per feature.
+        var hostVerification = new HostVerification(hostRunner, logger);
+
         return
         [
             .. distinct.Select(x => new SchemaContributionProvisioner(
@@ -51,9 +56,54 @@ internal sealed class SchemaProvisionerSource(
                 options.Value,
                 logger,
                 timeProvider,
-                shared.Contains(SchemaContributionProvisioner.BaseName(x.Contribution)) ? x.Database : null
+                shared.Contains(SchemaContributionProvisioner.BaseName(x.Contribution)) ? x.Database : null,
+                hostVerification
             )),
         ];
+    }
+
+    /// <summary>The host runner's verify pass, run at most once and shared by the provisioners of one lookup.</summary>
+    internal sealed partial class HostVerification(SchemaRunner runner, ILogger? logger)
+    {
+        private readonly Lock _gate = new();
+        private Task<IReadOnlyList<SchemaMismatch>>? _pass;
+
+        public Task<IReadOnlyList<SchemaMismatch>> GetAsync(CancellationToken cancellationToken)
+        {
+            lock (_gate)
+            {
+                // A canceled or faulted pass is not cached, so the next caller (a retried readiness check) runs it again.
+                if (_pass is null || _pass.IsCanceled || _pass.IsFaulted)
+                {
+                    _pass = _RunAsync(cancellationToken);
+                }
+
+                return _pass;
+            }
+        }
+
+        private async Task<IReadOnlyList<SchemaMismatch>> _RunAsync(CancellationToken cancellationToken)
+        {
+            var mismatches = await runner.VerifyAsync(cancellationToken).ConfigureAwait(false);
+
+            if (logger is not null)
+            {
+                foreach (var unknown in mismatches.Where(static m => m.Kind == SchemaMismatchKind.Unknown))
+                {
+                    LogUnknownStep(logger, unknown.Schema, unknown.Feature, unknown.Version);
+                }
+            }
+
+            return mismatches;
+        }
+
+        [LoggerMessage(
+            EventId = 10,
+            EventName = "SchemaRunnerUnknownStep",
+            Level = LogLevel.Warning,
+            Message = "Schema history of {Schema} records {Feature}/{Version}, which this host does not register; a newer deployment probably applied it."
+        )]
+        private static partial void LogUnknownStep(ILogger logger, string schema, string feature, string version);
     }
 }
 
@@ -62,16 +112,22 @@ internal sealed class SchemaContributionProvisioner : IResourceProvisioner
 {
     private readonly SchemaRunner _runner;
     private readonly SchemaContribution _contribution;
+    private readonly SchemaProvisionerSource.HostVerification? _hostVerification;
 
     public SchemaContributionProvisioner(
         SchemaContribution contribution,
         SchemaRunnerOptions options,
         ILogger<SchemaRunner>? logger,
         TimeProvider? timeProvider,
-        string? database = null
+        string? database = null,
+        SchemaProvisionerSource.HostVerification? hostVerification = null
     )
     {
         _contribution = contribution;
+
+        // The host's pass reports by schema and feature only, so a feature that lives in two databases, and an
+        // export-only one the host's runner skips, verifies with a runner of its own.
+        _hostVerification = database is null && !contribution.ExportOnly ? hostVerification : null;
 
         // The deploy step applies what the deploy script holds: export-only marks what the host's own runner skips,
         // not what the deployment provisions.
@@ -102,6 +158,11 @@ internal sealed class SchemaContributionProvisioner : IResourceProvisioner
 
     public string Name { get; }
 
+    // Tables are what the host's own background services reach first, so a missing step stops the start. An export-only
+    // contribution is deployed from the exported script and the host does not check it.
+    public ResourceStartupCheck StartupCheck =>
+        _contribution.ExportOnly ? ResourceStartupCheck.None : ResourceStartupCheck.FailStart;
+
     // Without declared objects the tables are unknown, so there is nothing this provisioner can safely purge or delete.
     public bool CanPurge => _contribution.Objects.Count > 0;
 
@@ -114,7 +175,15 @@ internal sealed class SchemaContributionProvisioner : IResourceProvisioner
 
     public async Task VerifyAsync(CancellationToken cancellationToken)
     {
-        var mismatches = await _runner.VerifyAsync(cancellationToken).ConfigureAwait(false);
+        var mismatches = _hostVerification is null
+            ? await _runner.VerifyAsync(cancellationToken).ConfigureAwait(false)
+            :
+            [
+                .. (await _hostVerification.GetAsync(cancellationToken).ConfigureAwait(false)).Where(m =>
+                    string.Equals(m.Schema, _contribution.Schema, StringComparison.Ordinal)
+                    && string.Equals(m.Feature, _contribution.Feature, StringComparison.Ordinal)
+                ),
+            ];
         var missing = mismatches.Where(static m => m.Kind == SchemaMismatchKind.Missing).ToList();
         var changed = mismatches.Where(static m => m.Kind == SchemaMismatchKind.Checksum).ToList();
 

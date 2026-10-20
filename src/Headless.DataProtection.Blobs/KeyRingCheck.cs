@@ -4,7 +4,7 @@ namespace Headless.DataProtection;
 
 /// <summary>How a failed data-protection key-ring validation affects the host.</summary>
 [PublicAPI]
-public enum KeyRingValidationMode
+public enum KeyRingCheck
 {
     /// <summary>
     /// Default: the host stays unready until the validation succeeds. A failure keeps the <c>warmup</c> readiness

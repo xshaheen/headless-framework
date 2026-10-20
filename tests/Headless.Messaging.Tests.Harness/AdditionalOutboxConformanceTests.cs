@@ -2,7 +2,7 @@
 
 using System.Collections.Concurrent;
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;

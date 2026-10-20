@@ -2,22 +2,21 @@
 
 using Headless.Hosting;
 using Headless.Messaging;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
 using Tests.Registration;
 
 namespace Tests.Transport;
 
 /// <summary>
-/// The running host checks the shared broker topology once, in one batch per transport, as a warm-up that holds
-/// readiness until the topology exists, instead of each consumer client checking its own objects as it connects.
+/// Each transport's shared broker topology is a provisioned resource whose startup check gates readiness: the running
+/// host checks it once, in one batch per transport, through the <c>Resources</c> warm-up, instead of each consumer client
+/// checking its own objects as it connects.
 /// </summary>
-public sealed class TransportTopologyWarmupTests : TestBase
+public sealed class TransportTopologyStartupCheckTests : TestBase
 {
     private const string _MissingQueue = "RabbitMQ queue 'queue.orders' does not exist. Run 'resources provision'.";
 
@@ -28,14 +27,13 @@ public sealed class TransportTopologyWarmupTests : TestBase
         var first = new RecordingProvisioner("First");
         var second = new RecordingProvisioner("Second");
         await using var provider = _BuildProvider(first, second);
-        var warmup = provider.GetServices<IWarmup>().Should().ContainSingle(w => w is TransportTopologyWarmup).Which;
+        var warmup = _ResourcesWarmup(provider);
 
         // when
         await warmup.WarmUpAsync(AbortToken);
 
         // then
         warmup.GatesReadiness.Should().BeTrue();
-        warmup.Name.Should().Be("MessagingTopology");
         first.Checks.Should().Be(1);
         second.Checks.Should().Be(1);
         first
@@ -55,19 +53,20 @@ public sealed class TransportTopologyWarmupTests : TestBase
             Failure = new ResourceProvisioningException("second missing"),
         };
         await using var provider = _BuildProvider(first, second);
-        var warmup = provider.GetServices<IWarmup>().OfType<TransportTopologyWarmup>().Single();
 
         // when
-        var act = () => warmup.WarmUpAsync(AbortToken);
+        var act = () => _ResourcesWarmup(provider).WarmUpAsync(AbortToken);
 
         // then
-        var failure = await act.Should().ThrowAsync<AggregateException>();
-        failure.Which.InnerExceptions.Select(e => e.Message).Should().Equal(_MissingQueue, "second missing");
+        var failure = await act.Should()
+            .ThrowAsync<ResourceProvisioningException>()
+            .WithMessage("*First topology: *queue.orders*Second topology: second missing*");
+        failure.Which.Failures.Select(e => e.Message).Should().Equal(_MissingQueue, "second missing");
         second.Checks.Should().Be(1, "a failing transport does not hide another's state");
     }
 
     [Fact]
-    public async Task should_rethrow_the_transports_own_error_when_one_check_fails()
+    public async Task should_keep_the_transports_own_error_when_one_check_fails()
     {
         // given
         var provisioner = new RecordingProvisioner("Only")
@@ -75,13 +74,14 @@ public sealed class TransportTopologyWarmupTests : TestBase
             Failure = new ResourceProvisioningException(_MissingQueue),
         };
         await using var provider = _BuildProvider(provisioner);
-        var warmup = provider.GetServices<IWarmup>().OfType<TransportTopologyWarmup>().Single();
 
         // when
-        var act = () => warmup.WarmUpAsync(AbortToken);
+        var act = () => _ResourcesWarmup(provider).WarmUpAsync(AbortToken);
 
         // then
-        await act.Should().ThrowAsync<ResourceProvisioningException>().WithMessage(_MissingQueue);
+        (await act.Should().ThrowAsync<ResourceProvisioningException>().WithMessage("*Only topology: *queue.orders*"))
+            .WithInnerException<ResourceProvisioningException>()
+            .WithMessage(_MissingQueue);
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public sealed class TransportTopologyWarmupTests : TestBase
         {
             Failure = new ResourceProvisioningException(_MissingQueue),
         };
-        using var host = _BuildHost(provisioner);
+        using var host = _BuildHost(_ => { }, provisioner);
 
         // when
         await host.StartAsync(AbortToken);
@@ -103,7 +103,7 @@ public sealed class TransportTopologyWarmupTests : TestBase
 
         // then
         unready.Status.Should().Be(HealthStatus.Unhealthy);
-        unready.Exception!.Message.Should().Contain("MessagingTopology").And.Contain("Run 'resources provision'");
+        unready.Exception!.Message.Should().Contain("Resources").And.Contain("Run 'resources provision'");
 
         // and when - the deployment creates the topology, and the next retry passes
         provisioner.Failure = null;
@@ -115,28 +115,58 @@ public sealed class TransportTopologyWarmupTests : TestBase
     }
 
     [Fact]
-    public async Task should_register_no_topology_check_when_verify_topology_is_off()
+    public async Task should_be_ready_without_checking_the_topology_when_the_application_sets_the_kind_to_none()
     {
         // given
-        var provisioner = new RecordingProvisioner("RabbitMQ");
+        var provisioner = new RecordingProvisioner("RabbitMQ")
+        {
+            Failure = new ResourceProvisioningException(_MissingQueue),
+        };
+        using var host = _BuildHost(
+            services =>
+                services.ConfigureResourceProvisioning(o => o.StartupChecks["RabbitMQ"] = ResourceStartupCheck.None),
+            provisioner
+        );
 
         // when
-        await using var provider = _BuildProvider(setup => setup.Options.VerifyTopology = false, provisioner);
+        await host.StartAsync(AbortToken);
+        await host.Services.WaitForWarmupAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+        await host.StopAsync(AbortToken);
 
         // then
-        provider.GetServices<IWarmup>().Should().NotContain(w => w is TransportTopologyWarmup);
-        provider
-            .GetRequiredService<IOptions<HealthCheckServiceOptions>>()
-            .Value.Registrations.Should()
-            .NotContain(r => r.Name == HeadlessWarmupServiceCollectionExtensions.HealthCheckName);
-        provider.GetRequiredService<IOptions<MessagingOptions>>().Value.VerifyTopology.Should().BeFalse();
+        provisioner.Checks.Should().Be(0);
     }
 
     [Fact]
-    public void should_verify_topology_by_default()
+    public async Task should_fail_the_start_when_a_transport_asks_to_fail_start_and_its_topology_is_missing()
     {
-        new MessagingOptions().VerifyTopology.Should().BeTrue();
+        // given
+        var provisioner = new RecordingProvisioner("RabbitMQ")
+        {
+            Failure = new ResourceProvisioningException(_MissingQueue),
+            Check = ResourceStartupCheck.FailStart,
+        };
+        using var host = _BuildHost(_ => { }, provisioner);
+
+        // when
+        var act = () => host.StartAsync(AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<ResourceProvisioningException>()
+            .WithMessage("*RabbitMQ topology: *queue.orders*");
     }
+
+    [Fact]
+    public void should_gate_readiness_by_default()
+    {
+        ITransportTopologyProvisioner provisioner = new DefaultCheckProvisioner();
+
+        provisioner.StartupCheck.Should().Be(ResourceStartupCheck.GateReadiness);
+    }
+
+    private static IWarmup _ResourcesWarmup(IServiceProvider provider) =>
+        provider.GetServices<IWarmup>().Should().ContainSingle(w => w.Name == "Resources").Which;
 
     private static ServiceProvider _BuildProvider(params RecordingProvisioner[] provisioners) =>
         _BuildProvider(_ => { }, provisioners);
@@ -153,7 +183,7 @@ public sealed class TransportTopologyWarmupTests : TestBase
         return services.BuildServiceProvider();
     }
 
-    private static IHost _BuildHost(RecordingProvisioner provisioner)
+    private static IHost _BuildHost(Action<IServiceCollection> configure, RecordingProvisioner provisioner)
     {
         return new HostBuilder()
             .ConfigureServices(services =>
@@ -161,6 +191,7 @@ public sealed class TransportTopologyWarmupTests : TestBase
                 // Keeps the test from installing the process-wide Ctrl+C / ProcessExit handlers ConsoleLifetime adds.
                 services.AddSingleton<IHostLifetime, NoopHostLifetime>();
                 _AddMessaging(services, _ => { }, [provisioner]);
+                configure(services);
             })
             .Build();
     }
@@ -196,7 +227,7 @@ public sealed class TransportTopologyWarmupTests : TestBase
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(30));
-        const string name = HeadlessWarmupServiceCollectionExtensions.HealthCheckName;
+        const string name = HeadlessHealthCheckNames.Warmup;
 
         while (true)
         {
@@ -231,6 +262,10 @@ public sealed class TransportTopologyWarmupTests : TestBase
 
         public string Kind => broker;
 
+        public ResourceStartupCheck Check { get; init; } = ResourceStartupCheck.GateReadiness;
+
+        public ResourceStartupCheck StartupCheck => Check;
+
         public Task VerifyAsync(MessagingTopology topology, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _checks);
@@ -238,6 +273,25 @@ public sealed class TransportTopologyWarmupTests : TestBase
 
             return Failure is { } failure ? Task.FromException(failure) : Task.CompletedTask;
         }
+
+        public Task ProvisionAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task PurgeAsync(MessagingTopology topology, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task DeleteAsync(MessagingTopology topology, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<IReadOnlyList<KeyValuePair<string, string>>> GetStatusAsync(
+            MessagingTopology topology,
+            CancellationToken cancellationToken
+        ) => Task.FromResult<IReadOnlyList<KeyValuePair<string, string>>>([]);
+    }
+
+    private sealed class DefaultCheckProvisioner : ITransportTopologyProvisioner
+    {
+        public string Kind => "Default";
+
+        public Task VerifyAsync(MessagingTopology topology, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task ProvisionAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
             Task.CompletedTask;

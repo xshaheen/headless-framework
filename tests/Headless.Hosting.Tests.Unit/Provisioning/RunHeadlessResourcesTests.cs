@@ -402,6 +402,25 @@ public sealed class RunHeadlessResourcesTests : TestBase
         _log.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task should_provision_on_a_fresh_database_without_running_the_startup_resource_check()
+    {
+        // given: a resource the starting host would refuse to start without
+        var schema = new RecordingProvisioner("Schema", "orders", _log)
+        {
+            StartupCheck = ResourceStartupCheck.FailStart,
+            FailureMessage = "Steps 1 of orders are not applied.",
+        };
+        schema.Failing.Add("verify");
+
+        // when
+        var run = await _RunAsync(services => services.AddResourceProvisioner(_ => schema), "resources", "provision");
+
+        // then: the command exists to create what the check would report missing
+        run.ExitCode.Should().Be(0);
+        _log.Should().Equal("provision orders");
+    }
+
     // Development, so purge and delete run without --force; the environment guard has tests of its own.
     private Task<HostConsoleRun> _RunAsync(Action<IServiceCollection> configure, params string[] args)
     {

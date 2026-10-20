@@ -2,7 +2,7 @@
 
 using System.Data.Common;
 
-namespace Headless.Hosting.Initialization.Schema;
+namespace Headless.Hosting.Schema;
 
 /// <summary>
 /// The database-specific half of the Headless schema runner: the per-database session lock, the history table's SQL,

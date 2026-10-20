@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Hosting.Schema;
 using Headless.Sequences.Sqlite;
 using Headless.Sql;
 using Headless.Sql.Sqlite;

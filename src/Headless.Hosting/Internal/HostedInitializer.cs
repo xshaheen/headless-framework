@@ -22,8 +22,7 @@ namespace Headless.Hosting;
 /// dependents that await <see cref="WaitForInitializationAsync"/> do not block.
 /// </para>
 /// </remarks>
-[PublicAPI]
-public abstract class HostedInitializer : IHostedLifecycleService, IInitializer
+internal abstract class HostedInitializer : IHostedLifecycleService, IInitializer
 {
     private volatile TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 

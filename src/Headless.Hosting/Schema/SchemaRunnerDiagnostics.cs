@@ -3,7 +3,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
-namespace Headless.Hosting.Initialization.Schema;
+namespace Headless.Hosting.Schema;
 
 /// <summary>
 /// Names the <see cref="ActivitySource" /> and <see cref="Meter" /> of the schema runner

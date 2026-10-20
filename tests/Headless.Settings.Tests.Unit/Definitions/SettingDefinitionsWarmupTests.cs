@@ -63,53 +63,44 @@ public sealed class SettingDefinitionsWarmupTests : TestBase
             TaskCreationOptions.RunContinuationsAsynchronously
         );
         _store.GetAllAsync(Arg.Any<CancellationToken>()).Returns(load.Task);
-        await using var provider = _BuildProvider(dynamicStore: true);
-        var runner = _Runner(provider);
+        using var host = _BuildHost(dynamicStore: true);
 
         // when
-        await runner.StartingAsync(AbortToken);
-        await runner.StartedAsync(AbortToken);
+        await host.StartAsync(AbortToken);
+        var warm = host.Services.WaitForWarmupAsync(AbortToken);
 
         // then
-        ((IInitializer)runner)
-            .IsInitialized.Should()
-            .BeFalse();
+        warm.IsCompleted.Should().BeFalse();
 
         load.SetResult([]);
-        await ((IInitializer)runner)
-            .WaitForInitializationAsync(AbortToken)
-            .WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await warm.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
         await _store.Received(1).GetAllAsync(Arg.Any<CancellationToken>());
 
-        await _StopAsync(runner);
+        await host.StopAsync(AbortToken);
     }
 
     [Fact]
     public async Task should_not_hold_readiness_or_load_the_store_when_the_dynamic_store_is_disabled()
     {
         // given
-        await using var provider = _BuildProvider(dynamicStore: false);
-        var runner = _Runner(provider);
+        using var host = _BuildHost(dynamicStore: false);
 
         // when
-        await runner.StartingAsync(AbortToken);
-        await runner.StartedAsync(AbortToken);
+        await host.StartAsync(AbortToken);
 
         // then
-        ((IInitializer)runner)
-            .IsInitialized.Should()
-            .BeTrue();
-        await _StopAsync(runner);
+        await host.Services.WaitForWarmupAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await host.StopAsync(AbortToken);
         await _store.DidNotReceive().GetAllAsync(Arg.Any<CancellationToken>());
     }
 
     private SettingDefinitionsWarmup _CreateSut(bool dynamicStore) =>
         new(_services, Options.Create(new SettingManagementOptions { IsDynamicSettingStoreEnabled = dynamicStore }));
 
-    private ServiceProvider _BuildProvider(bool dynamicStore)
+    private IHost _BuildHost(bool dynamicStore)
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
+        var builder = Host.CreateApplicationBuilder();
+        var services = builder.Services;
         services.AddStringEncryptionService(options =>
         {
             options.DefaultPassPhrase = "WarmupPassPhrase123";
@@ -122,18 +113,11 @@ public sealed class SettingDefinitionsWarmupTests : TestBase
         });
         services.Replace(ServiceDescriptor.Singleton(_store));
 
-        return services.BuildServiceProvider();
-    }
+        // The warm-up is under test, not the storage wiring: the cache and the EF context factory the required-service
+        // check asks for would not be reached with the store replaced.
+        services.RemoveAll<IHeadlessStartupValidator>();
 
-    // The warm-up runner is the one initializer that follows the host lifecycle; AddHeadlessSettings registers it.
-    private static IHostedLifecycleService _Runner(IServiceProvider provider) =>
-        provider.GetServices<IInitializer>().OfType<IHostedLifecycleService>().Single();
-
-    private static async Task _StopAsync(IHostedLifecycleService runner)
-    {
-        await runner.StoppingAsync(AbortToken);
-        await runner.StopAsync(AbortToken);
-        await runner.StoppedAsync(AbortToken);
+        return builder.Build();
     }
 
     private sealed class WarmupTestDbContext(DbContextOptions<WarmupTestDbContext> options) : DbContext(options);

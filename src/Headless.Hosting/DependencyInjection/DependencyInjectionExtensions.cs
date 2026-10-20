@@ -778,7 +778,7 @@ public static class DependencyInjectionExtensions
     /// two-argument overload of <c>ServiceDescriptor.Singleton&lt;TService, TImplementation&gt;</c>
     /// is what allows <c>TryAddEnumerable</c> to deduplicate by implementation type.
     /// </remarks>
-    public static IServiceCollection AddInitializerHostedService<
+    internal static IServiceCollection AddInitializerHostedService<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T
     >(this IServiceCollection services)
         where T : class, IHostedService, IInitializer

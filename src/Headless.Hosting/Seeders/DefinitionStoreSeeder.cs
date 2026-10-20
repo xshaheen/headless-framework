@@ -33,8 +33,22 @@ public abstract partial class DefinitionStoreSeeder(ILogger logger, TimeProvider
     /// <returns>A task that completes when the definitions are saved.</returns>
     protected abstract Task SaveAsync(CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Reports whether the store already holds the code-declared definitions. Default: <see cref="SeedState.Unknown" />;
+    /// a feature overrides it to compare its store with its definitions without writing.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the check.</param>
+    /// <returns>Whether the store is current.</returns>
+    protected virtual Task<SeedState> VerifyStoreAsync(CancellationToken cancellationToken) =>
+        Task.FromResult(SeedState.Unknown);
+
     /// <inheritdoc />
-    public async ValueTask SeedAsync(CancellationToken cancellationToken = default)
+    public Task<SeedState> VerifyAsync(CancellationToken cancellationToken) =>
+        // A store the application does not write to holds no seeded definitions to fall behind.
+        IsEnabled ? VerifyStoreAsync(cancellationToken) : Task.FromResult(SeedState.Current);
+
+    /// <inheritdoc />
+    public async Task SeedAsync(CancellationToken cancellationToken)
     {
         if (!IsEnabled)
         {

@@ -54,12 +54,12 @@ internal sealed class DataProtectionKeyRingValidationWarmup(
 
     public string Name => WarmupName;
 
-    public bool GatesReadiness => _options.Mode is KeyRingValidationMode.GateReadiness;
+    public bool GatesReadiness => _options.Check is KeyRingCheck.GateReadiness;
 
     /// <inheritdoc />
     /// <exception cref="InvalidOperationException">
-    /// Validation failed and <see cref="DataProtectionKeyRingValidationOptions.Mode"/> is
-    /// <see cref="KeyRingValidationMode.GateReadiness"/>; for backend failures the original exception is preserved as
+    /// Validation failed and <see cref="DataProtectionKeyRingValidationOptions.Check"/> is
+    /// <see cref="KeyRingCheck.GateReadiness"/>; for backend failures the original exception is preserved as
     /// the inner exception. The runner reports the message on the readiness check and retries.
     /// </exception>
     public async Task WarmUpAsync(CancellationToken cancellationToken)
@@ -119,7 +119,7 @@ internal sealed class DataProtectionKeyRingValidationWarmup(
         {
             // Any failure while the host is still running is a validation failure, including a backend timeout that
             // surfaces as an OperationCanceledException; only a stop request propagates as cancellation.
-            if (_options.Mode is KeyRingValidationMode.LogOnly)
+            if (_options.Check is KeyRingCheck.LogOnly)
             {
                 logger.LogKeyRingValidationFailed(exception, BlobStorageDataProtectionXmlRepository.ContainerName);
 
@@ -133,8 +133,8 @@ internal sealed class DataProtectionKeyRingValidationWarmup(
                     + "it. Wire an IBlobContainerManager so PersistKeysToBlobStorage ensures the container before "
                     + "writes, or provision the container out-of-band and acknowledge it with "
                     + "BlobContainerProvisioning.PreProvisioned. The host stays unready and the validation is retried; "
-                    + "to log instead of gating readiness, set DataProtectionKeyRingValidationOptions.Mode = "
-                    + "KeyRingValidationMode.LogOnly. Without this validation the same failure would surface at the "
+                    + "to log instead of gating readiness, set DataProtectionKeyRingValidationOptions.Check = "
+                    + "KeyRingCheck.LogOnly. Without this validation the same failure would surface at the "
                     + "first key write or the ~90-day key rotation. Cause: "
                     // The readiness check shows only this message, and the data-protection stack wraps the backend
                     // error in generic CryptographicException layers, so name the innermost cause.
@@ -150,7 +150,7 @@ internal sealed class DataProtectionKeyRingValidationWarmup(
 
         // The empty-key-ring failure is handled OUTSIDE the catch so its actionable message surfaces directly
         // instead of being buried as an inner exception under the generic backend-failure wrap.
-        if (_options.Mode is KeyRingValidationMode.LogOnly)
+        if (_options.Check is KeyRingCheck.LogOnly)
         {
             logger.LogKeyRingValidationEmptyKeyRing(BlobStorageDataProtectionXmlRepository.ContainerName);
 

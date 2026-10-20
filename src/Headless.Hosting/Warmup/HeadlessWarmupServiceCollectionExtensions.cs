@@ -11,9 +11,6 @@ namespace Headless.Hosting;
 [PublicAPI]
 public static class HeadlessWarmupServiceCollectionExtensions
 {
-    /// <summary>The name of the readiness health check that reports whether the host is warm.</summary>
-    public const string HealthCheckName = "warmup";
-
     extension(IServiceCollection services)
     {
         /// <summary>
@@ -68,7 +65,7 @@ public static class HeadlessWarmupServiceCollectionExtensions
             // Reads the running host's state, so the pre-start 'check' verb skips it: a host that never started is
             // never warm.
             services.AddHeadlessHealthCheck(
-                HealthCheckName,
+                HeadlessHealthCheckNames.Warmup,
                 static (provider, _) =>
                     provider.GetRequiredService<WarmupRunner>().DescribePending() is { } pending
                         ? Task.FromException(new InvalidOperationException(pending))

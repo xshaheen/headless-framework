@@ -19,6 +19,16 @@ public sealed class ResourceProvisioningOptions
     /// default. Default: <c>Development</c> and <c>Test</c>.
     /// </summary>
     public List<string> DestructiveEnvironments { get; set; } = [EnvironmentNames.Development, EnvironmentNames.Test];
+
+    /// <summary>
+    /// Overrides <see cref="IResourceProvisioner.StartupCheck" /> by <see cref="IResourceProvisioner.Kind" />, compared
+    /// case-insensitively: <c>options.StartupChecks["RabbitMQ"] = ResourceStartupCheck.None</c> stops a host from
+    /// checking its broker topology when it starts. A kind with no entry keeps the provisioner's own choice.
+    /// </summary>
+    public Dictionary<string, ResourceStartupCheck> StartupChecks { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    internal ResourceStartupCheck StartupCheckOf(IResourceProvisioner provisioner) =>
+        StartupChecks.TryGetValue(provisioner.Kind, out var check) ? check : provisioner.StartupCheck;
 }
 
 internal sealed class ResourceProvisioningOptionsValidator : AbstractValidator<ResourceProvisioningOptions>
@@ -27,5 +37,7 @@ internal sealed class ResourceProvisioningOptionsValidator : AbstractValidator<R
     {
         RuleFor(x => x.DestructiveEnvironments).NotNull();
         RuleForEach(x => x.DestructiveEnvironments).NotEmpty();
+        RuleFor(x => x.StartupChecks).NotNull();
+        RuleForEach(x => x.StartupChecks).Must(static entry => Enum.IsDefined(entry.Value));
     }
 }

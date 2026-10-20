@@ -127,16 +127,16 @@ public sealed class CronFingerprintActivationTests : TestBase
     }
 
     [Fact]
-    public void should_not_gate_the_warmup_readiness_check()
+    public void should_gate_the_warmup_readiness_check()
     {
-        // The jobs readiness check already reports the barrier, so the drain does not hold the warmup check as well.
+        // A host, or a test server waiting for its warm-ups, is ready only once the job loops may select work.
         var warmup = _Create(
             Substitute.For<IInternalJobManager>(),
             new JobsActivationBarrier(),
             new SchedulerOptionsBuilder()
         );
 
-        ((IWarmup)warmup).GatesReadiness.Should().BeFalse();
+        ((IWarmup)warmup).GatesReadiness.Should().BeTrue();
     }
 
     private static JobsActivationWarmup _Create(

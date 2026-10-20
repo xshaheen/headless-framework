@@ -2,7 +2,7 @@
 
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.SqlServer;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;

@@ -30,7 +30,7 @@ public static class HeadlessResourceProvisioningServiceCollectionExtensions
         // would keep only the first provisioner.
         services.AddSingleton(provisionerFactory);
 
-        return services;
+        return services._AddStartupChecks();
     }
 
     /// <summary>
@@ -50,7 +50,7 @@ public static class HeadlessResourceProvisioningServiceCollectionExtensions
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IResourceProvisionerSource, TSource>());
 
-        return services;
+        return services._AddStartupChecks();
     }
 
     /// <summary>Configures how resources are provisioned, such as where data-deleting operations may run.</summary>
@@ -67,5 +67,25 @@ public static class HeadlessResourceProvisioningServiceCollectionExtensions
         Argument.IsNotNull(configure);
 
         return services.Configure<ResourceProvisioningOptions, ResourceProvisioningOptionsValidator>(configure);
+    }
+
+    // Once per host: the first provisioner brings the two startup checks that read every provisioner's StartupCheck.
+    private static IServiceCollection _AddStartupChecks(this IServiceCollection services)
+    {
+        if (
+            services.Any(static d =>
+                d.ServiceType == typeof(IHeadlessStartupValidator)
+                && d.ImplementationType == typeof(ResourceStartupValidator)
+            )
+        )
+        {
+            return services;
+        }
+
+        services.AddOptions<ResourceProvisioningOptions>();
+        services.AddStartupValidator<ResourceStartupValidator>();
+        services.AddWarmup<ResourceReadinessWarmup>();
+
+        return services;
     }
 }

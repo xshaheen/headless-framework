@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting;
+
 namespace Headless.Messaging.Transport;
 
 /// <summary>
@@ -19,9 +21,8 @@ namespace Headless.Messaging.Transport;
 /// process creates its own. A broker that cannot purge or delete states it with <see cref="CanPurge"/> or
 /// <see cref="CanDelete"/>, and the operation is then skipped and reported as unsupported; any exception an operation
 /// throws is a failure. Once a transport provisions here, its consumer clients create shared objects only when
-/// <see cref="ConsumerClientRequest.ProvisionsTopology"/> is set, and otherwise declare nothing for them: unless
-/// <see cref="MessagingOptions.VerifyTopology"/> is off, the running host calls <see cref="VerifyAsync"/> once after it
-/// starts, behind its readiness check.
+/// <see cref="ConsumerClientRequest.ProvisionsTopology"/> is set, and otherwise declare nothing for them: the running
+/// host calls <see cref="VerifyAsync"/> once after it starts, as <see cref="StartupCheck"/> says.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -29,6 +30,12 @@ public interface ITransportTopologyProvisioner
 {
     /// <summary>Gets the broker's name, such as <c>RabbitMQ</c>: the resource's kind.</summary>
     string Kind { get; }
+
+    /// <summary>
+    /// Gets how a starting host checks the topology with <see cref="VerifyAsync"/>. Default:
+    /// <see cref="ResourceStartupCheck.GateReadiness"/>, so a missing queue keeps the host unready instead of failing it.
+    /// </summary>
+    ResourceStartupCheck StartupCheck => ResourceStartupCheck.GateReadiness;
 
     /// <summary>Gets whether <see cref="PurgeAsync"/> applies to this broker. Default: <see langword="true"/>.</summary>
     bool CanPurge => true;

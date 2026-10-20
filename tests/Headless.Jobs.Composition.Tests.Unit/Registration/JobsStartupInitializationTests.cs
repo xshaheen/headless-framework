@@ -49,43 +49,6 @@ public sealed class JobsStartupInitializationTests : TestBase
     }
 
     [Fact]
-    public async Task should_let_initializer_waiters_return_only_once_the_job_loops_are_activated()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddHeadlessJobs<TimeJobEntity, CronJobEntity>(_ => { });
-        await using var provider = services.BuildServiceProvider();
-        var barrier = provider.GetRequiredService<JobsActivationBarrier>();
-        var initializer = provider.GetServices<IInitializer>().OfType<JobsActivationInitializer>().Single();
-
-        // when
-        var wait = initializer.WaitForInitializationAsync(AbortToken);
-        var pendingBefore = !wait.IsCompleted && !initializer.IsInitialized;
-        barrier.MarkCompleted();
-        await wait.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
-
-        // then
-        pendingBefore.Should().BeTrue("a test server must not return before the activation drain opens the loops");
-        initializer.IsInitialized.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task should_fault_initializer_waiters_when_activation_failed()
-    {
-        // given
-        var barrier = new JobsActivationBarrier();
-        var initializer = new JobsActivationInitializer(barrier);
-
-        // when
-        barrier.MarkFailed(new InvalidOperationException("The catalog was rejected."));
-        var act = () => initializer.WaitForInitializationAsync(AbortToken);
-
-        // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*The catalog was rejected.*");
-    }
-
-    [Fact]
     public async Task should_open_the_activation_barrier_at_start_when_no_job_loop_runs()
     {
         // given

@@ -19,6 +19,7 @@ public static class HeadlessHostRunExtensions
     private const string _DescribeCommand = "describe";
     private const string _ResourcesCommand = ResourcesCommand.Name;
     private const string _SeedCommand = SeedCommand.Name;
+    private const string _DeployCommand = "deploy";
     private const string _CheckCommand = "check";
 
     extension(IHost host)
@@ -28,18 +29,19 @@ public static class HeadlessHostRunExtensions
         /// <c>describe</c>, prints the host manifest as JSON to standard output; when it is <c>check</c>, runs the
         /// host's health checks once and prints one line per check; when it is <c>resources</c>, provisions, verifies,
         /// purges, deletes, or lists the host's provisioned resources and prints one line per resource; when it is
-        /// <c>seed</c>, runs or lists the host's seeders and prints one line per seeder.
+        /// <c>seed</c>, runs, verifies, or lists the host's seeders and prints one line per seeder; when it is
+        /// <c>deploy</c>, runs <c>resources provision</c> and then <c>seed</c>.
         /// </summary>
         /// <param name="args">
-        /// The process arguments. Any first argument other than <c>describe</c>, <c>check</c>, <c>resources</c>, or
-        /// <c>seed</c> runs the host.
+        /// The process arguments. Any first argument other than <c>describe</c>, <c>check</c>, <c>resources</c>,
+        /// <c>seed</c>, or <c>deploy</c> runs the host.
         /// </param>
         /// <param name="cancellationToken">Stops the host, or abandons the command.</param>
         /// <returns>
         /// The process exit code: 0 on success; 1 when the manifest fails, when startup validation fails, when a
         /// health check reports <see cref="HealthStatus.Unhealthy" />, when a resource or a seeder fails or times out,
         /// or when a <see cref="BackgroundService" /> faulted while the host ran; 2 when the
-        /// <c>resources</c> or <c>seed</c> arguments are invalid or match nothing.
+        /// <c>resources</c>, <c>seed</c>, or <c>deploy</c> arguments are invalid or match nothing.
         /// </returns>
         /// <remarks>
         /// <para>
@@ -63,8 +65,13 @@ public static class HeadlessHostRunExtensions
         /// <see cref="IResourceProvisioner" />.
         /// </para>
         /// <para>
-        /// <c>seed</c> runs every seeder in priority order, or <c>list</c>s them, with <c>--name</c> filters and a
-        /// <c>--timeout</c> in seconds (default 300); a failed seeder stops the run. See <see cref="ISeeder" />.
+        /// <c>seed</c> runs every seeder in dependency order, <c>verify</c>s that the stores hold what the code declares,
+        /// or <c>list</c>s them, with <c>--name</c> filters and a <c>--timeout</c> in seconds (default 300); a failed
+        /// seeder stops the run. See <see cref="ISeeder" />.
+        /// </para>
+        /// <para>
+        /// <c>deploy</c> takes no arguments: it provisions every resource, then runs every seeder, and stops at the first
+        /// step that fails, so a deployment needs one step instead of two.
         /// </para>
         /// <para>
         /// <c>check</c> skips every check tagged <see cref="HeadlessHealthCheckTags.HostState" />, because those report
@@ -113,6 +120,16 @@ public static class HeadlessHostRunExtensions
                     .ConfigureAwait(false);
             }
 
+            if (args.Length > 0 && string.Equals(args[0], _DeployCommand, StringComparison.Ordinal))
+            {
+                return await _RunCommandAsync(
+                        host,
+                        (services, stdout, stderr, token) => _DeployAsync(args[1..], services, stdout, stderr, token),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
             if (args.Length > 0 && string.Equals(args[0], _CheckCommand, StringComparison.Ordinal))
             {
                 return await _RunCommandAsync(host, _CheckAsync, cancellationToken).ConfigureAwait(false);
@@ -122,10 +139,17 @@ public static class HeadlessHostRunExtensions
             // (or, when the host ignores such faults, leaves a dead component) but lets the process end normally, so
             // without this a crash reads as a clean exit to an orchestrator.
             var backgroundServices = host.Services.GetServices<IHostedService>().OfType<BackgroundService>().ToList();
+            var faulted = new List<BackgroundService>();
+
+            // Counted when the host starts stopping, not after: a service that throws while it shuts down (a disposed
+            // client, say) must not turn a clean rollout into a failed exit.
+            using var stopping = host
+                .Services.GetRequiredService<IHostApplicationLifetime>()
+                .ApplicationStopping.Register(() =>
+                    faulted.AddRange(backgroundServices.Where(static s => s.ExecuteTask?.IsFaulted == true))
+                );
 
             await host.RunAsync(cancellationToken).ConfigureAwait(false);
-
-            var faulted = backgroundServices.FindAll(static s => s.ExecuteTask?.IsFaulted == true);
 
             foreach (var service in faulted)
             {
@@ -178,6 +202,39 @@ public static class HeadlessHostRunExtensions
             await _DisposeAsync(host).ConfigureAwait(false);
             Console.SetOut(stdout);
         }
+    }
+
+    private static async Task<int> _DeployAsync(
+        IReadOnlyList<string> args,
+        IServiceProvider services,
+        TextWriter stdout,
+        TextWriter stderr,
+        CancellationToken cancellationToken
+    )
+    {
+        const string usage = "Usage: deploy";
+
+        if (args.Count > 0)
+        {
+            var help = args.Count == 1 && args[0] is "-h" or "--help";
+            await (help ? stdout : stderr).WriteLineAsync(usage).ConfigureAwait(false);
+
+            return help ? HostCommandLine.ExitSuccess : HostCommandLine.ExitUsage;
+        }
+
+        var provisioned = await ResourcesCommand
+            .RunAsync(["provision"], services, stdout, stderr, _ValidateStartupAsync, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (provisioned != HostCommandLine.ExitSuccess)
+        {
+            return provisioned;
+        }
+
+        // Validated once already, by the provisioning step.
+        return await SeedCommand
+            .RunAsync([], services, stdout, stderr, static (_, _) => Task.CompletedTask, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static async Task<int> _DescribeAsync(
@@ -323,7 +380,11 @@ public static class HeadlessHostRunExtensions
         // The same order as a real start: the host validates ValidateOnStart options before any lifecycle service.
         services.GetService<IStartupValidator>()?.Validate();
 
-        var runner = new StartupValidationRunner(services.GetServices<IHeadlessStartupValidator>());
+        // Without the resource check: these commands run before, or instead of, the deployment that creates the
+        // resources, so a missing table must not stop 'resources provision' from creating it.
+        var runner = new StartupValidationRunner(
+            services.GetServices<IHeadlessStartupValidator>().Where(static v => v is not ResourceStartupValidator)
+        );
         await runner.StartingAsync(cancellationToken).ConfigureAwait(false);
     }
 

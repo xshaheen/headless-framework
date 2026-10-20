@@ -92,7 +92,7 @@ internal static partial class DataProtectionLoggerExtensions
         EventId = 12,
         EventName = "KeyRingValidationFailed",
         Level = LogLevel.Critical,
-        Message = "Data protection key-ring validation failed and Mode is LogOnly, so readiness is not gated and the validation is not retried. The key ring could not be exercised against the '{Container}' blob container; the first key write or the ~90-day key rotation will likely fail the same way. Verify the container exists and the credentials allow access, wire an IBlobContainerManager so PersistKeysToBlobStorage ensures the container before writes, or provision the container out-of-band (BlobContainerProvisioning.PreProvisioned)"
+        Message = "Data protection key-ring validation failed and Check is LogOnly, so readiness is not gated and the validation is not retried. The key ring could not be exercised against the '{Container}' blob container; the first key write or the ~90-day key rotation will likely fail the same way. Verify the container exists and the credentials allow access, wire an IBlobContainerManager so PersistKeysToBlobStorage ensures the container before writes, or provision the container out-of-band (BlobContainerProvisioning.PreProvisioned)"
     )]
     public static partial void LogKeyRingValidationFailed(this ILogger logger, Exception exception, string container);
 
@@ -116,7 +116,7 @@ internal static partial class DataProtectionLoggerExtensions
         EventId = 15,
         EventName = "KeyRingValidationEmptyKeyRing",
         Level = LogLevel.Critical,
-        Message = "Data protection key-ring validation failed and Mode is LogOnly, so readiness is not gated and the validation is not retried. The key-ring read probe reached the '{Container}' container but found no keys; AutoGenerateKeys is false on this node so it cannot create one, and its first protected operation will fail. Has the designated key writer run yet? Is this the right container/storage for this environment?"
+        Message = "Data protection key-ring validation failed and Check is LogOnly, so readiness is not gated and the validation is not retried. The key-ring read probe reached the '{Container}' container but found no keys; AutoGenerateKeys is false on this node so it cannot create one, and its first protected operation will fail. Has the designated key writer run yet? Is this the right container/storage for this environment?"
     )]
     public static partial void LogKeyRingValidationEmptyKeyRing(this ILogger logger, string container);
 }

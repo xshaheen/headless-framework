@@ -2,7 +2,7 @@
 
 using Headless.AuditLog;
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,7 +14,7 @@ namespace Tests;
 public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture fixture) : TestBase
 {
     [Fact]
-    public async Task should_throw_and_keep_initializer_unmarked_when_database_unreachable()
+    public async Task should_fail_the_start_with_the_driver_error_when_database_unreachable()
     {
         // given — port 1 is reserved and won't accept connections; short timeout to fail fast.
         // Password is a placeholder; we never reach the auth handshake because the TCP connect fails first.
@@ -22,26 +22,20 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
             "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=true";
         using var host = _CreateHost(unreachable, setupResources: false);
 
-        // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is SqlException
-        await FluentActions
-            .Awaiting(() => host.StartAsync(AbortToken))
-            .Should()
-            .ThrowAsync<Exception>()
-            .Where(e => e is SqlException || e.InnerException is SqlException);
-
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
-        initializer.IsInitialized.Should().BeFalse();
-
-        // The schema runner names the features whose connection failed and keeps the driver error as the cause.
-        await FluentActions
-            .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
-            .Should()
-            .ThrowAsync<SchemaRunnerException>()
-            .WithInnerException(typeof(SqlException));
+        // The startup check fails the start; the schema runner names the features whose connection failed and keeps
+        // the driver error as the cause.
+        (
+            await FluentActions
+                .Awaiting(() => host.StartAsync(AbortToken))
+                .Should()
+                .ThrowAsync<ResourceProvisioningException>()
+        )
+            .WithInnerException<SchemaRunnerException>()
+            .WithInnerException<SqlException>();
     }
 
     [Fact]
-    public async Task should_throw_and_keep_initializer_unmarked_when_authentication_fails()
+    public async Task should_fail_the_start_with_the_driver_error_when_authentication_fails()
     {
         // given — point at the real fixture but with a wrong password
         var badAuth = new SqlConnectionStringBuilder(fixture.ConnectionString)
@@ -51,14 +45,14 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
         using var host = _CreateHost(badAuth, setupResources: false);
 
         // when / then
-        var startThrew = await FluentActions
-            .Awaiting(() => host.StartAsync(AbortToken))
-            .Should()
-            .ThrowAsync<Exception>();
-        startThrew.Which.Should().Match<Exception>(e => e is SqlException || e.InnerException is SqlException);
-
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
-        initializer.IsInitialized.Should().BeFalse();
+        (
+            await FluentActions
+                .Awaiting(() => host.StartAsync(AbortToken))
+                .Should()
+                .ThrowAsync<ResourceProvisioningException>()
+        )
+            .WithInnerException<SchemaRunnerException>()
+            .WithInnerException<SqlException>();
     }
 
     [Fact]
@@ -79,14 +73,12 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
             var startTasks = hosts.Select(h => h.StartAsync(AbortToken)).ToArray();
             await Task.WhenAll(startTasks);
 
-            // then — all initializers report ready, exactly one AuditLogEntries table exists, and the
+            // then — every host started, so each verified its schema; exactly one AuditLogEntries table exists, and the
             // full 6-index complement is present (regression guard: a CATCH that swallows a real
             // CREATE INDEX failure would otherwise pass the table-count assertion silently).
-            hosts
-                .Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized)
+            (await _CountTablesAsync("audit_log_sql_concurrent", "AuditLogEntries"))
                 .Should()
-                .AllSatisfy(initialized => initialized.Should().BeTrue());
-            (await _CountTablesAsync("audit_log_sql_concurrent", "AuditLogEntries")).Should().Be(1);
+                .Be(1);
             (await _CountIndexesAsync("audit_log_sql_concurrent", "AuditLogEntries")).Should().Be(6);
         }
         finally

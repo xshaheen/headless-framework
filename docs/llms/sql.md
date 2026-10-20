@@ -107,13 +107,13 @@ The EF Core storage variants and Jobs take their connection from the `DbContext`
 
 ### Schema runner: apply, verify, and deploy-time scripts
 
-Every raw PostgreSQL, SQL Server, and SQLite storage feature contributes its DDL to one schema runner (`SchemaRunner`, namespace `Headless.Hosting.Initialization.Schema`) instead of running its own initializer. Registering a feature adds its contribution, the runner's hosted initializer, and one `Schema` [provisioned resource](utilities.md#resource-provisioning) per contribution. The runner:
+Every raw PostgreSQL, SQL Server, and SQLite storage feature contributes its DDL to one schema runner (`SchemaRunner`, namespace `Headless.Hosting.Schema`) instead of running its own initializer. Registering a feature adds its contribution and one `Schema` [resource provisioner](utilities.md#resource-provisioning) per contribution, whose startup check is `FailStart`. The runner:
 
 - Applies every missing step of every feature that reaches one database in a single pass, under one session lock per database (`pg_try_advisory_lock` or `sp_getapplock`, polled; on SQLite a leased row in `headless_schema_lock`), before any hosted service can use the tables.
 - Records each applied step, with a SHA-256 checksum of its SQL, in `headless_schema_history` in the feature's schema. A recorded step is never run again, so a warm start is one history read per schema and takes no lock.
 - Absorbs a creator outside the lock, such as your own EF migration committing the same schema or table first: the failed step is re-run once in a fresh transaction.
 
-A host start never writes DDL. The hosted initializer verifies every registered contribution before any hosted service can use the tables, and fails the start when a step is missing or a recorded checksum no longer matches the code. The message names the fix: run `resources provision`, apply the exported script, or call `AddDeployStepsOnStartup()` in development. That call sets up every resource before the check runs, even on a host that starts its services concurrently. `HeadlessTestServer` makes it by default.
+A host start never writes DDL. The startup check verifies every registered contribution that is not export-only before any hosted service can use the tables, in one history read per schema, and fails the start when a step is missing or a recorded checksum no longer matches the code. The message names the fix: run `resources provision`, apply the exported script, or call `AddDeployStepsOnStartup()` in development. That call provisions every resource before the check runs, even on a host that starts its services concurrently. `HeadlessTestServer` makes it by default.
 
 | Who | Writes DDL | How |
 |---|---|---|
@@ -160,7 +160,7 @@ Spans: one `schema_runner.apply` or `schema_runner.verify` span per pass (`Apply
 
 | Instrument | Kind | Unit | Attributes | Meaning |
 | --- | --- | --- | --- | --- |
-| `headless.schema_runner.duration` | Histogram | `ms` | `headless.schema_runner.mode` (`apply`, `verify`), `headless.schema_runner.outcome` (`success`, `failure`), `error.type` on failure | One pass, every database it reaches included. A startup refused for a checksum or missing step is a `failure` with `error.type` `Headless.Hosting.Initialization.Schema.SchemaRunnerException`. |
+| `headless.schema_runner.duration` | Histogram | `ms` | `headless.schema_runner.mode` (`apply`, `verify`), `headless.schema_runner.outcome` (`success`, `failure`), `error.type` on failure | One pass, every database it reaches included. A startup refused for a checksum or missing step is a `failure` with `error.type` `Headless.Hosting.Schema.SchemaRunnerException`. |
 | `headless.schema_runner.lock.wait.duration` | Histogram | `ms` | `headless.schema_runner.dialect`, `headless.schema_runner.lock.outcome` (`acquired`, `timed_out`, `failed`) | Time a pass waited for another replica's per-database lock; `failed` means the lock query failed or the wait was cancelled. A warm database takes no lock and records nothing. |
 | `headless.schema_runner.steps` | Counter | `{step}` | `headless.schema_runner.dialect`, `headless.schema_runner.feature`, `headless.schema_runner.step.outcome` (`applied`, `skipped`) | Steps an apply pass ran, or skipped because the history already records them. Verify passes record none. |
 | `headless.schema_runner.mismatches` | Counter | `{mismatch}` | `headless.schema_runner.mode`, `headless.schema_runner.dialect`, `headless.schema_runner.feature`, `headless.schema_runner.mismatch.kind` (`missing`, `unknown`, `checksum`) | History disagreements a pass found. Apply passes never report `missing`, since applying it is the point. |

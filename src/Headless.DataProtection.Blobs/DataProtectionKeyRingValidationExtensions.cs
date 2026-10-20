@@ -20,7 +20,7 @@ public static class DataProtectionKeyRingValidationExtensions
     /// <param name="builder">The <see cref="IDataProtectionBuilder"/> to configure.</param>
     /// <param name="configure">
     /// Optional configuration for <see cref="DataProtectionKeyRingValidationOptions"/>; by default a failure keeps the
-    /// host unready (<see cref="KeyRingValidationMode.GateReadiness"/>) and the write probe
+    /// host unready (<see cref="KeyRingCheck.GateReadiness"/>) and the write probe
     /// (<see cref="DataProtectionKeyRingValidationOptions.ProbeWritePath"/>) is enabled.
     /// </param>
     /// <returns>The <paramref name="builder"/> so that additional calls can be chained.</returns>
@@ -49,9 +49,9 @@ public static class DataProtectionKeyRingValidationExtensions
     /// <para>
     /// The validation is an <c>IWarmup</c>: it runs in the background after the host has started, so reading the key
     /// blobs and writing the sentinel never delay the start. With
-    /// <see cref="KeyRingValidationMode.GateReadiness"/> the <c>warmup</c> readiness check stays <c>Unhealthy</c>,
+    /// <see cref="KeyRingCheck.GateReadiness"/> the <c>warmup</c> readiness check stays <c>Unhealthy</c>,
     /// reporting the validation error, and the validation is retried until it succeeds. With
-    /// <see cref="KeyRingValidationMode.LogOnly"/> it runs once and never gates readiness. Registration is idempotent:
+    /// <see cref="KeyRingCheck.LogOnly"/> it runs once and never gates readiness. Registration is idempotent:
     /// calling this method twice registers a single warm-up; a second call's <paramref name="configure"/> still
     /// applies on top of the first.
     /// </para>

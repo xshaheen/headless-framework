@@ -2,7 +2,7 @@
 
 using Headless.Caching;
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Permissions;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;

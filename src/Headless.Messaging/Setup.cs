@@ -169,15 +169,9 @@ public static class SetupMessaging
         services.TryAddSingleton<MethodMatcherCache>();
 
         // Each transport's ITransportTopologyProvisioner becomes one provisioned resource, so the deployment's
-        // resources provision creates the broker topology the registered consumers and messages need.
+        // resources provision creates the broker topology the registered consumers and messages need, and the running
+        // host checks it once after it starts, behind readiness, instead of each consumer client checking its own objects.
         services.AddResourceProvisionerSource<TransportTopologyProvisionerSource>();
-
-        // The running host checks that topology once, in one batch per transport after it starts, instead of each
-        // consumer client checking its own objects as it connects; readiness waits for the check.
-        if (options.VerifyTopology)
-        {
-            services.AddWarmup<TransportTopologyWarmup>();
-        }
 
         services.TryAddSingleton<IConsumerRegister, ConsumerRegister>();
 

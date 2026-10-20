@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Hosting.Initialization.Schema;
+namespace Headless.Hosting.Schema;
 
 /// <summary>
 /// A database object a schema contribution creates and owns: what <c>resources purge</c> empties and

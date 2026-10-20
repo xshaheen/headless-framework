@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting;
+using Headless.Hosting.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -13,7 +14,7 @@ namespace Tests.Seeders;
 public sealed class SeedVerbTests : TestBase
 {
     [Fact]
-    public async Task should_run_seeders_in_priority_order_and_print_one_line_each()
+    public async Task should_run_seeders_in_dependency_order_and_print_one_line_each()
     {
         // when
         var run = await _RunAsync(services => _AddSeeders(services), "seed");
@@ -70,6 +71,70 @@ public sealed class SeedVerbTests : TestBase
         SeedLog.Entries.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task should_exit_0_and_print_each_state_when_every_store_is_current_or_cannot_tell()
+    {
+        // when
+        var run = await _RunAsync(
+            services =>
+            {
+                services.AddSeeder(_ => new VerifyingSeeder("Definitions", SeedState.Current));
+                services.AddSeeder<UnknownSeeder>();
+            },
+            "seed",
+            "verify"
+        );
+
+        // then
+        run.ExitCode.Should().Be(0, "a seeder that cannot tell must not fail a deployment that seeded correctly");
+        var lines = run.StandardOutputLines();
+        lines.Should().HaveCount(2);
+        lines[0].Should().MatchRegex(@"^Definitions +Current +\d+ms$");
+        lines[1].Should().MatchRegex(@"^Unknown +Unknown +\d+ms +This seeder cannot tell\.$");
+        SeedLog.Entries.Should().BeEmpty("verify never writes");
+    }
+
+    [Fact]
+    public async Task should_exit_1_and_name_the_fix_when_a_store_is_stale()
+    {
+        // when
+        var run = await _RunAsync(
+            services =>
+            {
+                services.AddSeeder(_ => new VerifyingSeeder("Definitions", SeedState.Current));
+                services.AddSeeder<StaleSeeder>();
+            },
+            "seed",
+            "verify"
+        );
+
+        // then
+        run.ExitCode.Should().Be(1);
+        run.StandardOutput.Should()
+            .MatchRegex(@"Jobs +Stale +\d+ms +The store does not hold what the code declares\. Run 'seed'\.");
+        SeedLog.Entries.Should().BeEmpty("verify never writes");
+    }
+
+    [Fact]
+    public async Task should_exit_1_and_still_verify_the_rest_when_a_check_fails()
+    {
+        // when
+        var run = await _RunAsync(
+            services =>
+            {
+                services.AddSeeder<BrokenVerifySeeder>();
+                services.AddSeeder(_ => new VerifyingSeeder("Definitions", SeedState.Current));
+            },
+            "seed",
+            "verify"
+        );
+
+        // then
+        run.ExitCode.Should().Be(1);
+        run.StandardOutput.Should().MatchRegex(@"Broken +Failed +\d+ms +The definitions table is unreachable\.");
+        run.StandardOutput.Should().MatchRegex(@"Definitions +Current +\d+ms");
+    }
+
     private Task<HostConsoleRun> _RunAsync(Action<IServiceCollection> configure, params string[] args)
     {
         SeedLog.Entries.Clear();
@@ -101,10 +166,11 @@ public sealed class SeedOnStartupTests : TestBase
 
         // when
         await host.StartAsync(AbortToken);
+        await host.Services.WaitForWarmupAsync(AbortToken);
         await host.StopAsync(AbortToken);
 
-        // then
-        log.Should().Equal("provision definitions", "seed", "start");
+        // then: the readiness check verifies the resource only once the host has started
+        log.Should().Equal("provision definitions", "seed", "start", "verify definitions");
     }
 
     [Fact]
@@ -186,11 +252,7 @@ public sealed class SeedOnStartupTests : TestBase
         var contribution = db.Contribution(
             "Widgets",
             "s",
-            new Headless.Hosting.Initialization.Schema.SchemaStep(
-                "1",
-                "w",
-                "CREATE TABLE IF NOT EXISTS s_w (id INTEGER)"
-            )
+            new Headless.Hosting.Schema.SchemaStep("1", "w", "CREATE TABLE IF NOT EXISTS s_w (id INTEGER)")
         );
         builder.Services.AddHeadlessSchemaContribution(_ => contribution);
         using var host = builder.Build();
@@ -199,9 +261,7 @@ public sealed class SeedOnStartupTests : TestBase
         var act = () => host.StartAsync(AbortToken);
 
         // then
-        await act.Should()
-            .ThrowAsync<Headless.Hosting.Initialization.Schema.SchemaRunnerException>()
-            .WithMessage("*'resources provision'*");
+        await act.Should().ThrowAsync<ResourceProvisioningException>().WithMessage("*'resources provision'*");
         log.Should().BeEmpty("no seeder runs against a schema that is not set up");
     }
 
@@ -209,7 +269,7 @@ public sealed class SeedOnStartupTests : TestBase
     {
         public string Name => "First";
 
-        public ValueTask SeedAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public Task SeedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class StartLogger(List<string> log) : IHostedService
@@ -226,11 +286,11 @@ public sealed class SeedOnStartupTests : TestBase
 
     private sealed class ListSeeder(List<string> log) : ISeeder
     {
-        public ValueTask SeedAsync(CancellationToken cancellationToken = default)
+        public Task SeedAsync(CancellationToken cancellationToken)
         {
             log.Add("seed");
 
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         }
     }
 }
@@ -240,37 +300,78 @@ internal static class SeedLog
     public static List<string> Entries { get; } = [];
 }
 
-[SeederPriority(1)]
 internal sealed class FirstSeeder : ISeeder
 {
     public string Name => "First";
 
-    public ValueTask SeedAsync(CancellationToken cancellationToken = default)
+    public Task SeedAsync(CancellationToken cancellationToken)
     {
         SeedLog.Entries.Add("first");
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 }
 
-[SeederPriority(3)]
 internal sealed class SecondSeeder : ISeeder
 {
     public string Name => "Second";
 
-    public ValueTask SeedAsync(CancellationToken cancellationToken = default)
+    // Registered before both, so only this puts it after them.
+    public IEnumerable<ISeeder> DependsOn(IReadOnlyList<ISeeder> seeders) =>
+        seeders.Where(static s => s is FirstSeeder or FailingSeeder);
+
+    public Task SeedAsync(CancellationToken cancellationToken)
     {
         SeedLog.Entries.Add("second");
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 }
 
-[SeederPriority(2)]
 internal sealed class FailingSeeder : ISeeder
 {
     public string Name => "Failing";
 
-    public ValueTask SeedAsync(CancellationToken cancellationToken = default) =>
+    public Task SeedAsync(CancellationToken cancellationToken) =>
         throw new InvalidOperationException("The definitions table is locked.");
+}
+
+internal sealed class VerifyingSeeder(string name, SeedState state) : ISeeder
+{
+    public string Name => name;
+
+    public Task SeedAsync(CancellationToken cancellationToken)
+    {
+        SeedLog.Entries.Add(name);
+
+        return Task.CompletedTask;
+    }
+
+    public Task<SeedState> VerifyAsync(CancellationToken cancellationToken) => Task.FromResult(state);
+}
+
+internal sealed class StaleSeeder : ISeeder
+{
+    public string Name => "Jobs";
+
+    public Task SeedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task<SeedState> VerifyAsync(CancellationToken cancellationToken) => Task.FromResult(SeedState.Stale);
+}
+
+internal sealed class UnknownSeeder : ISeeder
+{
+    public string Name => "Unknown";
+
+    public Task SeedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+internal sealed class BrokenVerifySeeder : ISeeder
+{
+    public string Name => "Broken";
+
+    public Task SeedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task<SeedState> VerifyAsync(CancellationToken cancellationToken) =>
+        Task.FromException<SeedState>(new InvalidOperationException("The definitions table is unreachable."));
 }

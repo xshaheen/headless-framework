@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sequences;
 using Headless.Sequences.PostgreSql;
 using Headless.Testing.Tests;
@@ -20,28 +20,23 @@ namespace Tests;
 public sealed class PostgreSqlSequencesStorageInitializerTests(PostgreSqlSequencesFixture fixture) : TestBase
 {
     [Fact]
-    public async Task should_throw_and_keep_initializer_unmarked_when_database_unreachable()
+    public async Task should_fail_the_start_with_the_driver_error_when_database_unreachable()
     {
         // Port 1 accepts no connections, so the TCP connect fails before any authentication is attempted.
         const string unreachable =
             "Host=127.0.0.1;Port=1;Database=missing;Username=postgres;Password=placeholder-never-used;Timeout=2";
         using var host = _CreateHost(options => options.ConnectionString = unreachable, setupResources: false);
 
-        await FluentActions
-            .Awaiting(() => host.StartAsync(AbortToken))
-            .Should()
-            .ThrowAsync<Exception>()
-            .Where(e => e is NpgsqlException || e.InnerException is NpgsqlException);
-
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
-        initializer.IsInitialized.Should().BeFalse();
-
-        // The schema runner names the features whose connection failed and keeps the driver error as the cause.
-        await FluentActions
-            .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
-            .Should()
-            .ThrowAsync<SchemaRunnerException>()
-            .WithInnerException(typeof(NpgsqlException));
+        // The startup check fails the start; the schema runner names the features whose connection failed and keeps
+        // the driver error as the cause.
+        (
+            await FluentActions
+                .Awaiting(() => host.StartAsync(AbortToken))
+                .Should()
+                .ThrowAsync<ResourceProvisioningException>()
+        )
+            .WithInnerException<SchemaRunnerException>()
+            .WithInnerException<NpgsqlException>();
     }
 
     [Fact]
@@ -55,10 +50,6 @@ public sealed class PostgreSqlSequencesStorageInitializerTests(PostgreSqlSequenc
         {
             await Task.WhenAll(hosts.Select(h => h.StartAsync(AbortToken)));
 
-            hosts
-                .Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized)
-                .Should()
-                .AllSatisfy(initialized => initialized.Should().BeTrue());
             (await _CountTablesAsync(schema)).Should().Be(1);
             (await _CountPrimaryKeysAsync(schema)).Should().Be(1);
         }
@@ -123,7 +114,7 @@ public sealed class PostgreSqlSequencesStorageInitializerTests(PostgreSqlSequenc
         await FluentActions
             .Awaiting(() => host.StartAsync(AbortToken))
             .Should()
-            .ThrowAsync<SchemaRunnerException>()
+            .ThrowAsync<ResourceProvisioningException>()
             .WithMessage("*resources provision*");
 
         (await _CountTablesAsync(schema)).Should().Be(0);

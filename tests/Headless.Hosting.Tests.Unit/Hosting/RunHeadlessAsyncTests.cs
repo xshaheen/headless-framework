@@ -229,6 +229,41 @@ public sealed class RunHeadlessAsyncTests : TestBase
         run.StandardError.Should().Contain(nameof(FaultingBackgroundService)).And.Contain("queue is missing");
     }
 
+    [Fact]
+    public async Task should_exit_0_when_a_background_service_faults_only_while_the_host_shuts_down()
+    {
+        // given: a clean stop, during which the service throws (a disposed client, say)
+        var worker = new StoppingHostedService();
+
+        // when
+        var run = await HostConsoleRun.RunAsync(
+            builder =>
+            {
+                builder.Services.AddHostedService<FaultingOnStopBackgroundService>();
+                builder.Services.AddHostedService(sp => worker.Bind(sp));
+            },
+            [],
+            AbortToken
+        );
+
+        // then
+        worker.Started.Should().BeTrue();
+        run.ExitCode.Should()
+            .Be(0, "a fault raised by the shutdown itself must not turn a clean rollout into a failure");
+        run.StandardError.Should().NotContain("Host stopped:");
+    }
+
+    private sealed class FaultingOnStopBackgroundService : BackgroundService
+    {
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken)
+                .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+
+            throw new ObjectDisposedException("The client was disposed.");
+        }
+    }
+
     private sealed class FaultingBackgroundService : BackgroundService
     {
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)

@@ -471,7 +471,14 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         var act = () => sp.SeedAsync(cancellationToken: AbortToken);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("lock store down");
+        // The run names the seeder and keeps the lock store's own error as the cause.
+        (
+            await act.Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage("Seeder Jobs failed: lock store down*")
+        )
+            .WithInnerException<InvalidOperationException>()
+            .WithMessage("lock store down");
     }
 
     // ----------------------------------------------------------------------------------------------------------------

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Hosting;
@@ -9,17 +8,17 @@ namespace Headless.Hosting;
 internal static class SeedRunner
 {
     /// <summary>
-    /// Resolves every seeder from <paramref name="scoped"/> once, ordered by <see cref="SeederPriorityAttribute"/>
-    /// (lower first, registration order among equals).
+    /// Resolves every seeder from <paramref name="scoped"/> once, ordered so each runs after the seeders it names in
+    /// <see cref="ISeeder.DependsOn"/>, registration order otherwise.
     /// </summary>
-    /// <exception cref="InvalidOperationException">Two seeders share a name, so the <c>seed</c> verb could not tell them apart.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Two seeders share a name, so the <c>seed</c> verb could not tell them apart, or two depend on each other.
+    /// </exception>
     public static IReadOnlyList<ISeeder> Ordered(IServiceProvider scoped)
     {
-        var seeders = scoped
-            .GetServices<ISeeder>()
-            .OrderBy(static s => s.GetType().GetCustomAttribute<SeederPriorityAttribute>()?.Priority ?? 0)
-            .ToList();
+        List<ISeeder> registered = [.. scoped.GetServices<ISeeder>()];
 
+        var seeders = registered;
         var duplicate = seeders
             .GroupBy(static s => s.Name, StringComparer.OrdinalIgnoreCase)
             .FirstOrDefault(static g => g.Skip(1).Any());
@@ -32,7 +31,12 @@ internal static class SeedRunner
             );
         }
 
-        return seeders;
+        return DependencyOrder.Sort<ISeeder>(
+            seeders,
+            static (s, all) => s.DependsOn(all),
+            static s => s.Name,
+            "Seeders"
+        );
     }
 
     /// <summary>
@@ -62,7 +66,7 @@ internal static class SeedRunner
             }
 
             var result = await BudgetedStep
-                .RunAsync(token => seeder.SeedAsync(token).AsTask(), budget.Token, cancellationToken)
+                .RunAsync(seeder.SeedAsync, budget.Token, cancellationToken)
                 .ConfigureAwait(false);
 
             // A seeder has no unsupported state: anything but success stops the run.
@@ -74,6 +78,40 @@ internal static class SeedRunner
         }
 
         return outcomes;
+    }
+
+    /// <summary>
+    /// Asks every seeder in <paramref name="seeders"/> whether its store is current, one at a time. Every seeder is asked
+    /// even after one fails, so the report names each.
+    /// </summary>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was canceled.</exception>
+    public static async Task<IReadOnlyList<SeedVerification>> VerifyAsync(
+        IReadOnlyList<ISeeder> seeders,
+        TimeSpan? timeout,
+        CancellationToken cancellationToken
+    )
+    {
+        using var budget = BudgetedStep.CreateBudget(timeout, cancellationToken);
+        var verifications = new List<SeedVerification>(seeders.Count);
+
+        foreach (var seeder in seeders)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var state = SeedState.Unknown;
+            var result = await BudgetedStep
+                .RunAsync(
+                    async token => state = await seeder.VerifyAsync(token).ConfigureAwait(false),
+                    budget.Token,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            verifications.Add(
+                new(seeder.Name, state, result.Duration, result.Status == BudgetedStepStatus.Ok ? null : result.Error)
+            );
+        }
+
+        return verifications;
     }
 
     /// <summary>Throws when a seeder failed.</summary>
@@ -100,6 +138,8 @@ internal enum SeedOutcomeStatus
 }
 
 internal sealed record SeedOutcome(string Name, SeedOutcomeStatus Status, TimeSpan Duration, Exception? Error);
+
+internal sealed record SeedVerification(string Name, SeedState State, TimeSpan Duration, Exception? Error);
 
 /// <summary>
 /// Records one seeder type's registration, so a second registration with another factory is refused and the startup

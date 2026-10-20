@@ -3,7 +3,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -198,9 +198,9 @@ public abstract class SchemaRunnerConformanceTests(ISchemaRunnerFixture fixture)
         await fixture.DropSchemaAsync(schema, AbortToken);
         using var host = fixture.CreateHost(schema, setupResources: true);
 
+        // The start succeeding means the startup check found every step the provisioning applied.
         await host.StartAsync(AbortToken);
 
-        host.Services.GetServices<IInitializer>().Should().ContainSingle().Which.IsInitialized.Should().BeTrue();
         (await fixture.CountTablesAsync(schema, AbortToken)).Should().Be(fixture.ExpectedTableCount);
         await host.StopAsync(AbortToken);
         await fixture.DropSchemaAsync(schema, AbortToken);
@@ -286,11 +286,13 @@ public abstract class SchemaRunnerConformanceTests(ISchemaRunnerFixture fixture)
 
         var act = () => host.StartAsync(AbortToken);
 
-        (await act.Should().ThrowAsync<SchemaRunnerException>().WithMessage("*resources provision*"))
-            .Which.Mismatches.Should()
-            .HaveCount(fixture.ExpectedStepCount)
-            .And.OnlyContain(m => m.Kind == SchemaMismatchKind.Missing);
-        host.Services.GetServices<IInitializer>().Single().IsInitialized.Should().BeFalse();
+        // One failure per feature, each naming its missing steps and the command that applies them.
+        (await act.Should().ThrowAsync<ResourceProvisioningException>().WithMessage("*resources provision*"))
+            .Which.Failures.Should()
+            .NotBeEmpty()
+            .And.AllSatisfy(failure =>
+                failure.Message.Should().Contain("are not applied").And.Contain("'resources provision'")
+            );
         (await fixture.CountTablesAsync(schema, AbortToken)).Should().Be(0, "a host start writes nothing");
     }
 

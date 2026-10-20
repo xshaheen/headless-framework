@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Hosting.Initialization.Schema;
+namespace Headless.Hosting.Schema;
 
 /// <summary>What one <see cref="SchemaRunner.ApplyAsync"/> run did.</summary>
 [PublicAPI]

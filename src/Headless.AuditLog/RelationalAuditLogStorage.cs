@@ -2,7 +2,8 @@
 
 using FluentValidation;
 using Headless.Context;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting;
+using Headless.Hosting.Schema;
 using Headless.MultiTenancy;
 using Headless.Serializer;
 using Headless.Sql;

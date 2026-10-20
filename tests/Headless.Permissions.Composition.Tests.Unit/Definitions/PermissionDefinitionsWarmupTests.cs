@@ -62,43 +62,34 @@ public sealed class PermissionDefinitionsWarmupTests : TestBase
             TaskCreationOptions.RunContinuationsAsynchronously
         );
         _store.GetGroupsAsync(Arg.Any<CancellationToken>()).Returns(load.Task);
-        await using var provider = _BuildProvider(dynamicStore: true);
-        var runner = _Runner(provider);
+        await using var host = _BuildHost(dynamicStore: true);
 
         // when
-        await runner.StartingAsync(AbortToken);
-        await runner.StartedAsync(AbortToken);
+        await host.StartAsync(AbortToken);
+        var warm = host.Services.WaitForWarmupAsync(AbortToken);
 
         // then
-        ((IInitializer)runner)
-            .IsInitialized.Should()
-            .BeFalse();
+        warm.IsCompleted.Should().BeFalse();
 
         load.SetResult([]);
-        await ((IInitializer)runner)
-            .WaitForInitializationAsync(AbortToken)
-            .WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await warm.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
         await _store.Received(1).GetGroupsAsync(Arg.Any<CancellationToken>());
 
-        await _StopAsync(runner);
+        await host.StopAsync(AbortToken);
     }
 
     [Fact]
     public async Task should_not_hold_readiness_or_load_the_store_when_the_dynamic_store_is_disabled()
     {
         // given
-        await using var provider = _BuildProvider(dynamicStore: false);
-        var runner = _Runner(provider);
+        await using var host = _BuildHost(dynamicStore: false);
 
         // when
-        await runner.StartingAsync(AbortToken);
-        await runner.StartedAsync(AbortToken);
+        await host.StartAsync(AbortToken);
 
         // then
-        ((IInitializer)runner)
-            .IsInitialized.Should()
-            .BeTrue();
-        await _StopAsync(runner);
+        await host.Services.WaitForWarmupAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await host.StopAsync(AbortToken);
         await _store.DidNotReceive().GetGroupsAsync(Arg.Any<CancellationToken>());
     }
 
@@ -108,7 +99,7 @@ public sealed class PermissionDefinitionsWarmupTests : TestBase
             Options.Create(new PermissionManagementOptions { IsDynamicPermissionStoreEnabled = dynamicStore })
         );
 
-    private ServiceProvider _BuildProvider(bool dynamicStore)
+    private LifecycleHost _BuildHost(bool dynamicStore)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -119,18 +110,60 @@ public sealed class PermissionDefinitionsWarmupTests : TestBase
         });
         services.Replace(ServiceDescriptor.Singleton(_store));
 
-        return services.BuildServiceProvider();
+        // The warm-up is under test, not the storage wiring: the cache and the EF context factory the required-service
+        // check asks for would not be reached with the store replaced.
+        services.RemoveAll<IHeadlessStartupValidator>();
+
+        return new LifecycleHost(services.BuildServiceProvider());
     }
 
-    // The warm-up runner is the one initializer that follows the host lifecycle; AddHeadlessPermissions registers it.
-    private static IHostedLifecycleService _Runner(IServiceProvider provider) =>
-        provider.GetServices<IInitializer>().OfType<IHostedLifecycleService>().Single();
-
-    private static async Task _StopAsync(IHostedLifecycleService runner)
+    // Runs the lifecycle services a generic host would, without the hosting package this project does not reference.
+    private sealed class LifecycleHost(ServiceProvider services) : IAsyncDisposable
     {
-        await runner.StoppingAsync(AbortToken);
-        await runner.StopAsync(AbortToken);
-        await runner.StoppedAsync(AbortToken);
+        private readonly List<IHostedLifecycleService> _lifecycle =
+        [
+            .. services.GetServices<IHostedService>().OfType<IHostedLifecycleService>(),
+        ];
+
+        public IServiceProvider Services => services;
+
+        public async Task StartAsync(CancellationToken cancellationToken)
+        {
+            foreach (var service in _lifecycle)
+            {
+                await service.StartingAsync(cancellationToken);
+            }
+
+            foreach (var service in _lifecycle)
+            {
+                await service.StartAsync(cancellationToken);
+            }
+
+            foreach (var service in _lifecycle)
+            {
+                await service.StartedAsync(cancellationToken);
+            }
+        }
+
+        public async Task StopAsync(CancellationToken cancellationToken)
+        {
+            foreach (var service in _lifecycle)
+            {
+                await service.StoppingAsync(cancellationToken);
+            }
+
+            foreach (var service in _lifecycle)
+            {
+                await service.StopAsync(cancellationToken);
+            }
+
+            foreach (var service in _lifecycle)
+            {
+                await service.StoppedAsync(cancellationToken);
+            }
+        }
+
+        public ValueTask DisposeAsync() => services.DisposeAsync();
     }
 
     private sealed class WarmupTestDbContext(DbContextOptions<WarmupTestDbContext> options) : DbContext(options);

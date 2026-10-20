@@ -4,6 +4,7 @@ using FluentValidation;
 using Headless.Checks;
 using Headless.DistributedLocks.SqlServer;
 using Headless.Hosting;
+using Headless.Hosting.Schema;
 using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

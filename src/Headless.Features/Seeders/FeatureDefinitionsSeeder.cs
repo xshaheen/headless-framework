@@ -24,4 +24,17 @@ internal sealed class FeatureDefinitionsSeeder(
 
     protected override Task SaveAsync(CancellationToken cancellationToken) =>
         services.GetRequiredService<IDynamicFeatureDefinitionStore>().SaveAsync(cancellationToken);
+
+    protected override async Task<SeedState> VerifyStoreAsync(CancellationToken cancellationToken)
+    {
+        // A store the application replaced has no comparison this seeder knows, so it cannot tell.
+        if (services.GetRequiredService<IDynamicFeatureDefinitionStore>() is not DynamicFeatureDefinitionStore store)
+        {
+            return SeedState.Unknown;
+        }
+
+        return await store.HoldsStaticDefinitionsAsync(cancellationToken).ConfigureAwait(false)
+            ? SeedState.Current
+            : SeedState.Stale;
+    }
 }

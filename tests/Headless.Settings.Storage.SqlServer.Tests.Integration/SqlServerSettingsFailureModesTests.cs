@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,7 +13,7 @@ namespace Tests;
 public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture fixture) : TestBase
 {
     [Fact]
-    public async Task should_throw_and_keep_initializer_unmarked_when_database_unreachable()
+    public async Task should_fail_the_start_with_the_driver_error_when_database_unreachable()
     {
         // given — port 1 is reserved and won't accept connections; short timeout to fail fast.
         // Password is a placeholder; we never reach the auth handshake because the TCP connect fails first.
@@ -21,24 +21,16 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
             "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=true";
         using var host = fixture.CreateHost("settings_sql_failure", unreachable, setupResources: false);
 
-        // when & then — wrapped in HostFailedToStartException by the host pipeline; inner is SqlException
-        await FluentActions
-            .Awaiting(() => host.StartAsync(AbortToken))
-            .Should()
-            .ThrowAsync<Exception>()
-            .Where(e => e is SqlException || e.InnerException is SqlException);
-
-        var initializer = host
-            .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .Single(x => x is HostedInitializer);
-        initializer.IsInitialized.Should().BeFalse();
-
-        // The schema runner names the features whose connection failed and keeps the driver error as the cause.
-        await FluentActions
-            .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
-            .Should()
-            .ThrowAsync<SchemaRunnerException>()
-            .WithInnerException(typeof(SqlException));
+        // The startup check fails the start; the schema runner names the features whose connection failed and keeps
+        // the driver error as the cause.
+        (
+            await FluentActions
+                .Awaiting(() => host.StartAsync(AbortToken))
+                .Should()
+                .ThrowAsync<ResourceProvisioningException>()
+        )
+            .WithInnerException<SchemaRunnerException>()
+            .WithInnerException<SqlException>();
     }
 
     [Fact]
@@ -56,18 +48,12 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
             var startTasks = hosts.Select(h => h.StartAsync(AbortToken)).ToArray();
             await Task.WhenAll(startTasks);
 
-            // then — all initializers report ready, exactly one of each table exists, and the
+            // then — every host started, so each verified its schema; exactly one of each table exists, and the
             // full 3-index complement is present (regression guard: a CATCH that swallows a real
             // CREATE INDEX failure would otherwise pass the table-count assertion silently).
-            hosts
-                .Select(h =>
-                    h.Services.GetRequiredService<IEnumerable<IInitializer>>()
-                        .Single(x => x is HostedInitializer)
-                        .IsInitialized
-                )
+            (await _CountTablesAsync("settings_sql_concurrent", "SettingValues"))
                 .Should()
-                .AllSatisfy(initialized => initialized.Should().BeTrue());
-            (await _CountTablesAsync("settings_sql_concurrent", "SettingValues")).Should().Be(1);
+                .Be(1);
             (await _CountTablesAsync("settings_sql_concurrent", "SettingDefinitions")).Should().Be(1);
             (await _CountIndexesAsync("settings_sql_concurrent")).Should().Be(4);
         }

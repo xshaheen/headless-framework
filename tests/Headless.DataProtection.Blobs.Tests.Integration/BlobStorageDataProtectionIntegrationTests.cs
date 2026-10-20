@@ -268,15 +268,10 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
         while (true)
         {
             var report = await health.CheckHealthAsync(
-                r =>
-                    string.Equals(
-                        r.Name,
-                        HeadlessWarmupServiceCollectionExtensions.HealthCheckName,
-                        StringComparison.Ordinal
-                    ),
+                r => string.Equals(r.Name, HeadlessHealthCheckNames.Warmup, StringComparison.Ordinal),
                 AbortToken
             );
-            var entry = report.Entries[HeadlessWarmupServiceCollectionExtensions.HealthCheckName];
+            var entry = report.Entries[HeadlessHealthCheckNames.Warmup];
 
             if (condition(entry))
             {

@@ -2,7 +2,7 @@
 
 using System.Data;
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sql.SqlServer;
 using Microsoft.Data.SqlClient;
 

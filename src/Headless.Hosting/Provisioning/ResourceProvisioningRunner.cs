@@ -24,7 +24,12 @@ internal static class ResourceProvisioningRunner
             resources.AddRange(await source.GetProvisionersAsync(cancellationToken).ConfigureAwait(false));
         }
 
-        return _Order(resources);
+        return DependencyOrder.Sort<IResourceProvisioner>(
+            resources,
+            static (p, all) => p.DependsOn(all),
+            static p => $"{p.Kind} {p.Name}",
+            "Resource provisioners"
+        );
     }
 
     /// <summary>
@@ -165,53 +170,6 @@ internal static class ResourceProvisioningRunner
                 return await resource.GetStatusAsync(cancellationToken).ConfigureAwait(false);
             default:
                 throw new ArgumentOutOfRangeException(nameof(operation), operation, "Unknown resource operation.");
-        }
-    }
-
-    private static List<IResourceProvisioner> _Order(List<IResourceProvisioner> resources)
-    {
-        var ordered = new List<IResourceProvisioner>(resources.Count);
-        var registered = new HashSet<IResourceProvisioner>(resources, ReferenceEqualityComparer.Instance);
-        var done = new HashSet<IResourceProvisioner>(ReferenceEqualityComparer.Instance);
-        var visiting = new List<IResourceProvisioner>();
-
-        foreach (var resource in resources)
-        {
-            visit(resource);
-        }
-
-        return ordered;
-
-        void visit(IResourceProvisioner resource)
-        {
-            if (done.Contains(resource))
-            {
-                return;
-            }
-
-            if (visiting.Contains(resource, ReferenceEqualityComparer.Instance))
-            {
-                var cycle = visiting
-                    .SkipWhile(x => !ReferenceEquals(x, resource))
-                    .Append(resource)
-                    .Select(static x => $"{x.Kind} {x.Name}");
-
-                throw new InvalidOperationException(
-                    $"Resource provisioners depend on each other: {string.Join(" -> ", cycle)}."
-                );
-            }
-
-            visiting.Add(resource);
-
-            // A dependency that is not registered is not this host's to provision, so it does not join the order.
-            foreach (var dependency in resource.DependsOn(resources).Where(registered.Contains))
-            {
-                visit(dependency);
-            }
-
-            visiting.RemoveAt(visiting.Count - 1);
-            done.Add(resource);
-            ordered.Add(resource);
         }
     }
 }

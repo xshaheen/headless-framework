@@ -3,6 +3,7 @@
 using Headless.Hosting;
 using Headless.IpGeolocation;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 
 namespace Tests;
@@ -19,18 +20,16 @@ public sealed class MaxMindDatabaseWarmupTests : MaxMindTestBase
         Handler.DownloadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var provider = BuildProvider(options => options.LocationEditionId = null, withCredentials: true);
         var geolocator = provider.GetRequiredService<IIpGeolocator>();
-        var runner = _WarmupRunner(provider);
+        var lifecycle = _LifecycleServices(provider);
 
         // when
-        await _StartAsync(runner);
+        await _StartAsync(lifecycle);
         await WaitUntilAsync(() => Handler.Downloads == 1);
-        var readyMidDownload = ((IInitializer)runner).IsInitialized;
+        var readyMidDownload = await _IsReadyAsync(provider);
         var locatedMidDownload = geolocator.Locate(TestDatabases.TelstraAddress);
         Handler.DownloadGate.SetResult();
-        await ((IInitializer)runner)
-            .WaitForInitializationAsync(AbortToken)
-            .WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
-        await _StopAsync(runner);
+        await provider.WaitForWarmupAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await _StopAsync(lifecycle);
 
         // then
         readyMidDownload.Should().BeFalse();
@@ -46,12 +45,15 @@ public sealed class MaxMindDatabaseWarmupTests : MaxMindTestBase
         TestDatabases.Install(DatabaseDirectory, TestDatabases.AsnEdition);
         Handler.Publish(TestDatabases.AsnEdition, TestDatabases.Archive(TestDatabases.AsnEdition), _ReleaseDate);
         var provider = BuildProvider(options => options.LocationEditionId = null, withCredentials: true);
-        var runner = _WarmupRunner(provider);
+        var lifecycle = _LifecycleServices(provider);
 
         // when
-        await _StartAsync(runner);
-        var ready = ((IInitializer)runner).IsInitialized;
-        await _StopAsync(runner);
+        await _StartAsync(lifecycle);
+
+        // The readiness checks run on the warm-up runner's own thread, so wait briefly instead of reading at once.
+        await provider.WaitForWarmupAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        var ready = await _IsReadyAsync(provider);
+        await _StopAsync(lifecycle);
 
         // then
         ready.Should().BeTrue();
@@ -64,12 +66,15 @@ public sealed class MaxMindDatabaseWarmupTests : MaxMindTestBase
     {
         // given
         var provider = BuildProvider(options => options.LocationEditionId = null);
-        var runner = _WarmupRunner(provider);
+        var lifecycle = _LifecycleServices(provider);
 
         // when
-        await _StartAsync(runner);
-        var ready = ((IInitializer)runner).IsInitialized;
-        await _StopAsync(runner);
+        await _StartAsync(lifecycle);
+
+        // The readiness checks run on the warm-up runner's own thread, so wait briefly instead of reading at once.
+        await provider.WaitForWarmupAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        var ready = await _IsReadyAsync(provider);
+        await _StopAsync(lifecycle);
 
         // then
         ready.Should().BeTrue();
@@ -184,20 +189,55 @@ public sealed class MaxMindDatabaseWarmupTests : MaxMindTestBase
             .GetServices<IWarmup>()
             .Single(w => string.Equals(w.Name, "MaxMindDatabases", StringComparison.Ordinal));
 
-    private static IHostedLifecycleService _WarmupRunner(IServiceProvider provider) =>
-        provider.GetServices<IHostedService>().OfType<IInitializer>().Cast<IHostedLifecycleService>().Single();
+    // The warm-up runner and the startup validation runner: driven directly, so the updater's download loop never starts.
+    private static List<IHostedLifecycleService> _LifecycleServices(IServiceProvider provider) =>
+        [.. provider.GetServices<IHostedService>().OfType<IHostedLifecycleService>()];
 
-    private static async Task _StartAsync(IHostedLifecycleService runner)
+    private static async Task<bool> _IsReadyAsync(IServiceProvider provider)
     {
-        await runner.StartingAsync(AbortToken);
-        await runner.StartAsync(AbortToken);
-        await runner.StartedAsync(AbortToken);
+        var report = await provider
+            .GetRequiredService<HealthCheckService>()
+            .CheckHealthAsync(
+                static r => string.Equals(r.Name, HeadlessHealthCheckNames.Warmup, StringComparison.Ordinal),
+                AbortToken
+            );
+
+        return report.Entries[HeadlessHealthCheckNames.Warmup].Status == HealthStatus.Healthy;
     }
 
-    private static async Task _StopAsync(IHostedLifecycleService runner)
+    private static async Task _StartAsync(List<IHostedLifecycleService> services)
     {
-        await runner.StoppingAsync(AbortToken);
-        await runner.StopAsync(AbortToken);
-        await runner.StoppedAsync(AbortToken);
+        foreach (var service in services)
+        {
+            await service.StartingAsync(AbortToken);
+        }
+
+        foreach (var service in services)
+        {
+            await service.StartAsync(AbortToken);
+        }
+
+        foreach (var service in services)
+        {
+            await service.StartedAsync(AbortToken);
+        }
+    }
+
+    private static async Task _StopAsync(List<IHostedLifecycleService> services)
+    {
+        foreach (var service in services)
+        {
+            await service.StoppingAsync(AbortToken);
+        }
+
+        foreach (var service in services)
+        {
+            await service.StopAsync(AbortToken);
+        }
+
+        foreach (var service in services)
+        {
+            await service.StoppedAsync(AbortToken);
+        }
     }
 }

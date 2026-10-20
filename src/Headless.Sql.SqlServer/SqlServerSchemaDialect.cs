@@ -3,7 +3,7 @@
 using System.Data;
 using System.Data.Common;
 using Headless.Checks;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Microsoft.Data.SqlClient;
 
 namespace Headless.Sql.SqlServer;

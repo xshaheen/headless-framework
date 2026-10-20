@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Headless.Checks;
 
-namespace Headless.Hosting.Initialization.Schema;
+namespace Headless.Hosting.Schema;
 
 /// <summary>
 /// The checksum contract between the schema runner's history rows and any deploy-time tooling that writes them:

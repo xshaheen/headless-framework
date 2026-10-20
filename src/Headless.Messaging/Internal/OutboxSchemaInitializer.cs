@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Messaging.Persistence;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

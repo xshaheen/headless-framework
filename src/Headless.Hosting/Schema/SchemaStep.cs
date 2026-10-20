@@ -3,7 +3,7 @@
 using System.Data.Common;
 using Headless.Checks;
 
-namespace Headless.Hosting.Initialization.Schema;
+namespace Headless.Hosting.Schema;
 
 /// <summary>
 /// One idempotent DDL step a feature contributes to the Headless schema runner. The runner applies a step at most

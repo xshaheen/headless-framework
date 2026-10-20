@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using Headless.Checks;
+using Headless.Hosting.Schema;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.SqlServer;

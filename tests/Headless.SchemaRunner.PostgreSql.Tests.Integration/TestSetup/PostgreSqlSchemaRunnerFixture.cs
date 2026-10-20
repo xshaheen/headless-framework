@@ -3,7 +3,7 @@
 using System.Globalization;
 using Headless.Coordination;
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Idempotency;
 using Headless.Sequences;
 using Headless.Sql.PostgreSql;

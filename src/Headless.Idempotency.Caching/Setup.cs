@@ -2,6 +2,7 @@
 
 using Headless.Caching;
 using Headless.Checks;
+using Headless.Hosting;
 using Headless.Idempotency.Caching;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Configuration;

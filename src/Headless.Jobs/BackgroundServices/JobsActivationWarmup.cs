@@ -18,8 +18,9 @@ namespace Headless.Jobs.BackgroundServices;
 /// </para>
 /// <para>
 /// It fails closed. A storage or provider failure leaves the barrier closed and propagates, so the warm-up runner
-/// retries it with back-off; the loops keep waiting and the <c>jobs</c> readiness check stays <c>Unhealthy</c>
-/// meanwhile. It does not gate the <c>warmup</c> check because the <c>jobs</c> check already reports the same state.
+/// retries it with back-off; the loops keep waiting, and both the <c>warmup</c> and <c>jobs</c> readiness checks stay
+/// <c>Unhealthy</c> meanwhile. It gates readiness like any other warm-up, so a host, or a test server waiting for its
+/// warm-ups, is ready only once job loops may select work.
 /// </para>
 /// <para>
 /// A repeated run after a successful one does nothing: the barrier opens once per host and an open barrier means the
@@ -34,8 +35,6 @@ internal sealed class JobsActivationWarmup(
 ) : IWarmup
 {
     public string Name => "JobsActivation";
-
-    public bool GatesReadiness => false;
 
     public async Task WarmUpAsync(CancellationToken cancellationToken)
     {

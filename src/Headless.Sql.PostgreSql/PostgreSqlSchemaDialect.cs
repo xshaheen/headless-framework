@@ -3,7 +3,7 @@
 using System.Data.Common;
 using System.Globalization;
 using Headless.Checks;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Npgsql;
 
 namespace Headless.Sql.PostgreSql;

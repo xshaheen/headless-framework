@@ -248,6 +248,7 @@ Entity Framework Core integration with framework conventions and save pipeline o
 - Runtime guard that fails the save with a remediation message when an entity emits events but the matching tier is not registered
 - References `Headless.UnitOfWork.EntityFramework` directly, so `IUnitOfWorkFactory.BeginAsync(db)` / `Enlist(db, transaction)` / `RunAsync(db, …)` and `db.UnitOfWork()` are available without a separate adapter package. `RunAsync(db, …)` is the resilient, unit-of-work-aware transaction entry point: it begins a unit of work on the context inside the EF execution strategy, runs the operation, and completes the unit after commit, so outbox rows and job writes made inside enlist and drain atomically
 - Transitively exposes the provider-neutral converters, model helpers, pagination, ordering, data-grid, date aggregation, and lookup APIs from `Headless.EntityFramework.Primitives`
+- `services.AddDbContextMigrations<TContext>()` makes the context's EF Core migrations a [resource provisioner](utilities.md#resource-provisioning) of kind `EntityFramework`, named after the context: `resources provision` (or `AddDeployStepsOnStartup` in development) applies them, `resources verify` names each pending migration, and a host start fails while one is pending. Purge and delete are unsupported. Registering it again does nothing
 - `IDbContextFactory<TDbContext>` auto-registered as singleton: `HeadlessDbContextFactory<TDbContext>` for per-scope registration, EF's `PooledDbContextFactory<TDbContext>` for pooled registration
 
 ### Design constraints
@@ -673,7 +674,7 @@ await context.ExecuteTransactionAsync(async attempt =>
 - Implement and register `ICouchbaseTransactionConfigProvider` to supply transaction configuration per cluster key.
 - Optionally tune the manager's Polly resilience via `CouchbaseManagerOptions` (`MaxRetries`, default 3; `RetryDelay`, default 500 ms; `Timeout`, default 10 s) using the `AddHeadlessCouchbase(IConfiguration)` / `AddHeadlessCouchbase(Action<CouchbaseManagerOptions>)` / `AddHeadlessCouchbase(Action<CouchbaseManagerOptions, IServiceProvider>)` overloads; options are validated (FluentValidation) on startup.
 - Resolve `IBucketContextProvider` from DI to get typed bucket contexts.
-- Use `ICouchbaseManager` during application startup or `IInitializer` to bootstrap scopes, collections, and indexes idempotently.
+- Use `ICouchbaseManager` from a deploy step, such as an `IResourceProvisioner` that `resources provision` runs, to bootstrap scopes, collections, and indexes idempotently.
 
 ```csharp
 // Supply the two application-specific providers (or register the shipped defaults):

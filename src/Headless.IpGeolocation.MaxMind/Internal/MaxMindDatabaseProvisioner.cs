@@ -23,6 +23,10 @@ internal sealed class MaxMindDatabaseProvisioner(
 
     public string Name => "databases";
 
+    // The MaxMindDatabases warm-up already holds readiness until the files are on disk, downloading them when it can,
+    // so a second startup check would only repeat it.
+    public ResourceStartupCheck StartupCheck => ResourceStartupCheck.None;
+
     // The files are the only data, so there is nothing to purge apart from deleting them.
     public bool CanPurge => false;
 

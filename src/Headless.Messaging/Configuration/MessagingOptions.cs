@@ -182,17 +182,6 @@ public sealed class MessagingOptions
     public bool UseStorageLock { get; set; }
 
     /// <summary>
-    /// Gets or sets whether the host checks, once after it starts, that the broker holds the shared topology its
-    /// registered consumers and messages need: every registered transport's <c>ITransportTopologyProvisioner</c> checks
-    /// it in one pass, behind the <c>warmup</c> readiness check, which stays <c>Unhealthy</c> and names the first missing
-    /// object until the check passes. Consumer clients do not check that topology themselves; a consumer started against
-    /// a missing queue fails when it consumes, naming <c>resources provision</c>.
-    /// Turn it off to skip the check and leave readiness to the consumers alone.
-    /// Default is <see langword="true"/>.
-    /// </summary>
-    public bool VerifyTopology { get; set; } = true;
-
-    /// <summary>
     /// Gets a value indicating whether publish calls require a resolved tenant identifier.
     /// When <see langword="true"/>, the publish wrapper rejects calls where neither
     /// <see cref="MessageOptions.TenantId"/> nor the ambient <c>ICurrentTenant.Id</c> resolves a
@@ -404,7 +393,6 @@ public sealed class MessagingOptions
         target.OrphanProbeInterval = OrphanProbeInterval;
         target.OrphanProbeBatchSize = OrphanProbeBatchSize;
         target.UseStorageLock = UseStorageLock;
-        target.VerifyTopology = VerifyTopology;
         target.TenantContextRequired = TenantContextRequired;
         target.TransportPublishTimeout = TransportPublishTimeout;
         target.CommandTimeout = CommandTimeout;

@@ -117,9 +117,66 @@ public sealed class WarmupRunnerTests : TestBase
         var registration = provider
             .GetRequiredService<IOptions<HealthCheckServiceOptions>>()
             .Value.Registrations.Should()
-            .ContainSingle(r => r.Name == HeadlessWarmupServiceCollectionExtensions.HealthCheckName)
+            .ContainSingle(r => r.Name == HeadlessHealthCheckNames.Warmup)
             .Which;
         registration.Tags.Should().Contain([HeadlessHealthCheckTags.Ready, HeadlessHealthCheckTags.HostState]);
+    }
+
+    [Fact]
+    public async Task should_complete_the_wait_at_once_when_the_host_registers_no_warmup()
+    {
+        // given
+        using var host = _BuildHost(_ => { });
+        await host.StartAsync(AbortToken);
+
+        // when
+        var wait = () => host.Services.WaitForWarmupAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+
+        // then
+        await wait.Should().NotThrowAsync();
+        await host.StopAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_complete_the_wait_once_every_gating_warmup_finishes()
+    {
+        // given
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var host = _BuildHost(services => services.AddWarmup(_ => new BlockingWarmup("Cache", gate.Task)));
+        await host.StartAsync(AbortToken);
+
+        // when
+        var wait = host.Services.WaitForWarmupAsync(AbortToken);
+
+        // then
+        wait.IsCompleted.Should().BeFalse();
+        gate.SetResult();
+        await wait.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await host.StopAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_cancel_the_wait_naming_each_pending_warmup_and_its_last_error()
+    {
+        // given
+        var never = new TaskCompletionSource();
+        using var host = _BuildHost(services =>
+        {
+            services.AddWarmup(_ => new BlockingWarmup("Cache", never.Task));
+            services.AddWarmup(_ => new FlakyWarmup("Store", failures: int.MaxValue));
+        });
+        await host.StartAsync(AbortToken);
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        bounded.CancelAfter(TimeSpan.FromSeconds(1));
+
+        // when
+        var wait = () => host.Services.WaitForWarmupAsync(bounded.Token);
+
+        // then
+        await wait.Should()
+            .ThrowAsync<OperationCanceledException>()
+            .WithMessage("The host did not finish warming up: Warming up: Cache; Store (last error: *");
+        await host.StopAsync(AbortToken);
     }
 
     private static IHost _BuildHost(Action<IServiceCollection> configure)
@@ -140,16 +197,11 @@ public sealed class WarmupRunnerTests : TestBase
         var report = await services
             .GetRequiredService<HealthCheckService>()
             .CheckHealthAsync(
-                r =>
-                    string.Equals(
-                        r.Name,
-                        HeadlessWarmupServiceCollectionExtensions.HealthCheckName,
-                        StringComparison.Ordinal
-                    ),
+                r => string.Equals(r.Name, HeadlessHealthCheckNames.Warmup, StringComparison.Ordinal),
                 AbortToken
             );
 
-        return report.Entries[HeadlessWarmupServiceCollectionExtensions.HealthCheckName];
+        return report.Entries[HeadlessHealthCheckNames.Warmup];
     }
 
     private sealed class BlockingWarmup(string name, Task release) : IWarmup

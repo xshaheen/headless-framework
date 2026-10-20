@@ -23,10 +23,11 @@ public sealed class DeployStepsOnStartupTests : TestBase
 
         // when
         await host.StartAsync(AbortToken);
+        await host.Services.WaitForWarmupAsync(AbortToken);
         await host.StopAsync(AbortToken);
 
-        // then
-        _log.Should().Equal("provision orders", "starting initializer");
+        // then: the readiness check verifies the resource only once the host has started
+        _log.Should().Equal("provision orders", "starting initializer", "verify orders");
     }
 
     [Fact]
@@ -46,10 +47,11 @@ public sealed class DeployStepsOnStartupTests : TestBase
 
         // when
         await host.StartAsync(AbortToken);
+        await host.Services.WaitForWarmupAsync(AbortToken);
         await host.StopAsync(AbortToken);
 
         // then
-        _log.Should().Equal("provision orders", "purge orders");
+        _log.Should().Equal("provision orders", "purge orders", "verify orders");
     }
 
     [Fact]
@@ -108,10 +110,11 @@ public sealed class DeployStepsOnStartupTests : TestBase
 
         // when
         await host.StartAsync(AbortToken);
+        await host.Services.WaitForWarmupAsync(AbortToken);
         await host.StopAsync(AbortToken);
 
         // then
-        _log.Should().Equal("seed");
+        _log.Should().Equal("seed", "verify orders");
     }
 
     [Fact]
@@ -126,10 +129,11 @@ public sealed class DeployStepsOnStartupTests : TestBase
 
         // when
         await host.StartAsync(AbortToken);
+        await host.Services.WaitForWarmupAsync(AbortToken);
         await host.StopAsync(AbortToken);
 
         // then
-        _log.Should().Equal("provision orders");
+        _log.Should().Equal("provision orders", "verify orders");
     }
 
     [Fact]
@@ -153,11 +157,11 @@ public sealed class DeployStepsOnStartupTests : TestBase
 
     private sealed class LoggingSeeder(List<string> log) : ISeeder
     {
-        public ValueTask SeedAsync(CancellationToken cancellationToken = default)
+        public Task SeedAsync(CancellationToken cancellationToken)
         {
             log.Add("seed");
 
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         }
     }
 

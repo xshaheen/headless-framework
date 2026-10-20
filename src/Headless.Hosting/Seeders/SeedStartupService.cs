@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization.Schema;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -14,7 +13,6 @@ namespace Headless.Hosting;
 internal sealed class SeedStartupService(
     IServiceProvider services,
     IOptions<DeployStepsOnStartupOptions> options,
-    SchemaRunner? schemaRunner = null,
     ResourceProvisioningStartupService? resourceSetup = null
 ) : IHostedLifecycleService
 {
@@ -31,13 +29,12 @@ internal sealed class SeedStartupService(
             await resourceSetup.WaitForInitializationAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        if (schemaRunner is not null)
-        {
-            // The host's own verification may start after this service, so check here too: a missing table then fails
-            // with the message that names 'resources provision', not with a seeder's raw database error. Cheap on a warm
-            // database: one history read per schema.
-            await schemaRunner.RunAsync(SchemaRunnerMode.Verify, cancellationToken).ConfigureAwait(false);
-        }
+        // The host's own startup check may run after this service, so run it here too: a missing table then fails with
+        // the same ResourceProvisioningException that names 'resources provision', not with a seeder's raw database
+        // error. Cheap on a warm database: one history read per schema.
+        await ResourceStartupChecks
+            .VerifyAsync(services, ResourceStartupCheck.FailStart, cancellationToken)
+            .ConfigureAwait(false);
 
         await using var scope = services.CreateAsyncScope();
         var outcomes = await SeedRunner

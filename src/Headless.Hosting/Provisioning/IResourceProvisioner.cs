@@ -36,6 +36,13 @@ public interface IResourceProvisioner
     string Name { get; }
 
     /// <summary>
+    /// Gets how a starting host checks this resource with <see cref="VerifyAsync" />. Default:
+    /// <see cref="ResourceStartupCheck.GateReadiness" />. An application overrides it per <see cref="Kind" /> with
+    /// <see cref="ResourceProvisioningOptions.StartupChecks" />.
+    /// </summary>
+    ResourceStartupCheck StartupCheck => ResourceStartupCheck.GateReadiness;
+
+    /// <summary>
     /// Gets whether <see cref="PurgeAsync" /> applies to this resource. Default: <see langword="true" />.
     /// </summary>
     bool CanPurge => true;

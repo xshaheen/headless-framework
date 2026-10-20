@@ -97,9 +97,6 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
 
         // when
         await host.StartAsync(AbortToken);
-        var initializer = host
-            .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .Single(x => x is HostedInitializer);
         var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
         var record = new SettingValueRecord(Guid.NewGuid(), "Theme", "Dark", "Global");
         await repository.InsertAsync(record, AbortToken);
@@ -109,7 +106,6 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
         var updated = await repository.FindAsync("Theme", "Global", null, AbortToken);
 
         // then
-        initializer.IsInitialized.Should().BeTrue();
         var names = new SettingsStorageOptions();
         (await fixture.TableExistsAsync(_Schema, names.ResolveSettingValuesTableName(fixture.NamingStyle), AbortToken))
             .Should()
