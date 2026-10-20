@@ -91,6 +91,18 @@ public sealed class ProviderConformanceEvidenceTests(PulsarFixture fixture) : Te
                 )
             ),
             _Bind(
+                TransportConformanceScenario.HandlerFailureRedelivery,
+                nameof(
+                    PulsarConsumerClientHarnessTests.should_keep_the_delivery_and_the_listener_when_the_callback_throws
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+                nameof(
+                    PulsarConsumerClientHarnessTests.should_redeliver_then_give_up_when_the_header_builder_fails_transiently
+                )
+            ),
+            _Bind(
                 TransportConformanceScenario.BoundedGracefulShutdown,
                 nameof(PulsarConsumerClientHarnessTests.should_shutdown_idle_consumer_within_bound)
             ),

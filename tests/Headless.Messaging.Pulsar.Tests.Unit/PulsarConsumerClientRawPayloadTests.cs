@@ -234,20 +234,21 @@ public sealed class PulsarConsumerClientRawPayloadTests : TestBase
     }
 
     [Fact]
-    public async Task should_acknowledge_without_a_callback_when_the_custom_headers_builder_throws()
+    public async Task should_negatively_acknowledge_without_a_callback_when_the_custom_headers_builder_throws()
     {
         // given
         var message = _Message(_RawTopic, new Dictionary<string, string>(StringComparer.Ordinal));
 
         // when
-        var outcome = await _ConsumeOneAsync(message, (_, _) => throw new InvalidOperationException("boom"));
+        var outcome = await _ConsumeOneAsync(message, (_, _) => throw new System.TimeoutException("lookup timed out"));
 
-        // then
+        // then: a builder failure may be transient, so the broker redelivers the message instead of losing it
         outcome.Delivered.Should().BeNull();
-        outcome.Acknowledged.Should().BeTrue();
+        outcome.NegativelyAcknowledged.Should().BeTrue();
+        outcome.Acknowledged.Should().BeFalse();
         outcome
             .Logs.Should()
-            .Contain(log => log.Reason!.Contains(nameof(InvalidOperationException), StringComparison.Ordinal));
+            .Contain(log => log.Reason!.Contains(nameof(System.TimeoutException), StringComparison.Ordinal));
     }
 
     [Fact]
@@ -330,6 +331,15 @@ public sealed class PulsarConsumerClientRawPayloadTests : TestBase
                 // Pulsar.Client is F#: its acknowledgement task carries F#'s unit, which has no value.
                 return Task.FromResult<Microsoft.FSharp.Core.Unit>(null!);
             });
+        var negativelyAcknowledged = false;
+        consumer
+            .NegativeAcknowledge(Arg.Any<MessageId>())
+            .Returns(_ =>
+            {
+                negativelyAcknowledged = true;
+                settled.TrySetResult(null);
+                return Task.FromResult<Microsoft.FSharp.Core.Unit>(null!);
+            });
         typeof(PulsarConsumerClient)
             .GetField("_consumerClient", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
             .SetValue(client, consumer);
@@ -351,7 +361,7 @@ public sealed class PulsarConsumerClientRawPayloadTests : TestBase
         await cts.CancelAsync();
         await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-        return new ConsumeOutcome(delivered, acknowledged, [.. logs]);
+        return new ConsumeOutcome(delivered, acknowledged, negativelyAcknowledged, [.. logs]);
     }
 
     // Pulsar.Client builds Message<T> only on receipt and exposes no public constructor or factory for it.
@@ -405,6 +415,7 @@ public sealed class PulsarConsumerClientRawPayloadTests : TestBase
     private sealed record ConsumeOutcome(
         TransportMessage? Delivered,
         bool Acknowledged,
+        bool NegativelyAcknowledged,
         IReadOnlyList<LogMessageEventArgs> Logs
     );
 }

@@ -335,7 +335,7 @@ public static class MessagingGuarantees
         {
             Status = GuaranteeStatus.Unsupported,
             Rationale =
-                "Amazon SQS, Redis, and Pulsar settle a CustomHeadersBuilder exception as a malformed envelope and drop the message, so a transient builder failure is never redelivered.",
+                "Amazon SQS and Redis settle a CustomHeadersBuilder exception as a malformed envelope and drop the message, so a transient builder failure is never redelivered.",
             IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1199",
         },
         // Inbox
