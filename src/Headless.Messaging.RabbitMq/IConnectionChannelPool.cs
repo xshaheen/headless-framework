@@ -39,10 +39,6 @@ internal interface IConnectionChannelPool
     uint MaxMessageBodySize { get; }
 
     /// <summary>Returns the shared, lazily-established AMQP connection, opening it if necessary.</summary>
-    /// <remarks>
-    /// While RabbitMQ.Client recovers the lost shared connection, this returns that connection, and calls on it fail
-    /// until the recovery completes. Replacing it would cancel the recovery of every consumer on it.
-    /// </remarks>
     /// <param name="cancellationToken">Token to cancel connection setup.</param>
     Task<IConnection> GetConnectionAsync(CancellationToken cancellationToken = default);
 
@@ -111,7 +107,6 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
     private readonly Func<CancellationToken, Task<IConnection>> _connectionActivator;
     private readonly Func<CancellationToken, Task<IConnection>> _nonRecoveringConnectionActivator;
     private readonly bool _isPublishConfirms;
-    private readonly bool _sharedConnectionRecovers;
     private readonly RabbitMqMessagingOptions _options;
 
     // One ensure per Queue-lane queue per process. The Lazy keeps concurrent first publishes on one declare; a failed
@@ -158,14 +153,12 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
 
             // Read through an endpoint, which caps the factory's value at the largest body the client accepts at all.
             MaxMessageBodySize = factory.Endpoint.MaxInboundMessageBodySize;
-            _sharedConnectionRecovers = factory.AutomaticRecoveryEnabled;
         }
         else
         {
             _connectionActivator = connectionActivator;
             _nonRecoveringConnectionActivator = connectionActivator;
             MaxMessageBodySize = ConnectionFactory.DefaultMaxInboundMessageBodySize;
-            _sharedConnectionRecovers = true;
         }
 
         _isPublishConfirms = options.PublishConfirms;
@@ -231,17 +224,17 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
 
     public async Task<IConnection> GetConnectionAsync(CancellationToken cancellationToken = default)
     {
-        if (_connection is { } current && (current.IsOpen || _IsRecovering(current)))
+        if (_connection is { IsOpen: true })
         {
-            return current;
+            return _connection;
         }
 
         await _connectionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_connection is { } connection && (connection.IsOpen || _IsRecovering(connection)))
+            if (_connection is { IsOpen: true })
             {
-                return connection;
+                return _connection;
             }
 
             _connection?.Dispose();
@@ -252,17 +245,6 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         {
             _connectionLock.Release();
         }
-    }
-
-    // RabbitMQ.Client recovers a connection after any loss it did not cause itself, except the broker's ACCESS_REFUSED,
-    // and retries until the connection is disposed (AutorecoveringConnection, v7). Disposing a connection it is
-    // recovering cancels that recovery, and with it the recovery of every channel and consumer on the connection.
-    private bool _IsRecovering(IConnection connection)
-    {
-        return _sharedConnectionRecovers
-            && connection.CloseReason is { } reason
-            && reason.Initiator is not ShutdownInitiator.Application
-            && !(reason.Initiator is ShutdownInitiator.Peer && reason.ReplyCode == Constants.AccessRefused);
     }
 
     public Task<IConnection> CreateNonRecoveringConnectionAsync(CancellationToken cancellationToken = default)
