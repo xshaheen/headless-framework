@@ -603,7 +603,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         var document = await _GetDocumentAsync();
         var operation = document.Operation("/tenant/plain", "get");
 
-        _ResponseCodes(operation).Should().Equal("200", "401", "403");
+        _ResponseCodes(operation).Should().Equal("200", "401", "403", "404", "409", "422");
         operation["security"]!.ToJsonString().Should().Be("""[{"Bearer":[]}]""");
         var forbidden = operation["responses"]!["403"]!["content"]!["application/problem+json"]!;
         ((string?)forbidden["schema"]!["$ref"]).Should().Be("#/components/schemas/ForbiddenProblemDetails");
@@ -616,7 +616,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         var document = await _GetDocumentAsync();
         var limited = document.Operation("/limited", "get");
 
-        _ResponseCodes(limited).Should().Equal("200", "429");
+        _ResponseCodes(limited).Should().Equal("200", "429", "404", "409", "422");
         var rejection = limited["responses"]!["429"]!;
         ((string?)rejection["description"]).Should().Be("The request was rejected by a rate limiter. Retry later.");
         _ProblemSchemaRef(rejection).Should().Be("#/components/schemas/TooManyRequestsProblemDetails");
@@ -627,7 +627,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
                 """{"Retry-After":{"description":"The number of seconds to wait before retrying the request.","required":true,"schema":{"type":"integer","format":"int32"}}}"""
             );
 
-        _ResponseCodes(document.Operation("/limited/disabled", "get")).Should().Equal("200");
+        _ResponseCodes(document.Operation("/limited/disabled", "get")).Should().Equal("200", "404", "409", "422");
         _ResponseCodes(document.Operation("/orders", "get")).Should().NotContain("429");
     }
 
@@ -662,7 +662,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         var document = await _GetDocumentAsync();
 
         var update = document.Operation("/orders/{id}", "put");
-        _ResponseCodes(update).Should().BeEquivalentTo(["204", "400", "401", "409", "428"]);
+        _ResponseCodes(update).Should().BeEquivalentTo(["204", "400", "401", "404", "409", "422", "428"]);
         _ProblemSchemaRef(update["responses"]!["409"]!).Should().Be("#/components/schemas/ConflictProblemDetails");
         ((string?)update["responses"]!["409"]!["description"])
             .Should()
@@ -685,7 +685,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         var operation = document.Operation("/filtered", "post");
 
         // The 413 is the server's body size limit, which applies to every operation with a body.
-        _ResponseCodes(operation).Should().BeEquivalentTo(["200", "400", "413", "422"]);
+        _ResponseCodes(operation).Should().BeEquivalentTo(["200", "400", "404", "409", "413", "422"]);
         _ProblemSchemaRef(operation["responses"]!["400"]!).Should().Be("#/components/schemas/BadRequestProblemDetails");
         _ProblemSchemaRef(operation["responses"]!["422"]!)
             .Should()
@@ -761,7 +761,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         ((string?)key["schema"]!["type"]).Should().Be("string");
 
         var responses = operation["responses"]!;
-        _ResponseCodes(operation).Should().BeEquivalentTo(["200", "400", "409", "413", "422"]);
+        _ResponseCodes(operation).Should().BeEquivalentTo(["200", "400", "404", "409", "413", "422"]);
         _ProblemSchemaRef(responses["400"]!).Should().Be("#/components/schemas/BadRequestProblemDetails");
         ((string?)responses["400"]!["description"]).Should().Contain("g:idempotency_key_required");
         _ProblemSchemaRef(responses["409"]!).Should().Be("#/components/schemas/ConflictProblemDetails");
@@ -813,7 +813,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
                 ]
                 """
             );
-        _ResponseCodes(post).Should().BeEquivalentTo(["204", "400", "401", "409", "413", "422"]);
+        _ResponseCodes(post).Should().BeEquivalentTo(["204", "400", "401", "404", "409", "413", "422"]);
         post["responses"]!["204"]!
             ["headers"]
             .ShouldBeJson(
@@ -831,7 +831,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         // GET is never an idempotency method, so only the authorization convention shows.
         var get = document.Operation("/mvc/transfers", "get");
         get["parameters"].Should().BeNull();
-        _ResponseCodes(get).Should().BeEquivalentTo(["200", "401"]);
+        _ResponseCodes(get).Should().BeEquivalentTo(["200", "401", "404", "409", "422"]);
     }
 
     [Fact]
@@ -848,7 +848,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         headers.Should().ContainSingle();
         ((bool?)headers[0]!["required"]).Should().NotBe(true);
 
-        _ResponseCodes(operation).Should().BeEquivalentTo(["204", "400", "409"]);
+        _ResponseCodes(operation).Should().BeEquivalentTo(["204", "400", "404", "409", "422"]);
         var responses = operation["responses"]!;
         ((string?)responses["400"]!["description"])
             .Should()
@@ -864,13 +864,13 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         var entry = document.Operation("/ledger/entries", "post");
         entry["parameters"]!.AsArray().Should().ContainSingle();
         ((bool?)entry.Parameter("Idempotency-Key")["required"]).Should().BeTrue();
-        _ResponseCodes(entry).Should().BeEquivalentTo(["204", "400", "409", "413"]);
+        _ResponseCodes(entry).Should().BeEquivalentTo(["204", "400", "404", "409", "413", "422"]);
 
         // GET is never an idempotency method, so the middleware passes the request through untouched.
         var read = document.Operation("/payments/{id}", "get");
         read["parameters"]!.AsArray().Select(x => (string?)x!["name"]).Should().Equal("id");
         // The 400 is the route value that may fail to bind, not an idempotency response.
-        _ResponseCodes(read).Should().Equal("200", "400");
+        _ResponseCodes(read).Should().Equal("200", "400", "404", "409", "422");
     }
 
     [Fact]
@@ -919,7 +919,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
 
         var responses = operation["responses"]!;
         // The 400 is the bound X-Request-Source header, which may fail to bind.
-        _ResponseCodes(operation).Should().BeEquivalentTo(["200", "400", "404"]);
+        _ResponseCodes(operation).Should().BeEquivalentTo(["200", "400", "404", "409", "422"]);
         ((string?)responses["404"]!["description"]).Should().Be("No resource matches the request.");
         _ProblemSchemaRef(responses["404"]!).Should().Be("#/components/schemas/EntityNotFoundProblemDetails");
 

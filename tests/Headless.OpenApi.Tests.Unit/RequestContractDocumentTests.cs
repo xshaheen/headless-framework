@@ -57,9 +57,12 @@ public sealed class RequestContractDocumentTests : TestBase
             _ProblemSchemaRef(badRequest).Should().Be("#/components/schemas/BadRequestProblemDetails");
         }
 
-        document.Operation("/static", "get")["responses"]!.ShouldBeJson(
-            """{"200":{"description":"OK","content":{"application/json":{"schema":{"type":"string"}}}}}"""
-        );
+        // An operation that binds nothing can fail no binding, so it documents no 400.
+        document.Operation("/static", "get")["responses"]!
+            .AsObject()
+            .Select(x => x.Key)
+            .Should()
+            .Equal("200", "404", "409", "422");
     }
 
     [Fact]

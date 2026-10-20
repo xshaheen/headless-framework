@@ -224,10 +224,12 @@ public static class SetupHeadlessOpenApi
         options.AddOperationTransformer(new RequestReadingResponseTransformer());
         options.AddOperationTransformer(new FormFileValidationTransformer());
         options.AddOperationTransformer(new SecurityRequirementTransformer());
+        // After every feature-specific adder, so a feature's own 404, 409, or 422 description wins over the generic one.
+        options.AddOperationTransformer(new StandardProblemResponseTransformer());
         options.AddOperationTransformer(new ProblemDetailsTransformer());
         options.AddOperationTransformer(new TenantRequiredExampleTransformer());
         // After the problem types, so it can tell a response the operation already documents from one only the tenant
-        // rejection produces.
+        // rejection produces; with the standard problems on, the 404 is always the former.
         options.AddOperationTransformer(new TenantResolutionTransformer());
 
         options.AddDocumentTransformer(new DocumentInfoTransformer());

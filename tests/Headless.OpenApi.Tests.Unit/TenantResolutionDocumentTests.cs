@@ -98,7 +98,7 @@ public sealed class TenantResolutionDocumentTests : TestBase
         document.ShouldBeValidOpenApi("the collapsed tenant rejections");
         var responses = document.Operation("/catalog/orders", "get")["responses"]!;
 
-        responses.AsObject().Select(response => response.Key).Should().Equal("200", "400", "404");
+        responses.AsObject().Select(response => response.Key).Should().Equal("200", "404", "409", "422", "400");
 
         var badRequest = responses["400"]!;
         ((string?)badRequest["description"]).Should().Be("Bad Request - The tenant identifier is invalid.");
@@ -109,11 +109,15 @@ public sealed class TenantResolutionDocumentTests : TestBase
             );
 
         var notFound = responses["404"]!;
-        ((string?)notFound["description"]).Should().Be("Not Found - The tenant could not be resolved.");
+        // The standard 404 is already documented, so it keeps its description and the tenant example joins its own.
+        ((string?)notFound["description"])
+            .Should()
+            .Be("Not Found - The requested resource does not exist.");
         notFound["headers"]!.ShouldBeJson(_CacheControl);
-        _Examples(notFound)
+        _Examples(notFound)!
+            ["tenantResolutionFailed"]
             .ShouldBeJson(
-                """{"tenantResolutionFailed":{"summary":"Tenant not resolved","value":{"type":"https://tools.ietf.org/html/rfc9110#section-15.5.5","title":"entity-not-found","status":404,"detail":"The requested resource was not found.","instance":"/public/some-endpoint","traceId":"<trace-id>","buildNumber":"<version>","commitNumber":"<commit>","timestamp":"2024-01-01T12:00:00+00:00","error":{"code":"g:tenant_resolution_failed","description":"The requested tenant could not be resolved."}}}}"""
+                """{"summary":"Tenant not resolved","value":{"type":"https://tools.ietf.org/html/rfc9110#section-15.5.5","title":"entity-not-found","status":404,"detail":"The requested resource was not found.","instance":"/public/some-endpoint","traceId":"<trace-id>","buildNumber":"<version>","commitNumber":"<commit>","timestamp":"2024-01-01T12:00:00+00:00","error":{"code":"g:tenant_resolution_failed","description":"The requested tenant could not be resolved."}}}"""
             );
     }
 
@@ -124,8 +128,12 @@ public sealed class TenantResolutionDocumentTests : TestBase
         document.ShouldBeValidOpenApi("the detailed tenant rejections");
         var responses = document.Operation("/catalog/tenant", "get")["responses"]!;
 
-        responses.AsObject().Select(response => response.Key).Should().Equal("200", "401", "403", "400", "404");
-        _ExampleCodes(responses["404"]!).Should().Equal("tenantUnknown:g:tenant_unknown");
+        responses
+            .AsObject()
+            .Select(response => response.Key)
+            .Should()
+            .Equal("200", "401", "403", "404", "409", "422", "400");
+        _ExampleCodes(responses["404"]!).Should().Equal("notFound:", "tenantUnknown:g:tenant_unknown");
         // The 403 the authorization already documents keeps its examples beside the tenant ones.
         _ExampleCodes(responses["403"]!)
             .Should()
@@ -177,7 +185,7 @@ public sealed class TenantResolutionDocumentTests : TestBase
         var operation = document.Operation("/catalog/health", "get");
 
         operation["parameters"].Should().BeNull();
-        operation["responses"]!.AsObject().Select(response => response.Key).Should().Equal("200");
+        operation["responses"]!.AsObject().Select(response => response.Key).Should().Equal("200", "404", "409", "422");
     }
 
     [Fact]
@@ -211,7 +219,7 @@ public sealed class TenantResolutionDocumentTests : TestBase
 
         var operation = document.Operation("/catalog/orders", "get");
         operation["parameters"].Should().BeNull();
-        operation["responses"]!.AsObject().Select(response => response.Key).Should().Equal("200");
+        operation["responses"]!.AsObject().Select(response => response.Key).Should().Equal("200", "404", "409", "422");
         document["servers"]!.AsArray().Should().ContainSingle();
     }
 

@@ -36,6 +36,16 @@ public sealed class HeadlessOpenApiOptions
     public bool AddBearerSecurity { get; set; } = true;
 
     /// <summary>
+    /// Whether every operation documents the 404, 409, and 422 problem responses. Default is <see langword="true"/>.
+    /// </summary>
+    /// <remarks>
+    /// These are the statuses the exception handler and the <c>ApiResult</c> conversion write for not-found,
+    /// conflict, and validation failures. Any handler or service can raise them, so endpoint metadata cannot tell
+    /// which operations return them; the document lists them on every operation instead.
+    /// </remarks>
+    public bool StandardProblemResponses { get; set; } = true;
+
+    /// <summary>
     /// Whether to register an API-key security scheme named <see cref="ApiKeySchemeName"/> that reads the
     /// <see cref="ApiKeyHeaderName"/> header. Default is <see langword="false"/>.
     /// </summary>

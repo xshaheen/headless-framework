@@ -27,8 +27,9 @@ namespace Headless.OpenApi;
 /// either the collapsed 404 <c>g:tenant_resolution_failed</c>, or with detailed errors 404 <c>g:tenant_unknown</c> and
 /// 403 <c>g:tenant_disabled</c> or <c>g:tenant_identifier_mismatch</c>. Each rejection carries
 /// <c>Cache-Control: no-store</c>. It runs after <see cref="ProblemDetailsTransformer"/>: a response the operation
-/// already documents keeps its example as one named example beside the tenant ones, and a response only the
-/// rejection produces gets the tenant examples alone.
+/// already documents keeps its description and its example as one named example beside the tenant ones, and a response
+/// only the rejection produces gets the tenant examples alone. The standard 404 is already documented on every operation
+/// unless <see cref="HeadlessOpenApiOptions.StandardProblemResponses"/> is off, so the tenant-only 404 appears only then.
 /// </para>
 /// </remarks>
 internal sealed class TenantResolutionTransformer : IOpenApiOperationTransformer
