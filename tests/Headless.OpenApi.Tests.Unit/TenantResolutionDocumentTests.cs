@@ -98,7 +98,7 @@ public sealed class TenantResolutionDocumentTests : TestBase
         document.ShouldBeValidOpenApi("the collapsed tenant rejections");
         var responses = document.Operation("/catalog/orders", "get")["responses"]!;
 
-        responses.AsObject().Select(response => response.Key).Should().Equal("200", "404", "409", "422", "400");
+        responses.ExactStatusCodes().Should().Equal("200", "404", "409", "422", "400");
 
         var badRequest = responses["400"]!;
         ((string?)badRequest["description"]).Should().Be("Bad Request - The tenant identifier is invalid.");
@@ -128,11 +128,7 @@ public sealed class TenantResolutionDocumentTests : TestBase
         document.ShouldBeValidOpenApi("the detailed tenant rejections");
         var responses = document.Operation("/catalog/tenant", "get")["responses"]!;
 
-        responses
-            .AsObject()
-            .Select(response => response.Key)
-            .Should()
-            .Equal("200", "401", "403", "404", "409", "422", "400");
+        responses.ExactStatusCodes().Should().Equal("200", "401", "403", "404", "409", "422", "400");
         _ExampleCodes(responses["404"]!).Should().Equal("notFound:", "tenantUnknown:g:tenant_unknown");
         // The 403 the authorization already documents keeps its examples beside the tenant ones.
         _ExampleCodes(responses["403"]!)
@@ -185,7 +181,7 @@ public sealed class TenantResolutionDocumentTests : TestBase
         var operation = document.Operation("/catalog/health", "get");
 
         operation["parameters"].Should().BeNull();
-        operation["responses"]!.AsObject().Select(response => response.Key).Should().Equal("200", "404", "409", "422");
+        operation["responses"]!.ExactStatusCodes().Should().Equal("200", "404", "409", "422");
     }
 
     [Fact]
@@ -219,7 +215,7 @@ public sealed class TenantResolutionDocumentTests : TestBase
 
         var operation = document.Operation("/catalog/orders", "get");
         operation["parameters"].Should().BeNull();
-        operation["responses"]!.AsObject().Select(response => response.Key).Should().Equal("200", "404", "409", "422");
+        operation["responses"]!.ExactStatusCodes().Should().Equal("200", "404", "409", "422");
         document["servers"]!.AsArray().Should().ContainSingle();
     }
 

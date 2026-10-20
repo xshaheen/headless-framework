@@ -344,8 +344,7 @@ public sealed class HeadlessOpenApiOptionsTests : TestBase
         result.Errors.Should().ContainSingle().Which.PropertyName.Should().Be("FluentValidationRules[0]");
     }
 
-    private static string[] _ResponseCodes(JsonNode operation) =>
-        [.. operation["responses"]!.AsObject().Select(x => x.Key)];
+    private static string[] _ResponseCodes(JsonNode operation) => operation["responses"]!.ExactStatusCodes();
 
     private sealed record TestSurfaceMetadata(string SurfaceName) : IApiSurfaceMetadata;
 }

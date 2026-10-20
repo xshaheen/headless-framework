@@ -129,8 +129,7 @@ public sealed class AuthorizationPolicyDocumentTests : TestBase
         operation["security"]!.ToJsonString().Should().Be("""[{"Bearer":[]}]""");
     }
 
-    private static string[] _ResponseCodes(JsonNode operation) =>
-        [.. operation["responses"]!.AsObject().Select(x => x.Key)];
+    private static string[] _ResponseCodes(JsonNode operation) => operation["responses"]!.ExactStatusCodes();
 }
 
 /// <summary>An attribute that carries its own requirement, which the authorization middleware enforces.</summary>

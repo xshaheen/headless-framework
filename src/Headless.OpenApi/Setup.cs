@@ -231,6 +231,8 @@ public static class SetupHeadlessOpenApi
         // After the problem types, so it can tell a response the operation already documents from one only the tenant
         // rejection produces; with the standard problems on, the 404 is always the former.
         options.AddOperationTransformer(new TenantResolutionTransformer());
+        // Last, so every exact status is already in place and the ranges cover only what the operation does not list.
+        options.AddOperationTransformer(new ProblemResponseRangeTransformer());
 
         options.AddDocumentTransformer(new DocumentInfoTransformer());
         options.AddDocumentTransformer(new SecuritySchemesTransformer());

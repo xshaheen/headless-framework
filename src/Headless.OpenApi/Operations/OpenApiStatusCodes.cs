@@ -17,4 +17,8 @@ internal static class OpenApiStatusCodes
     public const string InternalServerError = "500";
     public const string NotImplemented = "501";
     public const string ServiceUnavailable = "503";
+
+    // OpenAPI range keys: they match any status in the class that the operation does not list exactly.
+    public const string ClientErrorRange = "4XX";
+    public const string ServerErrorRange = "5XX";
 }

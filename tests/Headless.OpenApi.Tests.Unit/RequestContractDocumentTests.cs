@@ -59,8 +59,7 @@ public sealed class RequestContractDocumentTests : TestBase
 
         // An operation that binds nothing can fail no binding, so it documents no 400.
         document.Operation("/static", "get")["responses"]!
-            .AsObject()
-            .Select(x => x.Key)
+            .ExactStatusCodes()
             .Should()
             .Equal("200", "404", "409", "422");
     }

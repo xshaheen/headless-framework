@@ -367,7 +367,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
             }
         }
 
-        problems.Should().HaveCount(14);
+        problems.Should().HaveCount(15);
 
         foreach (var (name, schema) in problems)
         {
@@ -930,8 +930,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         responses["404"]!["headers"].Should().BeNull();
     }
 
-    private static string[] _ResponseCodes(JsonNode operation) =>
-        [.. operation["responses"]!.AsObject().Select(x => x.Key)];
+    private static string[] _ResponseCodes(JsonNode operation) => operation["responses"]!.ExactStatusCodes();
 
     private static string? _ProblemSchemaRef(JsonNode response) =>
         (string?)response["content"]?["application/problem+json"]?["schema"]?["$ref"];

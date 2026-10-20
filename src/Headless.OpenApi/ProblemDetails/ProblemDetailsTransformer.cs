@@ -302,6 +302,26 @@ internal sealed class ProblemDetailsTransformer : IOpenApiOperationTransformer
                 "An error occurred while processing your request."
             )
         ),
+        // A range covers statuses no rule predicts, so it gets the base shape every Headless problem shares; its example
+        // shows one such status.
+        [OpenApiStatusCodes.ClientErrorRange] = (
+            typeof(HeadlessProblemDetails),
+            _Example(
+                Constants.Types.RequestTimeout,
+                Constants.Titles.RequestTimeout,
+                StatusCodes.Status408RequestTimeout,
+                "The request timed out."
+            )
+        ),
+        [OpenApiStatusCodes.ServerErrorRange] = (
+            typeof(HeadlessProblemDetails),
+            _Example(
+                Constants.Types.InternalError,
+                Constants.Titles.InternalError,
+                StatusCodes.Status500InternalServerError,
+                "An error occurred while processing your request."
+            )
+        ),
         [OpenApiStatusCodes.NotImplemented] = (
             typeof(NotImplementedProblemDetails),
             _Example(
