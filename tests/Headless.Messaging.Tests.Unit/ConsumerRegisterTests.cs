@@ -2054,8 +2054,15 @@ public sealed class ConsumerRegisterTests : TestBase
         };
     }
 
+    // The receive-outcome counter is process-wide and carries no message tag, so a listener would also hear the tests
+    // running in parallel. Each listener records only measurements made in the execution context of the test that
+    // started it, which flows into the receive work that test starts.
+    private static readonly AsyncLocal<object?> _OutcomeScope = new();
+
     private static System.Diagnostics.Metrics.MeterListener _ListenToReceiveOutcomes(ConcurrentQueue<string> outcomes)
     {
+        var scope = new object();
+        _OutcomeScope.Value = scope;
         var listener = new System.Diagnostics.Metrics.MeterListener
         {
             InstrumentPublished = (instrument, meterListener) =>
@@ -2069,6 +2076,11 @@ public sealed class ConsumerRegisterTests : TestBase
         listener.SetMeasurementEventCallback<long>(
             (_, _, tags, _) =>
             {
+                if (!ReferenceEquals(_OutcomeScope.Value, scope))
+                {
+                    return;
+                }
+
                 foreach (var tag in tags)
                 {
                     if (string.Equals(tag.Key, MessagingMetrics.TagReceiveOutcome, StringComparison.Ordinal))
