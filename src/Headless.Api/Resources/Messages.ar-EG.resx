@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>1.3</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral,
+      PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral,
+      PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <data name="g:concurrency_failure" xml:space="preserve">
+    <value>فيه عملية تانية غيّرت البيانات دي في نفس الوقت.</value>
+  </data>
+  <data name="g:unique_violation" xml:space="preserve">
+    <value>فيه سجل تاني بنفس القيمة، والقيمة دي لازم متتكررش.</value>
+  </data>
+  <data name="g:resource_busy" xml:space="preserve">
+    <value>فيه طلب تاني بيحدّث البيانات دي دلوقتي. جرّب تاني بعد شوية.</value>
+  </data>
+  <data name="g:if_match_required" xml:space="preserve">
+    <value>لازم تبعت قيمة ETag الحالية في If-Match.</value>
+  </data>
+  <data name="g:if_match_invalid" xml:space="preserve">
+    <value>قيمة If-Match مش صالحة. ابعت ETag واحدة بس، ومينفعش تكون ضعيفة.</value>
+  </data>
+  <data name="g:feature_currently_unavailable" xml:space="preserve">
+    <value>الميزة دي مش متاحة دلوقتي.</value>
+  </data>
+  <data name="g:unknown_error" xml:space="preserve">
+    <value>حصل خطأ غير معروف.</value>
+  </data>
+  <data name="g:obsolete_api" xml:space="preserve">
+    <value>الواجهة البرمجية دي قديمة ومش متاحة للحساب ده.</value>
+  </data>
+  <data name="g:user_not_found" xml:space="preserve">
+    <value>حصلت مشكلة. سجّل دخول تاني.</value>
+  </data>
+  <data name="g:invalid_recaptcha" xml:space="preserve">
+    <value>التحقق الآلي (reCAPTCHA) فشل أو انتهت مدته. جرّب تاني.</value>
+  </data>
+  <data name="g:not_authorized" xml:space="preserve">
+    <value>لازم تسجّل دخول علشان تنفذ الطلب ده.</value>
+  </data>
+  <data name="g:rate_limit_exceeded" xml:space="preserve">
+    <value>عدد الطلبات كتير. جرّب تاني بعد شوية.</value>
+  </data>
+  <data name="g:duplicated_request" xml:space="preserve">
+    <value>الطلب ده متكرر.</value>
+  </data>
+  <data name="g:tenant_required" xml:space="preserve">
+    <value>العملية دي محتاجة تحديد المستأجر، ومفيش مستأجر متحدد.</value>
+  </data>
+  <data name="g:cross_tenant_write" xml:space="preserve">
+    <value>عملية الكتابة دي مش مطابقة للمستأجر الحالي.</value>
+  </data>
+  <data name="g:invalid_request_type" xml:space="preserve">
+    <value>نوع الطلب المتحدد لنقطة النهاية دي مش صالح.</value>
+  </data>
+  <data name="problem:endpoint_not_found" xml:space="preserve">
+    <value>نقطة النهاية المطلوبة '{0}' مش موجودة.</value>
+  </data>
+  <data name="problem:entity_not_found" xml:space="preserve">
+    <value>العنصر المطلوب مش موجود.</value>
+  </data>
+  <data name="problem:bad_request" xml:space="preserve">
+    <value>تعذّرت قراءة الطلب. محتواه فاضي أو صيغته مش صحيحة.</value>
+  </data>
+  <data name="problem:unauthorized" xml:space="preserve">
+    <value>لازم تسجّل دخول علشان توصل للعنصر ده.</value>
+  </data>
+  <data name="problem:forbidden" xml:space="preserve">
+    <value>معندكش صلاحية توصل للعنصر ده.</value>
+  </data>
+  <data name="problem:conflict" xml:space="preserve">
+    <value>الطلب ده مخالف لقاعدة أو أكتر من قواعد العمل.</value>
+  </data>
+  <data name="problem:unprocessable_entity" xml:space="preserve">
+    <value>فيه خطأ أو أكتر في البيانات المدخلة.</value>
+  </data>
+  <data name="problem:internal_error" xml:space="preserve">
+    <value>حصل خطأ أثناء تنفيذ طلبك.</value>
+  </data>
+  <data name="problem:too_many_requests" xml:space="preserve">
+    <value>عدد الطلبات كتير. جرّب تاني بعد شوية.</value>
+  </data>
+  <data name="problem:request_timeout" xml:space="preserve">
+    <value>مهلة الطلب خلصت.</value>
+  </data>
+  <data name="problem:not_implemented" xml:space="preserve">
+    <value>الوظيفة دي مش متنفذة لسه.</value>
+  </data>
+  <data name="problem:payload_too_large" xml:space="preserve">
+    <value>حجم بيانات الطلب كبير جدًا ومينفعش يتعالج.</value>
+  </data>
+  <data name="problem:service_unavailable" xml:space="preserve">
+    <value>الخدمة مش متاحة مؤقتًا. جرّب تاني بعد شوية.</value>
+  </data>
+  <data name="problem:if_match_unsupported" xml:space="preserve">
+    <value>قيمة If-Match فيها ETag الواجهة البرمجية دي مش بتدعمه.</value>
+  </data>
+</root>

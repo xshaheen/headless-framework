@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.104.1",
+    "@tanstack/react-query": "^5.104.2",
     "@uppy/core": "^6.2.0",
     "@uppy/dashboard": "^6.0.1",
     "@uppy/react": "^6.0.0",
@@ -17,7 +17,7 @@
     "pretty-bytes": "^7.2.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-dropzone": "^20.1.2",
+    "react-dropzone": "^20.1.3",
     "tus-js-client": "^4.3.1",
     "use-tus": "^0.9.0"
   },
@@ -26,7 +26,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "typescript": "~7.0.2",
-    "vite": "^8.3.3"
+    "vite": "^8.3.4"
   },
   "overrides": {
     "postcss": {

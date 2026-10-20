@@ -86,7 +86,10 @@ TEST_MAX_PARALLEL ?= 3
 # and 92 s at 8 parallel modules on a 14-core machine. TEST_MAX_PARALLEL stays at 3 for integration
 # modules, which each start containers, and for CI's smaller runners.
 UNIT_TEST_MAX_PARALLEL ?= 6
+# Per test module. The affected test stages pass it too (unless TEST_ARGS already carries a --timeout), so a hung module (a broker suite once hung 57 min) fails
+# its stage instead of holding a gate slot; the longest module in recent proof runs took about 7 min under load.
 TEST_TIMEOUT ?= 15m
+AFFECTED_TIMEOUT_ARGS = $(if $(findstring --timeout,$(TEST_ARGS)),,--timeout $(TEST_TIMEOUT))
 # Inner-loop build flags. Analyzers are over half of the compiler's CPU on this solution (9 analyzer
 # packs, AnalysisMode=All, AnalysisLevel=latest-all, EnforceCodeStyleInBuild), and MinVer shells out
 # to git once per src project. Neither changes the emitted IL, so a compile-only loop can skip both.
@@ -142,8 +145,23 @@ GRAPH = $(PYTHON) scripts/project-graph.py
 PROOF = $(PYTHON) scripts/proof.py
 # Each proof target keeps the newest PROOF_KEEP bundles of its own kind (-verify, -integration, ...), counting the one
 # it starts, and deletes the older ones; nothing else ever removed a bundle, and one worktree had 52 of them (22 GB).
-# test-failed reads the newest -verify or -test bundle, which is always kept. PROOF_KEEP=0 keeps every bundle.
+# test-failed reads the newest -verify, -test, or -integration bundle, which is always kept. PROOF_KEEP=0 keeps every
+# bundle.
 PROOF_KEEP ?= 3
+# Heavy gates share one machine with every other worktree and session, so each one runs its recipe (the gated-<name>
+# target) only while it holds a machine-wide slot; scripts/gate-slot.py waits for a free slot and names who holds
+# each busy one. Build-and-unit gates share GATE_SLOTS slots. test-affected-integration takes one of
+# GATE_INTEGRATION_SLOTS instead: TEST_MAX_PARALLEL stays at 3 because six integration modules at once broke
+# timing-sensitive suites, and two integration gates side by side would be six. Setting a pool's size to 0 lifts
+# only that pool's limit, and a gate nested in another holds no second slot.
+GATE_SLOTS ?= 2
+GATE_INTEGRATION_SLOTS ?= 1
+export GATE_SLOTS GATE_INTEGRATION_SLOTS
+# $(MAKE) stays in each recipe line, not in these variables, so `make -n` still runs the sub-make and prints the recipe.
+GATE_SLOT = $(PYTHON) scripts/gate-slot.py --label '$@ in $(CURDIR)' --
+GATE_SLOT_INTEGRATION = $(PYTHON) scripts/gate-slot.py --pool integration --label '$@ in $(CURDIR)' --
+# A benchmark's timings mean nothing beside another gate, so it waits for the whole machine.
+GATE_SLOT_EXCLUSIVE = $(PYTHON) scripts/gate-slot.py --exclusive --pool gate --pool integration --label '$@ in $(CURDIR)' --
 # One timestamp per make invocation, so every stage of a target writes into the same bundle.
 PROOF_RUN := $(ARTIFACTS_DIR)/proof/$(shell date -u +%Y%m%dT%H%M%SZ)
 # Coverage costs ~0.4 s per test module plus a merge (~20 s on a whole-solution run), so the inner loop skips
@@ -195,17 +213,30 @@ AFFECTED_BUILD_STAGES = if [ -s "$$run/build.txt" ]; then \
 		fi; \
 		$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/build.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo $(PROOF_ERROR_LOG_ARGS) $(MSBUILD_ARGS) || status=1; \
 	fi;
+# An analyzer finding sends the change back for an edit, and that edit re-runs every suite, so the integration gate
+# analyzes right after the build (it reads the build's compiler logs) and skips its suites on a finding instead of finding out from
+# verify-affected after the suites already ran. The skip goes through `status`, as a failed build's does.
+AFFECTED_INTEGRATION_ANALYZER_STAGE = if [ $$status -eq 0 ]; then \
+		$(AFFECTED_ANALYZER_STAGE) \
+		$(PROOF) analyzers-clean --dir "$$run" || { status=1; printf '\033[31m[affected]\033[0m analyzer findings in the changed projects; fix them before the suites run.\n' >&2; }; \
+	fi;
+# A failed test stage whose every failure is listed in tests/known-flakes.txt retries those modules once
+# (scripts/proof.py retry-flakes), without coverage, and the summary names each flake with its issue; any other
+# failure fails the stage as before. The retry runs the binaries the stage just tested.
+FLAKE_RETRY_ARGS = --configuration "$(CONFIGURATION)" --no-build --no-restore $(AFFECTED_TIMEOUT_ARGS) $(TEST_ARGS) $(TEST_FILTER)
 # The unit stage runs the list the target names in `units` (unit by default; test-affected-integration narrows it).
 AFFECTED_UNIT_STAGE = units="$${units:-unit}"; \
-	if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name unit-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
+	if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name unit-tests --reason "an earlier stage (build or analyzers) failed; fix it first, since the fix re-runs these tests anyway"; \
 	elif [ -s "$$run/$$units.txt" ]; then \
 		$(COVERAGE_ARGS_FN) \
-		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/$$units.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
+		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/$$units.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) $(AFFECTED_TIMEOUT_ARGS) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} \
+			|| $(PROOF) retry-flakes --dir "$$run" --stage unit-tests --projects "$$run/$$units.txt" --dotnet $(DOTNET) -- $(FLAKE_RETRY_ARGS) || status=1; \
 	else printf '\033[33m[affected]\033[0m %s.txt selects no unit-test project; no unit tests ran.\n' "$$units"; fi;
-AFFECTED_INTEGRATION_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name integration-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
+AFFECTED_INTEGRATION_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name integration-tests --reason "an earlier stage (build or analyzers) failed; fix it first, since the fix re-runs these tests anyway"; \
 	elif [ -s "$$run/integration.txt" ]; then \
 		$(COVERAGE_ARGS_FN) \
-		$(PROOF) run --dir "$$run" --name integration-tests -- $(DOTNET) test --solution "$$run/integration.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/integration-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
+		$(PROOF) run --dir "$$run" --name integration-tests -- $(DOTNET) test --solution "$$run/integration.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/integration-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(AFFECTED_TIMEOUT_ARGS) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} \
+			|| $(PROOF) retry-flakes --dir "$$run" --stage integration-tests --projects "$$run/integration.txt" --dotnet $(DOTNET) -- $(FLAKE_RETRY_ARGS) || status=1; \
 	else printf '\033[33m[affected]\033[0m no integration-test project covers the affected set; nothing ran.\n'; fi;
 # One merged report over whichever suites ran, so the gate reads a line as covered when any test reached it. MTP
 # writes each module's report at the results root and the TRX reporter copies it under _<machine>_<time>/In/, so the
@@ -375,11 +406,11 @@ test-query: ## Run tests matching QUERY (MTP --filter-query). Solution-wide unle
 	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-query "$(QUERY)"'
 
 # A narrow fix after a failed verify-affected proves itself on the modules that failed, in seconds to a minute,
-# instead of the whole gate again (one Jobs module alone takes ~4 min). It reads the latest -verify or -test
-# bundle's summary.json; the other failed stages are named with the target that repeats them. The final proof
-# is still one full verify-affected.
+# instead of the whole gate again (one Jobs module alone takes ~4 min). It reads the latest -verify, -test, or
+# -integration bundle's summary.json; the other failed stages are named with the target that repeats them. The final
+# proof is still one full run of the gate that failed.
 .PHONY: test-failed
-test-failed: ## Re-run only the unit-test projects whose modules failed in the last verify-affected or test-affected proof (PROOF_BUNDLE=<dir> picks another).
+test-failed: ## Re-run only the test projects whose modules failed in the last verify-affected, test-affected, or test-affected-integration proof (PROOF_BUNDLE=<dir> picks another).
 	@projects="$$($(PROOF) failed --root "$(ARTIFACTS_DIR)/proof" $(if $(PROOF_BUNDLE),--dir "$(PROOF_BUNDLE)",))"; \
 	if [ -z "$$projects" ]; then exit 0; fi; failed=""; \
 	for project in $$projects; do \
@@ -927,6 +958,10 @@ build-affected: ## Build the affected projects (changed + direct dependents + th
 
 .PHONY: test-affected
 test-affected: ## Build the affected set, then run its *.Tests.Unit projects; writes a proof bundle under artifacts/proof/.
+	@$(GATE_SLOT) $(MAKE) --no-print-directory gated-$@
+
+.PHONY: gated-test-affected
+gated-test-affected:
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-test"; \
 	run="$(PROOF_RUN)-test"; status=0; coverage="$(AFFECTED_COVERAGE)"; \
 	$(AFFECTED_BUILD_STAGES) \
@@ -941,10 +976,15 @@ test-affected: ## Build the affected set, then run its *.Tests.Unit projects; wr
 # the affected integration suites, both with coverage, and holds those packages' changed lines to the floors. With no
 # such package edited (a build-wide change, say) it runs the integration suites without coverage, which costs less.
 test-affected-integration: ## Build the affected set, run its integration tests, and gate the changed lines of edited packages that own an integration project on merged unit + integration coverage (needs Docker; local only).
+	@$(GATE_SLOT_INTEGRATION) $(MAKE) --no-print-directory gated-$@
+
+.PHONY: gated-test-affected-integration
+gated-test-affected-integration:
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-integration"; \
 	run="$(PROOF_RUN)-integration"; status=0; units=integration-unit; coverage="$(INTEGRATION_COVERAGE)"; \
 	if [ ! -s "$$run/integration-packages.txt" ]; then coverage=false; fi; \
 	$(AFFECTED_BUILD_STAGES) \
+	$(AFFECTED_INTEGRATION_ANALYZER_STAGE) \
 	$(AFFECTED_UNIT_STAGE) \
 	$(AFFECTED_INTEGRATION_STAGE) \
 	$(AFFECTED_COVERAGE_MERGE_STAGE) \
@@ -953,6 +993,10 @@ test-affected-integration: ## Build the affected set, run its integration tests,
 
 .PHONY: verify-affected
 verify-affected: ## Format-check the changed files, then build, unit-test (with coverage), gate unit coverage, and analyze the affected set, plus dashboard-<name>-test for a changed SPA; one proof bundle for the PR body.
+	@$(GATE_SLOT) $(MAKE) --no-print-directory gated-$@
+
+.PHONY: gated-verify-affected
+gated-verify-affected:
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-verify"; \
 	run="$(PROOF_RUN)-verify"; status=0; coverage="$(VERIFY_COVERAGE)"; \
 	$(AFFECTED_FORMAT_STAGE) \
@@ -1188,11 +1232,19 @@ BENCH_RUN = bench_run() { \
 
 .PHONY: bench
 bench: ## Run BENCH_AREA benchmarks for the working tree (BENCH_FILTER, BENCH_JOB=short); JSON under artifacts/benchmark-runs/.
+	@$(GATE_SLOT_EXCLUSIVE) $(MAKE) --no-print-directory gated-$@
+
+.PHONY: gated-bench
+gated-bench:
 	@test -n "$(BENCH_AREA)" || (echo "BENCH_AREA is required. Example: make bench BENCH_AREA=Caching BENCH_FILTER='*Memory*'" && exit 2)
 	@$(BENCH_RUN); bench_run "$$(working_tree_ref)" "$(CURDIR)/$(BENCH_DIR)/$(notdir $(PROOF_RUN))-$(BENCH_AREA)"
 
 .PHONY: bench-compare
 bench-compare: ## Run BENCH_AREA benchmarks at BASE (default AFFECTED_BASE) and for the working tree; print a before/after table.
+	@$(GATE_SLOT_EXCLUSIVE) $(MAKE) --no-print-directory gated-$@
+
+.PHONY: gated-bench-compare
+gated-bench-compare:
 	@test -n "$(BENCH_AREA)" || (echo "BENCH_AREA is required. Example: make bench-compare BENCH_AREA=Caching BENCH_FILTER='*Memory*' BASE=origin/main" && exit 2)
 	@base_ref="$(or $(BASE),$(AFFECTED_BASE))"; \
 	git rev-parse --verify -q "$$base_ref^{commit}" >/dev/null || { printf 'ERROR: BASE=%s does not resolve to a commit.\n' "$$base_ref" >&2; exit 2; }; \

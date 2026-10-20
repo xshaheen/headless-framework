@@ -1,0 +1,7 @@
+# Tests that fail intermittently, one per line: <test module> <TRX test name, fnmatch pattern> <tracking issue>.
+# When every failure of a gate's test stage is listed here, the gate retries those modules once and reports each as a
+# known flake instead of failing. Every entry needs an open issue; delete the line in the change that fixes the test.
+# Never list a messaging integration or conformance test: that tier runs without retries on purpose, and a guarantee
+# that fails on a defect is quarantined through the harness (tests/Headless.Messaging.Tests.Harness/README.md).
+Headless.Messaging.Tests.Unit Tests.Processor.MessageNeedToRetryProcessorTests.should_warn_once_per_processor_when_monitor_only_fallback_retains_open_claims #1279
+Headless.Messaging.Tests.Unit Tests.DispatcherTests.should_be_thread_safe_when_enqueue_to_scheduler_delay_less_then_minute* #1279
