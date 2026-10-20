@@ -33,8 +33,13 @@ public sealed class AzureServiceBusEmulatorFixture : IAsyncLifetime
     // Config.json declares this many queues; each session takes one of its own, so no test reads another's leftovers.
     private const int _QueueCount = 16;
 
+    // Config.json declares one more queue whose max delivery count is this, for the one scenario that spends it.
+    private const int _DeliveryLimitQueueMaxDeliveryCount = 3;
+    private const string _DeliveryLimitQueueName = "emulator-queue-delivery-limit-3";
+
     private AzureServiceBusEmulatorContainer? _emulator;
     private int _queuesTaken;
+    private int _deliveryLimitQueueTaken;
 
     /// <summary>The two subscriptions <c>Config.json</c> declares on <see cref="TopicName"/>, each matching every message.</summary>
     public static IReadOnlyList<string> FanOutSubscriptions { get; } = ["emulator-fanout-a", "emulator-fanout-b"];
@@ -54,8 +59,29 @@ public sealed class AzureServiceBusEmulatorFixture : IAsyncLifetime
     /// <summary>Opens a session on a queue no other session of this run has used.</summary>
     public ValueTask<TransportConsumerConformanceSession> CreateQueueSessionAsync(CancellationToken cancellationToken)
     {
+        return CreateQueueSessionAsync(new TransportConformanceSessionOptions(), cancellationToken);
+    }
+
+    /// <summary>
+    /// Opens a session on a queue no other session of this run has used, with the session's header builder installed.
+    /// The emulator cannot create a queue, so a <see cref="TransportConformanceSessionOptions.DeliveryLimit"/> must match
+    /// the one <c>Config.json</c> queue declared for it.
+    /// </summary>
+    public ValueTask<TransportConsumerConformanceSession> CreateQueueSessionAsync(
+        TransportConformanceSessionOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        AzureServiceBusFixture.RequireSupportedSessionOptions(options);
         var connectionString = ConnectionString;
-        var queueName = _TakeQueue();
+        var queueName = options.DeliveryLimit switch
+        {
+            null => _TakeQueue(),
+            _DeliveryLimitQueueMaxDeliveryCount => _TakeDeliveryLimitQueue(),
+            var limit => throw new NotSupportedException(
+                $"Emulator/Config.json declares no queue whose max delivery count is {limit.Value.ToString(CultureInfo.InvariantCulture)}."
+            ),
+        };
         var group = $"group-{Guid.NewGuid():N}";
 
         return AzureServiceBusFixture.CreateSessionAsync(
@@ -74,8 +100,25 @@ public sealed class AzureServiceBusEmulatorFixture : IAsyncLifetime
                     group,
                     AzureServiceBusMessagingOptions.DefaultTopicPath,
                     disposeEntity: null,
-                    replacementToken
-                )
+                    replacementToken,
+                    sessionOptions: options
+                ),
+            sessionOptions: options
+        );
+    }
+
+    /// <summary>
+    /// Takes every message the dead-letter subqueue of the session's queue holds and returns their message ids.
+    /// </summary>
+    public ValueTask<IReadOnlyList<string>> TakeDeadLetteredMessageIdsAsync(
+        TransportConsumerConformanceSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        return AzureServiceBusFixture.TakeDeadLetteredMessageIdsAsync(
+            ConnectionString,
+            session.Destination,
+            cancellationToken
         );
     }
 
@@ -176,6 +219,15 @@ public sealed class AzureServiceBusEmulatorFixture : IAsyncLifetime
             ? _QueueName(index)
             : throw new InvalidOperationException(
                 $"Every one of the {_QueueCount} emulator queues is in use; declare more in Emulator/Config.json."
+            );
+    }
+
+    private string _TakeDeliveryLimitQueue()
+    {
+        return Interlocked.Exchange(ref _deliveryLimitQueueTaken, 1) == 0
+            ? _DeliveryLimitQueueName
+            : throw new InvalidOperationException(
+                $"The emulator queue '{_DeliveryLimitQueueName}' is in use; declare another in Emulator/Config.json."
             );
     }
 

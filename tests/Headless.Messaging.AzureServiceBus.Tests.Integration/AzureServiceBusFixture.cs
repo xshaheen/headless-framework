@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using Azure;
+using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
 using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
@@ -54,13 +55,25 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         );
     }
 
+    public ValueTask<TransportConsumerConformanceSession> CreateQueueSessionAsync(CancellationToken cancellationToken)
+    {
+        return CreateQueueSessionAsync(new TransportConformanceSessionOptions(), cancellationToken);
+    }
+
+    /// <summary>
+    /// Opens a session on a queue of its own whose max delivery count is <see cref="TransportConformanceSessionOptions.DeliveryLimit"/>,
+    /// with the session's header builder installed. Service Bus always dead-letters a message that spends its delivery
+    /// count, so <see cref="TransportConformanceSessionOptions.DeadLettering"/> needs nothing more.
+    /// </summary>
     public async ValueTask<TransportConsumerConformanceSession> CreateQueueSessionAsync(
+        TransportConformanceSessionOptions options,
         CancellationToken cancellationToken
     )
     {
+        RequireSupportedSessionOptions(options);
         var queueName = _UniqueName("queue");
         var group = $"group-{Guid.NewGuid():N}";
-        await _CreateQueueAsync(queueName, cancellationToken);
+        await _CreateQueueAsync(queueName, cancellationToken, maxDeliveryCount: options.DeliveryLimit ?? 10);
 
         try
         {
@@ -79,8 +92,10 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
                         AzureServiceBusMessagingOptions.DefaultTopicPath,
                         disposeEntity: null,
                         cancellationToken: replacementToken,
-                        createReplacementSession: null
-                    )
+                        createReplacementSession: null,
+                        sessionOptions: options
+                    ),
+                sessionOptions: options
             );
         }
         catch
@@ -197,6 +212,18 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         return await _CreateSessionAsync(lane, destination, group, topicName, disposeEntity: null, cancellationToken);
     }
 
+    /// <summary>
+    /// Takes every message the dead-letter subqueue of the session's queue holds, as an operator draining it would, and
+    /// returns their message ids.
+    /// </summary>
+    public ValueTask<IReadOnlyList<string>> TakeDeadLetteredMessageIdsAsync(
+        TransportConsumerConformanceSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        return TakeDeadLetteredMessageIdsAsync(_RequireConnectionString(), session.Destination, cancellationToken);
+    }
+
     /// <summary>Returns the subscription on <paramref name="topicName"/>, or <see langword="null"/> when none exists.</summary>
     public async ValueTask<SubscriptionProperties?> GetSubscriptionOrDefaultAsync(
         string topicName,
@@ -245,7 +272,8 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         CancellationToken cancellationToken,
         Func<CancellationToken, ValueTask<TransportConsumerConformanceSession>>? createReplacementSession = null,
         bool enableSessions = false,
-        ConsumerClientRequest? request = null
+        ConsumerClientRequest? request = null,
+        TransportConformanceSessionOptions? sessionOptions = null
     )
     {
         return CreateSessionAsync(
@@ -258,8 +286,66 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
             cancellationToken,
             createReplacementSession,
             enableSessions,
-            request
+            request,
+            sessionOptions
         );
+    }
+
+    /// <summary>
+    /// Fails for an option the Azure Service Bus leaves cannot configure on a session; the delivery limit is the queue's,
+    /// so each fixture checks it against the queue it hands out.
+    /// </summary>
+    internal static void RequireSupportedSessionOptions(TransportConformanceSessionOptions options)
+    {
+        if (
+            options with
+            {
+                HeaderBuilder = null,
+                DeliveryLimit = null,
+                DeadLettering = false,
+            } != new TransportConformanceSessionOptions()
+        )
+        {
+            throw new NotSupportedException($"The Azure Service Bus conformance leaves do not configure {options}.");
+        }
+    }
+
+    /// <summary>
+    /// Takes every message the dead-letter subqueue of <paramref name="queueName"/> holds and returns their message ids,
+    /// so one message dead-lettered twice shows twice.
+    /// </summary>
+    internal static async ValueTask<IReadOnlyList<string>> TakeDeadLetteredMessageIdsAsync(
+        string connectionString,
+        string queueName,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var client = new ServiceBusClient(connectionString);
+        await using var receiver = client.CreateReceiver(
+            queueName,
+            new ServiceBusReceiverOptions { SubQueue = SubQueue.DeadLetter }
+        );
+        var taken = new List<string>();
+
+        while (true)
+        {
+            var messages = await receiver.ReceiveMessagesAsync(
+                maxMessages: 50,
+                maxWaitTime: TimeSpan.FromSeconds(1),
+                cancellationToken
+            );
+
+            if (messages.Count == 0)
+            {
+                return taken;
+            }
+
+            foreach (var message in messages)
+            {
+                await receiver.CompleteMessageAsync(message, cancellationToken);
+                taken.Add(message.MessageId);
+            }
+        }
     }
 
     /// <summary>
@@ -276,10 +362,12 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         CancellationToken cancellationToken,
         Func<CancellationToken, ValueTask<TransportConsumerConformanceSession>>? createReplacementSession = null,
         bool enableSessions = false,
-        ConsumerClientRequest? request = null
+        ConsumerClientRequest? request = null,
+        TransportConformanceSessionOptions? sessionOptions = null
     )
     {
         request ??= new ConsumerClientRequest(group, 2, lane);
+        var headerBuilder = sessionOptions?.HeaderBuilder;
 
         // Every-instance subscriptions are created by the consumer itself, which takes AutoProvision.
         var autoProvision = request.Kind is ConsumerSubscriptionKind.EveryInstance;
@@ -296,6 +384,14 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
                 {
                     options.CustomHeadersBuilder = static (message, _) =>
                         [new("conformance-native-session", message.SessionId)];
+                }
+                else if (headerBuilder is not null)
+                {
+                    options.CustomHeadersBuilder = (message, _) =>
+                    {
+                        headerBuilder(message.MessageId);
+                        return [];
+                    };
                 }
 
                 options.MaxAutoLockRenewalDuration = TimeSpan.Zero;
@@ -355,14 +451,15 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
     private async Task _CreateQueueAsync(
         string queueName,
         CancellationToken cancellationToken,
-        bool requiresSession = false
+        bool requiresSession = false,
+        int maxDeliveryCount = 10
     )
     {
         var options = new CreateQueueOptions(queueName)
         {
             RequiresSession = requiresSession,
             LockDuration = TimeSpan.FromSeconds(5),
-            MaxDeliveryCount = 10,
+            MaxDeliveryCount = maxDeliveryCount,
         };
         await _RequireAdministrationClient().CreateQueueAsync(options, cancellationToken).ConfigureAwait(false);
         _queues.TryAdd(queueName, 0);
