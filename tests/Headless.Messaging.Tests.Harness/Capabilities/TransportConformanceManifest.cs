@@ -503,13 +503,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BrokerInterruptionRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.HandlerFailureRedelivery,
-                    ConformanceSupport.Unsupported(
-                        "A record whose callback throws is neither committed nor sought back to, so it is never redelivered.",
-                        "https://github.com/xshaheen/headless-framework/issues/1268"
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.HandlerFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
                 .WithRequestReplyScenarios(
                     ConformanceSupport.NotApplicable(
@@ -521,7 +515,7 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.HeaderBuilderFailureRedelivery,
                     ConformanceSupport.Unsupported(
                         "A header builder failure seeks back to the record, which is redelivered without end: Kafka has no delivery budget and the provider adds none.",
-                        _HeaderBuilderIssueUrl
+                        _DeliveryBudgetIssueUrl
                     )
                 )
                 .WithScenario(
