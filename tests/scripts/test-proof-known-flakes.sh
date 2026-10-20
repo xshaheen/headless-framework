@@ -31,6 +31,7 @@ trx() {
   mkdir -p "$(dirname "$1")"
   cat > "$1" <<XML
 <TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <ResultSummary outcome="Failed"><Counters total="2" /></ResultSummary>
   <Results>
     <UnitTestResult testName="Tests.ClockTests.should_pass" outcome="Passed" />
     <UnitTestResult testName="$3" outcome="$2"><Output><ErrorInfo><Message>timed out</Message></ErrorInfo></Output></UnitTestResult>
@@ -76,8 +77,25 @@ RETRY_OUTCOME=Passed retry known || fail "a listed flake that passed on retry st
 [ -e known/retry-ran ] || fail "the listed flake was not retried"
 python3 scripts/proof.py summarize --dir known > /dev/null || fail "the bundle failed although its only failure passed on retry"
 grep -q 'Tests.ClockTests.should_tick_on_time` (#42)' known/summary.md || fail "summary.md does not name the flake and its issue"
-grep -q 'Tests: 1 passed, 0 failed' known/summary.md || fail "the retried flake still counts as a failure: $(grep -m1 'Tests:' known/summary.md)"
+grep -q 'Tests: 2 passed, 0 failed' known/summary.md || fail "the retried flake does not count as one pass: $(grep -m1 'Tests:' known/summary.md)"
 pass "a listed flake retries once and the bundle passes, naming the flake and its issue"
+
+# A listed flake does not cover for a module that never finished: a timed-out module leaves no TRX at all.
+stage_failed hung Tests.ClockTests.should_tick_on_time
+printf 'tests/Hung.Tests.Unit/Hung.Tests.Unit.csproj\n' >> hung/unit.txt
+if RETRY_OUTCOME=Passed retry hung; then fail "a flake retry covered for a module with no result"; fi
+[ ! -e hung/retry-ran ] || fail "a stage with an unfinished module started a retry"
+if python3 scripts/proof.py summarize --dir hung > /dev/null; then fail "a bundle with an unfinished module passed"; fi
+pass "a listed flake does not hide a module that timed out or crashed"
+
+# A malformed line or a messaging integration module is reported and ignored, never silently dropped or honored.
+cp tests/known-flakes.txt known-flakes.bak
+printf 'Flaky.Tests.Unit Tests.ClockTests.only_two_fields\nHeadless.Messaging.Nats.Tests.Integration Tests.* #9\n' >> tests/known-flakes.txt
+python3 scripts/proof.py retry-flakes --dir unknown --stage unit-tests --projects unknown/unit.txt --dotnet ./fake-dotnet -- --no-build 2> lint.err || true
+grep -q 'known-flakes.txt:3 ignored: expected' lint.err || fail "a malformed line was not reported: $(cat lint.err)"
+grep -q 'known-flakes.txt:4 ignored: messaging integration' lint.err || fail "a messaging integration entry was not refused: $(cat lint.err)"
+mv known-flakes.bak tests/known-flakes.txt
+pass "a malformed or messaging integration entry is reported and ignored"
 
 # An unlisted failure is not retried and fails the bundle.
 stage_failed unknown Tests.ClockTests.should_add

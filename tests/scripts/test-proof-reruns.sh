@@ -58,19 +58,23 @@ git commit -qm 'Base'
 base=$(git rev-parse HEAD)
 git update-ref refs/remotes/origin/main "$base"
 
-# A bundle that selected nothing while HEAD changes src/ against origin/main fails; one that selected projects does not.
+# A bundle that selected nothing against the branch's own pushed copy fails while HEAD changes src/ against
+# origin/main; against origin/main itself an empty selection is real (a src/ file no project owns) and passes.
 printf '// changed\n' >> src/Kafka/Kafka.csproj
 git commit -qam 'Change Kafka'
+git update-ref refs/remotes/origin/feature HEAD
 mkdir -p bundle
 printf '{"base": "origin/feature", "changed_projects": []}\n' > bundle/affected.json
 : > bundle/stages.jsonl
 status=0
 python3 scripts/proof.py summarize --dir bundle > /dev/null || status=$?
-[[ "$status" -eq 1 ]] || fail "an empty selection on a src change passed (exit $status)"
+[[ "$status" -eq 1 ]] || fail "an empty selection against the branch's own copy passed (exit $status)"
 grep -q 'affected-selection' bundle/summary.md || fail "summary.md does not name the affected-selection stage"
+printf '{"base": "origin/main", "changed_projects": []}\n' > bundle/affected.json
+python3 scripts/proof.py summarize --dir bundle > /dev/null || fail "an empty selection against origin/main failed"
 printf '{"base": "origin/main", "changed_projects": ["src/Kafka/Kafka.csproj"]}\n' > bundle/affected.json
 python3 scripts/proof.py summarize --dir bundle > /dev/null || fail "a bundle that selected the changed project failed"
-pass "a bundle that selected nothing while HEAD changes src/ fails"
+pass "an empty selection fails only against a base other than origin/main"
 
 # `failed` reads an integration bundle and maps its failed module to the integration project.
 proof=artifacts/proof/20990101T000000Z-integration

@@ -79,14 +79,25 @@ class KnownFlake:
 
 
 def known_flakes(path: Path = KNOWN_FLAKES) -> list[KnownFlake]:
-    """`<module> <test pattern> <issue>` per line; `#` starts a comment line."""
+    """`<module> <test pattern> <issue>` per line; `#` starts a comment line.
+
+    A line that does not parse, or that names a messaging integration module, is reported and ignored: the messaging
+    integration tier runs without retries on purpose and quarantines a defect through its harness instead.
+    """
     if not path.exists():
         return []
     flakes = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         fields = line.split()
-        if fields and not fields[0].startswith("#") and len(fields) == 3:
-            flakes.append(KnownFlake(*fields))
+        if not fields or fields[0].startswith("#"):
+            continue
+        if len(fields) != 3:
+            print(f"[proof] {path.name}:{number} ignored: expected <module> <test pattern> <issue>", file=sys.stderr)
+            continue
+        if fields[0].startswith("Headless.Messaging") and fields[0].endswith(".Tests.Integration"):
+            print(f"[proof] {path.name}:{number} ignored: messaging integration tests are never retried", file=sys.stderr)
+            continue
+        flakes.append(KnownFlake(*fields))
     return flakes
 
 
@@ -471,6 +482,11 @@ def empty_selection_stage(affected: dict) -> Stage | None:
     """
     if not affected or affected.get("changed_projects"):
         return None
+    # Against the default branch itself an empty selection is real: a src/ edit no project owns, or a version bump
+    # no lock file resolves. Only a different base can hide the branch's own changes.
+    base = git("rev-parse", "--verify", "-q", f"{affected.get('base')}^{{commit}}")
+    if not base or base == git("rev-parse", "--verify", "-q", f"{DEFAULT_BRANCH}^{{commit}}"):
+        return None
     merge_base = git("merge-base", DEFAULT_BRANCH, "HEAD")
     if not merge_base:
         return None
@@ -499,6 +515,7 @@ def apply_flake_retries(directory: Path, stages: list[Stage], modules: list[Test
         issues = [flake_issue(module.module, f["test"], flakes) for f in module.failures]
         if all(issues):
             module.flaky = [{**f, "issue": issue or ""} for f, issue in zip(module.failures, issues, strict=True)]
+            module.passed += len(module.failures)
             module.failed, module.failures = 0, []
     cleared = set()
     for stage in stages:
@@ -694,7 +711,6 @@ STAGE_RERUN = {
     "analyzers": "make quality-analyzers-affected",
     "coverage-merge": "make verify-affected",
     "affected-selection": "make verify-affected AFFECTED_BASE=origin/main",
-    "integration-tests": "make test-affected-integration",
     "coverage-gate": "add tests for the uncovered changed lines summary.md lists, then make verify-affected (or make test-affected-integration for a package with an integration project)",
 }
 
@@ -708,10 +724,38 @@ def analyzers_clean(directory: Path) -> int:
     return 1 if findings else 0
 
 
+def unfinished_modules(results: Path, expected: list[str]) -> list[str]:
+    """Modules of the stage that did not finish with a readable result: no TRX (a timeout or a crash leaves none),
+    an outcome other than Completed or Failed, or no test run at all."""
+    finished: dict[str, bool] = {}
+    for trx in sorted(results.rglob("*.trx")) if results.exists() else []:
+        if any(part.endswith(RETRY_SUFFIX) for part in trx.relative_to(results).parts):
+            continue
+        root = ET.parse(trx).getroot()
+        summary = root.find("t:ResultSummary", TRX_NS)
+        counters = root.find("t:ResultSummary/t:Counters", TRX_NS)
+        total = int(counters.get("total", "0")) if counters is not None else 0
+        ok = summary is not None and summary.get("outcome") in ("Completed", "Failed") and total > 0
+        module = re.sub(r"_net[\d.]+_\w+$", "", trx.stem)
+        finished[module] = finished.get(module, True) and ok
+    return [module for module in expected if not finished.get(module, False)]
+
+
 def retry_flakes(directory: Path, stage: str, project_lists: list[Path], test_args: list[str], dotnet: str = "dotnet") -> int:
-    """Re-run once, into <stage>-retry, each failed module whose every failure is a listed known flake."""
+    """Re-run once, into <stage>-retry, the failed modules, but only when listed known flakes explain the whole
+    stage failure: every module of the stage finished with a readable result, and every failed result is listed.
+    A module that timed out or crashed leaves no failed result, so retrying around it would turn the stage green."""
     flakes = known_flakes()
     results = directory / stage
+    by_module: dict[str, str] = {}
+    for listing in project_lists:
+        if listing.exists():
+            by_module.update({Path(line).stem: line for line in listing.read_text(encoding="utf-8").split()})
+    unfinished = unfinished_modules(results, sorted(by_module))
+    if unfinished:
+        for module in unfinished[:10]:
+            print(f"[proof] {module} did not finish (timeout, crash, or no tests); no retry", file=sys.stderr)
+        return 1
     failed = [m for m in test_modules(results) if m.failed] if results.exists() else []
     if not failed:
         print(f"[proof] {stage} failed without a failed test result; nothing to retry", file=sys.stderr)
@@ -721,10 +765,6 @@ def retry_flakes(directory: Path, stage: str, project_lists: list[Path], test_ar
         for module, test in unknown[:10]:
             print(f"[proof] {module} {test} is not a known flake; no retry", file=sys.stderr)
         return 1
-    by_module = {}
-    for listing in project_lists:
-        if listing.exists():
-            by_module.update({Path(line).stem: line for line in listing.read_text(encoding="utf-8").split()})
     worst = 0
     for module in failed:
         project = by_module.get(module.module)
