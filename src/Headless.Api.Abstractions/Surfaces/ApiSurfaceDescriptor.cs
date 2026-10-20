@@ -23,8 +23,19 @@ public sealed class ApiSurfaceDescriptor(
 
 /// <summary>Immutable document identity for a surface; API version groups remain independent.</summary>
 [PublicAPI]
-public sealed class ApiSurfaceOpenApiDescriptor(string documentName, string title)
+public sealed class ApiSurfaceOpenApiDescriptor(
+    string documentName,
+    string title,
+    bool? standardProblemResponses = null
+)
 {
     public string DocumentName { get; } = Argument.IsNotNullOrWhiteSpace(documentName);
     public string Title { get; } = Argument.IsNotNullOrWhiteSpace(title);
+
+    /// <summary>
+    /// Whether the surface's endpoints document the standard 404, 409, and 422 problem responses, or
+    /// <see langword="null"/> to inherit the API-wide setting. An endpoint, route group, controller, or action marked
+    /// with <see cref="StandardProblemResponsesAttribute"/> overrides it.
+    /// </summary>
+    public bool? StandardProblemResponses { get; } = standardProblemResponses;
 }

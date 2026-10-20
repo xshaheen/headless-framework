@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json.Nodes;
+using Headless.Api;
 using Headless.OpenApi;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
@@ -16,7 +17,8 @@ public sealed class StandardProblemResponseDocumentTests : TestBase
 {
     private static Task<JsonNode> _GetDocumentAsync(
         Action<WebApplication> mapEndpoints,
-        Action<HeadlessOpenApiOptions>? configure = null
+        Action<HeadlessOpenApiOptions>? configure = null,
+        bool controllersOff = false
     )
     {
         return OpenApiTestHost.GetDocumentAsync(
@@ -25,8 +27,12 @@ public sealed class StandardProblemResponseDocumentTests : TestBase
                 builder
                     .Services.AddControllers()
                     .ConfigureApplicationPartManager(manager =>
-                        manager.FeatureProviders.Add(new SingleControllerFeatureProvider(typeof(PlainResultController)))
-                    );
+                    {
+                        manager.FeatureProviders.Add(
+                            new SingleControllerFeatureProvider(typeof(PlainResultController))
+                        );
+                        manager.FeatureProviders.Add(new SingleControllerFeatureProvider(typeof(OptOutController)));
+                    });
                 builder.Services.AddHeadlessOpenApi();
 
                 if (configure is not null)
@@ -36,7 +42,13 @@ public sealed class StandardProblemResponseDocumentTests : TestBase
             },
             app =>
             {
-                app.MapControllers();
+                var controllers = app.MapControllers();
+
+                if (controllersOff)
+                {
+                    controllers.WithoutStandardProblemResponses();
+                }
+
                 mapEndpoints(app);
             },
             "v1",
@@ -98,6 +110,107 @@ public sealed class StandardProblemResponseDocumentTests : TestBase
         ((string?)notFound["description"]).Should().Be("Not Found");
     }
 
+    [Fact]
+    public async Task should_let_an_endpoint_turn_the_standard_problems_back_on_inside_a_group_that_turns_them_off()
+    {
+        var document = await _GetDocumentAsync(app =>
+        {
+            var group = app.MapGroup("/ops").WithoutStandardProblemResponses().AllowAnonymous();
+            group.MapGet("/inherited", () => "ok");
+            group.MapGet("/restored", () => "ok").WithStandardProblemResponses();
+        });
+
+        _ResponseCodes(document.Operation("/ops/inherited", "get")).Should().NotContain(["404", "409", "422"]);
+        _ResponseCodes(document.Operation("/ops/restored", "get")).Should().Contain(["404", "409", "422"]);
+    }
+
+    [Fact]
+    public async Task should_leave_the_ranges_on_an_endpoint_that_turns_the_standard_problems_off()
+    {
+        // given the API-wide default and one health check marked off
+        var document = await _GetDocumentAsync(app =>
+            app.MapGet("/health", () => "ok").WithoutStandardProblemResponses().AllowAnonymous()
+        );
+
+        var codes = document.Operation("/health", "get")["responses"]!.AsObject().Select(x => x.Key).ToArray();
+
+        codes.Should().NotContain(["404", "409", "422"]);
+        codes.Should().Contain(["4XX", "5XX"]);
+    }
+
+    [Fact]
+    public async Task should_let_an_action_override_its_controller()
+    {
+        var document = await _GetDocumentAsync(_ => { });
+
+        _ResponseCodes(document.Operation("/mvc/opt-out/inherited", "get")).Should().NotContain(["404", "409", "422"]);
+        _ResponseCodes(document.Operation("/mvc/opt-out/restored", "get")).Should().Contain(["404", "409", "422"]);
+    }
+
+    [Fact]
+    public async Task should_let_an_action_marker_win_over_a_controller_convention()
+    {
+        // given MapControllers() turning the standard problems off for every action
+        var document = await _GetDocumentAsync(_ => { }, controllersOff: true);
+
+        // then an unmarked action follows the convention, and an action marked on keeps them
+        _ResponseCodes(document.Operation("/mvc/plain/{id}", "get")).Should().NotContain(["404", "409", "422"]);
+        _ResponseCodes(document.Operation("/mvc/opt-out/restored", "get")).Should().Contain(["404", "409", "422"]);
+    }
+
+    [Fact]
+    public async Task should_follow_the_surface_setting_unless_an_endpoint_overrides_it()
+    {
+        var document = await _GetDocumentAsync(app =>
+        {
+            var off = app.MapGroup("/internal").WithMetadata(_Surface("internal", standardProblemResponses: false));
+            off.MapGet("/inherited", () => "ok").AllowAnonymous();
+            off.MapGet("/restored", () => "ok").WithStandardProblemResponses().AllowAnonymous();
+        });
+
+        _ResponseCodes(document.Operation("/internal/inherited", "get")).Should().NotContain(["404", "409", "422"]);
+        _ResponseCodes(document.Operation("/internal/restored", "get")).Should().Contain(["404", "409", "422"]);
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData(true, true)]
+    public async Task should_let_a_surface_inherit_or_override_the_api_wide_setting(
+        bool? surfaceSetting,
+        bool documented
+    )
+    {
+        // given the API-wide default turned off
+        var document = await _GetDocumentAsync(
+            app =>
+                app.MapGroup("/portal")
+                    .WithMetadata(_Surface("portal", surfaceSetting))
+                    .MapGet("/item", () => "ok")
+                    .AllowAnonymous(),
+            options => options.StandardProblemResponses = false
+        );
+
+        var codes = _ResponseCodes(document.Operation("/portal/item", "get"));
+
+        if (documented)
+        {
+            codes.Should().Contain(["404", "409", "422"]);
+        }
+        else
+        {
+            codes.Should().NotContain(["404", "409", "422"]);
+        }
+    }
+
+    private static ApiSurfaceDescriptor _Surface(string name, bool? standardProblemResponses) =>
+        new(
+            name,
+            routePrefix: null,
+            defaultAuthorizationPolicy: null,
+            ApiSurfaceTenancyMode.Unspecified,
+            new ApiSurfaceOpenApiDescriptor(name, $"{name} API", standardProblemResponses)
+        );
+
     private static string[] _ResponseCodes(JsonNode operation) => operation["responses"]!.ExactStatusCodes();
 
     private static string? _ProblemSchemaRef(JsonNode response) =>
@@ -112,4 +225,20 @@ public sealed class PlainResultController : ControllerBase
     [HttpGet("{id:int}")]
     [AllowAnonymous]
     public ActionResult<int> Get(int id) => id;
+}
+
+[NonController]
+[ApiController]
+[Route("mvc/opt-out")]
+[StandardProblemResponses(false)]
+public sealed class OptOutController : ControllerBase
+{
+    [HttpGet("inherited")]
+    [AllowAnonymous]
+    public string Inherited() => "ok";
+
+    [HttpGet("restored")]
+    [AllowAnonymous]
+    [StandardProblemResponses]
+    public string Restored() => "ok";
 }

@@ -25,7 +25,7 @@ public sealed class ApiSurfaceBuilder(string surfaceName)
             string.IsNullOrWhiteSpace(RoutePrefix) ? null : RoutePrefix.Trim('/'),
             DefaultAuthorizationPolicy,
             DefaultTenancyMode,
-            new ApiSurfaceOpenApiDescriptor(OpenApi.DocumentName, OpenApi.Title)
+            new ApiSurfaceOpenApiDescriptor(OpenApi.DocumentName, OpenApi.Title, OpenApi.StandardProblemResponses)
         );
 }
 
@@ -35,4 +35,15 @@ public sealed class ApiSurfaceOpenApiOptions(string surfaceName)
 {
     public string DocumentName { get; set; } = surfaceName.ToLowerInvariant();
     public string Title { get; set; } = $"{surfaceName} API";
+
+    /// <summary>
+    /// Whether the surface's endpoints document the standard 404, 409, and 422 problem responses. Default is
+    /// <see langword="null"/>, which inherits the API-wide setting.
+    /// </summary>
+    /// <remarks>
+    /// Set it to <see langword="false"/> for a surface whose endpoints should not advertise these statuses, such as an
+    /// internal operations surface. An endpoint, route group, controller, or action marked with
+    /// <see cref="StandardProblemResponsesAttribute"/> overrides it.
+    /// </remarks>
+    public bool? StandardProblemResponses { get; set; }
 }

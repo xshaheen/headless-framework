@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Api;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -12,11 +13,19 @@ namespace Headless.OpenApi;
 /// <c>ApiResult</c> conversion write for not-found, conflict, and validation failures.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Any handler or service can raise these, whether the endpoint returns <c>ApiResult</c> or a plain value and throws,
 /// so endpoint metadata cannot tell which operations return them. Listing them everywhere over-states a few
-/// operations rather than hiding a failure a client must handle. <see cref="HeadlessOpenApiOptions.StandardProblemResponses"/>
-/// turns them off. The responses start without content; <see cref="ProblemDetailsTransformer"/> then describes their
-/// typed problem bodies. An operation that already declares one of these statuses keeps its own response.
+/// operations rather than hiding a failure a client must handle. The responses start without content;
+/// <see cref="ProblemDetailsTransformer"/> then describes their typed problem bodies. An operation that already
+/// declares one of these statuses keeps its own response.
+/// </para>
+/// <para>
+/// The innermost setting decides: a <see cref="StandardProblemResponsesAttribute"/> on the action, then on its
+/// controller, then on the endpoint, its route group, or a <c>MapControllers()</c> convention, then the surface's
+/// <see cref="ApiSurfaceOpenApiDescriptor.StandardProblemResponses"/>, then
+/// <see cref="HeadlessOpenApiOptions.StandardProblemResponses"/>.
+/// </para>
 /// </remarks>
 internal sealed class StandardProblemResponseTransformer : IOpenApiOperationTransformer
 {
@@ -26,9 +35,7 @@ internal sealed class StandardProblemResponseTransformer : IOpenApiOperationTran
         CancellationToken cancellationToken
     )
     {
-        var options = context.ApplicationServices.GetRequiredService<IOptions<HeadlessOpenApiOptions>>().Value;
-
-        if (!options.StandardProblemResponses)
+        if (!_IsEnabled(context))
         {
             return Task.CompletedTask;
         }
@@ -52,5 +59,30 @@ internal sealed class StandardProblemResponseTransformer : IOpenApiOperationTran
         );
 
         return Task.CompletedTask;
+    }
+
+    private static bool _IsEnabled(OpenApiOperationTransformerContext context)
+    {
+        var metadata = context.Description.GetEndpointMetadata();
+
+        // MVC adds MapControllers() conventions after the action's own attributes, so a plain last-wins read of the
+        // endpoint metadata would let a convention override an action. The action descriptor holds only the controller's
+        // and the action's attributes, in that order, so it is read first; for a Minimal API endpoint it already holds the
+        // whole endpoint metadata, groups before the endpoint.
+        var marker =
+            context
+                .Description.ActionDescriptor.EndpointMetadata.OfType<StandardProblemResponsesAttribute>()
+                .LastOrDefault()
+            ?? metadata.OfType<StandardProblemResponsesAttribute>().LastOrDefault();
+
+        if (marker is not null)
+        {
+            return marker.Enabled;
+        }
+
+        return metadata.OfType<ApiSurfaceDescriptor>().LastOrDefault()?.OpenApi.StandardProblemResponses
+            ?? context
+                .ApplicationServices.GetRequiredService<IOptions<HeadlessOpenApiOptions>>()
+                .Value.StandardProblemResponses;
     }
 }
