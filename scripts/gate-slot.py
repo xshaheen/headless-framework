@@ -10,7 +10,9 @@ directory every checkout shares, so the limit holds across worktrees with no coo
 
 The lock is an flock on a descriptor only this process holds (Python opens files non-inheritable), so
 it is released the moment this process exits for any reason, and a dotnet build server the gate leaves
-running cannot keep a slot. A nested gate (`make check` running `verify-affected`) sees GATE_SLOT_HELD
+running cannot keep a slot. The flip side: a SIGKILL of this wrapper frees the slot while its gate keeps
+running as an orphan, since no portable call lets a child die with its parent on macOS. Stop a gate with
+Ctrl-C or SIGTERM, which this wrapper forwards, rather than kill -9. A nested gate (`make check` running `verify-affected`) sees GATE_SLOT_HELD
 and runs without taking a second slot, which would otherwise deadlock at GATE_SLOTS=1.
 
 Slots come in pools, each with its own size. `gate` limits the build-and-unit-test gates. `integration` limits
@@ -25,8 +27,8 @@ slots forever.
 Usage: gate-slot.py [--exclusive] [--pool gate|integration]... --label <name> -- <command> [args...]
 
 Environment:
-  GATE_SLOTS              slots in the gate pool (default 2); 0 runs every command with no slot at all
-  GATE_INTEGRATION_SLOTS  slots in the integration pool (default 1)
+  GATE_SLOTS              slots in the gate pool (default 2); 0 lifts that pool's limit
+  GATE_INTEGRATION_SLOTS  slots in the integration pool (default 1); 0 lifts that pool's limit
   GATE_SLOT_DIR           the shared lock directory (default ~/.cache/headless-framework/gate-slots)
   GATE_SLOT_POLL          seconds between attempts while every slot is taken (default 2)
 
@@ -147,7 +149,7 @@ def _acquire(directory: Path, slots: int, label: str, poll: float, exclusive: bo
             holders = "\n  ".join(_holders(directory, slots)) or "(holders exited; retrying)"
             print(
                 f"[gate-slot] {label}: waiting for {'every' if exclusive else 'one'} of {slots} {directory.name} slots "
-                f"({POOLS[directory.name][0]}=<n> changes the limit, GATE_SLOTS=0 skips every limit):\n  {holders}",
+                f"({POOLS[directory.name][0]}=<n> changes the limit, 0 lifts it):\n  {holders}",
                 file=sys.stderr,
                 flush=True,
             )
@@ -155,7 +157,8 @@ def _acquire(directory: Path, slots: int, label: str, poll: float, exclusive: bo
 
 
 def _run(command: list[str], env: dict[str, str]) -> int:
-    child = subprocess.Popen(command, env=env)
+    # close_fds=False keeps inherited descriptors open, such as a make jobserver's under `make -j`.
+    child = subprocess.Popen(command, env=env, close_fds=False)
 
     def forward(signum: int, _frame: object) -> None:
         child.send_signal(signum)
@@ -178,7 +181,7 @@ def main() -> int:
         parser.error("no command given after --")
 
     env = dict(os.environ)
-    if _env_int("GATE_SLOTS", 2) == 0 or env.get("GATE_SLOT_HELD"):
+    if env.get("GATE_SLOT_HELD"):
         return _run(command, env)
 
     wanted = set(args.pool or ["gate"])

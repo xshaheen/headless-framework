@@ -107,7 +107,7 @@ GATE_SLOTS=2 python3 "$gate" --exclusive --pool gate --pool integration --label 
 wait "${pids[0]}"
 if overlap "$scratch/a" "$scratch/b"; then fail "a benchmark started beside an integration gate"; fi
 
-# The gate's exit status passes through; GATE_SLOTS=0 runs the command with no slot at all.
+# The gate's exit status passes through; GATE_SLOTS=0 lifts only the gate pool's limit.
 rm -rf "$GATE_SLOT_DIR"
 set +e
 GATE_SLOTS=1 python3 "$gate" --label failing -- bash -c 'exit 7'
@@ -117,5 +117,14 @@ set -e
 rm -rf "$GATE_SLOT_DIR"
 GATE_SLOTS=0 python3 "$gate" --label unlimited -- true || fail "GATE_SLOTS=0 did not run the command"
 [ ! -e "$GATE_SLOT_DIR" ] || fail "GATE_SLOTS=0 still created the lock directory"
+
+# Widening the build gates with GATE_SLOTS=0 keeps the integration limit.
+rm -rf "$GATE_SLOT_DIR" "$scratch/a" "$scratch/b"; pids=()
+GATE_SLOTS=0 python3 "$gate" --pool integration --label first-integration -- bash -c "$(record "$scratch/a" 3)" &
+pids+=($!)
+wait_for_slot_holder integration
+GATE_SLOTS=0 python3 "$gate" --pool integration --label second-integration -- bash -c "$(record "$scratch/b" 0)" 2> /dev/null
+wait "${pids[0]}"
+if overlap "$scratch/a" "$scratch/b"; then fail "GATE_SLOTS=0 also lifted the integration limit"; fi
 
 printf 'gate-slot: all checks passed\n'

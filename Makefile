@@ -86,9 +86,10 @@ TEST_MAX_PARALLEL ?= 3
 # and 92 s at 8 parallel modules on a 14-core machine. TEST_MAX_PARALLEL stays at 3 for integration
 # modules, which each start containers, and for CI's smaller runners.
 UNIT_TEST_MAX_PARALLEL ?= 6
-# Per test module. The affected test stages pass it too, so a hung module (a broker suite once hung 57 min) fails
+# Per test module. The affected test stages pass it too (unless TEST_ARGS already carries a --timeout), so a hung module (a broker suite once hung 57 min) fails
 # its stage instead of holding a gate slot; the longest module in recent proof runs took about 7 min under load.
 TEST_TIMEOUT ?= 15m
+AFFECTED_TIMEOUT_ARGS = $(if $(findstring --timeout,$(TEST_ARGS)),,--timeout $(TEST_TIMEOUT))
 # Inner-loop build flags. Analyzers are over half of the compiler's CPU on this solution (9 analyzer
 # packs, AnalysisMode=All, AnalysisLevel=latest-all, EnforceCodeStyleInBuild), and MinVer shells out
 # to git once per src project. Neither changes the emitted IL, so a compile-only loop can skip both.
@@ -151,8 +152,8 @@ PROOF_KEEP ?= 3
 # target) only while it holds a machine-wide slot; scripts/gate-slot.py waits for a free slot and names who holds
 # each busy one. Build-and-unit gates share GATE_SLOTS slots. test-affected-integration takes one of
 # GATE_INTEGRATION_SLOTS instead: TEST_MAX_PARALLEL stays at 3 because six integration modules at once broke
-# timing-sensitive suites, and two integration gates side by side would be six. GATE_SLOTS=0 skips every limit, and
-# a gate nested in another holds no second slot.
+# timing-sensitive suites, and two integration gates side by side would be six. Setting a pool's size to 0 lifts
+# only that pool's limit, and a gate nested in another holds no second slot.
 GATE_SLOTS ?= 2
 GATE_INTEGRATION_SLOTS ?= 1
 export GATE_SLOTS GATE_INTEGRATION_SLOTS
@@ -222,19 +223,19 @@ AFFECTED_INTEGRATION_ANALYZER_STAGE = if [ $$status -eq 0 ]; then \
 # A failed test stage whose every failure is listed in tests/known-flakes.txt retries those modules once
 # (scripts/proof.py retry-flakes), without coverage, and the summary names each flake with its issue; any other
 # failure fails the stage as before. The retry runs the binaries the stage just tested.
-FLAKE_RETRY_ARGS = --configuration "$(CONFIGURATION)" --no-build --no-restore --timeout $(TEST_TIMEOUT) $(TEST_ARGS) $(TEST_FILTER)
+FLAKE_RETRY_ARGS = --configuration "$(CONFIGURATION)" --no-build --no-restore $(AFFECTED_TIMEOUT_ARGS) $(TEST_ARGS) $(TEST_FILTER)
 # The unit stage runs the list the target names in `units` (unit by default; test-affected-integration narrows it).
 AFFECTED_UNIT_STAGE = units="$${units:-unit}"; \
 	if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name unit-tests --reason "an earlier stage (build or analyzers) failed; fix it first, since the fix re-runs these tests anyway"; \
 	elif [ -s "$$run/$$units.txt" ]; then \
 		$(COVERAGE_ARGS_FN) \
-		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/$$units.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) --timeout $(TEST_TIMEOUT) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} \
+		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/$$units.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) $(AFFECTED_TIMEOUT_ARGS) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} \
 			|| $(PROOF) retry-flakes --dir "$$run" --stage unit-tests --projects "$$run/$$units.txt" --dotnet $(DOTNET) -- $(FLAKE_RETRY_ARGS) || status=1; \
 	else printf '\033[33m[affected]\033[0m %s.txt selects no unit-test project; no unit tests ran.\n' "$$units"; fi;
 AFFECTED_INTEGRATION_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name integration-tests --reason "an earlier stage (build or analyzers) failed; fix it first, since the fix re-runs these tests anyway"; \
 	elif [ -s "$$run/integration.txt" ]; then \
 		$(COVERAGE_ARGS_FN) \
-		$(PROOF) run --dir "$$run" --name integration-tests -- $(DOTNET) test --solution "$$run/integration.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/integration-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) --timeout $(TEST_TIMEOUT) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} \
+		$(PROOF) run --dir "$$run" --name integration-tests -- $(DOTNET) test --solution "$$run/integration.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/integration-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(AFFECTED_TIMEOUT_ARGS) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} \
 			|| $(PROOF) retry-flakes --dir "$$run" --stage integration-tests --projects "$$run/integration.txt" --dotnet $(DOTNET) -- $(FLAKE_RETRY_ARGS) || status=1; \
 	else printf '\033[33m[affected]\033[0m no integration-test project covers the affected set; nothing ran.\n'; fi;
 # One merged report over whichever suites ran, so the gate reads a line as covered when any test reached it. MTP
