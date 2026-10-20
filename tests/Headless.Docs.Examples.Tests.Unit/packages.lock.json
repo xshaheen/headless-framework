@@ -195,20 +195,20 @@
       },
       "OpenTelemetry.Exporter.OpenTelemetryProtocol": {
         "type": "Direct",
-        "requested": "[1.19.1, )",
-        "resolved": "1.19.1",
-        "contentHash": "vsYYOBf/KxNubnuoja8pjJ9LG0zCC9HAYPay+R6N5ZKZMbhNdKWbaq6JZqJqTvK+55rudiqErJySekf9ql8okA==",
+        "requested": "[1.20.1, )",
+        "resolved": "1.20.1",
+        "contentHash": "IlO8F0Y01ki0N5hJaeFJ5j3MVYJdbyNpDF9g7goU8wA3o8r/+ir9WJNnmte7QlUzM3iSV/aIuev1fqwF1CZOqg==",
         "dependencies": {
-          "OpenTelemetry": "1.19.1"
+          "OpenTelemetry": "1.20.1"
         }
       },
       "OpenTelemetry.Extensions.Hosting": {
         "type": "Direct",
-        "requested": "[1.19.1, )",
-        "resolved": "1.19.1",
-        "contentHash": "3qqZfVmW8mKA2/fRwI83o8z+yZd33KbEqRlXrlX0+3e/U7i+z0MQiCr0L3Axxa0jGdiylIrpWX4DIT9nAbJ00A==",
+        "requested": "[1.20.1, )",
+        "resolved": "1.20.1",
+        "contentHash": "wnoK07COxyQBR47QwP80SIO4cpD2xeF4PrBDYFXDMnhDLmOP4nN0Szy1wCBLo5UABU1I4xwWRGzZM0bFdCbRog==",
         "dependencies": {
-          "OpenTelemetry": "1.19.1"
+          "OpenTelemetry": "1.20.1"
         }
       },
       "ReflectionAnalyzers": {
@@ -271,8 +271,8 @@
       },
       "AWSSDK.Core": {
         "type": "Transitive",
-        "resolved": "4.0.102.11",
-        "contentHash": "K9PP9/qHQ7pqSB0lYwStJrpXQ8P1xc7Fbn3CyPg8EX78p4+yz8dhIiwiRc3aVbVrUZxmPAPRvmZm+ey1euIXGg=="
+        "resolved": "4.0.102.12",
+        "contentHash": "/wJwMdRT5e9AbqRFfeazbyAbAZijYMDGlLDGAc07Ob2tPdeEUE0dC0zISIdtdWtCu0lV+oWf3qcsevpd7ejn9g=="
       },
       "Azure.Core": {
         "type": "Transitive",
@@ -556,10 +556,10 @@
       },
       "OpenTelemetry.Api.ProviderBuilderExtensions": {
         "type": "Transitive",
-        "resolved": "1.19.1",
-        "contentHash": "HtGe72B/IhzKqdU0a3fNE5osax/Cegwxd+p4u6lOFy20nsgmeaFuP2NRyFs1WvrOv/bpkII3IvvBkKoZXG8BLg==",
+        "resolved": "1.20.1",
+        "contentHash": "eDzDY/jTBqRytkYECmVKF7ZP5sKmCIqv1SSnA5BSWltIIvc3931TOMRyCW1qCGNIgmtldtJhISnsmFNxOCfauQ==",
         "dependencies": {
-          "OpenTelemetry.Api": "1.19.1"
+          "OpenTelemetry.Api": "1.20.1"
         }
       },
       "PemUtils": {
@@ -749,7 +749,7 @@
           "Headless.Caching.Abstractions": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Serializer.Abstractions": "[1.0.0, )",
-          "OpenTelemetry.Api": "[1.19.1, )"
+          "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
       "headless.caching.abstractions": {
@@ -895,7 +895,7 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
-          "OpenTelemetry.Api": "[1.19.1, )"
+          "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
       "headless.jobs": {
@@ -908,7 +908,7 @@
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "NCrontab.Signed": "[3.4.0, )",
-          "OpenTelemetry.Api": "[1.19.1, )",
+          "OpenTelemetry.Api": "[1.20.1, )",
           "Polly.Core": "[8.8.0, )"
         }
       },
@@ -984,7 +984,7 @@
           "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
-          "OpenTelemetry.Api": "[1.19.1, )",
+          "OpenTelemetry.Api": "[1.20.1, )",
           "Polly.Core": "[8.8.0, )"
         }
       },
@@ -999,8 +999,8 @@
       "headless.messaging.aws": {
         "type": "Project",
         "dependencies": {
-          "AWSSDK.SQS": "[4.0.100.18, )",
-          "AWSSDK.SimpleNotificationService": "[4.0.100.19, )",
+          "AWSSDK.SQS": "[4.0.100.19, )",
+          "AWSSDK.SimpleNotificationService": "[4.0.100.20, )",
           "Headless.Messaging": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )"
@@ -1208,7 +1208,7 @@
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )",
-          "OpenTelemetry.Api": "[1.19.1, )"
+          "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
       "headless.sql.abstractions": {
@@ -1289,20 +1289,20 @@
       },
       "AWSSDK.SimpleNotificationService": {
         "type": "CentralTransitive",
-        "requested": "[4.0.100.19, )",
-        "resolved": "4.0.100.19",
-        "contentHash": "O42Ms7bIGJM/DHnkNMh6sb2ToHEZIRDs4fRVtkrTfEx7I6zpX4kCtv9wY8lyVIqVRxM+eStGlwrDfZK752DH+Q==",
+        "requested": "[4.0.100.20, )",
+        "resolved": "4.0.100.20",
+        "contentHash": "waRlkeOkn8c5rjODfc/HSpHF6JGN6/FN30PIQz9PPn0QZS+fHqGmhvigSkfDeoJXngR+r+QbgaxWobzIVkTOnQ==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.102.11, 5.0.0)"
+          "AWSSDK.Core": "[4.0.102.12, 5.0.0)"
         }
       },
       "AWSSDK.SQS": {
         "type": "CentralTransitive",
-        "requested": "[4.0.100.18, )",
-        "resolved": "4.0.100.18",
-        "contentHash": "u5EcK7Ng17PNHj750wc5jY83Weixiu97kJ3eOuV8pCHfvP0G+84mdY6MOxunY9KHbx3A2i5tLaKlM8DCAwBITA==",
+        "requested": "[4.0.100.19, )",
+        "resolved": "4.0.100.19",
+        "contentHash": "/B2TxNITG6oNgebLQocRO2PoVMd0PRPksMKceewP8aFwG3k6PDfG06vYsM9csiPoi3TpmNoD7pb/1uUrhC1uTw==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.102.11, 5.0.0)"
+          "AWSSDK.Core": "[4.0.102.12, 5.0.0)"
         }
       },
       "Azure.Messaging.ServiceBus": {
@@ -1539,18 +1539,18 @@
       },
       "OpenTelemetry": {
         "type": "CentralTransitive",
-        "requested": "[1.19.1, )",
-        "resolved": "1.19.1",
-        "contentHash": "6ywhc3upf+dq8EsOohj7I7zS3l4yX9vfbtFkvyEC8xIUY4Z9iDIOVuke356eCAzIZaWtmwmmyl2UXYCp5n7I3Q==",
+        "requested": "[1.20.1, )",
+        "resolved": "1.20.1",
+        "contentHash": "+XDw3fYbiv1a40aFnDJSQleeuUJciXuhoIA19XmcGhT47Hy/xZRqk8NCjHUDKrg72Ixjthicecp8ygBDNeH/Jw==",
         "dependencies": {
-          "OpenTelemetry.Api.ProviderBuilderExtensions": "1.19.1"
+          "OpenTelemetry.Api.ProviderBuilderExtensions": "1.20.1"
         }
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",
-        "requested": "[1.19.1, )",
-        "resolved": "1.19.1",
-        "contentHash": "9JKIH+xrV0HNTFjQC8zrx9gZpDOMEljN5Htg/U0VE2IvO3N+7bKALCCsGy5tp09marX5dd8UkrgQFoLaulIBRw=="
+        "requested": "[1.20.1, )",
+        "resolved": "1.20.1",
+        "contentHash": "QO9hlwadOdJGR4vDpJyDnl9B62v7epIBSTIHUA4C+bCtrRaB4TWmYSnu3QVOIe7caH8dt7NaHRei6zebESJJyw=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",
