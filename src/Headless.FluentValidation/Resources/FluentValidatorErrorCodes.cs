@@ -130,4 +130,21 @@ public static class FluentValidatorErrorCodes
 
     /// <summary>A CORS origin that ends with a trailing slash.</summary>
     public const string InvalidOriginTrailingSlash = "g:invalid_origin_trailing_slash";
+
+    // Files
+
+    /// <summary>A file that has zero bytes.</summary>
+    public const string FileNotEmpty = "g:file_not_empty";
+
+    /// <summary>A file whose size is below the required minimum.</summary>
+    public const string FileGreaterThanOrEqualTo = "g:file_greater_than_or_equal_to";
+
+    /// <summary>A file whose size exceeds the allowed maximum.</summary>
+    public const string FileLessThanOrEqualTo = "g:file_less_than_or_equal_to";
+
+    /// <summary>
+    /// A file whose declared content type or binary signature does not match the expected format. Both failures share
+    /// this code intentionally.
+    /// </summary>
+    public const string FileUnexpectedSignature = "g:file_unexpected_signature";
 }

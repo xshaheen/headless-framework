@@ -121,4 +121,16 @@
   <data name="g:minimum_age" xml:space="preserve">
     <value>{PropertyName} must be at least {MinimumAge} years ago.</value>
   </data>
+  <data name="g:file_not_empty" xml:space="preserve">
+    <value>File must not be empty.</value>
+  </data>
+  <data name="g:file_unexpected_signature" xml:space="preserve">
+    <value>The file type is not allowed.</value>
+  </data>
+  <data name="g:file_greater_than_or_equal_to" xml:space="preserve">
+    <value>The size of '{PropertyName}' must be at least {MinSize} MB. You uploaded {TotalLength} MB.</value>
+  </data>
+  <data name="g:file_less_than_or_equal_to" xml:space="preserve">
+    <value>The size of '{PropertyName}' must be at most {MaxSize} MB. You uploaded {TotalLength} MB.</value>
+  </data>
 </root>

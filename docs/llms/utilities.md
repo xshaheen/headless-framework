@@ -51,6 +51,7 @@ Extension library for FluentValidation providing additional validators and utili
 - String-format validators (slug, username, ZIP code, hex color, decimal, Base64, trimmed, culture name)
 - Relative date/time validators (`InThePast`/`InTheFuture`/`MinimumAge`, …) that read "now" from an injectable `TimeProvider`
 - Enum-name and markup-rejection (`NoScripts`) validators
+- File validators for an `IUploadedFile` property (`FileNotEmpty`, `GreaterThanOrEqualTo`, `LessThanOrEqualTo`, `ContentTypes`, `HaveSignatures`), so a command, message, or job validates a file without depending on ASP.NET Core. `Headless.Api.FluentValidation` offers the same rules for `IFormFile`, with the same error codes (`FluentValidatorErrorCodes.File*`, descriptors in `FluentValidatorErrorDescriber.Files`) and messages. The size and content-type rules implement `IFileSizeValidator` / `IFileContentTypeValidator`, which Headless.OpenApi reads; `HaveSignatures` opens its own stream through `IUploadedFile.OpenReadStream()`, so the content stays readable for the code that stores it. A null file passes every rule
 - `ErrorDescriptor` integration for structured API responses
 - Automatic camelCase property path normalization
 

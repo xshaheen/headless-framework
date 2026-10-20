@@ -23,7 +23,7 @@ Use `Headless.Api.Abstractions` when you only need interfaces (`IRequestContext`
 
 Additional packages:
 
-- `Headless.Api.FluentValidation` — validators for `IFormFile` uploads (size, content type, magic bytes) plus API request contracts (`PhoneNumberRequest`, `GeoCoordinateRequest`, `PageMetadataRequest`).
+- `Headless.Api.FluentValidation` — the `Headless.FluentValidation` file rules (size, content type, magic bytes) for `IFormFile` uploads, plus API request contracts (`PhoneNumberRequest`, `GeoCoordinateRequest`, `PageMetadataRequest`).
 - `Headless.DataProtection.Blobs` — persist ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
 - `Headless.Api.Jwt` — issue and parse JWTs with `IJwtTokenFactory`, and validate them with the matching `AddHeadlessJwtBearer()` scheme.
 - `Headless.Api.Identity` — ASP.NET Core Identity helpers: token providers, localized `auth:`/`user:` errors, `HeadlessLookupNormalizer`, and the Identity-backed `AddBasicSchema()` and `AddApiKey()` schemes.
@@ -256,7 +256,6 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - Single-claim authorization: `RequireSingleClaimValue(claimType, value)`, `RequireSingleClaim(claimType, predicate)`, and `SingleClaimRequirement`
 - HTTP edge rate limiting: `RateLimiterOptions.UseHeadlessProblemDetails()` rejects with 429 ProblemDetails (`g:rate_limit_exceeded`, `Retry-After`, `Cache-Control: no-store`), and `HttpContext.GetIpAddressPartition(ipv6PrefixLength = 64)` keys anonymous callers by IPv4 address or IPv6 /64. The application owns the limiter itself; see [HTTP edge limits](rate-limiting.md#http-edge-limits)
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
-- `IFormFileSizeValidator` (`MinBytes`, `MaxBytes`) / `IFormFileContentTypeValidator` (`ContentTypes`) — FluentValidation property validators that Headless.OpenApi reads without referencing `Headless.Api.FluentValidation`; their bounds become a form part's encoding and description
 - `IServiceCollection.FreezeHeadlessApiSurfaces()` — freezes the set of API surfaces and returns their OpenAPI document names, so a later `AddHeadlessApiSurface(...)` throws. `AddHeadlessApiSurfaceDocuments()` and `AddHeadless()` call it; a custom document provider calls it while the service collection is still writable
 
 ### Design constraints
@@ -265,6 +264,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - `HeadlessApiExceptionHandler` honors `Accept` quality values when deciding whether to write JSON ProblemDetails. A request that rejects JSON, or explicitly rejects `application/problem+json`, with `q=0` is left for downstream/default handlers instead of receiving a JSON body.
 - Batch `IFormFile.SaveAsync(...)` preserves result ordering while bounding concurrent file stream copies to `Environment.ProcessorCount` to avoid unbounded file-handle and disk pressure on large multipart requests.
 - `IFormFile.GetAllBytesAsync(CancellationToken cancellationToken = default)` propagates optional cancellation through asynchronous upload buffering; callers can omit the token.
+- `IFormFile.ToUploadedFile()` adapts an upload to `Headless.IO.IUploadedFile`, so an endpoint passes a file to a command or service that must not depend on ASP.NET Core. The adapter reads through to the form file and is valid only while the request is in flight.
 - Tenant identifier sources run in first-registration order and the first `Found` result wins; `AddSource<T>()` and the built-in `AddHostSource` / `AddRouteSource` / `AddHeaderSource` registrations deduplicate by type (the first call fixes the position, every call's options contribution still applies), while `AddSource(instance)` and the delegate overload always append. A source result of `Invalid` (present but ambiguous input, such as two `X-Tenant` values) rejects with 400 `g:tenant_identifier_invalid` before any catalog call; `Found` with a blank value normalizes to `None`. Sources never trim, lowercase, or shape-validate — the catalog does.
 - The header source (default `X-Tenant`) can only select an existing enabled tenant, and the identifier/claim mismatch check still rejects an authenticated caller whose tenant claim disagrees, but it bypasses any WAF rule, mTLS policy, IP allowlist, or CDN configuration bound to a tenant's hostname — register the host source first where hostnames carry such controls, or strip/overwrite the header at the edge. A requested header name replaces the untouched default and appends afterwards (`AddHeaderSource("X-Legacy")` reads only `X-Legacy`); any second value across the configured names is `Invalid`, a single line `a,b` is one value, and every consult appends the configured names to `Vary`.
 - `AddRouteSource` (every overload) wraps the routing `LinkGenerator` once so `Url.Action`, `GetPathByAction`, and `GetPathByName` keep the current request's `{tenant}` segment, which ASP.NET Core would otherwise drop (required-value invalidation; the endpoint-name scheme passes no ambient values — only `GetPathByRouteValues` kept it). An explicit `tenant` value always wins; `RouteTenantIdentifierSourceOptions.PromoteAmbientRouteValue = false` opts out per call. A link from a tenant request to an endpoint without a `{tenant}` segment carries the value as a query string (`/plain?tenant=acme`); a link from a request with no tenant segment to a tenant endpoint returns `null` without an explicit value.
@@ -794,7 +794,7 @@ Provisioning matrix: **managed** — a manager is registered/keyed/passed, the c
 
 ## Headless.Api.FluentValidation
 
-FluentValidation extensions for ASP.NET Core file uploads and reusable Headless API request contracts.
+FluentValidation extensions for ASP.NET Core file uploads and reusable Headless API request contracts. The file rules are the `Headless.FluentValidation` rules read from an `IFormFile`: same checks, error codes, and messages.
 
 ### API and behavior
 
@@ -803,7 +803,8 @@ FluentValidation extensions for ASP.NET Core file uploads and reusable Headless 
 - `LessThanOrEqualTo(bytes)` — maximum file size validation
 - `ContentTypes(list)` — MIME type allowlist validation; the rule copies the list when it is built
 - `HaveSignatures(inspector, predicate)` — magic bytes/file signature validation
-- The size and content-type rules are typed validators implementing `IFormFileSizeValidator` and `IFormFileContentTypeValidator` (`Headless.Api`), so Headless.OpenApi documents a form's accepted part types and size bounds; `HaveSignatures` is a predicate and documents nothing
+- The size and content-type rules are typed validators implementing `IFileSizeValidator` and `IFileContentTypeValidator` (`Headless.FluentValidation`), so Headless.OpenApi documents a form's accepted part types and size bounds; `HaveSignatures` is a predicate and documents nothing
+- To keep a command free of ASP.NET Core, give it an `IUploadedFile` property, build it at the endpoint with `IFormFile.ToUploadedFile()`, and validate it with the same rules from `Headless.FluentValidation` (see [utilities.md](utilities.md#headlessfluentvalidation))
 - `PhoneNumber()` — validates `PhoneNumberRequest` country code and local subscriber number
 - `GeoCoordinate()` — validates `GeoCoordinateRequest` latitude/longitude ranges
 - `PageMetadata()` — validates `PageMetadataRequest` SEO field length and element-count limits
