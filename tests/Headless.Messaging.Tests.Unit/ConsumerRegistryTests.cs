@@ -338,13 +338,13 @@ public sealed class ConsumerRegistryTests : TestBase
             )
         );
 
-        var freezeTask = Task.Run(() => registry.GetAll());
+        // The freeze and the late registration race on purpose; either may win on a given run.
+        var freezeTask = Task.Run(() => registry.GetAll(), AbortToken);
         InvalidOperationException? caughtException = null;
 
         var registerTask = Task.Run(
-            async () =>
+            () =>
             {
-                await Task.Delay(10);
                 try
                 {
                     registry.Register(
@@ -370,9 +370,38 @@ public sealed class ConsumerRegistryTests : TestBase
         // when
         await Task.WhenAll(freezeTask, registerTask);
 
-        // then - registration after freeze should throw
-        caughtException.Should().NotBeNull("registration after freeze should have thrown");
-        caughtException!.Message.Should().Contain("frozen");
+        // then: a registration that lost the race throws, and one that won is in the frozen snapshot; it is never
+        // accepted and then missing
+        var frozen = await freezeTask;
+        var lateRegistered = frozen.Any(consumer =>
+            string.Equals(consumer.ConsumerIdentity, "tests.registry.concurrent-freeze-late", StringComparison.Ordinal)
+        );
+        if (lateRegistered)
+        {
+            caughtException.Should().BeNull("a registration that reached the snapshot must have succeeded");
+        }
+        else
+        {
+            caughtException
+                .Should()
+                .NotBeNull("a registration missing from the frozen snapshot must have been refused");
+            caughtException!.Message.Should().Contain("frozen");
+        }
+
+        // and: once frozen, a registration always throws
+        var afterFreeze = () =>
+            registry.Register(
+                new ConsumerMetadata(
+                    typeof(TestMessage),
+                    typeof(TestConsumer),
+                    "test3",
+                    1,
+                    Lane: MessageLane.Bus,
+                    ConsumerIdentity: "tests.registry.after-freeze",
+                    MessageContractVersion: "v1"
+                )
+            );
+        afterFreeze.Should().Throw<InvalidOperationException>().WithMessage("*frozen*");
     }
 
     [Fact]
