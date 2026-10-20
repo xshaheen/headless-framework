@@ -831,7 +831,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.13, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.13, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.13, )",
-          "OpenTelemetry.Api": "[1.19.1, )"
+          "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
       "headless.messaging": {
@@ -852,7 +852,7 @@
           "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.Extensions.Diagnostics": "[10.0.13, )",
           "Microsoft.Extensions.Options": "[10.0.13, )",
-          "OpenTelemetry.Api": "[1.19.1, )",
+          "OpenTelemetry.Api": "[1.20.1, )",
           "Polly.Core": "[8.8.0, )",
           "System.Threading.RateLimiting": "[10.0.13, )"
         }
@@ -999,7 +999,7 @@
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )",
-          "OpenTelemetry.Api": "[1.19.1, )"
+          "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
       "headless.sql.abstractions": {
@@ -1410,9 +1410,9 @@
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",
-        "requested": "[1.19.1, )",
-        "resolved": "1.19.1",
-        "contentHash": "9JKIH+xrV0HNTFjQC8zrx9gZpDOMEljN5Htg/U0VE2IvO3N+7bKALCCsGy5tp09marX5dd8UkrgQFoLaulIBRw=="
+        "requested": "[1.20.1, )",
+        "resolved": "1.20.1",
+        "contentHash": "QO9hlwadOdJGR4vDpJyDnl9B62v7epIBSTIHUA4C+bCtrRaB4TWmYSnu3QVOIe7caH8dt7NaHRei6zebESJJyw=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",
