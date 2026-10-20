@@ -53,6 +53,7 @@ Extension library for FluentValidation providing additional validators and utili
 - Enum-name and markup-rejection (`NoScripts`) validators
 - `ErrorDescriptor` integration for structured API responses
 - Automatic camelCase property path normalization
+- Messages in English, formal Arabic (`ar`), and Egyptian Arabic (`ar-EG`), including Arabic wording for FluentValidation's own built-in messages
 
 ### Install
 
@@ -101,6 +102,34 @@ a lambda such as `() => new ErrorDescriptor("order:total_invalid", "Total must b
 ```csharp
 var errors = result.Errors.ToErrorDescriptors(); // IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>
 ```
+
+#### Regional Arabic
+
+Every package that ships Arabic messages ships them twice: formal Arabic under `ar` and Egyptian Arabic under `ar-EG`. .NET resource fallback runs from the region to `ar`, then to English, so an `ar-EG` request reads Egyptian Arabic and `ar` or any other `ar-*` region (`ar-SA`, `ar-AE`, and so on) reads formal Arabic.
+
+| Culture | Register | Example (`g:rate_limit_exceeded`) |
+| --- | --- | --- |
+| `ar` | Formal Arabic, in the plain register Gulf and other regional products use | `عدد الطلبات كبير جداً. حاول مرة أخرى بعد قليل.` |
+| `ar-EG` | Professional Egyptian Arabic | `عدد الطلبات كتير. جرّب تاني بعد شوية.` |
+
+Formal Arabic uses vocabulary every region reads (رقم الهاتف، رقم الهوية الوطنية، البريد الإلكتروني، كلمة المرور). Egypt-only services, such as the Paymob wallet messages, keep Egyptian terms (الرقم القومي) under `ar` too.
+
+FluentValidation's built-in messages (`NotEmpty`, `EmailAddress`, `Length`, and the rest) come from its `LanguageManager`. `languageManager.AddHeadlessArabicTranslations()` replaces the library's own `ar` wording for every built-in key with the Headless formal Arabic, and `languageManager.AddHeadlessEgyptianArabicTranslations()` adds `ar-EG` wording. `AddHeadless()` applies both to `ValidatorOptions.Global.LanguageManager` through `SetupApi.ConfigureGlobalSettings()`; an application without `Headless.Api.ServiceDefaults` calls them once at startup:
+
+```csharp
+using FluentValidation;
+using FluentValidation.Resources;
+
+if (ValidatorOptions.Global.LanguageManager is LanguageManager languageManager)
+{
+    languageManager.AddHeadlessArabicTranslations();
+    languageManager.AddHeadlessEgyptianArabicTranslations();
+}
+```
+
+- The Arabic built-in messages leave out `{PropertyName}`: it resolves to the property's English name, which reads badly inside an Arabic sentence, so a client shows the message next to its field. English keeps the library's text, property name included.
+- Each call overwrites the text the manager holds for its culture and key. Add the application's own `ar` or `ar-EG` translations after `AddHeadless()` (or after the calls above): a translation added before is replaced. An application that assigns its own `ILanguageManager` that does not derive from `LanguageManager` gets no Headless built-ins.
+- `ar-EG` must be one of the request localization's `SupportedUICultures`. With only `ar` listed, an `ar-EG` request resolves to `ar` and reads formal Arabic. An application that sets `SatelliteResourceLanguages` must list `ar-EG` too, or the build drops those satellite assemblies.
 
 ### Available Validators
 

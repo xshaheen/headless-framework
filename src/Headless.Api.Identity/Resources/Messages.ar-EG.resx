@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>1.3</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral,
+      PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral,
+      PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <data name="auth:invalid_token" xml:space="preserve">
+    <value>الرمز ده مش صالح.</value>
+  </data>
+  <data name="auth:recovery_code_redemption_failed" xml:space="preserve">
+    <value>تعذّر استخدام رمز الاسترداد.</value>
+  </data>
+  <data name="auth:login_already_linked" xml:space="preserve">
+    <value>طريقة تسجيل الدخول دي مربوطة بحساب تاني بالفعل. تسجيل الدخول الخارجي ينفع يرتبط بحساب واحد بس.</value>
+  </data>
+  <data name="auth:invalid_username" xml:space="preserve">
+    <value>اسم المستخدم "{0}" مش صالح، لازم يكون حروف أو أرقام بس.</value>
+  </data>
+  <data name="auth:invalid_email" xml:space="preserve">
+    <value>الإيميل "{0}" مش صحيح.</value>
+  </data>
+  <data name="auth:duplicate_username" xml:space="preserve">
+    <value>اسم المستخدم "{0}" مستخدم قبل كده.</value>
+  </data>
+  <data name="auth:duplicate_email" xml:space="preserve">
+    <value>الإيميل "{0}" مستخدم قبل كده.</value>
+  </data>
+  <data name="auth:invalid_role" xml:space="preserve">
+    <value>اسم الدور "{0}" مش صالح.</value>
+  </data>
+  <data name="auth:duplicate_role_name" xml:space="preserve">
+    <value>فيه دور اسمه "{0}" بالفعل.</value>
+  </data>
+  <data name="auth:user_already_has_password" xml:space="preserve">
+    <value>الحساب ده ليه كلمة سر بالفعل.</value>
+  </data>
+  <data name="auth:lockout_not_enabled" xml:space="preserve">
+    <value>القفل المؤقت مش مفعّل للمستخدم ده.</value>
+  </data>
+  <data name="auth:already_in_role" xml:space="preserve">
+    <value>المستخدم عنده الدور "{0}" بالفعل.</value>
+  </data>
+  <data name="auth:not_in_role" xml:space="preserve">
+    <value>المستخدم معندوش الدور "{0}".</value>
+  </data>
+  <data name="auth:password_mismatch" xml:space="preserve">
+    <value>كلمة السر مش صحيحة.</value>
+  </data>
+  <data name="auth:password_too_short" xml:space="preserve">
+    <value>كلمة السر لازم تكون {0} حرف على الأقل.</value>
+  </data>
+  <data name="auth:password_requires_unique_chars" xml:space="preserve">
+    <value>كلمة السر لازم يكون فيها {0} حرف مختلف على الأقل.</value>
+  </data>
+  <data name="auth:password_requires_non_alphanumeric" xml:space="preserve">
+    <value>كلمة السر لازم يكون فيها رمز واحد على الأقل غير الحروف والأرقام.</value>
+  </data>
+  <data name="auth:password_requires_digit" xml:space="preserve">
+    <value>كلمة السر لازم يكون فيها رقم واحد على الأقل ['0'_'9'].</value>
+  </data>
+  <data name="auth:password_requires_lower" xml:space="preserve">
+    <value>كلمة السر لازم يكون فيها حرف إنجليزي صغير واحد على الأقل ['a'_'z'].</value>
+  </data>
+  <data name="auth:password_requires_upper" xml:space="preserve">
+    <value>كلمة السر لازم يكون فيها حرف إنجليزي كبير واحد على الأقل ['A'_'Z'].</value>
+  </data>
+  <data name="auth:email_already_linked" xml:space="preserve">
+    <value>الإيميل ده مربوط بالحساب ده بالفعل.</value>
+  </data>
+  <data name="auth:login_failed" xml:space="preserve">
+    <value>تعذّر تسجيل الدخول. الإيميل أو كلمة السر مش صحيحة.</value>
+  </data>
+  <data name="auth:login_requires_confirmation" xml:space="preserve">
+    <value>مينفعش تسجّل دخول قبل ما الحساب يتأكد.</value>
+  </data>
+  <data name="auth:login_requires_two_factor" xml:space="preserve">
+    <value>تسجيل الدخول محتاج تحقق بخطوتين.</value>
+  </data>
+  <data name="auth:user_locked_out" xml:space="preserve">
+    <value>عدد المحاولات كتير، فالحساب اتوقف مؤقتًا. جرّب تاني بعد شوية.</value>
+  </data>
+  <data name="auth:user_requires_alternate_login_or_password" xml:space="preserve">
+    <value>مينفعش تحذف طريقة تسجيل الدخول الخارجية دي، لأن مفيش طريقة دخول تانية للحساب. حدد كلمة سر الأول.</value>
+  </data>
+  <data name="auth:email_already_confirmed" xml:space="preserve">
+    <value>الإيميل ده اتأكد قبل كده.</value>
+  </data>
+  <data name="auth:login_not_found" xml:space="preserve">
+    <value>حساب تسجيل الدخول ده مش مربوط بأي مستخدم.</value>
+  </data>
+  <data name="auth:login_token_validation_failed" xml:space="preserve">
+    <value>تعذّر الاتصال بمزود المصادقة.</value>
+  </data>
+  <data name="auth:invalid_login_token" xml:space="preserve">
+    <value>رمز تسجيل الدخول مش صالح.</value>
+  </data>
+  <data name="auth:remove_password_requires_alternate_login" xml:space="preserve">
+    <value>علشان تحذف كلمة السر، لازم يكون للحساب طريقة تانية لتسجيل الدخول.</value>
+  </data>
+  <data name="auth:invalid_login_identifier" xml:space="preserve">
+    <value>بيانات الدخول دي مش معروفة. لتسجيل الدخول استخدم رقم الموبايل أو الرقم القومي أو الإيميل.</value>
+  </data>
+  <data name="auth:expired_token" xml:space="preserve">
+    <value>الرمز ده انتهت صلاحيته.</value>
+  </data>
+  <data name="user:duplicated_national_id" xml:space="preserve">
+    <value>الرقم القومي ده متسجل قبل كده.</value>
+  </data>
+  <data name="user:duplicated_phone_number" xml:space="preserve">
+    <value>رقم الموبايل ده متسجل قبل كده.</value>
+  </data>
+  <data name="user:request_verify_email_attempts_exceeded" xml:space="preserve">
+    <value>وصلت للحد الأقصى من المحاولات `{0}` لتأكيد الإيميل. جرّب تاني بعد {1}.</value>
+  </data>
+  <data name="user:request_forget_password_cooldown" xml:space="preserve">
+    <value>ينفع تطلب استعادة كلمة السر مرة واحدة بس كل {0}. استنى {1} وجرّب تاني.</value>
+  </data>
+  <data name="user:request_forget_password_attempts_exceeded" xml:space="preserve">
+    <value>وصلت للحد الأقصى من محاولات طلب استعادة كلمة السر. جرّب تاني بعد {0}.</value>
+  </data>
+  <data name="user:already_unlocked" xml:space="preserve">
+    <value>المستخدم ده مش مقفول.</value>
+  </data>
+  <data name="user:request_verify_email_cooldown" xml:space="preserve">
+    <value>ينفع تطلب تأكيد الإيميل مرة واحدة بس كل {0}. استنى {1} وجرّب تاني.</value>
+  </data>
+  <data name="user:phone_number_already_linked_to_other_user" xml:space="preserve">
+    <value>رقم الموبايل {0} مربوط بمستخدم تاني بالفعل.</value>
+  </data>
+  <data name="user:already_unblocked" xml:space="preserve">
+    <value>المستخدم ده مش محظور.</value>
+  </data>
+  <data name="user:already_blocked" xml:space="preserve">
+    <value>المستخدم ده محظور بالفعل.</value>
+  </data>
+  <data name="user:email_already_linked_to_other_user" xml:space="preserve">
+    <value>الإيميل {0} مربوط بمستخدم تاني بالفعل.</value>
+  </data>
+  <data name="auth:used_before_password" xml:space="preserve">
+    <value>مينفعش تستخدم كلمة سر استخدمتها قبل كده.</value>
+  </data>
+  <data name="user:phone_number_already_linked" xml:space="preserve">
+    <value>رقم الموبايل ده مربوط بالمستخدم ده بالفعل.</value>
+  </data>
+</root>

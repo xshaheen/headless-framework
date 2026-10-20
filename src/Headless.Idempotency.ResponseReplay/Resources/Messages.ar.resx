@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true"></xsd:element>
@@ -20,19 +20,19 @@
     </value>
   </resheader>
   <data name="g:idempotency_key_reused" xml:space="preserve">
-    <value>تم إعادة استخدام مفتاح الطلب الفريد مع محتوى مختلف للطلب.</value>
+    <value>تم استخدام مفتاح الطلب الفريد مسبقاً مع محتوى طلب مختلف.</value>
   </data>
   <data name="g:idempotency_in_flight" xml:space="preserve">
-    <value>طلب مطابق بهذا المفتاح الفريد لا يزال قيد المعالجة. أعد المحاولة بعد انتظار قصير.</value>
+    <value>يوجد طلب مطابق بالمفتاح الفريد نفسه قيد المعالجة حالياً. انتظر قليلاً ثم حاول مرة أخرى.</value>
   </data>
   <data name="g:idempotency_in_flight_timeout" xml:space="preserve">
-    <value>انتهت مهلة انتظار اكتمال طلب جارٍ بهذا المفتاح الفريد.</value>
+    <value>انتهت مهلة انتظار اكتمال الطلب الجاري بالمفتاح الفريد نفسه.</value>
   </data>
   <data name="g:idempotency_body_too_large" xml:space="preserve">
-    <value>حجم محتوى الطلب يتجاوز الحد المسموح به لمعالجة الطلبات الفريدة.</value>
+    <value>حجم محتوى الطلب أكبر من الحد المسموح به لمعالجة الطلبات الفريدة.</value>
   </data>
   <data name="g:idempotency_key_malformed" xml:space="preserve">
-    <value>قيمة ترويسة Idempotency-Key غير صالحة (يتجاوز طولها 255 أو تحتوي على رموز تحكم أو متعددة القيم).</value>
+    <value>قيمة ترويسة Idempotency-Key غير صالحة (طولها أكثر من 255، أو تحتوي على رموز تحكم، أو على أكثر من قيمة).</value>
   </data>
   <data name="g:idempotency_key_required" xml:space="preserve">
     <value>تتطلب نقطة النهاية هذه ترويسة Idempotency-Key.</value>

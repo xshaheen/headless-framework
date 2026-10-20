@@ -347,7 +347,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         // then
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
-        document.RootElement.GetProperty("detail").GetString().Should().Be("هذه الميزة غير متوفرة حاليا.");
+        document.RootElement.GetProperty("detail").GetString().Should().Be("هذه الميزة غير متاحة حالياً.");
     }
 
     #endregion Failure reasons
