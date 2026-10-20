@@ -126,7 +126,8 @@ public sealed class MessageSenderTests : TestBase
         IHostApplicationLifetime? lifetime = null,
         TransportConnectivity? connectivity = null,
         TimeProvider? timeProvider = null,
-        ILoggerProvider? loggerProvider = null
+        ILoggerProvider? loggerProvider = null,
+        TimeProvider? backoffClock = null
     )
     {
         storage
@@ -182,6 +183,11 @@ public sealed class MessageSenderTests : TestBase
         services.AddSingleton<IBusTransport>(_ => new TestBusTransportAdapter(transport));
         services.AddSingleton<IQueueTransport>(_ => new TestQueueTransportAdapter(transport));
         services.AddSingleton(timeProvider ?? TimeProvider.System);
+        if (backoffClock is not null)
+        {
+            services.AddKeyedSingleton(MessagingOptions.BackoffClockServiceKey, backoffClock);
+        }
+
         services.AddSingleton(Options.Create(options));
         if (lifetime is not null)
         {
@@ -694,6 +700,72 @@ public sealed class MessageSenderTests : TestBase
             .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(transportMessage));
 
+        var sendStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                sendStarted.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
+                return OperateResult.Success;
+            });
+
+        var options = new MessagingOptions
+        {
+            RetryPolicy =
+            {
+                RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.FromSeconds(5)),
+                MaxPersistedRetries = 1,
+            },
+        };
+        var backoffClock = new FakeTimeProvider();
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            options,
+            new FakeHostApplicationLifetime(AbortToken),
+            backoffClock: backoffClock
+        );
+
+        // when: the send waits for the broker until the back-off clock passes the publish timeout
+        var send = sender.SendAsync(_CreateMediumMessage());
+        await sendStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        send.IsCompleted.Should().BeFalse();
+        backoffClock.Advance(options.TransportPublishTimeout);
+        var result = await send.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then — a transient failure: the row is scheduled for a later attempt with back-off, not left on its lease.
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<TimeoutException>();
+        await storage
+            .Received(1)
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
+                Arg.Is<RetryDelay?>(value => value.HasValue),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Is<int>(value => value == 0),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_schedule_a_retry_when_the_publish_times_out_on_the_system_clock_while_the_host_runs()
+    {
+        // given — no back-off clock is registered, so one source on the system clock carries both the publish timeout
+        // and the running host's stopping token.
+        var storage = Substitute.For<IDataStorage>();
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
         transport
@@ -704,26 +776,27 @@ public sealed class MessageSenderTests : TestBase
                 return OperateResult.Success;
             });
 
+        var options = new MessagingOptions
+        {
+            TransportPublishTimeout = TimeSpan.FromMilliseconds(20),
+            RetryPolicy =
+            {
+                RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.FromSeconds(5)),
+                MaxPersistedRetries = 1,
+            },
+        };
         var sender = _CreateSender(
             storage,
             serializer,
             transport,
-            new MessagingOptions
-            {
-                TransportPublishTimeout = TimeSpan.FromMilliseconds(50),
-                RetryPolicy =
-                {
-                    RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.FromSeconds(5)),
-                    MaxPersistedRetries = 1,
-                },
-            },
+            options,
             new FakeHostApplicationLifetime(AbortToken)
         );
 
         // when
-        var result = await sender.SendAsync(_CreateMediumMessage());
+        var result = await sender.SendAsync(_CreateMediumMessage()).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-        // then — a transient failure: the row is scheduled for a later attempt with back-off, not left on its lease.
+        // then — the timeout, not shutdown, cut the send off, so the row is scheduled for a later attempt.
         result.Succeeded.Should().BeFalse();
         result.Exception.Should().BeOfType<TimeoutException>();
         await storage
@@ -2041,6 +2114,50 @@ public sealed class MessageSenderTests : TestBase
         message.ExpiresAt.Should().BeAfter(DateTimeOffset.UtcNow);
         callbackInvoked.Should().BeFalse();
         expired.Should().Contain("queue");
+    }
+
+    [Fact]
+    public async Task should_not_count_or_log_the_drop_when_another_worker_already_settled_the_expired_row()
+    {
+        // given — the deadline passed, but the Failed write loses its fence to another worker that settled the row
+        var storage = Substitute.For<IDataStorage>();
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        using var logs = new CapturingLoggerProvider();
+        var sender = _CreateSender(
+            storage,
+            Substitute.For<IMessageSerializer>(),
+            transport,
+            new MessagingOptions { RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(3) } },
+            loggerProvider: logs
+        );
+        storage
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(false));
+        var message = _CreateMediumMessage(MessageLane.Queue);
+        message.Origin.Headers[Headers.DeliverBy] = DateTimeOffset
+            .UtcNow.AddSeconds(-1)
+            .ToString("O", CultureInfo.InvariantCulture);
+        var expired = new List<string?>();
+        using var listener = _ListenToSendExpired(expired);
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then — the attempt still ends unsent, but the drop is the winner's to count and log
+        result.Exception.Should().BeOfType<MessageDeliverByExceededException>();
+        await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, Arg.Any<CancellationToken>());
+        expired.Should().BeEmpty();
+        logs.Entries.Should().NotContain(e => e.EventId.Id == 4125);
     }
 
     [Fact]

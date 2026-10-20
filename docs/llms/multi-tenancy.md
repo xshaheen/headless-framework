@@ -412,6 +412,8 @@ app.UseAuthorization();
 
 `Headless.Api.ServiceDefaults`' `app.UseHeadless()` already registers `UseForwardedHeaders()` and the rewriter in the right slots, so call them explicitly only on hosts that do not use ServiceDefaults — or that turned `HeadlessServiceDefaultsOptions.UseStatusCodePages` off, which also suppresses the rewriter.
 
+**API documentation.** Headless.OpenApi documents catalog resolution on every endpoint without `[SkipTenantResolution]`: each configured tenant header as a header parameter (required only on an endpoint that requires a tenant when the single header is the only identifier source), the 400 `g:tenant_identifier_invalid` and 404 (or, with `DetailedResolutionErrors`, 404 and 403) rejections with their `Cache-Control: no-store` header, and a `servers` entry with a `tenant` variable per host template without wildcards. See [OpenAPI](openapi.md#design-constraints).
+
 **Middleware ordering contract** — `UseHeadlessTenantCatalogResolution()` and `UseHeadlessTenancy()` occupy different, non-interchangeable pipeline slots:
 
 | Middleware | Placement | Resolves from |

@@ -101,6 +101,21 @@ public sealed class BlockInEnvironmentAttributeTests : TestBase
         environment.Should().Be("Production");
     }
 
+    [Fact]
+    public void should_report_availability_through_the_environment_restriction_metadata()
+    {
+        // given
+        IEnvironmentRestrictionMetadata restriction = new BlockInEnvironmentAttribute("Production");
+
+        // when
+        var available = restriction.IsAvailableIn(_CreateEnvironment("Development"));
+        var unavailable = restriction.IsAvailableIn(_CreateEnvironment("production"));
+
+        // then
+        available.Should().BeTrue();
+        unavailable.Should().BeFalse();
+    }
+
     #region Helper Methods
 
     private static ResourceExecutingContext _CreateResourceExecutingContext(

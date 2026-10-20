@@ -30,7 +30,8 @@ public static class RouteBuilderExtensions
     /// <summary>
     /// Adds <see cref="MinimalApiValidatorFilter{TRequest}"/> to the endpoint, which runs all registered
     /// <see cref="global::FluentValidation.IValidator{T}"/> implementations for <typeparamref name="TArgument"/>
-    /// before the endpoint handler is invoked.
+    /// before the endpoint handler is invoked, and declares the filter's 400 (missing body) and 422 (validation errors)
+    /// problem-details responses for OpenAPI discovery.
     /// </summary>
     /// <typeparam name="TArgument">The request type whose validators should be applied.</typeparam>
     /// <param name="builder">The route handler builder to add the filter to.</param>
@@ -38,6 +39,9 @@ public static class RouteBuilderExtensions
     /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
     public static RouteHandlerBuilder Validate<TArgument>(this RouteHandlerBuilder builder)
     {
-        return builder.AddEndpointFilter<MinimalApiValidatorFilter<TArgument>>();
+        return builder
+            .AddEndpointFilter<MinimalApiValidatorFilter<TArgument>>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
     }
 }

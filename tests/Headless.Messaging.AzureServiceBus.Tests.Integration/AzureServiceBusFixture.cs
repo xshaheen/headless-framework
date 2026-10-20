@@ -236,7 +236,7 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         await AzureServiceBusResourceCleanup.DeleteAllAsync(operations);
     }
 
-    private async ValueTask<TransportConsumerConformanceSession> _CreateSessionAsync(
+    private ValueTask<TransportConsumerConformanceSession> _CreateSessionAsync(
         MessageLane lane,
         string destination,
         string group,
@@ -248,7 +248,37 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         ConsumerClientRequest? request = null
     )
     {
-        var connectionString = _RequireConnectionString();
+        return CreateSessionAsync(
+            _RequireConnectionString(),
+            lane,
+            destination,
+            group,
+            topicPath,
+            disposeEntity,
+            cancellationToken,
+            createReplacementSession,
+            enableSessions,
+            request
+        );
+    }
+
+    /// <summary>
+    /// Opens a conformance session on entities that already exist under <paramref name="connectionString"/>; the real
+    /// namespace and the emulator share it, so both profiles drive the provider through the same wiring.
+    /// </summary>
+    internal static async ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
+        string connectionString,
+        MessageLane lane,
+        string destination,
+        string group,
+        string topicPath,
+        Func<ValueTask>? disposeEntity,
+        CancellationToken cancellationToken,
+        Func<CancellationToken, ValueTask<TransportConsumerConformanceSession>>? createReplacementSession = null,
+        bool enableSessions = false,
+        ConsumerClientRequest? request = null
+    )
+    {
         request ??= new ConsumerClientRequest(group, 2, lane);
 
         // Every-instance subscriptions are created by the consumer itself, which takes AutoProvision.

@@ -8,6 +8,10 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The emulator reads its fixed entities from this file; the fixture copies it into the container. -->
+    <None Include="Emulator\Config.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Messaging.AzureServiceBus\Headless.Messaging.AzureServiceBus.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Tests.Harness\Headless.Messaging.Tests.Harness.csproj" />
   </ItemGroup>

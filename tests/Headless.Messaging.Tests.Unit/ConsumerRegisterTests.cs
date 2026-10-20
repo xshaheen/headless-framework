@@ -1403,6 +1403,10 @@ public sealed class ConsumerRegisterTests : TestBase
 
         configureServices?.Invoke(services);
 
+        // The admission retries wait on the back-off clock, which the delivery steps through instead of sleeping.
+        var backoffClock = new FakeTimeProvider();
+        services.AddKeyedSingleton<TimeProvider>(MessagingOptions.BackoffClockServiceKey, backoffClock);
+
         var provider = services.BuildServiceProvider();
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
 
@@ -1437,7 +1441,6 @@ public sealed class ConsumerRegisterTests : TestBase
         );
 
         recorder.FailNextAdmissions(admissionFailures);
-        var backoffClock = _UseFakeBackoffClock(register);
 
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -2840,20 +2843,6 @@ public sealed class ConsumerRegisterTests : TestBase
             },
             "{}"u8.ToArray()
         );
-    }
-
-    /// <summary>
-    /// Replaces the real-time clock the admission retries wait on with a fake one, so a test steps through the back-off
-    /// instead of sleeping.
-    /// </summary>
-    private static FakeTimeProvider _UseFakeBackoffClock(ConsumerRegister register)
-    {
-        var clock = new FakeTimeProvider();
-        typeof(ConsumerRegister)
-            .GetField("_backoffClock", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
-            .SetValue(register, clock);
-
-        return clock;
     }
 
     /// <summary>Runs one delivery through the client's callback, advancing the back-off clock until it settles.</summary>

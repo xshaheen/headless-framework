@@ -160,7 +160,8 @@ public sealed class IdempotencyKeyRequiredTests : IdempotencyMiddlewareTestBase
         // then
         var probe = new HttpIdempotencyOptions();
         builder
-            .Metadata.Should()
+            .Metadata.OfType<HttpIdempotencyMetadata>()
+            .Should()
             .ContainSingle()
             .Which.Should()
             .BeOfType<HttpIdempotencyMetadata>()

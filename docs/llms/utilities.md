@@ -174,7 +174,7 @@ Roslyn source generator for creating strongly-typed domain primitives.
   - Entity Framework Core value converters
   - TypeConverter for model binding
   - Dapper type handlers
-  - NSwag/Swashbuckle schema mappings
+- No OpenAPI schema mapping is generated: `Headless.OpenApi` documents every `IPrimitive<T>` as its underlying JSON type automatically, with the `[StringLength]` bounds of a string primitive as `minLength`/`maxLength`
 
 ### Design constraints
 
@@ -239,8 +239,6 @@ modelBuilder.Entity<User>().Property(u => u.Email).HasConversion<EmailValueConve
 <PropertyGroup>
   <PrimitiveDapperConverters>true</PrimitiveDapperConverters>
   <PrimitiveEntityFrameworkValueConverters>true</PrimitiveEntityFrameworkValueConverters>
-  <PrimitiveSwashbuckleSwaggerConverters>false</PrimitiveSwashbuckleSwaggerConverters>
-  <PrimitiveNswagSwaggerConverters>false</PrimitiveNswagSwaggerConverters>
   <PrimitiveJsonConverters>true</PrimitiveJsonConverters>
   <PrimitiveTypeConverters>true</PrimitiveTypeConverters>
   <PrimitiveXmlConverters>false</PrimitiveXmlConverters>

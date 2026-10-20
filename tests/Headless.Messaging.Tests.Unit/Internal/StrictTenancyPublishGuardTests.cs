@@ -6,6 +6,7 @@ using Headless.Messaging.Internal;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
+using Tests.Guarantees;
 
 namespace Tests.Internal;
 
@@ -57,6 +58,7 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-PUB-07")]
     public void should_prefer_publish_options_tenant_over_ambient_when_both_set()
     {
         // given - publish-side explicit value wins; ambient is fallback only
@@ -70,6 +72,7 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-PUB-07")]
     public void should_throw_missing_tenant_context_when_strict_tenancy_enabled_and_both_null()
     {
         // given

@@ -15,6 +15,7 @@ using Headless.Hosting;
 using Headless.Http;
 using Headless.IO;
 using Headless.MultiTenancy;
+using Headless.OpenApi;
 using Headless.Security;
 using Headless.Serializer;
 using Microsoft.AspNetCore.Authentication;
@@ -182,14 +183,18 @@ public static class SetupApi
             if (options.OpenApi.Enabled)
             {
                 var documentNames =
-                    options.OpenApi.SurfaceDocumentNames ?? ApiSurfaceRegistration.InferDocumentNames(builder.Services);
+                    options.OpenApi.SurfaceDocumentNames ?? builder.Services.FreezeHeadlessApiSurfaces();
+                var configureOpenApi = options.OpenApi.ConfigureOpenApi;
                 if (documentNames.Count > 0)
                 {
-                    builder.Services.AddHeadlessApiSurfaceDocuments(documentNames, options.OpenApi.ConfigureOpenApi);
+                    builder.Services.AddHeadlessApiSurfaceDocuments(
+                        documentNames,
+                        configureOpenApi is null ? null : (openApi, _) => configureOpenApi(openApi)
+                    );
                 }
                 else
                 {
-                    builder.Services.AddOpenApi(options.OpenApi.ConfigureOpenApi ?? (_ => { }));
+                    builder.Services.AddHeadlessOpenApi(configure: configureOpenApi);
                 }
             }
 

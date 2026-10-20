@@ -1,0 +1,11 @@
+<Project>
+  <!-- The proof targets pass this file as CustomAfterMicrosoftCommonTargets, so every compile in their build writes
+       its diagnostics, info level included, to obj/<configuration>/<tfm>/analyzers.sarif. The analyzer stage reads
+       those logs (scripts/proof.py analyzers) instead of compiling the changed projects a second time under
+       dotnet format. A project whose log is older than its assembly falls back to dotnet format analyzers. -->
+  <Target Name="HeadlessProofErrorLog" BeforeTargets="CoreCompile" Condition="'$(ErrorLog)' == ''">
+    <PropertyGroup>
+      <ErrorLog>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'analyzers.sarif')),version=2.1</ErrorLog>
+    </PropertyGroup>
+  </Target>
+</Project>

@@ -28,7 +28,7 @@ internal sealed class ApiSurfaceRegistration
         if (services.Any(service => service.ServiceType == typeof(ApiSurfaceRegistration)))
         {
             throw new InvalidOperationException(
-                "Register all API surfaces with AddHeadlessApiSurface or AddHeadlessApiSurfaces before OpenAPI document inference (AddHeadless, AddHeadlessApiSurfaceDocuments, or AddNswagApiSurfaceDocuments). Move surface registration before that call."
+                "Register all API surfaces with AddHeadlessApiSurface or AddHeadlessApiSurfaces before OpenAPI document inference (AddHeadless or AddHeadlessApiSurfaceDocuments). Move surface registration before that call."
             );
         }
     }

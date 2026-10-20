@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -15,10 +16,21 @@ namespace Headless.Api;
 /// </summary>
 [PublicAPI]
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
-public sealed class RequireEnvironmentAttribute(string environment) : Attribute, IAsyncResourceFilter
+public sealed class RequireEnvironmentAttribute(string environment)
+    : Attribute,
+        IAsyncResourceFilter,
+        IEnvironmentRestrictionMetadata
 {
     /// <summary>Gets the environment name required to access the endpoint.</summary>
     public string Environment { get; } = environment;
+
+    /// <inheritdoc/>
+    public bool IsAvailableIn(IHostEnvironment environment)
+    {
+        Argument.IsNotNull(environment);
+
+        return environment.IsEnvironment(Environment);
+    }
 
     /// <inheritdoc/>
     public async Task OnResourceExecutionAsync(ResourceExecutingContext context, ResourceExecutionDelegate next)
@@ -26,7 +38,7 @@ public sealed class RequireEnvironmentAttribute(string environment) : Attribute,
         var services = context.HttpContext.RequestServices;
         var env = services.GetRequiredService<IWebHostEnvironment>();
 
-        if (env.IsEnvironment(Environment))
+        if (IsAvailableIn(env))
         {
             await next().ConfigureAwait(false);
 

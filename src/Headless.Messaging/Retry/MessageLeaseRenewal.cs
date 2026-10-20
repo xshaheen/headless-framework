@@ -28,7 +28,8 @@ namespace Headless.Messaging.Retry;
 /// its own row. Stopping waits for that renewal instead, which the interval bounds.
 /// </para>
 /// <para>
-/// The cadence runs on the app clock, so a test advances it like any other schedule; the lease itself is stamped by
+/// The cadence runs on the app clock, so a test advances it like any other schedule; the bound on each renewal call
+/// runs on the back-off clock (<see cref="MessagingOptions.BackoffClockServiceKey"/>); the lease itself is stamped by
 /// the store's clock.
 /// </para>
 /// </remarks>
@@ -39,6 +40,7 @@ internal sealed class MessageLeaseRenewal : IAsyncDisposable
     private readonly TimeSpan _leaseDuration;
     private readonly TimeSpan _interval;
     private readonly TimeProvider _clock;
+    private readonly TimeProvider _backoffClock;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _attempt;
     private readonly CancellationTokenSource _stopping = new();
@@ -53,6 +55,7 @@ internal sealed class MessageLeaseRenewal : IAsyncDisposable
         TimeSpan leaseDuration,
         TimeSpan interval,
         TimeProvider clock,
+        TimeProvider backoffClock,
         ILogger logger,
         CancellationToken attemptToken
     )
@@ -62,6 +65,7 @@ internal sealed class MessageLeaseRenewal : IAsyncDisposable
         _leaseDuration = leaseDuration;
         _interval = interval;
         _clock = clock;
+        _backoffClock = backoffClock;
         _logger = logger;
         _attempt = CancellationTokenSource.CreateLinkedTokenSource(attemptToken);
         _lastConfirmedAt = clock.GetTimestamp();
@@ -83,6 +87,7 @@ internal sealed class MessageLeaseRenewal : IAsyncDisposable
         Func<MediumMessage, TimeSpan, CancellationToken, ValueTask<bool>> renew,
         RetryPolicyOptions policy,
         TimeProvider clock,
+        TimeProvider backoffClock,
         ILogger logger,
         CancellationToken attemptToken
     )
@@ -93,6 +98,7 @@ internal sealed class MessageLeaseRenewal : IAsyncDisposable
             policy.DispatchTimeout,
             policy.ResolveLeaseRenewalInterval(),
             clock,
+            backoffClock,
             logger,
             attemptToken
         );
@@ -146,9 +152,9 @@ internal sealed class MessageLeaseRenewal : IAsyncDisposable
             bool renewed;
             try
             {
-                // Bounded by one interval, not by the stop signal; see the remarks. The bound waits real time: on an
-                // app clock that a test host fakes and never advances, a hung store call would never time out.
-                using var timeout = new CancellationTokenSource(_interval, TimeProvider.System);
+                // Bounded by one interval, not by the stop signal; see the remarks. The bound runs on the back-off
+                // clock: on an app clock that a test host fakes and never advances, a hung store call would never end.
+                using var timeout = new CancellationTokenSource(_interval, _backoffClock);
                 renewed = await _renew(_message, _leaseDuration, timeout.Token).ConfigureAwait(false);
             }
             catch (NotSupportedException)

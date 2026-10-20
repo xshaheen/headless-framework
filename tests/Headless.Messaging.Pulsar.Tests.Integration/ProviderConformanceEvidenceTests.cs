@@ -2,6 +2,7 @@
 
 using Headless.Testing.Tests;
 using Tests.Capabilities;
+using Tests.Guarantees;
 using Tests.RequestReply;
 
 namespace Tests;
@@ -9,6 +10,10 @@ namespace Tests;
 [Collection("Pulsar")]
 public sealed class ProviderConformanceEvidenceTests(PulsarFixture fixture) : TestBase
 {
+    [Fact]
+    public void should_run_every_guarantee_this_provider_inherits() =>
+        GuaranteeBindings.GetLeafErrors(typeof(ProviderConformanceEvidenceTests).Assembly).Should().BeEmpty();
+
     [Fact]
     public Task should_prove_routing_affinity_mapping_or_rejection() =>
         TransportRoutingAffinityConformance.AssertAsync(new PulsarProviderConformanceDriver(fixture), AbortToken);
@@ -26,6 +31,21 @@ public sealed class ProviderConformanceEvidenceTests(PulsarFixture fixture) : Te
         var profile = TransportConformanceManifest.Providers["Pulsar"];
         TransportConformanceTestBinding[] bindings =
         [
+            new(
+                TransportConformanceScenario.ConnectionDropRecovery,
+                typeof(PulsarNetworkFaultTests),
+                nameof(PulsarNetworkFaultTests.should_stop_consuming_while_the_proxy_is_cut_and_resume_once_after)
+            ),
+            new(
+                TransportConformanceScenario.ConnectionDropRecovery,
+                typeof(PulsarNetworkFaultTests),
+                nameof(PulsarNetworkFaultTests.should_resume_delivery_once_after_the_connection_is_dropped)
+            ),
+            new(
+                TransportConformanceScenario.PublishDuringOutage,
+                typeof(PulsarNetworkFaultTests),
+                nameof(PulsarNetworkFaultTests.should_keep_consuming_after_publishes_during_an_outage)
+            ),
             new(
                 TransportConformanceScenario.RawPayloadConsumption,
                 typeof(PulsarRawPayloadTests),
@@ -65,6 +85,12 @@ public sealed class ProviderConformanceEvidenceTests(PulsarFixture fixture) : Te
                 nameof(PulsarBrokerFaultTests.should_resume_delivery_once_after_consumer_pause)
             ),
             _Bind(
+                TransportConformanceScenario.StaleSettlement,
+                nameof(
+                    PulsarConsumerClientHarnessTests.should_not_settle_another_delivery_when_a_settled_value_is_used_again
+                )
+            ),
+            _Bind(
                 TransportConformanceScenario.BoundedGracefulShutdown,
                 nameof(PulsarConsumerClientHarnessTests.should_shutdown_idle_consumer_within_bound)
             ),
@@ -98,6 +124,26 @@ public sealed class ProviderConformanceEvidenceTests(PulsarFixture fixture) : Te
                 TransportConformanceScenario.RequestReplyStartupRejection,
                 typeof(ProviderConformanceEvidenceTests),
                 nameof(should_reject_requests_and_responders_at_startup_on_a_transport_without_request_reply)
+            ),
+            _Bind(
+                TransportConformanceScenario.StandardHeaderRoundTrip,
+                nameof(PulsarConsumerClientHarnessTests.should_round_trip_every_standard_header_unchanged)
+            ),
+            _Bind(
+                TransportConformanceScenario.HandlerConcurrencyCap,
+                nameof(
+                    PulsarConsumerClientHarnessTests.should_never_hand_over_more_deliveries_at_once_than_the_requested_concurrency
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.PerKeyOrdering,
+                nameof(PulsarConsumerClientHarnessTests.should_deliver_the_messages_of_one_key_in_publish_order)
+            ),
+            _Bind(
+                TransportConformanceScenario.BodySizeLimit,
+                nameof(
+                    PulsarConsumerClientHarnessTests.should_round_trip_a_body_at_the_size_limit_and_refuse_one_byte_more
+                )
             ),
         ];
 

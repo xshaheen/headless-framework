@@ -39,6 +39,10 @@ public static partial class MessagingDashboardEndpoints
         MessagingDashboardOptionsBuilder config
     )
     {
+        // The dashboard runs in an app.Map(basePath) branch, so an application document would list its endpoints under
+        // the wrong path (/api/... instead of {basePath}/api/...); the dashboard SPA is their only client, so every one
+        // is excluded from API descriptions.
+
         // Auth endpoints (always anonymous)
         endpoints
             .MapGet("/api/auth/info", _GetAuthInfo)
@@ -46,7 +50,8 @@ public static partial class MessagingDashboardEndpoints
             .WithSummary("Get authentication configuration")
             .WithTags("Messaging Dashboard")
             .RequireCors("HeadlessMessagingDashboardCORS")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .ExcludeFromDescription();
 
         endpoints
             .MapPost("/api/auth/validate", _ValidateAuth)
@@ -54,7 +59,8 @@ public static partial class MessagingDashboardEndpoints
             .WithSummary("Validate authentication credentials")
             .WithTags("Messaging Dashboard")
             .RequireCors("HeadlessMessagingDashboardCORS")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .ExcludeFromDescription();
 
         // Always-anonymous endpoints
         endpoints
@@ -63,14 +69,16 @@ public static partial class MessagingDashboardEndpoints
             .WithSummary("Health check endpoint")
             .WithTags("Messaging Dashboard")
             .RequireCors("HeadlessMessagingDashboardCORS")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .ExcludeFromDescription();
 
         // Protected API group with gateway proxy filter
         var apiGroup = endpoints
             .MapGroup("/api")
             .WithTags("Messaging Dashboard")
             .RequireCors("HeadlessMessagingDashboardCORS")
-            .AddEndpointFilter<GatewayProxyEndpointFilter>();
+            .AddEndpointFilter<GatewayProxyEndpointFilter>()
+            .ExcludeFromDescription();
 
         // Apply host auth if configured
         if (config.Auth.Mode == AuthMode.Host)

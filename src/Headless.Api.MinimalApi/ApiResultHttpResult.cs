@@ -6,7 +6,6 @@ using Headless.Primitives;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
-using Microsoft.AspNetCore.Mvc;
 
 #pragma warning disable CA1000 // IEndpointMetadataProvider requires a static member on the returned generic type.
 namespace Headless.Api;
@@ -41,7 +40,7 @@ public sealed class ApiResultHttpResult<T> : IResult, IEndpointMetadataProvider,
     {
         Argument.IsNotNull(method);
         Argument.IsNotNull(builder);
-        ApiResultHttpResultMetadata.Populate(builder, StatusCodes.Status200OK, typeof(T));
+        ApiResultResponseMetadata.Populate(builder, StatusCodes.Status200OK, typeof(T));
     }
 }
 
@@ -72,36 +71,6 @@ public sealed class ApiResultHttpResult : IResult, IEndpointMetadataProvider, IS
     {
         Argument.IsNotNull(method);
         Argument.IsNotNull(builder);
-        ApiResultHttpResultMetadata.Populate(builder, StatusCodes.Status204NoContent, successType: null);
-    }
-}
-
-file static class ApiResultHttpResultMetadata
-{
-    private static readonly int[] _ProblemStatusCodes =
-    [
-        StatusCodes.Status401Unauthorized,
-        StatusCodes.Status403Forbidden,
-        StatusCodes.Status404NotFound,
-        StatusCodes.Status409Conflict,
-        StatusCodes.Status422UnprocessableEntity,
-    ];
-
-    public static void Populate(EndpointBuilder builder, int successStatusCode, Type? successType)
-    {
-        builder.Metadata.Add(
-            new ProducesResponseTypeMetadata(
-                successStatusCode,
-                successType,
-                successType is null ? [] : ["application/json"]
-            )
-        );
-
-        foreach (var statusCode in _ProblemStatusCodes)
-        {
-            builder.Metadata.Add(
-                new ProducesResponseTypeMetadata(statusCode, typeof(ProblemDetails), ["application/problem+json"])
-            );
-        }
+        ApiResultResponseMetadata.Populate(builder, StatusCodes.Status204NoContent, successType: null);
     }
 }

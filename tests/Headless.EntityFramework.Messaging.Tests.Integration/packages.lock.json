@@ -900,7 +900,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.13, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.13, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.13, )",
-          "OpenTelemetry.Api": "[1.19.1, )"
+          "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
       "headless.jobs": {
@@ -913,7 +913,7 @@
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "NCrontab.Signed": "[3.4.0, )",
-          "OpenTelemetry.Api": "[1.19.1, )",
+          "OpenTelemetry.Api": "[1.20.1, )",
           "Polly.Core": "[8.8.0, )"
         }
       },
@@ -958,7 +958,7 @@
           "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.Extensions.Diagnostics": "[10.0.13, )",
           "Microsoft.Extensions.Options": "[10.0.13, )",
-          "OpenTelemetry.Api": "[1.19.1, )",
+          "OpenTelemetry.Api": "[1.20.1, )",
           "Polly.Core": "[8.8.0, )",
           "System.Threading.RateLimiting": "[10.0.13, )"
         }
@@ -992,12 +992,48 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )"
         }
       },
+      "headless.messaging.rabbitmq": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging": "[1.0.0, )",
+          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
+          "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
+          "RabbitMQ.Client": "[7.2.2, )"
+        }
+      },
+      "headless.messaging.storage.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging": "[1.0.0, )"
+        }
+      },
       "headless.messaging.storage.postgresql": {
         "type": "Project",
         "dependencies": {
           "Headless.Messaging": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
+        }
+      },
+      "headless.messaging.tests.harness": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.6.0, )",
+          "AwesomeAssertions.Json": "[9.0.0, )",
+          "Bogus": "[35.6.5, )",
+          "Headless.EntityFramework": "[1.0.0, )",
+          "Headless.Messaging": "[1.0.0, )",
+          "Headless.Messaging.Abstractions": "[1.0.0, )",
+          "Headless.Messaging.InMemory": "[1.0.0, )",
+          "Headless.Messaging.Storage.InMemory": "[1.0.0, )",
+          "Headless.MultiTenancy": "[1.0.0, )",
+          "Headless.Testing": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.13, )",
+          "Microsoft.Extensions.Hosting": "[10.0.13, )",
+          "NSubstitute": "[6.2.0, )",
+          "Testcontainers": "[4.16.0, )",
+          "xunit.v3.assert": "[4.0.2, )",
+          "xunit.v3.extensibility.core": "[4.0.2, )"
         }
       },
       "headless.multitenancy": {
@@ -1058,7 +1094,7 @@
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )",
-          "OpenTelemetry.Api": "[1.19.1, )"
+          "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
       "headless.sql.abstractions": {
@@ -1445,15 +1481,24 @@
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",
-        "requested": "[1.19.1, )",
-        "resolved": "1.19.1",
-        "contentHash": "9JKIH+xrV0HNTFjQC8zrx9gZpDOMEljN5Htg/U0VE2IvO3N+7bKALCCsGy5tp09marX5dd8UkrgQFoLaulIBRw=="
+        "requested": "[1.20.1, )",
+        "resolved": "1.20.1",
+        "contentHash": "QO9hlwadOdJGR4vDpJyDnl9B62v7epIBSTIHUA4C+bCtrRaB4TWmYSnu3QVOIe7caH8dt7NaHRei6zebESJJyw=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",
         "requested": "[8.8.0, )",
         "resolved": "8.8.0",
         "contentHash": "TewV9uNFsoRFggoFbTAGFwsMYPuckA+wTIpQPyhLL9BANRPQRENz2S4bwATrB3HBOakN5oKLFIllPiDnVecmJg=="
+      },
+      "RabbitMQ.Client": {
+        "type": "CentralTransitive",
+        "requested": "[7.2.2, )",
+        "resolved": "7.2.2",
+        "contentHash": "k4b6RnTXpLbsF96V93ooNYxgPMnoA2tEm24B6AXNJr1mG8wwNYdA1XJtgU66L5xqeGyveS7SJriRzlX3cbqQNA==",
+        "dependencies": {
+          "System.Threading.RateLimiting": "8.0.0"
+        }
       },
       "SSH.NET": {
         "type": "CentralTransitive",
