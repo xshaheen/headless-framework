@@ -331,13 +331,7 @@ public static class MessagingGuarantees
             GuaranteeArea.Settlement,
             realSystem: false,
             "A header builder that throws a transient error leads to redelivery, then dead-letter once the retry budget is spent."
-        ) with
-        {
-            Status = GuaranteeStatus.Unsupported,
-            Rationale =
-                "Amazon SQS and Redis settle a CustomHeadersBuilder exception as a malformed envelope and drop the message, so a transient builder failure is never redelivered.",
-            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1199",
-        },
+        ),
         // Inbox
         _Bound(
             "MSG-INBOX-01",
