@@ -148,20 +148,13 @@ PROOF = $(PYTHON) scripts/proof.py
 # test-failed reads the newest -verify, -test, or -integration bundle, which is always kept. PROOF_KEEP=0 keeps every
 # bundle.
 PROOF_KEEP ?= 3
-# Heavy gates share one machine with every other worktree and session, so each one runs its recipe (the gated-<name>
-# target) only while it holds a machine-wide slot; scripts/gate-slot.py waits for a free slot and names who holds
-# each busy one. Build-and-unit gates share GATE_SLOTS slots. test-affected-integration takes one of
-# GATE_INTEGRATION_SLOTS instead: TEST_MAX_PARALLEL stays at 3 because six integration modules at once broke
-# timing-sensitive suites, and two integration gates side by side would be six. Setting a pool's size to 0 lifts
-# only that pool's limit, and a gate nested in another holds no second slot.
-GATE_SLOTS ?= 2
-GATE_INTEGRATION_SLOTS ?= 1
-export GATE_SLOTS GATE_INTEGRATION_SLOTS
-# $(MAKE) stays in each recipe line, not in these variables, so `make -n` still runs the sub-make and prints the recipe.
-GATE_SLOT = $(PYTHON) scripts/gate-slot.py --label '$@ in $(CURDIR)' --
-GATE_SLOT_INTEGRATION = $(PYTHON) scripts/gate-slot.py --pool integration --label '$@ in $(CURDIR)' --
-# A benchmark's timings mean nothing beside another gate, so it waits for the whole machine.
-GATE_SLOT_EXCLUSIVE = $(PYTHON) scripts/gate-slot.py --exclusive --pool gate --pool integration --label '$@ in $(CURDIR)' --
+# Heavy gates share one machine with every other worktree, repository, and session, so each runs its recipe (the
+# gated-<name> target) behind a runner prefix that the machine may set: GATE_RUNNER for build-and-unit gates,
+# CONTAINER_GATE_RUNNER for gates that start containers, EXCLUSIVE_GATE_RUNNER for runs that need the machine to
+# themselves. A runner is expected to queue the command on a machine-wide limit and run it unchanged; unset, as in CI,
+# the prefix expands to nothing. Container gates get their own runner because TEST_MAX_PARALLEL stays at 3: six
+# integration modules at once broke timing-sensitive suites, and two integration gates side by side would be six.
+# $(MAKE) stays in each recipe line, not in a variable, so `make -n` still runs the sub-make and prints the recipe.
 # One timestamp per make invocation, so every stage of a target writes into the same bundle.
 PROOF_RUN := $(ARTIFACTS_DIR)/proof/$(shell date -u +%Y%m%dT%H%M%SZ)
 # Coverage costs ~0.4 s per test module plus a merge (~20 s on a whole-solution run), so the inner loop skips
@@ -952,7 +945,7 @@ build-affected: ## Build the affected projects (changed + direct dependents + th
 
 .PHONY: test-affected
 test-affected: ## Build the affected set, then run its *.Tests.Unit projects; writes a proof bundle under artifacts/proof/.
-	@$(GATE_SLOT) $(MAKE) --no-print-directory gated-$@
+	@$(GATE_RUNNER) $(MAKE) --no-print-directory gated-$@
 
 .PHONY: gated-test-affected
 gated-test-affected:
@@ -970,7 +963,7 @@ gated-test-affected:
 # the affected integration suites, both with coverage, and holds those packages' changed lines to the floors. With no
 # such package edited (a build-wide change, say) it runs the integration suites without coverage, which costs less.
 test-affected-integration: ## Build the affected set, run its integration tests, and gate the changed lines of edited packages that own an integration project on merged unit + integration coverage (needs Docker; local only).
-	@$(GATE_SLOT_INTEGRATION) $(MAKE) --no-print-directory gated-$@
+	@$(CONTAINER_GATE_RUNNER) $(MAKE) --no-print-directory gated-$@
 
 .PHONY: gated-test-affected-integration
 gated-test-affected-integration:
@@ -987,7 +980,7 @@ gated-test-affected-integration:
 
 .PHONY: verify-affected
 verify-affected: ## Format-check the changed files, then build, unit-test (with coverage), gate unit coverage, and analyze the affected set, plus dashboard-<name>-test for a changed SPA; one proof bundle for the PR body.
-	@$(GATE_SLOT) $(MAKE) --no-print-directory gated-$@
+	@$(GATE_RUNNER) $(MAKE) --no-print-directory gated-$@
 
 .PHONY: gated-verify-affected
 gated-verify-affected:
@@ -1226,7 +1219,7 @@ BENCH_RUN = bench_run() { \
 
 .PHONY: bench
 bench: ## Run BENCH_AREA benchmarks for the working tree (BENCH_FILTER, BENCH_JOB=short); JSON under artifacts/benchmark-runs/.
-	@$(GATE_SLOT_EXCLUSIVE) $(MAKE) --no-print-directory gated-$@
+	@$(EXCLUSIVE_GATE_RUNNER) $(MAKE) --no-print-directory gated-$@
 
 .PHONY: gated-bench
 gated-bench:
@@ -1235,7 +1228,7 @@ gated-bench:
 
 .PHONY: bench-compare
 bench-compare: ## Run BENCH_AREA benchmarks at BASE (default AFFECTED_BASE) and for the working tree; print a before/after table.
-	@$(GATE_SLOT_EXCLUSIVE) $(MAKE) --no-print-directory gated-$@
+	@$(EXCLUSIVE_GATE_RUNNER) $(MAKE) --no-print-directory gated-$@
 
 .PHONY: gated-bench-compare
 gated-bench-compare:
