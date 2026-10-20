@@ -242,4 +242,65 @@ public sealed class RedisConsumerConformanceTests(RedisMessagingFixture fixture)
         (await replacement.RemainsEmptyAsync(TimeSpan.FromSeconds(2), AbortToken)).Should().BeTrue();
         Volatile.Read(ref consumeErrors).Should().Be(1);
     }
+
+    [Fact]
+    public async Task should_leave_the_entry_pending_and_reclaim_it_when_the_custom_headers_builder_fails()
+    {
+        // given: a builder whose lookup times out on the first attempt only
+        var destination = $"builder-{Guid.NewGuid():N}";
+        var group = $"group-{Guid.NewGuid():N}";
+        var attempts = 0;
+        var consumeErrors = 0;
+        await using var session = await fixture.CreateSessionAsync(
+            MessageLane.Queue,
+            destination,
+            group,
+            AbortToken,
+            onConsumeError: _ =>
+            {
+                Interlocked.Increment(ref consumeErrors);
+                return Task.CompletedTask;
+            },
+            configure: redis =>
+                redis.CustomHeadersBuilder = (_, _) =>
+                    Interlocked.Increment(ref attempts) == 1
+                        ? throw new TimeoutException("The header lookup timed out.")
+                        : []
+        );
+        await session.StartAsync(cancellationToken: AbortToken);
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
+        var database = connection.GetDatabase();
+        var stream = RedisPhysicalAddress.QueueStream(destination);
+        var message = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = Guid.NewGuid().ToString("N"),
+                [Headers.MessageName] = destination,
+                [Headers.Intent] = nameof(MessageLane.Queue),
+            },
+            "pending"u8.ToArray()
+        );
+
+        // when
+        (await session.PublishAsync(message, AbortToken))
+            .Succeeded.Should()
+            .BeTrue();
+        using (var timeout = TimeSpan.FromSeconds(10).ToCancellationTokenSource(AbortToken))
+        {
+            while (Volatile.Read(ref consumeErrors) == 0)
+            {
+                await Task.Delay(20, timeout.Token);
+            }
+        }
+
+        // then: the failure acknowledged nothing, and the claim pass hands the same entry over again
+        (await database.StreamPendingAsync(stream, group))
+            .PendingMessageCount.Should()
+            .Be(1);
+        var delivery = await session.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        delivery.Message.Id.Should().Be(message.Id);
+        Volatile.Read(ref attempts).Should().Be(2);
+        await session.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
+        (await database.StreamPendingAsync(stream, group)).PendingMessageCount.Should().Be(0);
+    }
 }

@@ -283,22 +283,26 @@ public sealed class RedisConsumerClientRawPayloadTests : TestBase
     }
 
     [Fact]
-    public async Task should_settle_an_entry_as_malformed_when_the_custom_headers_builder_throws()
+    public async Task should_leave_the_entry_pending_when_the_custom_headers_builder_throws()
     {
-        // given
+        // given: a builder whose lookup is briefly down must not cost the entry
         var entry = new StreamEntry(_EntryId, [new NameValueEntry("body", "{}"u8.ToArray())]);
         var options = new RedisMessagingOptions
         {
-            CustomHeadersBuilder = (_, _) => throw new InvalidOperationException("builder failed"),
+            CustomHeadersBuilder = (_, _) => throw new TimeoutException("lookup of secret-header timed out"),
         };
 
         // when
         var (message, error) = await _ConsumeAsync(_RawStream, _RawName, entry, options);
 
-        // then
+        // then: the claim pass hands the unacknowledged entry out again
         message.Should().BeNull();
-        error.Should().NotBeNull();
-        await _streams.Received(1).Ack(_RawStream, "group", _EntryId, CancellationToken.None);
+        error!.Exception.Message.Should().Contain(_EntryId).And.Contain(nameof(TimeoutException));
+        error.Exception.Message.Should().NotContain("secret-header");
+        error.Exception.InnerException.Should().BeNull();
+        await _streams
+            .DidNotReceive()
+            .Ack(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     private RedisConsumerClient _CreateClient(RedisMessagingOptions options, MessageLane lane = MessageLane.Queue)

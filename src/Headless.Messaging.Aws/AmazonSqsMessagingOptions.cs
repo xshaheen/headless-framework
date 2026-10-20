@@ -78,8 +78,11 @@ public sealed class AmazonSqsMessagingOptions
     /// </summary>
     /// <remarks>
     /// Runs after the header bag is read, and each returned header overwrites the wire value of the same name. The
-    /// transport address is stamped afterwards, so the callback cannot choose it. A callback that throws settles the
-    /// message as a malformed envelope: it is logged and deleted without a handler.
+    /// transport address is stamped afterwards, so the callback cannot choose it. A callback that throws does not settle
+    /// the message: the failure is logged, no handler runs, and the message is released for SQS to hand out again a few
+    /// seconds later, so a builder whose lookup is briefly down costs no message. Give the queue a redrive policy: its
+    /// <c>maxReceiveCount</c> moves a message whose builder keeps failing to the dead-letter queue, and without one SQS
+    /// hands the message out again until the queue's retention period removes it.
     /// </remarks>
     public Func<
         Amazon.SQS.Model.Message,
