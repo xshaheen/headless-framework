@@ -771,7 +771,6 @@
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
-          "FileSignatures": "[7.3.0, )",
           "FluentValidation": "[12.2.0, )",
           "Headless.Extensions": "[1.0.0, )"
         }
@@ -904,15 +903,6 @@
           "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.13, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )"
-        }
-      },
-      "FileSignatures": {
-        "type": "CentralTransitive",
-        "requested": "[7.3.0, )",
-        "resolved": "7.3.0",
-        "contentHash": "jFvEf1Orm5VMH9gZ9aM7Rlu762CBm3zjYApaA9E/EkvO6CnvcDjbgRowmyk2c3y6LtI3D6DpYaU8y9+0lt0BuQ==",
-        "dependencies": {
-          "OpenMcdf": "3.1.4"
         }
       },
       "FluentValidation": {
@@ -1271,12 +1261,6 @@
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.4, 11.0.0)",
           "Npgsql": "10.0.3"
         }
-      },
-      "OpenMcdf": {
-        "type": "CentralTransitive",
-        "requested": "[3.3.0, )",
-        "resolved": "3.3.0",
-        "contentHash": "a7lcs+yTDzPRRS82KMmU/eVCMKbJrDStD1Yt+6RRZIsDxU006IdxEVkmMLvxt2hB5YS3Imfcxrdwywtv29ogjw=="
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",

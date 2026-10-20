@@ -14,15 +14,6 @@
         "resolved": "0.1.2",
         "contentHash": "RQdzUtFVhwLwisP2Du7Ugm7ldwAzc+QJrlZWNIwHXcgq4b5fLwZgdN1203RdYiHS8OOALophC6yWekxu3UgN2g=="
       },
-      "FileSignatures": {
-        "type": "Direct",
-        "requested": "[7.3.0, )",
-        "resolved": "7.3.0",
-        "contentHash": "jFvEf1Orm5VMH9gZ9aM7Rlu762CBm3zjYApaA9E/EkvO6CnvcDjbgRowmyk2c3y6LtI3D6DpYaU8y9+0lt0BuQ==",
-        "dependencies": {
-          "OpenMcdf": "3.1.4"
-        }
-      },
       "FluentValidation": {
         "type": "Direct",
         "requested": "[12.2.0, )",
@@ -225,12 +216,6 @@
         "requested": "[2.5.0, )",
         "resolved": "2.5.0",
         "contentHash": "l0OuzZ2T/botMbOvPGY6yp3v+69aMrt+wzST/tFdGnHEFVXbbdOFxu3bfo9XH1N1H0LCQlA3RmFvlPO8zA+faw=="
-      },
-      "OpenMcdf": {
-        "type": "CentralTransitive",
-        "requested": "[3.3.0, )",
-        "resolved": "3.3.0",
-        "contentHash": "a7lcs+yTDzPRRS82KMmU/eVCMKbJrDStD1Yt+6RRZIsDxU006IdxEVkmMLvxt2hB5YS3Imfcxrdwywtv29ogjw=="
       }
     }
   }
