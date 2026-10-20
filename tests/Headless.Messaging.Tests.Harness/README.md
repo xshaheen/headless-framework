@@ -144,7 +144,7 @@ That policy holds only while the real brokers keep passing, so `.github/workflow
 | `ConnectionDropRecovery` | S | S | S | S | S | U | U | U | S | S |
 | `PublishDuringOutage` | S | U | S | S | S | U | U | U | S | S |
 | `StaleSettlement` | S | U | S | S | S | U | S‡ | U | S | S |
-| `HandlerFailureRedelivery` | S | U | S | U | U | U | S‡ | U | S | S |
+| `HandlerFailureRedelivery` | S | U | S | S | U | U | S‡ | U | S | S |
 | `BoundedGracefulShutdown` | S | S | S | S | S | S† | U | S | S | S |
 | `BusConsumerIdentityFanOut` | S | S | S | N/A | S | S† | N/A | S | S | S |
 | `BusReplicaCompetition` | S | S | S | N/A | S | S† | N/A | S | S | S |

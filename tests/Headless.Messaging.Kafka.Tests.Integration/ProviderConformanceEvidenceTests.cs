@@ -94,6 +94,12 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
                 )
             ),
             _Bind(
+                TransportConformanceScenario.HandlerFailureRedelivery,
+                nameof(
+                    KafkaConsumerClientConformanceTests.should_keep_the_delivery_and_the_listener_when_the_callback_throws
+                )
+            ),
+            _Bind(
                 TransportConformanceScenario.BoundedGracefulShutdown,
                 nameof(KafkaConsumerClientConformanceTests.should_shutdown_idle_consumer_within_bound)
             ),
