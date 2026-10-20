@@ -475,7 +475,7 @@ builder.Services.AddHeadlessApiSurface("portal", surface =>
 });
 ```
 
-For an atomic batch, use `AddHeadlessApiSurfaces(surfaces => surfaces.Add("portal").Add("console"))`. Its `ApiSurfacesBuilder` validates every definition before registering any from the batch. Both registration methods return `IServiceCollection` for chaining and may be combined before document inference. Document names and titles are inferred; override `surface.OpenApi.DocumentName` and `.Title` only when needed.
+For an atomic batch, use `AddHeadlessApiSurfaces(surfaces => surfaces.Add("portal").Add("console"))`. Its `ApiSurfacesBuilder` validates every definition before registering any from the batch. Both registration methods return `IServiceCollection` for chaining and may be combined before document inference. Document names and titles are inferred; override `surface.OpenApi.DocumentName` and `.Title` only when needed. `surface.OpenApi.StandardProblemResponses` (`null` by default, inheriting the API-wide setting) turns the 404/409/422 problem responses on or off in the surface's documents; an endpoint, group, controller, or action marker overrides it.
 
 `DefaultAuthorizationPolicy` adds a native named policy alongside endpoint policies. `[AllowAnonymous]` / `.AllowAnonymous()` still bypass authorization. `DefaultTenancyMode = ApiSurfaceTenancyMode.RequireTenant` requires a policy containing `TenantRequirement`, the Headless tenant authorization handler, and current-tenant services. The mode alone does not install enforcement. Configure these through `AddHeadlessTenancy(...)` as shown above.
 
@@ -1045,11 +1045,11 @@ Framework integration for ASP.NET Core Minimal APIs: JSON configuration, mediato
 ### API and behavior
 
 - `ConfigureHeadlessMinimalApi()` — applies the Headless JSON conventions to Minimal API `JsonOptions`, indented in Development and Test. It registers nothing else: exception handling comes from `AddHeadlessProblemDetails()` in `Headless.Api`, and validation is per endpoint or per group (below).
-- `ApiResult<T>.ToHttpResult()`, `ApiResult.ToHttpResult()`, and `ApiResult<T>.ToCreatedHttpResult(value => location)` — 200 with the value, 204, or 201 with a `Location` field on success, and the error's problem-details response on failure. They return `ApiResultHttpResult<T>`, `ApiResultHttpResult`, and `ApiResultCreatedHttpResult<T>`, which publish the success type and the 400/401/403/404/409/422 problem responses to OpenAPI. The problem body is built when the result executes, from the request's `IProblemDetailsCreator`, so the endpoint never injects the creator. `ApiResultError.ToHttpResult(creator)` returns a plain `ProblemHttpResult` for composing your own `Results<...>` union.
+- `ApiResult<T>.ToHttpResult()`, `ApiResult.ToHttpResult()`, and `ApiResult<T>.ToCreatedHttpResult(value => location)` — 200 with the value, 204, or 201 with a `Location` field on success, and the error's problem-details response on failure. They return `ApiResultHttpResult<T>`, `ApiResultHttpResult`, and `ApiResultCreatedHttpResult<T>`, which publish only the success type to OpenAPI; `Headless.OpenApi` documents the error responses on every operation, whatever the handler returns (see [openapi.md](openapi.md#headlessopenapi)). The problem body is built when the result executes, from the request's `IProblemDetailsCreator`, so the endpoint never injects the creator. `ApiResultError.ToHttpResult(creator)` returns a plain `ProblemHttpResult` for composing your own `Results<...>` union.
 - `ISender.DispatchAsync(request, ct)` and `ISender.DispatchCreatedAsync(request, value => location, ct)` (`HeadlessSenderExtensions`) — send a `Mediator` request whose handler returns `ApiResult` or `ApiResult<T>`, and return the matching result type above. A `null` request answers 400 without reaching the mediator, as the MVC `ApiControllerBase` helpers do.
 - `MapGetRequest`, `MapDeleteRequest`, `MapPostRequest`, `MapPutRequest`, `MapPatchRequest` (`HeadlessRequestEndpointRouteBuilderExtensions`) — map a route whose whole handler is bind, dispatch, respond. `<TRequest, TResponse>` returns 200 with the value; `<TRequest>` returns 204. `MapPostRequest<TRequest, TResponse>(pattern, value => location)` returns 201.
-- `.ValidateArguments()` on a route group or endpoint — validates each handler argument that has a registered `IValidator<T>`. `.Validate<T>()` on one endpoint — validates one argument type with `MinimalApiValidatorFilter<T>`. Both answer 422 and document it; `.Validate<T>()` also answers and documents 400 when the argument is missing. Neither adds a status the endpoint already documents.
-- `.ProducesStandardProblems()` on a route group or endpoint — documents the 400/401/403/404/409/422/429 problem responses.
+- `.ValidateArguments()` on a route group or endpoint — validates each handler argument that has a registered `IValidator<T>`. `.Validate<T>()` on one endpoint — validates one argument type with `MinimalApiValidatorFilter<T>`. Both answer 422; `.Validate<T>()` also answers 400 when the argument is missing. Neither adds response metadata: `Headless.OpenApi` documents the 400 on every operation that binds a value and the 422 on every operation.
+- `.WithoutStandardProblemResponses()` / `.WithStandardProblemResponses()` on a route group, endpoint, or `MapApiSurface(...)` (from `Headless.Api`) — leaves the 404/409/422 problem responses out of the OpenAPI document, or puts them back; the innermost setting wins.
 - `app.MapApiSurface(name)` — maps a surface's route group with its prefix, authorization, tenancy, and OpenAPI tag defaults.
 - Entity-tag concurrency via `.WithEntityTag()` and `.RequireIfMatch()` endpoint filters.
 - The extensions and result types live in `Headless.Api`, the namespace the rest of the package's endpoint API uses, so a file that imports `Headless.Api` and `Headless.Primitives` (for `ApiResult`) sees them; do not write a local bridge.
@@ -1084,7 +1084,7 @@ app.MapHeadlessEndpoints();
 
 // This app validates at the endpoint and does not register AddMediatorValidationRequestBehavior(); an app that
 // does should drop ValidateArguments() here, or each request's validators run twice.
-var orders = app.MapGroup("/orders").WithTags("Orders").ProducesStandardProblems().ValidateArguments();
+var orders = app.MapGroup("/orders").WithTags("Orders").ValidateArguments();
 
 // Bind, dispatch, respond: GetOrder binds {id} with [AsParameters]; CreateOrder binds from the body.
 orders.MapGetRequest<GetOrder, OrderView>("/{id:guid}").WithEntityTag();
@@ -1127,10 +1127,10 @@ public sealed record RenameOrder(Guid Id, string Name) : IRequest<ApiResult>;
 
 #### API surfaces
 
-After `AddHeadlessApiSurface(...)`, `app.MapApiSurface("portal")` returns a native `RouteGroupBuilder` with the configured prefix and named authorization policy. The optional callback and returned builder support ordinary ASP.NET Core endpoint conventions, including `ProducesStandardProblems()` and `ValidateArguments()` for the whole surface. The example assumes the app does not register `AddMediatorValidationRequestBehavior()`; see "Validate a mediator request in one place" under Design constraints above.
+After `AddHeadlessApiSurface(...)`, `app.MapApiSurface("portal")` returns a native `RouteGroupBuilder` with the configured prefix and named authorization policy. The optional callback and returned builder support ordinary ASP.NET Core endpoint conventions, including `ValidateArguments()` and `WithoutStandardProblemResponses()` for the whole surface. The example assumes the app does not register `AddMediatorValidationRequestBehavior()`; see "Validate a mediator request in one place" under Design constraints above.
 
 ```csharp
-var portal = app.MapApiSurface("portal").ProducesStandardProblems().ValidateArguments();
+var portal = app.MapApiSurface("portal").ValidateArguments();
 portal.MapGet("profile", () => "profile");
 portal.MapGet("bootstrap", () => "bootstrap").AllowMissingTenant();
 portal.MapGet("status", () => "ready").AllowAnonymous();
@@ -1151,7 +1151,7 @@ builder.Services.AddHeadlessMinimalApiEntityTagConcurrency(options =>
 
 - `MapApiSurface` adds group route, authorization, tenancy, and default-tag conventions using the shared surface registry.
 - `ConfigureHeadlessMinimalApi` configures `JsonOptions` for Minimal APIs and nothing else.
-- Returning an `ApiResult` result type makes the full response set discoverable by OpenAPI without manual `.Produces(...)` calls. `ProducesStandardProblems()`, `ValidateArguments()`, and `.Validate<T>()` add a problem status only when the endpoint does not already document it, so no status is listed twice.
+- Returning an `ApiResult` result type publishes its success response to OpenAPI without manual `.Produces(...)` calls. The error responses come from `Headless.OpenApi`, the same for an endpoint that returns a plain value and throws, so no endpoint needs `.ProducesProblem(...)` for 404, 409, or 422.
 - A `ForbiddenError` writes its descriptor's description, after `IErrorDescriptionLocalizer`, as the problem `detail`; so does an `UnauthorizedError` that carries a descriptor. MVC `ToActionResult` shares the mapping. An error's `Metadata` stays on the wire as the descriptor's `params` in the `errors` extension; it is not copied to top-level problem fields.
 - An empty body on a `Map{Post,Put,Patch}Request` route, or a JSON `null`, answers a problem-details 400 before the mediator runs. A body that is not valid JSON gets the framework's bare 400, which `UseStatusCodesRewriter()` turns into problem details.
 - `ValidateArguments()` runs every validator of every validated argument one after another, each with its own validation context, and returns all failures as one 422. An optional argument the request omitted is skipped.
@@ -1170,7 +1170,7 @@ Framework integration for ASP.NET Core MVC/Web API with controllers, filters, JS
 - URL canonicalization middleware (`RedirectToCanonicalUrlRule`, registered via `UseRedirectToCanonicalUrl()`)
 - Pre-configured JSON and MVC options
 - Direct MVC `ObjectResult` responses carrying Headless-normalized `ProblemDetails` run `ProblemDetailsOptions.CustomizeProblemDetails` once before serialization
-- `ApiResult<T>.ToActionResult(...)` / `ApiResult.ToActionResult(...)` — exception-equivalent ProblemDetails mapping for expected failures, returning `ApiActionResult<T>` / `ApiActionResult`. An action that declares one of them as its return type (`Task<ApiActionResult<Order>>`) publishes the same OpenAPI response set as the Minimal API bridge: 200 with `T` (or a bodyless 204) and `application/problem+json` 401/403/404/409/422, with no `[ProducesResponseType]` attributes. MVC converts the result to the controller helper's typed result (`OkObjectResult`, `NotFoundObjectResult`, ...) before result filters run, so filters see the same results as before; `Result` exposes it to tests. `ApiResultError.ToActionResult(...)` still returns a plain `ActionResult` and publishes nothing. The extensions (`ApiResultMvcExtensions`) and both result types live in `Headless.Api`, as the Minimal API bridge does
+- `ApiResult<T>.ToActionResult(...)` / `ApiResult.ToActionResult(...)` — exception-equivalent ProblemDetails mapping for expected failures, returning `ApiActionResult<T>` / `ApiActionResult`. An action that declares one of them as its return type (`Task<ApiActionResult<Order>>`) publishes the same OpenAPI success response as the Minimal API bridge: 200 with `T`, or a bodyless 204, with no `[ProducesResponseType]` attributes. `Headless.OpenApi` documents its error responses, as it does for every action, so a base controller needs no problem `[ProducesResponseType]` attributes either. MVC converts the result to the controller helper's typed result (`OkObjectResult`, `NotFoundObjectResult`, ...) before result filters run, so filters see the same results as before; `Result` exposes it to tests. `ApiResultError.ToActionResult(...)` still returns a plain `ActionResult` and publishes nothing. The extensions (`ApiResultMvcExtensions`) and both result types live in `Headless.Api`, as the Minimal API bridge does
 - API versioning integration with API Explorer
 - Opt-in strong ETag responses and `If-Match` request validation
 
