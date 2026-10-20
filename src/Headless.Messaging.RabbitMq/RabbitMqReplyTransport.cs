@@ -57,6 +57,17 @@ internal sealed class RabbitMqReplyTransport(
         );
         cancellationToken.ThrowIfCancellationRequested();
 
+        // The caller's client would close the connection its reply listener shares on a body over its inbound limit.
+        if ((uint)reply.Body.Length > connectionChannelPool.MaxMessageBodySize)
+        {
+            throw new PublisherSentFailedException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The {reply.Body.Length}-byte reply body exceeds the {connectionChannelPool.MaxMessageBodySize}-byte limit a RabbitMQ consumer can receive (ConnectionFactory.MaxInboundMessageBodySize)."
+                )
+            );
+        }
+
         var channel = await connectionChannelPool.Rent(cancellationToken).ConfigureAwait(false);
         try
         {

@@ -29,6 +29,16 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
                 nameof(RabbitMqNetworkFaultTests.should_resume_delivery_once_after_the_connection_is_dropped)
             ),
             new(
+                TransportConformanceScenario.PublishDuringOutage,
+                typeof(RabbitMqNetworkFaultTests),
+                nameof(RabbitMqNetworkFaultTests.should_keep_consuming_after_publishes_during_an_outage)
+            ),
+            new(
+                TransportConformanceScenario.BrokerInterruptionRecovery,
+                typeof(RabbitMqBrokerFaultTests),
+                nameof(RabbitMqBrokerFaultTests.should_resume_delivery_once_after_broker_restart)
+            ),
+            new(
                 TransportConformanceScenario.RawPayloadConsumption,
                 typeof(RabbitMqRawPayloadTests),
                 nameof(RabbitMqRawPayloadTests.should_run_the_handler_once_when_a_raw_message_id_is_delivered_twice)
@@ -70,6 +80,18 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
             _Bind(
                 TransportConformanceScenario.BoundedGracefulShutdown,
                 nameof(RabbitMqConsumerClientConformanceTests.should_shutdown_idle_consumer_within_bound)
+            ),
+            _Bind(
+                TransportConformanceScenario.StaleSettlement,
+                nameof(
+                    RabbitMqConsumerClientConformanceTests.should_not_settle_another_delivery_when_a_settled_value_is_used_again
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.HandlerFailureRedelivery,
+                nameof(
+                    RabbitMqConsumerClientConformanceTests.should_keep_the_delivery_and_the_listener_when_the_callback_throws
+                )
             ),
             _Bind(
                 TransportConformanceScenario.BusConsumerIdentityFanOut,
@@ -117,6 +139,12 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
                 TransportConformanceScenario.HandlerConcurrencyCap,
                 nameof(
                     RabbitMqConsumerClientConformanceTests.should_never_hand_over_more_deliveries_at_once_than_the_requested_concurrency
+                )
+            ),
+            _Bind(
+                TransportConformanceScenario.BodySizeLimit,
+                nameof(
+                    RabbitMqConsumerClientConformanceTests.should_round_trip_a_body_at_the_size_limit_and_refuse_one_byte_more
                 )
             ),
             _Bind(
