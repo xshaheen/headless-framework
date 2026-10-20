@@ -34,9 +34,9 @@
       },
       "Foundatio": {
         "type": "Direct",
-        "requested": "[13.0.4, )",
-        "resolved": "13.0.4",
-        "contentHash": "OyaPTR7V7DUQ7haKYoXPLBqa/Tas9LQRcG/pmb6vBLaWNw60fp0z9a4hjNfVweWY+l2Cgdd3ja92bOOB1PMwdw==",
+        "requested": "[13.0.5, )",
+        "resolved": "13.0.5",
+        "contentHash": "ltSoPNe+hjA2xnX9+kHat8z4pUyb8k41pJYOan8viKimLTXb/ubSfCdJJwxQ964CZ+EU0VaGKsnEMiUQGdwY5Q==",
         "dependencies": {
           "Microsoft.Bcl.TimeProvider": "8.0.0",
           "Microsoft.Extensions.DependencyInjection": "8.0.0",
@@ -45,12 +45,12 @@
       },
       "Foundatio.Redis": {
         "type": "Direct",
-        "requested": "[13.0.4, )",
-        "resolved": "13.0.4",
-        "contentHash": "FxZZ7wTnEXISt6WRnSpAnarl+RXoyuQKSHZwpiCbbNouF5sNxOHw0uQ15QQ6KjZHhE1I/YSpyn3ahNGnvHlnxg==",
+        "requested": "[13.0.5, )",
+        "resolved": "13.0.5",
+        "contentHash": "pCMJ4qxSrMfTA90vV719Q14RuhY6qETS3H6oZtyxWxPRaMt29H7z0DXCCOSVUTgPC77INMWTSH75FBxtF7B+LQ==",
         "dependencies": {
-          "Foundatio": "13.0.4",
-          "StackExchange.Redis": "3.1.31"
+          "Foundatio": "13.0.5",
+          "StackExchange.Redis": "3.4.5"
         }
       },
       "JetBrains.Annotations": {
@@ -406,7 +406,7 @@
           "Headless.Serializer.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.13, )",
-          "OpenTelemetry.Api": "[1.19.1, )"
+          "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
       "headless.caching.abstractions": {
@@ -478,7 +478,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.13, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.13, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.13, )",
-          "OpenTelemetry.Api": "[1.19.1, )"
+          "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
       "headless.messaging.abstractions": {
@@ -666,9 +666,9 @@
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",
-        "requested": "[1.19.1, )",
-        "resolved": "1.19.1",
-        "contentHash": "9JKIH+xrV0HNTFjQC8zrx9gZpDOMEljN5Htg/U0VE2IvO3N+7bKALCCsGy5tp09marX5dd8UkrgQFoLaulIBRw=="
+        "requested": "[1.20.1, )",
+        "resolved": "1.20.1",
+        "contentHash": "QO9hlwadOdJGR4vDpJyDnl9B62v7epIBSTIHUA4C+bCtrRaB4TWmYSnu3QVOIe7caH8dt7NaHRei6zebESJJyw=="
       }
     }
   }
