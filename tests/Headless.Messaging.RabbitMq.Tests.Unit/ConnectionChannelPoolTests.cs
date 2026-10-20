@@ -172,7 +172,9 @@ public sealed class ConnectionChannelPoolTests : TestBase
             _ =>
             {
                 activations++;
+#pragma warning disable CA2025 // False positive: the pool awaits the completed task before it owns and disposes the connection.
                 return Task.FromResult(connection);
+#pragma warning restore CA2025
             }
         );
         var opened = await pool.GetConnectionAsync(AbortToken);
