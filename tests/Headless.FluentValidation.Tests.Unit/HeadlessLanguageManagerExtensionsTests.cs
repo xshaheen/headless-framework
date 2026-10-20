@@ -11,8 +11,8 @@ namespace Tests;
 public sealed partial class HeadlessLanguageManagerExtensionsTests : TestBase
 {
     private static readonly CultureInfo _EgyptianArabic = CultureInfo.GetCultureInfo("ar-EG");
-    private static readonly CultureInfo _SaudiArabic = CultureInfo.GetCultureInfo("ar-SA");
     private static readonly CultureInfo _Arabic = CultureInfo.GetCultureInfo("ar");
+    private static readonly CultureInfo _EmiratiArabic = CultureInfo.GetCultureInfo("ar-AE");
     private static readonly CultureInfo _English = CultureInfo.GetCultureInfo("en");
 
     // Every key FluentValidation 12 keeps a default message under; StringEnumValidator reads EnumValidator's.
@@ -48,27 +48,26 @@ public sealed partial class HeadlessLanguageManagerExtensionsTests : TestBase
         "ScalePrecisionValidator",
     ];
 
-    public static TheoryData<string, string> RegionalBuiltInKeys =>
-        [.. _BuiltInKeys.SelectMany(key => new[] { ("ar-EG", key), ("ar-SA", key) })];
+    public static TheoryData<string, string> ArabicBuiltInKeys =>
+        [.. _BuiltInKeys.SelectMany(key => new[] { ("ar", key), ("ar-EG", key) })];
 
     [Theory]
-    [MemberData(nameof(RegionalBuiltInKeys))]
-    public void should_translate_every_built_in_message_for_a_region_and_keep_ar_formal(string culture, string key)
+    [MemberData(nameof(ArabicBuiltInKeys))]
+    public void should_translate_every_built_in_message_for_arabic_and_keep_english(string culture, string key)
     {
         // given
-        var region = CultureInfo.GetCultureInfo(culture);
+        var arabic = CultureInfo.GetCultureInfo(culture);
         var stock = new LanguageManager();
         var manager = new LanguageManager();
 
         // when
+        manager.AddHeadlessArabicTranslations();
         manager.AddHeadlessEgyptianArabicTranslations();
-        manager.AddHeadlessSaudiArabicTranslations();
 
         // then
-        var regional = manager.GetString(key, region);
+        var regional = manager.GetString(key, arabic);
         regional.Should().NotBeNullOrWhiteSpace();
-        regional.Should().NotBe(stock.GetString(key, region), $"{culture} must not fall back to formal Arabic");
-        manager.GetString(key, _Arabic).Should().Be(stock.GetString(key, _Arabic));
+        regional.Should().NotBe(stock.GetString(key, arabic), $"{culture} must not keep FluentValidation's Arabic");
         manager.GetString(key, _English).Should().Be(stock.GetString(key, _English));
 
         // The English template defines which placeholders the validator fills; an unknown one would print raw.
@@ -77,34 +76,29 @@ public sealed partial class HeadlessLanguageManagerExtensionsTests : TestBase
     }
 
     [Fact]
-    public void should_report_ar_eg_ar_sa_ar_and_en_messages_when_validating_under_each_culture()
+    public void should_report_ar_eg_ar_and_en_messages_when_validating_under_each_culture()
     {
-        // given: validators read only the process-wide manager. Adding the regional entries to it is what the API
-        // defaults do at startup, and it changes no other culture's lookup.
-        var stock = new LanguageManager();
+        // given: validators read only the process-wide manager. Adding the Arabic entries to it is what the API
+        // defaults do at startup, and it changes no non-Arabic culture's lookup.
         var global = ValidatorOptions.Global.LanguageManager.Should().BeAssignableTo<LanguageManager>().Subject;
+        global.AddHeadlessArabicTranslations();
         global.AddHeadlessEgyptianArabicTranslations();
-        global.AddHeadlessSaudiArabicTranslations();
         var validator = new NameValidator();
 
         // when
         var egyptian = _InCulture(_EgyptianArabic, () => validator.Validate(new Person(Name: "")));
-        var saudi = _InCulture(_SaudiArabic, () => validator.Validate(new Person(Name: "")));
         var arabic = _InCulture(_Arabic, () => validator.Validate(new Person(Name: "")));
+        var emirati = _InCulture(_EmiratiArabic, () => validator.Validate(new Person(Name: "")));
         var english = _InCulture(_English, () => validator.Validate(new Person(Name: "")));
 
         // then
         egyptian.Errors.Should().ContainSingle().Which.ErrorMessage.Should().Be("الحقل ده مطلوب.");
-        saudi.Errors.Should().ContainSingle().Which.ErrorMessage.Should().Be("هذا الحقل مطلوب.");
-        arabic
+        arabic.Errors.Should().ContainSingle().Which.ErrorMessage.Should().Be("هذا الحقل مطلوب.");
+        emirati
             .Errors.Should()
             .ContainSingle()
             .Which.ErrorMessage.Should()
-            .Be(
-                stock
-                    .GetString("NotEmptyValidator", _Arabic)
-                    .Replace("{PropertyName}", "Name", StringComparison.Ordinal)
-            );
+            .Be("هذا الحقل مطلوب.", "an Arabic region without its own entries falls back to ar");
         english.Errors.Should().ContainSingle().Which.ErrorMessage.Should().Be("'Name' must not be empty.");
     }
 
@@ -113,16 +107,16 @@ public sealed partial class HeadlessLanguageManagerExtensionsTests : TestBase
     {
         // given
         var manager = new LanguageManager();
+        manager.AddHeadlessArabicTranslations();
         manager.AddHeadlessEgyptianArabicTranslations();
-        manager.AddHeadlessSaudiArabicTranslations();
 
         // when
         manager.AddTranslation("ar-EG", "NotEmptyValidator", "اكتب قيمة.");
-        manager.AddTranslation("ar-SA", "NotEmptyValidator", "أدخل قيمة.");
+        manager.AddTranslation("ar", "NotEmptyValidator", "أدخل قيمة.");
 
         // then
         manager.GetString("NotEmptyValidator", _EgyptianArabic).Should().Be("اكتب قيمة.");
-        manager.GetString("NotEmptyValidator", _SaudiArabic).Should().Be("أدخل قيمة.");
+        manager.GetString("NotEmptyValidator", _Arabic).Should().Be("أدخل قيمة.");
     }
 
     [Fact]
@@ -130,11 +124,11 @@ public sealed partial class HeadlessLanguageManagerExtensionsTests : TestBase
     {
         // when
         var egyptian = () => HeadlessLanguageManagerExtensions.AddHeadlessEgyptianArabicTranslations(null!);
-        var saudi = () => HeadlessLanguageManagerExtensions.AddHeadlessSaudiArabicTranslations(null!);
+        var arabic = () => HeadlessLanguageManagerExtensions.AddHeadlessArabicTranslations(null!);
 
         // then
         egyptian.Should().Throw<ArgumentNullException>();
-        saudi.Should().Throw<ArgumentNullException>();
+        arabic.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]
@@ -149,16 +143,12 @@ public sealed partial class HeadlessLanguageManagerExtensionsTests : TestBase
             FluentValidatorErrors.Culture = _EgyptianArabic;
             var egyptian = FluentValidatorErrorDescriber.Strings.OnlyNumberValidator().Description;
 
-            FluentValidatorErrors.Culture = _SaudiArabic;
-            var saudi = FluentValidatorErrorDescriber.Strings.OnlyNumberValidator().Description;
-
             FluentValidatorErrors.Culture = _Arabic;
             var arabic = FluentValidatorErrorDescriber.Strings.OnlyNumberValidator().Description;
 
             // then
             egyptian.Should().Be("الحقل ده لازم يكون أرقام بس.");
-            saudi.Should().Be("أدخل أرقاماً فقط.");
-            arabic.Should().Be("يجب أن يحتوي الحقل على أرقام فقط.");
+            arabic.Should().Be("أدخل أرقاماً فقط.");
         }
         finally
         {

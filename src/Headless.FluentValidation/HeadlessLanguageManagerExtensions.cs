@@ -9,7 +9,7 @@ namespace FluentValidation.Resources;
 public static class HeadlessLanguageManagerExtensions
 {
     private const string _EgyptianArabic = "ar-EG";
-    private const string _SaudiArabic = "ar-SA";
+    private const string _Arabic = "ar";
 
     // Keys are FluentValidation's built-in message keys. IsEnumName has no key of its own: it reads EnumValidator.
     private static readonly (string Key, string Message)[] _EgyptianArabicMessages =
@@ -50,7 +50,7 @@ public static class HeadlessLanguageManagerExtensions
 
     // The same keys as the Egyptian set. Counts read "عدد الأحرف" rather than "{n} حرف" because Arabic number agreement
     // changes the noun's form with the value, which a fixed template cannot follow.
-    private static readonly (string Key, string Message)[] _SaudiArabicMessages =
+    private static readonly (string Key, string Message)[] _ArabicMessages =
     [
         ("NotNullValidator", "هذا الحقل مطلوب."),
         ("NotEmptyValidator", "هذا الحقل مطلوب."),
@@ -91,19 +91,20 @@ public static class HeadlessLanguageManagerExtensions
 
     /// <summary>
     /// Adds Egyptian Arabic (<c>ar-EG</c>) wording for every FluentValidation built-in message, so a request whose UI
-    /// culture is <c>ar-EG</c> reads Egyptian Arabic while a plain <c>ar</c> request keeps the library's formal Arabic.
+    /// culture is <c>ar-EG</c> reads Egyptian Arabic.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The language manager tries the specific culture before its parent, so these entries win over the formal
-    /// Arabic FluentValidation ships under <c>ar</c>, and any other <c>ar-*</c> culture still falls back to it.
+    /// The language manager tries the specific culture before its parent, so these entries win over the Arabic under
+    /// <c>ar</c>, and any other <c>ar-*</c> culture still falls back to <c>ar</c>.
     /// </para>
     /// <para>
     /// The messages leave out <c>{PropertyName}</c>: it resolves to the property's English display name, which reads
     /// badly inside an Arabic sentence, and clients show a field error next to the field it belongs to.
     /// </para>
     /// <para>
-    /// A translation added for the same culture and key afterwards replaces the one added here.
+    /// Each entry replaces whatever text the manager holds for <c>ar-EG</c> and that key. Add your own <c>ar-EG</c>
+    /// translations after this call: one added before it is overwritten.
     /// </para>
     /// </remarks>
     /// <param name="languageManager">The language manager to add the translations to.</param>
@@ -115,28 +116,26 @@ public static class HeadlessLanguageManagerExtensions
     }
 
     /// <summary>
-    /// Adds Saudi Arabic (<c>ar-SA</c>) wording for every FluentValidation built-in message, so a request whose UI
-    /// culture is <c>ar-SA</c> reads Saudi Arabic while a plain <c>ar</c> request keeps the library's formal Arabic.
+    /// Replaces the formal Arabic FluentValidation ships under <c>ar</c> with the Headless wording for every built-in
+    /// message, so <c>ar</c> and every Arabic region without its own entries read the same text as the Headless
+    /// resources.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The language manager tries the specific culture before its parent, so these entries win over the formal
-    /// Arabic FluentValidation ships under <c>ar</c>, and any other <c>ar-*</c> culture still falls back to it.
-    /// </para>
     /// <para>
     /// The messages leave out <c>{PropertyName}</c>: it resolves to the property's English display name, which reads
     /// badly inside an Arabic sentence, and clients show a field error next to the field it belongs to.
     /// </para>
     /// <para>
-    /// A translation added for the same culture and key afterwards replaces the one added here.
+    /// Each entry replaces whatever text the manager holds for <c>ar</c> and that key. Add your own <c>ar</c>
+    /// translations after this call: one added before it is overwritten.
     /// </para>
     /// </remarks>
     /// <param name="languageManager">The language manager to add the translations to.</param>
     /// <exception cref="ArgumentNullException"><paramref name="languageManager"/> is <see langword="null"/>.</exception>
-    public static void AddHeadlessSaudiArabicTranslations(this LanguageManager languageManager)
+    public static void AddHeadlessArabicTranslations(this LanguageManager languageManager)
     {
         Argument.IsNotNull(languageManager);
-        _AddTranslations(languageManager, _SaudiArabic, _SaudiArabicMessages);
+        _AddTranslations(languageManager, _Arabic, _ArabicMessages);
     }
 
     private static void _AddTranslations(

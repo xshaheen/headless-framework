@@ -12,21 +12,21 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="setting:not_defined" xml:space="preserve">
-    <value>لم يتم العثور على تعريف الإعداد لـ {0}.</value>
+    <value>لا يوجد تعريف للإعداد {0}.</value>
   </data>
   <data name="setting:provider_not_found" xml:space="preserve">
-    <value>لم يتم العثور على موفر الإعداد لـ {0}.</value>
+    <value>لا يوجد موفر إعدادات باسم {0}.</value>
   </data>
   <data name="setting:provider_is_readonly" xml:space="preserve">
-    <value>موفر الإعداد {0} للقراءة فقط ولا يمكن تعديله.</value>
+    <value>موفر الإعدادات {0} للقراءة فقط ولا يمكن تعديله.</value>
   </data>
   <data name="setting:user_not_available" xml:space="preserve">
-    <value>المستخدم غير متاح للاستخدام مع موفر الإعداد.</value>
+    <value>لا يوجد مستخدم متاح للاستخدام مع موفر الإعدادات.</value>
   </data>
   <data name="setting:tenant_not_available" xml:space="preserve">
-    <value>المستأجر غير متاح للاستخدام مع موفر الإعداد.</value>
+    <value>لا يوجد مستأجر متاح للاستخدام مع موفر الإعدادات.</value>
   </data>
   <data name="setting:decryption_failed" xml:space="preserve">
-    <value>فشل فك تشفير قيمة الإعداد لـ {0}.</value>
+    <value>تعذّر فك تشفير قيمة الإعداد {0}.</value>
   </data>
 </root>

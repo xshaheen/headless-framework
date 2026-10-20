@@ -13,17 +13,16 @@ using Humanizer;
 namespace Tests.Localization;
 
 /// <summary>
-/// Every package that ships formal Arabic (<c>ar</c>) also ships Egyptian Arabic (<c>ar-EG</c>) and Saudi Arabic
-/// (<c>ar-SA</c>) with the same keys and placeholders, so a regional request never mixes registers or prints a raw
-/// placeholder.
+/// Every package that ships formal Arabic (<c>ar</c>) also ships Egyptian Arabic (<c>ar-EG</c>) with the same keys and
+/// placeholders, so an Egyptian request never mixes registers or prints a raw placeholder; every other Arabic region
+/// reads <c>ar</c>.
 /// </summary>
 public sealed partial class ArabicRegionalResourcesTests : TestBase
 {
     private static readonly CultureInfo _EgyptianArabic = CultureInfo.GetCultureInfo("ar-EG");
-    private static readonly CultureInfo _SaudiArabic = CultureInfo.GetCultureInfo("ar-SA");
     private static readonly CultureInfo _Arabic = CultureInfo.GetCultureInfo("ar");
 
-    private static readonly string[] _RegionalCultures = ["ar-EG", "ar-SA"];
+    private static readonly string[] _RegionalCultures = ["ar-EG"];
 
     public static TheoryData<string> ArabicResourceFiles => [.. _ArabicResourceFiles()];
 
@@ -91,17 +90,14 @@ public sealed partial class ArabicRegionalResourcesTests : TestBase
     {
         // when
         var egyptian = _InCulture(_EgyptianArabic, GeneralMessageDescriber.RateLimitExceeded);
-        var saudi = _InCulture(_SaudiArabic, GeneralMessageDescriber.RateLimitExceeded);
         var arabic = _InCulture(_Arabic, GeneralMessageDescriber.RateLimitExceeded);
-        var emirati = _InCulture(CultureInfo.GetCultureInfo("ar-AE"), GeneralMessageDescriber.RateLimitExceeded);
+        var saudi = _InCulture(CultureInfo.GetCultureInfo("ar-SA"), GeneralMessageDescriber.RateLimitExceeded);
 
         // then
         egyptian.Code.Should().Be(arabic.Code);
-        saudi.Code.Should().Be(arabic.Code);
         egyptian.Description.Should().Be("عدد الطلبات كتير. جرّب تاني بعد شوية.");
-        saudi.Description.Should().Be("عدد الطلبات كبير. حاول مرة ثانية بعد قليل.");
-        arabic.Description.Should().Be("عدد الطلبات كبير جدًا. حاول مرة أخرى لاحقًا.");
-        emirati.Description.Should().Be(arabic.Description, "an Arabic region without its own file falls back to ar");
+        arabic.Description.Should().Be("عدد الطلبات كبير جداً. حاول مرة أخرى بعد قليل.");
+        saudi.Description.Should().Be(arabic.Description, "an Arabic region without its own file falls back to ar");
     }
 
     [Theory]
@@ -138,8 +134,7 @@ public sealed partial class ArabicRegionalResourcesTests : TestBase
         // then
         var manager = ValidatorOptions.Global.LanguageManager;
         manager.GetString("NotEmptyValidator", _EgyptianArabic).Should().Be("الحقل ده مطلوب.");
-        manager.GetString("NotEmptyValidator", _SaudiArabic).Should().Be("هذا الحقل مطلوب.");
-        manager.GetString("NotEmptyValidator", _Arabic).Should().Contain("{PropertyName}");
+        manager.GetString("NotEmptyValidator", _Arabic).Should().Be("هذا الحقل مطلوب.");
     }
 
     private static IEnumerable<string> _ArabicResourceFiles()
