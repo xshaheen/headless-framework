@@ -40,6 +40,12 @@ public sealed class TestThreadSafeMessageSender : IMessageSender
 
     public List<MediumMessage> ReceivedMessages => [.. _messagesInOrder];
 
+    /// <summary>Waits for <paramref name="target"/> sends with no wall-clock bound; only cancellation ends it early.</summary>
+    public Task WaitForCountAsync(int target, CancellationToken cancellationToken)
+    {
+        return WaitForCountAsync(target, Timeout.InfiniteTimeSpan, cancellationToken);
+    }
+
     public async Task WaitForCountAsync(int target, TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         if (Count >= target)
