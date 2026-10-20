@@ -18,9 +18,8 @@ public static class HeadlessApiSurfaceEndpointRouteBuilderExtensions
     /// </summary>
     /// <remarks>
     /// An endpoint with no tag of its own is tagged with the surface's OpenAPI title. Chain
-    /// <see cref="RouteBuilderExtensions.ProducesStandardProblems{TBuilder}"/> and
-    /// <see cref="RouteBuilderExtensions.ValidateArguments{TBuilder}"/> on the returned group to document the standard
-    /// problem responses and validate arguments across the surface.
+    /// <see cref="RouteBuilderExtensions.ValidateArguments{TBuilder}"/> on the returned group to validate arguments
+    /// across the surface.
     /// </remarks>
     /// <param name="endpoints">The route builder.</param>
     /// <param name="surfaceName">The registered surface name.</param>

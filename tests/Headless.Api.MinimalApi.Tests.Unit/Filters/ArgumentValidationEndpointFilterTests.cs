@@ -196,79 +196,46 @@ public sealed class ArgumentValidationEndpointFilterTests : TestBase
     }
 
     [Fact]
-    public void should_document_422_only_on_endpoints_with_a_validated_argument()
+    public void should_add_no_problem_metadata_to_validated_endpoints()
     {
-        // given
-        using var services = _CreateServices();
-        var endpoints = new TestEndpointRouteBuilder(services);
-        var group = endpoints.MapGroup("/api").ValidateArguments();
-        group.MapPost("/users", (ValidatorFilterTestRequest request) => TypedResults.Ok(request.Name));
-        group.MapGet("/ping", () => TypedResults.Ok("pong"));
-
-        // when
-        var built = endpoints.DataSources.SelectMany(source => source.Endpoints).ToList();
-
-        // then
-        _StatusCodes(built.Single(endpoint => endpoint.DisplayName!.Contains("users", StringComparison.Ordinal)))
-            .Should()
-            .Contain(StatusCodes.Status422UnprocessableEntity);
-        _StatusCodes(built.Single(endpoint => endpoint.DisplayName!.Contains("ping", StringComparison.Ordinal)))
-            .Should()
-            .NotContain(StatusCodes.Status422UnprocessableEntity);
-    }
-
-    [Fact]
-    public void should_not_document_422_twice_when_the_result_type_already_does()
-    {
-        // given
+        // given a group that validates its arguments and an endpoint that validates one type
         using var services = _CreateServices();
         var endpoints = new TestEndpointRouteBuilder(services);
         endpoints
             .MapGroup("/api")
             .ValidateArguments()
-            .MapPost("/users", (ValidatorFilterTestRequest _) => ApiResult.Ok().ToHttpResult());
-
-        // when
-        var endpoint = MinimalApiTestHost.SingleEndpoint(endpoints);
-
-        // then
-        _StatusCodes(endpoint).Count(status => status == StatusCodes.Status422UnprocessableEntity).Should().Be(1);
-    }
-
-    [Fact]
-    public void should_document_422_for_a_per_endpoint_validate()
-    {
-        // given
-        using var services = _CreateServices();
-        var endpoints = new TestEndpointRouteBuilder(services);
+            .MapPost("/users", (ValidatorFilterTestRequest request) => TypedResults.Ok(request.Name));
         endpoints
-            .MapPost("/users", (ValidatorFilterTestRequest request) => TypedResults.Ok(request.Name))
+            .MapPost("/single", (ValidatorFilterTestRequest request) => TypedResults.Ok(request.Name))
             .Validate<ValidatorFilterTestRequest>();
 
         // when
-        var endpoint = MinimalApiTestHost.SingleEndpoint(endpoints);
+        var built = endpoints.DataSources.SelectMany(source => source.Endpoints).ToList();
 
-        // then
-        var problem = endpoint
-            .Metadata.OfType<IProducesResponseTypeMetadata>()
-            .Single(response => response.StatusCode == StatusCodes.Status422UnprocessableEntity);
-        problem.Type.Should().Be<ProblemDetails>();
-        problem.ContentTypes.Should().Equal("application/problem+json");
+        // then the OpenAPI layer documents the 400 and 422 these filters write, so the endpoints carry only the success
+        built.Should().HaveCount(2);
+        built.Should().AllSatisfy(endpoint => _StatusCodes(endpoint).Should().Equal(StatusCodes.Status200OK));
     }
 
     [Fact]
     public void should_leave_an_endpoint_without_a_handler_method_unfiltered()
     {
-        // given
+        // given an endpoint built from a request delegate, so it has no handler method to read parameters from
         using var services = _CreateServices();
-        var endpoints = new TestEndpointRouteBuilder(services);
-        endpoints.MapGroup("/api").ValidateArguments().Map("/raw", static _ => Task.CompletedTask);
+        var builder = new RouteEndpointBuilder(
+            static _ => Task.CompletedTask,
+            RoutePatternFactory.Parse("/raw"),
+            order: 0
+        )
+        {
+            ApplicationServices = services,
+        };
 
         // when
-        var endpoint = MinimalApiTestHost.SingleEndpoint(endpoints);
+        ArgumentValidationEndpointFilter.Apply(builder);
 
         // then
-        endpoint.Metadata.GetMetadata<ValidatedEndpointMetadata>().Should().BeNull();
+        builder.FilterFactories.Should().BeEmpty();
     }
 
     [Fact]
@@ -290,7 +257,6 @@ public sealed class ArgumentValidationEndpointFilterTests : TestBase
 
         // then
         builder.FilterFactories.Should().BeEmpty();
-        builder.Metadata.Should().NotContain(ValidatedEndpointMetadata.Instance);
     }
 
     private static string _Handler(ValidatorFilterTestRequest request) => request.Name;
@@ -300,12 +266,10 @@ public sealed class ArgumentValidationEndpointFilterTests : TestBase
     {
         // when
         var validate = () => ((RouteGroupBuilder)null!).ValidateArguments();
-        var produces = () => ((RouteGroupBuilder)null!).ProducesStandardProblems();
         var validateOne = () => ((RouteHandlerBuilder)null!).Validate<ValidatorFilterTestRequest>();
 
         // then
         validate.Should().Throw<ArgumentNullException>();
-        produces.Should().Throw<ArgumentNullException>();
         validateOne.Should().Throw<ArgumentNullException>();
     }
 

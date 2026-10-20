@@ -203,7 +203,7 @@ public sealed class HeadlessRequestEndpointRouteBuilderExtensionsTests : TestBas
                 .Metadata.OfType<IProducesResponseTypeMetadata>()
                 .Select(response => response.StatusCode)
                 .Should()
-                .BeEquivalentTo([200, 400, 401, 403, 404, 409, 422], method);
+                .Equal([200], method);
         }
     }
 

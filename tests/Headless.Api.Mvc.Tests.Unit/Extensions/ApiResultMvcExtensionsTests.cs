@@ -23,7 +23,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
     #region OpenAPI metadata
 
     [Fact]
-    public void should_publish_complete_openapi_metadata_for_valued_results()
+    public void should_publish_only_the_success_response_for_valued_results()
     {
         // given
         var builder = new RouteEndpointBuilder(_ => Task.CompletedTask, RoutePatternFactory.Parse("/"), order: 0);
@@ -33,18 +33,10 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
 
         // then
         var responses = builder.Metadata.OfType<IProducesResponseTypeMetadata>().ToList();
-        responses.Select(response => response.StatusCode).Should().BeEquivalentTo([200, 401, 403, 404, 409, 422]);
+        responses.Select(response => response.StatusCode).Should().Equal([200]);
         var success = responses.Single(response => response.StatusCode == 200);
         success.Type.Should().Be<string>();
         success.ContentTypes.Should().Equal("application/json");
-        responses
-            .Where(response => response.StatusCode >= 400)
-            .Should()
-            .AllSatisfy(response =>
-            {
-                response.Type.Should().Be<ProblemDetails>();
-                response.ContentTypes.Should().Equal("application/problem+json");
-            });
     }
 
     [Fact]
@@ -58,7 +50,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
 
         // then
         var responses = builder.Metadata.OfType<IProducesResponseTypeMetadata>().ToList();
-        responses.Select(response => response.StatusCode).Should().BeEquivalentTo([204, 401, 403, 404, 409, 422]);
+        responses.Select(response => response.StatusCode).Should().Equal([204]);
         var success = responses.Single(response => response.StatusCode == 204);
         success.Type.Should().Be(typeof(void));
         success.ContentTypes.Should().BeEmpty();

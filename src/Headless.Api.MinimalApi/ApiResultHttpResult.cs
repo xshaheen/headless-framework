@@ -67,7 +67,7 @@ public sealed class ApiResultHttpResult<T> : IResult, IEndpointMetadataProvider,
     {
         Argument.IsNotNull(method);
         Argument.IsNotNull(builder);
-        ApiResultProblemResponse.PopulateMetadata(builder, StatusCodes.Status200OK, typeof(T));
+        ApiResultResponseMetadata.Populate(builder, StatusCodes.Status200OK, typeof(T));
     }
 }
 
@@ -136,7 +136,7 @@ public sealed class ApiResultCreatedHttpResult<T>
     {
         Argument.IsNotNull(method);
         Argument.IsNotNull(builder);
-        ApiResultProblemResponse.PopulateMetadata(builder, StatusCodes.Status201Created, typeof(T));
+        ApiResultResponseMetadata.Populate(builder, StatusCodes.Status201Created, typeof(T));
     }
 }
 
@@ -187,6 +187,6 @@ public sealed class ApiResultHttpResult : IResult, IEndpointMetadataProvider, IS
     {
         Argument.IsNotNull(method);
         Argument.IsNotNull(builder);
-        ApiResultProblemResponse.PopulateMetadata(builder, StatusCodes.Status204NoContent, successType: null);
+        ApiResultResponseMetadata.Populate(builder, StatusCodes.Status204NoContent, successType: null);
     }
 }

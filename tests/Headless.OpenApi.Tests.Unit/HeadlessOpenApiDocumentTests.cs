@@ -289,10 +289,12 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
     {
         var document = await _GetDocumentAsync();
 
+        // The controller requires no authorization, so no 401 or 403: the result type no longer lists them for every
+        // action, and only the authorization facts decide them.
         var valued = document.Operation("/api/invoices/{id}", "get")["responses"]!;
         _ResponseCodes(document.Operation("/api/invoices/{id}", "get"))
             .Should()
-            .BeEquivalentTo(["200", "400", "401", "403", "404", "409", "422"]);
+            .BeEquivalentTo(["200", "400", "404", "409", "422"]);
         ((string?)valued["200"]!["content"]!["application/json"]!["schema"]!["$ref"])
             .Should()
             .Be("#/components/schemas/ProductView");
@@ -303,7 +305,7 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         var unit = document.Operation("/api/invoices/{id}", "delete")["responses"]!;
         _ResponseCodes(document.Operation("/api/invoices/{id}", "delete"))
             .Should()
-            .BeEquivalentTo(["204", "400", "401", "403", "404", "409", "422"]);
+            .BeEquivalentTo(["204", "400", "404", "409", "422"]);
         unit["204"]!["content"].Should().BeNull();
         _ProblemSchemaRef(unit["404"]!).Should().Be("#/components/schemas/EntityNotFoundProblemDetails");
         document["components"]!["schemas"]!.AsObject().Should().NotContainKey("ApiActionResultOfProductView");

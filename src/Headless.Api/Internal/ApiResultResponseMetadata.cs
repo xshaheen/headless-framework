@@ -3,29 +3,19 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
-using Microsoft.AspNetCore.Mvc;
 
 namespace Headless.Api;
 
 /// <summary>
-/// The one response contract an <see cref="Headless.Primitives.ApiResult"/> endpoint publishes, shared by the Minimal
-/// API and MVC result types, so the two documents never disagree on which responses such an endpoint can return.
+/// The success response an <see cref="Headless.Primitives.ApiResult"/> endpoint publishes, shared by the Minimal API and
+/// MVC result types.
 /// </summary>
 /// <remarks>
-/// The success response, then a problem-details response for each status <see cref="ApiResultErrorProblemDetails"/>
-/// can map an error to: 401, 403, 404, 409, and 422.
+/// Error responses are not published here: Headless.OpenApi documents the problem responses on every operation, so an
+/// endpoint that returns <c>ApiResult</c> and one that returns a plain value and throws document the same errors.
 /// </remarks>
 internal static class ApiResultResponseMetadata
 {
-    private static readonly int[] _ProblemStatusCodes =
-    [
-        StatusCodes.Status401Unauthorized,
-        StatusCodes.Status403Forbidden,
-        StatusCodes.Status404NotFound,
-        StatusCodes.Status409Conflict,
-        StatusCodes.Status422UnprocessableEntity,
-    ];
-
     // A null successType means a response without a body.
     public static void Populate(EndpointBuilder builder, int successStatusCode, Type? successType)
     {
@@ -38,12 +28,5 @@ internal static class ApiResultResponseMetadata
                 successType is null ? [] : ["application/json"]
             )
         );
-
-        foreach (var statusCode in _ProblemStatusCodes)
-        {
-            builder.Metadata.Add(
-                new ProducesResponseTypeMetadata(statusCode, typeof(ProblemDetails), ["application/problem+json"])
-            );
-        }
     }
 }

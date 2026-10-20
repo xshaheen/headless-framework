@@ -17,7 +17,7 @@ namespace Tests.Extensions;
 public sealed class ApiResultExtensionsTests : TestBase
 {
     [Fact]
-    public void should_publish_complete_openapi_metadata_for_valued_results()
+    public void should_publish_only_the_success_response_for_valued_results()
     {
         // given
         var builder = _CreateEndpointBuilder();
@@ -30,22 +30,14 @@ public sealed class ApiResultExtensionsTests : TestBase
 
         // then
         var responses = builder.Metadata.OfType<IProducesResponseTypeMetadata>().ToList();
-        responses.Select(response => response.StatusCode).Should().BeEquivalentTo([200, 400, 401, 403, 404, 409, 422]);
+        responses.Select(response => response.StatusCode).Should().Equal([200]);
         var success = responses.Single(response => response.StatusCode == 200);
         success.Type.Should().Be<string>();
         success.ContentTypes.Should().Equal("application/json");
-        responses
-            .Where(response => response.StatusCode >= 400)
-            .Should()
-            .AllSatisfy(response =>
-            {
-                response.Type.Should().Be<ProblemDetails>();
-                response.ContentTypes.Should().Equal("application/problem+json");
-            });
     }
 
     [Fact]
-    public void should_publish_complete_openapi_metadata_for_unit_results()
+    public void should_publish_only_the_success_response_for_unit_results()
     {
         // given
         var builder = _CreateEndpointBuilder();
@@ -58,7 +50,7 @@ public sealed class ApiResultExtensionsTests : TestBase
 
         // then
         var responses = builder.Metadata.OfType<IProducesResponseTypeMetadata>().ToList();
-        responses.Select(response => response.StatusCode).Should().BeEquivalentTo([204, 400, 401, 403, 404, 409, 422]);
+        responses.Select(response => response.StatusCode).Should().Equal([204]);
         responses.Single(response => response.StatusCode == 204).ContentTypes.Should().BeEmpty();
     }
 
@@ -79,7 +71,7 @@ public sealed class ApiResultExtensionsTests : TestBase
             .Metadata.OfType<IProducesResponseTypeMetadata>()
             .Select(response => response.StatusCode)
             .Should()
-            .BeEquivalentTo([200, 400, 401, 403, 404, 409, 422]);
+            .Equal([200]);
     }
 
     #region Error description localization

@@ -73,7 +73,6 @@ internal sealed class ArgumentValidationEndpointFilter : IEndpointFilter
 
         var filter = new ArgumentValidationEndpointFilter([.. arguments]);
         endpoint.FilterFactories.Add((_, next) => context => filter.InvokeAsync(context, next));
-        endpoint.Metadata.Add(ValidatedEndpointMetadata.Instance);
     }
 
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
@@ -119,10 +118,4 @@ internal sealed class ArgumentValidationEndpointFilter : IEndpointFilter
     );
 
     private readonly record struct ValidatedArgument(int Index, ArgumentValidator Validate);
-}
-
-/// <summary>Marks an endpoint that <see cref="ArgumentValidationEndpointFilter"/> validates, so its 422 is documented.</summary>
-internal sealed class ValidatedEndpointMetadata
-{
-    public static readonly ValidatedEndpointMetadata Instance = new();
 }

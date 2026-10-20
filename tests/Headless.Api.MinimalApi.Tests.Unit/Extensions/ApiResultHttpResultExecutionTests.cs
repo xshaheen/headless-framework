@@ -173,7 +173,7 @@ public sealed class ApiResultHttpResultExecutionTests : TestBase
     }
 
     [Fact]
-    public void should_publish_201_and_problem_metadata_for_created_results()
+    public void should_publish_only_the_201_response_for_created_results()
     {
         // given
         var builder = new RouteEndpointBuilder(
@@ -190,7 +190,7 @@ public sealed class ApiResultHttpResultExecutionTests : TestBase
 
         // then
         var responses = builder.Metadata.OfType<IProducesResponseTypeMetadata>().ToList();
-        responses.Select(response => response.StatusCode).Should().BeEquivalentTo([201, 400, 401, 403, 404, 409, 422]);
+        responses.Select(response => response.StatusCode).Should().Equal([201]);
         responses.Single(response => response.StatusCode == 201).Type.Should().Be<Item>();
     }
 

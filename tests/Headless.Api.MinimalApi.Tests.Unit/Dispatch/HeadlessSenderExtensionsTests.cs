@@ -173,7 +173,7 @@ public sealed class HeadlessSenderExtensionsTests : TestBase
 
         // then
         var responses = builder.Metadata.OfType<IProducesResponseTypeMetadata>().ToList();
-        responses.Select(response => response.StatusCode).Should().BeEquivalentTo([200, 400, 401, 403, 404, 409, 422]);
+        responses.Select(response => response.StatusCode).Should().Equal([200]);
         responses.Single(response => response.StatusCode == 200).Type.Should().Be<ItemView>();
     }
 
