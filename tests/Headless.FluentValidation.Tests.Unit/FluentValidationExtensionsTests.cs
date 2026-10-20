@@ -63,7 +63,7 @@ public sealed class FluentValidationExtensionsTests
 
         using (CultureHelper.Use("ar", "ar"))
         {
-            validator.Validate(invalid).Errors.Single().ErrorMessage.Should().Be("يجب أن يحتوي الحقل على أرقام فقط.");
+            validator.Validate(invalid).Errors.Single().ErrorMessage.Should().Be("أدخل أرقاماً فقط.");
         }
 
         using (CultureHelper.Use("en", "en"))

@@ -1,4 +1,4 @@
-<root>
+﻿<root>
   <resheader name="resmimetype">
     <value>text/microsoft-resx</value>
   </resheader>
@@ -12,36 +12,36 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="CashNoEtisalatCash" xml:space="preserve">
-		<value>لا يمكن إتمام العملية. هذا الرقم غير مشترك في خدمة اتصالات كاش للاشتراك برجاء زيارة أقرب فرع من فروع اتصالات بالخط والرقم القومي.</value>
+		<value>تعذّر إتمام العملية. هذا الرقم غير مشترك في خدمة اتصالات كاش، وللاشتراك يُرجى زيارة أقرب فرع لاتصالات مع الشريحة وبطاقة الرقم القومي.</value>
 	</data>
   <data name="CashNoVodafoneCash" xml:space="preserve">
-		<value>لا يمكن إتمام العملية. هذا الرقم غير مشترك في خدمة فودافون كاش للاشتراك برجاء زيارة أقرب فرع من فروع فودافون بالخط والرقم القومي.</value>
+		<value>تعذّر إتمام العملية. هذا الرقم غير مشترك في خدمة فودافون كاش، وللاشتراك يُرجى زيارة أقرب فرع لفودافون مع الشريحة وبطاقة الرقم القومي.</value>
 	</data>
   <data name="CashProviderConnectionFailed" xml:space="preserve">
-		<value>فشل في البدء في الدفع مع المزود. الرجاء معاودة المحاولة في وقت لاحق.</value>
+		<value>تعذّر بدء عملية الدفع مع مزود الخدمة. حاول مرة أخرى لاحقاً.</value>
 	</data>
   <data name="CashInvalidEtisalatNumber" xml:space="preserve">
-		<value>ليس رقم موبايل اتصالات صالح. الرجاء إدخال رقم صحيح مكون من 11 رقما يبدأ بـ 011.</value>
+		<value>رقم هاتف اتصالات غير صحيح. أدخل رقماً صحيحاً من 11 خانة يبدأ بـ 011.</value>
 	</data>
   <data name="CashInvalidOrangeNumber" xml:space="preserve">
-		<value>ليس رقم موبايل اورانج صالح. الرجاء إدخال رقم صحيح مكون من 11 رقما يبدأ بـ 012.</value>
+		<value>رقم هاتف أورانج غير صحيح. أدخل رقماً صحيحاً من 11 خانة يبدأ بـ 012.</value>
 	</data>
   <data name="CashInvalidVodafoneNumber" xml:space="preserve">
-		<value>ليس رقم موبايل فودافون صالح. الرجاء إدخال رقم صحيح مكون من 11 رقما يبدأ بـ 011.</value>
+		<value>رقم هاتف فودافون غير صحيح. أدخل رقماً صحيحاً من 11 خانة يبدأ بـ 010.</value>
 	</data>
   <data name="CashNotValidWalletPhoneNumber" xml:space="preserve">
-		<value>ليس رقم صالح. الرجاء إدخال رقم محفظة لرقم مصري صحيح مكون من 11 رقما يبدأ بـ 010 او 011 او 012 او 015.</value>
+		<value>الرقم غير صحيح. أدخل رقم محفظة مصرياً صحيحاً من 11 خانة يبدأ بـ 010 أو 011 أو 012 أو 015.</value>
 	</data>
   <data name="CashInProviderConnectionFailed" xml:space="preserve">
-    <value>فشل الاتصال بشركة الدفع.</value>
+    <value>تعذّر الاتصال بشركة الدفع.</value>
   </data>
   <data name="CashOutInsufficientFunds" xml:space="preserve">
-    <value>رصيد غير كاف.</value>
+    <value>الرصيد غير كافٍ.</value>
   </data>
   <data name="CashOutInvalidRequest" xml:space="preserve">
-		<value>البيانات غير صالحة. يرجى التأكد من إدخال بيانات صالحة.</value>
+		<value>البيانات غير صحيحة. تأكد من إدخال بيانات صحيحة.</value>
 	</data>
   <data name="CashOutProviderIsDown" xml:space="preserve">
-    <value>خادم مزود الدفع غير متاح حاليا. الرجاء معاودة المحاولة في وقت لاحق.</value>
+    <value>خادم مزود الدفع غير متاح حالياً. حاول مرة أخرى لاحقاً.</value>
   </data>
 </root>
