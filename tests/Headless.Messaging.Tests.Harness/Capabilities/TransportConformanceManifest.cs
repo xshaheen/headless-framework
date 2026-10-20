@@ -330,13 +330,7 @@ public static class TransportConformanceManifest
             ["RabbitMQ"] = TransportConformanceProfile
                 .CreateDisabled("RabbitMQ")
                 .WithScenario(TransportConformanceScenario.ConnectionDropRecovery, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.PublishDuringOutage,
-                    ConformanceSupport.Unsupported(
-                        "A publish while the client recovers from a dropped connection replaces the shared connection and cancels the recovery, so the consumer is cancelled and never registers again.",
-                        "https://github.com/xshaheen/headless-framework/issues/1243"
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.PublishDuringOutage, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.RoutingAffinityMappingOrRejection,
@@ -356,13 +350,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.BrokerInterruptionRecovery,
-                    ConformanceSupport.Unsupported(
-                        "A publish while the client recovers from a broker restart replaces the shared connection, and the consumer on it never receives again.",
-                        "https://github.com/xshaheen/headless-framework/issues/1243"
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.BrokerInterruptionRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HandlerFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
