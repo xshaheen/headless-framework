@@ -3,6 +3,7 @@
 using System.Text.Json.Nodes;
 using Headless.Api;
 using Headless.OpenApi;
+using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
@@ -32,6 +33,7 @@ public sealed class StandardProblemResponseDocumentTests : TestBase
                             new SingleControllerFeatureProvider(typeof(PlainResultController))
                         );
                         manager.FeatureProviders.Add(new SingleControllerFeatureProvider(typeof(OptOutController)));
+                        manager.FeatureProviders.Add(new SingleControllerFeatureProvider(typeof(CompareController)));
                     });
                 builder.Services.AddHeadlessOpenApi();
 
@@ -108,6 +110,27 @@ public sealed class StandardProblemResponseDocumentTests : TestBase
         var notFound = document.Operation("/minimal/lookup/{id}", "get")["responses"]!["404"]!;
         ((string?)notFound["content"]!["text/plain"]!["schema"]!["type"]).Should().Be("string");
         ((string?)notFound["description"]).Should().Be("Not Found");
+    }
+
+    [Fact]
+    public async Task should_document_a_plain_result_action_and_an_api_result_endpoint_alike()
+    {
+        // given an authenticated MVC action that binds a body and returns a plain value, and the same route on Minimal
+        // API returning an ApiResult
+        var document = await _GetDocumentAsync(app =>
+            app.MapPost(
+                    "/minimal/compare/{id:int}",
+                    (int id, ComparePayload payload) => ApiResult<int>.Ok(id + payload.Count).ToHttpResult()
+                )
+                .RequireAuthorization()
+        );
+
+        // then both document the same responses
+        var minimal = _ResponseCodes(document.Operation("/minimal/compare/{id}", "post"));
+        var mvc = _ResponseCodes(document.Operation("/mvc/compare/{id}", "post"));
+
+        minimal.Should().BeEquivalentTo(mvc);
+        minimal.Should().BeEquivalentTo(["200", "400", "401", "404", "409", "413", "422"]);
     }
 
     [Fact]
@@ -241,4 +264,16 @@ public sealed class OptOutController : ControllerBase
     [AllowAnonymous]
     [StandardProblemResponses]
     public string Restored() => "ok";
+}
+
+public sealed record ComparePayload(int Count);
+
+[NonController]
+[ApiController]
+[Route("mvc/compare")]
+public sealed class CompareController : ControllerBase
+{
+    [HttpPost("{id:int}")]
+    [Authorize]
+    public ActionResult<int> Post(int id, [FromBody] ComparePayload payload) => id + payload.Count;
 }
