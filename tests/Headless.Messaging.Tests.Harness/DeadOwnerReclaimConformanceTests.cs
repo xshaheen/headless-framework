@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Context;
 using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
@@ -7,6 +8,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Tests.Guarantees;
 using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
@@ -15,7 +17,8 @@ namespace Tests;
 /// Cross-provider end-to-end conformance for messaging dead-owner recovery. Hosts a real
 /// <c>DeadOwnerRecoveryBridge&lt;MessagingDeadOwnerReclaimer&gt;</c> (resolved through the messaging DI graph, since
 /// the bridge type is internal to Coordination) against a real provider store and a
-/// <see cref="ControlledNodeMembership"/>, then asserts outbox/inbox row outcomes.
+/// <see cref="ControlledNodeMembership"/>, then asserts outbox/inbox row outcomes. One scenario replaces the controlled
+/// membership with the provider's real coordination store, so a node is declared dead by the store's clock.
 /// </summary>
 /// <remarks>
 /// Each provider supplies its store via <see cref="ConfigureStorage"/>; the scenarios are owned here so they are
@@ -52,6 +55,12 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
     /// </summary>
     protected virtual bool SharesStorageInstanceForConcurrency => false;
 
+    /// <summary>
+    /// Selects the real coordination provider over the store's database (e.g. <c>setup.UsePostgreSql(...)</c>), or
+    /// <see langword="null"/> for a store that has none, which skips the real-membership scenario.
+    /// </summary>
+    protected virtual Action<HeadlessCoordinationSetupBuilder>? CoordinationProvider => null;
+
     protected override async ValueTask DisposeAsyncCore()
     {
         foreach (var bridge in _startedBridges)
@@ -75,6 +84,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
         await base.DisposeAsyncCore();
     }
 
+    [Guarantee("MSG-COORD-01")]
     public virtual async Task should_reclaim_dead_owner_published_and_received_rows()
     {
         // A Dead owner's in-flight rows are re-dispatched, not skipped.
@@ -96,6 +106,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
             .BeTrue("the dead owner's received row must be reclaimed and re-dispatched");
     }
 
+    [Guarantee("MSG-COORD-01")]
     public virtual async Task should_not_reclaim_suspected_owner_rows()
     {
         // A Suspected owner is never reclaimed through watch or reconcile.
@@ -120,6 +131,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
             .BeFalse("a suspected owner's received row stays leased");
     }
 
+    [Guarantee("MSG-COORD-02")]
     public virtual async Task should_reclaim_once_when_surfaced_by_both_event_and_reconcile()
     {
         // A Dead owner surfaced by both a NodeLeft event and the reconcile is reclaimed (dedup, no thrash).
@@ -138,6 +150,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
         (await _BecomesRetriableAsync(storage, dead.Received, published: false)).Should().BeTrue();
     }
 
+    [Guarantee("MSG-COORD-03")]
     public virtual async Task should_fence_a_restarted_incarnation()
     {
         // node@N dead, node@N+1 live (restart) → only the dead incarnation's rows are reclaimed.
@@ -182,6 +195,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
             .BeTrue("an expired lease is recovered by the per-row floor even with no bridge reclaim");
     }
 
+    [Guarantee("MSG-COORD-02")]
     public virtual async Task should_reclaim_once_under_two_concurrent_bridges()
     {
         // Concurrency: two bridge hosts reclaiming the same Dead owner → rows reclaimed, no duplicate-thrash error
@@ -202,6 +216,54 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
 
         (await _BecomesRetriableAsync(storage, dead.Published, published: true)).Should().BeTrue();
         (await _BecomesRetriableAsync(storage, dead.Received, published: false)).Should().BeTrue();
+    }
+
+    [Fact]
+    [Guarantee("MSG-COORD-04")]
+    public async Task should_reclaim_a_killed_nodes_rows_once_through_a_real_coordination_provider()
+    {
+        if (CoordinationProvider is not { } coordinationProvider)
+        {
+            Assert.Skip("This store has no real coordination provider.");
+            return;
+        }
+
+        // given: two hosts of one cluster on the real membership store, and a doomed node that registered and leased
+        // a published and a received row for an hour
+        var cluster = $"reclaim-{Guid.NewGuid():N}";
+        var (doomedProvider, doomedStorage) = await _BuildCoordinatedStackAsync(
+            "doomed-node",
+            cluster,
+            coordinationProvider
+        );
+        var (survivorProvider, survivorStorage) = await _BuildCoordinatedStackAsync(
+            "survivor-node",
+            cluster,
+            coordinationProvider
+        );
+        await ResetStorageAsync(doomedStorage);
+        var doomedIdentity = await doomedProvider.GetRequiredService<INodeMembership>().RegisterAsync(AbortToken);
+        var rows = await _SeedLeasedRowsAsync(doomedStorage, "doomed-node", _FutureLease());
+
+        // when: the doomed node is killed, so it never beats again, and the survivor runs its dead-owner bridge
+        await _StartBridgeAsync(survivorProvider);
+
+        // then: once the store's clock declares the node dead, the survivor claims each of its rows, and only once
+        (await _BecomesRetriableAsync(survivorStorage, rows.Published, published: true))
+            .Should()
+            .BeTrue("a killed node's published row must return to the retry processor long before its lease ends");
+        (await _BecomesRetriableAsync(survivorStorage, rows.Received, published: false))
+            .Should()
+            .BeTrue("a killed node's received row must return to the retry processor long before its lease ends");
+        (await _IsRetriableAsync(survivorStorage, rows.Published, published: true))
+            .Should()
+            .BeFalse("the survivor's claim leases the published row, so it is not handed out a second time");
+        (await _IsRetriableAsync(survivorStorage, rows.Received, published: false))
+            .Should()
+            .BeFalse("the survivor's claim leases the received row, so it is not handed out a second time");
+        (await survivorProvider.GetRequiredService<INodeMembership>().GetLivenessSnapshotAsync(AbortToken))
+            .Should()
+            .Contain(node => node.Identity == doomedIdentity && node.State == NodeLivenessState.Dead);
     }
 
     private async Task<(IServiceProvider Provider, IDataStorage Storage)> _StartPrimaryStackAsync()
@@ -264,9 +326,20 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
     {
         // The store stamps Owner from the membership identity at lease time, so set it to the owner-to-seed first.
         var owner = Membership.SetIdentity(nodeId, incarnation);
+        var (published, received) = await _SeedLeasedRowsAsync(storage, $"{nodeId}-{incarnation}", leaseDuration);
 
+        return (owner, published, received);
+    }
+
+    /// <summary>Seeds a published and a received retry row leased by whatever identity the storage's membership holds.</summary>
+    private async Task<(Guid Published, Guid Received)> _SeedLeasedRowsAsync(
+        IDataStorage storage,
+        string rowPrefix,
+        TimeSpan leaseDuration
+    )
+    {
         var published = await storage.StoreMessageAsync(
-            $"{nodeId}-{incarnation}-pub-{_NextId()}",
+            $"{rowPrefix}-pub-{_NextId()}",
             _CreateMessage(),
             cancellationToken: AbortToken
         );
@@ -281,8 +354,8 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
             .BeTrue("the seeded published row must be actively leased before reclaim runs");
 
         var received = await storage.StoreReceivedMessageAsync(
-            $"{nodeId}-{incarnation}-rec-{_NextId()}",
-            $"{nodeId}-grp",
+            $"{rowPrefix}-rec-{_NextId()}",
+            $"{rowPrefix}-grp",
             _CreateMessage(),
             AbortToken
         );
@@ -296,7 +369,50 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
             .Should()
             .BeTrue("the seeded received row must be actively leased before reclaim runs");
 
-        return (owner, published.StorageId, received.StorageId);
+        return (published.StorageId, received.StorageId);
+    }
+
+    /// <summary>
+    /// Builds a host whose membership is the real coordination provider, under <paramref name="nodeId"/> in
+    /// <paramref name="cluster"/>. Its liveness thresholds are short so a node that stops beating reads as dead within
+    /// about a second of the store's clock.
+    /// </summary>
+    private async Task<(IServiceProvider Provider, IDataStorage Storage)> _BuildCoordinatedStackAsync(
+        string nodeId,
+        string cluster,
+        Action<HeadlessCoordinationSetupBuilder> coordinationProvider
+    )
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(TimeProvider.System);
+        services.AddHeadlessHostIdentity(options => options.HostName = nodeId);
+        services.AddHeadlessCoordination(setup =>
+        {
+            coordinationProvider(setup);
+            setup.Configure(options =>
+            {
+                options.ClusterName = cluster;
+                options.HeartbeatInterval = TimeSpan.FromMilliseconds(200);
+                options.SuspicionThreshold = TimeSpan.FromMilliseconds(500);
+                options.DeadThreshold = TimeSpan.FromSeconds(1);
+            });
+            // Only the dead-owner bridge ever starts, and a killed node is one that stops beating, so no host beats.
+            setup.DisableMembershipHeartbeat();
+        });
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.Options.Version = "v1";
+            // The reconcile also bounds its snapshot read, which reaches the real store here.
+            setup.Options.DeadNodeReconcileInterval = TimeSpan.FromMilliseconds(250);
+            ConfigureStorage(setup);
+        });
+
+        var provider = services.BuildServiceProvider();
+        _providers.Add(provider);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
+
+        return (provider, provider.GetRequiredService<IDataStorage>());
     }
 
     private async Task<bool> _BecomesRetriableAsync(IDataStorage storage, Guid storageId, bool published)

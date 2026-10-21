@@ -21,7 +21,7 @@ public static class HeadlessUrlValidators
         public IRuleBuilderOptions<T, string> Url()
         {
             return rule.Must(maybeUrl => maybeUrl is null || Uri.TryCreate(maybeUrl, UriKind.Absolute, out _))
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl);
         }
 
         /// <summary>
@@ -73,7 +73,7 @@ public static class HeadlessUrlValidators
                         )
                     )
                 )
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl());
+                .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl);
         }
 
         /// <summary>
@@ -221,7 +221,7 @@ public static class HeadlessUrlValidators
                 maybeUrl is null
                 || (Uri.TryCreate(maybeUrl, UriKind.Absolute, out var uri) && schemeMatches(uri.Scheme))
             )
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl());
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl);
     }
 
     private static void _BuildOriginFailure<TObj>(

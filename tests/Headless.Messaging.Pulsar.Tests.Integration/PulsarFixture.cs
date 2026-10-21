@@ -154,7 +154,8 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
                 client,
                 request,
                 consumerConfig,
-                transportMessageFactory: transportMessageFactory
+                transportMessageFactory: transportMessageFactory,
+                serviceProvider: serviceProvider
             );
 #pragma warning restore CA2000
             consumer.AttachCallbacks(onMessage: null, onLog: _ => { });

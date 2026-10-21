@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
 using Npgsql;
 
 namespace Headless.DistributedLocks.PostgreSql;
@@ -30,7 +28,7 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// The quoted, schema-qualified fence sequence the exclusive session acquire draws from, or <see langword="null"/> for
 /// no fencing.
 /// </param>
-internal sealed partial class PostgresAdvisoryLock(
+internal sealed class PostgresAdvisoryLock(
     bool isShared,
     TimeProvider timeProvider,
     bool allowHashing = true,
@@ -57,6 +55,14 @@ internal sealed partial class PostgresAdvisoryLock(
     {
         const string savePointName = "headless_distributed_locks_postgres_advisory_lock_acquire";
 
+        // A transaction-scoped success keeps its savepoint, so the SET LOCAL timeouts the acquire sets stay in force until
+        // the transaction ends. That is harmless only for a transaction the engine owns and ends with the lease; a
+        // caller's transaction would inherit them.
+        Debug.Assert(
+            !(connection.IsExternallyOwned && connection.HasTransaction),
+            "Externally-owned transactions are not supported."
+        );
+
         var key = PostgreSqlAdvisoryLockKey.FromString(resourceName, allowHashing);
 
         if (
@@ -77,18 +83,12 @@ internal sealed partial class PostgresAdvisoryLock(
             }
 
             // The lock is already held on this connection; an externally-owned connection cannot acquire it again, so
-            // wait out the timeout and report failure. This degenerate path is reached only by the externally-owned
-            // transaction API, never by the connection-scoped provider (which owns its connections and never
-            // re-acquires the same lock on one).
+            // wait out the timeout and report failure. The connection-scoped provider never reaches this path: it owns
+            // its connections and never re-acquires the same lock on one.
             await timeProvider.Delay(timeout, cancellationToken).ConfigureAwait(false);
 
             return null;
         }
-
-        // Capture timeout settings before setting a savepoint when acquiring an externally-owned transaction-scoped lock:
-        // on success we can't roll back the savepoint (it would release the lock), so we restore the settings explicitly.
-        var capturedTimeoutSettings = await _CaptureTimeoutSettingsIfNeededAsync(connection, cancellationToken)
-            .ConfigureAwait(false);
 
         // The acquire command uses SET LOCAL to set statement/lock timeouts; inside a transaction those persist to the
         // end of the transaction, so we wrap in a savepoint we can roll back (except on a transaction-scoped success,
@@ -122,7 +122,6 @@ internal sealed partial class PostgresAdvisoryLock(
             {
                 // Rolling back to the savepoint also drops a transaction-scoped lock taken under it.
                 await rollBackTransactionTimeoutVariablesIfNeededAsync(isAcquired: false).ConfigureAwait(false);
-                await _RestoreTimeoutSettingsIfNeededAsync(capturedTimeoutSettings, connection).ConfigureAwait(false);
 
                 // The server may have granted the lock before the client gave up on the statement: a cancel or a
                 // client command timeout can land after pg_[try_]advisory_lock returned, and a lock_timeout can race
@@ -176,7 +175,6 @@ internal sealed partial class PostgresAdvisoryLock(
         };
 
         await rollBackTransactionTimeoutVariablesIfNeededAsync(isAcquired: acquired == true).ConfigureAwait(false);
-        await _RestoreTimeoutSettingsIfNeededAsync(capturedTimeoutSettings, connection).ConfigureAwait(false);
 
         return acquired switch
         {
@@ -192,8 +190,7 @@ internal sealed partial class PostgresAdvisoryLock(
             if (
                 savePointDefined
                 // For a transaction-scoped success we can't roll back the savepoint (it would release the lock). Leaking
-                // the savepoint is fine: an internally-owned transaction cleans it up on disposal, and an externally-owned
-                // transaction must keep it or lose the lock.
+                // the savepoint is fine: the internally-owned transaction cleans it up on disposal.
                 && !(isAcquired && _UseTransactionScopedLock(connection))
             )
             {
@@ -316,32 +313,6 @@ internal sealed partial class PostgresAdvisoryLock(
         return command;
     }
 
-    private static async ValueTask<CapturedTimeoutSettings?> _CaptureTimeoutSettingsIfNeededAsync(
-        DatabaseConnection connection,
-        CancellationToken cancellationToken
-    )
-    {
-        // Only relevant for an externally-owned transaction-scoped acquire (where we can't roll back the savepoint on
-        // success and must restore the settings explicitly).
-        if (!(connection.IsExternallyOwned && _UseTransactionScopedLock(connection)))
-        {
-            return null;
-        }
-
-        var statementTimeout = await getCurrentSettingAsync("statement_timeout").ConfigureAwait(false);
-        var lockTimeout = await getCurrentSettingAsync("lock_timeout").ConfigureAwait(false);
-
-        return new CapturedTimeoutSettings(statementTimeout!, lockTimeout!);
-
-        async ValueTask<string?> getCurrentSettingAsync(string settingName)
-        {
-            using var command = connection.CreateCommand();
-            command.SetCommandText($"SELECT current_setting('{settingName}', 'true') AS {settingName};");
-
-            return (string?)await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        }
-    }
-
     private static async ValueTask<bool> _DefineSavePointIfNeededAsync(
         DatabaseConnection connection,
         string savePointName,
@@ -382,29 +353,6 @@ internal sealed partial class PostgresAdvisoryLock(
         return true;
     }
 
-    private static async ValueTask _RestoreTimeoutSettingsIfNeededAsync(
-        CapturedTimeoutSettings? settings,
-        DatabaseConnection connection
-    )
-    {
-        if (settings is not { } captured)
-        {
-            return;
-        }
-
-        using var command = connection.CreateCommand();
-
-        var commandText = new StringBuilder();
-        commandText.AppendLine(
-            CultureInfo.InvariantCulture,
-            $"SET LOCAL statement_timeout = {captured.StatementTimeout};"
-        );
-        commandText.AppendLine(CultureInfo.InvariantCulture, $"SET LOCAL lock_timeout = {captured.LockTimeout};");
-
-        command.SetCommandText(commandText.ToString());
-        await command.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
-    }
-
     private static bool _HasSqlState(Exception exception, string sqlState)
     {
         return exception is PostgresException postgresException
@@ -413,26 +361,8 @@ internal sealed partial class PostgresAdvisoryLock(
 
     private static bool _UseTransactionScopedLock(DatabaseConnection connection)
     {
-        // Transaction-scoped locking applies to internally-owned connections with a transaction and externally-owned
-        // connections whose transaction we can see (i.e. came through the transactional API).
+        // Only an internally-owned connection carries a transaction (see the assert in TryAcquireAsync); an
+        // externally-owned connection's own transaction is invisible here and takes session locks.
         return connection.HasTransaction;
     }
-
-    [StructLayout(LayoutKind.Auto)]
-    private readonly struct CapturedTimeoutSettings(string statementTimeout, string lockTimeout)
-    {
-        public int StatementTimeout { get; } = _ParsePostgresTimeout(statementTimeout);
-
-        public int LockTimeout { get; } = _ParsePostgresTimeout(lockTimeout);
-
-        private static int _ParsePostgresTimeout(string timeout)
-        {
-            return PostgresTimeoutRegex.Match(timeout) is { Success: true, Value: var value }
-                ? int.Parse(value, CultureInfo.InvariantCulture)
-                : throw new FormatException($"Unexpected timeout setting value '{timeout}'.");
-        }
-    }
-
-    [GeneratedRegex(@"^\d+(?=(?:ms)?$)", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
-    private static partial Regex PostgresTimeoutRegex { get; }
 }

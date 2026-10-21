@@ -41,8 +41,8 @@ internal sealed partial class ConsumerRegister(
     private readonly TimeProvider _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
 
     // Admission retries wait for a store to come back in real time, which an app clock that a test host fakes and never
-    // advances would never allow, so they run on the system clock rather than the registered TimeProvider.
-    private readonly TimeProvider _backoffClock = TimeProvider.System;
+    // advances would never allow, so they run on the back-off clock rather than the registered TimeProvider.
+    private readonly TimeProvider _backoffClock = BackoffClock.Resolve(serviceProvider);
 
     private readonly MessagingTelemetry _telemetry =
         serviceProvider.GetService<MessagingTelemetry>() ?? MessagingTelemetry.Default;
@@ -1626,7 +1626,7 @@ internal sealed partial class ConsumerRegister(
 internal static partial class ConsumerRegisterLog
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 126,
         EventName = "ProcessReceivedMessageFailed",
         Level = LogLevel.Error,
         Message = "An exception occurred when process received message. Message:'{Message}'."
@@ -1650,7 +1650,7 @@ internal static partial class ConsumerRegisterLog
     );
 
     [LoggerMessage(
-        EventId = 4120,
+        EventId = 4134,
         EventName = "InboxAdmissionRetrying",
         Level = LogLevel.Warning,
         Message = "Storing received message '{MessageId}' in the inbox failed; retry {Retry} of {Retries} in {Delay}."

@@ -267,6 +267,71 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
             .Be(0);
     }
 
+    [Fact]
+    public async Task should_expire_message_in_broker_when_delivery_deadline_passes_before_any_consumer()
+    {
+        // given — a message with a one-second delivery deadline, then a control with none, on a queue nobody consumes
+        var options = _CreateOptions();
+        var name = $"orders-{Guid.NewGuid():N}";
+        await using var pool = _CreatePool(options);
+        await using var transport = new RabbitMqTransport(
+            NullLogger<RabbitMqTransport>.Instance,
+            pool,
+            MessageLane.Queue
+        );
+        var expiring = _CreateMessage(name);
+        expiring.Headers[MessagingHeaders.DeliverBy] = DateTimeOffset
+            .UtcNow.AddSeconds(1)
+            .ToString("O", CultureInfo.InvariantCulture);
+        var control = _CreateMessage(name);
+        (await transport.SendAsync(expiring, AbortToken)).Succeeded.Should().BeTrue();
+        (await transport.SendAsync(control, AbortToken)).Succeeded.Should().BeTrue();
+
+        // when — the deadline passes while the message waits at the head of the queue
+        await _WaitForMessageCountAsync($"queue.{name}", expected: 1);
+
+        // then — the broker dropped it on its own: a consumer that starts now receives only the control
+        var received = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var controlReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var services = new ServiceCollection().BuildServiceProvider();
+        await using var consumer = new RabbitMqConsumerClient(
+            "group",
+            1,
+            pool,
+            Options.Create(options),
+            services,
+            provisionsTopology: true,
+            lane: MessageLane.Queue
+        );
+        consumer.AttachCallbacks(
+            async (message, sender) =>
+            {
+                received.Enqueue(message.Id);
+                await consumer.CommitAsync(sender, CancellationToken.None);
+                if (string.Equals(message.Id, control.Id, StringComparison.Ordinal))
+                {
+                    controlReceived.TrySetResult();
+                }
+            },
+            _ => { }
+        );
+        await consumer.SubscribeAsync([name], AbortToken);
+        using var listening = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listeningTask = consumer.ListeningAsync(TimeSpan.FromSeconds(1), listening.Token).AsTask();
+
+        try
+        {
+            await consumer.WaitUntilReadyAsync(AbortToken);
+            await controlReceived.Task.WaitAsync(_Wait, AbortToken);
+            received.Should().Equal(control.Id);
+        }
+        finally
+        {
+            await listening.CancelAsync();
+            await listeningTask;
+        }
+    }
+
     private RabbitMqMessagingOptions _CreateOptions()
     {
         return new RabbitMqMessagingOptions

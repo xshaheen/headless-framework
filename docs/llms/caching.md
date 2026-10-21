@@ -169,7 +169,7 @@ Tag invalidation is Family-2 logical tag-version invalidation, the same model as
 
 `ClearAsync()` is the whole-cache analogue: it bumps one reserved clear-generation marker checked by every read (tagged or not). Every entry born before the bump reads as a miss but keeps its fail-safe reserve. It is the reserve-preserving counterpart of `FlushAsync` (which drops reserves: physical in-process, a logical remove-generation marker on a distributed tier — cluster-safe, no `FLUSHDB`). On a shared L2, marker bumps are eventually visible: an instance resolves L2 markers from a process-local cache refreshed within `RedisCacheOptions.TagMarkerRefreshWindow` (default 2s), so a peer's bump is observed only after the window elapses (the bumping instance invalidates immediately on its own next read). On a backplane hybrid the receiver seeds both its L1 and its L2 marker immediately from the notification timestamp (via `ISeedableTagMarkerCache`), so neither is window-bounded; the window is the backstop only for no-backplane (pure-Redis) deployments and recovery after a missed backplane message.
 
-Registration uses one builder with four slots. `services.AddHeadlessCaching(setup => ...)` is the single entry point, and provider packages contribute deferred extensions into the default slot (`Use{InMemory,Redis,Hybrid}` — the unkeyed `ICache`), the role-keyed tier slots (`AddMemoryTier`/`AddRedisTier` — the L1/L2 of a default hybrid), the named slot (`AddNamed(name, i => i.Use…(...))` — unlimited independent instances), and the cross-cutting slot (`UseDistributedFactoryLock`). The invariant is per-slot exactly-one rather than a global exactly-one-provider gate: exactly one default is required, at most one tier per reserved role is allowed, named instances need unique non-reserved names and exactly one provider each, and a tier role the default provider already claims (for example `UseRedis` plus `AddRedisTier`, which both claim the remote role) is rejected. The old per-provider extensions let two `isDefault: true` registrations silently race for the default `ICache` (first-wins); the builder turns that into a hard error at registration. All contributions are deferred until the gates pass and applied tiers → default → named → cross-cutting, so a throwing setup leaves the service collection unchanged, and a second `AddHeadlessCaching` call on the same service collection throws. `UseInMemory`, `UseRedis`, and `UseHybrid` each come in `Action<TOptions>`, `Action<TOptions, IServiceProvider>`, and `IConfiguration` shapes (`UseInMemory` and `UseHybrid` also work with no arguments; `UseRedis` does not, because `ConnectionMultiplexer` is required), and named instances bind their options per instance name — including the `IConfiguration` shape.
+Registration uses one builder with four slots. `services.AddHeadlessCaching(setup => ...)` is the single entry point, and provider packages contribute deferred extensions into the default slot (`Use{InMemory,Redis,Hybrid}` — the unkeyed `ICache`), the role-keyed tier slots (`AddMemoryTier`/`AddRedisTier` — the L1/L2 of a default hybrid), the named slot (`AddNamed(name, i => i.Use…(...))` — unlimited independent instances), and the cross-cutting slot (`UseDistributedFactoryLock`). The invariant is per-slot exactly-one rather than a global exactly-one-provider gate: exactly one default is required, at most one tier per reserved role is allowed, named instances need unique non-reserved names and exactly one provider each, and a tier role the default provider already claims (for example `UseRedis` plus `AddRedisTier`, which both claim the remote role) is rejected. The old per-provider extensions let two `isDefault: true` registrations silently race for the default `ICache` (first-wins); the builder turns that into a hard error at registration. All contributions are deferred until the gates pass and applied tiers → default → named → cross-cutting, so a throwing setup leaves the service collection unchanged, and a second `AddHeadlessCaching` call on the same service collection throws. `UseInMemory`, `UseRedis`, and `UseHybrid` each come in `Action<TOptions>`, `Action<TOptions, IServiceProvider>`, and `IConfiguration` shapes (`UseInMemory` and `UseHybrid` also work with no arguments; `UseRedis` takes its multiplexer from the registered `IConnectionMultiplexer` when the options leave it unset), and named instances bind their options per instance name — including the `IConfiguration` shape.
 
 Named caches are keyed `ICache` registrations created by `setup.AddNamed(name, i => i.Use{InMemory,Redis,Hybrid}(...))`, each with independent options (and for Redis, an independent multiplexer and scripts loader). Three role keys are reserved and registered by every provider setup — `CacheConstants.{Memory,Remote,Hybrid}CacheProvider`, i.e. `Headless.Caching:{Memory,Remote,Hybrid}`, namespaced so they cannot collide with consumer-owned keyed services — so the default tiers are always reachable by role; named instances must pick other names (any name under the `Headless.Caching:` namespace is reserved). `ICacheProvider` resolves both shapes. `DefaultEntryOptions` (per cache instance, from `CacheOptions`) feeds the option-less `GetOrAddAsync` extension overloads and is deliberately explicit-at-registration: unset means those overloads throw rather than invent a duration.
 
@@ -979,16 +979,12 @@ var redis = ConnectionMultiplexer.Connect("localhost:6379");
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
 
-builder.Services.AddHeadlessCaching(setup =>
-    setup.UseRedis(options =>
-    {
-        options.ConnectionMultiplexer = redis;
-        options.KeyPrefix = "myapp:";
-    })
-);
+// ConnectionMultiplexer is left unset, so the cache uses the registered IConnectionMultiplexer, the same one
+// the Redis distributed-lock provider resolves.
+builder.Services.AddHeadlessCaching(setup => setup.UseRedis(options => options.KeyPrefix = "myapp:"));
 ```
 
-`UseRedis` has no parameterless shape: `ConnectionMultiplexer` is required, and the `IConfiguration`-binding shape still needs the multiplexer supplied through an additional `Configure` call.
+`UseRedis` has no parameterless shape. Every shape, including the `IConfiguration`-binding one, falls back to the registered `IConnectionMultiplexer` when `ConnectionMultiplexer` is unset; set it to give one cache its own connection. Options validation fails at startup when neither exists.
 
 Named instances (independent multiplexer, prefix, and scripts loader per name; the setup still needs exactly one default `Use*`):
 
@@ -1036,7 +1032,7 @@ builder.Services.AddHeadlessCaching(setup =>
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `ConnectionMultiplexer` | required | The StackExchange.Redis multiplexer the cache uses; the setup never creates one. |
+| `ConnectionMultiplexer` | the registered `IConnectionMultiplexer` | The StackExchange.Redis multiplexer the cache uses; the setup never creates one. |
 | `KeyPrefix` | `""` | Prefix for all cache keys (and the NUL-prefixed `\0__tag:` / `\0__clear` marker namespaces). |
 | `DefaultEntryOptions` | `null` | Default `CacheEntryOptions` for the option-less `GetOrAddAsync` extension overloads; when `null` those overloads throw. |
 | `ReadMode` | `CommandFlags.None` | StackExchange.Redis command flags applied to read operations (e.g. `PreferReplica`). |

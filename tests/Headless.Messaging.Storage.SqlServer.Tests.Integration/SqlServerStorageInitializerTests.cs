@@ -349,27 +349,25 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         {
             foreach (var schema in new[] { "headless", otherSchema })
             {
-                // when
+                // when - other features share the schema (the schema runner's history, and the coordination tables
+                // the dead-owner tests create), so only Messaging tables' objects are judged
                 var names = (
                     await connection.QueryAsync<string>(
                         new CommandDefinition(
                             """
                             SELECT o.name FROM sys.objects o JOIN sys.tables t ON t.object_id = o.parent_object_id
                             JOIN sys.schemas s ON s.schema_id = t.schema_id
-                            WHERE s.name = @Schema AND o.type IN ('PK','UQ','F','C','D')
+                            WHERE s.name = @Schema AND t.name LIKE 'Messaging%' AND o.type IN ('PK','UQ','F','C','D')
                             UNION ALL
                             SELECT i.name FROM sys.indexes i JOIN sys.tables t ON t.object_id = i.object_id
                             JOIN sys.schemas s ON s.schema_id = t.schema_id
-                            WHERE s.name = @Schema AND i.name IS NOT NULL
+                            WHERE s.name = @Schema AND t.name LIKE 'Messaging%' AND i.name IS NOT NULL
                             """,
                             new { Schema = schema },
                             cancellationToken: AbortToken
                         )
                     )
-                )
-                    // The schema runner's history table and its key share the schema but are not Messaging objects.
-                    .Where(name => !name.Contains(SchemaRunner.HistoryTableName, StringComparison.Ordinal))
-                    .ToList();
+                ).ToList();
 
                 // then
                 names

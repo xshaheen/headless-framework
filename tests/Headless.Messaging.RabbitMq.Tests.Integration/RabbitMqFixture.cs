@@ -69,9 +69,12 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
             throw new InvalidOperationException($"rabbitmqctl list_queues failed ({result.ExitCode}): {result.Stderr}");
         }
 
+        // Only three-column lines are queue rows. A full-project run once got a shorter line on stdout while the broker
+        // was busy with other suites; its text was not captured, and no queue check needs it.
         return result
             .Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(static line => line.Split('\t'))
+            .Where(static columns => columns.Length == 3)
             .Select(static columns => new RabbitMqBrokerQueue(
                 columns[0],
                 Durable: bool.Parse(columns[1]),
@@ -130,7 +133,8 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         string? destination = null,
         string? group = null,
         bool createReplacement = true,
-        string? exchangeName = null
+        string? exchangeName = null,
+        TransportConformanceSessionOptions? options = null
     )
     {
         return _CreateConformanceSessionAsync(
@@ -140,7 +144,8 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
             exchangeName,
             createReplacement,
             failEnvelopeBuild: false,
-            cancellationToken
+            cancellationToken,
+            options: options
         );
     }
 
@@ -218,7 +223,30 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         );
     }
 
-    private async ValueTask<TransportConsumerConformanceSession> _CreateConformanceSessionAsync(
+    /// <summary>
+    /// Opens a queue session on the RabbitMQ at <paramref name="hostName"/>:<paramref name="port"/>, for a test that runs
+    /// its own broker rather than the collection's.
+    /// </summary>
+    public static ValueTask<TransportConsumerConformanceSession> CreateConformanceSessionAsync(
+        string hostName,
+        int port,
+        CancellationToken cancellationToken
+    )
+    {
+        return _CreateConformanceSessionAsync(
+            hostName,
+            port,
+            MessageLane.Queue,
+            destination: null,
+            group: null,
+            exchangeName: null,
+            createReplacement: false,
+            failEnvelopeBuild: false,
+            cancellationToken
+        );
+    }
+
+    private ValueTask<TransportConsumerConformanceSession> _CreateConformanceSessionAsync(
         MessageLane lane,
         string? destination,
         string? group,
@@ -226,9 +254,40 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         bool createReplacement,
         bool failEnvelopeBuild,
         CancellationToken cancellationToken,
-        ConsumerClientRequest? request = null
+        ConsumerClientRequest? request = null,
+        TransportConformanceSessionOptions? options = null
     )
     {
+        return _CreateConformanceSessionAsync(
+            HostName,
+            Port,
+            lane,
+            destination,
+            group,
+            exchangeName,
+            createReplacement,
+            failEnvelopeBuild,
+            cancellationToken,
+            request,
+            options
+        );
+    }
+
+    private static async ValueTask<TransportConsumerConformanceSession> _CreateConformanceSessionAsync(
+        string hostName,
+        int port,
+        MessageLane lane,
+        string? destination,
+        string? group,
+        string? exchangeName,
+        bool createReplacement,
+        bool failEnvelopeBuild,
+        CancellationToken cancellationToken,
+        ConsumerClientRequest? request = null,
+        TransportConformanceSessionOptions? options = null
+    )
+    {
+        options ??= new TransportConformanceSessionOptions();
         destination ??= $"conf-{Guid.NewGuid():N}";
         group ??= $"group-{Guid.NewGuid():N}";
         var services = new ServiceCollection().BuildServiceProvider();
@@ -236,10 +295,10 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         var rabbitOptions = Options.Create(
             new RabbitMqMessagingOptions
             {
-                HostName = HostName,
-                Port = Port,
-                UserName = UserName,
-                Password = Password,
+                HostName = hostName,
+                Port = port,
+                UserName = RabbitMqBuilder.DefaultUsername,
+                Password = RabbitMqBuilder.DefaultPassword,
                 ExchangeName = exchangeName ?? $"conf-{Guid.NewGuid():N}",
             }
         );
@@ -248,6 +307,8 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
             rabbitOptions.Value.CustomHeadersBuilder = static (_, _) =>
                 [new KeyValuePair<string, string>(Headless.Messaging.Headers.MessageId, string.Empty)];
         }
+
+        _Apply(options, rabbitOptions.Value);
 
 #pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.
         var pool = new ConnectionChannelPool(
@@ -271,7 +332,7 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
             consumer = request is null
                 ? new RabbitMqConsumerClient(
                     group,
-                    1,
+                    options.Concurrency,
                     pool,
                     rabbitOptions,
                     services,
@@ -302,13 +363,16 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
                 createReplacementSession: createReplacement
                     ? replacementToken =>
                         _CreateConformanceSessionAsync(
+                            hostName,
+                            port,
                             lane,
                             destination,
                             group,
                             rabbitOptions.Value.ExchangeName,
                             createReplacement: false,
                             failEnvelopeBuild,
-                            replacementToken
+                            replacementToken,
+                            options: options
                         )
                     : null
             );
@@ -324,6 +388,64 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
             await services.DisposeAsync();
             throw;
         }
+    }
+
+    /// <summary>Maps what a conformance scenario asks of a session onto the RabbitMQ options that provide it.</summary>
+    private static void _Apply(TransportConformanceSessionOptions options, RabbitMqMessagingOptions rabbitOptions)
+    {
+        if (options.HeaderBuilder is { } headerBuilder)
+        {
+            rabbitOptions.CustomHeadersBuilder = (delivery, _) =>
+            {
+                headerBuilder(delivery.BasicProperties.MessageId);
+                return [];
+            };
+        }
+
+        var queueArguments = rabbitOptions.QueueArguments;
+        queueArguments.EnableDeadLettering = options.DeadLettering;
+
+        if (options.DeliveryLimit is { } deliveryLimit)
+        {
+            // Only a quorum queue counts deliveries. Its limit counts the deliveries that came back, so the one that
+            // finally gives up is not part of it.
+            queueArguments.QueueType = "quorum";
+            queueArguments.DeliveryLimit = deliveryLimit - 1;
+        }
+
+        if (options.TimeToLive is { } timeToLive)
+        {
+            queueArguments.MessageTTL = (int)timeToLive.TotalMilliseconds;
+        }
+    }
+
+    /// <summary>
+    /// Takes every message the dead-letter queue of <paramref name="session"/> holds, as an operator draining it would,
+    /// and returns their message ids.
+    /// </summary>
+    public async ValueTask<IReadOnlyList<string>> TakeDeadLetteredMessageIdsAsync(
+        TransportConsumerConformanceSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        var queueName = ((RabbitMqConsumerClient)session.Consumer).QueueNames.Should().ContainSingle().Subject;
+        var connection = await GetConnectionAsync();
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
+        var taken = new List<string>();
+
+        while (
+            await channel.BasicGetAsync(
+                RabbitMqQueueTopology.DeadLetterQueue(queueName),
+                autoAck: true,
+                cancellationToken
+            )
+                is { } deadLettered
+        )
+        {
+            taken.Add(deadLettered.BasicProperties.MessageId ?? string.Empty);
+        }
+
+        return taken;
     }
 
     private static MessageLane _ToMessageLane(MessageLane lane) =>

@@ -12,6 +12,7 @@ using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Tests.Guarantees;
 using Tests.Helpers;
 
 namespace Tests;
@@ -67,6 +68,8 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-PUB-01")]
+    [Guarantee("MSG-PUB-03")]
     public async Task should_commit_the_row_in_the_units_database_and_relay_it_after_commit()
     {
         // given
@@ -93,6 +96,7 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-PUB-01")]
     public async Task should_leave_no_row_in_any_database_when_the_unit_rolls_back()
     {
         // given
@@ -121,6 +125,7 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-PUB-05")]
     public async Task should_refuse_a_unit_on_a_database_without_an_outbox()
     {
         // given
@@ -177,6 +182,7 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-PUB-06")]
     public async Task should_keep_relaying_the_other_outboxes_while_one_database_is_down()
     {
         // given — rows committed while the dispatcher is stopped, so only the relay can deliver them
@@ -231,6 +237,7 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-PUB-06")]
     public async Task should_start_while_an_outbox_database_is_down_and_publish_to_it_once_it_is_back()
     {
         // given — the shipping database does not exist when the host starts

@@ -1,6 +1,6 @@
 ---
 domain: Utilities
-packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, Http.Resilience, NetTopologySuite, PhoneNumbers, Redis, Sitemaps, Slugs
+packages: FluentValidation, FluentValidation.FileSignatures, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, Http.Resilience, NetTopologySuite, PhoneNumbers, Redis, Sitemaps, Slugs
 ---
 
 # Utilities
@@ -13,6 +13,7 @@ Install individually as needed -- these packages are independent of each other:
 
 - **Generator.Primitives + Generator.Primitives.Abstractions** -- Roslyn source generator for strongly-typed domain primitives (IDs, value types). Install both together. Define types implementing `IPrimitive<T>` and get auto-generated equality, JSON converters, EF Core value converters, Dapper handlers, and TypeConverters.
 - **FluentValidation** -- Enterprise validators on top of FluentValidation: national IDs, collections, geo, pagination, URLs, IP addresses, string formats (slug/username/hex color/Base64/…), relative date/time (`InThePast()`/`MinimumAge()`, `TimeProvider`-based), enum names, and markup rejection (`NoScripts()`). Use `ErrorDescriptor` for structured API errors.
+- **FluentValidation.FileSignatures** -- the binary signature (magic bytes) rule `HaveSignatures` for an `IUploadedFile`, kept out of FluentValidation so packages that never handle files do not carry FileSignatures and OpenMcdf.
 - **Http.Resilience** -- declare an outbound provider client's side-effect class (`OutboundEffect.Safe | Idempotent | Unsafe`) and derive its HttpClient resilience pipeline from it with `AddEffectResilienceHandler`. Used by the SMS and Paymob packages.
 - **Hosting** -- DI extensions (`AddIf`, `AddOrReplace*`, `Unregister<T>`), options validation with FluentValidation (`AddOptionsWithFluentValidation<T,V>`), database seeder infrastructure (`ISeeder`).
 - **PhoneNumbers** -- libphonenumber-backed phone number formatting, normalization, and parsing for the `PhoneNumber` value object, mobile-number validation, and the phone FluentValidation rules (`InternationalPhoneNumber()`, `MobilePhoneNumber()`, …).
@@ -28,10 +29,10 @@ CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) is its own d
 - Use `Generator.Primitives` + `Generator.Primitives.Abstractions` **together** for strongly-typed domain primitives. Define a `readonly partial struct` implementing `IPrimitive<T>` with a static `Validate` method. The source generator handles everything else.
 - Use `Headless.FluentValidation` for validators, not raw `FluentValidation`. It provides `EgyptianNationalId()`, `UniqueElements()`, `Latitude()`, `Longitude()`, `PageIndex()`, `PageSize()`, `Id()`, and more.
 - Use `Headless.PhoneNumbers` for phone validation and formatting: the `InternationalPhoneNumber()`, `MobilePhoneNumber()`, and `PhoneNumber(countryCode)` rules, and `GetInternationalFormat()` / `Normalize()` on `PhoneNumber`. `PhoneNumber` itself lives in `Headless.Primitives` and carries no libphonenumber dependency.
-- Use `ErrorDescriptor` with `.WithErrorDescriptor()` for structured API error responses. Convert results via `result.Errors.ToErrorDescriptors()`.
+- Use `ErrorDescriptor` with `.WithErrorDescriptor(factory)` for structured API error responses; pass a describer method group so the description follows the request culture. Convert results via `result.Errors.ToErrorDescriptors()`.
 - Use `Headless.Hosting` for DI helpers. Key methods: `AddIf(condition, action)`, `AddIfElse(condition, ifAction, elseAction)`, `AddOrReplaceSingleton<TService, TImpl>()`, `Configure<TOptions, TValidator>(configuration, name)`.
 - Use `ISeeder` from Hosting for data the code declares; register with `services.AddSeeder<T>()`, order with `DependsOn`, and let the deployment run `seed` (or `deploy`). Tools and tests call `await app.Services.SeedAsync()`. EF Core migrations are structure, not data: register them with `services.AddDbContextMigrations<TContext>()`, which `resources provision` applies.
-- Use `Headless.NetTopologySuite` for geospatial work. Key methods: `SanitizeForSqlGeography()`, `PermissiveIntersection()`, `PermissiveUnion()`, `ComputeOverlap()`, `EnsureIsOrientedCounterClockwise()`, `Simplify()`. Use `GeoConstants.GoogleMapsSrid` (4326) for SRID.
+- Use `Headless.NetTopologySuite` for geospatial work. Key methods: `SanitizeForSqlGeography()`, `PermissiveIntersection()`, `PermissiveUnion()`, `ComputeOverlap()`, `EnsureIsOrientedCounterClockwise()`, `Simplify()`. Use `GeoConstants.GoogleMapsSrid` (4326) for SRID. Call `services.AddHeadlessNetTopologySuite()` once at startup: it installs `GeoServices.NtsGeometryServices` as the process-wide `NtsGeometryServices.Instance`, which NetTopologySuite reads instead of DI, and registers it and `GeoServices.GeometryFactory` as singletons.
 - Use `Headless.Redis` for Lua script management only, not for general Redis operations. Call `HeadlessRedisScriptsLoader.EvaluateAsync(...)` directly: a script not loaded yet loads on that call. To have a package's scripts ready before first use, call `LoadAsync` with the scripts the package uses from an `IWarmup` whose `GatesReadiness` is `false`; never from a startup initializer, which blocks the host start on a Redis round trip.
 - Use `Headless.Sitemaps` for XML sitemap generation. Create `List<SitemapUrl>` and call `urls.WriteToAsync(stream)`. Auto-splits at 50,000 URLs via `urls.WriteAsync()`. Use `SitemapAlternateUrl` for hreflang/localized URLs.
 - Use `Slug.Create(text)` for slug generation. Customize with `SlugOptions` (separator, max length, casing, character replacements). Handles Unicode/Arabic text natively.
@@ -51,8 +52,10 @@ Extension library for FluentValidation providing additional validators and utili
 - String-format validators (slug, username, ZIP code, hex color, decimal, Base64, trimmed, culture name)
 - Relative date/time validators (`InThePast`/`InTheFuture`/`MinimumAge`, …) that read "now" from an injectable `TimeProvider`
 - Enum-name and markup-rejection (`NoScripts`) validators
+- File validators for an `IUploadedFile` property (`FileNotEmpty`, `GreaterThanOrEqualTo`, `LessThanOrEqualTo`, `ContentTypes`), so a command or request handled in process (through the mediator, for example) validates a file without depending on ASP.NET Core. An `IUploadedFile` wraps live content and is not a broker message payload; a message carries a reference to stored content instead. `Headless.Api.FluentValidation` offers the same rules for `IFormFile`, with the same error codes (`FluentValidatorErrorCodes.File*`, descriptors in `FluentValidatorErrorDescriber.Files`) and messages. A content-type failure reports `g:file_unexpected_content_type` with the accepted types in `{ContentTypes}`; a signature failure reports `g:file_unexpected_signature`. The size and content-type rules implement `IFileSizeValidator` / `IFileContentTypeValidator`, which Headless.OpenApi reads. The signature rule ships in [`Headless.FluentValidation.FileSignatures`](#headlessfluentvalidationfilesignatures). A null file passes every rule
 - `ErrorDescriptor` integration for structured API responses
 - Automatic camelCase property path normalization
+- Messages in English, formal Arabic (`ar`), and Egyptian Arabic (`ar-EG`), including Arabic wording for FluentValidation's own built-in messages
 
 ### Install
 
@@ -83,8 +86,14 @@ public sealed class UserValidator : AbstractValidator<User>
 ```csharp
 RuleFor(x => x.Total)
     .GreaterThan(0)
-    .WithErrorDescriptor(new ErrorDescriptor("ORDER_TOTAL_INVALID", "Total must be positive."));
+    .WithErrorDescriptor(OrderErrorDescriber.TotalInvalid); // static ErrorDescriptor TotalInvalid() => new("order:total_invalid", OrderMessages.total_invalid);
 ```
+
+`WithErrorDescriptor` takes a factory, not a descriptor. It reads the code and severity once, when the rule is
+built, and calls the factory again for every failure, so a description read from a localized resource follows the
+culture of the request being validated. Validators are usually registered as singletons, so a description captured
+at construction would answer every later request in the language of the first one. Pass a describer method group, or
+a lambda such as `() => new ErrorDescriptor("order:total_invalid", "Total must be positive.")` for a fixed text.
 
 `ErrorDescriptor` defaults to error severity. Pass `ValidationSeverity.Warning` or
 `ValidationSeverity.Information` explicitly for non-error rules; severity is preserved by both
@@ -95,6 +104,34 @@ RuleFor(x => x.Total)
 ```csharp
 var errors = result.Errors.ToErrorDescriptors(); // IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>
 ```
+
+#### Regional Arabic
+
+Every package that ships Arabic messages ships them twice: formal Arabic under `ar` and Egyptian Arabic under `ar-EG`. .NET resource fallback runs from the region to `ar`, then to English, so an `ar-EG` request reads Egyptian Arabic and `ar` or any other `ar-*` region (`ar-SA`, `ar-AE`, and so on) reads formal Arabic.
+
+| Culture | Register | Example (`g:rate_limit_exceeded`) |
+| --- | --- | --- |
+| `ar` | Formal Arabic, in the plain register Gulf and other regional products use | `عدد الطلبات كبير جداً. حاول مرة أخرى بعد قليل.` |
+| `ar-EG` | Professional Egyptian Arabic | `عدد الطلبات كتير. جرّب تاني بعد شوية.` |
+
+Formal Arabic uses vocabulary every region reads (رقم الهاتف، رقم الهوية الوطنية، البريد الإلكتروني، كلمة المرور). Egypt-only services, such as the Paymob wallet messages, keep Egyptian terms (الرقم القومي) under `ar` too.
+
+FluentValidation's built-in messages (`NotEmpty`, `EmailAddress`, `Length`, and the rest) come from its `LanguageManager`. `languageManager.AddHeadlessArabicTranslations()` replaces the library's own `ar` wording for every built-in key with the Headless formal Arabic, and `languageManager.AddHeadlessEgyptianArabicTranslations()` adds `ar-EG` wording. `AddHeadless()` applies both to `ValidatorOptions.Global.LanguageManager` through `SetupApi.ConfigureGlobalSettings()`; an application without `Headless.Api.ServiceDefaults` calls them once at startup:
+
+```csharp
+using FluentValidation;
+using FluentValidation.Resources;
+
+if (ValidatorOptions.Global.LanguageManager is LanguageManager languageManager)
+{
+    languageManager.AddHeadlessArabicTranslations();
+    languageManager.AddHeadlessEgyptianArabicTranslations();
+}
+```
+
+- The Arabic built-in messages leave out `{PropertyName}`: it resolves to the property's English name, which reads badly inside an Arabic sentence, so a client shows the message next to its field. English keeps the library's text, property name included.
+- Each call overwrites the text the manager holds for its culture and key. Add the application's own `ar` or `ar-EG` translations after `AddHeadless()` (or after the calls above): a translation added before is replaced. An application that assigns its own `ILanguageManager` that does not derive from `LanguageManager` gets no Headless built-ins.
+- `ar-EG` must be one of the request localization's `SupportedUICultures`. With only `ar` listed, an `ar-EG` request resolves to `ar` and reads formal Arabic. An application that sets `SatelliteResourceLanguages` must list `ar-EG` too, or the build drops those satellite assemblies.
 
 ### Available Validators
 
@@ -123,6 +160,56 @@ No configuration required.
 
 None.
 ---
+## Headless.FluentValidation.FileSignatures
+
+The binary signature (magic bytes) rule for an `IUploadedFile` property, built on FileSignatures. It is a separate package because `Headless.FluentValidation` sits under nearly every Headless package (through `Headless.Hosting`), and FileSignatures brings OpenMcdf with it.
+
+### API and behavior
+
+- `HaveSignatures(inspector, predicate)` opens a new stream through `IUploadedFile.OpenReadStream()`, asks the `IFileFormatInspector` for the format, and passes it (or `null` when no format matches) to the predicate. The stream is disposed afterwards, so the code that stores the file still reads the whole content.
+- The inspector requires a seekable stream; `IUploadedFile.OpenReadStream()` promises one. A forward-only implementation fails with `NotSupportedException` from the inspector rather than with a validation error.
+- A failure reports `g:file_unexpected_signature` (`FluentValidatorErrorCodes.FileUnexpectedSignature`). A null file passes.
+- The rule is asynchronous: validate with `ValidateAsync`, as the mediator's validation behavior does. It checks the validation's cancellation token before it opens the content.
+- `Headless.Api.FluentValidation` exposes the same rule for `IFormFile` and references this package.
+
+### Install
+
+```bash
+dotnet add package Headless.FluentValidation.FileSignatures
+```
+
+### Setup and use
+
+```csharp
+using FileSignatures;
+using FileSignatures.Formats;
+using FluentValidation;
+using Headless.IO;
+
+public sealed record UpdateAvatar(IUploadedFile Avatar);
+
+public sealed class UpdateAvatarValidator : AbstractValidator<UpdateAvatar>
+{
+    public UpdateAvatarValidator(IFileFormatInspector inspector)
+    {
+        RuleFor(x => x.Avatar)
+            .FileNotEmpty()
+            .LessThanOrEqualTo(5 * 1024 * 1024)
+            .HaveSignatures(inspector, format => format is Jpeg or Png);
+    }
+}
+```
+
+`Headless.Api.ServiceDefaults` registers an `IFileFormatInspector` over the FileSignatures built-in formats; outside an API host, register one yourself (`new FileFormatInspector()`).
+
+### Configuration
+
+No configuration required.
+
+### Runtime behavior
+
+None.
+---
 ## Headless.Generator.Primitives
 
 Roslyn source generator for creating strongly-typed domain primitives.
@@ -139,7 +226,7 @@ Roslyn source generator for creating strongly-typed domain primitives.
   - Entity Framework Core value converters
   - TypeConverter for model binding
   - Dapper type handlers
-  - NSwag/Swashbuckle schema mappings
+- No OpenAPI schema mapping is generated: `Headless.OpenApi` documents every `IPrimitive<T>` as its underlying JSON type automatically, with the `[StringLength]` bounds of a string primitive as `minLength`/`maxLength`
 
 ### Design constraints
 
@@ -204,8 +291,6 @@ modelBuilder.Entity<User>().Property(u => u.Email).HasConversion<EmailValueConve
 <PropertyGroup>
   <PrimitiveDapperConverters>true</PrimitiveDapperConverters>
   <PrimitiveEntityFrameworkValueConverters>true</PrimitiveEntityFrameworkValueConverters>
-  <PrimitiveSwashbuckleSwaggerConverters>false</PrimitiveSwashbuckleSwaggerConverters>
-  <PrimitiveNswagSwaggerConverters>false</PrimitiveNswagSwaggerConverters>
   <PrimitiveJsonConverters>true</PrimitiveJsonConverters>
   <PrimitiveTypeConverters>true</PrimitiveTypeConverters>
   <PrimitiveXmlConverters>false</PrimitiveXmlConverters>
@@ -364,7 +449,7 @@ public sealed class UserSeeder : ISeeder
 
 // Registration
 builder.Services.AddSeeder<UserSeeder>();
-builder.Services.AddDbContextMigrations<AppDbContext>(); // structure: applied by `resources provision`, before `seed`
+builder.Services.AddDbContextMigrations<AppDbContext>(); // Headless.EntityFramework; structure: applied by `resources provision`, before `seed`
 
 // Development: seed as the host starts. Production: the deployment runs `dotnet MyApp.dll seed`.
 if (builder.Environment.IsDevelopment()) builder.Services.AddDeployStepsOnStartup();

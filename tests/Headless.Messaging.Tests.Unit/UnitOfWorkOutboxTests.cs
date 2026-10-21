@@ -9,6 +9,7 @@ using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Tests.Guarantees;
 using Tests.Helpers;
 
 namespace Tests;
@@ -21,6 +22,7 @@ namespace Tests;
 public sealed class UnitOfWorkOutboxTests : TestBase
 {
     [Fact]
+    [Guarantee("MSG-PUB-01")]
     public async Task should_discard_the_durable_row_when_the_unit_of_work_rolls_back()
     {
         // given
@@ -114,6 +116,7 @@ public sealed class UnitOfWorkOutboxTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-PUB-04")]
     public async Task should_throw_when_publishing_on_a_unit_that_already_completed()
     {
         // given — a completed unit: nothing can enlist in it any more
@@ -132,6 +135,7 @@ public sealed class UnitOfWorkOutboxTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-PUB-04")]
     public async Task should_throw_when_a_binding_taken_before_the_unit_completed_is_used_after_it()
     {
         // given — the binding is taken while the unit is live, then retained past its completion

@@ -121,12 +121,14 @@ public static class SetupMessagingRabbitMq
             services.AddSingleton<IBusTransport>(sp => new RabbitMqTransport(
                 sp.GetRequiredService<ILogger<RabbitMqTransport>>(),
                 sp.GetRequiredService<IConnectionChannelPool>(),
-                MessageLane.Bus
+                MessageLane.Bus,
+                sp.GetRequiredService<TimeProvider>()
             ));
             services.AddSingleton<IQueueTransport>(sp => new RabbitMqTransport(
                 sp.GetRequiredService<ILogger<RabbitMqTransport>>(),
                 sp.GetRequiredService<IConnectionChannelPool>(),
-                MessageLane.Queue
+                MessageLane.Queue,
+                sp.GetRequiredService<TimeProvider>()
             ));
             services.AddSingleton<IReplyTransport, RabbitMqReplyTransport>();
             services.AddSingleton<IConsumerClientFactory, RabbitMqConsumerClientFactory>();

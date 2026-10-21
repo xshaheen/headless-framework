@@ -3,6 +3,7 @@
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
+using Tests.Guarantees;
 
 namespace Tests.Transport;
 
@@ -22,6 +23,7 @@ public sealed class InFlightHandlerTrackerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-SHUT-02")]
     public async Task should_wait_for_tracked_handlers_before_completing_the_drain()
     {
         // given
@@ -98,6 +100,7 @@ public sealed class InFlightHandlerTrackerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-SHUT-02")]
     public async Task should_surface_a_drained_handler_fault()
     {
         // given
@@ -114,6 +117,7 @@ public sealed class InFlightHandlerTrackerTests : TestBase
     }
 
     [Fact]
+    [Guarantee("MSG-SHUT-02")]
     public async Task should_keep_draining_a_later_handler_after_an_earlier_one_faults()
     {
         // given — the first snapshot holds only the handler that will fault.

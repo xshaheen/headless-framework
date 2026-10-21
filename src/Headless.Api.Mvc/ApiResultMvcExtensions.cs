@@ -31,17 +31,17 @@ public static class ApiResultMvcExtensions
     /// <param name="result">The result to convert.</param>
     /// <param name="controller">The controller instance used to create action results.</param>
     /// <param name="creator">The problem-details creator used to build error responses.</param>
-    /// <returns>An <see cref="ActionResult{T}"/> representing the HTTP response.</returns>
-    public static ActionResult<T> ToActionResult<T>(
+    /// <returns>An OpenAPI-aware action result representing the HTTP response.</returns>
+    public static ApiActionResult<T> ToActionResult<T>(
         this ApiResult<T> result,
         ControllerBase controller,
         IProblemDetailsCreator creator
     )
     {
         // Branch instead of Match: both lambdas would capture `controller`/`creator` and allocate on every response.
-        return result.TryGetValue(out var value)
-            ? controller.Ok(value)
-            : result.Error.ToActionResult(controller, creator);
+        return new ApiActionResult<T>(
+            result.TryGetValue(out var value) ? controller.Ok(value) : result.Error.ToActionResult(controller, creator)
+        );
     }
 
     /// <summary>
@@ -51,15 +51,17 @@ public static class ApiResultMvcExtensions
     /// <param name="result">The result to convert.</param>
     /// <param name="controller">The controller instance used to create action results.</param>
     /// <param name="creator">The problem-details creator used to build error responses.</param>
-    /// <returns>An <see cref="ActionResult"/> representing the HTTP response.</returns>
-    public static ActionResult ToActionResult(
+    /// <returns>An OpenAPI-aware action result representing the HTTP response.</returns>
+    public static ApiActionResult ToActionResult(
         this ApiResult result,
         ControllerBase controller,
         IProblemDetailsCreator creator
     )
     {
         // Branch instead of Match: the delegates would capture `controller`/`creator` and allocate on every response.
-        return result.IsSuccess ? controller.NoContent() : result.Error.ToActionResult(controller, creator);
+        return new ApiActionResult(
+            result.IsSuccess ? controller.NoContent() : result.Error.ToActionResult(controller, creator)
+        );
     }
 
     /// <summary>

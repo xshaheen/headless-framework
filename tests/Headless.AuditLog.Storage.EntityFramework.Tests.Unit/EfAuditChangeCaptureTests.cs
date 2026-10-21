@@ -606,6 +606,40 @@ public sealed partial class EfAuditChangeCaptureTests : TestBase
     }
 
     [Fact]
+    public async Task each_options_instance_applies_its_own_property_filter_over_one_model()
+    {
+        // given: one model, captured alternately under two option sets
+        var (db, conn) = _CreateDb();
+        await using (conn)
+        await using (db)
+        {
+            db.Orders.Add(
+                new Order
+                {
+                    Id = Guid.NewGuid(),
+                    CustomerName = "Alice",
+                    Email = "a@b.com",
+                    Phone = "555",
+                }
+            );
+            var filtering = _CreateSut(opts =>
+                opts.PropertyFilter = (_, name) => string.Equals(name, "CustomerName", StringComparison.Ordinal)
+            );
+            var unfiltered = _CreateSut();
+
+            // when
+            var first = _Capture(filtering, db);
+            var second = _Capture(unfiltered, db);
+            var third = _Capture(filtering, db);
+
+            // then
+            first.Single().NewValues.Should().NotContainKey("CustomerName");
+            second.Single().NewValues.Should().ContainKey("CustomerName");
+            third.Single().NewValues.Should().NotContainKey("CustomerName");
+        }
+    }
+
+    [Fact]
     public async Task owned_entity_inherits_auditability_from_owner()
     {
         // given - the explicitly audited Customer owns Address

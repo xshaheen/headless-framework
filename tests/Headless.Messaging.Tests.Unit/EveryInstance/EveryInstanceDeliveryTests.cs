@@ -172,6 +172,89 @@ public sealed class EveryInstanceDeliveryTests : TestBase
     }
 
     [Fact]
+    public async Task should_commit_without_consuming_when_every_instance_delivery_deadline_passed()
+    {
+        // given
+        var factory = new RecordingFactory();
+        var outcomes = new ConcurrentBag<string>();
+        using var listener = _ListenToEveryInstanceOutcomes(PriceCache.Identity, outcomes);
+        await using var provider = _BuildHost(
+            factory,
+            configure: services => services.ConfigureMessaging(m => m.AddModule<PriceCacheModule>())
+        );
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        var probe = provider.GetRequiredService<EveryInstanceProbe>();
+        var message = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "expired-1",
+                [Headers.MessageName] = probe.Established[0].MessageNames[0],
+                [Headers.DeliverBy] = DateTimeOffset
+                    .UtcNow.AddSeconds(-1)
+                    .ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+            },
+            "{\"Sku\":\"sku-1\"}"u8.ToArray()
+        );
+
+        // when
+        await factory.LatestClient(PriceCache.Identity).DeliverAsync(message, RecordingClient.OutOfBandSender);
+
+        // then — committed and dropped before any middleware or consumer
+        factory.Commits(PriceCache.Identity).Should().Be(1);
+        factory.Rejects(PriceCache.Identity).Should().Be(0);
+        probe.Consumed.Should().BeEmpty();
+        outcomes.Should().BeEquivalentTo(["dropped"]);
+    }
+
+    [Fact]
+    public async Task should_drop_an_every_instance_delivery_whose_deadline_passes_while_it_waits_for_a_rate_limit()
+    {
+        // given — one permit per three-second window, spent by the first delivery, so the second waits out the window
+        // and its one-second deadline with it
+        var factory = new RecordingFactory();
+        var outcomes = new ConcurrentBag<string>();
+        var logs = new List<(LogLevel Level, EventId EventId, string Message)>();
+        using var listener = _ListenToEveryInstanceOutcomes(PriceCache.Identity, outcomes);
+        await using var provider = _BuildHost(
+            factory,
+            configure: services =>
+                services
+                    .ConfigureMessaging(m =>
+                    {
+                        m.AddModule<PriceCacheModule>();
+                        m.Tune(
+                            PriceCache.Identity,
+                            c => c.RateLimit(ConsumerRateLimit.FixedWindow(1, TimeSpan.FromSeconds(3)))
+                        );
+                    })
+                    .AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs))
+        );
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        var probe = provider.GetRequiredService<EveryInstanceProbe>();
+        var client = factory.LatestClient(PriceCache.Identity);
+        var messageName = probe.Established[0].MessageNames[0];
+
+        // when
+        await client.DeliverAsync(
+            _PriceMessage("live-1", messageName, "sku-1", deliverBy: null),
+            RecordingClient.OutOfBandSender
+        );
+        await client.DeliverAsync(
+            _PriceMessage("throttled-1", messageName, "sku-2", DateTimeOffset.UtcNow.AddSeconds(1)),
+            RecordingClient.OutOfBandSender
+        );
+
+        // then — accepted on receive, dropped after the wait, never consumed
+        probe.Consumed.Should().Equal("sku-1");
+        factory.Commits(PriceCache.Identity).Should().Be(2);
+        outcomes.Should().BeEquivalentTo(["succeeded", "dropped"]);
+        lock (logs)
+        {
+            logs.Should().Contain(x => x.EventId.Id == 4132).And.NotContain(x => x.EventId.Id == 4126);
+        }
+    }
+
+    [Fact]
     public async Task should_finish_startup_when_a_subscription_hook_never_returns()
     {
         // given
@@ -596,6 +679,26 @@ public sealed class EveryInstanceDeliveryTests : TestBase
         _Decorate<IConsumerClientFactory>(services, factory.Wrap);
 
         return services.BuildServiceProvider();
+    }
+
+    private static TransportMessage _PriceMessage(
+        string messageId,
+        string messageName,
+        string sku,
+        DateTimeOffset? deliverBy
+    )
+    {
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = messageId,
+            [Headers.MessageName] = messageName,
+        };
+        if (deliverBy is { } deadline)
+        {
+            headers[Headers.DeliverBy] = deadline.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return new TransportMessage(headers, System.Text.Encoding.UTF8.GetBytes($"{{\"Sku\":\"{sku}\"}}"));
     }
 
     private static void _DeclareTransportWithoutEveryInstance(IServiceCollection services)

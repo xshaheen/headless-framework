@@ -3,6 +3,7 @@
 using FileSignatures;
 using FluentValidation;
 using FluentValidation.TestHelper;
+using Headless.FluentValidation;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 
@@ -565,6 +566,72 @@ public sealed class FileValidatorsTests : TestBase
         // then
         result.IsValid.Should().BeFalse();
         result.ShouldHaveValidationErrorFor(x => x.UploadedFile);
+    }
+
+    #endregion
+
+    #region Documentation Contracts
+
+    [Fact]
+    public void should_expose_the_size_bounds_of_each_size_rule()
+    {
+        // given
+        var validator = new InlineValidator<FileUploadTestModel>();
+        validator
+            .RuleFor(x => x.UploadedFile)
+            .FileNotEmpty()
+            .GreaterThanOrEqualTo(_MinimalFileSize)
+            .LessThanOrEqualTo(_MaximalFileSize);
+
+        // when
+        var bounds = validator
+            .CreateDescriptor()
+            .GetValidatorsForMember(nameof(FileUploadTestModel.UploadedFile))
+            .Select(x => x.Validator)
+            .OfType<IFileSizeValidator>()
+            .Select(x => (x.MinBytes, x.MaxBytes));
+
+        // then
+        bounds.Should().Equal((1L, (long?)null), (_MinimalFileSize, null), (null, _MaximalFileSize));
+    }
+
+    [Fact]
+    public void should_expose_a_copy_of_the_accepted_content_types()
+    {
+        // given
+        List<string> contentTypes = ["image/png", "image/jpeg"];
+        var validator = new InlineValidator<FileUploadTestModel>();
+        validator.RuleFor(x => x.UploadedFile).ContentTypes(contentTypes);
+        contentTypes.Add("application/pdf");
+
+        // when
+        var rule = validator
+            .CreateDescriptor()
+            .GetValidatorsForMember(nameof(FileUploadTestModel.UploadedFile))
+            .Select(x => x.Validator)
+            .OfType<IFileContentTypeValidator>()
+            .Single();
+
+        // then
+        rule.ContentTypes.Should().Equal("image/png", "image/jpeg");
+    }
+
+    [Fact]
+    public void should_reject_a_type_added_to_the_caller_list_after_the_rule_was_built()
+    {
+        // given
+        List<string> contentTypes = ["image/png"];
+        var validator = new InlineValidator<FileUploadTestModel>();
+        validator.RuleFor(x => x.UploadedFile).ContentTypes(contentTypes);
+        contentTypes.Add("application/pdf");
+        var file = Substitute.For<IFormFile>();
+        file.ContentType.Returns("application/pdf");
+
+        // when
+        var result = validator.TestValidate(new FileUploadTestModel { UploadedFile = file });
+
+        // then
+        result.Errors.Should().ContainSingle().Which.ErrorCode.Should().Be("g:file_unexpected_content_type");
     }
 
     #endregion

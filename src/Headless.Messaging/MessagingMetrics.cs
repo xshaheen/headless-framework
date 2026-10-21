@@ -39,6 +39,7 @@ internal static class MessagingMetrics
     internal const string InboxCapabilitiesName = "headless.messaging.inbox.capabilities";
     internal const string OperatorOperationsName = "headless.messaging.operator.operations";
     internal const string ReceiveOutcomesName = "headless.messaging.receive.outcomes";
+    internal const string SendExpiredName = "headless.messaging.send.expired";
     internal const string EveryInstanceDeliveriesName = "headless.messaging.every_instance.deliveries";
     internal const string RequestReplyDroppedRepliesName = "headless.messaging.request_reply.dropped_replies";
     internal const string RequestReplyRequestsName = "headless.messaging.request_reply.requests";
@@ -228,6 +229,10 @@ internal static class MessagingMetrics
         ReceiveOutcomesName
     );
 
+    private static readonly Counter<long> _SendExpired = MessagingDiagnostics.Meter.CreateCounter<long>(
+        SendExpiredName
+    );
+
     private static readonly Counter<long> _EveryInstanceDeliveries = MessagingDiagnostics.Meter.CreateCounter<long>(
         EveryInstanceDeliveriesName
     );
@@ -268,6 +273,7 @@ internal static class MessagingMetrics
         || _InboxCapabilities.Enabled
         || _OperatorOperations.Enabled
         || _ReceiveOutcomes.Enabled
+        || _SendExpired.Enabled
         || _EveryInstanceDeliveries.Enabled
         || _RequestReplyDroppedReplies.Enabled
         || _RequestReplyRequests.Enabled
@@ -522,6 +528,21 @@ internal static class MessagingMetrics
     }
 
     /// <summary>
+    /// Records one published message dropped because its delivery deadline (<c>MessageOptions.DeliverWithin</c>)
+    /// passed before the relay or a <c>Direct</c> send could hand it to the transport. Tagged only with the lane: names and ids are unbounded, so they never
+    /// become metric tags.
+    /// </summary>
+    internal static void RecordSendExpired(MessageLane lane)
+    {
+        if (!_SendExpired.Enabled)
+        {
+            return;
+        }
+
+        _SendExpired.Add(1, new TagList { { MessagingTags.Lane, LaneTagEnricher.ToTagValues(lane).Lane } });
+    }
+
+    /// <summary>
     /// Records one every-instance delivery, which has no inbox row to count it: <c>succeeded</c> when the consumer
     /// returned, <c>failed</c> when it threw (with <c>error.type</c>), <c>dropped</c> when the message never reached it or
     /// faulted outside it (no consumer on the subscription, a receive-stage reject, a core or transport fault, or a NATS
@@ -696,6 +717,7 @@ internal enum InboxMetricOutcome
     Purged = 11,
     Replayed = 12,
     Expired = 13,
+    FailedExpired = 14,
 }
 
 /// <summary>How inbox measurements treat the tenant dimension, resolved once from the host configuration.</summary>

@@ -23,7 +23,7 @@ Use `Headless.Api.Abstractions` when you only need interfaces (`IRequestContext`
 
 Additional packages:
 
-- `Headless.Api.FluentValidation` — validators for `IFormFile` uploads (size, content type, magic bytes) plus API request contracts (`PhoneNumberRequest`, `GeoCoordinateRequest`, `PageMetadataRequest`).
+- `Headless.Api.FluentValidation` — the `Headless.FluentValidation` file rules (size, content type, magic bytes) for `IFormFile` uploads, plus API request contracts (`PhoneNumberRequest`, `GeoCoordinateRequest`, `PageMetadataRequest`).
 - `Headless.DataProtection.Blobs` — persist ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
 - `Headless.Api.Jwt` — issue and parse JWTs with `IJwtTokenFactory`, and validate them with the matching `AddHeadlessJwtBearer()` scheme.
 - `Headless.Api.Identity` — ASP.NET Core Identity helpers: token providers, localized `auth:`/`user:` errors, `HeadlessLookupNormalizer`, and the Identity-backed `AddBasicSchema()` and `AddApiKey()` schemes.
@@ -47,7 +47,7 @@ Additional packages:
 - Write a CORS policy in code with ASP.NET Core's `AddCors`; use `services.AddHeadlessCors(configuration.GetSection("Cors"))` when the origins come from configuration, which registers `HeadlessCorsConstants.RestrictedCors` and validates it at startup. Do not hand-write a policy with `SetIsOriginAllowed(_ => true)` plus `AllowCredentials()`, which reflects every origin and hands it the user's session; origins known only at request time (tenant custom domains) go through an `ICorsOriginSource`, which works over either kind of policy. `AddHeadlessAllowAnyCors()` is for development: it never allows credentials and fails startup outside Development unless `AllowAnyOriginOutsideDevelopment` confirms a public API. A cookie-authenticated SPA on `http://localhost:5173` belongs in `AllowedOrigins` instead.
 - CORS governs browsers only. A native mobile client (React Native on iOS or Android, Flutter, a native SDK) sends no `Origin` header, so no policy applies and its requests pass unchanged; authenticate it like any client and never treat CORS as protection against non-browser callers. Its browser-hosted variants do need origins: an Expo or React Native Web dev server (`http://localhost:8081`, `http://localhost:19006`), the deployed web build, and Capacitor or Ionic webviews (`capacitor://localhost`, `ionic://localhost`).
 - `Headless.Api.ServiceDefaults` validates by default that `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` were applied at startup. For custom/manual pipelines, disable via `options.Validation.RequireUseHeadless = false`, `options.Validation.RequireStatusCodesRewriter = false`, and `options.Validation.RequireMapHeadlessEndpoints = false`.
-- `AddHeadless()` invokes `SetupApi.ConfigureGlobalSettings()` automatically (idempotent) to set the regex timeout and FluentValidation defaults. It no longer changes the `JsonWebTokenHandler` statics: the Headless token factory and bearer scheme turn off inbound claim mapping on their own handlers. Call it manually only if you need those defaults applied before `AddHeadless()` runs.
+- `AddHeadless()` invokes `SetupApi.ConfigureGlobalSettings()` automatically (idempotent) to set the regex timeout and FluentValidation defaults, including the Headless formal Arabic (`ar`) and Egyptian Arabic (`ar-EG`) wording of FluentValidation's built-in messages. It no longer changes the `JsonWebTokenHandler` statics: the Headless token factory and bearer scheme turn off inbound claim mapping on their own handlers. Call it manually only if you need those defaults applied before `AddHeadless()` runs.
 - Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.Validate<T>()` on endpoints for FluentValidation integration.
 - For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureHeadlessMvc()` not manual `MvcOptions` configuration.
 - Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`, `PhoneNumber()`, `GeoCoordinate()`, `PageMetadata()`) for API-boundary validation — do not write manual file or request-contract validation logic.
@@ -85,7 +85,7 @@ Additional packages:
 
 `type`, `status`, `title`, and every error `code` are the machine contract: they never vary by culture or release. `title` is a kebab-case identifier from `HeadlessProblemDetailsConstants.Titles` (`entity-not-found`, `validation-problem`), not prose. Clients branch on `code`, `title`, and `type`, never on `detail` or an error `description`.
 
-- **Default details are localized per call.** Every `IProblemDetailsCreator` factory, and `Normalize` when it fills a missing `Detail` for 404/408/413/500/501, resolves the default text from `Headless.Api` resources under `CultureInfo.CurrentUICulture` at the moment it runs. English and Arabic ship with the framework. An application without request localization (no `UseRequestLocalization()`, or any culture without a translation) gets English.
+- **Default details are localized per call.** Every `IProblemDetailsCreator` factory, and `Normalize` when it fills a missing `Detail` for 404/408/413/500/501, resolves the default text from `Headless.Api` resources under `CultureInfo.CurrentUICulture` at the moment it runs. English, formal Arabic (`ar`), and Egyptian Arabic (`ar-EG`) ship with the framework; see [Regional Arabic](utilities.md#regional-arabic). An application without request localization (no `UseRequestLocalization()`, or any culture without a translation) gets English.
 - **Responses written by `UseHeadless()` follow the request culture.** `RequestLocalizationMiddleware` sets the culture only for the middleware after it, so by the time an exception or a bare status code unwinds to the exception handler, the status-code rewriter, or status-code pages, `CurrentUICulture` is back to the server default. Those three re-apply the culture the request negotiated (`IRequestCultureFeature`) while they build the framework's default text, so an Arabic request gets Arabic problem details whether `UseRequestLocalization()` runs before or after `UseHeadless()`. A request that request localization never reached keeps `CurrentUICulture`. Your own `CustomizeProblemDetails` delegates and `IProblemDetailsWriter` implementations run outside that scope, so read `IRequestCultureFeature` there yourself.
 - **A caller-supplied `detail` passes through untouched.** `creator.Forbidden(detail: "...")` writes exactly that string under every culture, and `Normalize` never replaces a `Detail` that is already set. Only the framework default is localized, so a decorator that rewrites `Detail` unconditionally overwrites the caller's text.
 - **Framework error descriptions are localized the same way.** `GeneralMessageDescriber`, `IdentityMessageDescriber`, `TenancyMessageDescriber`, and the other `*MessageDescriber` factories build a new descriptor per call from resources. Call them per response: a descriptor cached in a `static` keeps the culture of its first caller.
@@ -145,7 +145,6 @@ app.UseHeadlessTenantCatalogResolution(); // only with catalog tenancy: after ro
 app.UseAuthentication();
 app.UseRateLimiter();
 app.UseHeadlessSerilogEnrichers(); // after authentication, so the user is known
-app.UseNswagOpenApi(); // path-matched middleware: must run before UseAuthorization
 app.UseHeadlessTenancy();
 app.UseAuthorization();
 app.UseHeadlessHttpIdempotency();
@@ -177,6 +176,8 @@ Defines core interfaces and contracts for HTTP request context, user identity, w
 - `IAbsoluteUrlFactory` — contract for building absolute URLs from the current request (implemented in `Headless.Api`)
 - Framework constants for HTTP headers and common values
 - `RequireIfMatchAttribute` — portable marker used by MVC and OpenAPI concurrency profiles
+- `HttpContractMetadata` — endpoint metadata a feature that runs around the handler (a middleware, a filter) attaches to describe HTTP behavior the handler's signature does not show, so API documentation can render it without referencing the feature: `RequestHeaders` (`HttpRequestHeaderDescription(name, required, description)`), `Responses` (`HttpResponseDescription(statusCode, description)`), and `ResponseHeaders` (`HttpResponseHeaderDescription(name, statusCode, description)` or `(name, minStatusCode, maxStatusCode, description)`, with an optional `Required`). It describes and never enforces; an endpoint may carry several. `Headless.OpenApi` renders it as header parameters, problem-details responses, and response headers, and `Headless.Idempotency.ResponseReplay` attaches one for its key header. A response header range (`200`–`299`) covers success statuses the feature cannot name. It describes only what framework features write or read on the wire, not a general OpenAPI model. The description types are sealed records, so two descriptions with the same values are equal
+- Documentation contracts that other packages implement and Headless.OpenApi reads, so neither side references the other: `IEnvironmentRestrictionMetadata.IsAvailableIn(IHostEnvironment)` (endpoint metadata for an endpoint that answers 404 outside some environments, left out of documents there), `IHttpCredentialSchemeOptions.Credentials` (implemented by an authentication scheme's options; each `HttpCredentialDescription.Header(name, description)`, `.Query(...)`, or `.Authorization(scheme, description)` becomes a security scheme), and `TenantCatalogResolutionDescription` (registered by `ResolveFromCatalog(...)`: `IsConfigured`, `DetailedResolutionErrors`, `HeaderNames`, `HostTemplates`, `HasNonHeaderSource`, read from registrations so a build-time document matches the running app)
 
 ### Install
 
@@ -255,6 +256,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - Single-claim authorization: `RequireSingleClaimValue(claimType, value)`, `RequireSingleClaim(claimType, predicate)`, and `SingleClaimRequirement`
 - HTTP edge rate limiting: `RateLimiterOptions.UseHeadlessProblemDetails()` rejects with 429 ProblemDetails (`g:rate_limit_exceeded`, `Retry-After`, `Cache-Control: no-store`), and `HttpContext.GetIpAddressPartition(ipv6PrefixLength = 64)` keys anonymous callers by IPv4 address or IPv6 /64. The application owns the limiter itself; see [HTTP edge limits](rate-limiting.md#http-edge-limits)
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
+- `IServiceCollection.FreezeHeadlessApiSurfaces()` — freezes the set of API surfaces and returns their OpenAPI document names, so a later `AddHeadlessApiSurface(...)` throws. `AddHeadlessApiSurfaceDocuments()` and `AddHeadless()` call it; a custom document provider calls it while the service collection is still writable
 
 ### Design constraints
 
@@ -262,6 +264,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - `HeadlessApiExceptionHandler` honors `Accept` quality values when deciding whether to write JSON ProblemDetails. A request that rejects JSON, or explicitly rejects `application/problem+json`, with `q=0` is left for downstream/default handlers instead of receiving a JSON body.
 - Batch `IFormFile.SaveAsync(...)` preserves result ordering while bounding concurrent file stream copies to `Environment.ProcessorCount` to avoid unbounded file-handle and disk pressure on large multipart requests.
 - `IFormFile.GetAllBytesAsync(CancellationToken cancellationToken = default)` propagates optional cancellation through asynchronous upload buffering; callers can omit the token.
+- `IFormFile.ToUploadedFile()` adapts an upload to `Headless.IO.IUploadedFile`, so an endpoint passes a file to a command or service that must not depend on ASP.NET Core. The adapter reads through to the form file and is valid only while the request is in flight.
 - Tenant identifier sources run in first-registration order and the first `Found` result wins; `AddSource<T>()` and the built-in `AddHostSource` / `AddRouteSource` / `AddHeaderSource` registrations deduplicate by type (the first call fixes the position, every call's options contribution still applies), while `AddSource(instance)` and the delegate overload always append. A source result of `Invalid` (present but ambiguous input, such as two `X-Tenant` values) rejects with 400 `g:tenant_identifier_invalid` before any catalog call; `Found` with a blank value normalizes to `None`. Sources never trim, lowercase, or shape-validate — the catalog does.
 - The header source (default `X-Tenant`) can only select an existing enabled tenant, and the identifier/claim mismatch check still rejects an authenticated caller whose tenant claim disagrees, but it bypasses any WAF rule, mTLS policy, IP allowlist, or CDN configuration bound to a tenant's hostname — register the host source first where hostnames carry such controls, or strip/overwrite the header at the edge. A requested header name replaces the untouched default and appends afterwards (`AddHeaderSource("X-Legacy")` reads only `X-Legacy`); any second value across the configured names is `Invalid`, a single line `a,b` is one value, and every consult appends the configured names to `Vary`.
 - `AddRouteSource` (every overload) wraps the routing `LinkGenerator` once so `Url.Action`, `GetPathByAction`, and `GetPathByName` keep the current request's `{tenant}` segment, which ASP.NET Core would otherwise drop (required-value invalidation; the endpoint-name scheme passes no ambient values — only `GetPathByRouteValues` kept it). An explicit `tenant` value always wins; `RouteTenantIdentifierSourceOptions.PromoteAmbientRouteValue = false` opts out per call. A link from a tenant request to an endpoint without a `{tenant}` segment carries the value as a query string (`/plain?tenant=acme`); a link from a request with no tenant segment to a tenant endpoint returns `null` without an explicit value.
@@ -655,9 +658,11 @@ app.MapHeadlessEndpoints();
 
 `SurfaceDocumentNames` defaults to `null`, which publishes every registered surface document. Without surfaces, the ordinary `v1` document remains. Set a nonempty list only to select specific documents; each name must match a configured `OpenApi.DocumentName`. An explicit empty list selects the ordinary, unfiltered `v1` document. Set `OpenApi.Enabled = false` to disable registration. `MapHeadlessEndpoints()` serves documents at the configured route. Adding surfaces after inference throws; unknown explicit document names fail startup.
 
-For hosts using individual registrations, call `builder.Services.AddHeadlessApiSurfaceDocuments()` after surface registration and pair it with native `app.MapOpenApi()`. An optional document list selects a subset; no surfaces or an empty list registers no documents on this standalone path. Use it without the default `AddHeadless()` OpenAPI registration, or disable that registration with `OpenApi.Enabled = false` and map documents yourself. Native `AddOpenApi(...)` can register additional documents.
+For hosts using individual registrations, call `builder.Services.AddHeadlessApiSurfaceDocuments()` from `Headless.OpenApi` after surface registration and pair it with native `app.MapOpenApi()`. An optional document list selects a subset; no surfaces or an empty list registers no documents on this standalone path. Use it without the default `AddHeadless()` OpenAPI registration, or disable that registration with `OpenApi.Enabled = false` and map documents yourself. Native `AddOpenApi(...)` can register additional documents.
 
-Surface filtering runs before schema generation and is independent of API Explorer version groups. `ConfigureOpenApi` can narrow the selected endpoints with `ShouldInclude` and append document transformers, including a title override. The standalone method accepts the same callback. This adapter uses ASP.NET Core OpenAPI generation; NSwag-specific security, schema mappings, and tenant-error examples remain in `Headless.OpenApi.Nswag`.
+Surface filtering runs before schema generation and is independent of API Explorer version groups. `ConfigureOpenApi` can narrow the selected endpoints with `ShouldInclude` and append document transformers, including a title override. The standalone method takes a per-surface callback, `Action<OpenApiOptions, ApiSurfaceDescriptor>`, for the same purpose. Every document these registrations create carries the Headless transformers (security schemes, typed problem details, operation ids, FluentValidation constraints); configure them with `builder.Services.ConfigureHeadlessOpenApi(...)`. See [OpenAPI](openapi.md).
+
+`MapHeadlessEndpoints()` maps the documents as ordinary endpoints, so authorization applies to them: under a fallback authorization policy they answer 401. To publish them anonymously, set `OpenApi.Enabled = false`, register the documents yourself, and map them with `app.MapOpenApi("/openapi/{documentName}.json").AllowAnonymous()`.
 
 #### String Encryption
 
@@ -789,19 +794,21 @@ Provisioning matrix: **managed** — a manager is registered/keyed/passed, the c
 
 ## Headless.Api.FluentValidation
 
-FluentValidation extensions for ASP.NET Core file uploads and reusable Headless API request contracts.
+FluentValidation extensions for ASP.NET Core file uploads and reusable Headless API request contracts. The file rules are the `Headless.FluentValidation` rules read from an `IFormFile`: same checks, error codes, and messages.
 
 ### API and behavior
 
 - `FileNotEmpty()` — validates file has content
 - `GreaterThanOrEqualTo(bytes)` — minimum file size validation
 - `LessThanOrEqualTo(bytes)` — maximum file size validation
-- `ContentTypes(list)` — MIME type allowlist validation
-- `HaveSignatures(inspector, predicate)` — magic bytes/file signature validation
+- `ContentTypes(list)` — MIME type allowlist validation; the rule copies the list when it is built. A failure reports `g:file_unexpected_content_type` and lists the accepted types
+- `HaveSignatures(inspector, predicate)` — magic bytes/file signature validation, reporting `g:file_unexpected_signature`; it is the `Headless.FluentValidation.FileSignatures` rule, which this package references
+- The size and content-type rules are typed validators implementing `IFileSizeValidator` and `IFileContentTypeValidator` (`Headless.FluentValidation`), so Headless.OpenApi documents a form's accepted part types and size bounds; `HaveSignatures` is a predicate and documents nothing
+- To keep a command free of ASP.NET Core, give it an `IUploadedFile` property, build it at the endpoint with `IFormFile.ToUploadedFile()`, and validate it with the same rules from `Headless.FluentValidation` and `Headless.FluentValidation.FileSignatures` (see [utilities.md](utilities.md#headlessfluentvalidation))
 - `PhoneNumber()` — validates `PhoneNumberRequest` country code and local subscriber number
 - `GeoCoordinate()` — validates `GeoCoordinateRequest` latitude/longitude ranges
 - `PageMetadata()` — validates `PageMetadataRequest` SEO field length and element-count limits
-- Localized error messages (English, Arabic)
+- Localized error messages (English, formal Arabic, Egyptian Arabic)
 
 ### Install
 
@@ -870,7 +877,7 @@ ASP.NET Core Identity integration for Headless APIs. Apps that do not use ASP.NE
 ### Design constraints
 
 - Basic authentication delegates password validation to `SignInManager.CheckPasswordSignInAsync(..., lockoutOnFailure: true)`, so configured ASP.NET Core Identity lockout policies apply to failed Basic credentials.
-- `IdentityMessageDescriber`'s password-reset and email-verification throttling messages format their durations with Humanizer's `TimeSpan.Humanize()` in the current UI culture. The package ships `Humanizer.Core.ar` beside its Arabic `Messages.ar.resx`, so an Arabic request gets Arabic durations; any other culture falls back to English unless the application references the matching `Humanizer.Core.<culture>` package.
+- `IdentityMessageDescriber`'s password-reset and email-verification throttling messages format their durations with Humanizer's `TimeSpan.Humanize()` in the current UI culture. The package ships `Humanizer.Core.ar` beside its Arabic `Messages.ar.resx` and `Messages.ar-EG.resx`, so any Arabic request, `ar-EG` included, gets Arabic durations; any other culture falls back to English unless the application references the matching `Humanizer.Core.<culture>` package.
 
 ### Install
 
@@ -893,7 +900,7 @@ builder.Services
     .AddBasicSchema<AppUser, Guid>();
 ```
 
-`AddBasicSchema()` defaults to the canonical `Basic` authentication scheme and `AddApiKey()` defaults to `ApiKey`. `DynamicAuthenticationSchemeProvider` selects those same canonical names. API keys are read from the configured header by default; query-string keys are routed and accepted only when `ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString` is `true`.
+`AddBasicSchema()` defaults to the canonical `Basic` authentication scheme and `AddApiKey()` defaults to `ApiKey`. `DynamicAuthenticationSchemeProvider` selects those same canonical names. API keys are read from the configured header by default; query-string keys are routed and accepted only when `ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString` is `true`. Both options classes implement `IHttpCredentialSchemeOptions`, so Headless.OpenApi publishes each registered scheme from its own options: an `apiKey` header scheme named after the scheme, an `apiKey` query scheme (`{scheme}Query`) while the query fallback is on, and an HTTP `basic` scheme for `AddBasicSchema()`.
 
 ### Runtime behavior
 
@@ -1039,7 +1046,7 @@ Framework integration for ASP.NET Core Minimal APIs with JSON configuration, val
 ### API and behavior
 
 - Pre-configured JSON serialization options
-- `MinimalApiValidatorFilter` — FluentValidation integration via `.Validate<T>()` on endpoint builders
+- `MinimalApiValidatorFilter` — FluentValidation integration via `.Validate<T>()` on endpoint builders. `.Validate<T>()` also declares the filter's problem-details 400 (missing body) and 422 (validation errors) responses, so OpenAPI documents them without `.ProducesProblem(...)` calls
 - Entity-tag concurrency via `.WithEntityTag()` and `.RequireIfMatch()` endpoint filters
 - `ApiResult<T>.ToHttpResult(...)` / `ApiResult.ToHttpResult(...)` — exception-equivalent ProblemDetails mapping with automatic 200/204 and 401/403/404/409/422 OpenAPI metadata. The extensions (`ApiResultExtensions`) and the returned `ApiResultHttpResult<T>` / `ApiResultHttpResult` live in `Headless.Api`, the namespace the rest of the package's endpoint API uses, so a file that imports `Headless.Api` and `Headless.Primitives` (for `ApiResult`) sees them; do not write a local bridge
 - API versioning integration
@@ -1118,11 +1125,11 @@ Framework integration for ASP.NET Core MVC/Web API with controllers, filters, JS
 ### API and behavior
 
 - `ApiControllerBase` — base controller with common utilities
-- Environment-based action filters (`BlockInEnvironmentAttribute`, `RequireEnvironmentAttribute`)
+- Environment-based action filters (`BlockInEnvironmentAttribute`, `RequireEnvironmentAttribute`). Outside their environment they answer 404, and they implement `IEnvironmentRestrictionMetadata`, so Headless.OpenApi leaves the action out of documents generated there
 - URL canonicalization middleware (`RedirectToCanonicalUrlRule`, registered via `UseRedirectToCanonicalUrl()`)
 - Pre-configured JSON and MVC options
 - Direct MVC `ObjectResult` responses carrying Headless-normalized `ProblemDetails` run `ProblemDetailsOptions.CustomizeProblemDetails` once before serialization
-- `ApiResult<T>.ToActionResult(...)` / `ApiResult.ToActionResult(...)` — exception-equivalent ProblemDetails mapping for expected failures. The extensions (`ApiResultMvcExtensions`) live in `Headless.Api`, as the Minimal API bridge does
+- `ApiResult<T>.ToActionResult(...)` / `ApiResult.ToActionResult(...)` — exception-equivalent ProblemDetails mapping for expected failures, returning `ApiActionResult<T>` / `ApiActionResult`. An action that declares one of them as its return type (`Task<ApiActionResult<Order>>`) publishes the same OpenAPI response set as the Minimal API bridge: 200 with `T` (or a bodyless 204) and `application/problem+json` 401/403/404/409/422, with no `[ProducesResponseType]` attributes. MVC converts the result to the controller helper's typed result (`OkObjectResult`, `NotFoundObjectResult`, ...) before result filters run, so filters see the same results as before; `Result` exposes it to tests. `ApiResultError.ToActionResult(...)` still returns a plain `ActionResult` and publishes nothing. The extensions (`ApiResultMvcExtensions`) and both result types live in `Headless.Api`, as the Minimal API bridge does
 - API versioning integration with API Explorer
 - Opt-in strong ETag responses and `If-Match` request validation
 
@@ -1157,7 +1164,7 @@ app.Run();
 public sealed class OrdersController(IOrderService service, IProblemDetailsCreator problems) : ControllerBase
 {
     [HttpGet("{id:int}")]
-    public async Task<ActionResult<Order>> GetAsync(int id, CancellationToken ct)
+    public async Task<ApiActionResult<Order>> GetAsync(int id, CancellationToken ct)
     {
         var result = await service.GetAsync(id, ct).ConfigureAwait(false);
         return result.ToActionResult(this, problems);
@@ -1167,7 +1174,7 @@ public sealed class OrdersController(IOrderService service, IProblemDetailsCreat
 
 #### ETag concurrency
 
-`AddHeadlessMvcEntityTagConcurrency()` emits an `ETag` for successful MVC `ObjectResult` values implementing `IHasEntityTag`. Add `[RequireIfMatch]` to write actions; the filter accepts exactly one strong tag and exposes it through scoped `IIfMatchContext`. Missing tags return 428 with `g:if_match_required`, invalid tags return 400 with `g:if_match_invalid`, and persistence conflicts return 409 with `g:concurrency_failure`.
+`AddHeadlessMvcEntityTagConcurrency()` emits an `ETag` for successful MVC `ObjectResult` values implementing `IHasEntityTag`. Add `[RequireIfMatch]` to write actions, or attach `RequireIfMatchAttribute` to many at once with a `MapControllers().WithMetadata(new RequireIfMatchAttribute())` convention; the filter reads the routed endpoint's metadata, accepts exactly one strong tag and exposes it through scoped `IIfMatchContext`. Missing tags return 428 with `g:if_match_required`, invalid tags return 400 with `g:if_match_invalid`, and persistence conflicts return 409 with `g:concurrency_failure`.
 
 Use `AddHeadlessMvcEntityTagConcurrency(options => ...)` to apply API-wide representation validation after the strong tag is parsed. For PostgreSQL `xmin`, set `options.IfMatchValidator = static tag => tag.TryGetUInt32(out _)`. The same option is available for Minimal APIs.
 

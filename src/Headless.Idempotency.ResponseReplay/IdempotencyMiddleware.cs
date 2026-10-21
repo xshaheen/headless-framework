@@ -649,10 +649,6 @@ internal sealed partial class IdempotencyMiddleware(
     private static HttpIdempotencyOptions _ResolveOptions(HttpContext context, HttpIdempotencyOptions appOptions)
     {
         var metadata = context.GetEndpoint()?.Metadata.GetOrderedMetadata<HttpIdempotencyMetadata>();
-        if (metadata is null or { Count: 0 })
-        {
-            return appOptions;
-        }
 
         // Clone + merge per request. A static cache keyed by metadata captured `appOptions` from
         // the first observation, which silently ignored subsequent IOptionsMonitor reloads for
@@ -660,16 +656,7 @@ internal sealed partial class IdempotencyMiddleware(
         // asymmetric drift that was very hard to debug. Cloning per request costs a struct copy
         // plus two HashSet allocations (Methods, ReplayHeaderAllowlist), well below request-flow
         // noise.
-        // Every attachment applies, in the order the endpoint declared them, so RequireIdempotencyKey() and
-        // WithIdempotency(...) compose instead of the last one silently replacing the other.
-        var cloned = appOptions.Clone();
-
-        foreach (var attached in metadata)
-        {
-            attached.Configure(cloned);
-        }
-
-        return cloned;
+        return metadata is null ? appOptions : appOptions.WithEndpointOverrides(metadata);
     }
 
     /// <summary>Returns the tenant the store keys this request's record under; see <see cref="IdempotencyRequestScope.StoreTenant" />.</summary>

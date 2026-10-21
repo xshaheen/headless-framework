@@ -135,7 +135,7 @@ public sealed class InMemoryProviderConformanceTests : TransportRequestReplyConf
                 _ => throw new ArgumentOutOfRangeException(nameof(endpoint), endpoint.Lane, null),
             };
 #pragma warning restore CA2000
-            var consumer = await new InMemoryConsumerClientFactory(queue).CreateAsync(
+            var consumer = await new InMemoryConsumerClientFactory(queue, TimeProvider.System).CreateAsync(
                 endpoint.ToRequest(),
                 cancellationToken
             );

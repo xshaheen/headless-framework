@@ -2,7 +2,7 @@ using Demo;
 using Demo.Models;
 using Headless.Context;
 using Headless.Hosting;
-using Headless.OpenApi.Nswag;
+using Headless.OpenApi;
 using Headless.Permissions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -19,7 +19,7 @@ builder.Services.AddDbContextFactory<PermissionsDemoDbContext>(options => option
 builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<PermissionsDemoDbContext>());
 
 // Configure OpenAPI documentation
-builder.Services.AddNswagOpenApi();
+builder.Services.AddHeadlessOpenApi();
 
 // Configure authorization policies
 builder.Services.AddAuthentication();
@@ -43,7 +43,7 @@ var app = builder.Build();
 // Configure middleware pipeline
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseNswagOpenApi();
+app.MapOpenApi("/openapi/{documentName}.json").AllowAnonymous();
 
 // List all permission definitions
 app.MapGet(

@@ -126,6 +126,15 @@ public static class Headers
     public const string DelayTime = "headless-delay-time";
 
     /// <summary>
+    /// Absolute UTC instant, in ISO 8601 format, after which the message is dropped instead of delivered: the
+    /// publisher derives it from <see cref="MessageOptions.DeliverWithin"/> at publish time, the outbox relay marks a
+    /// row past it terminally failed without sending, and a consumer commits a delivery past it without running its
+    /// handler. The receiver checks it against its own clock. This header is framework-owned and cannot be overridden.
+    /// Value: "headless-deliver-by"
+    /// </summary>
+    public const string DeliverBy = "headless-deliver-by";
+
+    /// <summary>
     /// Delivery mode requested by the caller before coordination resolution.
     /// Values are stable <see cref="DeliveryMode"/> names. This header is framework-owned and cannot be overridden.
     /// Value: "headless-delivery-requested"

@@ -96,6 +96,9 @@ public static class SetupMessaging
         MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
         services.AddHeadlessGuidGenerator();
         services.TryAddSingleton(TimeProvider.System);
+        // Failure waits ride out an unresponsive store or broker, so they keep real time even under a faked app clock;
+        // keyed apart from it so a test can step through them without faking every schedule.
+        services.TryAddKeyedSingleton(MessagingOptions.BackoffClockServiceKey, TimeProvider.System);
         // Idempotent: registers the singleton IUnitOfWorkFactory exactly once regardless of registration order
         // with other consumer packages (Headless.EntityFramework, Headless.Jobs).
         services.AddUnitOfWork();
@@ -241,9 +244,13 @@ public static class SetupMessaging
         services.TryAddSingleton<ICircuitBreakerStateManager, CircuitBreakerStateManager>();
         services.TryAddSingleton<ICircuitBreakerMonitor>(sp => sp.GetRequiredService<ICircuitBreakerStateManager>());
 
+        // Recorded per extension so a test host can later take one provider's registrations out exactly, such as
+        // replacing a broker transport with the in-memory one, instead of guessing which descriptors were its own.
+        var extensionRegistrations = MessagingExtensionRegistrations.GetOrAdd(services);
+
         foreach (var serviceExtension in setup.Extensions)
         {
-            serviceExtension.AddServices(services);
+            extensionRegistrations.Record(services, serviceExtension);
         }
 
         // Generic publisher facades are provider-order independent. They resolve transport/storage implementations
@@ -274,7 +281,8 @@ public static class SetupMessaging
                 sp.GetService<MessagingTelemetry>(),
                 options.TransportPublishTimeout,
                 sp.GetRequiredService<IOptions<MessagingOptions>>().Value.DefaultDeliveryMode,
-                sp.GetRequiredService<ConsumerRegistry>().DeclaredRoutes
+                sp.GetRequiredService<ConsumerRegistry>().DeclaredRoutes,
+                sp.GetService<ILogger<MessagePublisher>>()
             );
         });
         // Singleton: these facades are autonomous, so they hold no scope-bound state and framework singletons

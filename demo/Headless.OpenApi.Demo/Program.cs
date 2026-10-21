@@ -1,0 +1,71 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.OpenApi;
+using Headless.OpenApi.Scalar;
+using Headless.Security;
+using Microsoft.IdentityModel.Logging;
+using Microsoft.IdentityModel.Tokens;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllers();
+
+// Registering the document here, rather than through AddHeadlessOpenApi(), lets the OpenAPI XML-comment generator
+// intercept this call and add this project's XML documentation to the document.
+builder.Services.AddOpenApi(options => options.AddHeadlessTransformers());
+
+builder
+    .Services.AddAuthentication()
+    .AddJwtBearer(
+        AuthenticationConstants.Schemas.Bearer,
+        options =>
+        {
+            if (builder.Environment.IsDevelopmentOrTest())
+            {
+                options.RequireHttpsMetadata = false;
+                options.IncludeErrorDetails = true;
+                IdentityModelEventSource.ShowPII = true;
+            }
+
+            options.SaveToken = true;
+            options.Audience = "audience";
+            options.ClaimsIssuer = "issuer";
+            options.TokenValidationParameters.ValidIssuer = "issuer";
+            options.TokenValidationParameters.ValidateAudience = true;
+            options.TokenValidationParameters.ValidateIssuer = true;
+            options.TokenValidationParameters.ValidateIssuerSigningKey = true;
+            options.TokenValidationParameters.ValidateLifetime = true;
+            options.TokenValidationParameters.RequireExpirationTime = true;
+            options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
+            options.TokenValidationParameters.NameClaimType = UserClaimTypes.UserName;
+            options.TokenValidationParameters.RoleClaimType = UserClaimTypes.Roles;
+            options.TokenValidationParameters.AuthenticationType = AuthenticationConstants.IdentityAuthenticationType;
+            options.TokenValidationParameters.TokenDecryptionKey = createKey("EncryptingKey");
+            options.TokenValidationParameters.IssuerSigningKey = createKey("SigningKey");
+
+            return;
+
+            static SymmetricSecurityKey createKey(string key) => new(Encoding.UTF8.GetBytes(key));
+        }
+    );
+
+builder
+    .Services.AddAuthorizationBuilder()
+    .AddPolicy(
+        "PolicyName",
+        policy =>
+        {
+            policy.RequireAuthenticatedUser();
+            policy.RequireClaim(UserClaimTypes.Roles, "role");
+        }
+    );
+
+var app = builder.Build();
+
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapOpenApi("/openapi/{documentName}.json").AllowAnonymous();
+app.MapScalarOpenApi();
+app.MapControllers();
+
+await app.RunAsync();
