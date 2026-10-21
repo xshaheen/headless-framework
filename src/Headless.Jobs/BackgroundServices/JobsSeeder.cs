@@ -140,9 +140,10 @@ internal sealed class JobsSeeder(
             logger.CronSeedMigrationLockTimedOut(_seedLockOptions.AcquireTimeout!.Value);
 
             throw new InvalidOperationException(
-                $"The '{JobsKeys.CronSeedMigrationResource}' lock was still held after "
-                    + $"{_seedLockOptions.AcquireTimeout.Value.TotalSeconds:F0}s, so the cron seed did not run. Another "
-                    + "seed is running or did not release it; run 'seed' again once it finishes."
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The '{JobsKeys.CronSeedMigrationResource}' lock was still held after {_seedLockOptions.AcquireTimeout.Value.TotalSeconds:F0}s, so the cron seed did not run. Another seed is running or did not release it; run 'seed' again once it finishes."
+                )
             );
         }
 
