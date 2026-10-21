@@ -367,24 +367,28 @@ test-class: ## The inner loop: run tests matching CLASS (MTP --filter-class) ins
 	@$(REPEATED) $(MAKE) --no-print-directory $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-class "$(CLASS)"'
 
 .PHONY: test-method
-test-method: ## Run tests matching METHOD (MTP --filter-method). Solution-wide unless TEST_PROJECT is set.
+test-method: ## Run tests matching METHOD (MTP --filter-method). Solution-wide unless TEST_PROJECT is set; REPEAT=N runs it N times.
 	@test -n "$(METHOD)" || (echo "METHOD is required. Example: make test-method METHOD='*utc_now_should_return_correct_utc_time'" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-method "$(METHOD)"'
+	@case "$(REPEAT)" in ''|*[!0-9]*|0) echo "REPEAT must be a positive whole number." >&2; exit 2;; esac
+	@$(REPEATED) $(MAKE) --no-print-directory $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-method "$(METHOD)"'
 
 .PHONY: test-namespace
-test-namespace: ## Run tests matching NAMESPACE (MTP --filter-namespace). Solution-wide unless TEST_PROJECT is set.
+test-namespace: ## Run tests matching NAMESPACE (MTP --filter-namespace). Solution-wide unless TEST_PROJECT is set; REPEAT=N runs it N times.
 	@test -n "$(NAMESPACE)" || (echo "NAMESPACE is required. Example: make test-namespace NAMESPACE=Headless.Api.Tests" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-namespace "$(NAMESPACE)"'
+	@case "$(REPEAT)" in ''|*[!0-9]*|0) echo "REPEAT must be a positive whole number." >&2; exit 2;; esac
+	@$(REPEATED) $(MAKE) --no-print-directory $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-namespace "$(NAMESPACE)"'
 
 .PHONY: test-trait
-test-trait: ## Run tests matching TRAIT (MTP --filter-trait). Solution-wide unless TEST_PROJECT is set.
+test-trait: ## Run tests matching TRAIT (MTP --filter-trait). Solution-wide unless TEST_PROJECT is set; REPEAT=N runs it N times.
 	@test -n "$(TRAIT)" || (echo "TRAIT is required. Example: make test-trait TRAIT='Category=Unit'" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-trait "$(TRAIT)"'
+	@case "$(REPEAT)" in ''|*[!0-9]*|0) echo "REPEAT must be a positive whole number." >&2; exit 2;; esac
+	@$(REPEATED) $(MAKE) --no-print-directory $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-trait "$(TRAIT)"'
 
 .PHONY: test-query
-test-query: ## Run tests matching QUERY (MTP --filter-query). Solution-wide unless TEST_PROJECT is set.
+test-query: ## Run tests matching QUERY (MTP --filter-query). Solution-wide unless TEST_PROJECT is set; REPEAT=N runs it N times.
 	@test -n "$(QUERY)" || (echo "QUERY is required. Example: make test-query QUERY='/Headless.Extensions.Tests.Unit/Tests.Core/CultureHelperTests/*'" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-query "$(QUERY)"'
+	@case "$(REPEAT)" in ''|*[!0-9]*|0) echo "REPEAT must be a positive whole number." >&2; exit 2;; esac
+	@$(REPEATED) $(MAKE) --no-print-directory $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-query "$(QUERY)"'
 
 # A narrow fix after a failed verify-affected proves itself on the modules that failed, in seconds to a minute,
 # instead of the whole gate again (one Jobs module alone takes ~4 min). It reads the latest -verify, -test, or
