@@ -732,12 +732,13 @@ dashboards-test-affected: ## Run dashboard-<name>-test for each SPA changed vs A
 # its lifecycle: `up` builds and starts it in the background, `ready` waits for it, `seed` creates dashboard states,
 # `down` stops only what `up` started. STORE=memory (default) needs nothing beyond the SDK; STORE=postgres also
 # starts sandboxes/compose.yaml so stored state survives a restart and `db-q` can read it. The process, its log, and
-# the generated messaging-dashboard password live under .context/cli/, which git ignores.
+# the generated messaging-dashboard password live under artifacts/sandbox/, which git ignores. Each worktree keeps its
+# own copy, so one worktree's `down` never stops another worktree's sandbox.
 SANDBOX_PROJECT ?= sandboxes/Headless.Dashboards.Sandbox/Headless.Dashboards.Sandbox.csproj
 SANDBOX_DLL ?= sandboxes/Headless.Dashboards.Sandbox/bin/$(CONFIGURATION)/net10.0/Headless.Dashboards.Sandbox.dll
 SANDBOX_PORT ?= 5300
 SANDBOX_URL ?= http://127.0.0.1:$(SANDBOX_PORT)
-SANDBOX_DIR ?= .context/cli
+SANDBOX_DIR ?= $(ARTIFACTS_DIR)/sandbox
 SANDBOX_PID ?= $(SANDBOX_DIR)/sandbox.pid
 SANDBOX_LOG ?= $(SANDBOX_DIR)/sandbox.log
 SANDBOX_STATE ?= $(SANDBOX_DIR)/sandbox.state
