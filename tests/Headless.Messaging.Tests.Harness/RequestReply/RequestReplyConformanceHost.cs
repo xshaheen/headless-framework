@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Diagnostics.Metrics;
 using Headless.Messaging;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
@@ -270,68 +269,6 @@ internal sealed record ConformanceReceivedRequest(MessageHeader Headers, string?
         Headers.TryGetValue(MessagingHeaders.ReplyTo, out var replyTo) && replyTo is not null
             ? replyTo
             : throw new InvalidOperationException("The request carried no reply address.");
-}
-
-/// <summary>
-/// Records the reasons the request/reply instruments give for dropping a reply, in the execution context of the test
-/// that created it and the hosts that test starts.
-/// </summary>
-/// <remarks>
-/// The drop counter is process-wide and carries no message tag, so a recorder would also hear the tests running in
-/// parallel and could see a drop before its own host made one.
-/// </remarks>
-internal sealed class RequestReplyDropRecorder : IDisposable
-{
-    private static readonly AsyncLocal<object?> _Scope = new();
-    private readonly MeterListener _listener = new();
-    private readonly object _scope = new();
-
-    public RequestReplyDropRecorder()
-    {
-        _Scope.Value = _scope;
-        _listener.InstrumentPublished = (instrument, listener) =>
-        {
-            if (
-                string.Equals(instrument.Meter.Name, MessagingDiagnostics.SourceName, StringComparison.Ordinal)
-                && string.Equals(
-                    instrument.Name,
-                    MessagingMetrics.RequestReplyDroppedRepliesName,
-                    StringComparison.Ordinal
-                )
-            )
-            {
-                listener.EnableMeasurementEvents(instrument);
-            }
-        };
-        _listener.SetMeasurementEventCallback<long>(
-            (_, _, tags, _) =>
-            {
-                if (!ReferenceEquals(_Scope.Value, _scope))
-                {
-                    return;
-                }
-
-                foreach (var tag in tags)
-                {
-                    if (
-                        string.Equals(tag.Key, MessagingMetrics.TagRequestReplyDropReason, StringComparison.Ordinal)
-                        && tag.Value is string reason
-                    )
-                    {
-                        Reasons.Enqueue(reason);
-                    }
-                }
-            }
-        );
-        _listener.Start();
-    }
-
-    public ConcurrentQueue<string> Reasons { get; } = new();
-
-    public void Dispose()
-    {
-        _listener.Dispose();
-    }
 }
 
 /// <summary>Bounded waits for outcomes another host produces asynchronously.</summary>

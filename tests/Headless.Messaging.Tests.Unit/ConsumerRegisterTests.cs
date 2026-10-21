@@ -1633,8 +1633,10 @@ public sealed class ConsumerRegisterTests : TestBase
     public async Task receive_skip_commits_without_storage_or_exhausted_callback()
     {
         var exhaustedFired = false;
-        var outcomes = new ConcurrentQueue<string>();
-        using var listener = _ListenToReceiveOutcomes(outcomes);
+        using var outcomes = new ScopedCounterTagRecorder(
+            MessagingMetrics.ReceiveOutcomesName,
+            MessagingMetrics.TagReceiveOutcome
+        );
         var middleware = new RecordingReceiveMiddleware
         {
             Behavior = (context, _) =>
@@ -1662,7 +1664,7 @@ public sealed class ConsumerRegisterTests : TestBase
         run.Client.RejectCount.Should().Be(0);
         run.Storage.ReceivedExceptionRows.Should().BeEmpty("a skip must not persist any row");
         exhaustedFired.Should().BeFalse("a skip must not fire OnExhausted");
-        outcomes.Should().Contain("skipped").And.NotContain("no_responder");
+        outcomes.Values.Should().Contain("skipped").And.NotContain("no_responder");
         await circuitBreaker
             .DidNotReceive()
             .ReportFailureAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
@@ -1682,8 +1684,10 @@ public sealed class ConsumerRegisterTests : TestBase
         // given — a request whose caller stopped waiting a second ago on the responder's clock
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
         var replies = new Tests.RequestReply.RecordingReplyTransport();
-        var outcomes = new ConcurrentQueue<string>();
-        using var listener = _ListenToReceiveOutcomes(outcomes);
+        using var outcomes = new ScopedCounterTagRecorder(
+            MessagingMetrics.ReceiveOutcomesName,
+            MessagingMetrics.TagReceiveOutcome
+        );
         var exhaustedFired = false;
 
         // when
@@ -1719,7 +1723,7 @@ public sealed class ConsumerRegisterTests : TestBase
             );
         exhaustedFired.Should().BeFalse();
         replies.Sent.Should().BeEmpty();
-        outcomes.Should().Contain("expired");
+        outcomes.Values.Should().Contain("expired");
     }
 
     [Theory]
@@ -1729,8 +1733,10 @@ public sealed class ConsumerRegisterTests : TestBase
     {
         // given — a plain message whose delivery deadline passed a second ago on the receiver's clock
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
-        var outcomes = new ConcurrentQueue<string>();
-        using var listener = _ListenToReceiveOutcomes(outcomes);
+        using var outcomes = new ScopedCounterTagRecorder(
+            MessagingMetrics.ReceiveOutcomesName,
+            MessagingMetrics.TagReceiveOutcome
+        );
         var exhaustedFired = false;
 
         // when
@@ -1761,7 +1767,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 Arg.Any<CancellationToken>()
             );
         exhaustedFired.Should().BeFalse();
-        outcomes.Should().Contain("expired");
+        outcomes.Values.Should().Contain("expired");
     }
 
     [Fact]
@@ -1805,8 +1811,10 @@ public sealed class ConsumerRegisterTests : TestBase
         // given — a live request reaches a consumer that implements IConsume<T>, not IRespond<T, TResponse>
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
         var replies = new Tests.RequestReply.RecordingReplyTransport();
-        var outcomes = new ConcurrentQueue<string>();
-        using var listener = _ListenToReceiveOutcomes(outcomes);
+        using var outcomes = new ScopedCounterTagRecorder(
+            MessagingMetrics.ReceiveOutcomesName,
+            MessagingMetrics.TagReceiveOutcome
+        );
         var headers = _RequestHeaders(clock.GetUtcNow().AddSeconds(30));
         headers[Headers.TenantId] = "tenant-a";
 
@@ -1844,7 +1852,7 @@ public sealed class ConsumerRegisterTests : TestBase
         System.Text.Encoding.UTF8.GetString(reply.Body.Span).Should().Be("""{"code":"no_responder"}""");
 
         // and the counter names the deployment gap rather than a middleware policy
-        outcomes.Should().Contain("no_responder").And.NotContain("skipped").And.NotContain("expired");
+        outcomes.Values.Should().Contain("no_responder").And.NotContain("skipped").And.NotContain("expired");
     }
 
     [Fact]
@@ -1853,8 +1861,10 @@ public sealed class ConsumerRegisterTests : TestBase
         // given — a foreign Bus message that happens to carry the request headers, with a deadline already past
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
         var replies = new Tests.RequestReply.RecordingReplyTransport();
-        var outcomes = new ConcurrentQueue<string>();
-        using var listener = _ListenToReceiveOutcomes(outcomes);
+        using var outcomes = new ScopedCounterTagRecorder(
+            MessagingMetrics.ReceiveOutcomesName,
+            MessagingMetrics.TagReceiveOutcome
+        );
 
         // when
         await using var run = await _RunReceiveDeliveryAsync(
@@ -1880,7 +1890,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 Arg.Any<CancellationToken>()
             );
         replies.Sent.Should().BeEmpty();
-        outcomes.Should().NotContain("expired").And.NotContain("skipped").And.NotContain("no_responder");
+        outcomes.Values.Should().NotContain("expired").And.NotContain("skipped").And.NotContain("no_responder");
     }
 
     [Fact]
@@ -2052,46 +2062,6 @@ public sealed class ConsumerRegisterTests : TestBase
             [Headers.ReplyTo] = "headless.reply.test-caller",
             [Headers.RequestDeadline] = deadline.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
         };
-    }
-
-    // The receive-outcome counter is process-wide and carries no message tag, so a listener would also hear the tests
-    // running in parallel. Each listener records only measurements made in the execution context of the test that
-    // started it, which flows into the receive work that test starts.
-    private static readonly AsyncLocal<object?> _OutcomeScope = new();
-
-    private static System.Diagnostics.Metrics.MeterListener _ListenToReceiveOutcomes(ConcurrentQueue<string> outcomes)
-    {
-        var scope = new object();
-        _OutcomeScope.Value = scope;
-        var listener = new System.Diagnostics.Metrics.MeterListener
-        {
-            InstrumentPublished = (instrument, meterListener) =>
-            {
-                if (string.Equals(instrument.Name, MessagingMetrics.ReceiveOutcomesName, StringComparison.Ordinal))
-                {
-                    meterListener.EnableMeasurementEvents(instrument);
-                }
-            },
-        };
-        listener.SetMeasurementEventCallback<long>(
-            (_, _, tags, _) =>
-            {
-                if (!ReferenceEquals(_OutcomeScope.Value, scope))
-                {
-                    return;
-                }
-
-                foreach (var tag in tags)
-                {
-                    if (string.Equals(tag.Key, MessagingMetrics.TagReceiveOutcome, StringComparison.Ordinal))
-                    {
-                        outcomes.Enqueue((string)tag.Value!);
-                    }
-                }
-            }
-        );
-        listener.Start();
-        return listener;
     }
 
     [Fact]

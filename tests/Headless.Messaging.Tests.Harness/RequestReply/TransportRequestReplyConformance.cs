@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Microsoft.Extensions.DependencyInjection;
+using Tests.Helpers;
 using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests.RequestReply;
@@ -91,7 +92,10 @@ public static class TransportRequestReplyConformance
     {
         _RequireSupport(driver);
         var contracts = new RequestReplyConformanceContracts();
-        using var drops = new RequestReplyDropRecorder();
+        using var drops = new ScopedCounterTagRecorder(
+            MessagingMetrics.RequestReplyDroppedRepliesName,
+            MessagingMetrics.TagRequestReplyDropReason
+        );
         await using var responder = await RequestReplyConformanceHost.StartResponderAsync(
             driver,
             contracts,
@@ -122,7 +126,7 @@ public static class TransportRequestReplyConformance
             .Distinct(StringComparer.Ordinal)
             .Should()
             .HaveCount(2, "each caller process listens on a reply address of its own");
-        drops.Reasons.Should().NotContain(MessagingMetrics.DropReasonUnknown, "no caller saw another caller's reply");
+        drops.Values.Should().NotContain(MessagingMetrics.DropReasonUnknown, "no caller saw another caller's reply");
     }
 
     /// <summary>A responder that fails terminally ends the call with a typed fault instead of a timeout.</summary>
@@ -215,7 +219,10 @@ public static class TransportRequestReplyConformance
     {
         _RequireSupport(driver);
         var contracts = new RequestReplyConformanceContracts();
-        using var drops = new RequestReplyDropRecorder();
+        using var drops = new ScopedCounterTagRecorder(
+            MessagingMetrics.RequestReplyDroppedRepliesName,
+            MessagingMetrics.TagRequestReplyDropReason
+        );
         await using var responder = await RequestReplyConformanceHost.StartResponderAsync(
             driver,
             contracts,
@@ -237,7 +244,7 @@ public static class TransportRequestReplyConformance
         );
         responder.Probe.HeldRelease.TrySetResult();
         await RequestReplyConformanceWait.UntilAsync(
-            () => drops.Reasons.Contains(MessagingMetrics.DropReasonLate),
+            () => drops.Values.Contains(MessagingMetrics.DropReasonLate),
             "the caller dropped the reply as late",
             cancellationToken
         );
@@ -255,7 +262,10 @@ public static class TransportRequestReplyConformance
     {
         _RequireSupport(driver);
         var contracts = new RequestReplyConformanceContracts();
-        using var drops = new RequestReplyDropRecorder();
+        using var drops = new ScopedCounterTagRecorder(
+            MessagingMetrics.RequestReplyDroppedRepliesName,
+            MessagingMetrics.TagRequestReplyDropReason
+        );
         await using var responder = await RequestReplyConformanceHost.StartResponderAsync(
             driver,
             contracts,
@@ -283,7 +293,7 @@ public static class TransportRequestReplyConformance
         await RequestReplyConformanceWait.UntilAsync(
             () =>
                 responder.Probe.Handled.Contains("quote:forged")
-                && drops.Reasons.Contains(MessagingMetrics.DropReasonInvalidReplyAddress),
+                && drops.Values.Contains(MessagingMetrics.DropReasonInvalidReplyAddress),
             "the responder handled the forged request and refused its reply address",
             cancellationToken
         );
@@ -313,7 +323,10 @@ public static class TransportRequestReplyConformance
     {
         _RequireSupport(driver);
         var contracts = new RequestReplyConformanceContracts();
-        using var drops = new RequestReplyDropRecorder();
+        using var drops = new ScopedCounterTagRecorder(
+            MessagingMetrics.RequestReplyDroppedRepliesName,
+            MessagingMetrics.TagRequestReplyDropReason
+        );
         await using var responder = await RequestReplyConformanceHost.StartResponderAsync(
             driver,
             contracts,
@@ -357,7 +370,7 @@ public static class TransportRequestReplyConformance
         quote.Sku.Should().Be("after-restart");
         responder.Probe.Requests.Last().ReplyTo.Should().NotBe(previousAddress, "a restarted caller listens anew");
         drops
-            .Reasons.Should()
+            .Values.Should()
             .NotContain(MessagingMetrics.DropReasonUnknown, "the restarted caller never saw the reply");
     }
 
