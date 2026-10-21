@@ -458,6 +458,14 @@ The fixtures create their containers with Testcontainers reuse enabled, except `
 
 Because a reused container keeps state between runs, tests must be idempotent across runs: use drop-before-create (`DROP TABLE IF EXISTS` / `IF OBJECT_ID(...) IS NOT NULL DROP ...`) or guarded create (`CREATE ... IF NOT EXISTS`) rather than assuming a clean database. Each integration project reuses its own container in each checkout of the repository, keyed by the test assembly name (`headless.fixture` label) and the checkout's root directory (`headless.checkout` label), so neither two projects nor two worktrees running the same project share state. A removed worktree leaves its stopped containers behind; find them with `docker ps -a --filter label=headless.checkout=<path>`.
 
+A container your own test project builds outside these fixtures takes the same checkout scoping through `WithCheckoutReuse()` (`HeadlessContainerBuilderExtensions`, namespace `DotNet.Testcontainers.Builders`), which turns reuse on and adds the `headless.checkout` label. Use it in place of `WithReuse(true)`, which hashes the same in every worktree, so two worktrees running that project would share one container and each other's rows. Add a label of your own when two fixtures in one project build otherwise identical containers:
+
+```csharp
+new PostgreSqlBuilder(TestImages.PostgreSql).WithLabel("type", "settings").WithCheckoutReuse().Build();
+```
+
+In this repository a bare `WithReuse(true)` fails the build with RS0030 (`eng/BannedSymbols.Testcontainers.txt`).
+
 #### SQL Server image override
 
 On ARM64, `HeadlessSqlServerFixture` runs Azure SQL Edge, which is a different engine build from SQL Server 2022: deadlock detection, catalog visibility, and error numbers can differ. To run a suite against real SQL Server on an ARM64 host that can emulate x86_64 (OrbStack or Docker Desktop with Rosetta), set `HEADLESS_SQLSERVER_IMAGE` to the image before the test process starts:

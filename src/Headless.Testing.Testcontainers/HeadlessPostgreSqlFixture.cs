@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using DotNet.Testcontainers.Builders;
 using Testcontainers.PostgreSql;
 using Testcontainers.Xunit;
 
@@ -17,8 +18,7 @@ public class HeadlessPostgreSqlFixture()
     {
         return base.Configure()
             .WithImage(TestImages.PostgreSql)
-            .WithReuse(true)
-            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this))
-            .WithLabel(ReuseLabel.CheckoutKey, ReuseLabel.Checkout);
+            .WithCheckoutReuse()
+            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this));
     }
 }

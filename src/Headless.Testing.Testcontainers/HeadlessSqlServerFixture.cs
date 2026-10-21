@@ -67,8 +67,7 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
             .WithEnvironment("ACCEPT_EULA", "Y")
             .WithEnvironment("MSSQL_SA_PASSWORD", _Password)
             .WithLabel(ReuseLabel.Key, ReuseLabel.For(this))
-            .WithLabel(ReuseLabel.CheckoutKey, ReuseLabel.Checkout)
-            .WithReuse(true)
+            .WithCheckoutReuse()
             .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("SQL Server is now ready"))
             .Build();
     }

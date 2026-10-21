@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using DotNet.Testcontainers.Builders;
 using Testcontainers.Redis;
 using Testcontainers.Xunit;
 
@@ -16,9 +17,8 @@ public class HeadlessRedisFixture() : ContainerFixture<RedisBuilder, RedisContai
     {
         return base.Configure()
             .WithImage(TestImages.Redis)
-            .WithReuse(true)
-            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this))
-            .WithLabel(ReuseLabel.CheckoutKey, ReuseLabel.Checkout);
+            .WithCheckoutReuse()
+            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this));
     }
 
     /// <summary>Deletes every key in every database of the shared container.</summary>

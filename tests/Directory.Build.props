@@ -18,6 +18,11 @@
     <Verify_SponsorshipExemption>OpenSource</Verify_SponsorshipExemption>
     <Verify_SponsorshipExemptionUntil>2027-10</Verify_SponsorshipExemptionUntil>
   </PropertyGroup>
+  <ItemGroup Label="Banned APIs">
+    <!-- WithReuse(true) alone hashes the same in every worktree, so two checkouts share one container and its rows;
+         WithCheckoutReuse() in Headless.Testing.Testcontainers adds the checkout label. -->
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)..\eng\BannedSymbols.Testcontainers.txt" />
+  </ItemGroup>
   <ItemGroup Label="Global Usings">
     <Using Include="NSubstitute" />
     <Using Include="Bogus" />
