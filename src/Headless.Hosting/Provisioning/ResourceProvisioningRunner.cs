@@ -33,7 +33,7 @@ internal static class ResourceProvisioningRunner
     }
 
     /// <summary>
-    /// Runs <paramref name="operation" /> over <paramref name="resources" /> one at a time: delete in reverse order,
+    /// Runs <paramref name="operation" /> over <paramref name="resources" /> one at a time: delete and purge in reverse order,
     /// every other operation in the given order. A failure does not stop the run, so the report names every resource.
     /// </summary>
     /// <param name="resources">The resources, in dependency order.</param>
@@ -50,7 +50,10 @@ internal static class ResourceProvisioningRunner
     {
         using var budget = BudgetedStep.CreateBudget(timeout, cancellationToken);
 
-        var ordered = operation == ResourceOperation.Delete ? resources.Reverse() : resources;
+        // Delete and purge go dependents first, so a row or object another resource references is removed after it.
+        var ordered = operation is ResourceOperation.Delete or ResourceOperation.Purge
+            ? resources.Reverse()
+            : resources;
         var outcomes = new List<ResourceOutcome>(resources.Count);
 
         foreach (var resource in ordered)

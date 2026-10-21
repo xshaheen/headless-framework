@@ -3,6 +3,7 @@
 using System.Globalization;
 using Headless.Context;
 using Headless.Coordination;
+using Headless.Hosting;
 using Headless.Testing.Testcontainers;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -86,6 +87,36 @@ public sealed class RedisMembershipScriptLoadingTests : TestBase
         {
             await hostedService.StopAsync(AbortToken);
         }
+    }
+
+    [Fact]
+    public async Task should_load_only_this_packages_scripts_in_a_warmup_that_does_not_gate_readiness()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IConnectionMultiplexer>(_multiplexer);
+        services.AddHeadlessHostIdentity(options => options.HostName = "node-a");
+        services.AddHeadlessCoordination(setup =>
+        {
+            setup.UseRedis(static _ => { });
+            setup.DisableMembershipHeartbeat();
+            setup.Configure(options => options.ClusterName = "script-loading");
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var warmup = provider
+            .GetServices<IWarmup>()
+            .Should()
+            .ContainSingle(w => w.Name == "RedisCoordinationScripts")
+            .Which;
+
+        // when
+        await warmup.WarmUpAsync(AbortToken);
+
+        // then - the membership store's scripts
+        warmup.GatesReadiness.Should().BeFalse();
+        (await _CachedScriptCountAsync()).Should().Be(7);
     }
 
     private async Task<long> _CachedScriptCountAsync()

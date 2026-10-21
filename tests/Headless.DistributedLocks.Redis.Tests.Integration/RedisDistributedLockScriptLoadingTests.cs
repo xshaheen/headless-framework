@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using Headless.DistributedLocks;
+using Headless.Hosting;
 using Headless.Testing.Testcontainers;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -50,8 +51,18 @@ public sealed class RedisDistributedLockScriptLoadingTests : TestBase
 
         using var host = builder.Build();
 
-        // when
-        await host.StartAsync(AbortToken);
+        // when - the start up to the point the warm-ups would begin, which run after it in the background
+        var hostedServices = host.Services.GetServices<IHostedService>().ToList();
+
+        foreach (var hostedService in hostedServices.OfType<IHostedLifecycleService>())
+        {
+            await hostedService.StartingAsync(AbortToken);
+        }
+
+        foreach (var hostedService in hostedServices)
+        {
+            await hostedService.StartAsync(AbortToken);
+        }
 
         // then - the host start made no SCRIPT LOAD
         (await _CachedScriptCountAsync())
@@ -79,7 +90,34 @@ public sealed class RedisDistributedLockScriptLoadingTests : TestBase
         await mutex!.DisposeAsync();
         await write!.DisposeAsync();
         await permit!.DisposeAsync();
-        await host.StopAsync(AbortToken);
+
+        foreach (var hostedService in hostedServices)
+        {
+            await hostedService.StopAsync(AbortToken);
+        }
+    }
+
+    [Fact]
+    public async Task should_load_only_this_packages_scripts_in_a_warmup_that_does_not_gate_readiness()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSingleton<IConnectionMultiplexer>(_multiplexer);
+        builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
+
+        using var host = builder.Build();
+        var warmup = host
+            .Services.GetServices<IWarmup>()
+            .Should()
+            .ContainSingle(w => w.Name == "RedisDistributedLockScripts")
+            .Which;
+
+        // when
+        await warmup.WarmUpAsync(AbortToken);
+
+        // then - the scripts of the lock, reader-writer lock, and semaphore
+        warmup.GatesReadiness.Should().BeFalse();
+        (await _CachedScriptCountAsync()).Should().Be(14);
     }
 
     private async Task<long> _CachedScriptCountAsync()

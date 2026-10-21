@@ -170,19 +170,18 @@ internal static partial class JobsInitializationLog
 
     [LoggerMessage(
         EventId = 2,
-        EventName = "CronSeedMigrationSkipped",
-        Level = LogLevel.Debug,
-        Message = "Skipped cron-seed migration: another node holds the '"
+        EventName = "CronSeedMigrationLockTimedOut",
+        Level = LogLevel.Error,
+        Message = "Cron-seed migration failed: the '"
             + JobsKeys.CronSeedMigrationResource
-            + "' lock and is seeding."
+            + "' lock was still held after {Wait}, so the seed did not run."
     )]
-    public static partial void CronSeedMigrationSkipped(this ILogger logger);
+    public static partial void CronSeedMigrationLockTimedOut(this ILogger logger, TimeSpan wait);
 
     [LoggerMessage(
         EventId = 3,
         EventName = "CronSeedMigrationLockAcquireFailed",
-        // Error: a contention skip (lease == null) is normal, but an acquire fault signals a lock-store problem and
-        // fails the seed.
+        // Error: an acquire fault signals a lock-store problem and fails the seed.
         Level = LogLevel.Error,
         Message = "Cron-seed migration failed: acquiring the '"
             + JobsKeys.CronSeedMigrationResource

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks.Redis;
+using Headless.DistributedLocks.Redis.Scripts;
 using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Redis;
@@ -51,8 +52,8 @@ public static class SetupDistributedLocksRedis
     {
         public void AddServices(IServiceCollection services)
         {
-            // One loader serves every lock family. Each script loads on its first evaluation instead of
-            // at host start, which would only pay the same round trip earlier and delay the start.
+            // One loader serves every lock family. Its scripts load in a warm-up after the host starts, so neither
+            // the start nor the first acquire waits for them.
             services.TryAddKeyedSingleton(
                 RedisDistributedLockServiceKeys.ScriptsLoader,
                 (sp, _) =>
@@ -62,6 +63,7 @@ public static class SetupDistributedLocksRedis
                         sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
                     )
             );
+            services.AddWarmup<RedisDistributedLockScriptsWarmup>();
             services.AddDistributedLockCore<RedisDistributedLockStorage>();
             services.AddDistributedReadWriteLockCore<RedisDistributedReadWriteLockStorage>();
             services.AddDistributedSemaphoreCore<RedisDistributedSemaphoreStorage>();

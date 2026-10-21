@@ -2,6 +2,8 @@
 
 using Headless.Checks;
 using Headless.Coordination.Redis;
+using Headless.Coordination.Redis.Scripts;
+using Headless.Hosting;
 using Headless.Redis;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,7 +21,8 @@ namespace Headless.Coordination;
 /// <remarks>
 /// Requires a pre-registered <c>IConnectionMultiplexer</c> in the DI container (for example from
 /// <c>AddHeadlessRedis</c>). The Redis store uses Lua scripts for atomic heartbeat and incarnation
-/// allocation; each script loads on its first use instead of at host start.
+/// allocation; they load in a warm-up after the host starts, so neither the start nor the first heartbeat waits for
+/// them.
 /// </remarks>
 [PublicAPI]
 public static class SetupCoordinationRedis
@@ -116,6 +119,7 @@ public static class SetupCoordinationRedis
                 )
         );
 
+        services.AddWarmup<RedisCoordinationScriptsWarmup>();
         services.TryAddSingleton<IMembershipStore>(static sp => sp.GetRequiredService<RedisMembershipStore>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, RedisMembershipCleanupService>(static sp =>

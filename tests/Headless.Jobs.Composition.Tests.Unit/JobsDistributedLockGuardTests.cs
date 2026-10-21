@@ -16,7 +16,7 @@ using NSubstitute.ExceptionExtensions;
 namespace Tests;
 
 /// <summary>
-/// Behavior of the cron-seed migration guard (<see cref="JobsSeeder"/>) — skip-on-contention,
+/// Behavior of the cron-seed migration guard (<see cref="JobsSeeder"/>) — a bounded wait that fails on contention,
 /// unchanged no-lock default, and lease release on the success and throw paths — plus the dead-node reclaim contract
 /// (<see cref="JobsDeadOwnerReclaimer"/>). The reclaim path is intentionally <em>not</em> lock-guarded (#267 review):
 /// the shared <c>DeadOwnerRecoveryBridge</c> marks owners reclaimed before the call and only retries on a thrown
@@ -56,7 +56,8 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         SchedulerOptionsBuilder options,
         IDistributedLock lockProvider,
         CancellationToken cancellationToken,
-        JobFunctionRegistry? functionRegistry = null
+        JobFunctionRegistry? functionRegistry = null,
+        TimeSpan? seedLockWait = null
     )
     {
         var services = new ServiceCollection();
@@ -70,7 +71,12 @@ public sealed class JobsDistributedLockGuardTests : TestBase
 
         // Drive the seed guard directly, without StartAsync, so the test controls the registry it seeds from. A rename
         // breaks the build, not at runtime.
-        var seeder = new JobsSeeder(sp, functionRegistry ?? _EmptyRegistry, NullLogger<JobsSeeder>.Instance);
+        var seeder = new JobsSeeder(
+            sp,
+            functionRegistry ?? _EmptyRegistry,
+            NullLogger<JobsSeeder>.Instance,
+            seedLockWait
+        );
 
         await seeder.SeedDefinedCronJobsAsync(options, cancellationToken);
     }
@@ -339,7 +345,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     }
 
     [Fact]
-    public async Task seed_skips_when_another_node_holds_the_lock()
+    public async Task seed_fails_naming_the_lock_when_another_node_holds_it_past_the_wait()
     {
         var storage = new InMemoryDistributedLockStorage(TimeProvider.System);
 
@@ -357,11 +363,42 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         var manager = Substitute.For<IInternalJobManager>();
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
 
-        await _InvokeSeedAsync(manager, options, nodeB, AbortToken);
+        // A deploy step runs once, so a seed that skipped would report success over stale cron rows.
+        var act = () =>
+            _InvokeSeedAsync(manager, options, nodeB, AbortToken, seedLockWait: TimeSpan.FromMilliseconds(200));
 
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*'{JobsKeys.CronSeedMigrationResource}' lock was still held*");
         await manager
             .DidNotReceive()
             .MigrateDefinedCronJobs(Arg.Any<CronSeedDefinition[]>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task seed_waits_out_a_lease_released_during_the_wait_and_runs()
+    {
+        var storage = new InMemoryDistributedLockStorage(TimeProvider.System);
+        var nodeA = _CreateLock(storage);
+        var held = await nodeA.TryAcquireAsync(JobsKeys.CronSeedMigrationResource, _HoldOptions, AbortToken);
+        held.Should().NotBeNull();
+        var manager = Substitute.For<IInternalJobManager>();
+        var options = new SchedulerOptionsBuilder { UseStorageLock = true };
+
+        // when node A releases while node B waits
+        var seeding = _InvokeSeedAsync(
+            manager,
+            options,
+            _CreateLock(storage),
+            AbortToken,
+            seedLockWait: TimeSpan.FromSeconds(10)
+        );
+        await Task.Delay(TimeSpan.FromMilliseconds(200), AbortToken);
+        await held!.DisposeAsync();
+        await seeding;
+
+        // then
+        await manager.Received(1).MigrateDefinedCronJobs(Arg.Any<CronSeedDefinition[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

@@ -51,6 +51,22 @@ public sealed class ResourceProvisioningOperationsTests : TestBase
     }
 
     [Fact]
+    public async Task should_purge_a_resource_before_the_resource_it_depends_on()
+    {
+        // given rows in 'jobs' that reference rows in 'db', as a cross-feature foreign key would
+        var services = new ServiceCollection();
+        services.AddResourceProvisioner(_ => new DependentProvisioner("Queue", "jobs", _log, "db"));
+        services.AddResourceProvisioner(_ => new RecordingProvisioner("Schema", "db", _log));
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        await provider.PurgeResourcesAsync(AbortToken);
+
+        // then
+        _log.Should().Equal("purge jobs", "purge db");
+    }
+
+    [Fact]
     public async Task should_name_the_cycle_when_two_resources_depend_on_each_other()
     {
         // given

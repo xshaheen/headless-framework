@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching.Scripts;
 using Headless.Checks;
 using Headless.Hosting;
 using Headless.Redis;
@@ -19,8 +20,8 @@ public static class SetupRedisCache
     {
         /// <summary>
         /// Uses the Redis cache as the default (unkeyed) <see cref="ICache"/> and <see cref="IRemoteCache"/>.
-        /// Also registers the <see cref="CacheConstants.RemoteCacheProvider"/> role key. Each Lua script loads on
-        /// its first use instead of at host start.
+        /// Also registers the <see cref="CacheConstants.RemoteCacheProvider"/> role key. The cache's Lua scripts load
+        /// in a warm-up after the host starts, so neither the start nor the first cache call waits for them.
         /// <see cref="RedisCacheOptions.ConnectionMultiplexer"/> is required.
         /// </summary>
         /// <param name="setupAction">Configuration action for <see cref="RedisCacheOptions"/>.</param>
@@ -184,6 +185,7 @@ public static class SetupRedisCache
                     sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
                 )
         );
+        _AddScriptsWarmup(services, loaderKey);
 
         services.AddHeadlessHealthCheck(
             "cache-redis-" + name,
@@ -220,6 +222,22 @@ public static class SetupRedisCache
         return services;
     }
 
+    // One warm-up loads the scripts onto every registered cache's Redis; each loader is listed once.
+    private static void _AddScriptsWarmup(IServiceCollection services, string loaderKey)
+    {
+        var listed = services.Any(d =>
+            d.ImplementationInstance is RedisCacheScriptsLoaderKey existing
+            && string.Equals(existing.Key, loaderKey, StringComparison.Ordinal)
+        );
+
+        if (!listed)
+        {
+            services.AddSingleton(new RedisCacheScriptsLoaderKey(loaderKey));
+        }
+
+        services.AddWarmup<RedisCacheScriptsWarmup>();
+    }
+
     private static IServiceCollection _AddSerializerCore(IServiceCollection services)
     {
         // Defensive: this package RESOLVES TimeProvider, so it must also guarantee one exists. Without this,
@@ -250,6 +268,7 @@ public static class SetupRedisCache
                     sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
                 )
         );
+        _AddScriptsWarmup(services, RedisCacheServiceKeys.ScriptsLoader);
         services.TryAddSingleton<IRemoteCache, RedisCache>();
         services.AddHeadlessHealthCheck(
             "cache-redis",

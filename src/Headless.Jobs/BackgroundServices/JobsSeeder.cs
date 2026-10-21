@@ -21,9 +21,21 @@ namespace Headless.Jobs.BackgroundServices;
 internal sealed class JobsSeeder(
     IServiceProvider serviceProvider,
     JobFunctionRegistry functionRegistry,
-    ILogger<JobsSeeder> logger
+    ILogger<JobsSeeder> logger,
+    TimeSpan? seedLockWait = null
 ) : ISeeder
 {
+    // Longer than the lease, so a lease a crashed run left behind expires inside the wait instead of failing the seed.
+    internal static readonly TimeSpan DefaultSeedLockWait =
+        JobsKeys.GuardAcquireOptions.TimeUntilExpires!.Value + TimeSpan.FromSeconds(30);
+
+    private readonly DistributedLockAcquireOptions _seedLockOptions = new()
+    {
+        AcquireTimeout = seedLockWait ?? DefaultSeedLockWait,
+        TimeUntilExpires = JobsKeys.GuardAcquireOptions.TimeUntilExpires,
+        Monitoring = LockMonitoringMode.None,
+    };
+
     public string Name => "Jobs";
 
     public async Task SeedAsync(CancellationToken cancellationToken)
@@ -102,7 +114,7 @@ internal sealed class JobsSeeder(
             // provider is registered — is logged as an acquire fault like any other.
             var lockProvider = scopedProvider.GetRequiredKeyedService<IDistributedLock>(JobsKeys.LockProvider);
             lease = await lockProvider
-                .TryAcquireAsync(JobsKeys.CronSeedMigrationResource, JobsKeys.GuardAcquireOptions, cancellationToken)
+                .TryAcquireAsync(JobsKeys.CronSeedMigrationResource, _seedLockOptions, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -122,9 +134,16 @@ internal sealed class JobsSeeder(
 
         if (lease is null)
         {
-            // Another node holds the seed lock and is migrating; skip the redundant scan (skip-on-contention).
-            logger.CronSeedMigrationSkipped();
-            return;
+            // The seed runs once per deployment, so nothing retries a skipped one: a lock still held after the wait
+            // (another seed that outlived its lease, or a stuck one) fails the step instead of reporting success over
+            // stale cron rows.
+            logger.CronSeedMigrationLockTimedOut(_seedLockOptions.AcquireTimeout!.Value);
+
+            throw new InvalidOperationException(
+                $"The '{JobsKeys.CronSeedMigrationResource}' lock was still held after "
+                    + $"{_seedLockOptions.AcquireTimeout.Value.TotalSeconds:F0}s, so the cron seed did not run. Another "
+                    + "seed is running or did not release it; run 'seed' again once it finishes."
+            );
         }
 
         await using (lease.ConfigureAwait(false))

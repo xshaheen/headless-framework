@@ -14,9 +14,9 @@ namespace Headless.Redis;
 /// <remarks>
 /// Callers pass <see cref="RedisScriptDefinition"/> singletons straight to <see cref="EvaluateAsync"/>.
 /// The first evaluation of a script loads it onto every writable node via <c>SCRIPT LOAD</c>, and
-/// later evaluations run it by SHA using <c>EVALSHA</c>. No startup preload is needed: the first use
-/// pays the same single round trip a preload would, without delaying the host start.
-/// <see cref="LoadAsync"/> remains for callers that want a set of scripts loaded ahead of first use.
+/// later evaluations run it by SHA using <c>EVALSHA</c>. Never preload in the host start, which would block it on a
+/// Redis round trip: a package that wants its scripts ready before first use calls <see cref="LoadAsync"/> from a
+/// warm-up that does not gate readiness, as the Redis cache, lock, and coordination packages do.
 /// When a node returns <c>NOSCRIPT</c> (for example after a promoted replica or a cache flush), the
 /// loader falls back to plain <c>EVAL</c> for the affected call and resets the internal SHA cache so
 /// the next caller triggers a fresh reload.

@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using Headless.Caching;
+using Headless.Hosting;
 using Headless.Testing.Testcontainers;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -59,8 +60,18 @@ public sealed class RedisCacheScriptLoadingTests : TestBase
 
         using var host = builder.Build();
 
-        // when
-        await host.StartAsync(AbortToken);
+        // when - the start up to the point the warm-ups would begin, which run after it in the background
+        var hostedServices = host.Services.GetServices<IHostedService>().ToList();
+
+        foreach (var hostedService in hostedServices.OfType<IHostedLifecycleService>())
+        {
+            await hostedService.StartingAsync(AbortToken);
+        }
+
+        foreach (var hostedService in hostedServices)
+        {
+            await hostedService.StartAsync(AbortToken);
+        }
 
         // then - the host start made no SCRIPT LOAD
         (await _CachedScriptCountAsync())
@@ -80,7 +91,44 @@ public sealed class RedisCacheScriptLoadingTests : TestBase
         namedFirst.Should().Be(7);
         (await _CachedScriptCountAsync()).Should().BePositive();
 
-        await host.StopAsync(AbortToken);
+        foreach (var hostedService in hostedServices)
+        {
+            await hostedService.StopAsync(AbortToken);
+        }
+    }
+
+    [Fact]
+    public async Task should_load_only_this_packages_scripts_in_a_warmup_that_does_not_gate_readiness()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddHeadlessCaching(setup =>
+        {
+            setup.UseRedis(options => options.ConnectionMultiplexer = _multiplexer);
+            setup.AddNamed(
+                "tenant",
+                instance =>
+                    instance.UseRedis(options =>
+                    {
+                        options.ConnectionMultiplexer = _multiplexer;
+                        options.KeyPrefix = "script-loading-tenant:";
+                    })
+            );
+        });
+
+        using var host = builder.Build();
+        var warmup = host
+            .Services.GetServices<IWarmup>()
+            .Should()
+            .ContainSingle(w => w.Name == "RedisCacheScripts")
+            .Which;
+
+        // when
+        await warmup.WarmUpAsync(AbortToken);
+
+        // then - the seven scripts the cache runs, loaded once for both instances on this one Redis
+        warmup.GatesReadiness.Should().BeFalse();
+        (await _CachedScriptCountAsync()).Should().Be(7);
     }
 
     private async Task<long> _CachedScriptCountAsync()
