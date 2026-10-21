@@ -12,19 +12,19 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="permissions:disabled" xml:space="preserve">
-    <value>الصلاحية '{0}' معطلة.</value>
+    <value>الصلاحية '{0}' معطّلة.</value>
   </data>
   <data name="permissions:provider-not-defined" xml:space="preserve">
     <value>الصلاحية '{0}' لا تدعم مقدم الصلاحيات '{1}'.</value>
   </data>
   <data name="permissions:some-undefined" xml:space="preserve">
-    <value>بعض الصلاحيات غير معرفة.</value>
+    <value>بعض الصلاحيات غير معرّفة.</value>
   </data>
   <data name="permissions:undefined" xml:space="preserve">
-    <value>الصلاحية '{0}' غير معرفة.</value>
+    <value>الصلاحية '{0}' غير معرّفة.</value>
   </data>
   <data name="permissions:some-disabled" xml:space="preserve">
-    <value>بعض الصلاحيات معطلة.</value>
+    <value>بعض الصلاحيات معطّلة.</value>
   </data>
   <data name="permissions:provider-not-found" xml:space="preserve">
     <value>مقدم الصلاحيات غير معروف: {0}.</value>

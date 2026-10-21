@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-204 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+205 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -291,7 +291,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 204 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 205 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -741,6 +741,7 @@ Base classes وbuilders وfixtures وتكامل Testcontainers لـ integration 
 |---------|-------|
 | [Headless.Dashboard.Authentication](src/Headless.Dashboard.Authentication/README.md) | Authentication مشتركة للـ dashboards بتاعة الـ Jobs والـ Messaging |
 | [Headless.FluentValidation](src/Headless.FluentValidation/README.md) | Extensions لـ FluentValidation |
+| [Headless.FluentValidation.FileSignatures](src/Headless.FluentValidation.FileSignatures/README.md) | Validation rule للـ file signature (الـ magic bytes) |
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Source generator للـ primitive types |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | الـ abstractions بتاعة الـ generator |
 | [Headless.Hosting](src/Headless.Hosting/README.md) | أدوات للـ .NET hosting |

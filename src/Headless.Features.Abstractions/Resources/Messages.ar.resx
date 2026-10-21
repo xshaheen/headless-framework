@@ -1,4 +1,4 @@
-<root>
+﻿<root>
   <resheader name="resmimetype">
     <value>text/microsoft-resx</value>
   </resheader>
@@ -12,6 +12,6 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="g:feature_currently_unavailable" xml:space="preserve">
-    <value>هذه الميزة غير متوفرة حاليا.</value>
+    <value>هذه الميزة غير متاحة حالياً.</value>
   </data>
 </root>

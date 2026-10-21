@@ -23,7 +23,7 @@ Use `Headless.Api.Abstractions` when you only need interfaces (`IRequestContext`
 
 Additional packages:
 
-- `Headless.Api.FluentValidation` — validators for `IFormFile` uploads (size, content type, magic bytes) plus API request contracts (`PhoneNumberRequest`, `GeoCoordinateRequest`, `PageMetadataRequest`).
+- `Headless.Api.FluentValidation` — the `Headless.FluentValidation` file rules (size, content type, magic bytes) for `IFormFile` uploads, plus API request contracts (`PhoneNumberRequest`, `GeoCoordinateRequest`, `PageMetadataRequest`).
 - `Headless.DataProtection.Blobs` — persist ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
 - `Headless.Api.Jwt` — issue and parse JWTs with `IJwtTokenFactory`, and validate them with the matching `AddHeadlessJwtBearer()` scheme.
 - `Headless.Api.Identity` — ASP.NET Core Identity helpers: token providers, localized `auth:`/`user:` errors, `HeadlessLookupNormalizer`, and the Identity-backed `AddBasicSchema()` and `AddApiKey()` schemes.
@@ -47,7 +47,7 @@ Additional packages:
 - Write a CORS policy in code with ASP.NET Core's `AddCors`; use `services.AddHeadlessCors(configuration.GetSection("Cors"))` when the origins come from configuration, which registers `HeadlessCorsConstants.RestrictedCors` and validates it at startup. Do not hand-write a policy with `SetIsOriginAllowed(_ => true)` plus `AllowCredentials()`, which reflects every origin and hands it the user's session; origins known only at request time (tenant custom domains) go through an `ICorsOriginSource`, which works over either kind of policy. `AddHeadlessAllowAnyCors()` is for development: it never allows credentials and fails startup outside Development unless `AllowAnyOriginOutsideDevelopment` confirms a public API. A cookie-authenticated SPA on `http://localhost:5173` belongs in `AllowedOrigins` instead.
 - CORS governs browsers only. A native mobile client (React Native on iOS or Android, Flutter, a native SDK) sends no `Origin` header, so no policy applies and its requests pass unchanged; authenticate it like any client and never treat CORS as protection against non-browser callers. Its browser-hosted variants do need origins: an Expo or React Native Web dev server (`http://localhost:8081`, `http://localhost:19006`), the deployed web build, and Capacitor or Ionic webviews (`capacitor://localhost`, `ionic://localhost`).
 - `Headless.Api.ServiceDefaults` validates by default that `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` were applied at startup. For custom/manual pipelines, disable via `options.Validation.RequireUseHeadless = false`, `options.Validation.RequireStatusCodesRewriter = false`, and `options.Validation.RequireMapHeadlessEndpoints = false`.
-- `AddHeadless()` invokes `SetupApi.ConfigureGlobalSettings()` automatically (idempotent) to set the regex timeout and FluentValidation defaults. It no longer changes the `JsonWebTokenHandler` statics: the Headless token factory and bearer scheme turn off inbound claim mapping on their own handlers. Call it manually only if you need those defaults applied before `AddHeadless()` runs.
+- `AddHeadless()` invokes `SetupApi.ConfigureGlobalSettings()` automatically (idempotent) to set the regex timeout and FluentValidation defaults, including the Headless formal Arabic (`ar`) and Egyptian Arabic (`ar-EG`) wording of FluentValidation's built-in messages. It no longer changes the `JsonWebTokenHandler` statics: the Headless token factory and bearer scheme turn off inbound claim mapping on their own handlers. Call it manually only if you need those defaults applied before `AddHeadless()` runs.
 - Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Call `.ValidateArguments()` on a route group (or a surface) to validate every argument that has a registered `IValidator<T>`; use `.Validate<T>()` on a single endpoint only when the group convention does not fit, and never both for the same argument. Return `ApiResult` through `ToHttpResult()`, `sender.DispatchAsync(...)`, or the `Map*Request` helpers, not a hand-written bridge.
 - For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureHeadlessMvc()` not manual `MvcOptions` configuration.
 - Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`, `PhoneNumber()`, `GeoCoordinate()`, `PageMetadata()`) for API-boundary validation — do not write manual file or request-contract validation logic.
@@ -85,7 +85,7 @@ Additional packages:
 
 `type`, `status`, `title`, and every error `code` are the machine contract: they never vary by culture or release. `title` is a kebab-case identifier from `HeadlessProblemDetailsConstants.Titles` (`entity-not-found`, `validation-problem`), not prose. Clients branch on `code`, `title`, and `type`, never on `detail` or an error `description`.
 
-- **Default details are localized per call.** Every `IProblemDetailsCreator` factory, and `Normalize` when it fills a missing `Detail` for 404/408/413/500/501, resolves the default text from `Headless.Api` resources under `CultureInfo.CurrentUICulture` at the moment it runs. English and Arabic ship with the framework. An application without request localization (no `UseRequestLocalization()`, or any culture without a translation) gets English.
+- **Default details are localized per call.** Every `IProblemDetailsCreator` factory, and `Normalize` when it fills a missing `Detail` for 404/408/413/500/501, resolves the default text from `Headless.Api` resources under `CultureInfo.CurrentUICulture` at the moment it runs. English, formal Arabic (`ar`), and Egyptian Arabic (`ar-EG`) ship with the framework; see [Regional Arabic](utilities.md#regional-arabic). An application without request localization (no `UseRequestLocalization()`, or any culture without a translation) gets English.
 - **Responses written by `UseHeadless()` follow the request culture.** `RequestLocalizationMiddleware` sets the culture only for the middleware after it, so by the time an exception or a bare status code unwinds to the exception handler, the status-code rewriter, or status-code pages, `CurrentUICulture` is back to the server default. Those three re-apply the culture the request negotiated (`IRequestCultureFeature`) while they build the framework's default text, so an Arabic request gets Arabic problem details whether `UseRequestLocalization()` runs before or after `UseHeadless()`. A request that request localization never reached keeps `CurrentUICulture`. Your own `CustomizeProblemDetails` delegates and `IProblemDetailsWriter` implementations run outside that scope, so read `IRequestCultureFeature` there yourself.
 - **A caller-supplied `detail` passes through untouched.** `creator.Forbidden(detail: "...")` writes exactly that string under every culture, and `Normalize` never replaces a `Detail` that is already set. Only the framework default is localized, so a decorator that rewrites `Detail` unconditionally overwrites the caller's text.
 - **Framework error descriptions are localized the same way.** `GeneralMessageDescriber`, `IdentityMessageDescriber`, `TenancyMessageDescriber`, and the other `*MessageDescriber` factories build a new descriptor per call from resources. Call them per response: a descriptor cached in a `static` keeps the culture of its first caller.
@@ -256,7 +256,6 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - Single-claim authorization: `RequireSingleClaimValue(claimType, value)`, `RequireSingleClaim(claimType, predicate)`, and `SingleClaimRequirement`
 - HTTP edge rate limiting: `RateLimiterOptions.UseHeadlessProblemDetails()` rejects with 429 ProblemDetails (`g:rate_limit_exceeded`, `Retry-After`, `Cache-Control: no-store`), and `HttpContext.GetIpAddressPartition(ipv6PrefixLength = 64)` keys anonymous callers by IPv4 address or IPv6 /64. The application owns the limiter itself; see [HTTP edge limits](rate-limiting.md#http-edge-limits)
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
-- `IFormFileSizeValidator` (`MinBytes`, `MaxBytes`) / `IFormFileContentTypeValidator` (`ContentTypes`) — FluentValidation property validators that Headless.OpenApi reads without referencing `Headless.Api.FluentValidation`; their bounds become a form part's encoding and description
 - `IServiceCollection.FreezeHeadlessApiSurfaces()` — freezes the set of API surfaces and returns their OpenAPI document names, so a later `AddHeadlessApiSurface(...)` throws. `AddHeadlessApiSurfaceDocuments()` and `AddHeadless()` call it; a custom document provider calls it while the service collection is still writable
 
 ### Design constraints
@@ -265,6 +264,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - `HeadlessApiExceptionHandler` honors `Accept` quality values when deciding whether to write JSON ProblemDetails. A request that rejects JSON, or explicitly rejects `application/problem+json`, with `q=0` is left for downstream/default handlers instead of receiving a JSON body.
 - Batch `IFormFile.SaveAsync(...)` preserves result ordering while bounding concurrent file stream copies to `Environment.ProcessorCount` to avoid unbounded file-handle and disk pressure on large multipart requests.
 - `IFormFile.GetAllBytesAsync(CancellationToken cancellationToken = default)` propagates optional cancellation through asynchronous upload buffering; callers can omit the token.
+- `IFormFile.ToUploadedFile()` adapts an upload to `Headless.IO.IUploadedFile`, so an endpoint passes a file to a command or service that must not depend on ASP.NET Core. The adapter reads through to the form file and is valid only while the request is in flight.
 - Tenant identifier sources run in first-registration order and the first `Found` result wins; `AddSource<T>()` and the built-in `AddHostSource` / `AddRouteSource` / `AddHeaderSource` registrations deduplicate by type (the first call fixes the position, every call's options contribution still applies), while `AddSource(instance)` and the delegate overload always append. A source result of `Invalid` (present but ambiguous input, such as two `X-Tenant` values) rejects with 400 `g:tenant_identifier_invalid` before any catalog call; `Found` with a blank value normalizes to `None`. Sources never trim, lowercase, or shape-validate — the catalog does.
 - The header source (default `X-Tenant`) can only select an existing enabled tenant, and the identifier/claim mismatch check still rejects an authenticated caller whose tenant claim disagrees, but it bypasses any WAF rule, mTLS policy, IP allowlist, or CDN configuration bound to a tenant's hostname — register the host source first where hostnames carry such controls, or strip/overwrite the header at the edge. A requested header name replaces the untouched default and appends afterwards (`AddHeaderSource("X-Legacy")` reads only `X-Legacy`); any second value across the configured names is `Invalid`, a single line `a,b` is one value, and every consult appends the configured names to `Vary`.
 - `AddRouteSource` (every overload) wraps the routing `LinkGenerator` once so `Url.Action`, `GetPathByAction`, and `GetPathByName` keep the current request's `{tenant}` segment, which ASP.NET Core would otherwise drop (required-value invalidation; the endpoint-name scheme passes no ambient values — only `GetPathByRouteValues` kept it). An explicit `tenant` value always wins; `RouteTenantIdentifierSourceOptions.PromoteAmbientRouteValue = false` opts out per call. A link from a tenant request to an endpoint without a `{tenant}` segment carries the value as a query string (`/plain?tenant=acme`); a link from a request with no tenant segment to a tenant endpoint returns `null` without an explicit value.
@@ -794,20 +794,21 @@ Provisioning matrix: **managed** — a manager is registered/keyed/passed, the c
 
 ## Headless.Api.FluentValidation
 
-FluentValidation extensions for ASP.NET Core file uploads and reusable Headless API request contracts.
+FluentValidation extensions for ASP.NET Core file uploads and reusable Headless API request contracts. The file rules are the `Headless.FluentValidation` rules read from an `IFormFile`: same checks, error codes, and messages.
 
 ### API and behavior
 
 - `FileNotEmpty()` — validates file has content
 - `GreaterThanOrEqualTo(bytes)` — minimum file size validation
 - `LessThanOrEqualTo(bytes)` — maximum file size validation
-- `ContentTypes(list)` — MIME type allowlist validation; the rule copies the list when it is built
-- `HaveSignatures(inspector, predicate)` — magic bytes/file signature validation
-- The size and content-type rules are typed validators implementing `IFormFileSizeValidator` and `IFormFileContentTypeValidator` (`Headless.Api`), so Headless.OpenApi documents a form's accepted part types and size bounds; `HaveSignatures` is a predicate and documents nothing
+- `ContentTypes(list)` — MIME type allowlist validation; the rule copies the list when it is built. A failure reports `g:file_unexpected_content_type` and lists the accepted types
+- `HaveSignatures(inspector, predicate)` — magic bytes/file signature validation, reporting `g:file_unexpected_signature`; it is the `Headless.FluentValidation.FileSignatures` rule, which this package references
+- The size and content-type rules are typed validators implementing `IFileSizeValidator` and `IFileContentTypeValidator` (`Headless.FluentValidation`), so Headless.OpenApi documents a form's accepted part types and size bounds; `HaveSignatures` is a predicate and documents nothing
+- To keep a command free of ASP.NET Core, give it an `IUploadedFile` property, build it at the endpoint with `IFormFile.ToUploadedFile()`, and validate it with the same rules from `Headless.FluentValidation` and `Headless.FluentValidation.FileSignatures` (see [utilities.md](utilities.md#headlessfluentvalidation))
 - `PhoneNumber()` — validates `PhoneNumberRequest` country code and local subscriber number
 - `GeoCoordinate()` — validates `GeoCoordinateRequest` latitude/longitude ranges
 - `PageMetadata()` — validates `PageMetadataRequest` SEO field length and element-count limits
-- Localized error messages (English, Arabic)
+- Localized error messages (English, formal Arabic, Egyptian Arabic)
 
 ### Install
 
@@ -876,7 +877,7 @@ ASP.NET Core Identity integration for Headless APIs. Apps that do not use ASP.NE
 ### Design constraints
 
 - Basic authentication delegates password validation to `SignInManager.CheckPasswordSignInAsync(..., lockoutOnFailure: true)`, so configured ASP.NET Core Identity lockout policies apply to failed Basic credentials.
-- `IdentityMessageDescriber`'s password-reset and email-verification throttling messages format their durations with Humanizer's `TimeSpan.Humanize()` in the current UI culture. The package ships `Humanizer.Core.ar` beside its Arabic `Messages.ar.resx`, so an Arabic request gets Arabic durations; any other culture falls back to English unless the application references the matching `Humanizer.Core.<culture>` package.
+- `IdentityMessageDescriber`'s password-reset and email-verification throttling messages format their durations with Humanizer's `TimeSpan.Humanize()` in the current UI culture. The package ships `Humanizer.Core.ar` beside its Arabic `Messages.ar.resx` and `Messages.ar-EG.resx`, so any Arabic request, `ar-EG` included, gets Arabic durations; any other culture falls back to English unless the application references the matching `Humanizer.Core.<culture>` package.
 
 ### Install
 

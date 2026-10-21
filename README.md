@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-204 packages &bull; One setup grammar &bull; Swap any provider in one line
+205 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -252,7 +252,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 204 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 205 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -703,6 +703,7 @@ Cross-cutting utilities that belong to no single domain.
 |---------|-------------|
 | [Headless.Dashboard.Authentication](src/Headless.Dashboard.Authentication/README.md) | Shared authentication for the Jobs and Messaging dashboards |
 | [Headless.FluentValidation](src/Headless.FluentValidation/README.md) | FluentValidation extensions |
+| [Headless.FluentValidation.FileSignatures](src/Headless.FluentValidation.FileSignatures/README.md) | File signature (magic bytes) validation rule |
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Primitive types source generator |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | Generator abstractions |
 | [Headless.Hosting](src/Headless.Hosting/README.md) | .NET hosting utilities |
