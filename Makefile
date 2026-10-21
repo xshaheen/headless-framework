@@ -86,8 +86,9 @@ TEST_MAX_PARALLEL ?= 3
 # and 92 s at 8 parallel modules on a 14-core machine. TEST_MAX_PARALLEL stays at 3 for integration
 # modules, which each start containers, and for CI's smaller runners.
 UNIT_TEST_MAX_PARALLEL ?= 6
-# Per test module. The affected test stages pass it too (unless TEST_ARGS already carries a --timeout), so a hung module (a broker suite once hung 57 min) fails
-# its stage instead of holding a gate slot; the longest module in recent proof runs took about 7 min under load.
+# Per test module. The affected test stages pass it too (unless TEST_ARGS already carries a --timeout), so a hung
+# module (a broker suite once hung 57 min) fails its stage instead of holding the machine; the longest module in recent
+# proof runs took about 7 min under load.
 TEST_TIMEOUT ?= 15m
 AFFECTED_TIMEOUT_ARGS = $(if $(findstring --timeout,$(TEST_ARGS)),,--timeout $(TEST_TIMEOUT))
 # Inner-loop build flags. Analyzers are over half of the compiler's CPU on this solution (9 analyzer
@@ -148,13 +149,6 @@ PROOF = $(PYTHON) scripts/proof.py
 # test-failed reads the newest -verify, -test, or -integration bundle, which is always kept. PROOF_KEEP=0 keeps every
 # bundle.
 PROOF_KEEP ?= 3
-# Heavy gates share one machine with every other worktree, repository, and session, so each runs its recipe (the
-# gated-<name> target) behind a runner prefix that the machine may set: GATE_RUNNER for build-and-unit gates,
-# CONTAINER_GATE_RUNNER for gates that start containers, EXCLUSIVE_GATE_RUNNER for runs that need the machine to
-# themselves. A runner is expected to queue the command on a machine-wide limit and run it unchanged; unset, as in CI,
-# the prefix expands to nothing. Container gates get their own runner because TEST_MAX_PARALLEL stays at 3: six
-# integration modules at once broke timing-sensitive suites, and two integration gates side by side would be six.
-# $(MAKE) stays in each recipe line, not in a variable, so `make -n` still runs the sub-make and prints the recipe.
 # One timestamp per make invocation, so every stage of a target writes into the same bundle.
 PROOF_RUN := $(ARTIFACTS_DIR)/proof/$(shell date -u +%Y%m%dT%H%M%SZ)
 # Coverage costs ~0.4 s per test module plus a merge (~20 s on a whole-solution run), so the inner loop skips
@@ -945,10 +939,6 @@ build-affected: ## Build the affected projects (changed + direct dependents + th
 
 .PHONY: test-affected
 test-affected: ## Build the affected set, then run its *.Tests.Unit projects; writes a proof bundle under artifacts/proof/.
-	@$(GATE_RUNNER) $(MAKE) --no-print-directory gated-$@
-
-.PHONY: gated-test-affected
-gated-test-affected:
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-test"; \
 	run="$(PROOF_RUN)-test"; status=0; coverage="$(AFFECTED_COVERAGE)"; \
 	$(AFFECTED_BUILD_STAGES) \
@@ -963,10 +953,6 @@ gated-test-affected:
 # the affected integration suites, both with coverage, and holds those packages' changed lines to the floors. With no
 # such package edited (a build-wide change, say) it runs the integration suites without coverage, which costs less.
 test-affected-integration: ## Build the affected set, run its integration tests, and gate the changed lines of edited packages that own an integration project on merged unit + integration coverage (needs Docker; local only).
-	@$(CONTAINER_GATE_RUNNER) $(MAKE) --no-print-directory gated-$@
-
-.PHONY: gated-test-affected-integration
-gated-test-affected-integration:
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-integration"; \
 	run="$(PROOF_RUN)-integration"; status=0; units=integration-unit; coverage="$(INTEGRATION_COVERAGE)"; \
 	if [ ! -s "$$run/integration-packages.txt" ]; then coverage=false; fi; \
@@ -980,10 +966,6 @@ gated-test-affected-integration:
 
 .PHONY: verify-affected
 verify-affected: ## Format-check the changed files, then build, unit-test (with coverage), gate unit coverage, and analyze the affected set, plus dashboard-<name>-test for a changed SPA; one proof bundle for the PR body.
-	@$(GATE_RUNNER) $(MAKE) --no-print-directory gated-$@
-
-.PHONY: gated-verify-affected
-gated-verify-affected:
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-verify"; \
 	run="$(PROOF_RUN)-verify"; status=0; coverage="$(VERIFY_COVERAGE)"; \
 	$(AFFECTED_FORMAT_STAGE) \
@@ -1219,19 +1201,11 @@ BENCH_RUN = bench_run() { \
 
 .PHONY: bench
 bench: ## Run BENCH_AREA benchmarks for the working tree (BENCH_FILTER, BENCH_JOB=short); JSON under artifacts/benchmark-runs/.
-	@$(EXCLUSIVE_GATE_RUNNER) $(MAKE) --no-print-directory gated-$@
-
-.PHONY: gated-bench
-gated-bench:
 	@test -n "$(BENCH_AREA)" || (echo "BENCH_AREA is required. Example: make bench BENCH_AREA=Caching BENCH_FILTER='*Memory*'" && exit 2)
 	@$(BENCH_RUN); bench_run "$$(working_tree_ref)" "$(CURDIR)/$(BENCH_DIR)/$(notdir $(PROOF_RUN))-$(BENCH_AREA)"
 
 .PHONY: bench-compare
 bench-compare: ## Run BENCH_AREA benchmarks at BASE (default AFFECTED_BASE) and for the working tree; print a before/after table.
-	@$(EXCLUSIVE_GATE_RUNNER) $(MAKE) --no-print-directory gated-$@
-
-.PHONY: gated-bench-compare
-gated-bench-compare:
 	@test -n "$(BENCH_AREA)" || (echo "BENCH_AREA is required. Example: make bench-compare BENCH_AREA=Caching BENCH_FILTER='*Memory*' BASE=origin/main" && exit 2)
 	@base_ref="$(or $(BASE),$(AFFECTED_BASE))"; \
 	git rev-parse --verify -q "$$base_ref^{commit}" >/dev/null || { printf 'ERROR: BASE=%s does not resolve to a commit.\n' "$$base_ref" >&2; exit 2; }; \
