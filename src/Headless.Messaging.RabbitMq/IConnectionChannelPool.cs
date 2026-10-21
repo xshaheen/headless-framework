@@ -112,7 +112,18 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
     private readonly Func<CancellationToken, Task<IConnection>> _nonRecoveringConnectionActivator;
     private readonly bool _isPublishConfirms;
     private readonly bool _sharedConnectionRecovers;
+    private readonly TimeProvider _recoveryClock;
     private readonly RabbitMqMessagingOptions _options;
+
+    // How long a lost shared connection is left to the client's recovery before the pool replaces it. The client
+    // retries until the connection is disposed, but a recovery that failed for good (a topology recovery error, a
+    // close the client does not recover from) leaves the connection closed forever, and every publish would fail.
+    // A broker restart recovers well inside this window; replacing the connection after it gives up on the consumers
+    // the recovery would have restored, which the transport health check rebuilds.
+    internal static readonly TimeSpan RecoveryWindow = TimeSpan.FromMinutes(2);
+
+    // The timestamp, on _recoveryClock, at which the current connection was first seen lost; 0 while it is open.
+    private long _lostSince;
 
     // One ensure per Queue-lane queue per process. The Lazy keeps concurrent first publishes on one declare; a failed
     // declare is removed, so the next publish tries again.
@@ -130,16 +141,25 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         IOptions<MessagingOptions> messagingAccessorOptionsAccessor,
         IOptions<RabbitMqMessagingOptions> optionsAccessor
     )
-        : this(logger, messagingAccessorOptionsAccessor, optionsAccessor, connectionActivator: null) { }
+        : this(
+            logger,
+            messagingAccessorOptionsAccessor,
+            optionsAccessor,
+            connectionActivator: null,
+            recoveryClock: TimeProvider.System
+        ) { }
 
     internal ConnectionChannelPool(
         ILogger<ConnectionChannelPool> logger,
         IOptions<MessagingOptions> messagingAccessorOptionsAccessor,
         IOptions<RabbitMqMessagingOptions> optionsAccessor,
-        Func<CancellationToken, Task<IConnection>>? connectionActivator
+        Func<CancellationToken, Task<IConnection>>? connectionActivator,
+        TimeProvider? recoveryClock = null
     )
     {
         _logger = logger;
+        // Real time unless a test steps it: the window bounds a broker outage, not an app schedule.
+        _recoveryClock = recoveryClock ?? TimeProvider.System;
         var messagingOptions = messagingAccessorOptionsAccessor.Value;
         var options = optionsAccessor.Value;
 
@@ -231,7 +251,7 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
 
     public async Task<IConnection> GetConnectionAsync(CancellationToken cancellationToken = default)
     {
-        if (_connection is { } current && (current.IsOpen || _IsRecovering(current)))
+        if (_connection is { } current && _IsUsable(current))
         {
             return current;
         }
@@ -239,12 +259,13 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         await _connectionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_connection is { } connection && (connection.IsOpen || _IsRecovering(connection)))
+            if (_connection is { } connection && _IsUsable(connection))
             {
                 return connection;
             }
 
             _connection?.Dispose();
+            Interlocked.Exchange(ref _lostSince, 0);
             _connection = await _connectionActivator(cancellationToken).ConfigureAwait(false);
             return _connection;
         }
@@ -252,6 +273,30 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         {
             _connectionLock.Release();
         }
+    }
+
+    // An open connection, or a lost one the client is still recovering within RecoveryWindow.
+    private bool _IsUsable(IConnection connection)
+    {
+        if (connection.IsOpen)
+        {
+            Interlocked.Exchange(ref _lostSince, 0);
+            return true;
+        }
+
+        if (!_IsRecovering(connection))
+        {
+            return false;
+        }
+
+        var lostSince = Interlocked.Read(ref _lostSince);
+        if (lostSince == 0)
+        {
+            Interlocked.CompareExchange(ref _lostSince, _recoveryClock.GetTimestamp(), 0);
+            return true;
+        }
+
+        return _recoveryClock.GetElapsedTime(lostSince) < RecoveryWindow;
     }
 
     // RabbitMQ.Client recovers a connection after any loss it did not cause itself, except the broker's ACCESS_REFUSED,

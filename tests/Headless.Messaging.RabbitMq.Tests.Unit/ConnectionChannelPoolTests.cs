@@ -6,6 +6,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
@@ -221,6 +222,75 @@ public sealed class ConnectionChannelPoolTests : TestBase
         // then
         current.Should().BeSameAs(replacement);
         lost.Received(1).Dispose();
+    }
+
+    [Fact]
+    public async Task should_replace_a_connection_the_client_has_not_recovered_within_the_recovery_window()
+    {
+        // given: a lost connection the client is recovering
+        var clock = new FakeTimeProvider();
+        var lost = Substitute.For<IConnection>();
+        lost.IsOpen.Returns(true);
+        var replacement = Substitute.For<IConnection>();
+        replacement.IsOpen.Returns(true);
+        var connections = new Queue<IConnection>([lost, replacement]);
+        await using var pool = new ConnectionChannelPool(
+            _logger,
+            _capOptions,
+            _rabbitOptions,
+            _ => Task.FromResult(connections.Dequeue()),
+            clock
+        );
+        await pool.GetConnectionAsync(AbortToken);
+        lost.IsOpen.Returns(false);
+        lost.CloseReason.Returns(new ShutdownEventArgs(ShutdownInitiator.Library, 541, "connection lost"));
+        (await pool.GetConnectionAsync(AbortToken)).Should().BeSameAs(lost);
+
+        // when: the recovery has not brought it back within the window
+        clock.Advance(ConnectionChannelPool.RecoveryWindow - TimeSpan.FromSeconds(1));
+        var stillRecovering = await pool.GetConnectionAsync(AbortToken);
+        clock.Advance(TimeSpan.FromSeconds(2));
+        var afterWindow = await pool.GetConnectionAsync(AbortToken);
+
+        // then
+        stillRecovering.Should().BeSameAs(lost);
+        afterWindow.Should().BeSameAs(replacement);
+        lost.Received(1).Dispose();
+    }
+
+    [Fact]
+    public async Task should_restart_the_recovery_window_when_the_connection_recovers()
+    {
+        // given: a connection that was lost, recovered, and is lost again
+        var clock = new FakeTimeProvider();
+        var connection = Substitute.For<IConnection>();
+        connection.IsOpen.Returns(true);
+        await using var pool = new ConnectionChannelPool(
+            _logger,
+            _capOptions,
+            _rabbitOptions,
+#pragma warning disable CA2025 // False positive: the pool awaits the completed task before it owns and disposes the connection.
+            _ => Task.FromResult(connection),
+#pragma warning restore CA2025
+            clock
+        );
+        await pool.GetConnectionAsync(AbortToken);
+        connection.IsOpen.Returns(false);
+        connection.CloseReason.Returns(new ShutdownEventArgs(ShutdownInitiator.Library, 541, "connection lost"));
+        await pool.GetConnectionAsync(AbortToken);
+        clock.Advance(ConnectionChannelPool.RecoveryWindow - TimeSpan.FromSeconds(1));
+        connection.IsOpen.Returns(true);
+        await pool.GetConnectionAsync(AbortToken);
+
+        // when: lost again, the earlier outage does not count against the new one
+        connection.IsOpen.Returns(false);
+        await pool.GetConnectionAsync(AbortToken);
+        clock.Advance(TimeSpan.FromSeconds(2));
+        var current = await pool.GetConnectionAsync(AbortToken);
+
+        // then
+        current.Should().BeSameAs(connection);
+        connection.DidNotReceive().Dispose();
     }
 
     [Fact]
