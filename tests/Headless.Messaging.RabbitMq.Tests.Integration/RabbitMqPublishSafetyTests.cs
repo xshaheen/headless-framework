@@ -270,10 +270,15 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
     [Fact]
     public async Task should_expire_message_in_broker_when_delivery_deadline_passes_before_any_consumer()
     {
-        // given — a message with a one-second delivery deadline, then a control with none, on a queue nobody consumes
+        // given — a message with a one-second delivery deadline, then a control with none, on a provisioned queue nobody
+        // consumes
         var options = _CreateOptions();
         var name = $"orders-{Guid.NewGuid():N}";
         await using var pool = _CreatePool(options);
+        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).ProvisionAsync(
+            new MessagingTopology([], [new TopologyMessage(name, MessageLane.Queue)]),
+            AbortToken
+        );
         await using var transport = new RabbitMqTransport(
             NullLogger<RabbitMqTransport>.Instance,
             pool,

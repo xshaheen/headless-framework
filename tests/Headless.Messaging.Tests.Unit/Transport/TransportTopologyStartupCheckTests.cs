@@ -20,6 +20,9 @@ public sealed class TransportTopologyStartupCheckTests : TestBase
 {
     private const string _MissingQueue = "RabbitMQ queue 'queue.orders' does not exist. Run 'resources provision'.";
 
+    // Bounds a wait on the host's background warm-up, which only fails a test that would otherwise hang.
+    private static readonly TimeSpan _Timeout = TimeSpan.FromSeconds(30);
+
     [Fact]
     public async Task should_check_each_transport_once_with_the_registered_topology_when_warming_up()
     {
@@ -88,26 +91,32 @@ public sealed class TransportTopologyStartupCheckTests : TestBase
     public async Task should_report_unready_naming_the_missing_queue_until_the_topology_exists()
     {
         // given
+        var retryGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var provisioner = new RecordingProvisioner("RabbitMQ")
         {
             Failure = new ResourceProvisioningException(_MissingQueue),
+            RetryGate = retryGate,
         };
         using var host = _BuildHost(_ => { }, provisioner);
 
         // when
         await host.StartAsync(AbortToken);
-        var unready = await _WaitForCheckAsync(
-            host.Services,
-            entry => entry.Exception?.Message.Contains("queue.orders", StringComparison.Ordinal) == true
-        );
+        await provisioner.Retrying.WaitAsync(_Timeout, AbortToken);
+        var unready = await _CheckWarmupAsync(host.Services);
 
         // then
         unready.Status.Should().Be(HealthStatus.Unhealthy);
-        unready.Exception!.Message.Should().Contain("Resources").And.Contain("Run 'resources provision'");
+        unready
+            .Exception!.Message.Should()
+            .Contain("Resources")
+            .And.Contain("queue.orders")
+            .And.Contain("Run 'resources provision'");
 
-        // and when - the deployment creates the topology, and the next retry passes
+        // and when - the deployment creates the topology, and the held retry passes
         provisioner.Failure = null;
-        var ready = await _WaitForCheckAsync(host.Services, entry => entry.Status == HealthStatus.Healthy);
+        retryGate.TrySetResult();
+        await host.Services.WaitForWarmupAsync(AbortToken).WaitAsync(_Timeout, AbortToken);
+        var ready = await _CheckWarmupAsync(host.Services);
 
         // then
         ready.Status.Should().Be(HealthStatus.Healthy);
@@ -130,7 +139,7 @@ public sealed class TransportTopologyStartupCheckTests : TestBase
 
         // when
         await host.StartAsync(AbortToken);
-        await host.Services.WaitForWarmupAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+        await host.Services.WaitForWarmupAsync(AbortToken).WaitAsync(_Timeout, AbortToken);
         await host.StopAsync(AbortToken);
 
         // then
@@ -219,34 +228,19 @@ public sealed class TransportTopologyStartupCheckTests : TestBase
         });
     }
 
-    // The warm-up retries on a one-second back-off, so wait on the check's state rather than a fixed delay.
-    private static async Task<HealthReportEntry> _WaitForCheckAsync(
-        IServiceProvider services,
-        Func<HealthReportEntry, bool> condition
-    )
+    private static async Task<HealthReportEntry> _CheckWarmupAsync(IServiceProvider services)
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(30));
         const string name = HeadlessHealthCheckNames.Warmup;
+        var report = await services
+            .GetRequiredService<HealthCheckService>()
+            .CheckHealthAsync(r => string.Equals(r.Name, name, StringComparison.Ordinal), AbortToken);
 
-        while (true)
-        {
-            var report = await services
-                .GetRequiredService<HealthCheckService>()
-                .CheckHealthAsync(r => string.Equals(r.Name, name, StringComparison.Ordinal), timeout.Token);
-            var entry = report.Entries[name];
-
-            if (condition(entry))
-            {
-                return entry;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(20), timeout.Token);
-        }
+        return report.Entries[name];
     }
 
     private sealed class RecordingProvisioner(string broker) : ITransportTopologyProvisioner
     {
+        private readonly TaskCompletionSource _retrying = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _checks;
 
         // Changed by the test while the warm-up retries on another thread.
@@ -266,12 +260,26 @@ public sealed class TransportTopologyStartupCheckTests : TestBase
 
         public ResourceStartupCheck StartupCheck => Check;
 
-        public Task VerifyAsync(MessagingTopology topology, CancellationToken cancellationToken)
+        // Holds every retry until released, so a test can inspect the host after the first check failed.
+        public TaskCompletionSource? RetryGate { get; init; }
+
+        // Completes when the warm-up retries, which it does only after it recorded the first check's failure.
+        public Task Retrying => _retrying.Task;
+
+        public async Task VerifyAsync(MessagingTopology topology, CancellationToken cancellationToken)
         {
-            Interlocked.Increment(ref _checks);
             LastTopology = topology;
 
-            return Failure is { } failure ? Task.FromException(failure) : Task.CompletedTask;
+            if (Interlocked.Increment(ref _checks) > 1 && RetryGate is { } gate)
+            {
+                _retrying.TrySetResult();
+                await gate.Task.WaitAsync(cancellationToken);
+            }
+
+            if (Failure is { } failure)
+            {
+                throw failure;
+            }
         }
 
         public Task ProvisionAsync(MessagingTopology topology, CancellationToken cancellationToken) =>

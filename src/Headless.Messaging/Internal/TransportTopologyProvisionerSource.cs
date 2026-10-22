@@ -2,6 +2,7 @@
 
 using Headless.Hosting;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Internal;
 
@@ -11,15 +12,19 @@ namespace Headless.Messaging.Internal;
 /// </summary>
 internal sealed class TransportTopologyProvisionerSource(
     IEnumerable<ITransportTopologyProvisioner> provisioners,
-    MethodMatcherCache selector,
+    IServiceProvider services,
     IMessageMetadataRegistry? messages = null
 ) : IResourceProvisionerSource
 {
     // Built once per lookup and shared by every provisioner of the run: it reads only registrations frozen with the
-    // container, and runtime subscriptions are never in it, so it cannot change while a run lasts.
+    // container, and runtime subscriptions are never in it, so it cannot change while a run lasts. The consumer
+    // selector is resolved only when an operation needs the topology: it builds the consumer registry and the transport,
+    // and the host start lists every provisioner just to read its StartupCheck, before messaging bootstraps.
     public Task<IReadOnlyList<IResourceProvisioner>> GetProvisionersAsync(CancellationToken cancellationToken)
     {
-        var topology = new Lazy<MessagingTopology>(() => BuildTopology(selector, messages));
+        var topology = new Lazy<MessagingTopology>(() =>
+            BuildTopology(services.GetRequiredService<MethodMatcherCache>(), messages)
+        );
         IReadOnlyList<IResourceProvisioner> resources =
         [
             .. provisioners.Select(p => new TransportTopologyResourceProvisioner(p, topology)),
