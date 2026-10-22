@@ -19,8 +19,8 @@
     <Verify_SponsorshipExemptionUntil>2027-10</Verify_SponsorshipExemptionUntil>
   </PropertyGroup>
   <ItemGroup Label="Banned APIs">
-    <!-- WithReuse(true) alone hashes the same in every worktree, so two checkouts share one container and its rows;
-         WithCheckoutReuse() in Headless.Testing.Testcontainers adds the checkout label. -->
+    <!-- Test containers are never reused: Ryuk does not remove a reused container, so reuse leaks one per configuration
+         and checkout, and carries one run's schema and rows into the next. -->
     <AdditionalFiles Include="$(MSBuildThisFileDirectory)..\eng\BannedSymbols.Testcontainers.txt" />
   </ItemGroup>
   <ItemGroup Label="Global Usings">

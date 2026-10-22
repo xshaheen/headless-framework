@@ -1,4 +1,3 @@
-using DotNet.Testcontainers.Builders;
 using Headless;
 using Headless.Context;
 using Headless.EntityFramework;
@@ -96,7 +95,6 @@ public abstract class TenantWriteGuardDbContextTestFixtureBase : IAsyncLifetime
             .WithDatabase("headless_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
-            .WithCheckoutReuse()
             .Build();
     }
 }

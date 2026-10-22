@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using DotNet.Testcontainers.Builders;
 using Testcontainers.Azurite;
 using Testcontainers.Xunit;
 
@@ -16,9 +15,6 @@ public class HeadlessAzuriteFixture()
 {
     protected override AzuriteBuilder Configure()
     {
-        return base.Configure()
-            .WithImage(TestImages.Azurite)
-            .WithCheckoutReuse()
-            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this));
+        return base.Configure().WithImage(TestImages.Azurite);
     }
 }

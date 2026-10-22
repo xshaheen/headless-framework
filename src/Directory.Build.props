@@ -35,8 +35,8 @@
     <!-- DbException.IsTransient reads false for every SqlClient fault, so a check built on it silently misses SQL
          Server; RelationalTransientFaults is the provider-complete classifier. -->
     <AdditionalFiles Include="$(MSBuildThisFileDirectory)..\eng\BannedSymbols.Database.txt" />
-    <!-- WithReuse(true) alone hashes the same in every worktree, so two checkouts share one container and its rows;
-         WithCheckoutReuse() in Headless.Testing.Testcontainers adds the checkout label. -->
+    <!-- Test containers are never reused: Ryuk does not remove a reused container, so reuse leaks one per configuration
+         and checkout, and carries one run's schema and rows into the next. -->
     <AdditionalFiles Include="$(MSBuildThisFileDirectory)..\eng\BannedSymbols.Testcontainers.txt" />
   </ItemGroup>
   <ItemGroup Label="README Files">

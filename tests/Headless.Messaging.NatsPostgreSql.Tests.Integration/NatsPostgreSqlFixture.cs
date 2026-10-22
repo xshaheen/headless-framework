@@ -59,7 +59,6 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
         private readonly NatsContainer _container = new NatsBuilder(TestImages.Nats)
             .WithLabel("type", "nats-postgresql-nats")
             .WithResourceMapping(_NatsConfig, "/etc/nats/nats-server.conf")
-            .WithCheckoutReuse()
             .WithWaitStrategy(
                 Wait.ForUnixContainer()
                     .UntilMessageIsLogged("Server is ready")
@@ -155,7 +154,6 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
             .WithDatabase("messages_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
-            .WithCheckoutReuse()
             .Build();
 
         public string ConnectionString => _container.GetConnectionString();

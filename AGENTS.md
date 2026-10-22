@@ -36,7 +36,7 @@ Registration follows the same split. The feature's root package (`Headless.<Feat
 
 Transactions are explicit. `IUnitOfWorkFactory` is a singleton with no `Current` property. The `IUnitOfWork` handle is the unit's only identity, and the receiver always decides whether to enlist. Before you change how Messaging, Jobs, or a storage provider joins a unit, read the design rationale in [docs/llms/unit-of-work.md](docs/llms/unit-of-work.md).
 
-Relational storage features create their tables through one `SchemaRunner`, which trusts `headless_schema_history`. A table dropped by hand, or by a test reset on a reused container, is not recreated until its feature's history rows go too. Never edit a released step: add a new one. Before a release no database runs the step, so change it in place. Put every configurable object name in `SchemaContribution.FeatureId`. Before you add or change a storage feature's DDL, match an existing feature's `SchemaContribution`.
+Relational storage features create their tables through one `SchemaRunner`, which trusts `headless_schema_history`. A table dropped by hand, or by a test reset that keeps the database, is not recreated until its feature's history rows go too. Never edit a released step: add a new one. Before a release no database runs the step, so change it in place. Put every configurable object name in `SchemaContribution.FeatureId`. Before you add or change a storage feature's DDL, match an existing feature's `SchemaContribution`.
 
 ## Build and test
 

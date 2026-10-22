@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using DotNet.Testcontainers.Builders;
 using Headless.Testing.AspNetCore;
 using Headless.Testing.Testcontainers;
 using Npgsql;
@@ -83,12 +82,11 @@ public sealed class FeaturesTestFixture : ICollectionFixture<FeaturesTestFixture
             .WithDatabase("headless_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
-            .WithCheckoutReuse()
             .Build();
     }
 
     private static RedisContainer _CreateRedisContainer()
     {
-        return new RedisBuilder(TestImages.Redis).WithLabel("type", "features-redis").WithCheckoutReuse().Build();
+        return new RedisBuilder(TestImages.Redis).WithLabel("type", "features-redis").Build();
     }
 }

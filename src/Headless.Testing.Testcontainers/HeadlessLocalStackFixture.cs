@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using DotNet.Testcontainers.Builders;
 using Testcontainers.LocalStack;
 using Testcontainers.Xunit;
 
@@ -16,9 +15,6 @@ public class HeadlessLocalStackFixture()
 {
     protected override LocalStackBuilder Configure()
     {
-        return base.Configure()
-            .WithImage(TestImages.LocalStack)
-            .WithCheckoutReuse()
-            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this));
+        return base.Configure().WithImage(TestImages.LocalStack);
     }
 }

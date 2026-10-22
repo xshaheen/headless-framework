@@ -19,17 +19,9 @@ namespace Headless.Testing.Testcontainers;
 /// log reports readiness, to guard against race conditions in slow CI environments.
 /// </para>
 /// <para>
-/// The container is created with reuse enabled, so when the host opts in
-/// (<c>testcontainers.reuse.enable=true</c> in <c>~/.testcontainers.properties</c>, or
-/// <c>TESTCONTAINERS_REUSE_ENABLE=true</c>) repeated local runs reattach to the already-warm SQL Server
-/// instead of paying the cold-start boot + login wait each time — the single biggest local-iteration cost
-/// for the SQL Server integration suites. CI leaves reuse disabled, so reuse becomes a no-op and Ryuk
-/// reaps the container as usual.
-/// </para>
-/// <para>
 /// The lifecycle has the same shape as the <c>ContainerFixture</c>-based fixtures: xUnit calls
 /// <see cref="IAsyncLifetime.InitializeAsync"/> explicitly, and a subclass overrides <see cref="InitializeAsync"/> to
-/// create its own database or clear what a reused container left, after <c>base.InitializeAsync()</c> returns, and
+/// create its own database after <c>base.InitializeAsync()</c> returns, and
 /// overrides <see cref="DisposeAsyncCore"/> for teardown.
 /// </para>
 /// </remarks>
@@ -59,15 +51,10 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
 
     public HeadlessSqlServerFixture()
     {
-        // Per-project, per-checkout reuse labels so each integration project in each checkout reuses its OWN container
-        // instead of colliding on the shared `master` database under parallel module execution or across worktrees.
-        // See ReuseLabel for the keying rationale.
         _container = new ContainerBuilder(_Image)
             .WithPortBinding(1433, assignRandomHostPort: true)
             .WithEnvironment("ACCEPT_EULA", "Y")
             .WithEnvironment("MSSQL_SA_PASSWORD", _Password)
-            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this))
-            .WithCheckoutReuse()
             .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("SQL Server is now ready"))
             .Build();
     }
@@ -116,10 +103,9 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
 
     /// <summary>Disposes the SQL Server container.</summary>
     /// <remarks>
-    /// Mirrors Testcontainers' own <c>ContainerFixture</c> teardown: a single <c>DisposeAsync</c> on the container.
-    /// With reuse enabled the engine stops-but-keeps the container so the next run reattaches by reuse hash;
-    /// with reuse disabled (CI) the same call removes it (and Ryuk backstops). An explicit <c>StopAsync</c>
-    /// before dispose is redundant and only adds teardown latency.
+    /// Mirrors Testcontainers' own <c>ContainerFixture</c> teardown: a single <c>DisposeAsync</c> removes the
+    /// container, and Ryuk removes it if the test process dies first. An explicit <c>StopAsync</c> before dispose is
+    /// redundant and only adds teardown latency.
     /// </remarks>
     protected virtual async ValueTask DisposeAsyncCore()
     {

@@ -17,8 +17,6 @@ public class HeadlessNatsFixture() : ContainerFixture<NatsBuilder, NatsContainer
     {
         return base.Configure()
             .WithImage(TestImages.Nats)
-            .WithCheckoutReuse()
-            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this))
             .WithWaitStrategy(
                 Wait.ForUnixContainer()
                     .UntilMessageIsLogged("Server is ready")

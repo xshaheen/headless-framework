@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using DotNet.Testcontainers.Builders;
 using Testcontainers.Redis;
 using Testcontainers.Xunit;
 
@@ -15,14 +14,11 @@ public class HeadlessRedisFixture() : ContainerFixture<RedisBuilder, RedisContai
 {
     protected override RedisBuilder Configure()
     {
-        return base.Configure()
-            .WithImage(TestImages.Redis)
-            .WithCheckoutReuse()
-            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this));
+        return base.Configure().WithImage(TestImages.Redis);
     }
 
     /// <summary>Deletes every key in every database of the shared container.</summary>
-    /// <remarks>The container is reused across test runs, so call this from setup or teardown to start clean.</remarks>
+    /// <remarks>The container is shared by every test in the collection, so call this from setup or teardown to start clean.</remarks>
     public Task FlushAllAsync(CancellationToken cancellationToken = default)
     {
         return Container.FlushAllAsync(cancellationToken);

@@ -304,7 +304,7 @@ using (tenant.Change(tenantId, "Test Tenant"))
 
 | Tables | Kept | Why |
 |---|---|---|
-| `__EFMigrationsHistory`, `headless_schema_history` (every schema), and each registered feature's history table under the name its dialect stores it by (on SQLite `<schema>_headless_schema_history`) | Always. Standalone `DatabaseReset` keeps the dialect-named history only when created with the host's `IServiceProvider` | They record work done to a schema that the reset leaves in place. Wiping `headless_schema_history` makes the next host (a reused container, a `DeriveAsync` variant) replay every schema step against tables that already exist. |
+| `__EFMigrationsHistory`, `headless_schema_history` (every schema), and each registered feature's history table under the name its dialect stores it by (on SQLite `<schema>_headless_schema_history`) | Always. Standalone `DatabaseReset` keeps the dialect-named history only when created with the host's `IServiceProvider` | They record work done to a schema that the reset leaves in place. Wiping `headless_schema_history` makes the next host on the same database (a `DeriveAsync` variant) replay every schema step against tables that already exist. |
 | Host-state tables that framework features declare through `SchemaContribution.HostStateTables` | By default (`PreserveHostStateTables = true`), also by standalone `DatabaseReset` created with the host's `IServiceProvider` | The host writes them once at startup or keeps them live, and never rewrites them while it runs. Today: the feature, permission, and setting definition tables (including the feature and permission group tables), which the definition initializers write at startup, and the coordination membership tables (on PostgreSQL `coordination_node_generation`, `coordination_descriptor`, and `coordination_liveness`; on SQLite the same names with the schema prefix), whose rows the host keeps heartbeating; a reset that deletes them makes the next heartbeat report the membership as lost. |
 | `TablesToPreserve` | Always | Your own tables that hold data the application seeds once at startup, such as reference data. A `Table` without a schema matches the name in every schema. |
 
@@ -441,10 +441,10 @@ Testcontainers fixtures for integration testing.
   - `HeadlessLocalStackFixture`
   - `HeadlessMinioFixture`
   - `HeadlessSqlServerFixture` (architecture-aware: SQL Server 2022 on x86_64, Azure SQL Edge on ARM64; set `HEADLESS_SQLSERVER_IMAGE` to override, see below)
-- `HeadlessRedisFixture.FlushAllAsync(ct)` and the `RedisContainer.FlushAllAsync(ct)` extension (`HeadlessRedisContainerExtensions`, namespace `Testcontainers.Redis`) — delete every key in every database by running `redis-cli FLUSHALL` inside the container, so a reused container starts clean without a client connection or `allowAdmin`
+- `HeadlessRedisFixture.FlushAllAsync(ct)` and the `RedisContainer.FlushAllAsync(ct)` extension (`HeadlessRedisContainerExtensions`, namespace `Testcontainers.Redis`) — delete every key in every database by running `redis-cli FLUSHALL` inside the container, so a collection's next test starts clean without a client connection or `allowAdmin`
 - `TestContextMessageSink` — xUnit v3 diagnostic-message forwarder
 - Automatic container lifecycle management via `Testcontainers.Xunit`
-- Every fixture has the same subclassing surface: xUnit calls `IAsyncLifetime` explicitly, and a subclass overrides `protected virtual ValueTask InitializeAsync()` (call `base.InitializeAsync()` first, then create its database or clear what a reused container left) and `protected virtual ValueTask DisposeAsyncCore()`. The `ContainerFixture`-based fixtures also take `protected override TBuilder Configure()` for the database name, credentials, or labels; `HeadlessSqlServerFixture` builds its own architecture-aware container, so a subclass creates its database in `InitializeAsync` instead.
+- Every fixture has the same subclassing surface: xUnit calls `IAsyncLifetime` explicitly, and a subclass overrides `protected virtual ValueTask InitializeAsync()` (call `base.InitializeAsync()` first, then create its database) and `protected virtual ValueTask DisposeAsyncCore()`. The `ContainerFixture`-based fixtures also take `protected override TBuilder Configure()` for the database name, credentials, or labels; `HeadlessSqlServerFixture` builds its own architecture-aware container, so a subclass creates its database in `InitializeAsync` instead.
 
 ### Design constraints
 
@@ -452,19 +452,9 @@ Testcontainers fixtures for integration testing.
 
 Floating tags such as `:latest` force Docker to hit the registry on every pull to check the digest, even when the local image is current. Pinning each image in `TestImages` keeps the working set small and reproducible across CI and local runs. Bump versions in one place when you want a refresh.
 
-#### Container reuse
+#### Fresh containers
 
-The fixtures create their containers with Testcontainers reuse enabled, except `HeadlessRabbitMqFixture`, `HeadlessKafkaFixture`, and `HeadlessPulsarFixture`. These broker fixtures need clean restart semantics, so they always create fresh containers. When the host opts in with `testcontainers.reuse.enable=true` in `~/.testcontainers.properties` or the `TESTCONTAINERS_REUSE_ENABLE=true` environment variable, repeated local runs reattach to an already-warm reusable container instead of paying the cold-start cost. CI leaves reuse disabled, so reuse becomes a no-op and Ryuk reaps containers as usual.
-
-Because a reused container keeps state between runs, tests must be idempotent across runs: use drop-before-create (`DROP TABLE IF EXISTS` / `IF OBJECT_ID(...) IS NOT NULL DROP ...`) or guarded create (`CREATE ... IF NOT EXISTS`) rather than assuming a clean database. Each integration project reuses its own container in each checkout of the repository, keyed by the test assembly name (`headless.fixture` label) and the checkout's root directory (`headless.checkout` label), so neither two projects nor two worktrees running the same project share state. A removed worktree leaves its stopped containers behind; find them with `docker ps -a --filter label=headless.checkout=<path>`.
-
-A container your own test project builds outside these fixtures takes the same checkout scoping through `WithCheckoutReuse()` (`HeadlessContainerBuilderExtensions`, namespace `DotNet.Testcontainers.Builders`), which turns reuse on and adds the `headless.checkout` label. Use it in place of `WithReuse(true)`, which hashes the same in every worktree, so two worktrees running that project would share one container and each other's rows. Add a label of your own when two fixtures in one project build otherwise identical containers:
-
-```csharp
-new PostgreSqlBuilder(TestImages.PostgreSql).WithLabel("type", "settings").WithCheckoutReuse().Build();
-```
-
-In this repository a bare `WithReuse(true)` fails the build with RS0030 (`eng/BannedSymbols.Testcontainers.txt`).
+Every fixture creates a fresh container for each test run, and Testcontainers' Ryuk sidecar removes it when the run ends, even after a crash. The fixtures never use Testcontainers reuse: Ryuk does not remove a reused container, so reuse leaves one stopped container (and its data volume) behind for every configuration change and every checkout, and carries one run's schema and rows into the next. The cost is a cold start once per collection per run, which matters most for SQL Server. In this repository `WithReuse(true)` fails the build with RS0030 (`eng/BannedSymbols.Testcontainers.txt`).
 
 #### SQL Server image override
 
@@ -475,7 +465,7 @@ HEADLESS_SQLSERVER_IMAGE=mcr.microsoft.com/mssql/server:2022-latest \
   make test-project TEST_PROJECT=tests/Headless.Sql.SqlServer.Tests.Integration/Headless.Sql.SqlServer.Tests.Integration.csproj
 ```
 
-Unset, the default is unchanged. The image name is part of the reuse hash, so the override gets its own container instead of reattaching to the Azure SQL Edge one. Emulated startup is slower; the fixture still waits for the "SQL Server is now ready" log line and a successful login.
+Unset, the default is unchanged. Emulated startup is slower; the fixture still waits for the "SQL Server is now ready" log line and a successful login.
 
 ### Install
 
@@ -520,7 +510,7 @@ No configuration required. Containers use sensible defaults.
 ### Runtime behavior
 
 - Starts Docker containers during test execution
-- Containers are stopped after tests complete; with reuse enabled on the host they are kept stopped for the next run to reattach
+- Containers are removed after tests complete; Ryuk removes them if the test process dies first
 ## Tenant isolation
 
 A tenant-isolation test seeds a row as tenant A and then probes it as tenant B. The kit spans two packages so `Headless.Testing` stays free of EF Core. The HTTP assertion needs only an `HttpClient`, so it works with `HeadlessTestServer.CreateClient()` or any other client:

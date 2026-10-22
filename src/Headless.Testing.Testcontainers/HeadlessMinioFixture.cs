@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using DotNet.Testcontainers.Builders;
 using Testcontainers.Minio;
 using Testcontainers.Xunit;
 
@@ -16,9 +15,6 @@ public class HeadlessMinioFixture() : ContainerFixture<MinioBuilder, MinioContai
 {
     protected override MinioBuilder Configure()
     {
-        return base.Configure()
-            .WithImage(TestImages.Minio)
-            .WithCheckoutReuse()
-            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this));
+        return base.Configure().WithImage(TestImages.Minio);
     }
 }
