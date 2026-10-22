@@ -67,9 +67,7 @@ public class SqlServerJobsCoordinationFixture
         + "DROP TABLE IF EXISTS [headless].[CoordinationLiveness];"
         + "DROP TABLE IF EXISTS [headless].[CoordinationDescriptor];"
         + "DROP TABLE IF EXISTS [headless].[CoordinationNodeGeneration];"
-        // The history goes with every table its steps created. Dropping the history alone is not a reset: a step's
-        // guarded CREATE skips a table that already exists, so a reused container would keep a table in the shape of
-        // an older step (an in-place step change before a release) while the history says it is current.
+        // The history goes with every table its steps created, so the next test's host recreates all of them.
         + "DROP TABLE IF EXISTS [headless].[headless_schema_history];"
         + "DROP TABLE IF EXISTS [jobs_probe];";
 
@@ -87,9 +85,8 @@ public class SqlServerJobsCoordinationFixture
         }
     }
 
-    // The renamed-mapping claim test owns its own mapped_jobs cleanup, but this fixture reuses its container: if that
-    // test's teardown is cut short, the leftovers wedge every later run at CREATE TABLE. Drop them defensively here
-    // for the same reason the stale jobs leftovers above are dropped.
+    // The renamed-mapping claim test owns its own mapped_jobs cleanup, but the collection shares one database: if that
+    // test's teardown is cut short, the leftovers wedge every later test at CREATE TABLE, so drop them here too.
     private const string _MappedSchemaResetSql =
         "DROP TABLE IF EXISTS [mapped_jobs].[native_cron_occurrences];"
         + "DROP TABLE IF EXISTS [mapped_jobs].[native_time_jobs];"

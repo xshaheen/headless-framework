@@ -3389,7 +3389,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         // First pickup: 3 slots for 4 due rows, so the earlier-due open rows fill the claim. The
         // healthy row's absence here is what proves starvation is possible without the fix.
         // Scoped to this test's own rows: a sibling in this collection (PostgreSqlDeduplicationTest)
-        // leaves due rows in the reused container, which can take claim slots. That also rules out an
+        // leaves due rows in the collection's database, which can take claim slots. That also rules out an
         // unfiltered HaveCount — this test cannot guarantee its rows win every slot.
         var firstClaim = (
             await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken)

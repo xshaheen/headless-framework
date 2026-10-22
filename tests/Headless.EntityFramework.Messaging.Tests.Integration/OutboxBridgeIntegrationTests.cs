@@ -549,8 +549,8 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
 
-        // A reused container may have an older fixture model. Recreate only this test's business tables so a
-        // duplicate-table exception cannot hide a missing new table or roll back the collection's cleanup batch.
+        // Every test builds its own provider over the collection's database. Recreate only this test's business tables
+        // so the previous test's copies cannot fail the create or roll back the collection's cleanup batch.
         await db.Database.ExecuteSqlRawAsync(
             """
             DROP TABLE IF EXISTS "DeadlineReceipts";

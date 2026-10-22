@@ -60,8 +60,6 @@ internal sealed class FixedPortRedisFixture : HeadlessRedisFixture
 
     protected override RedisBuilder Configure()
     {
-        // Built afresh rather than from the shared fixture's builder, which reuses one container across runs; this one is
-        // stopped mid-test, so a later run must never reattach to it.
         return new RedisBuilder(TestImages.Redis).WithPortBinding(_hostPort, RedisBuilder.RedisPort);
     }
 }

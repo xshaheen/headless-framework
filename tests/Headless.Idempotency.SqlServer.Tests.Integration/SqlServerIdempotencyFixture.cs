@@ -78,21 +78,14 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
             await alter.ExecuteNonQueryAsync(CancellationToken.None);
         }
 
-        // The container is reused across runs, so start from no storage and let the initializers create it.
         await using var connection = new SqlConnection(DatabaseConnectionString);
         await connection.OpenAsync(CancellationToken.None);
-        await using var reset = new SqlCommand(
-            $"""
-            IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.IdempotencyRecords', N'U') IS NOT NULL DROP TABLE {_Records};
-            IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.IdempotencyRecordGenerations', N'SO') IS NOT NULL DROP SEQUENCE [{HeadlessStorageDefaults.Schema}].[IdempotencyRecordGenerations];
-            IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.headless_schema_history', N'U') IS NOT NULL DROP TABLE [{HeadlessStorageDefaults.Schema}].[headless_schema_history];
-            IF SCHEMA_ID(N'{HeadlessStorageDefaults.Schema}') IS NOT NULL EXEC(N'DROP SCHEMA [{HeadlessStorageDefaults.Schema}]');
-            SELECT CAST(is_read_committed_snapshot_on AS int) FROM sys.databases WHERE database_id = DB_ID();
-            """,
+        await using var probe = new SqlCommand(
+            "SELECT CAST(is_read_committed_snapshot_on AS int) FROM sys.databases WHERE database_id = DB_ID();",
             connection
         );
         var probed = Convert.ToInt32(
-            await reset.ExecuteScalarAsync(CancellationToken.None),
+            await probe.ExecuteScalarAsync(CancellationToken.None),
             CultureInfo.InvariantCulture
         );
 
