@@ -3,6 +3,7 @@
 using Headless.Coordination;
 using Headless.Hosting;
 using Headless.Jobs;
+using Headless.Jobs.Internal;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -43,11 +44,12 @@ public sealed class JobsHealthCheckTests : TestBase
         // when
         var beforeStart = await _CheckAsync(host.Services, _JobsCheck);
         await host.StartAsync(AbortToken);
-        var afterStart = await _CheckAsync(host.Services, _JobsCheck);
+        await _ActivatedAsync(host);
+        var afterActivation = await _CheckAsync(host.Services, _JobsCheck);
 
         // then
         beforeStart.Status.Should().Be(HealthStatus.Unhealthy);
-        afterStart.Status.Should().Be(HealthStatus.Healthy);
+        afterActivation.Status.Should().Be(HealthStatus.Healthy);
 
         await host.StopAsync(AbortToken);
     }
@@ -59,6 +61,7 @@ public sealed class JobsHealthCheckTests : TestBase
         var blocker = new BlockingStopService();
         using var host = _BuildHost(_ => { }, services => services.AddHostedService(_ => blocker));
         await host.StartAsync(AbortToken);
+        await _ActivatedAsync(host);
         (await _CheckAsync(host.Services, _JobsCheck)).Status.Should().Be(HealthStatus.Healthy);
 
         // when
@@ -251,6 +254,12 @@ public sealed class JobsHealthCheckTests : TestBase
                 afterJobs?.Invoke(services);
             })
             .Build();
+    }
+
+    // The fingerprint drain that opens activation runs in the background after the host start.
+    private static async Task _ActivatedAsync(IHost host)
+    {
+        (await host.Services.GetRequiredService<JobsActivationBarrier>().WaitAsync(AbortToken)).Should().BeNull();
     }
 
     private static async Task<HealthReportEntry> _CheckAsync(IServiceProvider services, string name)

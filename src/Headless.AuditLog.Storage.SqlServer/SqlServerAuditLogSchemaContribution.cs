@@ -2,7 +2,7 @@
 
 using System.Data;
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sql.SqlServer;
 using Microsoft.Data.SqlClient;
 
@@ -113,7 +113,7 @@ internal static class SqlServerAuditLogSchemaContribution
                 new SchemaStep(TableStepVersion, "Create the audit log table.", tableSql),
                 new SchemaStep(IndexesStepVersion, "Create the audit log read indexes.", indexesSql),
             ],
-            applyOnStartup: storageOptions.InitializeOnStartup
+            objects: [SchemaObject.Table(tableName)]
         );
     }
 

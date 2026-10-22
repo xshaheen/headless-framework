@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.Coordination;
+using Headless.Hosting;
 using Headless.Jobs;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -153,6 +154,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>
                 })
             );
         });
+        builder.Services.AddDeployStepsOnStartup();
         return builder.Build();
     }
 

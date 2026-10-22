@@ -33,6 +33,40 @@ public sealed class JobsStartupInitializationTests : TestBase
     }
 
     [Fact]
+    public void should_register_the_activation_drain_as_a_warmup_only_when_job_loops_run()
+    {
+        // given
+        var withLoops = new ServiceCollection();
+        var withoutLoops = new ServiceCollection();
+
+        // when
+        withLoops.AddHeadlessJobs<TimeJobEntity, CronJobEntity>(_ => { });
+        withoutLoops.AddHeadlessJobs<TimeJobEntity, CronJobEntity>(jobs => jobs.DisableBackgroundServices());
+
+        // then
+        _WarmupTypes(withLoops).Should().ContainSingle().Which.Should().Be<JobsActivationWarmup>();
+        _WarmupTypes(withoutLoops).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_open_the_activation_barrier_at_start_when_no_job_loop_runs()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessJobs<TimeJobEntity, CronJobEntity>(jobs => jobs.DisableBackgroundServices());
+        await using var provider = services.BuildServiceProvider();
+        var barrier = provider.GetRequiredService<JobsActivationBarrier>();
+        var initializer = provider.GetServices<IHostedService>().OfType<JobsInitializationHostedService>().Single();
+
+        // when
+        await initializer.StartAsync(AbortToken);
+
+        // then
+        barrier.IsActivated.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_skip_the_initializer_and_open_the_activation_barrier_when_disabled()
     {
         // given
@@ -213,6 +247,11 @@ public sealed class JobsStartupInitializationTests : TestBase
         return type is { IsGenericType: true }
             && type.GetGenericTypeDefinition().Name.StartsWith("DeadOwnerRecoveryBridge", StringComparison.Ordinal)
             && type.GetGenericArguments()[0] == typeof(JobsDeadOwnerReclaimer);
+    }
+
+    private static List<Type?> _WarmupTypes(IServiceCollection services)
+    {
+        return [.. services.Where(d => d.ServiceType == typeof(IWarmup)).Select(d => d.ImplementationType)];
     }
 
     private static List<Type?> _HostedServiceTypes(IServiceCollection services)

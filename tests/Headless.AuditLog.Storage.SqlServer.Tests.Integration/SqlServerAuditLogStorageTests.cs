@@ -23,7 +23,6 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
 
         // when
         await host.StartAsync(AbortToken);
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
         var reader = scope.ServiceProvider.GetRequiredService<IReadAuditLog<object>>();
@@ -55,8 +54,9 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
         ).Items;
 
         // then
-        initializer.IsInitialized.Should().BeTrue();
-        (await _TableExistsAsync("AuditLogEntries")).Should().BeTrue();
+        (await _TableExistsAsync("AuditLogEntries"))
+            .Should()
+            .BeTrue();
         (await _JsonColumnTypeAsync("NewValues")).Should().Be("nvarchar");
         entries.Should().ContainSingle();
         entries[0].EntityId.Should().Be("ORD-1");
@@ -352,6 +352,7 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
             setup.UseSqlServer(fixture.ConnectionString);
         });
 
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         return builder.Build();
     }
 

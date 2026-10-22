@@ -241,8 +241,14 @@ public sealed class DynamicSettingDefinitionStore(
                 .ConfigureAwait(false)
             ?? throw new InvalidOperationException("Could not acquire distributed lock for saving static Settings!"); // It will re-try
 
-        var (newRecords, changedRecords, deletedRecords) = await _UpdateChangedSettingsAsync(records, cancellationToken)
+        var (newRecords, changes, deletedRecords) = await _DiffSettingsAsync(records, cancellationToken)
             .ConfigureAwait(false);
+        var changedRecords = changes.ConvertAll(static change =>
+        {
+            change.Stored.Patch(change.Declared);
+
+            return change.Stored;
+        });
 
         var hasChangesInSettings = newRecords.Count != 0 || changedRecords.Count != 0 || deletedRecords.Count != 0;
 
@@ -264,6 +270,24 @@ public sealed class DynamicSettingDefinitionStore(
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Reports whether the stored records already hold the application's static setting definitions, serialized as
+    /// <see cref="SaveAsync"/> serializes them, and none of the configured deleted settings. Reads the records only: it
+    /// writes nothing, takes no lock, and ignores the saved hash, so it reports what the store holds.
+    /// </summary>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns><see langword="true"/> when <see cref="SaveAsync"/> would change nothing.</returns>
+    internal async Task<bool> HoldsStaticDefinitionsAsync(CancellationToken cancellationToken)
+    {
+        var records = definitionSerializer.Serialize(
+            await staticStore.GetAllAsync(cancellationToken).ConfigureAwait(false)
+        );
+        var (newRecords, changedRecords, deletedRecords) = await _DiffSettingsAsync(records, cancellationToken)
+            .ConfigureAwait(false);
+
+        return newRecords.Count == 0 && changedRecords.Count == 0 && deletedRecords.Count == 0;
+    }
+
     #endregion
 
     #region Save Helpers
@@ -279,17 +303,18 @@ public sealed class DynamicSettingDefinitionStore(
         },
     };
 
+    // Compares without patching, so the verify path can share it; SaveAsync patches each changed stored record.
     private async Task<(
         List<SettingDefinitionRecord> NewRecords,
-        List<SettingDefinitionRecord> ChangedRecords,
+        List<(SettingDefinitionRecord Stored, SettingDefinitionRecord Declared)> ChangedRecords,
         List<SettingDefinitionRecord> DeletedRecords
-    )> _UpdateChangedSettingsAsync(List<SettingDefinitionRecord> settingRecords, CancellationToken cancellationToken)
+    )> _DiffSettingsAsync(List<SettingDefinitionRecord> settingRecords, CancellationToken cancellationToken)
     {
         var dbRecords = await definitionRepository.GetListAsync(cancellationToken).ConfigureAwait(false);
         var dbRecordsMap = dbRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
 
         var newRecords = new List<SettingDefinitionRecord>();
-        var changedRecords = new List<SettingDefinitionRecord>();
+        var changedRecords = new List<(SettingDefinitionRecord Stored, SettingDefinitionRecord Declared)>();
         var deletedRecords = new List<SettingDefinitionRecord>();
 
         // Handle new and changed records
@@ -309,8 +334,7 @@ public sealed class DynamicSettingDefinitionStore(
                 continue; // Not changed
             }
 
-            dbSettingRecord.Patch(record); // Changed
-            changedRecords.Add(dbSettingRecord);
+            changedRecords.Add((dbSettingRecord, record)); // Changed
         }
 
         // Handle deleted records

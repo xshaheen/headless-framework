@@ -1,11 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.RabbitMq;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
+using RabbitMQ.Client.Exceptions;
 
 namespace Tests;
 
@@ -46,7 +49,7 @@ public sealed class RabbitMqQueueTopologyTests : TestBase
         options.QueueArguments.EnableDeadLettering = true;
         var channel = Substitute.For<IChannel>();
 
-        await RabbitMqQueueTopology.DeclareQueueAsync(
+        await RabbitMqQueueTopology.EnsureQueueAsync(
             channel,
             options,
             _LaneExchange,
@@ -93,23 +96,12 @@ public sealed class RabbitMqQueueTopologyTests : TestBase
     }
 
     [Fact]
-    public async Task should_only_declare_passively_and_never_bind_when_auto_provision_is_off()
+    public async Task should_only_declare_passively_when_requiring()
     {
-        var options = _CreateOptions();
-        options.AutoProvision = false;
-        options.QueueArguments.EnableDeadLettering = true;
         var channel = Substitute.For<IChannel>();
 
-        await RabbitMqQueueTopology.DeclareExchangeAsync(channel, options, _LaneExchange, "direct", AbortToken);
-        await RabbitMqQueueTopology.DeclareQueueAsync(
-            channel,
-            options,
-            _LaneExchange,
-            _Queue,
-            "queue.orders",
-            AbortToken
-        );
-        await RabbitMqQueueTopology.BindQueueAsync(channel, options, _LaneExchange, _Queue, "queue.orders", AbortToken);
+        await RabbitMqQueueTopology.RequireExchangeAsync(channel, _LaneExchange, AbortToken);
+        await RabbitMqQueueTopology.RequireQueueAsync(channel, _Queue, AbortToken);
 
         await channel.Received(1).ExchangeDeclarePassiveAsync(_LaneExchange, AbortToken);
         await channel.Received(1).QueueDeclarePassiveAsync(_Queue, AbortToken);
@@ -125,7 +117,26 @@ public sealed class RabbitMqQueueTopologyTests : TestBase
     }
 
     [Fact]
-    public async Task should_declare_and_bind_publish_queue_once_per_process()
+    public async Task should_name_resources_setup_when_a_passive_declare_finds_nothing()
+    {
+        var channel = Substitute.For<IChannel>();
+        channel
+            .QueueDeclarePassiveAsync(_Queue, AbortToken)
+            .Returns(
+                Task.FromException<QueueDeclareOk>(
+                    new OperationInterruptedException(new ShutdownEventArgs(ShutdownInitiator.Peer, 404, "NOT_FOUND"))
+                )
+            );
+
+        var act = () => RabbitMqQueueTopology.RequireQueueAsync(channel, _Queue, AbortToken);
+
+        await act.Should()
+            .ThrowAsync<ResourceProvisioningException>()
+            .WithMessage($"RabbitMQ queue '{_Queue}' does not exist. Run 'resources provision'*");
+    }
+
+    [Fact]
+    public async Task should_check_publish_queue_once_per_process_without_declaring_or_binding_it()
     {
         var (pool, channel) = _CreatePool(_CreateOptions());
         await using var _ = pool;
@@ -133,47 +144,22 @@ public sealed class RabbitMqQueueTopologyTests : TestBase
         await pool.EnsureQueueForPublishAsync("orders", AbortToken);
         await pool.EnsureQueueForPublishAsync("orders", AbortToken);
 
-        await channel
-            .Received(1)
-            .QueueDeclareAsync(
-                "queue.orders",
-                true,
-                false,
-                false,
-                Arg.Any<IDictionary<string, object?>>(),
-                false,
-                false,
-                Arg.Any<CancellationToken>()
-            );
-        await channel
-            .Received(1)
-            .QueueBindAsync(
-                "queue.orders",
-                "test.exchange.queue",
-                "queue.orders",
-                null,
-                false,
-                Arg.Any<CancellationToken>()
-            );
+        await channel.Received(1).QueueDeclarePassiveAsync("queue.orders", Arg.Any<CancellationToken>());
+        channel
+            .ReceivedCalls()
+            .Select(call => call.GetMethodInfo().Name)
+            .Should()
+            .NotContain([nameof(IChannel.QueueDeclareAsync), nameof(IChannel.QueueBindAsync)]);
     }
 
     [Fact]
-    public async Task should_declare_publish_queue_again_after_a_failed_attempt()
+    public async Task should_check_publish_queue_again_after_a_failed_attempt()
     {
         var (pool, channel) = _CreatePool(_CreateOptions());
         await using var _ = pool;
         var attempts = 0;
         channel
-            .QueueDeclareAsync(
-                Arg.Any<string>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<IDictionary<string, object?>>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<CancellationToken>()
-            )
+            .QueueDeclarePassiveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
                 ++attempts == 1
                     ? Task.FromException<QueueDeclareOk>(new InvalidOperationException("declare refused"))
@@ -189,7 +175,7 @@ public sealed class RabbitMqQueueTopologyTests : TestBase
     }
 
     [Fact]
-    public async Task should_declare_publish_queue_again_after_it_is_forgotten()
+    public async Task should_check_publish_queue_again_after_it_is_forgotten()
     {
         var (pool, channel) = _CreatePool(_CreateOptions());
         await using var _ = pool;
@@ -198,25 +184,13 @@ public sealed class RabbitMqQueueTopologyTests : TestBase
         pool.ForgetQueueForPublish("orders");
         await pool.EnsureQueueForPublishAsync("orders", AbortToken);
 
-        await channel
-            .Received(2)
-            .QueueDeclareAsync(
-                "queue.orders",
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<IDictionary<string, object?>>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<CancellationToken>()
-            );
+        await channel.Received(2).QueueDeclarePassiveAsync("queue.orders", Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task should_declare_lane_exchanges_passively_when_auto_provision_is_off()
+    public async Task should_declare_lane_exchanges_passively()
     {
         var options = _CreateOptions();
-        options.AutoProvision = false;
         var (pool, channel) = _CreatePool(options);
         await using var _ = pool;
 

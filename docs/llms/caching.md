@@ -1045,8 +1045,8 @@ builder.Services.AddHeadlessCaching(setup =>
 - Registers a keyed `ICache` under the `CacheConstants.RemoteCacheProvider` role key (`Headless.Caching:Remote`).
 - Registers `ICache<T>` as singleton when used as the default provider.
 - Registers `ICacheProvider` (shared, `TryAdd`).
-- Registers a keyed `HeadlessRedisScriptsLoader` bound to `RedisCacheOptions.ConnectionMultiplexer`, plus a hosted `IInitializer` that warms the cache Lua scripts on host start.
-- `setup.AddNamed(name, i => i.UseRedis(...))` registers a keyed `ICache` under the instance name with a per-instance scripts loader and initializer bound to that instance's multiplexer.
+- Registers a keyed `HeadlessRedisScriptsLoader` bound to `RedisCacheOptions.ConnectionMultiplexer`. The host start loads no Lua script: each script loads on the first cache operation that runs it, which costs that operation one extra round trip. A Redis outage at start therefore does not stop the host; the `cache-redis` readiness check reports it.
+- `setup.AddNamed(name, i => i.UseRedis(...))` registers a keyed `ICache` under the instance name with a per-instance scripts loader bound to that instance's multiplexer.
 - Named Redis instances use the keyed `ISerializer` configured by `HeadlessCacheInstanceBuilder.WithSerializer(...)` when present; otherwise they use the global `ISerializer`.
 - `RemoveByTagAsync`/`ClearAsync` write timestamp marker keys in the reserved `{KeyPrefix}\0__tag:{tag}` / `{KeyPrefix}\0__clear` namespaces (one `StringSet` per call; no key enumeration).
 

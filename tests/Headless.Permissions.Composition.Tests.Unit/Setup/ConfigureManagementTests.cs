@@ -4,6 +4,7 @@ using Headless.Hosting;
 using Headless.Permissions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Tests.Setup;
@@ -112,34 +113,24 @@ public sealed class ConfigureManagementTests
     }
 
     [Fact]
-    public void should_register_startup_initializer_by_default()
+    public void should_register_the_definitions_seeder_without_seeding_at_startup()
     {
         // given
         var services = new ServiceCollection();
+        services.AddLogging();
 
         // when
         services.AddHeadlessPermissions(setup => setup.UseEntityFramework<OptionsTestDbContext>());
 
-        // then
-        services.Should().Contain(d => d.ServiceType == typeof(IInitializer));
-    }
-
-    [Fact]
-    public void should_not_register_startup_initializer_when_disabled()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessPermissions(setup =>
-        {
-            setup.DisableStartupInitialization();
-            setup.UseEntityFramework<OptionsTestDbContext>();
-        });
-
-        // then — the seeder is the only IInitializer the package registers; the other hosted services stay.
-        services.Should().NotContain(d => d.ServiceType == typeof(IInitializer));
-        services.Should().Contain(d => d.ServiceType == typeof(IConfigureOptions<PermissionManagementOptions>));
+        // then - seeding is opt-in: the seeder is registered, but the startup seed runner that
+        // AddDeployStepsOnStartup adds is not, so nothing seeds when the host starts
+        services.Should().Contain(d => d.ServiceType == typeof(ISeeder));
+        using var provider = services.BuildServiceProvider();
+        provider
+            .GetServices<IHostedService>()
+            .Select(static s => s.GetType().Name)
+            .Should()
+            .NotContain("SeedStartupService");
     }
 
     private sealed class OptionsTestDbContext(DbContextOptions<OptionsTestDbContext> options) : DbContext(options);

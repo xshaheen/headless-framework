@@ -3,6 +3,7 @@
 using System.Security.Claims;
 using Headless.Api;
 using Headless.Context;
+using Headless.Hosting;
 using Headless.Idempotency;
 using Headless.MultiTenancy;
 using Headless.Primitives;
@@ -78,6 +79,7 @@ internal static class IdempotencyTestApp
             configure?.Invoke(o);
         });
 
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         var app = builder.Build();
 
         // Ambient tenant from a caller-controlled header BEFORE idempotency, the way pre-auth catalog resolution

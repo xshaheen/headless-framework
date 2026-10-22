@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.AuditLog;
+using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -257,6 +258,7 @@ public sealed class PostgreSqlAuditLogAtomicityTests(PostgreSqlAuditLogFixture f
             setup.ConfigureStorage(options => options.Schema = _Schema);
             setup.UsePostgreSql(fixture.ConnectionString);
         });
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         using var host = builder.Build();
 
         // when
@@ -292,6 +294,7 @@ public sealed class PostgreSqlAuditLogAtomicityTests(PostgreSqlAuditLogFixture f
         // Override the default null/missing accessor with the test-owned one so the store can enroll.
         builder.Services.AddSingleton(accessor);
 
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         return builder.Build();
     }
 

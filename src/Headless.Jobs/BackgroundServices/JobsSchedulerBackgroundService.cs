@@ -108,9 +108,9 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         );
         var loopToken = membershipLinkedCts.Token;
 
-        // Activation gate: no dispatch selection before JobsInitializationHostedService has drained one stable
-        // fingerprint snapshot. Awaiting the barrier — rather than assuming hosted services start sequentially in
-        // registration order — is what keeps the gate intact under HostOptions.ServicesStartConcurrently.
+        // Activation gate: no dispatch selection before JobsActivationWarmup has drained one stable fingerprint
+        // snapshot. The drain runs after the host start, so awaiting the barrier — rather than assuming anything about
+        // hosted-service start order — is what keeps the gate intact in every startup order.
         Exception? activationFailure;
         try
         {
@@ -127,8 +127,8 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
 
         if (activationFailure is not null)
         {
-            // The failure already propagated out of the initializer's StartAsync and aborts host startup; this loop
-            // stays closed rather than selecting under an unverified schedule interpretation.
+            // The initializer rejected the configuration and the failure aborts host startup; this loop stays closed
+            // rather than selecting under an unverified schedule interpretation.
             _logger.LogJobsSchedulerStoppedOnActivationFailure(activationFailure);
 
             return;

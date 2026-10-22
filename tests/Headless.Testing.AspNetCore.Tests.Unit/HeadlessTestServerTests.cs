@@ -321,49 +321,47 @@ public sealed class HeadlessTestServerTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_timeout_when_initializer_exceeds_timeout()
+    public async Task should_throw_timeout_naming_the_warmup_when_it_exceeds_the_timeout()
     {
         _server = new HeadlessTestServer<Program>(
-            configureTestServices: services => services.AddSingleton<IInitializer>(new NeverCompletesInitializer()),
-            initializerTimeout: TimeSpan.FromMilliseconds(100)
+            configureTestServices: services => services.AddWarmup(_ => new NeverCompletesWarmup()),
+            warmupTimeout: TimeSpan.FromMilliseconds(100)
         );
 
         var act = async () => await _server.InitializeAsync();
 
-        await act.Should().ThrowExactlyAsync<TimeoutException>().WithMessage("*NeverCompletesInitializer*");
+        await act.Should().ThrowExactlyAsync<TimeoutException>().WithMessage("*NeverCompletes*");
     }
 
     [Fact]
-    public async Task should_throw_when_initializer_faults()
+    public async Task should_throw_timeout_naming_the_last_error_when_a_warmup_keeps_failing()
     {
-        _server = new HeadlessTestServer<Program>(configureTestServices: services =>
-            services.AddSingleton<IInitializer>(new FaultingInitializer())
+        _server = new HeadlessTestServer<Program>(
+            configureTestServices: services => services.AddWarmup(_ => new FaultingWarmup()),
+            warmupTimeout: TimeSpan.FromMilliseconds(500)
         );
 
         var act = async () => await _server.InitializeAsync();
 
-        await act.Should().ThrowExactlyAsync<InvalidOperationException>().WithMessage("*FaultingInitializer*faulted*");
+        await act.Should()
+            .ThrowExactlyAsync<TimeoutException>()
+            .WithMessage("*Faulting (last error: Warm-up exploded)*");
     }
 
     private sealed class MarkerService;
 
-    private sealed class NeverCompletesInitializer : IInitializer
+    private sealed class NeverCompletesWarmup : IWarmup
     {
-        public bool IsInitialized => false;
+        public string Name => "NeverCompletes";
 
-        public Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
-        {
-            return Task.Delay(Timeout.Infinite, cancellationToken);
-        }
+        public Task WarmUpAsync(CancellationToken cancellationToken) => Task.Delay(Timeout.Infinite, cancellationToken);
     }
 
-    private sealed class FaultingInitializer : IInitializer
+    private sealed class FaultingWarmup : IWarmup
     {
-        public bool IsInitialized => false;
+        public string Name => "Faulting";
 
-        public Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
-        {
-            return Task.FromException(new InvalidOperationException("Initializer exploded"));
-        }
+        public Task WarmUpAsync(CancellationToken cancellationToken) =>
+            Task.FromException(new InvalidOperationException("Warm-up exploded"));
     }
 }

@@ -1,6 +1,7 @@
 using Demo;
 using Demo.Models;
 using Headless.Context;
+using Headless.Hosting;
 using Headless.OpenApi;
 using Headless.Permissions;
 using Microsoft.AspNetCore.Mvc;
@@ -33,6 +34,9 @@ builder
                 && (context.User.IsInRole("Admin") || context.User.IsInRole("PermissionsAdmin"))
             )
     );
+
+// Nothing seeds on its own, so this demo seeds as it starts; a deployed app runs `dotnet <app>.dll seed` instead.
+builder.Services.AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None);
 
 var app = builder.Build();
 

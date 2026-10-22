@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Exceptions;
 
 namespace Headless.Messaging.RabbitMq;
 
@@ -9,9 +11,10 @@ namespace Headless.Messaging.RabbitMq;
 /// so a publisher and a consumer always ask the broker for the same queue with the same arguments.
 /// </summary>
 /// <remarks>
-/// With <see cref="RabbitMqMessagingOptions.AutoProvision"/> off every declare is passive: it only proves the exchange
-/// or queue exists, and binding stays with whoever manages the topology. A redeclare whose arguments differ from the
-/// broker's queue fails with <c>PRECONDITION_FAILED</c>, which is why both sides build the arguments here.
+/// The <c>Ensure*</c> methods create, for <c>resources provision</c> and runtime subscriptions; the <c>Require*</c> methods
+/// only prove an object exists and fail with <see cref="ResourceProvisioningException"/> naming <c>resources provision</c> when it
+/// does not. A redeclare whose arguments differ from the broker's queue fails with
+/// <c>PRECONDITION_FAILED</c>, which is why every side builds the arguments here.
 /// </remarks>
 internal static class RabbitMqQueueTopology
 {
@@ -73,34 +76,42 @@ internal static class RabbitMqQueueTopology
         return arguments;
     }
 
-    /// <summary>Declares a lane exchange, or proves it exists when auto-provisioning is off.</summary>
-    public static Task DeclareExchangeAsync(
+    /// <summary>Declares a lane exchange: what <c>resources provision</c> and a runtime subscription do.</summary>
+    public static Task EnsureExchangeAsync(
         IChannel channel,
-        RabbitMqMessagingOptions options,
         string exchange,
         string exchangeType,
         CancellationToken cancellationToken
     )
     {
-        return options.AutoProvision
-            ? channel.ExchangeDeclareAsync(
-                exchange,
-                exchangeType,
-                durable: true,
-                autoDelete: false,
-                arguments: null,
-                passive: false,
-                noWait: false,
-                cancellationToken: cancellationToken
-            )
-            : channel.ExchangeDeclarePassiveAsync(exchange, cancellationToken);
+        return channel.ExchangeDeclareAsync(
+            exchange,
+            exchangeType,
+            durable: true,
+            autoDelete: false,
+            arguments: null,
+            passive: false,
+            noWait: false,
+            cancellationToken: cancellationToken
+        );
+    }
+
+    /// <summary>Proves a lane exchange exists, creating nothing.</summary>
+    /// <exception cref="ResourceProvisioningException">The exchange does not exist.</exception>
+    public static Task RequireExchangeAsync(IChannel channel, string exchange, CancellationToken cancellationToken)
+    {
+        return RequireAsync(
+            "exchange",
+            exchange,
+            () => channel.ExchangeDeclarePassiveAsync(exchange, cancellationToken)
+        );
     }
 
     /// <summary>
     /// Declares a shared queue, its dead-letter topology when enabled, and (when <paramref name="routingKey"/> is set)
-    /// its binding to <paramref name="laneExchange"/>; with auto-provisioning off it only proves the queue exists.
+    /// its binding to <paramref name="laneExchange"/>: what <c>resources provision</c> and a runtime subscription do.
     /// </summary>
-    public static async Task DeclareQueueAsync(
+    public static async Task EnsureQueueAsync(
         IChannel channel,
         RabbitMqMessagingOptions options,
         string laneExchange,
@@ -109,12 +120,6 @@ internal static class RabbitMqQueueTopology
         CancellationToken cancellationToken
     )
     {
-        if (!options.AutoProvision)
-        {
-            await channel.QueueDeclarePassiveAsync(queueName, cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
         if (options.QueueArguments.EnableDeadLettering)
         {
             await _DeclareDeadLetterTopologyAsync(channel, options, laneExchange, queueName, cancellationToken)
@@ -124,9 +129,12 @@ internal static class RabbitMqQueueTopology
         await channel
             .QueueDeclareAsync(
                 queueName,
-                options.QueueOptions.Durable,
-                options.QueueOptions.Exclusive,
-                options.QueueOptions.AutoDelete,
+                // A shared queue outlives the process that declares it: 'resources provision' creates it, and every host
+                // start expects it, so it must survive the declaring connection, its last consumer, and a broker
+                // restart.
+                durable: true,
+                exclusive: false,
+                autoDelete: false,
                 BuildQueueArguments(options, laneExchange, queueName),
                 cancellationToken: cancellationToken
             )
@@ -134,25 +142,68 @@ internal static class RabbitMqQueueTopology
 
         if (routingKey is not null)
         {
-            await channel
-                .QueueBindAsync(queueName, laneExchange, routingKey, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            await BindQueueAsync(channel, laneExchange, queueName, routingKey, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    /// <summary>Binds a shared queue to its lane exchange; with auto-provisioning off the binding is not this app's.</summary>
+    /// <summary>Proves a shared queue exists, creating nothing, and returns its message and consumer counts.</summary>
+    /// <exception cref="ResourceProvisioningException">The queue does not exist.</exception>
+    public static Task<QueueDeclareOk> RequireQueueAsync(
+        IChannel channel,
+        string queueName,
+        CancellationToken cancellationToken
+    )
+    {
+        return RequireAsync("queue", queueName, () => channel.QueueDeclarePassiveAsync(queueName, cancellationToken));
+    }
+
+    /// <summary>Binds a shared queue to its lane exchange under <paramref name="routingKey"/>.</summary>
     public static Task BindQueueAsync(
         IChannel channel,
-        RabbitMqMessagingOptions options,
         string laneExchange,
         string queueName,
         string routingKey,
         CancellationToken cancellationToken
     )
     {
-        return options.AutoProvision
-            ? channel.QueueBindAsync(queueName, laneExchange, routingKey, cancellationToken: cancellationToken)
-            : Task.CompletedTask;
+        return channel.QueueBindAsync(queueName, laneExchange, routingKey, cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Runs a passive declare or a call on an existing object of the <paramref name="kind"/> named
+    /// <paramref name="name"/>, turning the broker's <c>NOT_FOUND</c> into an error that names the fix. The broker closes
+    /// the channel on any refused call, so run it on a channel of its own.
+    /// </summary>
+    /// <exception cref="ResourceProvisioningException">The broker reports the object does not exist.</exception>
+    public static Task RequireAsync(string kind, string name, Func<Task> call)
+    {
+        return RequireAsync(
+            kind,
+            name,
+            async () =>
+            {
+                await call().ConfigureAwait(false);
+
+                return true;
+            }
+        );
+    }
+
+    /// <inheritdoc cref="RequireAsync(string, string, Func{Task})" />
+    public static async Task<T> RequireAsync<T>(string kind, string name, Func<Task<T>> call)
+    {
+        try
+        {
+            return await call().ConfigureAwait(false);
+        }
+        catch (OperationInterruptedException ex) when (ex.ShutdownReason?.ReplyCode == Constants.NotFound)
+        {
+            throw new ResourceProvisioningException(
+                $"RabbitMQ {kind} '{name}' does not exist. Run 'resources provision' (dotnet <app>.dll resources provision) in "
+                    + "the deployment, or call AddDeployStepsOnStartup() in development.",
+                ex
+            );
+        }
     }
 
     // Declared before the queue, so nothing the queue dead-letters can reach an exchange with no queue behind it.

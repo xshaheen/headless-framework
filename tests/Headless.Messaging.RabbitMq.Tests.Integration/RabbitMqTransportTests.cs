@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Messaging.RabbitMq;
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Tests.Capabilities;
@@ -15,7 +16,24 @@ namespace Tests;
 [Collection<RabbitMqFixture>]
 public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportTestsBase
 {
+    private readonly string _exchange = $"test-exchange-{Guid.NewGuid():N}";
     private IConnectionChannelPool? _connectionChannelPool;
+
+    // The transport only checks that the lane exchanges exist; the deployment's resources provision creates them.
+    public override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync();
+        var options = _CreateOptions();
+        await using var pool = new ConnectionChannelPool(
+            NullLogger<ConnectionChannelPool>.Instance,
+            Options.Create(new MessagingOptions { Version = "v1" }),
+            Options.Create(options)
+        );
+        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).ProvisionAsync(
+            MessagingTopology.Empty,
+            AbortToken
+        );
+    }
 
     /// <inheritdoc />
     protected override TransportCapabilities Capabilities =>
@@ -63,21 +81,20 @@ public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportT
     private IConnectionChannelPool _CreateConnectionChannelPool()
     {
         var messagingOptions = Options.Create(new MessagingOptions { Version = "v1" });
-        var rabbitOptions = Options.Create(
-            new RabbitMqMessagingOptions
-            {
-                HostName = fixture.HostName,
-                Port = fixture.Port,
-                UserName = fixture.UserName,
-                Password = fixture.Password,
-                ExchangeName = $"test-exchange-{Guid.NewGuid():N}",
-            }
-        );
-
         var logger = NullLogger<ConnectionChannelPool>.Instance;
 
-        return new ConnectionChannelPool(logger, messagingOptions, rabbitOptions);
+        return new ConnectionChannelPool(logger, messagingOptions, Options.Create(_CreateOptions()));
     }
+
+    private RabbitMqMessagingOptions _CreateOptions() =>
+        new()
+        {
+            HostName = fixture.HostName,
+            Port = fixture.Port,
+            UserName = fixture.UserName,
+            Password = fixture.Password,
+            ExchangeName = _exchange,
+        };
 
     #region Transport Tests
 

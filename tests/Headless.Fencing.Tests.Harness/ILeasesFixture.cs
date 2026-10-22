@@ -3,6 +3,7 @@
 using System.Data;
 using System.Data.Common;
 using Headless.Fencing;
+using Headless.Hosting;
 using Headless.MultiTenancy;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
@@ -137,6 +138,9 @@ public static class LeasesFixtureExtensions
             fixture.ConfigureProvider(setup);
             configure?.Invoke(setup);
         });
+
+        // A host start only verifies the schema, so the test host creates it first, as a development host does.
+        services.AddDeployStepsOnStartup(o => o.Seed = false);
 
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 

@@ -22,6 +22,9 @@ internal sealed class StubMaxMindHandler : HttpMessageHandler
             r.Method == HttpMethod.Get && r.RequestUri!.Query.EndsWith("=tar.gz", StringComparison.Ordinal)
         );
 
+    /// <summary>When set, archive downloads wait for it to complete, so a test can observe the host mid-download.</summary>
+    public TaskCompletionSource? DownloadGate { get; set; }
+
     public void Publish(string edition, byte[] archive, DateTimeOffset lastModified, string? sha256 = null)
     {
         _releases[edition] = new Release(
@@ -31,7 +34,7 @@ internal sealed class StubMaxMindHandler : HttpMessageHandler
         );
     }
 
-    protected override Task<HttpResponseMessage> SendAsync(
+    protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken
     )
@@ -45,7 +48,16 @@ internal sealed class StubMaxMindHandler : HttpMessageHandler
 
         if (!_releases.TryGetValue(edition, out var release))
         {
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        }
+
+        if (
+            DownloadGate is { } gate
+            && request.Method == HttpMethod.Get
+            && string.Equals(suffix, "tar.gz", StringComparison.Ordinal)
+        )
+        {
+            await gate.Task.WaitAsync(cancellationToken);
         }
 
         HttpContent content = string.Equals(suffix, "tar.gz.sha256", StringComparison.Ordinal)
@@ -55,7 +67,7 @@ internal sealed class StubMaxMindHandler : HttpMessageHandler
         content.Headers.LastModified = release.LastModified;
         content.Headers.ContentType = new MediaTypeHeaderValue("application/gzip");
 
-        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+        return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
     }
 
     private sealed record Release(byte[] Archive, DateTimeOffset LastModified, string Sha256);

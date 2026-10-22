@@ -23,7 +23,6 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
 
         // when
         await host.StartAsync(AbortToken);
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
         var reader = scope.ServiceProvider.GetRequiredService<IReadAuditLog<object>>();
@@ -55,8 +54,9 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
         ).Items;
 
         // then
-        initializer.IsInitialized.Should().BeTrue();
-        (await _TableExistsAsync("audit_log_entries")).Should().BeTrue();
+        (await _TableExistsAsync("audit_log_entries"))
+            .Should()
+            .BeTrue();
         (await _JsonColumnTypeAsync("new_values")).Should().Be("jsonb");
         entries.Should().ContainSingle();
         entries[0].EntityId.Should().Be("ORD-1");
@@ -293,6 +293,7 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
             setup.UsePostgreSql(fixture.ConnectionString);
         });
 
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         return builder.Build();
     }
 

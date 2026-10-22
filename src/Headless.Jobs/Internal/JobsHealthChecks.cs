@@ -19,8 +19,9 @@ internal static class JobsHealthChecks
 
     public static void Add(IServiceCollection services)
     {
-        // Unhealthy until the startup drain opens the activation barrier, and again from the moment host shutdown
-        // begins: the host stops claiming work then, so a load balancer should stop routing to it before the drain.
+        // Unhealthy until the fingerprint drain, which runs and retries in the background after the host start, opens
+        // the activation barrier, and again from the moment host shutdown begins: the host stops claiming work then, so
+        // a load balancer should stop routing to it before the drain.
         services.AddHeadlessHealthCheck(
             HostCheckName,
             static (provider, _) =>

@@ -38,6 +38,8 @@ Transactions are explicit. `IUnitOfWorkFactory` is a singleton with no `Current`
 
 Relational storage features create their tables through one `SchemaRunner`, which trusts `headless_schema_history`. A table dropped by hand, or by a test reset on a reused container, is not recreated until its feature's history rows go too. Never edit a released step: add a new one. Before a release no database runs the step, so change it in place. Put every configurable object name in `SchemaContribution.FeatureId`. Before you add or change a storage feature's DDL, match an existing feature's `SchemaContribution`.
 
+Startup does only what a host needs to serve requests correctly. Creating tables, broker topology, or seed data is a deploy step (`resources provision`, `seed`, or `deploy` for both); the host only verifies a resource, failing the start or holding readiness as its `IResourceProvisioner.StartupCheck` says, discovery happens at build time through the source generators, cache warm-up runs in the background behind the readiness check, and every startup check is one cheap read. A hosted service, initializer, or `IHeadlessStartupValidator` that creates or writes external state, or repeats a round trip per feature, queue, or consumer, breaks this rule. [docs/llms/utilities.md](docs/llms/utilities.md#resource-provisioning) describes the verbs.
+
 ## Build and test
 
 Use the `make` targets instead of raw `dotnet`. They pin configuration, results directories, and parallelism. `make help` lists every target, `make doctor` checks the prerequisites with a fix for each, and `make check` runs the CI gates over the affected scope. The rules below cover what `make help` does not say.

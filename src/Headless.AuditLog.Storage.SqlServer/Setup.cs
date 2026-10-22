@@ -49,9 +49,8 @@ public static class SetupAuditLogSqlServer
         /// </summary>
         /// <param name="configuration">Configuration section to bind to <see cref="SqlServerAuditLogOptions"/>. Must not be <see langword="null"/>.</param>
         /// <remarks>
-        /// The provider self-initializes the schema and table on startup (serialized with
-        /// <c>sp_getapplock</c> across replicas) unless
-        /// <see cref="AuditLogStorageOptions.InitializeOnStartup"/> is <see langword="false"/>. Audit rows
+        /// The deployment creates the schema and table with <c>resources provision</c> (serialized with
+        /// <c>sp_getapplock</c> across replicas), and a host start verifies them. Audit rows
         /// are written via batched <c>INSERT … VALUES</c> statements (up to 100 rows per command).
         /// When an <see cref="IAmbientDbTransactionAccessor"/> is registered and the calling
         /// <c>DbContext</c> has an open <c>SqlTransaction</c>, writes enroll atomically in
@@ -74,9 +73,8 @@ public static class SetupAuditLogSqlServer
         /// </summary>
         /// <param name="configure">Delegate that configures the provider options.</param>
         /// <remarks>
-        /// The provider self-initializes the schema and table on startup (serialized with
-        /// <c>sp_getapplock</c> across replicas) unless
-        /// <see cref="AuditLogStorageOptions.InitializeOnStartup"/> is <see langword="false"/>. Audit rows
+        /// The deployment creates the schema and table with <c>resources provision</c> (serialized with
+        /// <c>sp_getapplock</c> across replicas), and a host start verifies them. Audit rows
         /// are written via batched <c>INSERT … VALUES</c> statements (up to 100 rows per command).
         /// When an <see cref="IAmbientDbTransactionAccessor"/> is registered and the calling
         /// <c>DbContext</c> has an open <c>SqlTransaction</c>, writes enroll atomically in
@@ -100,9 +98,8 @@ public static class SetupAuditLogSqlServer
         /// </summary>
         /// <param name="configure">Delegate that configures the provider options with service resolution.</param>
         /// <remarks>
-        /// The provider self-initializes the schema and table on startup (serialized with
-        /// <c>sp_getapplock</c> across replicas) unless
-        /// <see cref="AuditLogStorageOptions.InitializeOnStartup"/> is <see langword="false"/>. Audit rows
+        /// The deployment creates the schema and table with <c>resources provision</c> (serialized with
+        /// <c>sp_getapplock</c> across replicas), and a host start verifies them. Audit rows
         /// are written via batched <c>INSERT … VALUES</c> statements (up to 100 rows per command).
         /// When an <see cref="IAmbientDbTransactionAccessor"/> is registered and the calling
         /// <c>DbContext</c> has an open <c>SqlTransaction</c>, writes enroll atomically in

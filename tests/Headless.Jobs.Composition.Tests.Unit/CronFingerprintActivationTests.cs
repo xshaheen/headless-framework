@@ -1,11 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Frozen;
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Internal;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
@@ -46,13 +45,12 @@ public sealed class CronFingerprintActivationTests : TestBase
                     SnapshotHighWatermarkId = highWatermark,
                 }
             );
-        var hosted = _Create(manager);
+        var barrier = new JobsActivationBarrier();
+        var warmup = _Create(manager, barrier, new SchedulerOptionsBuilder { FingerprintSweepBatchSize = 2 });
 
-        await hosted.DrainFingerprintSnapshotAsync(
-            new SchedulerOptionsBuilder { FingerprintSweepBatchSize = 2 },
-            AbortToken
-        );
+        await warmup.WarmUpAsync(AbortToken);
 
+        barrier.IsActivated.Should().BeTrue();
         await manager.Received(1).RebaseStaleFingerprintsAsync(2, null, null, false, AbortToken);
         await manager.Received(1).RebaseStaleFingerprintsAsync(2, firstCursor, highWatermark, false, AbortToken);
         await manager
@@ -61,35 +59,92 @@ public sealed class CronFingerprintActivationTests : TestBase
     }
 
     [Fact]
-    public async Task should_fail_closed_when_fingerprint_storage_fails()
+    public async Task should_keep_the_barrier_closed_when_fingerprint_storage_fails()
     {
         var manager = Substitute.For<IInternalJobManager>();
         manager
             .RebaseStaleFingerprintsAsync(100, null, null, false, AbortToken)
             .Returns<Task<CronFingerprintSweepResult>>(_ => throw new InvalidOperationException("store unavailable"));
-        var hosted = _Create(manager);
+        var barrier = new JobsActivationBarrier();
+        var warmup = _Create(manager, barrier, new SchedulerOptionsBuilder());
 
-        var act = () => hosted.DrainFingerprintSnapshotAsync(new SchedulerOptionsBuilder(), AbortToken);
+        var act = () => warmup.WarmUpAsync(AbortToken);
 
+        // The failure propagates so the warm-up runner retries it, and it is not published to the waiting loops:
+        // they keep waiting for a drain that succeeds instead of stopping for the host's lifetime.
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("store unavailable");
+        barrier.IsActivated.Should().BeFalse();
+        barrier.WaitAsync(AbortToken).IsCompleted.Should().BeFalse();
     }
 
-    private static JobsInitializationHostedService _Create(IInternalJobManager manager)
+    [Fact]
+    public async Task should_keep_the_barrier_closed_when_a_page_reports_more_rows_without_a_cursor()
     {
-        var services = new ServiceCollection();
-        services.AddSingleton(manager);
-        var provider = services.BuildServiceProvider();
-        return new JobsInitializationHostedService(
-            provider,
-            new JobFunctionRegistry(
-                FrozenDictionary<string, JobFunctionRegistration>.Empty,
-                FrozenDictionary<string, (string, Type)>.Empty,
-                FrozenDictionary<string, JobFunctionDescriptor>.Empty,
-                FrozenDictionary<Type, JobFunctionDescriptor>.Empty,
-                FrozenDictionary<Type, JobFunctionDescriptor>.Empty
-            ),
+        var manager = Substitute.For<IInternalJobManager>();
+        manager
+            .RebaseStaleFingerprintsAsync(100, null, null, false, AbortToken)
+            .Returns(
+                new CronFingerprintSweepResult
+                {
+                    Scanned = 1,
+                    Rebased = 0,
+                    Deferred = 0,
+                    LostFence = 0,
+                    HasMore = true,
+                    NextCursorId = null,
+                }
+            );
+        var barrier = new JobsActivationBarrier();
+        var warmup = _Create(manager, barrier, new SchedulerOptionsBuilder());
+
+        var act = () => warmup.WarmUpAsync(AbortToken);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("Fingerprint sweep reported more rows without a continuation cursor.");
+        barrier.IsActivated.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_not_drain_again_once_activation_completed()
+    {
+        var manager = Substitute.For<IInternalJobManager>();
+        var barrier = new JobsActivationBarrier();
+        barrier.MarkCompleted();
+        var warmup = _Create(manager, barrier, new SchedulerOptionsBuilder());
+
+        await warmup.WarmUpAsync(AbortToken);
+
+        await manager
+            .DidNotReceive()
+            .RebaseStaleFingerprintsAsync(
+                Arg.Any<int>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public void should_gate_the_warmup_readiness_check()
+    {
+        // A host, or a test server waiting for its warm-ups, is ready only once the job loops may select work.
+        var warmup = _Create(
+            Substitute.For<IInternalJobManager>(),
             new JobsActivationBarrier(),
-            NullLogger<JobsInitializationHostedService>.Instance
+            new SchedulerOptionsBuilder()
         );
+
+        ((IWarmup)warmup).GatesReadiness.Should().BeTrue();
+    }
+
+    private static JobsActivationWarmup _Create(
+        IInternalJobManager manager,
+        JobsActivationBarrier barrier,
+        SchedulerOptionsBuilder schedulerOptions
+    )
+    {
+        return new JobsActivationWarmup(manager, schedulerOptions, barrier, NullLogger<JobsActivationWarmup>.Instance);
     }
 }

@@ -141,32 +141,4 @@ public sealed class EntityFrameworkInfrastructureBehaviorTests : TestBase
             .Should()
             .BeEmpty();
     }
-
-    [Fact]
-    public async Task should_fail_with_actionable_error_when_migration_seeder_has_no_context_registration()
-    {
-        await using var provider = new ServiceCollection().BuildServiceProvider();
-        var seeder = new DbMigrationSeeder<UnregisteredDbContext>(provider);
-
-        Func<Task> action = () => seeder.SeedAsync(AbortToken).AsTask();
-
-        var exception = await action.Should().ThrowAsync<InvalidOperationException>();
-        exception.Which.Message.Should().Contain(nameof(UnregisteredDbContext));
-        exception.Which.Message.Should().Contain(nameof(IDbContextFactory<>));
-    }
-
-    [Fact]
-    public void should_register_migration_seeder_once_when_registration_is_repeated()
-    {
-        var services = new ServiceCollection();
-
-        services.AddDbMigrationSeeder<UnregisteredDbContext>();
-        services.AddDbMigrationSeeder<UnregisteredDbContext>();
-
-        using var provider = services.BuildServiceProvider();
-        provider.GetServices<ISeeder>().Should().ContainSingle();
-        provider.GetServices<DbMigrationSeeder<UnregisteredDbContext>>().Should().ContainSingle();
-    }
-
-    private sealed class UnregisteredDbContext(DbContextOptions<UnregisteredDbContext> options) : DbContext(options);
 }

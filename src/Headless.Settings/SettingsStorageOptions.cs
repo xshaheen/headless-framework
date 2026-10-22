@@ -28,14 +28,6 @@ public sealed class SettingsStorageOptions
     /// </summary>
     public string? SettingDefinitionsTableName { get; set; }
 
-    /// <summary>
-    /// When false, the startup storage initializer is skipped (no-op) — use when the schema is
-    /// provisioned out-of-band (migrations job / DBA). The initializer still reports
-    /// IsInitialized=true so dependents that await WaitForInitializationAsync do not block. Only
-    /// affects raw-DDL self-initializing providers; EF-mode storage uses migrations.
-    /// </summary>
-    public bool InitializeOnStartup { get; set; } = true;
-
     /// <summary>Returns the setting values table name to use on a database with <paramref name="style"/>.</summary>
     /// <param name="style">The naming style of the target database.</param>
     /// <returns>The configured name, or the conventional default for <paramref name="style"/>.</returns>
@@ -62,6 +54,5 @@ public sealed class SettingsStorageOptions
         target.Schema = Schema;
         target.SettingValuesTableName = SettingValuesTableName;
         target.SettingDefinitionsTableName = SettingDefinitionsTableName;
-        target.InitializeOnStartup = InitializeOnStartup;
     }
 }

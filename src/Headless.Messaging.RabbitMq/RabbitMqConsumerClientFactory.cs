@@ -39,6 +39,7 @@ internal sealed class RabbitMqConsumerClientFactory(
             channelPool,
             rabbitMqOptions,
             serviceProvider,
+            request.ProvisionsTopology,
             config,
             lane,
             kind: request.Kind

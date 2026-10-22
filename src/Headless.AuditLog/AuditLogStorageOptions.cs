@@ -11,8 +11,8 @@ namespace Headless.AuditLog;
 /// <remarks>
 /// Configure these options via <c>HeadlessAuditLogSetupBuilder.ConfigureStorage</c> inside
 /// the <c>AddHeadlessAuditLog(setup =&gt; …)</c> lambda. The EF Core provider validates the schema
-/// and table name at startup; raw-SQL providers (PostgreSql, SqlServer) self-initialize the DDL
-/// unless <see cref="InitializeOnStartup"/> is set to <see langword="false"/>.
+/// and table name at startup; for the raw-SQL providers (PostgreSql, SqlServer) the deployment creates the table with
+/// <c>resources provision</c>, and a host start verifies it.
 /// </remarks>
 [PublicAPI]
 public sealed class AuditLogStorageOptions
@@ -50,15 +50,6 @@ public sealed class AuditLogStorageOptions
     /// </summary>
     public string? CreatedAtColumnType { get; set; }
 
-    /// <summary>
-    /// When <see langword="false"/>, the startup storage initializer is skipped — use when the schema is
-    /// provisioned out-of-band (migrations job / DBA). The initializer still reports
-    /// <c>IsInitialized = true</c> so dependents that await <c>WaitForInitializationAsync</c>
-    /// do not block. Only affects raw-DDL self-initializing providers; EF-mode storage uses
-    /// EF Core migrations and is not affected by this flag. Default: <see langword="true"/>.
-    /// </summary>
-    public bool InitializeOnStartup { get; set; } = true;
-
     /// <summary>Returns the audit log table name to use on a database with <paramref name="style"/>.</summary>
     /// <param name="style">The naming style of the target database.</param>
     /// <returns>The configured name, or the conventional default for <paramref name="style"/>.</returns>
@@ -78,7 +69,6 @@ public sealed class AuditLogStorageOptions
         target.TableName = TableName;
         target.JsonColumnType = JsonColumnType;
         target.CreatedAtColumnType = CreatedAtColumnType;
-        target.InitializeOnStartup = InitializeOnStartup;
     }
 }
 

@@ -39,7 +39,7 @@ public sealed class ConnectionChannelPoolTests : TestBase
     }
 
     [Fact]
-    public async Task should_declare_both_lane_exchanges_when_channel_created()
+    public async Task should_check_both_lane_exchanges_when_channel_created()
     {
         var connection = Substitute.For<IConnection>();
         var channel = Substitute.For<IChannel>();
@@ -56,12 +56,9 @@ public sealed class ConnectionChannelPoolTests : TestBase
         var rented = await ((IConnectionChannelPool)pool).Rent(AbortToken);
 
         rented.Should().BeSameAs(channel);
-        await channel
-            .Received(1)
-            .ExchangeDeclareAsync("test.exchange.bus", "topic", true, false, null, false, false, AbortToken);
-        await channel
-            .Received(1)
-            .ExchangeDeclareAsync("test.exchange.queue", "direct", true, false, null, false, false, AbortToken);
+        // The deployment's resources provision created them; a publisher only proves they exist.
+        await channel.Received(1).ExchangeDeclarePassiveAsync("test.exchange.bus", AbortToken);
+        await channel.Received(1).ExchangeDeclarePassiveAsync("test.exchange.queue", AbortToken);
         ((IConnectionChannelPool)pool).Return(rented);
     }
 

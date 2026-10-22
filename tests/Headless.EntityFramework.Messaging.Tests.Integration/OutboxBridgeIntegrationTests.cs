@@ -3,7 +3,7 @@
 using System.Diagnostics;
 using Headless.Domain;
 using Headless.EntityFramework;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;

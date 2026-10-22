@@ -151,14 +151,12 @@ public sealed class HeadlessTestServerDeriveTests : TestBase
     }
 
     [Fact]
-    public async Task should_await_initializers_and_readiness_checks_in_the_variant()
+    public async Task should_await_warmups_and_readiness_checks_in_the_variant()
     {
         // given
         var readinessRuns = 0;
-        var initializer = new CountingInitializer();
-        _server = new HeadlessTestServer<Program>(configureTestServices: services =>
-            services.AddSingleton<IInitializer>(initializer)
-        );
+        var warmup = new CountingWarmup();
+        _server = new HeadlessTestServer<Program>(configureTestServices: services => services.AddWarmup(_ => warmup));
         _server.AddReadinessCheck(_ =>
         {
             Interlocked.Increment(ref readinessRuns);
@@ -171,7 +169,7 @@ public sealed class HeadlessTestServerDeriveTests : TestBase
 
         // then
         readinessRuns.Should().Be(2);
-        initializer.Waits.Should().Be(2);
+        warmup.Runs.Should().Be(2);
     }
 
     [Fact]
@@ -223,43 +221,43 @@ public sealed class HeadlessTestServerDeriveTests : TestBase
     public async Task should_surface_variant_initialization_failure()
     {
         // given
-        _server = new HeadlessTestServer<Program>();
+        _server = new HeadlessTestServer<Program>(warmupTimeout: TimeSpan.FromMilliseconds(500));
         await _server.InitializeAsync();
 
         // when
-        var act = async () =>
-            await _server.DeriveAsync(services => services.AddSingleton<IInitializer>(new FaultingInitializer()));
+        var act = async () => await _server.DeriveAsync(services => services.AddWarmup(_ => new FaultingWarmup()));
 
         // then
-        await act.Should().ThrowExactlyAsync<InvalidOperationException>().WithMessage("*FaultingInitializer*");
+        await act.Should()
+            .ThrowExactlyAsync<TimeoutException>()
+            .WithMessage("*Faulting (last error: Initialization failed.)*");
     }
 
     private sealed class BaseMarker;
 
     private sealed class VariantMarker;
 
-    private sealed class CountingInitializer : IInitializer
+    private sealed class CountingWarmup : IWarmup
     {
-        private int _waits;
+        private int _runs;
 
-        public int Waits => Volatile.Read(ref _waits);
+        public int Runs => Volatile.Read(ref _runs);
 
-        public bool IsInitialized => true;
+        public string Name => "Counting";
 
-        public Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
+        public Task WarmUpAsync(CancellationToken cancellationToken)
         {
-            Interlocked.Increment(ref _waits);
+            Interlocked.Increment(ref _runs);
+
             return Task.CompletedTask;
         }
     }
 
-    private sealed class FaultingInitializer : IInitializer
+    private sealed class FaultingWarmup : IWarmup
     {
-        public bool IsInitialized => false;
+        public string Name => "Faulting";
 
-        public Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
-        {
-            return Task.FromException(new InvalidOperationException("Initialization failed."));
-        }
+        public Task WarmUpAsync(CancellationToken cancellationToken) =>
+            Task.FromException(new InvalidOperationException("Initialization failed."));
     }
 }

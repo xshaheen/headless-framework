@@ -83,6 +83,14 @@ internal sealed partial class MaxMindDatabases
         }
     }
 
+    public void Remove(string editionId)
+    {
+        lock (_lock)
+        {
+            _databases.Remove(editionId);
+        }
+    }
+
     private void _LoadExisting(string editionId)
     {
         var path = PathOf(editionId);

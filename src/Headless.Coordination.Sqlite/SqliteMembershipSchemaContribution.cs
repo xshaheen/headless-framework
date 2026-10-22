@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sql.Sqlite;
 
 namespace Headless.Coordination.Sqlite;
@@ -76,13 +76,18 @@ internal static class SqliteMembershipSchemaContribution
                     tablesSql
                 ),
             ],
-            applyOnStartup: providerOptions.InitializeOnStartup,
             // SQLite has no schemas: the schema is a prefix of each table's name, so the stored table is named with it.
             hostStateTables:
             [
                 SqliteDialect.QualifiedName(schema, t.GenerationTableName),
                 SqliteDialect.QualifiedName(schema, t.DescriptorTableName),
                 SqliteDialect.QualifiedName(schema, t.LivenessTableName),
+            ],
+            objects:
+            [
+                SchemaObject.Table(SqliteDialect.QualifiedName(schema, t.GenerationTableName)),
+                SchemaObject.Table(SqliteDialect.QualifiedName(schema, t.DescriptorTableName)),
+                SchemaObject.Table(SqliteDialect.QualifiedName(schema, t.LivenessTableName)),
             ]
         );
     }

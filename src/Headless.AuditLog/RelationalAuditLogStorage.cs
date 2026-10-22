@@ -2,7 +2,8 @@
 
 using FluentValidation;
 using Headless.Context;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting;
+using Headless.Hosting.Schema;
 using Headless.MultiTenancy;
 using Headless.Serializer;
 using Headless.Sql;
@@ -46,8 +47,7 @@ internal static class RelationalAuditLogStorage
             );
         });
 
-        // The contribution factory reads options at first resolution, so InitializeOnStartup keeps its contract:
-        // false keeps the steps out of the runner's apply pass while verify and export still see them.
+        // The contribution factory reads options at first resolution, so configured names reach the steps.
         services.AddHeadlessSchemaContribution(sp =>
             createContribution(
                 sp.GetRequiredService<IOptions<TOptions>>().Value,

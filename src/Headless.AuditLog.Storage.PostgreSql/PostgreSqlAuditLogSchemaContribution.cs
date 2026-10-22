@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sql.PostgreSql;
 
 namespace Headless.AuditLog.PostgreSql;
@@ -97,7 +97,7 @@ internal static class PostgreSqlAuditLogSchemaContribution
                 new SchemaStep(TableStepVersion, "Create the audit log table.", tableSql),
                 new SchemaStep(IndexesStepVersion, "Create the audit log read indexes.", indexesSql),
             ],
-            applyOnStartup: storageOptions.InitializeOnStartup
+            objects: [SchemaObject.Table(tableName)]
         );
     }
 

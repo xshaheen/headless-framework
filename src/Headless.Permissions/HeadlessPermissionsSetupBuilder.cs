@@ -26,22 +26,7 @@ public sealed class HeadlessPermissionsSetupBuilder
 
     internal IList<IPermissionsStorageOptionsExtension> Extensions { get; } = [];
 
-    internal bool RegisterStartupInitializer { get; private set; } = true;
-
     internal bool RegisterPermissionNamePolicies { get; private set; } = true;
-
-    /// <summary>
-    /// Skips the hosted service that seeds static permission definitions into the store and pre-caches dynamic
-    /// ones at startup. Use it on hosts that must not touch the store at startup, such as test hosts and
-    /// read-only replicas; static definitions stay available in memory and every other registration is unchanged.
-    /// </summary>
-    /// <returns>The same builder for chaining.</returns>
-    public HeadlessPermissionsSetupBuilder DisableStartupInitialization()
-    {
-        RegisterStartupInitializer = false;
-
-        return this;
-    }
 
     /// <summary>
     /// Skips registering <see cref="PermissionPolicyProvider"/>, so a defined permission name no
@@ -58,7 +43,7 @@ public sealed class HeadlessPermissionsSetupBuilder
     }
 
     /// <summary>
-    /// Configures shared storage options (schema name, table names, startup initialization flag).
+    /// Configures shared storage options (schema name, table names).
     /// Calls are applied in order and composed with provider-specific defaults.
     /// </summary>
     public HeadlessPermissionsSetupBuilder ConfigureStorage(Action<PermissionsStorageOptions> configure)

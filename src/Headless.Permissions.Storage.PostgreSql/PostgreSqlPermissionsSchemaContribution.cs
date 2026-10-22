@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sql.PostgreSql;
 
 namespace Headless.Permissions.PostgreSql;
@@ -19,11 +19,7 @@ internal static class PostgreSqlPermissionsSchemaContribution
         new PermissionsStorageOptions()
     );
 
-    public static SchemaContribution Create(
-        PostgreSqlPermissionsOptions options,
-        RelationalPermissionsTables tables,
-        bool applyOnStartup
-    )
+    public static SchemaContribution Create(PostgreSqlPermissionsOptions options, RelationalPermissionsTables tables)
     {
         var grantsName = tables.GrantsName;
         var definitionsName = tables.DefinitionsName;
@@ -90,8 +86,13 @@ internal static class PostgreSqlPermissionsSchemaContribution
                 new SchemaStep(TablesStepVersion, "Create the grant, definition, and group tables.", tablesSql),
                 new SchemaStep(IndexesStepVersion, "Create the grant, definition, and group indexes.", indexesSql),
             ],
-            applyOnStartup: applyOnStartup,
-            hostStateTables: [definitionsName, groupsName]
+            hostStateTables: [definitionsName, groupsName],
+            objects:
+            [
+                SchemaObject.Table(groupsName),
+                SchemaObject.Table(definitionsName),
+                SchemaObject.Table(grantsName),
+            ]
         );
     }
 }

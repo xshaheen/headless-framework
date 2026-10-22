@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.Redis;
 using Headless.Testing.Tests;
 using StackExchange.Redis;
@@ -71,6 +72,42 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
     }
 
     [Fact]
+    public async Task should_load_script_on_first_evaluate_when_server_has_no_scripts_and_nothing_was_preloaded()
+    {
+        // given - an empty server script cache and a loader that never ran LoadAsync
+        foreach (var endpoint in fixture.ConnectionMultiplexer.GetEndPoints())
+        {
+            await fixture.ConnectionMultiplexer.GetServer(endpoint).ScriptFlushAsync();
+        }
+
+        using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
+        var db = fixture.ConnectionMultiplexer.GetDatabase();
+        var key = (RedisKey)("loader-evaluate-cold:" + Guid.NewGuid().ToString("N"));
+
+        // when
+        var first = await loader.EvaluateAsync(
+            db,
+            TestSetScriptDefinition.Instance,
+            new { key, value = "1" },
+            cancellationToken: AbortToken
+        );
+        var second = await loader.EvaluateAsync(
+            db,
+            TestSetScriptDefinition.Instance,
+            new { key, value = "2" },
+            cancellationToken: AbortToken
+        );
+
+        // then - the first call loaded the script, and both ran it
+        ((int)first)
+            .Should()
+            .Be(1);
+        ((int)second).Should().Be(1);
+        (await db.StringGetAsync(key)).ToString().Should().Be("2");
+        (await _CachedScriptCountAsync()).Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_recover_via_eval_after_server_script_cache_flush_when_evaluate_async()
     {
         // given — preload + a first eval so the script is cached on the server (EVALSHA path)
@@ -109,6 +146,18 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
         );
 
         ((int)result).Should().Be(1);
+    }
+
+    private async Task<long> _CachedScriptCountAsync()
+    {
+        var multiplexer = fixture.ConnectionMultiplexer;
+        var server = multiplexer.GetServer(multiplexer.GetEndPoints().Single());
+        var info = await server.InfoAsync("memory");
+        var count = info.SelectMany(group => group)
+            .Single(pair => string.Equals(pair.Key, "number_of_cached_scripts", StringComparison.Ordinal))
+            .Value;
+
+        return long.Parse(count, CultureInfo.InvariantCulture);
     }
 
     private sealed class TestReturnOneScriptDefinition : RedisScriptDefinition

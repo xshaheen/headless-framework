@@ -113,7 +113,7 @@ public sealed class RabbitMqRawPayloadTests(RabbitMqFixture fixture) : TestBase
 
         try
         {
-            await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+            await provider.SetupResourcesAndBootstrapAsync(AbortToken);
             var host = new RawHost(
                 provider,
                 name,

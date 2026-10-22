@@ -2,6 +2,7 @@
 
 using Headless.Domain;
 using Headless.EntityFramework;
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
@@ -128,7 +129,10 @@ public abstract class EntityFrameworkOutboxRelayTestsBase : TestBase
 
         try
         {
+            // No host starts here, so nothing sets up the storage's tables or the broker's topology: do it before
+            // bootstrap, as the deployment would.
             await provider.ApplyMessagingSchemaAsync(AbortToken);
+            await provider.ProvisionResourcesAsync(AbortToken);
 
             await using (var scope = provider.CreateAsyncScope())
             {

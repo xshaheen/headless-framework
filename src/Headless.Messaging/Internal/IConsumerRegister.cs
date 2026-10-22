@@ -814,10 +814,18 @@ internal sealed partial class ConsumerRegister(
             var everyInstance = subscriptionKey.Kind is ConsumerSubscriptionKind.EveryInstance;
             var descriptors = match.Value;
 
+            // A runtime subscription carries a handler id; no deploy step knows it, so its client creates its topology.
+            var provisionsTopology = descriptors.Any(static d => d.HandlerId is not null);
+
             ICollection<string> messageNames;
             try
             {
-                await using var client = await _CreateConsumerClientAsync(subscriptionKey, limit, _stoppingCts.Token)
+                await using var client = await _CreateConsumerClientAsync(
+                        subscriptionKey,
+                        limit,
+                        provisionsTopology,
+                        _stoppingCts.Token
+                    )
                     .ConfigureAwait(false);
                 client.AttachCallbacks(onMessage: null, onLog: _WriteLog);
                 messageNames = await client
@@ -888,6 +896,7 @@ internal sealed partial class ConsumerRegister(
                                 var innerClient = await _CreateConsumerClientAsync(
                                         subscriptionKey,
                                         limit,
+                                        provisionsTopology,
                                         groupCts.Token
                                     )
                                     .ConfigureAwait(false);
@@ -964,6 +973,7 @@ internal sealed partial class ConsumerRegister(
     private Task<IConsumerClient> _CreateConsumerClientAsync(
         ConsumerSubscriptionKey subscriptionKey,
         byte groupConcurrent,
+        bool provisionsTopology,
         CancellationToken cancellationToken
     )
     {
@@ -974,7 +984,10 @@ internal sealed partial class ConsumerRegister(
                 subscriptionKey.Lane,
                 subscriptionKey.Kind,
                 _instanceId
-            ),
+            )
+            {
+                ProvisionsTopology = provisionsTopology,
+            },
             cancellationToken
         );
     }
