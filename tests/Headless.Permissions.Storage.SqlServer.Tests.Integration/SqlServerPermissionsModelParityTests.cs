@@ -2,7 +2,7 @@
 
 using Headless.Caching;
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Permissions;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
@@ -93,6 +93,7 @@ public sealed class SqlServerPermissionsModelParityTests(SqlServerPermissionsFix
             setup.UseSqlServer(fixture.ConnectionString);
         });
 
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         return builder.Build();
     }
 

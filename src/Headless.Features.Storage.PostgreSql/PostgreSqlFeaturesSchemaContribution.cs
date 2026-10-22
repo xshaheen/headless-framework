@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sql.PostgreSql;
 
 namespace Headless.Features.PostgreSql;
@@ -19,11 +19,7 @@ internal static class PostgreSqlFeaturesSchemaContribution
         new FeaturesStorageOptions()
     );
 
-    public static SchemaContribution Create(
-        PostgreSqlFeaturesOptions options,
-        RelationalFeaturesTables tables,
-        bool applyOnStartup
-    )
+    public static SchemaContribution Create(PostgreSqlFeaturesOptions options, RelationalFeaturesTables tables)
     {
         var valuesName = tables.ValuesName;
         var definitionsName = tables.DefinitionsName;
@@ -94,8 +90,13 @@ internal static class PostgreSqlFeaturesSchemaContribution
                 new SchemaStep(TablesStepVersion, "Create the value, definition, and group tables.", tablesSql),
                 new SchemaStep(IndexesStepVersion, "Create the value, definition, and group indexes.", indexesSql),
             ],
-            applyOnStartup: applyOnStartup,
-            hostStateTables: [definitionsName, groupsName]
+            hostStateTables: [definitionsName, groupsName],
+            objects:
+            [
+                SchemaObject.Table(groupsName),
+                SchemaObject.Table(definitionsName),
+                SchemaObject.Table(valuesName),
+            ]
         );
     }
 }

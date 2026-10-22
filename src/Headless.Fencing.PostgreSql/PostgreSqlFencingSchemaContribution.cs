@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sql.PostgreSql;
 
 namespace Headless.Fencing.PostgreSql;
@@ -85,7 +85,11 @@ internal static class PostgreSqlFencingSchemaContribution
                     sql
                 ),
             ],
-            applyOnStartup: options.InitializeOnStartup
+            objects:
+            [
+                SchemaObject.Sequence(PostgreSqlFencingSchema.SequenceName),
+                SchemaObject.Table(PostgreSqlFencingSchema.TableName),
+            ]
         );
     }
 }

@@ -1,4 +1,5 @@
 using Demo.Controllers;
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using StackExchange.Redis;
@@ -27,6 +28,10 @@ builder.Services.AddHeadlessMessaging(setup =>
 
     setup.UseDashboard(d => d.WithNoAuth());
 });
+
+// The host start only verifies its tables and queues, so this demo creates them as it starts; a deployed app runs
+// `dotnet <app>.dll resources provision` instead.
+builder.Services.AddDeployStepsOnStartup();
 
 var app = builder.Build();
 

@@ -45,9 +45,8 @@ public static class SetupIdempotencySqlite
         /// <param name="connectionString">The SQLite connection string.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The record table is created at host startup unless
-        /// <see cref="RelationalIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
-        /// call is accepted only on a unit whose SQLite connection reaches this same database.
+        /// The record table is created by <c>resources provision</c> and verified at host start.
+        /// An enlisted call is accepted only on a unit whose SQLite connection reaches this same database.
         /// </remarks>
         /// <exception cref="ArgumentException"><paramref name="connectionString" /> is <see langword="null" /> or whitespace.</exception>
         public HeadlessIdempotencySetupBuilder UseSqlite(string connectionString)
@@ -64,9 +63,8 @@ public static class SetupIdempotencySqlite
         /// <param name="configuration">The configuration section bound to the provider options.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The record table is created at host startup unless
-        /// <see cref="RelationalIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
-        /// call is accepted only on a unit whose SQLite connection reaches the configured database.
+        /// The record table is created by <c>resources provision</c> and verified at host start.
+        /// An enlisted call is accepted only on a unit whose SQLite connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configuration" /> is <see langword="null" />.</exception>
         public HeadlessIdempotencySetupBuilder UseSqlite(IConfiguration configuration)
@@ -82,9 +80,8 @@ public static class SetupIdempotencySqlite
         /// <param name="configure">Delegate that configures the provider options.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The record table is created at host startup unless
-        /// <see cref="RelationalIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
-        /// call is accepted only on a unit whose SQLite connection reaches the configured database.
+        /// The record table is created by <c>resources provision</c> and verified at host start.
+        /// An enlisted call is accepted only on a unit whose SQLite connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
         public HeadlessIdempotencySetupBuilder UseSqlite(Action<SqliteIdempotencyOptions> configure)
@@ -103,9 +100,8 @@ public static class SetupIdempotencySqlite
         /// <param name="configure">Delegate that configures the provider options with service resolution.</param>
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
-        /// The record table is created at host startup unless
-        /// <see cref="RelationalIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
-        /// call is accepted only on a unit whose SQLite connection reaches the configured database.
+        /// The record table is created by <c>resources provision</c> and verified at host start.
+        /// An enlisted call is accepted only on a unit whose SQLite connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
         public HeadlessIdempotencySetupBuilder UseSqlite(Action<SqliteIdempotencyOptions, IServiceProvider> configure)

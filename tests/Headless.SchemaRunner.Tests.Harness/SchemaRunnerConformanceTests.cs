@@ -3,7 +3,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -192,35 +192,108 @@ public abstract class SchemaRunnerConformanceTests(ISchemaRunnerFixture fixture)
     }
 
     [Fact]
-    public async Task should_start_in_apply_mode_and_create_every_feature_table()
+    public async Task should_start_with_resource_setup_and_create_every_feature_table()
     {
         var schema = _Schema("host_apply");
         await fixture.DropSchemaAsync(schema, AbortToken);
-        using var host = fixture.CreateHost(schema, SchemaRunnerMode.Apply);
+        using var host = fixture.CreateHost(schema, setupResources: true);
 
+        // The start succeeding means the startup check found every step the provisioning applied.
         await host.StartAsync(AbortToken);
 
-        host.Services.GetServices<IInitializer>().Should().ContainSingle().Which.IsInitialized.Should().BeTrue();
         (await fixture.CountTablesAsync(schema, AbortToken)).Should().Be(fixture.ExpectedTableCount);
         await host.StopAsync(AbortToken);
         await fixture.DropSchemaAsync(schema, AbortToken);
     }
 
     [Fact]
-    public async Task should_refuse_to_start_in_verify_mode_when_a_step_is_missing()
+    public async Task should_clear_keep_and_tear_down_every_feature_so_setup_recreates_it()
+    {
+        // given
+        var schema = _Schema("resources");
+        await fixture.DropSchemaAsync(schema, AbortToken);
+        using var host = fixture.CreateHost(schema, setupResources: false);
+        await host.Services.ProvisionResourcesAsync(AbortToken);
+
+        // when
+        await host.Services.PurgeResourcesAsync(AbortToken);
+
+        // then: clear deletes rows only, so every table and every history row is still there
+        (await fixture.CountTablesAsync(schema, AbortToken))
+            .Should()
+            .Be(fixture.ExpectedTableCount);
+        (await fixture.CountHistoryRowsAsync(schema, AbortToken)).Should().Be(fixture.ExpectedStepCount);
+
+        // and when
+        await host.Services.DeleteResourcesAsync(AbortToken);
+
+        // then: only the history table is left, and it no longer records the features
+        (await fixture.CountTablesAsync(schema, AbortToken))
+            .Should()
+            .Be(1);
+        (await fixture.CountHistoryRowsAsync(schema, AbortToken)).Should().Be(0);
+
+        // and when: the next setup trusts the emptied history and creates everything again
+        await host.Services.ProvisionResourcesAsync(AbortToken);
+
+        // then
+        (await fixture.CountTablesAsync(schema, AbortToken))
+            .Should()
+            .Be(fixture.ExpectedTableCount);
+        (await fixture.CountHistoryRowsAsync(schema, AbortToken)).Should().Be(fixture.ExpectedStepCount);
+        await fixture.DropSchemaAsync(schema, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_clear_and_tear_down_only_the_features_own_state_and_objects()
+    {
+        // given — another application's table and history row share the schema
+        var schema = _Schema("foreign");
+        await fixture.DropSchemaAsync(schema, AbortToken);
+        using var host = fixture.CreateHost(schema, setupResources: false);
+        await host.Services.ProvisionResourcesAsync(AbortToken);
+        await fixture.AddForeignStateAsync(schema, AbortToken);
+
+        // when
+        await host.Services.PurgeResourcesAsync(AbortToken);
+
+        // then
+        (await fixture.CountForeignRowsAsync(schema, AbortToken))
+            .Should()
+            .Be(1);
+        (await fixture.CountHistoryRowsAsync(schema, ISchemaRunnerFixture.ForeignFeature, AbortToken)).Should().Be(1);
+        (await fixture.CountHistoryRowsAsync(schema, AbortToken)).Should().Be(fixture.ExpectedStepCount + 1);
+
+        // and when
+        await host.Services.DeleteResourcesAsync(AbortToken);
+
+        // then — the catalog, not the declared objects, proves nothing the features created is left
+        (await fixture.ListObjectsAsync(schema, AbortToken))
+            .Should()
+            .BeEquivalentTo(SchemaRunner.HistoryTableName, ISchemaRunnerFixture.ForeignTable);
+        (await fixture.CountForeignRowsAsync(schema, AbortToken)).Should().Be(1);
+        (await fixture.CountHistoryRowsAsync(schema, ISchemaRunnerFixture.ForeignFeature, AbortToken)).Should().Be(1);
+        (await fixture.CountHistoryRowsAsync(schema, AbortToken)).Should().Be(1);
+        await fixture.DropSchemaAsync(schema, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_refuse_to_start_naming_resources_setup_when_a_step_is_missing()
     {
         var schema = _Schema("host_verify");
         await fixture.DropSchemaAsync(schema, AbortToken);
-        using var host = fixture.CreateHost(schema, SchemaRunnerMode.Verify);
+        using var host = fixture.CreateHost(schema, setupResources: false);
 
         var act = () => host.StartAsync(AbortToken);
 
-        (await act.Should().ThrowAsync<SchemaRunnerException>())
-            .Which.Mismatches.Should()
-            .HaveCount(fixture.ExpectedStepCount)
-            .And.OnlyContain(m => m.Kind == SchemaMismatchKind.Missing);
-        host.Services.GetServices<IInitializer>().Single().IsInitialized.Should().BeFalse();
-        (await fixture.CountTablesAsync(schema, AbortToken)).Should().Be(0, "verify mode writes nothing");
+        // One failure per feature, each naming its missing steps and the command that applies them.
+        (await act.Should().ThrowAsync<ResourceProvisioningException>().WithMessage("*resources provision*"))
+            .Which.Failures.Should()
+            .NotBeEmpty()
+            .And.AllSatisfy(failure =>
+                failure.Message.Should().Contain("are not applied").And.Contain("'resources provision'")
+            );
+        (await fixture.CountTablesAsync(schema, AbortToken)).Should().Be(0, "a host start writes nothing");
     }
 
     /// <summary>

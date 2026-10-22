@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Hosting;
 using Headless.IpGeolocation.Internal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -70,8 +71,13 @@ public static class SetupMaxMind
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<MaxMindDatabases>();
             services.TryAddSingleton<MaxMindDownloader>();
+            services.TryAddSingleton<MaxMindDatabaseSync>();
             services.TryAddSingleton<IIpGeolocator, MaxMindIpGeolocator>();
             services.AddHostedService<MaxMindDatabaseUpdater>();
+            services.AddWarmup<MaxMindDatabaseWarmup>();
+            services.AddResourceProvisioner(static provider =>
+                ActivatorUtilities.CreateInstance<MaxMindDatabaseProvisioner>(provider)
+            );
 
             services.AddHttpClient(
                 MaxMindOptions.HttpClientName,

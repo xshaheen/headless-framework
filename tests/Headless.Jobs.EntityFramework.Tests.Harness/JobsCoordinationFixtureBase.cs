@@ -362,6 +362,7 @@ public static partial class JobsCoordinationFixtureExtensions
             builder.Services.AddSingleton(timeProvider);
         }
 
+        builder.Services.AddDeployStepsOnStartup();
         return builder.Build();
     }
 
@@ -529,6 +530,7 @@ public static partial class JobsCoordinationFixtureExtensions
         }
 
         configureServices?.Invoke(builder.Services);
+        builder.Services.AddDeployStepsOnStartup();
         return builder.Build();
     }
 

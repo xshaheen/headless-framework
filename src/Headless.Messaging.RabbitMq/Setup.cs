@@ -5,6 +5,7 @@ using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging;
@@ -132,6 +133,11 @@ public static class SetupMessagingRabbitMq
             services.AddSingleton<IReplyTransport, RabbitMqReplyTransport>();
             services.AddSingleton<IConsumerClientFactory, RabbitMqConsumerClientFactory>();
             services.AddSingleton<IConnectionChannelPool, ConnectionChannelPool>();
+
+            // The shared topology is the deployment's: resources provision creates it, and the transport only checks it.
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<ITransportTopologyProvisioner, RabbitMqTopologyProvisioner>()
+            );
         }
     }
 }

@@ -347,7 +347,7 @@ public async Task should_limit_attempts_with_redis_cache()
 ```
 
 - The variant runs the server's own `configureTestServices`, `configureWebHost`, and `configureHost` first, then the delegates you pass, so it reaches the same containers and your settings win.
-- It awaits every `IInitializer`, runs the server's readiness checks, and supports `ResetDatabaseAsync()` with the server's reset configuration.
+- It waits for the host's warm-ups, runs the server's readiness checks, and supports `ResetDatabaseAsync()` with the server's reset configuration.
 - It shares the server's `TimeProvider`, registered after both sets of service delegates so neither replaces it, so `App.AdvanceTime(...)` moves both hosts' clocks.
 - It is a separate host with its own background services and connection pools. Dispose it at the end of the test; disposing it never stops the shared server. Settings that are additive, such as an extra controller, belong in the shared server's own configuration instead, because every variant costs a host startup.
 - The server must be initialized first; `DeriveAsync` throws `InvalidOperationException` otherwise.
@@ -401,7 +401,7 @@ The same caveat applies to other databases with sub-tick storage precision (MySQ
 | `configureTestServices` | `Action<IServiceCollection>?` | `null` | Additional DI registrations layered on top of the application's own `ConfigureTestServices`. |
 | `configureWebHost` | `Action<IWebHostBuilder>?` | `null` | Additional web host configuration (e.g., environment, configuration sources). |
 | `configureHost` | `Action<IHostBuilder>?` | `null` | Generic host configuration with no web host equivalent (service provider options, host options, `IHostBuilder` logging providers). Runs just before the host is built. |
-| `initializerTimeout` | `TimeSpan?` | 60 s | Per-`IInitializer` wait budget before a `TimeoutException` is thrown. |
+| `warmupTimeout` | `TimeSpan?` | 60 s | How long the host may take to finish the warm-ups that gate readiness before a `TimeoutException` names each pending one. |
 | `AddReadinessCheck(check, timeout)` | fluent | 30 s per check | Registers a post-startup readiness probe. Must be called before `InitializeAsync()`. |
 | `ConfigureDatabaseReset(configure)` | fluent | (disabled) | Opts into Respawner-based DB reset. Must be called before `InitializeAsync()`. |
 | `ResetDatabaseAsync(cancellationToken)` | `Task` | active xUnit test token | Resets database state and retries transient database or transport failures up to three times. |

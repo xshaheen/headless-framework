@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sql.SqlServer;
 
 namespace Headless.Features.SqlServer;
@@ -18,11 +18,7 @@ internal static class SqlServerFeaturesSchemaContribution
         new FeaturesStorageOptions()
     );
 
-    public static SchemaContribution Create(
-        SqlServerFeaturesOptions options,
-        RelationalFeaturesTables tables,
-        bool applyOnStartup
-    )
+    public static SchemaContribution Create(SqlServerFeaturesOptions options, RelationalFeaturesTables tables)
     {
         var valuesName = tables.ValuesName;
         var definitionsName = tables.DefinitionsName;
@@ -108,8 +104,13 @@ internal static class SqlServerFeaturesSchemaContribution
             [
                 new SchemaStep(StepVersion, "Create the value, definition, and group tables and their indexes.", sql),
             ],
-            applyOnStartup: applyOnStartup,
-            hostStateTables: [definitionsName, groupsName]
+            hostStateTables: [definitionsName, groupsName],
+            objects:
+            [
+                SchemaObject.Table(groupsName),
+                SchemaObject.Table(definitionsName),
+                SchemaObject.Table(valuesName),
+            ]
         );
     }
 }

@@ -85,7 +85,7 @@ internal sealed class RequestReplyConformanceHost : IAsyncDisposable
     {
         try
         {
-            await services.GetRequiredService<IBootstrapper>().BootstrapAsync(cancellationToken);
+            await services.SetupResourcesAndBootstrapAsync(cancellationToken);
             return new RequestReplyConformanceHost(services);
         }
         catch

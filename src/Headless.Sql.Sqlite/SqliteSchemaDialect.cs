@@ -3,7 +3,7 @@
 using System.Data.Common;
 using System.Globalization;
 using Headless.Checks;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Microsoft.Data.Sqlite;
 
 namespace Headless.Sql.Sqlite;
@@ -183,6 +183,31 @@ public sealed class SqliteSchemaDialect : ISchemaDialect
     {
         return exception is SqliteException { SqliteErrorCode: SqliteErrors.Error } e
             && e.Message.Contains("no such table", StringComparison.Ordinal);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>The table name carries the schema prefix, as the contribution declares it.</remarks>
+    public string DeleteRowsSql(string schema, string table)
+    {
+        return $"DELETE FROM {SqliteDialect.Instance.Quote(table)};";
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// SQLite has no sequences: a declared sequence is the one-row table that stands in for one, so it is dropped as a
+    /// table.
+    /// </remarks>
+    public string DropObjectSql(string schema, SchemaObject schemaObject)
+    {
+        Argument.IsNotNull(schemaObject);
+
+        return $"DROP TABLE IF EXISTS {SqliteDialect.Instance.Quote(schemaObject.Name)};";
+    }
+
+    /// <inheritdoc />
+    public string DeleteFeatureHistorySql(string schema)
+    {
+        return $"DELETE FROM {_History(schema)} WHERE feature = @Feature;";
     }
 
     private string _History(string schema)

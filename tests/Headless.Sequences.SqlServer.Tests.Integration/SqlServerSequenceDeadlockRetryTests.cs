@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting;
 using Headless.Sequences;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
@@ -104,6 +105,9 @@ public sealed class SqlServerSequenceDeadlockRetryTests(SqlServerSequencesFixtur
                 options.Schema = _Schema;
             })
         );
+
+        // A host start only verifies the schema, so the test host creates it first, as a development host does.
+        services.AddDeployStepsOnStartup(o => o.Seed = false);
 
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 

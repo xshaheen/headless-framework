@@ -75,6 +75,7 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
             );
         });
 
+        builder.Services.AddDeployStepsOnStartup();
         using var host = builder.Build();
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync<ApplicationContext>(host, AbortToken);
         await host.StartAsync(AbortToken);
@@ -122,6 +123,7 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
             );
         });
 
+        builder.Services.AddDeployStepsOnStartup();
         using var host = builder.Build();
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync<ApplicationContext>(host, AbortToken);
         await host.StartAsync(AbortToken);
@@ -205,6 +207,7 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
             );
         });
 
+        builder.Services.AddDeployStepsOnStartup();
         using var host = builder.Build();
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync<HeadlessApplicationContext>(host, AbortToken);
         await host.StartAsync(AbortToken);
@@ -263,6 +266,7 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
             );
         });
 
+        builder.Services.AddDeployStepsOnStartup();
         using var host = builder.Build();
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync<TContext>(host, AbortToken);
         await host.StartAsync(AbortToken);
@@ -347,6 +351,7 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
             fixture.ConfigureMessagingStorage(messaging);
         });
 
+        builder.Services.AddDeployStepsOnStartup();
         using var host = builder.Build();
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync<TContext>(host, AbortToken);
         await host.StartAsync(AbortToken);

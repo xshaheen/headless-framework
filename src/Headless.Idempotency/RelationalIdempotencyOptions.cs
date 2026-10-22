@@ -26,14 +26,6 @@ public abstract class RelationalIdempotencyOptions
     /// </summary>
     public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
-    /// <summary>
-    /// Gets or sets whether the schema, record table, index, and generation sequence are created at host startup when
-    /// missing. Default: <see langword="true" />. Set it to <see langword="false" /> when a migration tool owns them;
-    /// the provider never creates them lazily inside a call, because DDL inside a caller's transaction would roll back
-    /// with it.
-    /// </summary>
-    public bool InitializeOnStartup { get; set; } = true;
-
     internal int CommandTimeoutSeconds => (int)Math.Ceiling(CommandTimeout.TotalSeconds);
 }
 

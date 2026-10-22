@@ -228,6 +228,10 @@ public static class SetupJobs
         optionInstance.LockRegistrationAction?.Invoke(services);
         services.TryAddKeyedSingleton<IDistributedLock, NullDistributedLock>(JobsKeys.LockProvider);
 
+        // Code-declared cron rows and the UseJobsSeeder delegates: written only when the application opts in to
+        // seeding (the seed verb or AddDeployStepsOnStartup), never by the activation pipeline below.
+        services.AddSeeder<JobsSeeder>();
+
         // The activation gate itself — registered before every service that signals or waits on it. Registration order
         // of the hosted services below is a readability convention only; the barrier is the actual ordering guarantee,
         // because HostOptions.ServicesStartConcurrently lets a consuming host start all of them at once.
@@ -235,8 +239,15 @@ public static class SetupJobs
         {
             services.AddSingleton<JobsActivationBarrier>();
 
-            // Core initialization — opens the activation barrier when its drain completes.
+            // Core initialization — the cheap checks run inside the host start.
             services.AddHostedService<JobsInitializationHostedService>();
+
+            // The fingerprint drain runs after the start and opens the barrier once it completes; a host without job
+            // loops has nothing to drain, so its initializer opens the barrier instead.
+            if (optionInstance.RegisterBackgroundServices)
+            {
+                services.AddWarmup<JobsActivationWarmup>();
+            }
         }
         else
         {

@@ -2,6 +2,7 @@
 
 using Headless.AuditLog;
 using Headless.EntityFramework;
+using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -222,6 +223,7 @@ public sealed class SqlServerAuditLogMissingTransactionTests(SqlServerAuditLogFi
             setup.UseSqlServer(fixture.ConnectionString);
         });
 
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         var host = builder.Build();
         await host.StartAsync(AbortToken);
 

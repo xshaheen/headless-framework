@@ -41,20 +41,34 @@ namespace Headless.Testing.AspNetCore;
 /// host options, or a logging provider that plugs into <see cref="IHostBuilder"/>. Runs after
 /// <paramref name="configureWebHost"/>, just before the host is built.
 /// </param>
-/// <param name="initializerTimeout">How long each <see cref="IInitializer"/> may take. Defaults to 60 seconds.</param>
+/// <param name="warmupTimeout">
+/// How long the host may take to finish the warm-ups that gate its readiness. Defaults to 60 seconds.
+/// </param>
+/// <param name="setupResources">
+/// Whether the host provisions its resources (tables, queues, containers) when it starts, as
+/// <c>AddDeployStepsOnStartup</c> does. Defaults to <see langword="true"/>, because a host start otherwise
+/// only verifies them. An application that registers the startup deploy steps itself keeps its own choice. Pass
+/// <see langword="false"/> for a test whose resources already exist or that tests the check.
+/// </param>
+/// <param name="seed">
+/// Whether the host runs its seeders when it starts, as <c>AddDeployStepsOnStartup</c> does, so definitions and
+/// scheduled jobs exist before the tests run. Defaults to <see langword="true"/>.
+/// </param>
 [PublicAPI]
 public sealed class HeadlessTestServer<TProgram>(
     Action<IServiceCollection>? configureTestServices = null,
     Action<IWebHostBuilder>? configureWebHost = null,
     Action<IHostBuilder>? configureHost = null,
-    TimeSpan? initializerTimeout = null
+    TimeSpan? warmupTimeout = null,
+    bool setupResources = true,
+    bool seed = true
 ) : IAsyncLifetime
     where TProgram : class
 {
     private readonly Action<IServiceCollection>? _configureTestServices = configureTestServices;
     private readonly Action<IWebHostBuilder>? _configureWebHost = configureWebHost;
     private readonly Action<IHostBuilder>? _configureHost = configureHost;
-    private readonly TimeSpan _initializerTimeout = initializerTimeout ?? TimeSpan.FromSeconds(60);
+    private readonly TimeSpan _warmupTimeout = warmupTimeout ?? TimeSpan.FromSeconds(60);
     private readonly List<(Func<IServiceProvider, Task> Check, TimeSpan Timeout)> _readinessChecks = [];
     private Action<DatabaseResetOptions>? _configureDatabaseReset;
     private readonly SemaphoreSlim _initGate = new(1, 1);
@@ -183,7 +197,7 @@ public sealed class HeadlessTestServer<TProgram>(
     /// <summary>
     /// Starts a second server for the same application with extra settings layered on this server's configuration,
     /// for a test that needs the host configured differently. The variant gets the same lifecycle guarantees as this
-    /// server: it awaits every <see cref="IInitializer"/>, runs this server's readiness checks, and supports
+    /// server: it waits for the host's warm-ups, runs this server's readiness checks, and supports
     /// <see cref="ResetDatabaseAsync"/> with this server's reset configuration.
     /// </summary>
     /// <remarks>
@@ -211,7 +225,7 @@ public sealed class HeadlessTestServer<TProgram>(
     /// </exception>
     /// <exception cref="ObjectDisposedException">Thrown when this server has been disposed.</exception>
     /// <exception cref="TimeoutException">
-    /// Thrown when an <c>IInitializer</c> or a readiness check of the variant does not complete in time.
+    /// Thrown when the variant's warm-ups or a readiness check of the variant do not complete in time.
     /// </exception>
     public async Task<HeadlessTestServer<TProgram>> DeriveAsync(
         Action<IServiceCollection>? configureTestServices = null,
@@ -246,7 +260,9 @@ public sealed class HeadlessTestServer<TProgram>(
                 baseConfigureHost?.Invoke(builder);
                 configureHost?.Invoke(builder);
             },
-            _initializerTimeout
+            _warmupTimeout,
+            setupResources,
+            seed
         )
         {
             _sharedClock = TimeProvider,
@@ -458,10 +474,10 @@ public sealed class HeadlessTestServer<TProgram>(
 
     /// <summary>Starts the test host, registers the fake time provider, and runs readiness checks.</summary>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when an <c>IInitializer</c> faults, or when <see cref="DisposeAsync"/> has already been called.
+    /// Thrown when <see cref="DisposeAsync"/> has already been called.
     /// </exception>
     /// <exception cref="TimeoutException">
-    /// Thrown when an <c>IInitializer</c> or a registered readiness check does not complete
+    /// Thrown when the host's warm-ups or a registered readiness check do not complete
     /// within its configured timeout.
     /// </exception>
     public async ValueTask InitializeAsync()
@@ -489,7 +505,14 @@ public sealed class HeadlessTestServer<TProgram>(
             }
 
 #pragma warning disable CA2000 // Ownership transferred to _factory on success; finally disposes on failure
-            factory = new ServerFactory(_configureTestServices, _configureWebHost, _configureHost, _sharedClock);
+            factory = new ServerFactory(
+                _configureTestServices,
+                _configureWebHost,
+                _configureHost,
+                _sharedClock,
+                setupResources,
+                seed
+            );
 #pragma warning restore CA2000
 
             // Force host startup — triggers ConfigureTestServices
@@ -497,31 +520,21 @@ public sealed class HeadlessTestServer<TProgram>(
 
             TimeProvider = factory.Services.GetRequiredService<TimeProvider>();
 
-            // Await all IInitializer services (e.g. settings/permissions/features sync)
-            var initializers = factory.Services.GetServices<IInitializer>();
-
-            foreach (var initializer in initializers)
+            // Wait for the warm-ups that gate readiness (definition caches, the topology check, Jobs activation), so a
+            // test starts on the same host an orchestrator would send traffic to.
+            using (var cts = new CancellationTokenSource(_warmupTimeout))
             {
-                using var cts = new CancellationTokenSource(_initializerTimeout);
-
                 try
                 {
-                    await initializer.WaitForInitializationAsync(cts.Token).ConfigureAwait(false);
+                    await factory.Services.WaitForWarmupAsync(cts.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException ex) when (cts.IsCancellationRequested)
                 {
                     throw new TimeoutException(
                         string.Create(
                             CultureInfo.InvariantCulture,
-                            $"Initializer '{initializer.GetType().Name}' did not complete within {_initializerTimeout.TotalSeconds:F0}s."
+                            $"The host did not finish warming up within {_warmupTimeout.TotalSeconds:F0}s: {ex.Message}"
                         ),
-                        ex
-                    );
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    throw new InvalidOperationException(
-                        $"Initializer '{initializer.GetType().Name}' faulted during test initialization.",
                         ex
                     );
                 }
@@ -608,7 +621,9 @@ public sealed class HeadlessTestServer<TProgram>(
         Action<IServiceCollection>? configureTestServices,
         Action<IWebHostBuilder>? configureWebHost,
         Action<IHostBuilder>? configureHost,
-        TimeProvider? sharedClock
+        TimeProvider? sharedClock,
+        bool setupResources,
+        bool seed
     ) : WebApplicationFactory<TProgram>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -619,6 +634,19 @@ public sealed class HeadlessTestServer<TProgram>(
                 if (sharedClock is null)
                 {
                     services.AddTestTimeProvider();
+                }
+
+                // A TryAdd, so the deploy steps the application registered (ProvisionAndPurge, say) stay; and before
+                // configureTestServices, so a test that asks for other steps replaces these.
+                if (setupResources || seed)
+                {
+                    services.TryAddDeployStepsOnStartup(options =>
+                    {
+                        options.Resources = setupResources
+                            ? ResourceStartupAction.Provision
+                            : ResourceStartupAction.None;
+                        options.Seed = seed;
+                    });
                 }
 
                 configureTestServices?.Invoke(services);

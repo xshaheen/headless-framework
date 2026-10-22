@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
@@ -209,9 +210,10 @@ public abstract class MessagingIntegrationHostTestsBase : TestBase
         _serviceProvider = services.BuildServiceProvider();
         _testScope = _serviceProvider.CreateAsyncScope();
 
-        // No host starts here, so the hosted schema runner never runs: apply the storage's schema before bootstrap,
-        // as a host would.
+        // No host starts here, so nothing sets up the storage's tables or the broker's topology: do it before
+        // bootstrap, as the deployment would.
         await _serviceProvider.ApplyMessagingSchemaAsync(AbortToken);
+        await _serviceProvider.ProvisionResourcesAsync(AbortToken);
 
         // Bootstrap the messaging system
         await Bootstrapper.BootstrapAsync(AbortToken);

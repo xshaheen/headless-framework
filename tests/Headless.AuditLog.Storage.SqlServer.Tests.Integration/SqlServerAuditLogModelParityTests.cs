@@ -6,6 +6,7 @@ using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Tests;
@@ -81,6 +82,7 @@ public sealed class SqlServerAuditLogModelParityTests(SqlServerAuditLogFixture f
             setup.UseSqlServer(fixture.ConnectionString);
         });
 
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         return builder.Build();
     }
 

@@ -12,8 +12,8 @@ namespace Headless.Permissions;
 public sealed class PermissionManagementOptions
 {
     /// <summary>
-    /// When <see langword="true"/> (the default), the application persists its static permission definitions to
-    /// the database on startup via <see cref="IDynamicPermissionDefinitionStore.SaveAsync"/> so other
+    /// When <see langword="true"/> (the default), the <c>PermissionDefinitions</c> seeder persists the static
+    /// permission definitions to the database via <see cref="IDynamicPermissionDefinitionStore.SaveAsync"/> so other
     /// instances can read them through the dynamic store.
     /// </summary>
     public bool SaveStaticPermissionsToDatabase { get; set; } = true;
@@ -23,6 +23,10 @@ public sealed class PermissionManagementOptions
     /// read operations return empty/null without hitting the database. Set to <see langword="true"/> to enable
     /// DB-backed dynamic permissions.
     /// </summary>
+    /// <remarks>
+    /// When enabled, the <c>PermissionDefinitions</c> warm-up loads the dynamic definitions after the host starts, and
+    /// the host reports not ready until that load succeeds.
+    /// </remarks>
     public bool IsDynamicPermissionStoreEnabled { get; set; }
 
     /// <summary>

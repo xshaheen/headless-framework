@@ -198,7 +198,7 @@ Applications reach it through a provider package, as shown in [Orientation](#ori
 - `IIdempotencyRecordStore` is the provider seam. Applications do not call it.
 - The PostgreSQL and SQL Server providers share one record store, written once against the `Headless.Sql` dialect kit. Lock and lock-or-insert are a locking read (`FOR NO KEY UPDATE` / `UPDLOCK, HOLDLOCK, ROWLOCK`) followed by a database-clock read in a statement of its own, so retention and lease are judged on a clock read after the lock wait; an absent record is then inserted by a statement that cannot raise a duplicate-key error inside a caller's transaction. Admit, complete, release, recovery point, and renewal are each one fenced transition: a single conditional `UPDATE` whose `WHERE` is the fence (an admission: no live attempt holds the record; the others: pending at this generation; a renewal also: lease unexpired by the database clock), so the check and the write cannot disagree. An admission draws its generation from the store-wide sequence in that `UPDATE`'s own assignment, so a generation is drawn only for an admission that applies and only after the row is locked. Retention is set to the later of the stored value and the database clock plus the retention.
 - Renewal, peek, and purge run on their own connection in a READ COMMITTED transaction they commit, and retry a transient fault raised before the commit (a deadlock, a serialization conflict, a lock timeout, a dropped connection) in a fresh transaction up to 3 attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`). A fault from the commit is never retried; see the kit's [retry rule](sql.md#store-statement-kit-for-provider-authors). Enlisted calls never retry.
-- `PostgreSqlIdempotencyOptions` and `SqlServerIdempotencyOptions` both derive from `RelationalIdempotencyOptions`, which carries `ConnectionString`, `CommandTimeout`, and `InitializeOnStartup`. Each provider contributes its sequence, table, and index as one schema step, in its own SQL; the store only reads and writes rows.
+- `PostgreSqlIdempotencyOptions` and `SqlServerIdempotencyOptions` both derive from `RelationalIdempotencyOptions`, which carries `ConnectionString` and `CommandTimeout`. Each provider contributes its sequence, table, and index as one schema step, in its own SQL; the store only reads and writes rows.
 - An optimistic provider (one that checks at write time instead of locking at read time, such as the cache provider) throws `IdempotencyRecordConflictException` from a write another caller beat. The autonomous `AdmitAsync`, `CompleteAsync`, `SetRecoveryPointAsync`, and `ReleaseAsync` then run again, whole, in a fresh owned unit, at most 8 attempts with no delay between them. The locking providers never throw it.
 
 ---
@@ -294,7 +294,6 @@ The parameterless overloads and the shared `headless` schema are described in [s
 | --- | --- | --- |
 | `ConnectionString` | required | The database that holds the records; an enlisted call is accepted only on a unit whose connection reaches it |
 | `CommandTimeout` | 30 seconds | Also bounds how long a concurrent admission of the same key waits behind an open enlisted admission, fence, or completion |
-| `InitializeOnStartup` | `true` | When `false`, the application creates the schema, the `idempotency_record_generations` sequence, the `idempotency_records` table, and its index |
 
 ### Design and runtime behavior
 
@@ -302,7 +301,7 @@ The parameterless overloads and the shared `headless` schema are described in [s
 - Every decision reads `clock_timestamp()` after the row lock, captured once per statement in a `MATERIALIZED` CTE — never `now()`, which is frozen at transaction start and would keep an expired lease looking live inside a long enlisted unit. `nextval()` runs only in a statement after the lock is held.
 - The autonomous path begins an owned unit through `IIdempotencyRecordStore.BeginOwnedUnitAsync` at READ COMMITTED; the enlisted path runs on the unit's own connection and transaction with no retry.
 - Autonomous renewal, peek, and purge retry a transient fault raised before the commit, including a deadlock or serialization failure (`40P01`, `40001`) and anything Npgsql reports as transient. The purge skips locked rows with `FOR UPDATE … SKIP LOCKED`.
-- The sequence, table, and index are one step the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one advisory lock per database shared with every other Headless feature, recorded as `Idempotency/1`.
+- The sequence, table, and index are one step `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), under one advisory lock per database shared with every other Headless feature, recorded as `Idempotency/1`. A host start only verifies the step and fails fast when it is missing; see [Resource provisioning](utilities.md#resource-provisioning).
 
 ---
 
@@ -329,7 +328,6 @@ The parameterless overloads and the shared `headless` schema are described in [s
 | --- | --- | --- |
 | `ConnectionString` | required | The database that holds the records; an enlisted call is accepted only on a unit whose connection reaches it. Name the database explicitly (`Initial Catalog`) |
 | `CommandTimeout` | 30 seconds | Also bounds how long a concurrent admission of the same key waits behind an open enlisted admission, fence, or completion |
-| `InitializeOnStartup` | `true` | When `false`, the application creates the schema, the `IdempotencyRecordGenerations` sequence, the `IdempotencyRecords` table, and its index |
 
 ### Design and runtime behavior
 
@@ -338,7 +336,7 @@ The parameterless overloads and the shared `headless` schema are described in [s
 - Each deciding statement captures `SYSUTCDATETIME()` into a variable after the locking read, because SQL Server evaluates it when a statement starts, before any lock wait. `NEXT VALUE FOR` runs only in the admission's `UPDATE` assignment, after the lock is held.
 - The autonomous path begins an owned unit through `IIdempotencyRecordStore.BeginOwnedUnitAsync` at READ COMMITTED; the enlisted path runs on the unit's own connection and transaction with no retry.
 - Autonomous renewal, peek, and purge retry a transient fault raised before the commit, including a deadlock or snapshot update conflict (1205, 3960), a lock timeout (1222), and the connection faults EF Core's SQL Server retry set covers. The purge skips locked rows with `UPDLOCK, READPAST, ROWLOCK, READCOMMITTEDLOCK`: `READPAST` is refused under read committed snapshot isolation unless the read also takes locks, and the hint is the default without it, so the same statement works either way.
-- The sequence, table, and index are one step the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one `sp_getapplock` per database shared with every other Headless feature, recorded as `Idempotency/1`.
+- The sequence, table, and index are one step `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), under one `sp_getapplock` per database shared with every other Headless feature, recorded as `Idempotency/1`.
 
 ---
 
@@ -365,7 +363,6 @@ Use a database file: the store and the schema runner open their own connections,
 | --- | --- | --- |
 | `ConnectionString` | required | The database file that holds the records; an enlisted call is accepted only on a SQLite unit whose connection reaches the same file |
 | `CommandTimeout` | 30 seconds | Also bounds how long a call waits for another writer's database lock |
-| `InitializeOnStartup` | `true` | When `false`, the application creates the `<schema>_idempotency_record_generations` sequence table, the `<schema>_idempotency_records` table, its index, and its two generation triggers |
 
 ### Design and runtime behavior
 
@@ -373,7 +370,7 @@ Use a database file: the store and the schema runner open their own connections,
 - The verbs are the shared relational store's (see [Headless.Idempotency](#headlessidempotency)). Every transaction begins `IMMEDIATE` and holds the database write lock, which stands in for the row lock: admissions, fences, and completions of every key serialize on the file. A peek runs in a deferred transaction that takes no write lock, so it reads the last committed record without waiting on a writer.
 - The generation sequence is a one-row table. The admission's `UPDATE` reads one past its value, and triggers on the record table raise it to every generation written, in the same statement. A purge deletes records, never the sequence row, so a key admitted again after its record was purged still gets a higher generation.
 - `SQLITE_BUSY` before the commit (another writer held the database past the connection's `Default Timeout`) is retried in a fresh transaction, like a lock timeout on the other providers. The wait holds a thread-pool thread; see [sql.md § SQLite in the kit](sql.md#sqlite-in-the-kit).
-- The sequence table, record table, index, and triggers are one step the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, recorded as `Idempotency/1`.
+- The sequence table, record table, index, and triggers are one step `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), recorded as `Idempotency/1`.
 
 ---
 

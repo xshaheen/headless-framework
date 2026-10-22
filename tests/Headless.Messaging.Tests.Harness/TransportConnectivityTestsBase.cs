@@ -2,6 +2,7 @@
 
 using System.Net;
 using System.Net.Sockets;
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
@@ -77,6 +78,7 @@ public abstract class TransportConnectivityTestsBase : TestBase
             await using var provider = services.BuildServiceProvider();
             var bootstrapper = provider.GetRequiredService<IBootstrapper>();
             var connectivity = provider.GetRequiredService<TransportConnectivity>();
+            await provider.ProvisionResourcesAsync(AbortToken);
             await bootstrapper.BootstrapAsync(AbortToken);
             connectivity.IsReachable.Should().BeTrue("the host just reached the broker to subscribe");
 

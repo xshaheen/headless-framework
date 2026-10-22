@@ -123,7 +123,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 
         await foreach (var blob in _storage.GetBlobsAsync(new BlobQuery(ContainerName), "*.xml").ConfigureAwait(false))
         {
-            // The startup write probe's sentinel is reserved and never part of the key ring; if a crash left one
+            // The write probe's sentinel is reserved and never part of the key ring; if a crash left one
             // behind (upload succeeded, delete did not), skip it so it cannot corrupt or warn key-ring loading.
             if (string.Equals(blob.BlobKey, WriteProbeBlobName, StringComparison.OrdinalIgnoreCase))
             {
@@ -304,7 +304,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     /// <summary>
     /// Verifies write access to the <c>DataProtection</c> container by uploading and deleting a reserved sentinel
     /// blob (<see cref="WriteProbeBlobName"/>) through the exact ensure + resilience pipeline the key writes use.
-    /// This is how startup validation exercises the write path even when the key ring already holds a valid key —
+    /// This is how key-ring validation exercises the write path even when the key ring already holds a valid key —
     /// a state in which the protect/unprotect round-trip performs no write and lost write permission would
     /// otherwise stay hidden until the ~90-day key rotation.
     /// </summary>

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sql.PostgreSql;
 
 namespace Headless.Sequences.PostgreSql;
@@ -41,7 +41,7 @@ internal static class PostgreSqlSequencesSchemaContribution
             createConnection: () => dialect.CreateConnection(options.ConnectionString),
             schema: options.Schema,
             steps: [new SchemaStep(StepVersion, "Create the counter table.", sql)],
-            applyOnStartup: options.InitializeOnStartup
+            objects: [SchemaObject.Table(options.TableName)]
         );
     }
 }

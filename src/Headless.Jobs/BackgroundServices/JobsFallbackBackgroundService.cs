@@ -58,7 +58,7 @@ internal sealed class JobsFallbackBackgroundService(
 
         // Same activation gate as the main scheduler loop: RunTimedOutTickers re-queues and dispatches cron
         // occurrences, so it must not select before the fingerprint drain has published one stable snapshot. The
-        // barrier — not hosted-service registration order — is what holds under HostOptions.ServicesStartConcurrently.
+        // barrier — not hosted-service start order — is what holds while the drain runs after the host start.
         Exception? activationFailure;
         try
         {

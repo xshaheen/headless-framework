@@ -4,26 +4,30 @@ namespace Headless.Jobs.Internal;
 
 /// <summary>
 /// One-shot startup gate that holds every loop able to select or claim cron work until
-/// <c>JobsInitializationHostedService</c> has drained one stable fingerprint snapshot.
+/// <c>JobsActivationWarmup</c> has drained one stable fingerprint snapshot.
 /// </summary>
 /// <remarks>
-/// <b>Hosted-service registration order is not the guarantee.</b> A consuming application may set
-/// <c>HostOptions.ServicesStartConcurrently</c>, which starts every hosted service
-/// at once; the scheduler would then begin dispatch selection while the activation drain is still running and could
-/// dispatch a uninitialized or stale-fingerprint definition under an unverified schedule interpretation — defeating the
-/// activation gate outright. This barrier makes the ordering explicit and independent of how the host starts services.
+/// <b>Hosted-service start order is not the guarantee.</b> The drain runs in the background after the host has
+/// started, and a consuming application may also set <c>HostOptions.ServicesStartConcurrently</c>; either way the
+/// scheduler can reach its first dispatch selection while the drain is still running and could dispatch a
+/// uninitialized or stale-fingerprint definition under an unverified schedule interpretation — defeating the activation
+/// gate outright. This barrier makes the ordering explicit and independent of how the host starts services.
 /// <para>
-/// <b>Failure is a result, not a fault.</b> The activation exception is carried as the wait's value rather than as a
-/// faulted task: the initializer already propagates it out of <c>StartAsync</c> (which aborts host startup), so waiters
-/// need to observe the failure and stay closed, not raise a second exception out of a background loop — and a faulted
-/// task nothing awaits (background services disabled, or the host aborting before any loop reaches its wait) would
-/// surface later as an unobserved task exception.
+/// <b>A failed drain is not a signal.</b> It leaves the barrier closed and the warm-up runner retries it, so waiters keep
+/// waiting rather than give up on a transient store outage.
+/// </para>
+/// <para>
+/// <b>A failed start is a result, not a fault.</b> When <c>JobsInitializationHostedService</c> rejects the configuration
+/// it carries the exception as the wait's value rather than as a faulted task: the initializer already propagates it
+/// out of <c>StartAsync</c> (which aborts host startup), so waiters need to observe the failure and stay closed, not
+/// raise a second exception out of a background loop — and a faulted task nothing awaits (background services
+/// disabled, or the host aborting before any loop reaches its wait) would surface later as an unobserved task exception.
 /// </para>
 /// </remarks>
 internal sealed class JobsActivationBarrier
 {
-    // RunContinuationsAsynchronously: the signal is raised from inside the initializer's StartAsync, so synchronous
-    // continuations would run every parked scheduler loop's first pass inline on the host-startup thread.
+    // RunContinuationsAsynchronously: the signal is raised from inside the initializer's StartAsync or the warm-up run,
+    // so synchronous continuations would run every parked loop's first pass inline on the signalling thread.
     private readonly TaskCompletionSource<Exception?> _activated = new(
         TaskCreationOptions.RunContinuationsAsynchronously
     );

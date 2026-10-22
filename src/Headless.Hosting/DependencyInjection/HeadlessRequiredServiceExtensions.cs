@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Hosting;
 
 /// <summary>
 /// Declares services that a feature consumes but does not register itself, so the host fails at startup

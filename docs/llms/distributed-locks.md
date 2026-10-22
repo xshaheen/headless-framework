@@ -925,7 +925,7 @@ Reader-writer storage creates `{resource}:writer` (string holding the active wri
 ### Runtime behavior
 
 - Registers a keyed `HeadlessRedisScriptsLoader` bound to the app's `IConnectionMultiplexer`.
-- Registers hosted `IInitializer` warmup for Redis mutex, reader-writer, and semaphore scripts.
+- Loads no Lua script at host start: each mutex, reader-writer, and semaphore script loads on the first lock operation that runs it, which costs that operation one extra round trip. A Redis outage at start does not stop the host; the `distributed-locks-redis` readiness check reports it.
 - Registers `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider` through `Headless.DistributedLocks`.
 
 ---

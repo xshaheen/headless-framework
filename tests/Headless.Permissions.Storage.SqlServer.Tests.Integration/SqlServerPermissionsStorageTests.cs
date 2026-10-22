@@ -28,9 +28,6 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
 
         // when
         await host.StartAsync(AbortToken);
-        var initializer = host
-            .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .Single(x => x is IHostedLifecycleService);
         var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
         var definitionRepository = host.Services.GetRequiredService<IPermissionDefinitionRecordRepository>();
         var record = new PermissionGrantRecord(Guid.NewGuid(), "Users.Create", "Role", "admin", isGranted: true);
@@ -44,8 +41,9 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
         var storedPermissions = await definitionRepository.GetPermissionsListAsync(AbortToken);
 
         // then
-        initializer.IsInitialized.Should().BeTrue();
-        (await _TableExistsAsync("PermissionGrants")).Should().BeTrue();
+        (await _TableExistsAsync("PermissionGrants"))
+            .Should()
+            .BeTrue();
         (await _TableExistsAsync("PermissionDefinitions")).Should().BeTrue();
         (await _TableExistsAsync("PermissionGroupDefinitions")).Should().BeTrue();
         stored.Should().NotBeNull();
@@ -311,6 +309,7 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
             setup.UseSqlServer(fixture.ConnectionString);
         });
 
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         return builder.Build();
     }
 

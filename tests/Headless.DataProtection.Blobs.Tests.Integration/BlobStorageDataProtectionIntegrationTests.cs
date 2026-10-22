@@ -6,8 +6,13 @@ using Azure.Storage.Blobs.Models;
 using Headless.Blobs;
 using Headless.Blobs.Azure;
 using Headless.DataProtection;
+using Headless.Hosting;
 using Headless.IO;
 using Headless.Testing.Tests;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -203,6 +208,77 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
                 string.Equals(e.Attribute("id")?.Value, keyId, StringComparison.Ordinal)
             );
             retrieved.Should().NotBeNull($"concurrent key {keyId} should be retrieved");
+        }
+    }
+
+    [Fact]
+    public async Task should_keep_the_host_unready_until_the_key_container_exists_then_become_ready()
+    {
+        // given: the container is acknowledged as pre-provisioned but does not exist yet, so every key write fails
+        // against the real backend until someone creates it.
+        await using var storage = _CreateStorage();
+        var container = _blobServiceClient!.GetBlobContainerClient("dataprotection");
+        await container.DeleteIfExistsAsync(cancellationToken: AbortToken);
+
+        var builder = Host.CreateApplicationBuilder();
+        builder.Logging.AddProvider(LoggerProvider);
+        builder
+            .Services.AddDataProtection()
+            .PersistKeysToBlobStorage(storage, provisioning: BlobContainerProvisioning.PreProvisioned)
+            .ValidateKeyRing();
+        using var host = builder.Build();
+
+        // when: the start does not wait for the key store.
+        await host.StartAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+        var failing = await _WaitForReadinessAsync(
+            host.Services,
+            e => e.Exception?.Message.Contains("last error", StringComparison.Ordinal) == true
+        );
+
+        // then: unready, naming the validation and the missing container.
+        failing.Status.Should().Be(HealthStatus.Unhealthy);
+        failing.Exception!.Message.Should().Contain("DataProtectionKeyRing");
+        failing.Exception.Message.Should().Contain("key-ring validation failed");
+
+        // when: the container is provisioned, the retried validation writes a real key.
+        await container.CreateIfNotExistsAsync(cancellationToken: AbortToken);
+        var ready = await _WaitForReadinessAsync(host.Services, e => e.Status == HealthStatus.Healthy);
+
+        // then
+        ready.Status.Should().Be(HealthStatus.Healthy);
+        var blobs = new List<string>();
+        await foreach (var blob in container.GetBlobsAsync(cancellationToken: AbortToken))
+        {
+            blobs.Add(blob.Name);
+        }
+
+        blobs.Should().ContainSingle(name => name.StartsWith("key-", StringComparison.Ordinal));
+        await host.StopAsync(AbortToken);
+    }
+
+    private static async Task<HealthReportEntry> _WaitForReadinessAsync(
+        IServiceProvider services,
+        Func<HealthReportEntry, bool> condition
+    )
+    {
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        limit.CancelAfter(TimeSpan.FromSeconds(60));
+        var health = services.GetRequiredService<HealthCheckService>();
+
+        while (true)
+        {
+            var report = await health.CheckHealthAsync(
+                r => string.Equals(r.Name, HeadlessHealthCheckNames.Warmup, StringComparison.Ordinal),
+                AbortToken
+            );
+            var entry = report.Entries[HeadlessHealthCheckNames.Warmup];
+
+            if (condition(entry))
+            {
+                return entry;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50), limit.Token);
         }
     }
 

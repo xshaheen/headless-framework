@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Hosting;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -30,6 +31,11 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly Func<RabbitMqConsumerLifecycleCheckpoint, ValueTask>? _lifecycleCheckpointAsync;
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly ConsumerSubscriptionKind _kind;
+
+    // Shared topology is the deployment's (resources provision), and the host checks it once in its topology warm-up, so
+    // a client declares nothing for it and a missing queue surfaces when the client consumes. A runtime subscription,
+    // which no deploy step knows, creates its own.
+    private readonly bool _provisionsTopology;
     private readonly TransportEnvelopeGate _envelopeGate;
 
     // Written only while subscribing, before the consumer starts, and read by every delivery afterwards.
@@ -53,6 +59,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         IConnectionChannelPool connectionChannelPool,
         IOptions<RabbitMqMessagingOptions> options,
         IServiceProvider serviceProvider,
+        bool provisionsTopology,
         RabbitMqConsumerConfig? consumerConfig = null,
         MessageLane lane = MessageLane.Bus,
         Func<RabbitMqConsumerLifecycleCheckpoint, ValueTask>? lifecycleCheckpointAsync = null,
@@ -75,6 +82,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         _lane = lane;
         _lifecycleCheckpointAsync = lifecycleCheckpointAsync;
         _kind = Argument.IsInEnum(kind);
+        _provisionsTopology = provisionsTopology;
 
         if (kind is ConsumerSubscriptionKind.EveryInstance && lane is not MessageLane.Bus)
         {
@@ -142,13 +150,17 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
             if (!_queueNames.Contains(queueName, StringComparer.Ordinal))
             {
-                await _DeclareQueueAsync(queueName, cancellationToken).ConfigureAwait(false);
+                await _EnsureQueueIfProvisioningAsync(queueName, cancellationToken).ConfigureAwait(false);
                 _queueNames.Add(queueName);
             }
 
-            await RabbitMqQueueTopology
-                .BindQueueAsync(_channel!, _rabbitMqOptions, _exchangeName, queueName, routingKey, cancellationToken)
-                .ConfigureAwait(false);
+            // A registered subscription's bindings are the deployment's, made by resources provision.
+            if (_provisionsTopology)
+            {
+                await RabbitMqQueueTopology
+                    .BindQueueAsync(_channel!, _exchangeName, queueName, routingKey, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
     }
 
@@ -206,6 +218,11 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             await _StartConsumingAsync(consumer, cancellationToken).ConfigureAwait(false);
 
             _ready.TrySetResult();
+        }
+        catch (ResourceProvisioningException ex)
+        {
+            _ready.TrySetException(ex);
+            throw;
         }
         catch (TimeoutException ex)
         {
@@ -448,15 +465,17 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
             try
             {
-                await RabbitMqQueueTopology
-                    .DeclareExchangeAsync(
-                        channel,
-                        _rabbitMqOptions,
-                        _exchangeName,
-                        RabbitMqPhysicalAddress.ExchangeType(_lane),
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
+                if (_provisionsTopology)
+                {
+                    await RabbitMqQueueTopology
+                        .EnsureExchangeAsync(
+                            channel,
+                            _exchangeName,
+                            RabbitMqPhysicalAddress.ExchangeType(_lane),
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                }
 
                 _channel = channel;
 
@@ -469,7 +488,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                     && !_queueNames.Contains(busQueue, StringComparer.Ordinal)
                 )
                 {
-                    await _DeclareQueueAsync(busQueue, cancellationToken).ConfigureAwait(false);
+                    await _EnsureQueueIfProvisioningAsync(busQueue, cancellationToken).ConfigureAwait(false);
                     _queueNames.Add(busQueue);
                 }
             }
@@ -554,13 +573,30 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                     continue;
                 }
 
-                var consumerTag = await _channel!
-                    .BasicConsumeAsync(queueName, autoAck: false, _consumer!, cancellationToken)
+                // The first call that names a shared queue the client never declared: a queue resources provision did not
+                // create fails here naming the fix, not as a bare NOT_FOUND.
+                var consumerTag = await RabbitMqQueueTopology
+                    .RequireAsync(
+                        "queue",
+                        queueName,
+                        () => _channel!.BasicConsumeAsync(queueName, autoAck: false, _consumer!, cancellationToken)
+                    )
                     .ConfigureAwait(false);
 
                 _consumerTags.Add(queueName, consumerTag);
                 registrations.Add(KeyValuePair.Create(queueName, consumerTag));
             }
+        }
+        catch (Exception) when (_channel is { IsClosed: true })
+        {
+            // The broker closed the channel on the refused call, and its consumers went with it: nothing is left to
+            // cancel, and the original error (a missing queue, say) stays the one the caller sees.
+            foreach (var (queueName, _) in registrations)
+            {
+                _consumerTags.Remove(queueName);
+            }
+
+            throw;
         }
         catch (Exception registrationException)
         {
@@ -732,17 +768,20 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         return RabbitMqPhysicalAddress.Queue(lane, subscriptionName, messageName);
     }
 
-    // Bindings go with SubscribeAsync, which knows the routing keys; the queue declare here only creates the queue.
-    private Task _DeclareQueueAsync(string queueName, CancellationToken cancellationToken)
+    // Bindings go with SubscribeAsync, which knows the routing keys; the declare here only creates the queue. A shared
+    // queue is left alone: the topology warm-up checks it once per host, and consuming it proves it exists.
+    private Task _EnsureQueueIfProvisioningAsync(string queueName, CancellationToken cancellationToken)
     {
-        return RabbitMqQueueTopology.DeclareQueueAsync(
-            _channel!,
-            _rabbitMqOptions,
-            _exchangeName,
-            queueName,
-            routingKey: null,
-            cancellationToken
-        );
+        return _provisionsTopology
+            ? RabbitMqQueueTopology.EnsureQueueAsync(
+                _channel!,
+                _rabbitMqOptions,
+                _exchangeName,
+                queueName,
+                routingKey: null,
+                cancellationToken
+            )
+            : Task.CompletedTask;
     }
 }
 

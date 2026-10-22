@@ -6,7 +6,7 @@ using Headless;
 using Headless.Caching;
 using Headless.Features;
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -103,9 +103,6 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
 
         // when
         await host.StartAsync(AbortToken);
-        var initializer = host
-            .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .Single(x => x is IHostedLifecycleService);
         var valueRepository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
         var definitionRepository = host.Services.GetRequiredService<IFeatureDefinitionRecordRepository>();
         var record = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "true", "Edition", "pro");
@@ -125,7 +122,6 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
         var storedFeatures = await definitionRepository.GetFeaturesListAsync(AbortToken);
 
         // then
-        initializer.IsInitialized.Should().BeTrue();
         var names = new FeaturesStorageOptions();
         (await fixture.TableExistsAsync(_Schema, names.ResolveFeatureValuesTableName(fixture.NamingStyle), AbortToken))
             .Should()

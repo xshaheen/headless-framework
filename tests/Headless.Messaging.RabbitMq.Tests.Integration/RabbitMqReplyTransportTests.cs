@@ -32,7 +32,7 @@ public sealed class RabbitMqReplyTransportTests(RabbitMqFixture fixture) : TestB
         // given
         var before = await _ReplyQueueNamesAsync();
         await using var caller = _BuildCaller();
-        await caller.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        await caller.SetupResourcesAndBootstrapAsync(AbortToken);
 
         // when
         RabbitMqBrokerQueue? replyQueue = null;
@@ -64,7 +64,7 @@ public sealed class RabbitMqReplyTransportTests(RabbitMqFixture fixture) : TestB
     public async Task should_drop_a_reply_to_a_deleted_reply_queue_without_an_exception(bool publishConfirms)
     {
         // given
-        var transport = _CreateTransport(publishConfirms);
+        var transport = await _CreateTransportAsync(publishConfirms);
         var gone = await transport.OpenListenerAsync(static (_, _) => ValueTask.CompletedTask, AbortToken);
         var goneAddress = await gone.WaitForAddressAsync(AbortToken);
         await gone.DisposeAsync();
@@ -96,7 +96,7 @@ public sealed class RabbitMqReplyTransportTests(RabbitMqFixture fixture) : TestB
     public async Task should_refuse_a_server_named_or_application_queue_address_without_publishing()
     {
         // given
-        var transport = _CreateTransport(publishConfirms: false);
+        var transport = await _CreateTransportAsync(publishConfirms: false);
         var connection = await fixture.GetConnectionAsync();
         await using var channel = await connection.CreateChannelAsync(cancellationToken: AbortToken);
         var serverNamed = (
@@ -148,7 +148,7 @@ public sealed class RabbitMqReplyTransportTests(RabbitMqFixture fixture) : TestB
     public async Task should_consume_replies_under_a_new_address_after_its_reply_queue_is_lost()
     {
         // given
-        var transport = _CreateTransport(publishConfirms: false);
+        var transport = await _CreateTransportAsync(publishConfirms: false);
         var received = Channel.CreateUnbounded<TransportMessage>();
         await using var listener = await transport.OpenListenerAsync(
             (reply, _) => received.Writer.WriteAsync(reply, AbortToken),
@@ -187,24 +187,28 @@ public sealed class RabbitMqReplyTransportTests(RabbitMqFixture fixture) : TestB
         await base.DisposeAsyncCore();
     }
 
-    private RabbitMqReplyTransport _CreateTransport(bool publishConfirms)
+    // The transport only checks the lane exchanges exist; the deployment's resources provision creates them.
+    private async Task<RabbitMqReplyTransport> _CreateTransportAsync(bool publishConfirms)
     {
+        var options = new RabbitMqMessagingOptions
+        {
+            HostName = fixture.HostName,
+            Port = fixture.Port,
+            UserName = fixture.UserName,
+            Password = fixture.Password,
+            ExchangeName = $"reply-{Guid.NewGuid():N}",
+            PublishConfirms = publishConfirms,
+        };
         var pool = new ConnectionChannelPool(
             NullLogger<ConnectionChannelPool>.Instance,
             Options.Create(new MessagingOptions { Version = "v1" }),
-            Options.Create(
-                new RabbitMqMessagingOptions
-                {
-                    HostName = fixture.HostName,
-                    Port = fixture.Port,
-                    UserName = fixture.UserName,
-                    Password = fixture.Password,
-                    ExchangeName = $"reply-{Guid.NewGuid():N}",
-                    PublishConfirms = publishConfirms,
-                }
-            )
+            Options.Create(options)
         );
         _pools.Add(pool);
+        await new RabbitMqTopologyProvisioner(pool, Options.Create(options)).ProvisionAsync(
+            MessagingTopology.Empty,
+            AbortToken
+        );
 
         return new RabbitMqReplyTransport(pool, NullLogger<RabbitMqReplyTransport>.Instance);
     }

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sql.SqlServer;
 
 namespace Headless.Coordination.SqlServer;
@@ -103,8 +103,13 @@ internal static class SqlServerMembershipSchemaContribution
                     tablesSql
                 ),
             ],
-            applyOnStartup: providerOptions.InitializeOnStartup,
-            hostStateTables: [t.GenerationTableName, t.DescriptorTableName, t.LivenessTableName]
+            hostStateTables: [t.GenerationTableName, t.DescriptorTableName, t.LivenessTableName],
+            objects:
+            [
+                SchemaObject.Table(t.GenerationTableName),
+                SchemaObject.Table(t.DescriptorTableName),
+                SchemaObject.Table(t.LivenessTableName),
+            ]
         );
     }
 }

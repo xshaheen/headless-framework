@@ -2,7 +2,7 @@
 
 using Headless.AuditLog;
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -15,53 +15,45 @@ namespace Tests;
 public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixture fixture) : TestBase
 {
     [Fact]
-    public async Task should_throw_and_keep_initializer_unmarked_when_database_unreachable()
+    public async Task should_fail_the_start_with_the_driver_error_when_database_unreachable()
     {
         // given — port 1 is reserved and won't accept connections; short timeout to fail fast.
         // Credentials are placeholders; we never reach the auth handshake because the TCP connect fails first.
         const string unreachable =
             "Host=127.0.0.1;Port=1;Database=missing;Username=postgres;Password=placeholder-never-used;Timeout=2";
-        using var host = _CreateHost(unreachable);
+        using var host = _CreateHost(unreachable, setupResources: false);
 
-        // when & then — wrapped in HostFailedToStartException by the host pipeline; inner is NpgsqlException
-        await FluentActions
-            .Awaiting(() => host.StartAsync(AbortToken))
-            .Should()
-            .ThrowAsync<Exception>()
-            .Where(e => e is NpgsqlException || e.InnerException is NpgsqlException);
-
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
-        initializer.IsInitialized.Should().BeFalse();
-
-        // The schema runner names the features whose connection failed and keeps the driver error as the cause.
-        await FluentActions
-            .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
-            .Should()
-            .ThrowAsync<SchemaRunnerException>()
-            .WithInnerException(typeof(NpgsqlException));
+        // The startup check fails the start; the schema runner names the features whose connection failed and keeps
+        // the driver error as the cause.
+        (
+            await FluentActions
+                .Awaiting(() => host.StartAsync(AbortToken))
+                .Should()
+                .ThrowAsync<ResourceProvisioningException>()
+        )
+            .WithInnerException<SchemaRunnerException>()
+            .WithInnerException<NpgsqlException>();
     }
 
     [Fact]
-    public async Task should_throw_and_keep_initializer_unmarked_when_authentication_fails()
+    public async Task should_fail_the_start_with_the_driver_error_when_authentication_fails()
     {
         // given — point at the real fixture but with a wrong password
         var badAuth = new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
         {
             Password = "wrong-password",
         }.ToString();
-        using var host = _CreateHost(badAuth);
+        using var host = _CreateHost(badAuth, setupResources: false);
 
         // when & then
-        var startThrew = await FluentActions
-            .Awaiting(() => host.StartAsync(AbortToken))
-            .Should()
-            .ThrowAsync<Exception>();
-        startThrew
-            .Which.Should()
-            .Match<Exception>(e => e is PostgresException || e.InnerException is PostgresException);
-
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
-        initializer.IsInitialized.Should().BeFalse();
+        (
+            await FluentActions
+                .Awaiting(() => host.StartAsync(AbortToken))
+                .Should()
+                .ThrowAsync<ResourceProvisioningException>()
+        )
+            .WithInnerException<SchemaRunnerException>()
+            .WithInnerException<PostgresException>();
     }
 
     [Fact]
@@ -82,14 +74,12 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
             var startTasks = hosts.Select(h => h.StartAsync(AbortToken)).ToArray();
             await Task.WhenAll(startTasks);
 
-            // then — all initializers report ready, exactly one audit_log_entries table exists, and the
+            // then — every host started, so each verified its schema; exactly one audit_log_entries table exists, and the
             // full 6-index complement is present (regression guard: a swallowed CREATE INDEX
             // failure would otherwise pass the table-count assertion silently).
-            hosts
-                .Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized)
+            (await _CountTablesAsync("audit_log_pg_concurrent", "audit_log_entries"))
                 .Should()
-                .AllSatisfy(initialized => initialized.Should().BeTrue());
-            (await _CountTablesAsync("audit_log_pg_concurrent", "audit_log_entries")).Should().Be(1);
+                .Be(1);
             (await _CountIndexesAsync("audit_log_pg_concurrent", "audit_log_entries")).Should().Be(6);
         }
         finally
@@ -156,7 +146,8 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
     private static IHost _CreateHost(
         string connectionString,
         string schema = "audit_log_pg_failure",
-        string? tableName = null
+        string? tableName = null,
+        bool setupResources = true
     )
     {
         var builder = Host.CreateApplicationBuilder();
@@ -169,6 +160,11 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
             });
             setup.UsePostgreSql(connectionString);
         });
+
+        if (setupResources)
+        {
+            builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
+        }
 
         return builder.Build();
     }

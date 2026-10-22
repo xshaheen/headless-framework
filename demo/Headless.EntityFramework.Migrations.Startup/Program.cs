@@ -5,6 +5,7 @@ using Headless.Api.ServiceDefaults;
 using Headless.DistributedLocks;
 using Headless.EntityFramework.Migrations.Startup;
 using Headless.Features;
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Permissions;
 using Headless.Security;
@@ -73,6 +74,9 @@ builder.Services.AddDbContextFactory<FeaturesMigrationDbContext>(options =>
 );
 
 builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<FeaturesMigrationDbContext>());
+
+// Nothing seeds on its own, so this demo seeds as it starts; a deployed app runs `dotnet <app>.dll seed` instead.
+builder.Services.AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None);
 
 var app = builder.Build();
 

@@ -362,17 +362,30 @@ public sealed class DynamicFeatureDefinitionStore(
                 .ConfigureAwait(false)
             ?? throw new InvalidOperationException("Could not acquire distributed lock for saving static features!"); // It will re-try
 
-        var (newGroups, updatedGroups, deletedGroups) = await _UpdateChangedFeatureGroupsAsync(
+        var (newGroups, changedGroups, deletedGroups) = await _DiffFeatureGroupsAsync(
                 featureGroupRecords,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        var (newFeatures, updatedFeatures, deletedFeatures) = await _UpdateChangedFeaturesAsync(
+        var (newFeatures, changedFeatures, deletedFeatures) = await _DiffFeaturesAsync(
                 featureRecords,
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        var updatedGroups = changedGroups.ConvertAll(static change =>
+        {
+            change.Stored.Patch(change.Declared);
+
+            return change.Stored;
+        });
+        var updatedFeatures = changedFeatures.ConvertAll(static change =>
+        {
+            change.Stored.Patch(change.Declared);
+
+            return change.Stored;
+        });
 
         var hasChangesInGroups = newGroups.Count != 0 || updatedGroups.Count != 0 || deletedGroups.Count != 0;
         var hasChangesInFeatures = newFeatures.Count != 0 || updatedFeatures.Count != 0 || deletedFeatures.Count != 0;
@@ -404,15 +417,48 @@ public sealed class DynamicFeatureDefinitionStore(
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Reports whether the stored records already hold the application's static feature definitions, serialized as
+    /// <see cref="SaveAsync"/> serializes them, and none of the configured deleted groups or features. Reads the records
+    /// only: it writes nothing, takes no lock, and ignores the saved hash, so it reports what the store holds.
+    /// </summary>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns><see langword="true"/> when <see cref="SaveAsync"/> would change nothing.</returns>
+    internal async Task<bool> HoldsStaticDefinitionsAsync(CancellationToken cancellationToken)
+    {
+        var groups = await staticStore.GetGroupsAsync(cancellationToken).ConfigureAwait(false);
+        var (featureGroupRecords, featureRecords) = serializer.Serialize(groups);
+
+        var (newGroups, changedGroups, deletedGroups) = await _DiffFeatureGroupsAsync(
+                featureGroupRecords,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var (newFeatures, changedFeatures, deletedFeatures) = await _DiffFeaturesAsync(
+                featureRecords,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return newGroups.Count == 0
+            && changedGroups.Count == 0
+            && deletedGroups.Count == 0
+            && newFeatures.Count == 0
+            && changedFeatures.Count == 0
+            && deletedFeatures.Count == 0;
+    }
+
     #endregion
 
     #region Save Helpers
 
+    // Compares without patching, so the verify path can share it; SaveAsync patches each changed stored record.
     private async Task<(
         List<FeatureGroupDefinitionRecord> NewRecords,
-        List<FeatureGroupDefinitionRecord> ChangedRecords,
+        List<(FeatureGroupDefinitionRecord Stored, FeatureGroupDefinitionRecord Declared)> ChangedRecords,
         List<FeatureGroupDefinitionRecord> DeletedRecords
-    )> _UpdateChangedFeatureGroupsAsync(
+    )> _DiffFeatureGroupsAsync(
         IEnumerable<FeatureGroupDefinitionRecord> featureGroupRecords,
         CancellationToken cancellationToken
     )
@@ -421,7 +467,7 @@ public sealed class DynamicFeatureDefinitionStore(
         var dbRecordsMap = dbRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
 
         var newRecords = new List<FeatureGroupDefinitionRecord>();
-        var changedRecords = new List<FeatureGroupDefinitionRecord>();
+        var changedRecords = new List<(FeatureGroupDefinitionRecord Stored, FeatureGroupDefinitionRecord Declared)>();
         var deletedRecords = new List<FeatureGroupDefinitionRecord>();
 
         foreach (var featureGroupRecord in featureGroupRecords)
@@ -440,8 +486,7 @@ public sealed class DynamicFeatureDefinitionStore(
                 continue; // Not changed
             }
 
-            dbRecord.Patch(featureGroupRecord); // Changed
-            changedRecords.Add(dbRecord);
+            changedRecords.Add((dbRecord, featureGroupRecord)); // Changed
         }
 
         // Handle deleted records
@@ -455,18 +500,15 @@ public sealed class DynamicFeatureDefinitionStore(
 
     private async Task<(
         List<FeatureDefinitionRecord> NewRecords,
-        List<FeatureDefinitionRecord> ChangedRecords,
+        List<(FeatureDefinitionRecord Stored, FeatureDefinitionRecord Declared)> ChangedRecords,
         List<FeatureDefinitionRecord> DeletedRecords
-    )> _UpdateChangedFeaturesAsync(
-        IEnumerable<FeatureDefinitionRecord> featureRecords,
-        CancellationToken cancellationToken
-    )
+    )> _DiffFeaturesAsync(IEnumerable<FeatureDefinitionRecord> featureRecords, CancellationToken cancellationToken)
     {
         var dbRecords = await repository.GetFeaturesListAsync(cancellationToken).ConfigureAwait(false);
         var dbRecordsMap = dbRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
 
         var newRecords = new List<FeatureDefinitionRecord>();
-        var changedRecords = new List<FeatureDefinitionRecord>();
+        var changedRecords = new List<(FeatureDefinitionRecord Stored, FeatureDefinitionRecord Declared)>();
         var deletedRecords = new List<FeatureDefinitionRecord>();
 
         // Handle new and changed records
@@ -486,8 +528,7 @@ public sealed class DynamicFeatureDefinitionStore(
                 continue;
             }
 
-            dbRecord.Patch(featureRecord); // Changed
-            changedRecords.Add(dbRecord);
+            changedRecords.Add((dbRecord, featureRecord)); // Changed
         }
 
         // Handle deleted records

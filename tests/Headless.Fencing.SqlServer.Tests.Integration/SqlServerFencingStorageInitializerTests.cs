@@ -3,7 +3,7 @@
 using Headless.Fencing;
 using Headless.Fencing.SqlServer;
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,28 +20,23 @@ namespace Tests;
 public sealed class SqlServerFencingStorageInitializerTests(SqlServerFencingFixture fixture) : TestBase
 {
     [Fact]
-    public async Task should_throw_and_keep_initializer_unmarked_when_database_unreachable()
+    public async Task should_fail_the_start_with_the_driver_error_when_database_unreachable()
     {
         // Port 1 accepts no connections, so the TCP connect fails before any login is attempted.
         const string unreachable =
             "Server=127.0.0.1,1;Database=missing;User ID=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=True";
-        using var host = _CreateHost(options => options.ConnectionString = unreachable);
+        using var host = _CreateHost(options => options.ConnectionString = unreachable, setupResources: false);
 
-        await FluentActions
-            .Awaiting(() => host.StartAsync(AbortToken))
-            .Should()
-            .ThrowAsync<Exception>()
-            .Where(e => e is SqlException || e.InnerException is SqlException);
-
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
-        initializer.IsInitialized.Should().BeFalse();
-
-        // The schema runner names the features whose connection failed and keeps the driver error as the cause.
-        await FluentActions
-            .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
-            .Should()
-            .ThrowAsync<SchemaRunnerException>()
-            .WithInnerException(typeof(SqlException));
+        // The startup check fails the start; the schema runner names the features whose connection failed and keeps
+        // the driver error as the cause.
+        (
+            await FluentActions
+                .Awaiting(() => host.StartAsync(AbortToken))
+                .Should()
+                .ThrowAsync<ResourceProvisioningException>()
+        )
+            .WithInnerException<SchemaRunnerException>()
+            .WithInnerException<SqlException>();
     }
 
     [Fact]
@@ -55,10 +50,6 @@ public sealed class SqlServerFencingStorageInitializerTests(SqlServerFencingFixt
         {
             await Task.WhenAll(hosts.Select(h => h.StartAsync(AbortToken)));
 
-            hosts
-                .Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized)
-                .Should()
-                .AllSatisfy(initialized => initialized.Should().BeTrue());
             await _AssertObjectsAsync(schema);
         }
         finally
@@ -71,20 +62,14 @@ public sealed class SqlServerFencingStorageInitializerTests(SqlServerFencingFixt
     }
 
     [Fact]
-    public async Task should_create_each_object_once_when_the_initializer_runs_twice()
+    public async Task should_create_each_object_once_when_setup_runs_twice()
     {
         const string schema = "fencing_mssql_rerun";
         await _DropStorageAsync(schema);
         using var host = _CreateHost(schema);
-        var initializer = host
-            .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .OfType<HostedInitializer>()
-            .Single();
+        await host.Services.ProvisionResourcesAsync(AbortToken);
+        await host.Services.ProvisionResourcesAsync(AbortToken);
 
-        await initializer.StartingAsync(AbortToken);
-        await initializer.StartingAsync(AbortToken);
-
-        initializer.IsInitialized.Should().BeTrue();
         await _AssertObjectsAsync(schema);
     }
 
@@ -107,7 +92,7 @@ public sealed class SqlServerFencingStorageInitializerTests(SqlServerFencingFixt
     }
 
     [Fact]
-    public async Task should_not_create_the_table_when_initialization_is_off()
+    public async Task should_fail_the_start_naming_resources_setup_when_the_table_is_missing()
     {
         const string schema = "fencing_mssql_no_init";
         await _DropStorageAsync(schema);
@@ -115,25 +100,18 @@ public sealed class SqlServerFencingStorageInitializerTests(SqlServerFencingFixt
             options =>
             {
                 options.ConnectionString = fixture.LeaseConnectionString;
-                options.InitializeOnStartup = false;
             },
-            schema
+            schema,
+            setupResources: false
         );
 
-        await host.StartAsync(AbortToken);
+        await FluentActions
+            .Awaiting(() => host.StartAsync(AbortToken))
+            .Should()
+            .ThrowAsync<ResourceProvisioningException>()
+            .WithMessage("*resources provision*");
 
-        host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized.Should().BeTrue();
         (await _CountTablesAsync(schema)).Should().Be(0);
-
-        // The consumer owns the table in this mode, so a call before it exists fails instead of creating it.
-        var act = async () =>
-            await host
-                .Services.GetRequiredService<IFencedLeases>()
-                .GrantAsync("x", "y", TimeSpan.FromMinutes(1), AbortToken);
-
-        (await act.Should().ThrowAsync<SqlException>()).Which.Number.Should().Be(208, "invalid object name");
-        (await _CountTablesAsync(schema)).Should().Be(0);
-        await host.StopAsync(AbortToken);
     }
 
     [Fact]
@@ -169,9 +147,19 @@ public sealed class SqlServerFencingStorageInitializerTests(SqlServerFencingFixt
         act.Should().Throw<ArgumentException>();
     }
 
-    private static IHost _CreateHost(Action<SqlServerFencingOptions> configure, string? schema = null)
+    private static IHost _CreateHost(
+        Action<SqlServerFencingOptions> configure,
+        string? schema = null,
+        bool setupResources = true
+    )
     {
         var builder = Host.CreateApplicationBuilder();
+
+        if (setupResources)
+        {
+            builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
+        }
+
         builder.Services.AddHeadlessFencing(setup =>
         {
             setup.UseSqlServer(configure);

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting;
 using Headless.Idempotency;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -77,6 +78,9 @@ public sealed class PostgreSqlIdempotencyDeadlockRetryTests(PostgreSqlIdempotenc
             // The retention sweep would purge on its own schedule and consume injected failures meant for the test.
             setup.ConfigureOptions(options => options.PurgeInterval = null);
         });
+
+        // A host start only verifies the schema, so the test host creates it first, as a development host does.
+        services.AddDeployStepsOnStartup(o => o.Seed = false);
 
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 

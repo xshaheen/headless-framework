@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sql.SqlServer;
 
 namespace Headless.Settings.SqlServer;
@@ -19,11 +19,7 @@ internal static class SqlServerSettingsSchemaContribution
         new SettingsStorageOptions()
     );
 
-    public static SchemaContribution Create(
-        SqlServerSettingsOptions providerOptions,
-        RelationalSettingsTables tables,
-        bool applyOnStartup
-    )
+    public static SchemaContribution Create(SqlServerSettingsOptions providerOptions, RelationalSettingsTables tables)
     {
         var schema = tables.Schema;
         var valuesName = tables.ValuesName;
@@ -97,8 +93,8 @@ internal static class SqlServerSettingsSchemaContribution
                     indexesSql
                 ),
             ],
-            applyOnStartup: applyOnStartup,
-            hostStateTables: [definitionsName]
+            hostStateTables: [definitionsName],
+            objects: [SchemaObject.Table(definitionsName), SchemaObject.Table(valuesName)]
         );
     }
 }
