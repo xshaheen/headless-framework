@@ -18,6 +18,11 @@
     <Verify_SponsorshipExemption>OpenSource</Verify_SponsorshipExemption>
     <Verify_SponsorshipExemptionUntil>2027-10</Verify_SponsorshipExemptionUntil>
   </PropertyGroup>
+  <ItemGroup Label="Banned APIs">
+    <!-- Test containers are never reused: Ryuk does not remove a reused container, so reuse leaks one per configuration
+         and checkout, and carries one run's schema and rows into the next. -->
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)..\eng\BannedSymbols.Testcontainers.txt" />
+  </ItemGroup>
   <ItemGroup Label="Global Usings">
     <Using Include="NSubstitute" />
     <Using Include="Bogus" />

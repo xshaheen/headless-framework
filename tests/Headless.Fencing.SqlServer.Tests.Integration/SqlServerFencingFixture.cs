@@ -83,11 +83,8 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IL
             await alter.ExecuteNonQueryAsync(CancellationToken.None);
         }
 
-        // The container is reused across runs, so start from no lease storage and let the initializer create it.
         await ExecuteAsync(
             $"""
-            {DropStorageSql(HeadlessStorageDefaults.Schema)}
-            IF OBJECT_ID(N'{_HandoffTable}', N'U') IS NOT NULL DROP TABLE {_HandoffTable};
             CREATE TABLE {_HandoffTable} (
                 [id] bigint IDENTITY(1, 1) PRIMARY KEY,
                 [TenantId] nvarchar(128) NOT NULL,

@@ -443,9 +443,9 @@ public sealed class PublishedMessageEndpointTests : TestBase
     [Fact]
     public async Task should_reject_pending_scheduled_id_and_requeue_others_when_published_requeue()
     {
-        // given: one pending scheduled id (rejected) and one Succeeded id (requeued, unaffected).
+        // given: one pending scheduled id (rejected) and one id that failed for good (requeued in the store).
         var pendingId = Guid.Parse("11111111-1111-1111-1111-111111111991");
-        var succeededId = Guid.Parse("11111111-1111-1111-1111-111111111992");
+        var failedId = Guid.Parse("11111111-1111-1111-1111-111111111992");
         _scheduledOperationsApi
             .QueryAsync(
                 Arg.Any<ScheduledDeliveryQuery>(),
@@ -478,14 +478,14 @@ public sealed class PublishedMessageEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
         _monitoringApi
             .GetPublishedMessagesAsync(
-                Arg.Is<IReadOnlyList<Guid>>(ids => ids.Count == 1 && ids[0] == succeededId),
+                Arg.Is<IReadOnlyList<Guid>>(ids => ids.Count == 1 && ids[0] == failedId),
                 Arg.Any<CancellationToken>()
             )
             .Returns(
                 ValueTask.FromResult<IReadOnlyList<MediumMessage>>([
                     new MediumMessage
                     {
-                        StorageId = succeededId,
+                        StorageId = failedId,
                         Lane = MessageLane.Bus,
                         Content = "{}",
                         Origin = new Message(
@@ -500,6 +500,13 @@ public sealed class PublishedMessageEndpointTests : TestBase
                 ])
             );
 
+        _dataStorage
+            .RequeuePublishedMessagesAsync(
+                Arg.Is<IReadOnlyList<Guid>>(ids => ids.Count == 1 && ids[0] == failedId),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult<IReadOnlyList<Guid>>([failedId]));
+
         await using var app = _CreateTestApp(_dataStorage);
         await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
@@ -507,7 +514,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
         // when
         var response = await client.PostAsJsonAsync(
             "/api/published/requeue",
-            new[] { pendingId, succeededId },
+            new[] { pendingId, failedId },
             AbortToken
         );
 
@@ -515,8 +522,56 @@ public sealed class PublishedMessageEndpointTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
         document.RootElement.GetProperty("rejected")[0].GetString().Should().Be(pendingId.ToString());
-        document.RootElement.GetProperty("requeued")[0].GetString().Should().Be(succeededId.ToString());
+        document.RootElement.GetProperty("requeued")[0].GetString().Should().Be(failedId.ToString());
         document.RootElement.GetProperty("message").GetString().Should().Contain("scheduled-delivery");
+    }
+
+    [Fact]
+    public async Task should_reject_a_published_row_the_store_does_not_requeue_when_published_requeue()
+    {
+        // given: a row the store leaves as it is, such as one that was already sent
+        var sentId = Guid.Parse("11111111-1111-1111-1111-111111111993");
+        _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
+        _monitoringApi
+            .GetPublishedMessagesAsync(
+                Arg.Is<IReadOnlyList<Guid>>(ids => ids.Count == 1 && ids[0] == sentId),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(
+                ValueTask.FromResult<IReadOnlyList<MediumMessage>>([
+                    new MediumMessage
+                    {
+                        StorageId = sentId,
+                        Lane = MessageLane.Bus,
+                        Content = "{}",
+                        Origin = new Message(
+                            new Dictionary<string, string?>(StringComparer.Ordinal)
+                            {
+                                [Headers.MessageId] = "msg-993",
+                                [Headers.MessageName] = "orders.created",
+                            },
+                            new { }
+                        ),
+                    },
+                ])
+            );
+        _dataStorage
+            .RequeuePublishedMessagesAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IReadOnlyList<Guid>>([]));
+
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        // when
+        var response = await client.PostAsJsonAsync("/api/published/requeue", new[] { sentId }, AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
+        document.RootElement.GetProperty("rejected")[0].GetString().Should().Be(sentId.ToString());
+        document.RootElement.GetProperty("requeued").GetArrayLength().Should().Be(0);
+        document.RootElement.GetProperty("message").GetString().Should().Contain("failed for good");
     }
 
     private static WebApplication _CreateTestApp(IDataStorage dataStorage)
@@ -542,7 +597,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
         appBuilder.Services.AddSingleton(new CurrentNodeIdentity("test-node"));
         appBuilder.Services.AddSingleton<GatewayProxyAgent>();
 
-        // Legacy requeue's transport-availability check (the fencing tests exercise the happy path).
+        // The requeue's transport-availability check (the fencing tests exercise the happy path).
         appBuilder.Services.AddSingleton(Substitute.For<IDispatcher>());
         appBuilder.Services.AddSingleton(Substitute.For<IBusTransport>());
 

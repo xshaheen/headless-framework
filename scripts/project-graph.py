@@ -519,10 +519,13 @@ def write_category_files(out_dir: Path, report: dict[str, object], solution: Pat
         if category == "affected":
             continue
         items: list[str] = report[key]  # type: ignore[assignment]
-        (out_dir / f"{category}.txt").write_text("".join(f"{item}\n" for item in items), encoding="utf-8")
         missing = write_solution_filter(out_dir / f"{category}.slnf", solution, items)
+        # The list matches its filter. A project outside the solution, such as a probe a test compiles on purpose
+        # to watch it fail, is never built by the gate, so a stage that reads the list must not analyze it either.
+        listed = [item for item in items if item not in missing]
+        (out_dir / f"{category}.txt").write_text("".join(f"{item}\n" for item in listed), encoding="utf-8")
         for project in missing:
-            print(f"[affected] not in {solution.name}, left out of {category}.slnf: {project}", file=sys.stderr)
+            print(f"[affected] not in {solution.name}, left out of {category}.slnf and {category}.txt: {project}", file=sys.stderr)
 
 
 def ci_scope(event: str, base: str, head: str, out_dir: Path, solution: str, projects: dict[str, Project]) -> dict[str, str]:

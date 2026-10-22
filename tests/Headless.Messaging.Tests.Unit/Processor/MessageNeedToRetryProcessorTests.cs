@@ -179,23 +179,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
     }
 
-    private static ILogger<MessageNeedToRetryProcessor> _CreateCapturingLogger(List<(LogLevel Level, int Id)> captured)
+    // The processor logs from one background task per due quadrant, so captures from concurrent cycles must not race:
+    // a List<T> drops or overwrites an entry when two quadrants log at once.
+    private static ILogger<MessageNeedToRetryProcessor> _CreateCapturingLogger(
+        ConcurrentQueue<(LogLevel Level, int Id)> captured
+    )
     {
-        var logger = Substitute.For<ILogger<MessageNeedToRetryProcessor>>();
-        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        logger
-            .When(l =>
-                l.Log(
-                    Arg.Any<LogLevel>(),
-                    Arg.Any<EventId>(),
-                    Arg.Any<object>(),
-                    Arg.Any<Exception?>(),
-                    Arg.Any<Func<object, Exception?, string>>()
-                )
-            )
-            .Do(ci => captured.Add((ci.Arg<LogLevel>(), ci.Arg<EventId>().Id)));
-
-        return logger;
+        return new CapturingLogger(captured);
     }
 
     private static void _SetupReceivedMessages(IDataStorage dataStorage, params MediumMessage[] messages)
@@ -1131,7 +1121,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     [Fact]
     public async Task should_warn_once_per_processor_when_monitor_only_fallback_retains_open_claims()
     {
-        var captured = new List<(LogLevel Level, int Id)>();
+        var captured = new ConcurrentQueue<(LogLevel Level, int Id)>();
         var cb = Substitute.For<ICircuitBreakerMonitor>();
         cb.IsOpen(_CircuitKey("consumer-a")).Returns(true);
         var sut = new MessageNeedToRetryProcessor(
@@ -1206,7 +1196,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .Returns(
                 new CircuitRetryDecision(CircuitRetryDecisionKind.Defer, DateTimeOffset.UtcNow.AddMinutes(1), null)
             );
-        var captured = new List<(LogLevel Level, int Id)>();
+        var captured = new ConcurrentQueue<(LogLevel Level, int Id)>();
         var sut = new MessageNeedToRetryProcessor(
             Options.Create(new MessagingOptions()),
             Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.Zero, AdaptivePolling = false }),
@@ -1920,21 +1910,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
-        var logger = Substitute.For<ILogger<MessageNeedToRetryProcessor>>();
-        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-
-        var captured = new List<(LogLevel Level, int Id)>();
-        logger
-            .When(l =>
-                l.Log(
-                    Arg.Any<LogLevel>(),
-                    Arg.Any<EventId>(),
-                    Arg.Any<object>(),
-                    Arg.Any<Exception?>(),
-                    Arg.Any<Func<object, Exception?, string>>()
-                )
-            )
-            .Do(ci => captured.Add((ci.Arg<LogLevel>(), ci.Arg<EventId>().Id)));
+        var captured = new ConcurrentQueue<(LogLevel Level, int Id)>();
+        var logger = _CreateCapturingLogger(captured);
 
         var lockProvider = _CreateContendedLockProvider();
         // Published-path acquire throws once; received-path returns null (no contention).
@@ -1996,21 +1973,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
-        var logger = Substitute.For<ILogger<MessageNeedToRetryProcessor>>();
-        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-
-        var captured = new List<(LogLevel Level, int Id)>();
-        logger
-            .When(l =>
-                l.Log(
-                    Arg.Any<LogLevel>(),
-                    Arg.Any<EventId>(),
-                    Arg.Any<object>(),
-                    Arg.Any<Exception?>(),
-                    Arg.Any<Func<object, Exception?, string>>()
-                )
-            )
-            .Do(ci => captured.Add((ci.Arg<LogLevel>(), ci.Arg<EventId>().Id)));
+        var captured = new ConcurrentQueue<(LogLevel Level, int Id)>();
+        var logger = _CreateCapturingLogger(captured);
 
         var lockProvider = _CreateContendedLockProvider();
         var publishCallCount = 0;
@@ -2099,7 +2063,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
-        var captured = new List<(LogLevel Level, int Id)>();
+        var captured = new ConcurrentQueue<(LogLevel Level, int Id)>();
         var logger = _CreateCapturingLogger(captured);
 
         var lockProvider = _CreateContendedLockProvider();
@@ -2156,7 +2120,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
-        var captured = new List<(LogLevel Level, int Id)>();
+        var captured = new ConcurrentQueue<(LogLevel Level, int Id)>();
         var logger = _CreateCapturingLogger(captured);
 
         var lockProvider = _CreateContendedLockProvider();
@@ -2235,7 +2199,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
-        var captured = new List<(LogLevel Level, int Id)>();
+        var captured = new ConcurrentQueue<(LogLevel Level, int Id)>();
         var logger = _CreateCapturingLogger(captured);
 
         var lockProvider = _CreateContendedLockProvider();
@@ -2305,7 +2269,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
-        var captured = new List<(LogLevel Level, int Id)>();
+        var captured = new ConcurrentQueue<(LogLevel Level, int Id)>();
         var logger = _CreateCapturingLogger(captured);
 
         var publishLockCall = 0;

@@ -41,8 +41,12 @@ public sealed class PulsarMessagingOptions
     /// event time, or a foreign producer's own property names. Each returned header overwrites a message property of the
     /// same name, and runs before the envelope is checked, so it can supply a message id or name a foreign producer
     /// wrote under another property. It cannot choose <c>headless-transport-address</c>, which the transport always
-    /// stamps from the topic. A callback that throws settles the message like a malformed envelope: it is logged and
-    /// acknowledged, so it is not redelivered.
+    /// stamps from the topic. A callback that throws is treated as a retryable failure, since a builder that looks up or
+    /// translates headers can fail on a brief outage of its own dependency: the failure is logged and the message is
+    /// negatively acknowledged, so the broker redelivers it after <see cref="NegativeAckRedeliveryDelay"/>. A message
+    /// whose builder keeps failing is redelivered without end unless the consumer sets a dead-letter policy through
+    /// <c>UsePulsar(p =&gt; p.DeadLetter(...))</c>, which moves it to the dead-letter topic once that redelivery budget
+    /// is spent. An envelope the transport's own check finds malformed is still acknowledged and not redelivered.
     /// </summary>
     public Func<
         Message<byte[]>,

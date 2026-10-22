@@ -114,15 +114,21 @@ public sealed class RedisMessagingOptions
     /// <remarks>
     /// A header the callback returns overwrites the same header read from the entry's <c>headers</c> field. The
     /// transport stamps <c>headless-transport-address</c> after the callback, so the callback cannot choose it. An
-    /// exception from the callback settles the entry as malformed: it is acknowledged and reported through
-    /// <see cref="OnConsumeError"/>, and no handler runs.
+    /// exception from the callback does not settle the entry: it is logged and reported through
+    /// <see cref="OnConsumeError"/>, no handler runs, and the entry stays pending, so another read claims it again after
+    /// <see cref="PendingClaimMinIdleTime"/>. A builder whose lookup is briefly down therefore costs no entry, but Redis
+    /// has no delivery limit: an entry whose builder keeps failing is handed out again until
+    /// <see cref="StreamMaxAge"/> trims it. A group-less, every-instance subscription keeps no pending entry, so its
+    /// delivery is dropped.
     /// </remarks>
     public Func<StreamEntry, IServiceProvider, List<KeyValuePair<string, string>>>? CustomHeadersBuilder { get; set; }
 
     /// <summary>
     /// Optional callback invoked when an error occurs during message consumption. Use this to
     /// log or alert on failed entries.
-    /// When <see langword="null"/>, consume errors are logged and the entry is skipped.
+    /// When <see langword="null"/>, consume errors are only logged. The callback reports an error and never decides the
+    /// entry's settlement: a malformed entry is acknowledged, and a <see cref="CustomHeadersBuilder"/> failure leaves it
+    /// pending.
     /// The callback receives a sanitized exception and an entry containing only its identifier;
     /// raw headers and message bodies are never exposed through this diagnostic surface.
     /// </summary>

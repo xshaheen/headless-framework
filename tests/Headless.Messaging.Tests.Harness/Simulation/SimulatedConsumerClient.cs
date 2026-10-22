@@ -542,7 +542,10 @@ public sealed class SimulatedConsumerClient : IConsumerClient
         }
     }
 
-    /// <summary>Runs the broker's custom headers builder; a builder that throws settles the delivery as malformed.</summary>
+    /// <summary>
+    /// Runs the broker's custom headers builder; a builder that throws rejects the delivery for redelivery, so the
+    /// broker's delivery limit dead-letters a builder that never succeeds.
+    /// </summary>
     private bool _TryBuildHeaders(SimulatedDelivery delivery)
     {
         if (_broker.CustomHeadersBuilder is not { } builder)
@@ -555,7 +558,7 @@ public sealed class SimulatedConsumerClient : IConsumerClient
             builder(delivery.Message.Headers);
             return true;
         }
-#pragma warning disable CA1031 // A builder is user code that may throw anything; the providers it models settle every failure as malformed.
+#pragma warning disable CA1031 // A builder is user code that may throw anything; the providers it models redeliver on every failure.
         catch (Exception ex)
 #pragma warning restore CA1031
         {
@@ -566,7 +569,7 @@ public sealed class SimulatedConsumerClient : IConsumerClient
                     Reason = $"The custom headers builder failed: {ex.GetType().Name}.",
                 }
             );
-            _Settle(delivery, BrokerEventKind.Committed, redeliveryDelay: null);
+            _Settle(delivery, BrokerEventKind.Rejected, TimeSpan.Zero);
             return false;
         }
     }

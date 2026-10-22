@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using Headless.Messaging.Transport;
 using RabbitMQ.Client;
@@ -16,7 +17,8 @@ namespace Headless.Messaging.RabbitMq;
 /// <c>Task.Run</c> thread pool task and a semaphore limits the number of in-flight handlers.
 /// When <paramref name="concurrent"/> is zero, deliveries are handled sequentially on the calling
 /// thread. On header or body parsing failure, or when <paramref name="envelopeGate"/> finds the envelope malformed, the
-/// delivery is terminally rejected. Every dispatched handler is tracked in both modes, so shutdown can stop dispatching
+/// delivery is terminally rejected. When the callback throws without settling the delivery, the delivery is rejected
+/// with requeue. Every dispatched handler is tracked in both modes, so shutdown can stop dispatching
 /// and wait for the running ones before the channel closes.
 /// </remarks>
 /// <param name="arrivalNames">
@@ -44,6 +46,11 @@ internal sealed class RabbitMqBasicConsumer(
 
     // A delivery either registers before the drain takes its snapshot or sees dispatching stopped; none slips between.
     private readonly InFlightHandlerTracker _inFlightHandlers = new();
+
+    // The delivery tags handed to the callback and not yet settled. The broker closes the channel over a tag it does not
+    // know, so a second settlement of one delivery must never reach it. The client offsets tags across a channel
+    // recovery, so a tag is never handed out twice and an entry left by a lost channel cannot match a new delivery.
+    private readonly ConcurrentDictionary<ulong, byte> _unsettled = new();
 
     public override async Task HandleBasicDeliverAsync(
         string consumerTag,
@@ -226,7 +233,26 @@ internal sealed class RabbitMqBasicConsumer(
             return;
         }
 
-        await msgCallback(message, deliveryTag).ConfigureAwait(false);
+        _unsettled.TryAdd(deliveryTag, 0);
+
+        try
+        {
+            await msgCallback(message, deliveryTag).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // The core settles every handler outcome itself, so its callback throws only when that settlement failed or
+            // the core broke. Nothing else will settle the delivery then, and an unsettled delivery on an open channel
+            // is never redelivered and keeps its prefetch slot, so it goes back to the queue here.
+            logCallback(
+                new LogMessageEventArgs { LogType = MqLogType.ConsumeError, Reason = $"Error consuming message: {ex}" }
+            );
+
+            if (_unsettled.TryRemove(deliveryTag, out _))
+            {
+                await _RejectForRetryAsync(deliveryTag).ConfigureAwait(false);
+            }
+        }
     }
 
     private async Task _RejectForRetryAsync(ulong deliveryTag)
@@ -331,8 +357,17 @@ internal sealed class RabbitMqBasicConsumer(
     /// a delivery tag belongs to its channel, so the broker already requeued the message when the channel closed and
     /// redelivers it, which the inbox deduplicates. That lost acknowledgement is logged and counted, not thrown.
     /// </summary>
+    /// <remarks>
+    /// Each settlement method settles a delivery at most once and ignores a tag this consumer did not hand out or has
+    /// already settled, because the broker closes the channel over a tag it does not know.
+    /// </remarks>
     public async Task BasicAck(ulong deliveryTag, CancellationToken cancellationToken = default)
     {
+        if (!_unsettled.TryRemove(deliveryTag, out _))
+        {
+            return;
+        }
+
         if (Channel.IsOpen)
         {
             await Channel.BasicAckAsync(deliveryTag, multiple: false, cancellationToken).ConfigureAwait(false);
@@ -356,7 +391,7 @@ internal sealed class RabbitMqBasicConsumer(
 
     public async Task BasicReject(ulong deliveryTag, CancellationToken cancellationToken = default)
     {
-        if (Channel.IsOpen)
+        if (_unsettled.TryRemove(deliveryTag, out _) && Channel.IsOpen)
         {
             await Channel.BasicRejectAsync(deliveryTag, requeue: true, cancellationToken).ConfigureAwait(false);
         }
@@ -369,7 +404,7 @@ internal sealed class RabbitMqBasicConsumer(
     /// </summary>
     public async Task BasicDeadLetter(ulong deliveryTag, CancellationToken cancellationToken = default)
     {
-        if (Channel.IsOpen)
+        if (_unsettled.TryRemove(deliveryTag, out _) && Channel.IsOpen)
         {
             await Channel.BasicRejectAsync(deliveryTag, requeue: false, cancellationToken).ConfigureAwait(false);
         }

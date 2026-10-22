@@ -15,10 +15,6 @@ public class HeadlessMinioFixture() : ContainerFixture<MinioBuilder, MinioContai
 {
     protected override MinioBuilder Configure()
     {
-        return base.Configure()
-            .WithImage(TestImages.Minio)
-            .WithReuse(true)
-            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this))
-            .WithLabel(ReuseLabel.CheckoutKey, ReuseLabel.Checkout);
+        return base.Configure().WithImage(TestImages.Minio);
     }
 }

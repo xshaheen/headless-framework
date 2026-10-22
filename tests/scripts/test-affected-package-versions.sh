@@ -108,3 +108,23 @@ git commit -qam 'Bump'
 python3 scripts/project-graph.py ci-scope --event pull_request --base HEAD~1 --head HEAD --out-dir "$scratch/ci" 2>/dev/null | grep -qx 'scope=full' \
   || fail "ci-scope should keep the full run for Directory.Packages.props"
 echo 'PASS: ci-scope keeps the full run'
+
+# A project outside the solution, such as a probe a test compiles on purpose to watch it fail, is left out of both
+# the solution filter and the list beside it: the gate never builds it, so the analyzer stage must not analyze it.
+add_project tests/Headless.Checks.Tests.Unit/Probes/FailsToCompile/FailsToCompile.csproj
+cat > headless-framework.slnx <<'XML'
+<Solution>
+  <Project Path="src/Headless.Caching.Redis/Headless.Caching.Redis.csproj" />
+  <Project Path="src/Headless.Checks/Headless.Checks.csproj" />
+  <Project Path="src/Headless.NoLock/Headless.NoLock.csproj" />
+  <Project Path="tests/Headless.Checks.Tests.Unit/Headless.Checks.Tests.Unit.csproj" />
+</Solution>
+XML
+git add -A
+git commit -qm 'Probe'
+printf '<Project Sdk="Microsoft.NET.Sdk"><!-- edited --></Project>\n' > tests/Headless.Checks.Tests.Unit/Probes/FailsToCompile/FailsToCompile.csproj
+printf '<Project Sdk="Microsoft.NET.Sdk"><!-- edited --></Project>\n' > src/Headless.Checks/Headless.Checks.csproj
+python3 scripts/project-graph.py affected --base HEAD --out-dir "$scratch/out" 2>/dev/null
+grep -q 'FailsToCompile' "$scratch/out/changed.txt" && fail "a project outside the solution should be left out of changed.txt"
+grep -qx 'src/Headless.Checks/Headless.Checks.csproj' "$scratch/out/changed.txt" || fail "a solution project should stay in changed.txt"
+echo 'PASS: projects outside the solution stay out of the category lists'

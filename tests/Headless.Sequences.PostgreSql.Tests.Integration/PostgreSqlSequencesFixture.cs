@@ -42,17 +42,6 @@ public sealed class PostgreSqlSequencesFixture
         await using var connection = new NpgsqlConnection(ConnectionString);
         await connection.OpenAsync(CancellationToken.None);
 
-        // The container is reused across runs, so start from no counter table and let the initializer create it.
-        await using (
-            var drop = new NpgsqlCommand(
-                $"""DROP SCHEMA IF EXISTS "{HeadlessStorageDefaults.Schema}" CASCADE;""",
-                connection
-            )
-        )
-        {
-            await drop.ExecuteNonQueryAsync(CancellationToken.None);
-        }
-
         await using var exists = new NpgsqlCommand("SELECT 1 FROM pg_database WHERE datname = @name", connection);
         exists.Parameters.AddWithValue("name", _OtherDatabase);
 

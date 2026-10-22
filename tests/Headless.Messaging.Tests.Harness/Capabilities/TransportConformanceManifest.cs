@@ -248,8 +248,8 @@ public static class TransportConformanceManifest
     private const string _AzureServiceBusReplyChannelIssueUrl =
         "https://github.com/xshaheen/headless-framework/issues/1070";
 
-    /// <summary>The open issue that tracks settling a custom headers builder failure the same way on every provider.</summary>
-    private const string _HeaderBuilderIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1199";
+    /// <summary>The open issue that tracks a delivery budget for the brokers that have none, Kafka and Redis.</summary>
+    private const string _DeliveryBudgetIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1288";
 
     /// <summary>An Azure Service Bus cell that only the protected, credential-gated workflow can prove.</summary>
     private static readonly ConformanceSupport _AzureWorkflowGap = ConformanceSupport.Unsupported(
@@ -330,13 +330,7 @@ public static class TransportConformanceManifest
             ["RabbitMQ"] = TransportConformanceProfile
                 .CreateDisabled("RabbitMQ")
                 .WithScenario(TransportConformanceScenario.ConnectionDropRecovery, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.PublishDuringOutage,
-                    ConformanceSupport.Unsupported(
-                        "A publish while the client recovers from a dropped connection replaces the shared connection and cancels the recovery, so the consumer is cancelled and never registers again.",
-                        "https://github.com/xshaheen/headless-framework/issues/1243"
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.PublishDuringOutage, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.RoutingAffinityMappingOrRejection,
@@ -356,27 +350,9 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.BrokerInterruptionRecovery,
-                    ConformanceSupport.Unsupported(
-                        "A publish while the client recovers from a broker restart replaces the shared connection, and the consumer on it never receives again.",
-                        "https://github.com/xshaheen/headless-framework/issues/1243"
-                    )
-                )
-                .WithScenario(
-                    TransportConformanceScenario.StaleSettlement,
-                    ConformanceSupport.Unsupported(
-                        "Settling a delivery tag a second time closes the channel with PRECONDITION_FAILED, and the competing consumer stops receiving.",
-                        "https://github.com/xshaheen/headless-framework/issues/1267"
-                    )
-                )
-                .WithScenario(
-                    TransportConformanceScenario.HandlerFailureRedelivery,
-                    ConformanceSupport.Unsupported(
-                        "A delivery whose callback throws stays unacknowledged on the open channel, so it is never redelivered and the prefetch slot stays taken.",
-                        "https://github.com/xshaheen/headless-framework/issues/1268"
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.BrokerInterruptionRecovery, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HandlerFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusConsumerIdentityFanOut, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
@@ -401,13 +377,7 @@ public static class TransportConformanceManifest
                         "RabbitMQ rejects a routing affinity key at publish, so it orders no messages by key."
                     )
                 )
-                .WithScenario(
-                    TransportConformanceScenario.BodySizeLimit,
-                    ConformanceSupport.Unsupported(
-                        "A body over the client's 64 MiB inbound limit is accepted by the broker, then closes the consumer's connection on delivery, so the consumer stops and the publish is reported as failed although the message was kept.",
-                        "https://github.com/xshaheen/headless-framework/issues/1280"
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.BodySizeLimit, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.MessageExpiry, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
             ["AWS/LocalStack"] = TransportConformanceProfile
@@ -456,13 +426,7 @@ public static class TransportConformanceManifest
                     )
                 )
                 .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.HeaderBuilderFailureRedelivery,
-                    ConformanceSupport.Unsupported(
-                        "A header builder failure settles the message as malformed and deletes it, so the message is lost instead of redelivered.",
-                        _HeaderBuilderIssueUrl
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.HeaderBuilderFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.DeadLetterSingleCopy,
                     ConformanceSupport.NotApplicable(
@@ -536,13 +500,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BrokerInterruptionRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.HandlerFailureRedelivery,
-                    ConformanceSupport.Unsupported(
-                        "A record whose callback throws is neither committed nor sought back to, so it is never redelivered.",
-                        "https://github.com/xshaheen/headless-framework/issues/1268"
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.HandlerFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
                 .WithRequestReplyScenarios(
                     ConformanceSupport.NotApplicable(
@@ -554,7 +512,7 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.HeaderBuilderFailureRedelivery,
                     ConformanceSupport.Unsupported(
                         "A header builder failure seeks back to the record, which is redelivered without end: Kafka has no delivery budget and the provider adds none.",
-                        _HeaderBuilderIssueUrl
+                        _DeliveryBudgetIssueUrl
                     )
                 )
                 .WithScenario(
@@ -593,18 +551,12 @@ public static class TransportConformanceManifest
                 .WithScenario(
                     TransportConformanceScenario.BrokerInterruptionRecovery,
                     ConformanceSupport.Unsupported(
-                        "Delivery resumes after a broker restart, but stopping the consumer afterwards can overrun the shutdown timeout, so the scenario fails intermittently.",
+                        "After a broker restart the producer does not recover within a minute, so the scenario cannot reach the consumer's bounded shutdown.",
                         "https://github.com/xshaheen/headless-framework/issues/1269"
                     )
                 )
                 .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.HandlerFailureRedelivery,
-                    ConformanceSupport.Unsupported(
-                        "A message whose callback throws is neither acknowledged nor negatively acknowledged, so the live subscription never redelivers it.",
-                        "https://github.com/xshaheen/headless-framework/issues/1268"
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.HandlerFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
@@ -627,13 +579,7 @@ public static class TransportConformanceManifest
                     )
                 )
                 .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.HeaderBuilderFailureRedelivery,
-                    ConformanceSupport.Unsupported(
-                        "A header builder failure settles the message as malformed and acknowledges it, so the message is lost instead of redelivered.",
-                        _HeaderBuilderIssueUrl
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.HeaderBuilderFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.DeadLetterSingleCopy,
                     ConformanceSupport.NotApplicable(
@@ -704,13 +650,7 @@ public static class TransportConformanceManifest
                     )
                 )
                 .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.HeaderBuilderFailureRedelivery,
-                    ConformanceSupport.Unsupported(
-                        "A header builder failure dead-letters the message at once, so it is never redelivered and only a manual replay recovers it.",
-                        _HeaderBuilderIssueUrl
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.HeaderBuilderFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.DeadLetterSingleCopy, _AzureWorkflowGap)
                 .WithScenario(TransportConformanceScenario.StandardHeaderRoundTrip, _AzureWorkflowGap)
                 .WithScenario(TransportConformanceScenario.HandlerConcurrencyCap, _AzureWorkflowGap)
@@ -829,8 +769,8 @@ public static class TransportConformanceManifest
                 .WithScenario(
                     TransportConformanceScenario.HeaderBuilderFailureRedelivery,
                     ConformanceSupport.Unsupported(
-                        "A header builder failure settles the entry as malformed and acknowledges it, so the message is lost instead of redelivered.",
-                        _HeaderBuilderIssueUrl
+                        "A header builder failure leaves the entry pending, and the claim pass redelivers it without end: Redis has no delivery budget and the provider adds none.",
+                        _DeliveryBudgetIssueUrl
                     )
                 )
                 .WithScenario(
@@ -1089,6 +1029,8 @@ public static class TransportConformanceManifest
             TransportConformanceScenario.BrokerInterruptionRecovery,
             TransportConformanceScenario.StaleSettlement,
             TransportConformanceScenario.HandlerFailureRedelivery,
+            TransportConformanceScenario.BoundedGracefulShutdown,
+            TransportConformanceScenario.HeaderBuilderFailureRedelivery,
         ];
 
         TransportConformanceScenario[] provisioned =
@@ -1125,27 +1067,12 @@ public static class TransportConformanceManifest
             );
         }
 
-        return profile
-            .WithRequestReplyScenarios(
-                ConformanceSupport.Unsupported(
-                    "The Azure Service Bus reply channel is not built yet, so the provider rejects request/reply at startup.",
-                    _AzureServiceBusReplyChannelIssueUrl
-                )
+        return profile.WithRequestReplyScenarios(
+            ConformanceSupport.Unsupported(
+                "The Azure Service Bus reply channel is not built yet, so the provider rejects request/reply at startup.",
+                _AzureServiceBusReplyChannelIssueUrl
             )
-            .WithScenario(
-                TransportConformanceScenario.HeaderBuilderFailureRedelivery,
-                ConformanceSupport.Unsupported(
-                    "A header builder failure dead-letters the message at once, so it is never redelivered and only a manual replay recovers it.",
-                    _HeaderBuilderIssueUrl
-                )
-            )
-            .WithScenario(
-                TransportConformanceScenario.BoundedGracefulShutdown,
-                ConformanceSupport.Unsupported(
-                    "Stopping a consumer while a handler runs waits for the handler, because the processor drains in-flight handlers without the shutdown budget.",
-                    "https://github.com/xshaheen/headless-framework/issues/1282"
-                )
-            );
+        );
     }
 
     private static void _ValidateLaneRoundTrip(

@@ -44,6 +44,7 @@ public enum StorageOperation
     DeleteReceivedMessages,
     DeletePublishedMessage,
     DeletePublishedMessages,
+    RequeuePublishedMessages,
     ClaimDelayedMessages,
     ReleasePublishedLease,
     ReleaseReceivedLease,

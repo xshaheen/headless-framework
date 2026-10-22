@@ -15,10 +15,6 @@ public class HeadlessAzuriteFixture()
 {
     protected override AzuriteBuilder Configure()
     {
-        return base.Configure()
-            .WithImage(TestImages.Azurite)
-            .WithReuse(true)
-            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this))
-            .WithLabel(ReuseLabel.CheckoutKey, ReuseLabel.Checkout);
+        return base.Configure().WithImage(TestImages.Azurite);
     }
 }

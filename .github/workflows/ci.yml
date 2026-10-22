@@ -80,6 +80,9 @@ jobs:
       - name: "Verify proof analyzer stage"
         run: bash tests/scripts/test-proof-analyzers.sh
 
+      - name: "Verify proof re-run scope"
+        run: bash tests/scripts/test-proof-reruns.sh
+
       # Stdlib Python over tracked files, under a second, so it runs on every event here instead of in a
       # job of its own; ci-changes.sh skips docs-only changes for the .NET jobs, and this is the only
       # check a docs-only change gets.
@@ -180,13 +183,16 @@ jobs:
         if: steps.scope.outputs.spa == 'true'
         run: make -j2 --output-sync=target dashboards DASHBOARD_BUILD_SCRIPT=build-only
 
+      # Each compile also writes its analyzer findings to a compiler log, which the info-level step below reads
+      # instead of analyzing every changed project a second time under dotnet format: a change to a Directory.Build.props
+      # marks hundreds of projects changed, and that second pass ran past the job's timeout.
       - name: "Build solution with analyzers"
         if: steps.scope.outputs.scope != 'empty'
         env:
           BuildDashboardSpa: "false"
           GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SCOPE_SOLUTION: ${{ steps.scope.outputs.solution }}
-        run: make rebuild SOLUTION="$SCOPE_SOLUTION"
+        run: make rebuild SOLUTION="$SCOPE_SOLUTION" MSBUILD_ARGS="-p:CustomAfterMicrosoftCommonTargets=$GITHUB_WORKSPACE/eng/ProofErrorLog.targets"
 
       # The build above fails on warnings and errors only. Info-level suggestions are gated here, on
       # the projects the pull request changed, so the local `make verify-affected` gate and CI agree

@@ -15,10 +15,6 @@ public class HeadlessLocalStackFixture()
 {
     protected override LocalStackBuilder Configure()
     {
-        return base.Configure()
-            .WithImage(TestImages.LocalStack)
-            .WithReuse(true)
-            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this))
-            .WithLabel(ReuseLabel.CheckoutKey, ReuseLabel.Checkout);
+        return base.Configure().WithImage(TestImages.LocalStack);
     }
 }

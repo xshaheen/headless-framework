@@ -197,6 +197,31 @@ public sealed class PulsarReconnectMonitorTests : TestBase
         monitor.IsCompletedSuccessfully.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task should_stop_when_canceled_while_a_probe_never_answers()
+    {
+        // given: the consumer's mailbox stalls, as it can after a broker restart, so a probe never completes
+        var probeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var neverAnswered = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _consumer
+            .LastDisconnectedTimestamp()
+            .Returns(_ =>
+            {
+                probeStarted.TrySetResult();
+                return neverAnswered.Task;
+            });
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var monitor = _RunAsync(cts.Token);
+        await probeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        await cts.CancelAsync();
+
+        // then
+        await monitor.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        monitor.IsCompletedSuccessfully.Should().BeTrue();
+    }
+
     private Task _RunAsync(CancellationToken cancellationToken) =>
         PulsarReconnectMonitor.RunAsync(
             _consumer,

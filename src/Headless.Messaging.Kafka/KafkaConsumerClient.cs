@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Frozen;
+using System.Runtime.ExceptionServices;
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
 using Headless.Checks;
@@ -57,6 +58,9 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
     // Every dispatched delivery, keyed by its handler task, so shutdown and a revoke can wait for the ones they affect.
     private readonly InFlightHandlerTracker _inFlightHandlers = new();
+
+    // The first failure of a background handler to settle its record, rethrown by the poll loop.
+    private ExceptionDispatchInfo? _handlerFailure;
     private bool _hasPartitionAssignment;
 
     // volatile is required: Connect performs double-checked locking on this field. Without volatile a reader could
@@ -231,6 +235,10 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         {
             await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
 
+            // A background handler left its record unsettled. Failing the listener, as an inline handler's throw
+            // does, makes the consumer register rebuild the client, which reads again from the last committed offset.
+            Volatile.Read(ref _handlerFailure)?.Throw();
+
             ConsumeResult<string, byte[]>? consumerResult;
 
             try
@@ -334,6 +342,16 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                             try
                             {
                                 await _ConsumeAsync(delivery).ConfigureAwait(false);
+                            }
+                            catch (Exception e)
+                            {
+                                Interlocked.CompareExchange(
+                                    ref _handlerFailure,
+                                    ExceptionDispatchInfo.Capture(e),
+                                    comparand: null
+                                );
+
+                                throw;
                             }
                             finally
                             {
@@ -781,7 +799,24 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             return;
         }
 
-        await OnMessageCallback!(message, delivery).ConfigureAwait(false);
+        try
+        {
+            await OnMessageCallback!(message, delivery).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // The core settles handler failures itself, so a throw here means nothing else will settle the record.
+            // Seeking back redelivers it and releases its pending offset; a seek that throws fails the listener.
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason = $"Kafka message callback failed; seeking offset for retry: {ex}",
+                }
+            );
+
+            await RejectAsync(delivery).ConfigureAwait(false);
+        }
     }
 
     private async Task _TerminallyCommitMalformedEnvelopeAsync(KafkaDelivery delivery, Exception exception)

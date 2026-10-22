@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Checks;
 using Headless.Messaging.Internal;
 using Headless.Sql;
 
@@ -630,6 +631,43 @@ internal sealed partial class RelationalDataStorage
     )
     {
         return _DeleteByIdsAsync(_publishedTable, ids, cancellationToken);
+    }
+
+    /// <summary>Requeues published rows that failed for good; see <see cref="IDataStorage.RequeuePublishedMessagesAsync"/>.</summary>
+    /// <returns>The identifiers of the rows that were requeued.</returns>
+    public async ValueTask<IReadOnlyList<Guid>> RequeuePublishedMessagesAsync(
+        IReadOnlyList<Guid> ids,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(ids);
+
+        // One fenced transition per row: each row is locked and decided on the database clock by itself, so a row a
+        // sender holds or a concurrent operator already requeued is left alone without failing the rest. The bulk
+        // endpoint caps the batch, so a statement per row stays cheap.
+        var requeued = new List<Guid>(ids.Count);
+        foreach (var id in ids.Distinct())
+        {
+            var applied = await _TransitionAsync(
+                    "messaging.requeue_published",
+                    transaction: null,
+                    _publishedTable,
+                    $"{_t.StatusName}='{nameof(StatusName.Failed)}' AND {_t.NextRetryAt} IS NULL",
+                    $"{_t.NextRetryAt}={SqlDialectTokens.Now}, {_t.Retries}=0, {_t.InlineAttempts}=0, {_t.ExpiresAt}=NULL, {_t.LockedUntil}=NULL, {_t.Owner}=NULL",
+                    [_t.Id],
+                    command => _dialect.AddParameter(command, "Id", SqlColumnType.Guid, id),
+                    _ReadAppliedAsync,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (applied)
+            {
+                requeued.Add(id);
+            }
+        }
+
+        return requeued;
     }
 
     private async ValueTask<int> _DeleteByIdsAsync(

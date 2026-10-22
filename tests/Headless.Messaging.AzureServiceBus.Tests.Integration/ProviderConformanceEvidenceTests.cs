@@ -101,6 +101,12 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
                 typeof(ProviderConformanceEvidenceTests),
                 nameof(should_reject_requests_and_responders_at_startup_on_a_transport_without_request_reply)
             ),
+            _Bind(
+                TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+                nameof(
+                    AzureServiceBusConsumerClientHarnessTests.should_redeliver_then_give_up_when_the_header_builder_fails_transiently
+                )
+            ),
         ];
 
         TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();
@@ -164,6 +170,20 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
                 TransportConformanceScenario.BrokerInterruptionRecovery,
                 typeof(AzureServiceBusEmulatorBrokerFaultTests),
                 nameof(AzureServiceBusEmulatorBrokerFaultTests.should_resume_delivery_once_after_broker_restart)
+            ),
+            _BindEmulator(
+                TransportConformanceScenario.BoundedGracefulShutdown,
+                nameof(AzureServiceBusEmulatorConsumerClientHarnessTests.should_shutdown_idle_consumer_within_bound)
+            ),
+            _BindEmulator(
+                TransportConformanceScenario.BoundedGracefulShutdown,
+                nameof(AzureServiceBusEmulatorConsumerClientHarnessTests.should_bound_shutdown_while_handler_is_active)
+            ),
+            _BindEmulator(
+                TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+                nameof(
+                    AzureServiceBusEmulatorConsumerClientHarnessTests.should_redeliver_then_give_up_when_the_header_builder_fails_transiently
+                )
             ),
         ];
 

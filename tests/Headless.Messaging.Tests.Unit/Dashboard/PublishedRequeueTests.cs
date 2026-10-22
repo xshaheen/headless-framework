@@ -10,8 +10,10 @@ namespace Tests.Dashboard;
 
 /// <summary>
 /// The dashboard's requeue of published rows, on the real pipeline against the simulated broker and store. The
-/// requeue endpoint hands each selected row to <see cref="IDispatcher.EnqueueToPublish"/>, so this drives that call:
-/// a row that already succeeded is not sent again, and a row that failed terminally is sent once.
+/// requeue endpoint resets each selected row in the store through
+/// <see cref="Headless.Messaging.Persistence.IDataStorage.RequeuePublishedMessagesAsync"/> and the retry processor
+/// sends it, so this drives that call: a row that already succeeded is not sent again, and a row that failed
+/// terminally is sent once.
 /// </summary>
 public sealed class PublishedRequeueTests : TestBase
 {
@@ -45,22 +47,20 @@ public sealed class PublishedRequeueTests : TestBase
         host.Broker.Restore();
 
         // when: an operator requeues both rows
-        var dispatcher = host.GetRequiredService<IDispatcher>();
-        var rows = await host
-            .Storage.GetMonitoringApi()
-            .GetPublishedMessagesAsync([succeeded.StorageId, failed.StorageId], AbortToken);
-        foreach (var row in rows)
-        {
-            await dispatcher.EnqueueToPublish(row, AbortToken);
-        }
+        var requeued = await host.Storage.RequeuePublishedMessagesAsync(
+            [succeeded.StorageId, failed.StorageId],
+            AbortToken
+        );
 
+        // and: the retry processor picks the requeued row up on its next polls
+        await host.RunForAsync(TimeSpan.FromSeconds(5), AbortToken);
         await host.WaitForPublishedRowAsync(
             row => row.StorageId == failed.StorageId && row.StatusName == StatusName.Succeeded,
             AbortToken
         );
-        await host.RunForAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-        // then: the failed row was sent once, and the succeeded row was not sent again
+        // then: only the failed row was requeued; it was sent once, and the succeeded row was not sent again
+        requeued.Should().Equal(failed.StorageId);
         _Sends(host, failed.MessageId).Should().Be(1);
         _Sends(host, succeeded.MessageId).Should().Be(1, "the row was sent once before the requeue, and not again");
     }

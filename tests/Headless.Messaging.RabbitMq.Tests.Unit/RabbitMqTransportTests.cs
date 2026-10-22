@@ -27,6 +27,7 @@ public sealed class RabbitMqTransportTests : TestBase
 
         _pool.Exchange.Returns("test.exchange");
         _pool.HostAddress.Returns("localhost:5672");
+        _pool.MaxMessageBodySize.Returns(ConnectionFactory.DefaultMaxInboundMessageBodySize);
         _pool.Rent(Arg.Any<CancellationToken>()).Returns(_channel);
     }
 
@@ -129,6 +130,46 @@ public sealed class RabbitMqTransportTests : TestBase
                 Arg.Any<CancellationToken>()
             );
         _pool.Received(1).Return(_channel);
+    }
+
+    [Fact]
+    public async Task should_fail_without_publishing_when_the_body_is_larger_than_a_consumer_can_receive()
+    {
+        // given
+        _pool.MaxMessageBodySize.Returns(4u);
+        await using var transport = new RabbitMqTransport(_logger, _pool);
+
+        // when
+        var atLimit = await transport.SendAsync(_CreateMessage("msg-at-limit", "1234"u8.ToArray()), AbortToken);
+        var overLimit = await transport.SendAsync(_CreateMessage("msg-over-limit", "12345"u8.ToArray()), AbortToken);
+
+        // then — the broker would keep the larger body, and the consumer's client would close its connection on it
+        atLimit.Succeeded.Should().BeTrue();
+        overLimit.Succeeded.Should().BeFalse();
+        overLimit.Exception.Should().BeOfType<PublisherSentFailedException>();
+        await _pool.Received(1).Rent(Arg.Any<CancellationToken>());
+        await _channel
+            .Received(1)
+            .BasicPublishAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Any<BasicProperties>(),
+                Arg.Any<ReadOnlyMemory<byte>>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    private static TransportMessage _CreateMessage(string messageId, byte[] body)
+    {
+        return new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [MessagingHeaders.MessageId] = messageId,
+                [MessagingHeaders.MessageName] = "TestMessage",
+            },
+            body
+        );
     }
 
     [Fact]

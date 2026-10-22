@@ -368,36 +368,23 @@ internal sealed class RedisConsumerClient(
         {
             try
             {
-                TransportMessage message;
+                TransportMessage? message;
+                string? builderFailure;
                 try
                 {
-                    message = _CreateMessage(stream.Key.ToString(), entry);
+                    message = _CreateMessage(stream.Key.ToString(), entry, out builderFailure);
                 }
                 catch (Exception ex)
                 {
                     var errorContext = _CreateMalformedEntryErrorContext(ex, entry);
                     logger.InvalidRedisEntry(errorContext.Exception, entry.Id, stream.Key, position, _groupName);
 
-                    var logArgs = new LogMessageEventArgs
-                    {
-                        LogType = MqLogType.RedisConsumeError,
-                        Reason = errorContext.Exception.Message,
-                    };
-
                     try
                     {
-                        var onError = options.Value.OnConsumeError?.Invoke(errorContext);
-
-                        await (onError ?? Task.CompletedTask).ConfigureAwait(false);
-                    }
-                    catch (Exception onError)
-                    {
-                        logger.RedisConsumeErrorCallbackFailed(onError, nameof(RedisMessagingOptions.OnConsumeError));
+                        await _ReportConsumeErrorAsync(errorContext).ConfigureAwait(false);
                     }
                     finally
                     {
-                        OnLogCallback?.Invoke(logArgs);
-
                         // A group-less read keeps no pending entry, so there is nothing to acknowledge.
                         if (kind is ConsumerSubscriptionKind.Competing)
                         {
@@ -410,12 +397,30 @@ internal sealed class RedisConsumerClient(
                     return;
                 }
 
+                if (message is not { } transportMessage)
+                {
+                    // A builder failure is no verdict on the entry: the builder's own lookup may be briefly down. The
+                    // entry stays pending, unacknowledged, and the claim pass hands it out again; a group-less read
+                    // keeps no pending entry, so its delivery is dropped. The builder's message can quote the entry,
+                    // so only its type name reaches the callback.
+                    await _ReportConsumeErrorAsync(
+                            new RedisMessagingOptions.ConsumeErrorContext(
+                                new InvalidOperationException(
+                                    $"The custom headers builder failed for Redis entry [{entry.Id}]: {builderFailure}."
+                                ),
+                                new StreamEntry(entry.Id, [])
+                            )
+                        )
+                        .ConfigureAwait(false);
+                    return;
+                }
+
                 object delivery =
                     kind is ConsumerSubscriptionKind.EveryInstance
                         ? new RedisEveryInstanceDelivery(stream.Key.ToString(), entry.Id.ToString())
                         : new RedisConsumerDelivery(stream.Key.ToString(), _groupName, entry.Id.ToString());
 
-                await OnMessageCallback!(message, delivery).ConfigureAwait(false);
+                await OnMessageCallback!(transportMessage, delivery).ConfigureAwait(false);
             }
             finally
             {
@@ -444,16 +449,32 @@ internal sealed class RedisConsumerClient(
 
     /// <summary>
     /// Builds the transport message of <paramref name="entry"/>: reads its fields, applies the custom headers builder,
-    /// stamps the address, then completes and checks the envelope. Every failure means the entry is malformed.
+    /// stamps the address, then completes and checks the envelope. A thrown failure means the entry is malformed. A
+    /// custom headers builder failure is logged instead and returns no message, with the failure's type name in
+    /// <paramref name="builderFailure"/>.
     /// </summary>
-    private TransportMessage _CreateMessage(string streamKey, StreamEntry entry)
+    private TransportMessage? _CreateMessage(string streamKey, StreamEntry entry, out string? builderFailure)
     {
         var arrivalName = ArrivalName(streamKey);
         var message = RedisMessage.Create(entry, headersOptional: _envelopeGate.IsRaw(lane, arrivalName));
 
+        builderFailure = null;
         if (options.Value.CustomHeadersBuilder is { } customHeadersBuilder)
         {
-            foreach (var customHeader in customHeadersBuilder(entry, _serviceProvider))
+            List<KeyValuePair<string, string>> customHeaders;
+            try
+            {
+                customHeaders = customHeadersBuilder(entry, _serviceProvider);
+            }
+            catch (Exception ex)
+            {
+                // A builder is user code that may throw anything; the caller leaves the entry pending for redelivery.
+                logger.RedisCustomHeadersBuilderFailed(ex, entry.Id, streamKey, _groupName);
+                builderFailure = ex.GetType().Name;
+                return null;
+            }
+
+            foreach (var customHeader in customHeaders)
             {
                 message.Headers[customHeader.Key] = customHeader.Value;
             }
@@ -507,6 +528,30 @@ internal sealed class RedisConsumerClient(
         };
 
         return new RedisMessagingOptions.ConsumeErrorContext(safeException, new StreamEntry(entry.Id, []));
+    }
+
+    private async Task _ReportConsumeErrorAsync(RedisMessagingOptions.ConsumeErrorContext errorContext)
+    {
+        try
+        {
+            var onError = options.Value.OnConsumeError?.Invoke(errorContext);
+
+            await (onError ?? Task.CompletedTask).ConfigureAwait(false);
+        }
+        catch (Exception onError)
+        {
+            logger.RedisConsumeErrorCallbackFailed(onError, nameof(RedisMessagingOptions.OnConsumeError));
+        }
+        finally
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.RedisConsumeError,
+                    Reason = errorContext.Exception.Message,
+                }
+            );
+        }
     }
 
     private void _ObserveBackgroundHandler(Task task)
@@ -602,4 +647,17 @@ internal static partial class RedisConsumerClientLog
         Message = "Redis consumer of group {GroupId} shut down before its in-flight handlers finished; their unsettled entries stay pending for another consumer to claim"
     )]
     public static partial void RedisShutdownDrainIncomplete(this ILogger logger, Exception exception, string groupId);
+
+    [LoggerMessage(
+        EventId = 3009,
+        Level = LogLevel.Warning,
+        Message = "The custom headers builder failed for Redis entry {EntryId} on stream {StreamKey} of group {GroupId}; the entry is left unacknowledged, so the group hands it out again"
+    )]
+    public static partial void RedisCustomHeadersBuilderFailed(
+        this ILogger logger,
+        Exception exception,
+        RedisValue entryId,
+        RedisKey streamKey,
+        string groupId
+    );
 }

@@ -91,12 +91,11 @@ public sealed class PermissionsTestFixture : ICollectionFixture<PermissionsTestF
             .WithDatabase("headless_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
-            .WithReuse(true)
             .Build();
     }
 
     private static RedisContainer _CreateRedisContainer()
     {
-        return new RedisBuilder(TestImages.Redis).WithLabel("type", "permissions-redis").WithReuse(true).Build();
+        return new RedisBuilder(TestImages.Redis).WithLabel("type", "permissions-redis").Build();
     }
 }

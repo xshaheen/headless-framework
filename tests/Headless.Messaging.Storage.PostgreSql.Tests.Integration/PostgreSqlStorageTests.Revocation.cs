@@ -62,6 +62,10 @@ public partial class PostgreSqlStorageTests
         base.should_revoke_queued_message_before_first_reservation();
 
     [Fact]
+    public override Task should_requeue_only_a_published_row_that_failed_for_good_with_a_fresh_retry_budget() =>
+        base.should_requeue_only_a_published_row_that_failed_for_good_with_a_fresh_retry_budget();
+
+    [Fact]
     public override Task should_reject_revocation_after_attempt_reservation() =>
         base.should_reject_revocation_after_attempt_reservation();
 

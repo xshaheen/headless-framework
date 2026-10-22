@@ -137,6 +137,12 @@ public sealed class ProviderConformanceEvidenceTests(LocalStackTestFixture fixtu
                 nameof(should_reject_requests_and_responders_at_startup_on_a_transport_without_request_reply)
             ),
             _Bind(
+                TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+                nameof(
+                    AmazonSqsConsumerClientConformanceTests.should_redeliver_then_give_up_when_the_header_builder_fails_transiently
+                )
+            ),
+            _Bind(
                 TransportConformanceScenario.StandardHeaderRoundTrip,
                 nameof(AmazonSqsConsumerClientConformanceTests.should_round_trip_every_standard_header_unchanged)
             ),

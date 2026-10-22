@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting;
 using Headless.Idempotency;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,17 +34,6 @@ public sealed class ResponseReplayPostgreSqlFixture
     protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
-        await using var connection = new NpgsqlConnection(ConnectionString);
-        await connection.OpenAsync(CancellationToken.None);
-
-        // The container is reused across runs, so start from no storage and let the initializers create it.
-        await using var reset = new NpgsqlCommand(
-            $"""
-            DROP SCHEMA IF EXISTS "{HeadlessStorageDefaults.Schema}" CASCADE;
-            """,
-            connection
-        );
-        await reset.ExecuteNonQueryAsync(CancellationToken.None);
     }
 
     /// <summary>Registers idempotency on this fixture's database.</summary>

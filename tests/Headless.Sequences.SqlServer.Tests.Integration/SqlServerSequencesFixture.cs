@@ -38,25 +38,17 @@ public sealed class SqlServerSequencesFixture
     {
         await base.InitializeAsync();
 
-        await using (var master = new SqlConnection(ConnectionString))
+        await using var master = new SqlConnection(ConnectionString);
+        await master.OpenAsync(CancellationToken.None);
+
+        foreach (var database in (string[])[_CountersDatabase, _OtherDatabase])
         {
-            await master.OpenAsync(CancellationToken.None);
-
-            foreach (var database in (string[])[_CountersDatabase, _OtherDatabase])
-            {
-                await using var create = new SqlCommand(
-                    $"IF DB_ID(N'{database}') IS NULL CREATE DATABASE [{database}];",
-                    master
-                );
-                await create.ExecuteNonQueryAsync(CancellationToken.None);
-            }
+            await using var create = new SqlCommand(
+                $"IF DB_ID(N'{database}') IS NULL CREATE DATABASE [{database}];",
+                master
+            );
+            await create.ExecuteNonQueryAsync(CancellationToken.None);
         }
-
-        // The container is reused across runs, so start from no counter table and let the initializer create it.
-        await ExecuteAsync(
-            DropSchemaSql(HeadlessStorageDefaults.Schema, SqlServerSequencesOptions.DefaultTableName),
-            CancellationToken.None
-        );
     }
 
     public void ConfigureUnitOfWork(IServiceCollection services)

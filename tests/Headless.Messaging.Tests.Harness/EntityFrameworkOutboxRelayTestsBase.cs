@@ -136,7 +136,7 @@ public abstract class EntityFrameworkOutboxRelayTestsBase : TestBase
 
             await using (var scope = provider.CreateAsyncScope())
             {
-                // A reused database may hold the table in an older shape; recreate only this suite's table.
+                // Every test builds its own provider over the collection's database; recreate only this suite's table.
                 var db = scope.ServiceProvider.GetRequiredService<RelayDbContext>();
                 await db.Database.ExecuteSqlRawAsync("""DROP TABLE IF EXISTS "RelayOrders";""", AbortToken);
                 await db.GetService<IRelationalDatabaseCreator>().CreateTablesAsync(AbortToken);

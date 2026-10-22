@@ -820,7 +820,10 @@ public sealed class DispatcherTests : TestBase
     [Fact]
     public async Task should_be_thread_safe_when_enqueue_to_scheduler_delay_less_then_minute()
     {
-        // given
+        // given — a frozen clock with every message due at its publish time: the scheduler loop drains while the
+        // producers are still enqueueing, and the test ends on the delivered count, never on a wall-clock bound
+        // that a loaded runner can outlast.
+        var timeProvider = new FakeTimeProvider();
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(
             new MessagingOptions
@@ -839,7 +842,7 @@ public sealed class DispatcherTests : TestBase
             options,
             _executor,
             _storage,
-            TimeProvider.System,
+            timeProvider,
             _scopeFactory
         );
         using var cts = new CancellationTokenSource();
@@ -858,15 +861,16 @@ public sealed class DispatcherTests : TestBase
 
         // when
         await dispatcher.StartAsync(cts.Token);
-        var dateTime = DateTimeOffset.UtcNow.AddMilliseconds(50);
+        // Due on arrival is still under a minute away, so each message takes the in-memory scheduler path.
+        var publishTime = timeProvider.GetUtcNow();
 
         await Parallel.ForEachAsync(
             messages,
             AbortToken,
-            async (m, ct) => await dispatcher.EnqueueToScheduler(m, dateTime, null, ct)
+            async (m, ct) => await dispatcher.EnqueueToScheduler(m, publishTime, null, ct)
         );
 
-        await sender.WaitForCountAsync(10000, TimeSpan.FromSeconds(10), AbortToken);
+        await sender.WaitForCountAsync(10000, AbortToken);
 
         await cts.CancelAsync();
 
@@ -1041,7 +1045,10 @@ public sealed class DispatcherTests : TestBase
     [Fact]
     public async Task should_be_thread_safe_when_enqueue_to_scheduler_delay_less_then_minute_and_parallel_send_enabled()
     {
-        // given
+        // given — a frozen clock with every message due at its publish time: the scheduler loop drains while the
+        // producers are still enqueueing, and the test ends on the delivered count, never on a wall-clock bound
+        // that a loaded runner can outlast.
+        var timeProvider = new FakeTimeProvider();
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(
             new MessagingOptions
@@ -1060,7 +1067,7 @@ public sealed class DispatcherTests : TestBase
             options,
             _executor,
             _storage,
-            TimeProvider.System,
+            timeProvider,
             _scopeFactory
         );
         using var cts = new CancellationTokenSource();
@@ -1079,15 +1086,16 @@ public sealed class DispatcherTests : TestBase
 
         // when
         await dispatcher.StartAsync(cts.Token);
-        var dateTime = DateTimeOffset.UtcNow.AddMilliseconds(50);
+        // Due on arrival is still under a minute away, so each message takes the in-memory scheduler path.
+        var publishTime = timeProvider.GetUtcNow();
 
         await Parallel.ForEachAsync(
             messages,
             AbortToken,
-            async (m, ct) => await dispatcher.EnqueueToScheduler(m, dateTime, null, ct)
+            async (m, ct) => await dispatcher.EnqueueToScheduler(m, publishTime, null, ct)
         );
 
-        await sender.WaitForCountAsync(10000, TimeSpan.FromSeconds(10), AbortToken);
+        await sender.WaitForCountAsync(10000, AbortToken);
 
         await cts.CancelAsync();
 

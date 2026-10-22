@@ -62,7 +62,14 @@ public sealed class NatsTransportTests(NatsFixture fixture) : TransportTestsBase
             {
                 Servers = fixture.ConnectionString,
                 ConnectionPoolSize = 2,
-                ConfigureConnection = opts => opts with { ConnectTimeout = TimeSpan.FromSeconds(10) },
+                // Fifty concurrent JetStream publishes share two connections, so on a loaded runner an acknowledgement
+                // can take longer than the client's 5-second default and the publish fails as unacknowledged.
+                ConfigureConnection = opts =>
+                    opts with
+                    {
+                        ConnectTimeout = TimeSpan.FromSeconds(10),
+                        RequestTimeout = TimeSpan.FromSeconds(30),
+                    },
                 // InitializeAsync provisions these streams under its own names, as an operator would.
                 StreamProvisioning = NatsStreamProvisioning.Disabled,
             }
@@ -84,7 +91,14 @@ public sealed class NatsTransportTests(NatsFixture fixture) : TransportTestsBase
             {
                 Servers = fixture.ConnectionString,
                 ConnectionPoolSize = 2,
-                ConfigureConnection = opts => opts with { ConnectTimeout = TimeSpan.FromSeconds(10) },
+                // Fifty concurrent JetStream publishes share two connections, so on a loaded runner an acknowledgement
+                // can take longer than the client's 5-second default and the publish fails as unacknowledged.
+                ConfigureConnection = opts =>
+                    opts with
+                    {
+                        ConnectTimeout = TimeSpan.FromSeconds(10),
+                        RequestTimeout = TimeSpan.FromSeconds(30),
+                    },
                 // InitializeAsync provisions these streams under its own names, as an operator would.
                 StreamProvisioning = NatsStreamProvisioning.Disabled,
             }

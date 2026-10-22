@@ -137,7 +137,7 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
         services.AddLogging();
         services.ConfigureMessaging(messaging =>
         {
-            // A stream key of its own per run: a reused container keeps streams earlier runs provisioned.
+            // A stream key of its own, so no stream another test provisioned on the shared server matches it.
             messaging.Message<UncapturedRequest>($"uncaptured-{run}.request");
             messaging.Message<UncapturedResponse>($"uncaptured-{run}.response");
         });
