@@ -482,6 +482,9 @@ public static partial class MessagingDashboardEndpoints
     private const string _PendingScheduledRejectionMessage =
         "Pending scheduled deliveries must be revoked or dispatched through the audited scheduled-delivery operations.";
 
+    private const string _NotFailedRejectionMessage =
+        "Only a published message that failed for good can be requeued; a sent message, or one still waiting for a retry, is left as it is.";
+
     private static async Task<IResult> _PublishedRequeue(HttpContext httpContext, IServiceProvider sp)
     {
         var storageIds = await _ReadStorageIdsAsync(httpContext).ConfigureAwait(false);
@@ -505,7 +508,6 @@ public static partial class MessagingDashboardEndpoints
         var eligibleIds = storageIds.Where(id => !pendingScheduledIds.Contains(id)).ToArray();
 
         var monitoringApi = dataStorage.GetMonitoringApi();
-        var dispatcher = sp.GetRequiredService<IDispatcher>();
         var busTransport = sp.GetService<IBusTransport>();
         var queueTransport = sp.GetService<IQueueTransport>();
 
@@ -516,9 +518,7 @@ public static partial class MessagingDashboardEndpoints
                     .ConfigureAwait(false)
                 : [];
 
-        var rejected = new List<Guid>(pendingScheduledIds);
-        var requeued = new List<Guid>();
-
+        var sendable = new List<Guid>(messages.Count);
         foreach (var message in messages)
         {
             var hasTransport = message.Lane switch
@@ -528,15 +528,24 @@ public static partial class MessagingDashboardEndpoints
                 _ => false,
             };
 
-            if (!hasTransport)
+            if (hasTransport)
             {
-                rejected.Add(message.StorageId);
-                continue;
+                sendable.Add(message.StorageId);
             }
-
-            await dispatcher.EnqueueToPublish(message, httpContext.RequestAborted).ConfigureAwait(false);
-            requeued.Add(message.StorageId);
         }
+
+        // The store refuses to lease a row that failed for good, so handing it to the dispatcher would end it again
+        // without a send. Requeuing resets the row in the store with a fresh retry budget, and the retry processor
+        // sends it on its next pickup.
+        var requeued =
+            sendable.Count > 0
+                ? await dataStorage
+                    .RequeuePublishedMessagesAsync(sendable, httpContext.RequestAborted)
+                    .ConfigureAwait(false)
+                : [];
+
+        var requeuedSet = requeued.ToHashSet();
+        var rejected = storageIds.Where(id => !requeuedSet.Contains(id)).ToList();
 
         if (rejected.Count > 0)
         {
@@ -545,7 +554,9 @@ public static partial class MessagingDashboardEndpoints
                 {
                     rejected,
                     requeued,
-                    message = pendingScheduledIds.Count > 0 ? _PendingScheduledRejectionMessage : null,
+                    message = pendingScheduledIds.Count > 0
+                        ? _PendingScheduledRejectionMessage
+                        : _NotFailedRejectionMessage,
                 }
             );
         }

@@ -1,9 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Amazon.Runtime;
+using Amazon.SQS.Model;
+using Headless.Checks;
 using Headless.Messaging;
 using Headless.Messaging.Aws;
 using Headless.Testing.Testcontainers;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -16,6 +19,8 @@ namespace Tests;
 [CollectionDefinition(DisableParallelization = true)]
 public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollectionFixture<LocalStackTestFixture>
 {
+    private static readonly IServiceProvider _NoServices = new ServiceCollection().BuildServiceProvider();
+
     /// <summary>Gets the LocalStack connection string (service URL).</summary>
     public string ConnectionString => Container.GetConnectionString();
 
@@ -153,7 +158,9 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
                 MessageLane.Bus => MessageLane.Bus,
                 MessageLane.Queue => MessageLane.Queue,
                 _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, null),
-            }
+            },
+            // The custom headers builder receives the service provider, and the client refuses to call it without one.
+            serviceProvider: _NoServices
         );
         var cleanupClient = AwsClientFactory.CreateSqsClient(options.Value);
 #pragma warning restore CA2000
@@ -171,13 +178,28 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
                             cancellationToken
                         )
                     ).QueueUrl;
+            string? deadLetterQueueUrl = null;
             if (ownsQueue)
             {
-                await cleanupClient.SetQueueAttributesAsync(
-                    queueUrl,
-                    new Dictionary<string, string>(StringComparer.Ordinal) { ["VisibilityTimeout"] = "2" },
-                    cancellationToken
-                );
+                var attributes = new Dictionary<string, string>(StringComparer.Ordinal) { ["VisibilityTimeout"] = "2" };
+
+                // SQS gives up on a message only through a redrive policy: past maxReceiveCount receives it moves the
+                // message to the dead-letter queue.
+                if (sessionOptions.DeliveryLimit is { } deliveryLimit)
+                {
+                    Ensure.False(sessionOptions.RoutingAffinity, "A FIFO queue's dead-letter queue must be FIFO too.");
+                    deadLetterQueueUrl = (
+                        await cleanupClient.CreateQueueAsync(_DeadLetterQueueName(destination), cancellationToken)
+                    ).QueueUrl;
+                    var deadLetterQueueArn = (
+                        await cleanupClient.GetQueueAttributesAsync(deadLetterQueueUrl, ["QueueArn"], cancellationToken)
+                    ).QueueARN;
+                    attributes["RedrivePolicy"] = JsonSerializer.Serialize(
+                        new { deadLetterTargetArn = deadLetterQueueArn, maxReceiveCount = deliveryLimit }
+                    );
+                }
+
+                await cleanupClient.SetQueueAttributesAsync(queueUrl, attributes, cancellationToken);
             }
 
             return new TransportConsumerConformanceSession(
@@ -192,6 +214,11 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
                         if (ownsQueue)
                         {
                             await cleanupClient.DeleteQueueAsync(queueUrl, CancellationToken.None);
+                        }
+
+                        if (deadLetterQueueUrl is not null)
+                        {
+                            await cleanupClient.DeleteQueueAsync(deadLetterQueueUrl, CancellationToken.None);
                         }
                     }
                     finally
@@ -222,4 +249,56 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
             throw;
         }
     }
+
+    /// <summary>
+    /// Takes every message the dead-letter queue of <paramref name="session"/> holds, as an operator draining it would,
+    /// and returns their message ids.
+    /// </summary>
+    public async ValueTask<IReadOnlyList<string>> TakeDeadLetteredMessageIdsAsync(
+        TransportConsumerConformanceSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        using var client = AwsClientFactory.CreateSqsClient(
+            new AmazonSqsMessagingOptions
+            {
+                Region = Amazon.RegionEndpoint.USEast1,
+                SnsServiceUrl = ConnectionString,
+                SqsServiceUrl = ConnectionString,
+                Credentials = new BasicAWSCredentials("test", "test"),
+            }
+        );
+        var queueUrl = (
+            await client.GetQueueUrlAsync(_DeadLetterQueueName(session.Destination), cancellationToken)
+        ).QueueUrl;
+        var taken = new List<string>();
+
+        while (true)
+        {
+            var response = await client.ReceiveMessageAsync(
+                new ReceiveMessageRequest(queueUrl)
+                {
+                    MaxNumberOfMessages = 10,
+                    MessageAttributeNames = ["All"],
+                    WaitTimeSeconds = 0,
+                },
+                cancellationToken
+            );
+            if (response.Messages is not { Count: > 0 } messages)
+            {
+                return taken;
+            }
+
+            foreach (var message in messages)
+            {
+                taken.Add(
+                    SqsHeaderCodec.Decode(message.MessageAttributes).GetValueOrDefault(Headers.MessageId)
+                        ?? string.Empty
+                );
+                await client.DeleteMessageAsync(queueUrl, message.ReceiptHandle, cancellationToken);
+            }
+        }
+    }
+
+    private static string _DeadLetterQueueName(string destination) => destination + "-dlq";
 }

@@ -4,7 +4,7 @@ using System.Xml.Linq;
 using Dapper;
 using Headless;
 using Headless.Coordination;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.SqlServer;

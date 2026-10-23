@@ -117,7 +117,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
 
         await _WaitForSignalAsync(consumeFailed.Task);
 
-        // then - reject is owned by the framework callback wrapper, not the transport callback shell
+        // then - a failed callback requeues through basic.reject, never basic.nack
         await _channel
             .DidNotReceive()
             .BasicNackAsync(Arg.Any<ulong>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
@@ -263,7 +263,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     }
 
     [Fact]
-    public async Task should_propagate_exception_when_consume_fails_without_concurrent_processing()
+    public async Task should_log_instead_of_propagating_when_consume_fails_without_concurrent_processing()
     {
         // given
         const byte concurrent = 0;
@@ -295,8 +295,9 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
                 CancellationToken.None
             );
 
-        // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Simulated consumption error");
+        // then — the client's dispatcher would only log it, after the delivery was left unsettled
+        await act.Should().NotThrowAsync();
+        _loggedEvents.Should().ContainSingle().Which.Reason.Should().Contain("Simulated consumption error");
     }
 
     [Fact]
@@ -555,12 +556,13 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var failures = new SettlementFailureRecorder();
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
-            1,
+            0,
             (_, _) => Task.CompletedTask,
             _loggedEvents.Add,
             null,
             _serviceProvider
         );
+        await _DeliverAsync(consumer, 42UL);
 
         // when
         await consumer.BasicAck(42UL, AbortToken);
@@ -579,12 +581,13 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var failures = new SettlementFailureRecorder();
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
-            1,
+            0,
             (_, _) => Task.CompletedTask,
             _loggedEvents.Add,
             null,
             _serviceProvider
         );
+        await _DeliverAsync(consumer, 42UL);
 
         // when
         var act = async () => await consumer.BasicAck(42UL, AbortToken);
@@ -614,12 +617,13 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         _channel.IsOpen.Returns(true);
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
-            1,
+            0,
             (_, _) => Task.CompletedTask,
             _ => { },
             null,
             _serviceProvider
         );
+        await _DeliverAsync(consumer, 42UL);
 
         // when
         await consumer.BasicReject(42UL, AbortToken);
@@ -635,12 +639,13 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         _channel.IsOpen.Returns(true);
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
-            1,
+            0,
             (_, _) => Task.CompletedTask,
             _ => { },
             null,
             _serviceProvider
         );
+        await _DeliverAsync(consumer, 42UL);
 
         // when
         await consumer.BasicDeadLetter(42UL, AbortToken);
@@ -657,12 +662,13 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         _channel.IsOpen.Returns(false);
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
-            1,
+            0,
             (_, _) => Task.CompletedTask,
             _ => { },
             null,
             _serviceProvider
         );
+        await _DeliverAsync(consumer, 42UL);
 
         // when
         await consumer.BasicDeadLetter(42UL, AbortToken);
@@ -680,12 +686,13 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         _channel.IsOpen.Returns(false);
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
-            1,
+            0,
             (_, _) => Task.CompletedTask,
             _ => { },
             null,
             _serviceProvider
         );
+        await _DeliverAsync(consumer, 42UL);
 
         // when
         await consumer.BasicReject(42UL, AbortToken);
@@ -988,12 +995,15 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         _channel.IsOpen.Returns(true);
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
-            2,
+            0,
             (_, _) => Task.CompletedTask,
             _ => { },
             null,
             _serviceProvider
         );
+        await _DeliverAsync(consumer, 1UL);
+        await _DeliverAsync(consumer, 2UL);
+        await _DeliverAsync(consumer, 3UL);
 
         // when - multiple acks should not block if semaphore is released properly
         await consumer.BasicAck(1UL, AbortToken);
@@ -1011,12 +1021,15 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         _channel.IsOpen.Returns(true);
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
-            2,
+            0,
             (_, _) => Task.CompletedTask,
             _ => { },
             null,
             _serviceProvider
         );
+        await _DeliverAsync(consumer, 1UL);
+        await _DeliverAsync(consumer, 2UL);
+        await _DeliverAsync(consumer, 3UL);
 
         // when - multiple rejects should not block if semaphore is released properly
         await consumer.BasicReject(1UL, AbortToken);
@@ -1154,6 +1167,128 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             .Select(call => call.GetMethodInfo().Name)
             .Should()
             .NotContain([nameof(IChannel.BasicAckAsync), nameof(IChannel.BasicRejectAsync)]);
+    }
+
+    [Fact]
+    public async Task should_send_one_settlement_when_a_delivery_is_settled_again()
+    {
+        // given
+        _channel.IsOpen.Returns(true);
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            0,
+            (_, _) => Task.CompletedTask,
+            _loggedEvents.Add,
+            null,
+            _serviceProvider
+        );
+        await _DeliverAsync(consumer, 7ul);
+        await consumer.BasicAck(7ul, AbortToken);
+
+        // when — a tag the broker no longer knows closes the channel with PRECONDITION_FAILED if it is sent again
+        await consumer.BasicAck(7ul, AbortToken);
+        await consumer.BasicReject(7ul, AbortToken);
+        await consumer.BasicDeadLetter(7ul, AbortToken);
+
+        // then
+        await _channel.Received(1).BasicAckAsync(7ul, false, Arg.Any<CancellationToken>());
+        await _channel
+            .DidNotReceive()
+            .BasicRejectAsync(Arg.Any<ulong>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_not_settle_a_delivery_tag_this_consumer_never_handed_out()
+    {
+        // given
+        _channel.IsOpen.Returns(true);
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            0,
+            (_, _) => Task.CompletedTask,
+            _loggedEvents.Add,
+            null,
+            _serviceProvider
+        );
+
+        // when
+        await consumer.BasicAck(99ul, AbortToken);
+        await consumer.BasicReject(99ul, AbortToken);
+
+        // then
+        await _channel.DidNotReceive().BasicAckAsync(Arg.Any<ulong>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+        await _channel
+            .DidNotReceive()
+            .BasicRejectAsync(Arg.Any<ulong>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public async Task should_requeue_the_delivery_when_the_callback_throws(byte concurrent)
+    {
+        // given
+        _channel.IsOpen.Returns(true);
+        var consumeFailed = _CreateSignal();
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            concurrent,
+            (_, _) => throw new InvalidOperationException("Simulated consumption error"),
+            args => _RecordLog(args, consumeFailed),
+            null,
+            _serviceProvider
+        );
+
+        // when
+        await _DeliverAsync(consumer, 11ul);
+        await _WaitForSignalAsync(consumeFailed.Task);
+
+        // then — nothing else settles it, so an unsettled delivery would hold its prefetch slot for good
+        await _channel.Received(1).BasicRejectAsync(11ul, true, Arg.Any<CancellationToken>());
+        _loggedEvents.Should().ContainSingle().Which.LogType.Should().Be(MqLogType.ConsumeError);
+    }
+
+    [Fact]
+    public async Task should_not_requeue_the_delivery_when_the_callback_settled_it_before_throwing()
+    {
+        // given
+        _channel.IsOpen.Returns(true);
+        RabbitMqBasicConsumer? consumer = null;
+        using var created = consumer = new RabbitMqBasicConsumer(
+            _channel,
+            0,
+            async (_, tag) =>
+            {
+                await consumer!.BasicAck((ulong)tag!, AbortToken);
+                throw new InvalidOperationException("failed after the commit");
+            },
+            _loggedEvents.Add,
+            null,
+            _serviceProvider
+        );
+
+        // when
+        await _DeliverAsync(created, 12ul);
+
+        // then
+        await _channel.Received(1).BasicAckAsync(12ul, false, Arg.Any<CancellationToken>());
+        await _channel
+            .DidNotReceive()
+            .BasicRejectAsync(Arg.Any<ulong>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+    }
+
+    private static Task _DeliverAsync(RabbitMqBasicConsumer consumer, ulong deliveryTag)
+    {
+        return consumer.HandleBasicDeliverAsync(
+            "consumerTag",
+            deliveryTag,
+            false,
+            "exchange",
+            "routingKey",
+            _CreateProperties(),
+            "body"u8.ToArray(),
+            CancellationToken.None
+        );
     }
 
     /// <summary>

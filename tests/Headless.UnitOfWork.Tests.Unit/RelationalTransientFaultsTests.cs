@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using System.Net.Sockets;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Headless.UnitOfWork.Internal;
@@ -69,6 +70,38 @@ public sealed class RelationalTransientFaultsTests : TestBase
         var exception = new Microsoft.Data.Sqlite.SqliteException(errorCode, extendedErrorCode);
 
         RelationalTransientFaults.IsTransient(exception, CancellationToken.None).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData((byte)20, true)] // a refused connect or a failed pre-login handshake closes the connection
+    [InlineData((byte)16, false)] // a client-side failure of the statement, not of the connection
+    public void should_classify_a_sql_client_connection_failure_by_its_severity(byte severity, bool expected)
+    {
+        // SqlClient reports its own connection-layer failures as number 0, which is not in the transient set.
+        var exception = new Microsoft.Data.SqlClient.SqlException(0, severity);
+
+        RelationalTransientFaults.IsTransient(exception, CancellationToken.None).Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_classify_a_sql_client_failure_over_a_transport_error_as_transient()
+    {
+        // "A transport-level error has occurred when receiving results from the server": the I/O error is the cause.
+        var exception = new Microsoft.Data.SqlClient.SqlException(
+            0,
+            inner: new IOException("Unable to read data from the transport connection.", new SocketException())
+        );
+
+        RelationalTransientFaults.IsTransient(exception, CancellationToken.None).Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_not_read_a_connection_failure_from_another_driver()
+    {
+        // The rule is SqlClient's: another driver says itself whether a fault over an I/O error is transient.
+        var exception = new FakeDbException(number: 0, inner: new IOException("connection reset"));
+
+        RelationalTransientFaults.IsTransient(exception, CancellationToken.None).Should().BeFalse();
     }
 
     [Fact]

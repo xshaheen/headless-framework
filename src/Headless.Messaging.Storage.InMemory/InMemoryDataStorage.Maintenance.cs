@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Data.Common;
+using Headless.Checks;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 
@@ -269,6 +270,44 @@ internal sealed partial class InMemoryDataStorage
         }
 
         return ValueTask.FromResult(deleted);
+    }
+
+    public ValueTask<IReadOnlyList<Guid>> RequeuePublishedMessagesAsync(
+        IReadOnlyList<Guid> ids,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(ids);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var requeued = new List<Guid>(ids.Count);
+        foreach (var id in ids.Distinct())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!PublishedMessages.TryGetValue(id, out var row))
+            {
+                continue;
+            }
+
+            lock (row)
+            {
+                if (row.StatusName != StatusName.Failed || row.NextRetryAt is not null)
+                {
+                    continue;
+                }
+
+                row.NextRetryAt = timeProvider.GetUtcNow();
+                row.Retries = 0;
+                row.InlineAttempts = 0;
+                row.ExpiresAt = null;
+                row.LockedUntil = null;
+                row.Owner = null;
+            }
+
+            requeued.Add(id);
+        }
+
+        return ValueTask.FromResult<IReadOnlyList<Guid>>(requeued);
     }
 
     public ValueTask ScheduleMessagesOfDelayedAsync(

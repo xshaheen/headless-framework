@@ -2,6 +2,6 @@
 # cancellation), Thread.Sleep, SpinWait.SpinUntil, and TimeProvider.System.Delay, outside line comments.
 # FastTierPolicyTests fails when a count rises above its line, and when it falls below it: lower the line in the
 # same change that removes a wait, so the gain is kept.
-Headless.Messaging.Tests.Unit 42
+Headless.Messaging.Tests.Unit 41
 Headless.Messaging.InMemory.Tests.Unit 38
 Headless.Messaging.Tests.Harness 23

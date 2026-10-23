@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Hosting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Hosting;
 
 /// <summary>
 /// Registers the dependency health checks that Headless provider packages contribute, and lets an application remove
@@ -409,16 +409,16 @@ public static class HeadlessHealthCheckExtensions
 #pragma warning restore CA1031, ERP022
     }
 
-    private static HeadlessHealthCheckNames _GetNames(IServiceCollection services)
+    private static RegisteredHealthCheckNames _GetNames(IServiceCollection services)
     {
         if (
             services
-                .FirstOrDefault(static descriptor => descriptor.ServiceType == typeof(HeadlessHealthCheckNames))
+                .FirstOrDefault(static descriptor => descriptor.ServiceType == typeof(RegisteredHealthCheckNames))
                 ?.ImplementationInstance
-            is not HeadlessHealthCheckNames names
+            is not RegisteredHealthCheckNames names
         )
         {
-            names = new HeadlessHealthCheckNames();
+            names = new RegisteredHealthCheckNames();
             services.AddSingleton(names);
 
             // First in the collection, so every ConfigureHeadlessHealthCheck call runs after it and wins.
@@ -522,9 +522,9 @@ public static class HeadlessHealthCheckExtensions
             : base(StringComparer.Ordinal) { }
     }
 
-    private sealed class HeadlessHealthCheckNames : HashSet<string>
+    private sealed class RegisteredHealthCheckNames : HashSet<string>
     {
-        public HeadlessHealthCheckNames()
+        public RegisteredHealthCheckNames()
             : base(StringComparer.Ordinal) { }
     }
 

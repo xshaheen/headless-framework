@@ -322,6 +322,12 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
 
         try
         {
+            // A session stands in for a deployed host: the shared exchanges exist before any publish checks them.
+            await new RabbitMqTopologyProvisioner(pool, rabbitOptions).ProvisionAsync(
+                MessagingTopology.Empty,
+                cancellationToken
+            );
+
 #pragma warning disable CA2000 // False positive: consumer transfers to the returned session or the catch disposes it.
             consumer = request is null
                 ? new RabbitMqConsumerClient(
@@ -330,10 +336,15 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
                     pool,
                     rabbitOptions,
                     services,
+                    provisionsTopology: true,
                     lane: _ToMessageLane(lane)
                 )
                 : await new RabbitMqConsumerClientFactory(rabbitOptions, pool, services).CreateAsync(
-                    request,
+                    // These sessions stand in for a deployed host and its topology at once, so the client creates it.
+                    request with
+                    {
+                        ProvisionsTopology = true,
+                    },
                     cancellationToken
                 );
 #pragma warning restore CA2000

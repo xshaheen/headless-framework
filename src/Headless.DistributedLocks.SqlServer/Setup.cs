@@ -4,6 +4,7 @@ using FluentValidation;
 using Headless.Checks;
 using Headless.DistributedLocks.SqlServer;
 using Headless.Hosting;
+using Headless.Hosting.Schema;
 using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -175,7 +176,7 @@ public static class SetupDistributedLocksSqlServer
         // a unit-of-work provider, inert otherwise.
         services.TryAddSingleton<IUnitOfWorkTransactionLocks, SqlServerUnitOfWorkTransactionLocks>();
         // The contribution factory reads options at first resolution, so EnableFencing keeps its contract: false
-        // means the runner never creates the fence sequence, which nothing then reads.
+        // means the host never verifies the fence sequence, which nothing then reads.
         services.AddHeadlessSchemaContribution(sp =>
             SqlServerDistributedLocksSchemaContribution.Create(
                 sp.GetRequiredService<IOptions<SqlServerDistributedLockOptions>>().Value,

@@ -767,6 +767,18 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
         );
     }
 
+    public ValueTask<IReadOnlyList<Guid>> RequeuePublishedMessagesAsync(
+        IReadOnlyList<Guid> ids,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _RunAsync(
+            StorageOperation.RequeuePublishedMessages,
+            () => Inner.RequeuePublishedMessagesAsync(ids, cancellationToken),
+            cancellationToken
+        );
+    }
+
     public ValueTask<IReadOnlyList<MediumMessage>> ClaimDelayedMessagesAsync(
         CancellationToken cancellationToken = default
     )

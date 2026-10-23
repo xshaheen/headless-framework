@@ -20,12 +20,6 @@ public abstract class RelationalCoordinationOptions
     /// </summary>
     public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
-    /// <summary>
-    /// Gets or sets a value indicating whether the schema runner creates missing tables at startup.
-    /// Defaults to <see langword="true"/>. Set to <see langword="false"/> when an external tool manages migrations.
-    /// </summary>
-    public bool InitializeOnStartup { get; set; } = true;
-
     internal int CommandTimeoutSeconds => Math.Max(1, (int)Math.Ceiling(CommandTimeout.TotalSeconds));
 }
 

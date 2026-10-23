@@ -37,6 +37,16 @@ public sealed class AmazonSqsConsumerClientConformanceTests(LocalStackTestFixtur
         return fixture.CreateConformanceSessionAsync(cancellationToken, options: options);
     }
 
+    protected override bool HasDeadLetterDestination => true;
+
+    protected override ValueTask<IReadOnlyList<string>> TakeDeadLetteredMessageIdsAsync(
+        TransportConsumerConformanceSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        return fixture.TakeDeadLetteredMessageIdsAsync(session, cancellationToken);
+    }
+
     /// <summary>
     /// LocalStack's SQS limit of 256 KiB, which counts message attributes too: the conformance envelope's header bag
     /// takes 207 bytes of it, and SQS refuses a larger message at send.

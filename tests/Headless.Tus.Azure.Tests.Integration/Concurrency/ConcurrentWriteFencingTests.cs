@@ -49,7 +49,7 @@ public sealed class ConcurrentWriteFencingTests : TestBase
         clientOptions.AddPolicy(_deleteGate, HttpPipelinePosition.PerCall);
 
         var blobServiceClient = new BlobServiceClient(fixture.Container.GetConnectionString(), clientOptions);
-        // A prefix per test keeps the reaper test's scan to its own uploads, even on a reused container.
+        // A prefix per test keeps the reaper test's scan to its own uploads.
         var storeOptions = new TusAzureStoreOptions
         {
             ContainerName = _ContainerName,

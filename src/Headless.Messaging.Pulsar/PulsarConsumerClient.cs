@@ -195,6 +195,10 @@ internal sealed class PulsarConsumerClient(
         var retryDelay = TimeSpan.FromMilliseconds(200);
         CancellationTokenSource? linkedReceiveCts = null;
         var receiveToken = CancellationToken.None;
+
+        // The listener's cancellation ends the loop without waiting on the SDK: Pulsar.Client cancels a receive and
+        // answers the monitor's probes through the consumer's one mailbox, which can stall after a broker restart, so a
+        // stop that waits for the SDK to honor it can outlive the shutdown budget.
         using var monitorCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var reconnectMonitor = _StartReconnectMonitor(monitorCts.Token);
 
@@ -203,6 +207,7 @@ internal sealed class PulsarConsumerClient(
             while (!cancellationToken.IsCancellationRequested)
             {
                 Message<byte[]> consumerResult;
+                Task<Message<byte[]>>? receive = null;
                 try
                 {
                     await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
@@ -227,12 +232,16 @@ internal sealed class PulsarConsumerClient(
                         receiveToken = currentReceiveToken;
                     }
 
-                    consumerResult = await _consumerClient!.ReceiveAsync(linkedReceiveCts!.Token).ConfigureAwait(false);
+                    receive = _consumerClient!.ReceiveAsync(linkedReceiveCts!.Token);
+                    consumerResult = await receive.WaitAsync(cancellationToken).ConfigureAwait(false);
                     retryDelay = TimeSpan.FromMilliseconds(200);
                     _reachability.ReportSuccess(OnLogCallback);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
+                    // A message an abandoned receive still hands over stays unacknowledged, and the broker redelivers
+                    // it once this consumer closes.
+                    _ObserveAbandoned(receive);
                     break;
                 }
                 catch (OperationCanceledException) when (receiveToken.IsCancellationRequested)
@@ -295,26 +304,45 @@ internal sealed class PulsarConsumerClient(
 
                 async Task consumeAsync(Message<byte[]> currentMessage)
                 {
-                    TransportMessage message;
-                    try
+                    var headers = new Dictionary<string, string?>(
+                        currentMessage.Properties.Count,
+                        StringComparer.Ordinal
+                    );
+                    foreach (var header in currentMessage.Properties)
                     {
-                        var headers = new Dictionary<string, string?>(
-                            currentMessage.Properties.Count,
-                            StringComparer.Ordinal
-                        );
-                        foreach (var header in currentMessage.Properties)
-                        {
-                            headers.Add(header.Key, header.Value);
-                        }
+                        headers.Add(header.Key, header.Value);
+                    }
 
-                        if (_pulsarOptions.CustomHeadersBuilder is { } customHeadersBuilder)
+                    if (_pulsarOptions.CustomHeadersBuilder is { } customHeadersBuilder)
+                    {
+                        try
                         {
                             foreach (var customHeader in customHeadersBuilder(currentMessage, serviceProvider!))
                             {
                                 headers[customHeader.Key] = customHeader.Value;
                             }
                         }
+                        catch (Exception ex)
+                        {
+                            // A builder is user code that may depend on a service that is briefly down, so its failure says
+                            // nothing about the message: the broker redelivers it, and a dead-letter policy bounds the retries.
+                            OnLogCallback!(
+                                new LogMessageEventArgs
+                                {
+                                    LogType = MqLogType.ConsumeError,
+                                    Reason =
+                                        $"Pulsar custom headers builder failed; message negatively acknowledged for redelivery: {ex.GetType().Name}",
+                                }
+                            );
 
+                            await _consumerClient!.NegativeAcknowledge(currentMessage.MessageId).ConfigureAwait(false);
+                            return;
+                        }
+                    }
+
+                    TransportMessage message;
+                    try
+                    {
                         // Stamped after the custom headers builder so neither the wire nor the builder can choose the
                         // address.
                         headers[Headers.TransportAddress] = currentMessage.MessageId.TopicName;
@@ -350,7 +378,25 @@ internal sealed class PulsarConsumerClient(
                         return;
                     }
 
-                    await OnMessageCallback!(message, currentMessage.MessageId).ConfigureAwait(false);
+                    try
+                    {
+                        await OnMessageCallback!(message, currentMessage.MessageId).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        // The core settles every handler outcome itself, so its callback throws only when that settlement
+                        // failed or the core broke. Nothing else settles the message then, and with no ack timeout the
+                        // live subscription never redelivers an unsettled one, so it is released for redelivery here.
+                        OnLogCallback?.Invoke(
+                            new LogMessageEventArgs
+                            {
+                                LogType = MqLogType.ConsumeError,
+                                Reason = $"Error consuming message; negatively acknowledged for redelivery: {ex}",
+                            }
+                        );
+
+                        await _consumerClient!.NegativeAcknowledge(currentMessage.MessageId).ConfigureAwait(false);
+                    }
                 }
             }
         }
@@ -360,6 +406,16 @@ internal sealed class PulsarConsumerClient(
             await monitorCts.CancelAsync().ConfigureAwait(false);
             await reconnectMonitor.ConfigureAwait(false);
         }
+    }
+
+    private static void _ObserveAbandoned(Task? task)
+    {
+        _ = task?.ContinueWith(
+            static completed => _ = completed.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
     }
 
     // Pulsar.Client recovers a lost connection on its own and resubscribes, and a receive waits quietly meanwhile, so
@@ -660,6 +716,7 @@ internal sealed class PulsarConsumerClient(
 
         _pauseGate.Release();
         _ready.TrySetCanceled(CancellationToken.None);
+        var startedAt = _timeProvider.GetTimestamp();
         CancellationTokenSource? receiveCts;
         lock (_receiveLock)
         {
@@ -695,7 +752,35 @@ internal sealed class PulsarConsumerClient(
         _semaphore.Dispose();
         if (_consumerClient is not null)
         {
-            await _consumerClient.DisposeAsync().ConfigureAwait(false);
+            await _CloseWithinAsync(_consumerClient, timeout - _timeProvider.GetElapsedTime(startedAt))
+                .ConfigureAwait(false);
+        }
+    }
+
+    // Closing sends a close command and waits for the broker's answer, which a consumer that just reconnected after a
+    // broker restart can wait on past the caller's budget. The close is bounded by what the drain left of the budget;
+    // an abandoned close finishes in the background, and the broker reclaims the subscription when the connection drops.
+    private async Task _CloseWithinAsync(IConsumer<byte[]> consumer, TimeSpan remaining)
+    {
+        var close = consumer.DisposeAsync().AsTask();
+        try
+        {
+            await close
+                .WaitAsync(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero, _timeProvider)
+                .ConfigureAwait(false);
+        }
+        catch (System.TimeoutException) when (!close.IsCompleted)
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason =
+                        "Pulsar consumer close did not finish within the shutdown budget; abandoned to finish in the background.",
+                }
+            );
+
+            _ObserveAbandoned(close);
         }
     }
 }

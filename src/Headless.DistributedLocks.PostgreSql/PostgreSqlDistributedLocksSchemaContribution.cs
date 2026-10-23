@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sql.PostgreSql;
 using Npgsql;
 
@@ -42,7 +42,8 @@ internal static class PostgreSqlDistributedLocksSchemaContribution
                     "Create the fence sequence.",
                     $"CREATE SEQUENCE IF NOT EXISTS {QualifiedSequence(schema)};"
                 ),
-            ]
+            ],
+            objects: [SchemaObject.Sequence(SequenceName)]
         );
     }
 }

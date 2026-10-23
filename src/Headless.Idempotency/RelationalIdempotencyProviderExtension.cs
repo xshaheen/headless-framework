@@ -2,7 +2,7 @@
 
 using System.Data.Common;
 using FluentValidation;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sql;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Configuration;
@@ -88,9 +88,7 @@ internal sealed class RelationalIdempotencyProviderExtension<TOptions, TOptionsV
             );
         });
 
-        // The contribution factory reads options at first resolution, so InitializeOnStartup keeps its contract:
-        // false means the runner never creates the record table (a migration tool owns it), while the initializer
-        // promise still completes for dependents.
+        // The contribution factory reads options at first resolution, so configured names reach the steps.
         services.AddHeadlessSchemaContribution(sp =>
             provider.SchemaContribution(
                 sp.GetRequiredService<IOptions<TOptions>>().Value,

@@ -97,6 +97,29 @@ public sealed class MaxMindDatabaseUpdaterTests : MaxMindTestBase
     }
 
     [Fact]
+    public async Task should_not_download_again_within_the_retry_delay_when_a_download_failed()
+    {
+        // given
+        Handler.Publish(
+            TestDatabases.AsnEdition,
+            TestDatabases.Archive(TestDatabases.AsnEdition),
+            _ReleaseDate,
+            sha256: new string('0', 64)
+        );
+        var provider = BuildProvider(options => options.LocationEditionId = null, withCredentials: true);
+        var updater = _Updater(provider);
+        await updater.CheckAllAsync(AbortToken);
+        var requestsAfterTheFailure = Handler.Requests.Count;
+
+        // when
+        var succeeded = await updater.CheckAllAsync(AbortToken);
+
+        // then
+        succeeded.Should().BeFalse();
+        Handler.Requests.Count.Should().Be(requestsAfterTheFailure);
+    }
+
+    [Fact]
     public async Task should_reject_a_download_that_is_not_a_database()
     {
         // given
@@ -153,20 +176,25 @@ public sealed class MaxMindDatabaseUpdaterTests : MaxMindTestBase
     public async Task should_check_again_when_the_update_interval_passes()
     {
         // given
+        var installed = TestDatabases.Install(DatabaseDirectory, TestDatabases.AsnEdition);
+        File.SetLastWriteTimeUtc(installed, _ReleaseDate.UtcDateTime);
         Handler.Publish(TestDatabases.AsnEdition, TestDatabases.Archive(TestDatabases.AsnEdition), _ReleaseDate);
         var provider = BuildProvider(options => options.LocationEditionId = null, withCredentials: true);
         var updater = _Updater(provider);
-        var geolocator = provider.GetRequiredService<IIpGeolocator>();
         await updater.StartAsync(AbortToken);
-        await _WaitUntil(() => geolocator.Locate(TestDatabases.TelstraAddress) is not null);
+        await WaitUntilAsync(() => Handler.Checks == 1);
 
-        // when
-        Clock.Advance(TimeSpan.FromHours(12));
-        await _WaitUntil(() => Handler.Checks == 2);
+        // when: advancing until the check lands, because the updater may not have scheduled its next one yet
+        await WaitUntilAsync(() =>
+        {
+            Clock.Advance(TimeSpan.FromHours(12));
+
+            return Handler.Checks >= 2;
+        });
         await updater.StopAsync(AbortToken);
 
         // then
-        Handler.Downloads.Should().Be(1);
+        Handler.Downloads.Should().Be(0);
     }
 
     [Fact]
@@ -205,7 +233,25 @@ public sealed class MaxMindDatabaseUpdaterTests : MaxMindTestBase
     }
 
     [Fact]
-    public async Task should_check_for_updates_when_the_host_starts_with_credentials()
+    public async Task should_check_for_updates_when_the_host_starts_with_credentials_and_every_database_present()
+    {
+        // given
+        TestDatabases.Install(DatabaseDirectory, TestDatabases.AsnEdition);
+        Handler.Publish(TestDatabases.AsnEdition, TestDatabases.Archive(TestDatabases.AsnEdition), _ReleaseDate);
+        var provider = BuildProvider(options => options.LocationEditionId = null, withCredentials: true);
+        var updater = _Updater(provider);
+
+        // when
+        await updater.StartAsync(AbortToken);
+        await WaitUntilAsync(() => Handler.Checks == 1);
+        await updater.StopAsync(AbortToken);
+
+        // then
+        Handler.Checks.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_wait_an_interval_before_checking_when_the_warmup_makes_the_first_download()
     {
         // given
         Handler.Publish(TestDatabases.AsnEdition, TestDatabases.Archive(TestDatabases.AsnEdition), _ReleaseDate);
@@ -215,10 +261,15 @@ public sealed class MaxMindDatabaseUpdaterTests : MaxMindTestBase
 
         // when
         await updater.StartAsync(AbortToken);
-        await _WaitUntil(() => geolocator.Locate(TestDatabases.TelstraAddress) is not null);
+        await Task.Delay(TimeSpan.FromMilliseconds(200), AbortToken);
+        var requestsBeforeTheInterval = Handler.Requests.Count;
+        Clock.Advance(TimeSpan.FromHours(12));
+        await WaitUntilAsync(() => geolocator.Locate(TestDatabases.TelstraAddress) is not null);
         await updater.StopAsync(AbortToken);
 
         // then
+        requestsBeforeTheInterval.Should().Be(0);
+        Handler.Checks.Should().Be(1);
         Handler.Downloads.Should().Be(1);
     }
 
@@ -242,15 +293,4 @@ public sealed class MaxMindDatabaseUpdaterTests : MaxMindTestBase
 
     private static MaxMindDatabaseUpdater _Updater(IServiceProvider provider) =>
         provider.GetServices<IHostedService>().OfType<MaxMindDatabaseUpdater>().Single();
-
-    private static async Task _WaitUntil(Func<bool> condition)
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
-
-        while (!condition())
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(20), timeout.Token);
-        }
-    }
 }

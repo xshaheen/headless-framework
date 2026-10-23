@@ -42,12 +42,9 @@ public sealed class PostgreSqlFencingFixture
         await using var connection = new NpgsqlConnection(ConnectionString);
         await connection.OpenAsync(CancellationToken.None);
 
-        // The container is reused across runs, so start from no lease table and let the initializer create it.
         await using (
             var reset = new NpgsqlCommand(
                 $"""
-                DROP SCHEMA IF EXISTS "{HeadlessStorageDefaults.Schema}" CASCADE;
-                DROP TABLE IF EXISTS {_HandoffTable};
                 CREATE TABLE {_HandoffTable} (
                     id bigserial PRIMARY KEY,
                     tenant_id text NOT NULL,

@@ -122,8 +122,14 @@ public sealed class JobsTaskSchedulerWorkerPoolTests : TestBase
         }
 
         // Every uncapped job finishes while the first capped job still holds the only permit. Before the gate moved
-        // into the scheduler, the parked capped jobs held all four worker slots and nothing else ran.
-        await _WaitUntilAsync(() => Volatile.Read(ref uncappedDone) == 12);
+        // into the scheduler, the parked capped jobs held all four worker slots and nothing else ran. The uncapped
+        // jobs can all finish before the worker that took the permit reaches the capped body, so wait for that too:
+        // with the permit never released, no second capped job can start while we wait.
+        await _WaitUntilAsync(() =>
+            Volatile.Read(ref uncappedDone) == 12
+            && Volatile.Read(ref cappedStarted) == 1
+            && scheduler.ParkedTasks == 11
+        );
         Volatile.Read(ref cappedStarted).Should().Be(1);
         scheduler.ParkedTasks.Should().Be(11);
 

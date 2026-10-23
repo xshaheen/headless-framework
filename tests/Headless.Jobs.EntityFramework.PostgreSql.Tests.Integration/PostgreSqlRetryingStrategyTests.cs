@@ -16,7 +16,6 @@ public sealed class PostgreSqlRetryingStrategyFixture
     : PostgreSqlJobsCoordinationFixture,
         ICollectionFixture<PostgreSqlRetryingStrategyFixture>
 {
-    // A database name of its own gives this fixture its own reused container, apart from the default fixture's.
     protected override PostgreSqlBuilder Configure() => base.Configure().WithDatabase("jobs_retrying_strategy_test");
 
     public override void ConfigureStore(DbContextOptionsBuilder db) => ConfigureRetryingStore(db);

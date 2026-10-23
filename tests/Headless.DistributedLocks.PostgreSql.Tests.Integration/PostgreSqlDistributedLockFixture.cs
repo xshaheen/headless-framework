@@ -1,11 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
-using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
-using Npgsql;
 using Testcontainers.PostgreSql;
 
 namespace Tests;
@@ -29,18 +27,6 @@ public sealed class PostgreSqlDistributedLockFixture
     protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
-
-        // The container is reused across runs, and the schema runner trusts its history, so start from neither the
-        // fence sequence nor the history that records it.
-        await using (var connection = new NpgsqlConnection(ConnectionString))
-        {
-            await connection.OpenAsync(CancellationToken.None);
-            await using var reset = new NpgsqlCommand(
-                $"""DROP SCHEMA IF EXISTS "{HeadlessStorageDefaults.Schema}" CASCADE;""",
-                connection
-            );
-            await reset.ExecuteNonQueryAsync(CancellationToken.None);
-        }
 
         // A host creates the fence sequence at startup; the tests resolve providers without a host, so the fixture
         // runs that startup once for the default schema they all share.

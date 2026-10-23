@@ -723,6 +723,24 @@ public interface IDataStorage
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The number of rows deleted.</returns>
     ValueTask<int> DeletePublishedMessagesAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Requeues published message rows that failed for good, so the retry processor sends each one again with a fresh
+    /// retry budget.
+    /// </summary>
+    /// <remarks>
+    /// Only a row that is <see cref="StatusName.Failed"/> with no <c>NextRetryAt</c> is requeued: its retry counters
+    /// reset to zero, its lease and retention expiry clear, and its <c>NextRetryAt</c> becomes the store's clock, so the
+    /// next retry pickup claims it. A succeeded row, a row still waiting for a retry, and a row that does not exist are
+    /// left unchanged. Each row is decided on its own, so a concurrent writer of one row does not affect the others.
+    /// </remarks>
+    /// <param name="ids">The internal storage row identifiers to requeue.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The identifiers of the rows that were requeued.</returns>
+    ValueTask<IReadOnlyList<Guid>> RequeuePublishedMessagesAsync(
+        IReadOnlyList<Guid> ids,
+        CancellationToken cancellationToken = default
+    );
 }
 
 /// <summary>

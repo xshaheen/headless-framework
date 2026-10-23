@@ -140,12 +140,25 @@ public sealed class TransportConformanceManifestTests : TestBase
     [Fact]
     public void should_allow_a_simulator_cell_that_one_real_broker_leaves_unsupported_and_others_support()
     {
-        // given: RabbitMQ fails stale settlement (#1267) while NATS and Redis prove it
-        var providers = TransportConformanceManifest.Providers;
-        providers["RabbitMQ"]
-            .Scenarios[TransportConformanceScenario.StaleSettlement]
-            .Status.Should()
-            .Be(ConformanceStatus.Unsupported);
+        // given: one real broker fails stale settlement against a linked issue while two others prove it
+        var failing = TransportConformanceProfile
+            .CreateDisabled("Failing")
+            .WithScenario(
+                TransportConformanceScenario.StaleSettlement,
+                ConformanceSupport.Unsupported(
+                    "Settling a delivery a second time closes the consumer's channel.",
+                    "https://github.com/xshaheen/headless-framework/issues/1267"
+                )
+            )
+            .EnableRealBrokerLeaf();
+        var first = TransportConformanceProfile
+            .CreateDisabled("First")
+            .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
+            .EnableRealBrokerLeaf();
+        var second = TransportConformanceProfile
+            .CreateDisabled("Second")
+            .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
+            .EnableRealBrokerLeaf();
         var simulator = TransportConformanceProfile
             .CreateDisabled("Simulator")
             .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported);
@@ -153,7 +166,7 @@ public sealed class TransportConformanceManifestTests : TestBase
         // when
         var errors = TransportConformanceManifest.GetSimulatorSubsetErrors(
             simulator,
-            [providers["RabbitMQ"], providers["NATS"], providers["Redis"], simulator]
+            [failing, first, second, simulator]
         );
 
         // then

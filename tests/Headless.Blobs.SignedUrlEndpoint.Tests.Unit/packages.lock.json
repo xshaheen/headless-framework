@@ -454,6 +454,7 @@
         "dependencies": {
           "Headless.Blobs.Abstractions": "[1.0.0, )",
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
           "Polly.Core": "[8.8.0, )"
         }
       },

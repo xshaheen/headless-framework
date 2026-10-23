@@ -12,12 +12,14 @@ namespace Headless.Redis;
 /// NOSCRIPT errors caused by topology changes (failover, node restart, script-cache flush).
 /// </summary>
 /// <remarks>
-/// Callers register one or more <see cref="RedisScriptDefinition"/> singletons, then call
-/// <see cref="LoadAsync"/> at startup to pre-load every script onto all writable nodes via
-/// <c>SCRIPT LOAD</c>. <see cref="EvaluateAsync"/> subsequently runs each script by SHA using
-/// <c>EVALSHA</c>. When a node returns <c>NOSCRIPT</c> (for example after a promoted replica or
-/// a cache flush), the loader falls back to plain <c>EVAL</c> for the affected call and resets
-/// the internal SHA cache so the next caller triggers a fresh reload.
+/// Callers pass <see cref="RedisScriptDefinition"/> singletons straight to <see cref="EvaluateAsync"/>.
+/// The first evaluation of a script loads it onto every writable node via <c>SCRIPT LOAD</c>, and
+/// later evaluations run it by SHA using <c>EVALSHA</c>. Never preload in the host start, which would block it on a
+/// Redis round trip: a package that wants its scripts ready before first use calls <see cref="LoadAsync"/> from a
+/// warm-up that does not gate readiness, as the Redis cache, lock, and coordination packages do.
+/// When a node returns <c>NOSCRIPT</c> (for example after a promoted replica or a cache flush), the
+/// loader falls back to plain <c>EVAL</c> for the affected call and resets the internal SHA cache so
+/// the next caller triggers a fresh reload.
 /// <para>
 /// Each concrete <see cref="RedisScriptDefinition"/> type must be represented by a single shared
 /// instance; the loader keys its cache on the concrete type and rejects duplicate instances of the
@@ -129,8 +131,8 @@ public sealed class HeadlessRedisScriptsLoader(
                     // StackExchange call does not honor a CancellationToken, so a single stalled load
                     // would wedge the lock for every other caller. Mirror the on-demand path: a
                     // TimeProvider-driven timeout CTS linked with the caller token (via .WaitAsync)
-                    // lets a stuck load fail fast and release the lock instead of wedging the lock
-                    // indefinitely at startup.
+                    // lets a stuck load fail fast and release the lock instead of wedging it
+                    // indefinitely.
                     var loadTasks = missingDefinitions.Select(script => script.LoadAsync(server)).ToArray();
                     LoadedLuaScript[] results;
 
@@ -181,7 +183,7 @@ public sealed class HeadlessRedisScriptsLoader(
     /// Evaluates a Lua script on <paramref name="db"/> with automatic recovery from NOSCRIPT errors.
     /// </summary>
     /// <param name="db">The Redis database to execute the script on.</param>
-    /// <param name="scriptDefinition">The script to evaluate. Must be registered via <see cref="LoadAsync"/> beforehand, or it will be loaded on demand.</param>
+    /// <param name="scriptDefinition">The script to evaluate. A script not yet loaded is loaded onto every writable node before it runs.</param>
     /// <param name="parameters">Parameters passed to the Lua script (keys and argv), or <see langword="null"/> if the script takes no parameters.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The raw result returned by the Lua script.</returns>

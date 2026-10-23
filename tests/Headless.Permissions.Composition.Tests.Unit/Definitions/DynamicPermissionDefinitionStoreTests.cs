@@ -23,6 +23,7 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
     private readonly PermissionManagementOptions _options;
     private readonly FakeTimeProvider _timeProvider;
     private readonly DynamicPermissionDefinitionStore _sut;
+    private readonly DynamicPermissionDefinitionStore _sutWithoutBus;
 
     public DynamicPermissionDefinitionStoreTests()
     {
@@ -53,7 +54,21 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
             _serializer,
             _cache,
             _distributedLockProvider,
-            _bus,
+            guidGenerator,
+            application,
+            optionsAccessor,
+            providersAccessor,
+            _timeProvider,
+            _bus
+        );
+
+        // A host that does not use messaging: the store resolves without a bus.
+        _sutWithoutBus = new DynamicPermissionDefinitionStore(
+            _repository,
+            _staticStore,
+            _serializer,
+            _cache,
+            _distributedLockProvider,
             guidGenerator,
             application,
             optionsAccessor,
@@ -254,6 +269,48 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
                 ),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Fact]
+    public async Task should_save_definitions_without_publishing_when_the_host_has_no_bus()
+    {
+        // given — nothing is stored yet, so the serialized permission is new
+        var lease = Substitute.For<IDistributedLease>();
+        _distributedLockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(lease);
+        _cache
+            .GetAsync<string>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new CacheValue<string>(null, false));
+        _staticStore.GetGroupsAsync(Arg.Any<CancellationToken>()).Returns([]);
+        _serializer
+            .Serialize(Arg.Any<IReadOnlyCollection<PermissionGroupDefinition>>())
+            .Returns(
+                (
+                    [_CreateGroupRecord("TestGroup")],
+                    (IReadOnlyCollection<PermissionDefinitionRecord>)
+                        [_CreatePermissionRecord("Dynamic.NoBus", "TestGroup")]
+                )
+            );
+        _repository.GetGroupsListAsync(Arg.Any<CancellationToken>()).Returns([]);
+        _repository.GetPermissionsListAsync(Arg.Any<CancellationToken>()).Returns([]);
+
+        // when
+        await _sutWithoutBus.SaveAsync(AbortToken);
+
+        // then — the definitions are stored, and nothing is announced
+        await _repository
+            .Received(1)
+            .SaveAsync(
+                Arg.Any<List<PermissionGroupDefinitionRecord>>(),
+                Arg.Any<List<PermissionGroupDefinitionRecord>>(),
+                Arg.Any<List<PermissionGroupDefinitionRecord>>(),
+                Arg.Any<List<PermissionDefinitionRecord>>(),
+                Arg.Any<List<PermissionDefinitionRecord>>(),
+                Arg.Any<List<PermissionDefinitionRecord>>(),
+                Arg.Any<CancellationToken>()
+            );
+        _bus.ReceivedCalls().Should().BeEmpty();
     }
 
     #endregion

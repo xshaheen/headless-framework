@@ -2,11 +2,11 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
-using Headless.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
-namespace Microsoft.Extensions.DependencyInjection;
+namespace Headless.Hosting;
 
 /// <summary>Registers <see cref="IHeadlessStartupValidator" /> checks that run before any hosted service starts.</summary>
 [PublicAPI]

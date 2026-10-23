@@ -1,7 +1,6 @@
 .nuget/
 .vscode/
 .worktrees/
-.context/
 .wiki/
 artifacts/
 **/Snapshots/**/*.verified.cs

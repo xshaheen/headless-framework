@@ -25,12 +25,12 @@ public sealed class DynamicPermissionDefinitionStore(
     IPermissionDefinitionSerializer serializer,
     ICache distributedCache,
     IDistributedLock distributedLockProvider,
-    IBus messagePublisher,
     IGuidGenerator guidGenerator,
     IHostIdentityAccessor application,
     IOptions<PermissionManagementOptions> optionsAccessor,
     IOptions<PermissionManagementProvidersOptions> providersAccessor,
-    TimeProvider timeProvider
+    TimeProvider timeProvider,
+    IBus? messagePublisher = null
 ) : IDynamicPermissionDefinitionStore, IDisposable
 {
     private readonly PermissionManagementOptions _options = optionsAccessor.Value;
@@ -348,17 +348,30 @@ public sealed class DynamicPermissionDefinitionStore(
                 .ConfigureAwait(false)
             ?? throw new InvalidOperationException("Could not acquire distributed lock for saving static permissions!"); // It will re-try
 
-        var (newGroups, updatedGroups, deletedGroups) = await _UpdateChangedPermissionGroupsAsync(
+        var (newGroups, changedGroups, deletedGroups) = await _DiffPermissionGroupsAsync(
                 permissionGroupRecords,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        var (newPermissions, updatedPermissions, deletedPermissions) = await _UpdateChangedPermissionsAsync(
+        var (newPermissions, changedPermissions, deletedPermissions) = await _DiffPermissionsAsync(
                 permissionRecords,
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        var updatedGroups = changedGroups.ConvertAll(static change =>
+        {
+            change.Stored.Patch(change.Declared);
+
+            return change.Stored;
+        });
+        var updatedPermissions = changedPermissions.ConvertAll(static change =>
+        {
+            change.Stored.Patch(change.Declared);
+
+            return change.Stored;
+        });
 
         var hasChangesInGroups = newGroups.Count != 0 || updatedGroups.Count != 0 || deletedGroups.Count != 0;
         var hasChangesInPermissions =
@@ -381,7 +394,9 @@ public sealed class DynamicPermissionDefinitionStore(
             await _ChangeCommonStampAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        if (newPermissions.Count != 0 || updatedPermissions.Count != 0)
+        // Messaging is optional for Permissions, as it is for PermissionManager: without a bus, the common stamp changed
+        // above is how other instances learn of the change, at their next refresh.
+        if (messagePublisher is not null && (newPermissions.Count != 0 || updatedPermissions.Count != 0))
         {
             var message = new DynamicPermissionDefinitionsChanged
             {
@@ -402,15 +417,48 @@ public sealed class DynamicPermissionDefinitionStore(
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Reports whether the stored records already hold the application's static permission definitions, serialized as
+    /// <see cref="SaveAsync"/> serializes them, and none of the configured deleted groups or permissions. Reads the
+    /// records only: it writes nothing, takes no lock, and ignores the saved hash, so it reports what the store holds.
+    /// </summary>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns><see langword="true"/> when <see cref="SaveAsync"/> would change nothing.</returns>
+    internal async Task<bool> HoldsStaticDefinitionsAsync(CancellationToken cancellationToken)
+    {
+        var groups = await staticStore.GetGroupsAsync(cancellationToken).ConfigureAwait(false);
+        var (permissionGroupRecords, permissionRecords) = serializer.Serialize(groups);
+
+        var (newGroups, changedGroups, deletedGroups) = await _DiffPermissionGroupsAsync(
+                permissionGroupRecords,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var (newPermissions, changedPermissions, deletedPermissions) = await _DiffPermissionsAsync(
+                permissionRecords,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return newGroups.Count == 0
+            && changedGroups.Count == 0
+            && deletedGroups.Count == 0
+            && newPermissions.Count == 0
+            && changedPermissions.Count == 0
+            && deletedPermissions.Count == 0;
+    }
+
     #endregion
 
     #region Save Helpers
 
+    // Compares without patching, so the verify path can share it; SaveAsync patches each changed stored record.
     private async Task<(
         List<PermissionGroupDefinitionRecord> NewRecords,
-        List<PermissionGroupDefinitionRecord> ChangedRecords,
+        List<(PermissionGroupDefinitionRecord Stored, PermissionGroupDefinitionRecord Declared)> ChangedRecords,
         List<PermissionGroupDefinitionRecord> DeletedRecords
-    )> _UpdateChangedPermissionGroupsAsync(
+    )> _DiffPermissionGroupsAsync(
         IEnumerable<PermissionGroupDefinitionRecord> permissionGroupRecords,
         CancellationToken cancellationToken
     )
@@ -419,7 +467,8 @@ public sealed class DynamicPermissionDefinitionStore(
         var dbRecordsMap = dbRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
 
         var newRecords = new List<PermissionGroupDefinitionRecord>();
-        var changedRecords = new List<PermissionGroupDefinitionRecord>();
+        var changedRecords =
+            new List<(PermissionGroupDefinitionRecord Stored, PermissionGroupDefinitionRecord Declared)>();
         var deletedRecords = new List<PermissionGroupDefinitionRecord>();
 
         foreach (var permissionGroupRecord in permissionGroupRecords)
@@ -438,8 +487,7 @@ public sealed class DynamicPermissionDefinitionStore(
                 continue;
             }
 
-            dbRecord.Patch(permissionGroupRecord); // Changed
-            changedRecords.Add(dbRecord);
+            changedRecords.Add((dbRecord, permissionGroupRecord)); // Changed
         }
 
         // Handle deleted records
@@ -477,15 +525,15 @@ public sealed class DynamicPermissionDefinitionStore(
 
     private async Task<(
         List<PermissionDefinitionRecord> NewRecords,
-        List<PermissionDefinitionRecord> ChangedRecords,
+        List<(PermissionDefinitionRecord Stored, PermissionDefinitionRecord Declared)> ChangedRecords,
         List<PermissionDefinitionRecord> DeletedRecords
-    )> _UpdateChangedPermissionsAsync(
+    )> _DiffPermissionsAsync(
         IEnumerable<PermissionDefinitionRecord> permissionRecords,
         CancellationToken cancellationToken = default
     )
     {
         var newRecords = new List<PermissionDefinitionRecord>();
-        var changedRecords = new List<PermissionDefinitionRecord>();
+        var changedRecords = new List<(PermissionDefinitionRecord Stored, PermissionDefinitionRecord Declared)>();
         var deletedRecords = new List<PermissionDefinitionRecord>();
 
         var dbRecords = await repository.GetPermissionsListAsync(cancellationToken).ConfigureAwait(false);
@@ -508,8 +556,7 @@ public sealed class DynamicPermissionDefinitionStore(
                 continue;
             }
 
-            dbRecord.Patch(permissionRecord); // Changed
-            changedRecords.Add(dbRecord);
+            changedRecords.Add((dbRecord, permissionRecord)); // Changed
         }
 
         // Handle deleted records

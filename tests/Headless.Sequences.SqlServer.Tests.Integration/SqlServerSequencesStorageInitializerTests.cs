@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sequences;
 using Headless.Sequences.SqlServer;
 using Headless.Testing.Tests;
@@ -20,28 +20,23 @@ namespace Tests;
 public sealed class SqlServerSequencesStorageInitializerTests(SqlServerSequencesFixture fixture) : TestBase
 {
     [Fact]
-    public async Task should_throw_and_keep_initializer_unmarked_when_database_unreachable()
+    public async Task should_fail_the_start_with_the_driver_error_when_database_unreachable()
     {
         // Port 1 accepts no connections, so the TCP connect fails before any authentication is attempted.
         const string unreachable =
             "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=true";
-        using var host = _CreateHost(options => options.ConnectionString = unreachable);
+        using var host = _CreateHost(options => options.ConnectionString = unreachable, setupResources: false);
 
-        await FluentActions
-            .Awaiting(() => host.StartAsync(AbortToken))
-            .Should()
-            .ThrowAsync<Exception>()
-            .Where(e => e is SqlException || e.InnerException is SqlException);
-
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
-        initializer.IsInitialized.Should().BeFalse();
-
-        // The schema runner names the features whose connection failed and keeps the driver error as the cause.
-        await FluentActions
-            .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
-            .Should()
-            .ThrowAsync<SchemaRunnerException>()
-            .WithInnerException(typeof(SqlException));
+        // The startup check fails the start; the schema runner names the features whose connection failed and keeps
+        // the driver error as the cause.
+        (
+            await FluentActions
+                .Awaiting(() => host.StartAsync(AbortToken))
+                .Should()
+                .ThrowAsync<ResourceProvisioningException>()
+        )
+            .WithInnerException<SchemaRunnerException>()
+            .WithInnerException<SqlException>();
     }
 
     [Fact]
@@ -55,10 +50,6 @@ public sealed class SqlServerSequencesStorageInitializerTests(SqlServerSequences
         {
             await Task.WhenAll(hosts.Select(h => h.StartAsync(AbortToken)));
 
-            hosts
-                .Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized)
-                .Should()
-                .AllSatisfy(initialized => initialized.Should().BeTrue());
             (await _CountTablesAsync(schema)).Should().Be(1);
             (await _CountPrimaryKeysAsync(schema)).Should().Be(1);
         }
@@ -72,20 +63,14 @@ public sealed class SqlServerSequencesStorageInitializerTests(SqlServerSequences
     }
 
     [Fact]
-    public async Task should_leave_one_table_and_one_primary_key_when_the_initializer_runs_twice()
+    public async Task should_leave_one_table_and_one_primary_key_when_setup_runs_twice()
     {
         const string schema = "sequences_mssql_rerun";
         await _DropSchemaAsync(schema);
         using var host = _CreateHost(schema: schema);
-        var initializer = host
-            .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .OfType<HostedInitializer>()
-            .Single();
+        await host.Services.ProvisionResourcesAsync(AbortToken);
+        await host.Services.ProvisionResourcesAsync(AbortToken);
 
-        await initializer.StartingAsync(AbortToken);
-        await initializer.StartingAsync(AbortToken);
-
-        initializer.IsInitialized.Should().BeTrue();
         (await _CountTablesAsync(schema)).Should().Be(1);
         (await _CountPrimaryKeysAsync(schema)).Should().Be(1);
     }
@@ -159,32 +144,26 @@ public sealed class SqlServerSequencesStorageInitializerTests(SqlServerSequences
     }
 
     [Fact]
-    public async Task should_not_create_the_table_when_initialization_is_off()
+    public async Task should_fail_the_start_naming_resources_setup_when_the_table_is_missing()
     {
         const string schema = "sequences_mssql_no_init";
         await _DropSchemaAsync(schema);
-        using var host = _CreateHost(options =>
-        {
-            options.ConnectionString = fixture.CountersConnectionString;
-            options.Schema = schema;
-            options.InitializeOnStartup = false;
-        });
+        using var host = _CreateHost(
+            options =>
+            {
+                options.ConnectionString = fixture.CountersConnectionString;
+                options.Schema = schema;
+            },
+            setupResources: false
+        );
 
-        await host.StartAsync(AbortToken);
+        await FluentActions
+            .Awaiting(() => host.StartAsync(AbortToken))
+            .Should()
+            .ThrowAsync<ResourceProvisioningException>()
+            .WithMessage("*resources provision*");
 
-        host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized.Should().BeTrue();
         (await _CountTablesAsync(schema)).Should().Be(0);
-
-        // The consumer owns the table in this mode, so a call before it exists fails instead of creating it.
-        var act = async () =>
-            await host.Services.GetRequiredService<ISequenceGenerator>().NextAsync("x", cancellationToken: AbortToken);
-
-        // 208: invalid object name.
-        (await act.Should().ThrowAsync<SqlException>())
-            .Which.Number.Should()
-            .Be(208);
-        (await _CountTablesAsync(schema)).Should().Be(0);
-        await host.StopAsync(AbortToken);
     }
 
     [Fact]
@@ -235,9 +214,15 @@ public sealed class SqlServerSequencesStorageInitializerTests(SqlServerSequences
         act.Should().Throw<ArgumentException>();
     }
 
-    private static IHost _CreateHost(Action<SqlServerSequencesOptions> configure)
+    private static IHost _CreateHost(Action<SqlServerSequencesOptions> configure, bool setupResources = true)
     {
         var builder = Host.CreateApplicationBuilder();
+
+        if (setupResources)
+        {
+            builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
+        }
+
         builder.Services.AddHeadlessSequences(setup => setup.UseSqlServer(configure));
 
         return builder.Build();

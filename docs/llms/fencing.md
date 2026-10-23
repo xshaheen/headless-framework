@@ -267,7 +267,7 @@ Applications reach it through a provider package; call `AddHeadlessFencing` as s
 - The PostgreSQL and SQL Server providers share one store, written once against the `Headless.Sql` dialect kit. Renew, settle, release, and the fence are each one fenced transition: a locking read (`FOR NO KEY UPDATE` / `UPDLOCK, HOLDLOCK, ROWLOCK`) waits out any other holder, then a single conditional `UPDATE` whose `WHERE` is "this generation, active, unexpired by the database clock" decides and writes, so the check and the write cannot disagree; a refusal is classified from the row the locking read found. A grant is the same transition with the opposite fence ("no live holder"), drawing its generation from the store-wide sequence in the `UPDATE`'s own assignment, so a generation is drawn only for a grant that applies and only after the row is locked. An absent row is inserted by a statement that cannot raise a duplicate-key error inside a caller's transaction.
 - The database clock is read once per deciding statement, after its locks are held: a `clock_timestamp()` captured in a `MATERIALIZED` CTE on PostgreSQL (never `now()`, which is frozen at transaction start), `SYSUTCDATETIME()` captured into a variable on SQL Server (which evaluates it when a statement starts, before any lock wait).
 - Each provider contributes its table, indexes, and sequence as one schema step, in its own SQL, to the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts); the store only reads and writes rows.
-- `PostgreSqlFencingOptions` and `SqlServerFencingOptions` both derive from `RelationalFencingOptions`, which carries `ConnectionString`, `CommandTimeout`, and `InitializeOnStartup`.
+- `PostgreSqlFencingOptions` and `SqlServerFencingOptions` both derive from `RelationalFencingOptions`, which carries `ConnectionString` and `CommandTimeout`.
 
 ---
 
@@ -328,7 +328,6 @@ Enlisted calls need a unit begun over an Npgsql connection or an EF `DbContext` 
 | --- | --- | --- |
 | `ConnectionString` | required | The database that holds the leases and that enlisted units must run on |
 | `CommandTimeout` | 30 seconds | Also bounds how long a grant waits behind another transaction's open fence |
-| `InitializeOnStartup` | `true` | When `false`, the application creates the schema, the `fencing_leases` table and its indexes, and the `fencing_lease_generations` sequence |
 
 The lease row stores progress as `progress bytea` plus `progress_contract varchar(256)` (both null or both set) and the count as `takeover_count integer NOT NULL DEFAULT 0`.
 
@@ -337,7 +336,7 @@ The lease row stores progress as `progress bytea` plus `progress_contract varcha
 - The verbs are the shared relational store's (see [Headless.Fencing](#headlessfencing)). A first grant of a key inserts with `INSERT … ON CONFLICT DO NOTHING`; when it loses a race to another transaction's insert, it rereads the committed row and decides again.
 - Sweep claims and purge batches use `FOR UPDATE … SKIP LOCKED`, so a lease another sweeper is already claiming is simply skipped, not waited on.
 - The autonomous path opens its own connection at READ COMMITTED and retries a transient fault raised before the commit (a deadlock or serialization failure, `40P01`, `40001`, or anything Npgsql reports as transient) up to 3 attempts with a jittered delay between them, never a fault from the commit; the enlisted path runs on the unit's own connection and transaction with no retry.
-- The table and sequence are one schema step (`Fencing/1`) the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one advisory lock per database shared with every other Headless feature.
+- The table and sequence are one schema step (`Fencing/1`) that `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), under one advisory lock per database shared with every other Headless feature. A host start only verifies the step and fails fast when it is missing; see [Resource provisioning](utilities.md#resource-provisioning).
 
 ---
 
@@ -368,14 +367,13 @@ The lease row stores progress as `Progress varbinary(max)` plus `ProgressContrac
 | --- | --- | --- |
 | `ConnectionString` | required | The database that holds the leases and that enlisted units must run on |
 | `CommandTimeout` | 30 seconds | Also bounds how long a grant waits behind another transaction's open fence |
-| `InitializeOnStartup` | `true` | When `false`, the application creates the schema, the `FencingLeases` table and its indexes, and the `FencingLeaseGenerations` sequence |
 
 ### Design and runtime behavior
 
 - The verbs are the shared relational store's (see [Headless.Fencing](#headlessfencing)). The locking read's `HOLDLOCK` takes a key-range lock when the row is absent, so two first grants of one key serialize and the insert never collides; no batch uses `TRY/CATCH` or a session `SET`, so nothing leaks into or dooms a caller's `XACT_ABORT ON` transaction.
 - Sweep claims and purge batches use `UPDLOCK, READPAST, ROWLOCK, READCOMMITTEDLOCK`: `READPAST` is refused under read committed snapshot isolation unless the read also takes locks, and the hint is the default without it, so the same statement works either way.
 - The autonomous path opens its own connection at READ COMMITTED and retries a transient fault raised before the commit (a deadlock or snapshot update conflict, 1205, 3960, a lock timeout, 1222, or a connection fault EF Core's SQL Server retry set covers) up to 3 attempts with a jittered delay between them, never a fault from the commit; the enlisted path runs on the unit's own connection and transaction with no retry.
-- The table and sequence are one schema step (`Fencing/1`) the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one `sp_getapplock` per database shared with every other Headless feature.
+- The table and sequence are one schema step (`Fencing/1`) that `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), under one `sp_getapplock` per database shared with every other Headless feature.
 
 ---
 
@@ -402,7 +400,6 @@ Use a database file: the store and the schema runner open their own connections.
 | --- | --- | --- |
 | `ConnectionString` | required | The database file that holds the leases; an enlisted call is accepted only on a SQLite unit whose connection reaches the same file |
 | `CommandTimeout` | 30 seconds | Also bounds how long a call waits for another writer's database lock |
-| `InitializeOnStartup` | `true` | When `false`, the application creates the `<schema>_fencing_lease_generations` sequence table, the `<schema>_fencing_leases` table, its two indexes, and its two generation triggers |
 
 ### Design and runtime behavior
 
@@ -410,5 +407,5 @@ Use a database file: the store and the schema runner open their own connections.
 - The verbs are the shared relational store's (see [Headless.Fencing](#headlessfencing)). Every transaction begins `IMMEDIATE` and holds the database write lock in place of the row lock, so grants, fences, and settlements of every key serialize on the file, and a sweep never meets a lease another transaction holds.
 - The generation sequence is a one-row table. A grant reads one past its value, and triggers on the lease table raise it to every generation written, in the same statement. A purge deletes leases, never the sequence row, so a lease granted again after its row was purged still gets a higher generation.
 - `SQLITE_BUSY` before the commit is retried in a fresh transaction, like a lock timeout on the other providers. The wait holds a thread-pool thread; see [sql.md § SQLite in the kit](sql.md#sqlite-in-the-kit).
-- The sequence table, lease table, indexes, and triggers are one schema step (`Fencing/1`) the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup.
+- The sequence table, lease table, indexes, and triggers are one schema step (`Fencing/1`) that `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
 

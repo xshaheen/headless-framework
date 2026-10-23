@@ -814,10 +814,18 @@ internal sealed partial class ConsumerRegister(
             var everyInstance = subscriptionKey.Kind is ConsumerSubscriptionKind.EveryInstance;
             var descriptors = match.Value;
 
+            // A runtime subscription carries a handler id; no deploy step knows it, so its client creates its topology.
+            var provisionsTopology = descriptors.Any(static d => d.HandlerId is not null);
+
             ICollection<string> messageNames;
             try
             {
-                await using var client = await _CreateConsumerClientAsync(subscriptionKey, limit, _stoppingCts.Token)
+                await using var client = await _CreateConsumerClientAsync(
+                        subscriptionKey,
+                        limit,
+                        provisionsTopology,
+                        _stoppingCts.Token
+                    )
                     .ConfigureAwait(false);
                 client.AttachCallbacks(onMessage: null, onLog: _WriteLog);
                 messageNames = await client
@@ -888,6 +896,7 @@ internal sealed partial class ConsumerRegister(
                                 var innerClient = await _CreateConsumerClientAsync(
                                         subscriptionKey,
                                         limit,
+                                        provisionsTopology,
                                         groupCts.Token
                                     )
                                     .ConfigureAwait(false);
@@ -964,6 +973,7 @@ internal sealed partial class ConsumerRegister(
     private Task<IConsumerClient> _CreateConsumerClientAsync(
         ConsumerSubscriptionKey subscriptionKey,
         byte groupConcurrent,
+        bool provisionsTopology,
         CancellationToken cancellationToken
     )
     {
@@ -974,7 +984,10 @@ internal sealed partial class ConsumerRegister(
                 subscriptionKey.Lane,
                 subscriptionKey.Kind,
                 _instanceId
-            ),
+            )
+            {
+                ProvisionsTopology = provisionsTopology,
+            },
             cancellationToken
         );
     }
@@ -1536,15 +1549,35 @@ internal sealed partial class ConsumerRegister(
                 return;
             }
 
-            if (shouldPause)
+            // The client is already in the list, so a circuit transition that runs while its pause is in flight reaches
+            // it, and a resume can complete before that pause does. Applying only the state read above would then leave
+            // the client paused under a resumed circuit, so re-read the state after each change until it holds still;
+            // the last change always follows the last transition's own call on this client.
+            var applied = false;
+            while (shouldPause != applied)
             {
                 try
                 {
-                    await client.PauseAsync().ConfigureAwait(false);
+                    if (shouldPause)
+                    {
+                        await client.PauseAsync().ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await client.ResumeAsync().ConfigureAwait(false);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogPauseNewlyAddedClientFailed(ex, SubscriptionName);
+                    if (shouldPause)
+                    {
+                        Logger.LogPauseNewlyAddedClientFailed(ex, SubscriptionName);
+                    }
+                    else
+                    {
+                        Logger.ResumeConsumerClientFailed(ex, SubscriptionName);
+                    }
+
                     lock (_clientsLock)
                     {
                         _clients.Remove(client);
@@ -1552,6 +1585,18 @@ internal sealed partial class ConsumerRegister(
 
                     await client.DisposeAsync().ConfigureAwait(false);
                     throw;
+                }
+
+                applied = shouldPause;
+
+                lock (_clientsLock)
+                {
+                    if (_disposing)
+                    {
+                        return;
+                    }
+
+                    shouldPause = _isPaused;
                 }
             }
         }

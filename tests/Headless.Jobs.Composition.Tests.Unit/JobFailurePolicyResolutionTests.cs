@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Frozen;
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
 using Headless.Reliability;
@@ -359,8 +360,10 @@ public sealed class JobFailurePolicyResolutionTests : TestBase
         reseeded.RetryIntervals.Should().Equal(0, 0, 30, 60, 120);
     }
 
+    // A host that seeds on startup: the seeders run, then the initializer opens activation.
     private static async Task _StartAsync(IServiceProvider provider)
     {
+        await provider.SeedAsync(cancellationToken: AbortToken);
         var initializer = provider.GetServices<IHostedService>().OfType<JobsInitializationHostedService>().Single();
         await initializer.StartAsync(AbortToken);
     }

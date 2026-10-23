@@ -2,6 +2,7 @@
 
 using Headless.AuditLog;
 using Headless.EntityFramework;
+using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -214,6 +215,7 @@ public sealed class PostgreSqlAuditLogMissingTransactionTests(PostgreSqlAuditLog
             setup.UsePostgreSql(fixture.ConnectionString);
         });
 
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         var host = builder.Build();
         await host.StartAsync(AbortToken);
 

@@ -56,9 +56,15 @@ public static class FeaturesStorageFixtureExtensions
 {
     /// <summary>
     /// Builds an unstarted host that stores features in <paramref name="schema" /> through the fixture's provider.
-    /// Pass <paramref name="connectionString" /> to point the provider somewhere other than the fixture's database.
+    /// Pass <paramref name="connectionString" /> to point the provider somewhere other than the fixture's database, and
+    /// <paramref name="setupResources" /> <see langword="false" /> for a host whose start must only verify the schema.
     /// </summary>
-    public static IHost CreateHost(this IFeaturesStorageFixture fixture, string schema, string? connectionString = null)
+    public static IHost CreateHost(
+        this IFeaturesStorageFixture fixture,
+        string schema,
+        string? connectionString = null,
+        bool setupResources = true
+    )
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddSingleton(TimeProvider.System);
@@ -69,6 +75,11 @@ public static class FeaturesStorageFixtureExtensions
             setup.ConfigureStorage(options => options.Schema = schema);
             fixture.UseStorage(setup, connectionString ?? fixture.ConnectionString);
         });
+
+        if (setupResources)
+        {
+            builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
+        }
 
         return builder.Build();
     }

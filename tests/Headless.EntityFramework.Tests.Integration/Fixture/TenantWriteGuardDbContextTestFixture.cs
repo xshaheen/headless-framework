@@ -95,7 +95,6 @@ public abstract class TenantWriteGuardDbContextTestFixtureBase : IAsyncLifetime
             .WithDatabase("headless_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
-            .WithReuse(true)
             .Build();
     }
 }

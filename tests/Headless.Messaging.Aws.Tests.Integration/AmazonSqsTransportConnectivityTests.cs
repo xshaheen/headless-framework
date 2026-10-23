@@ -96,8 +96,6 @@ internal sealed class FixedPortLocalStackFixture : HeadlessLocalStackFixture
 
     protected override LocalStackBuilder Configure()
     {
-        // Built afresh rather than from the shared fixture's builder, which reuses one container across runs; this one is
-        // stopped mid-test, so a later run must never reattach to it.
         return new LocalStackBuilder(TestImages.LocalStack).WithPortBinding(
             _hostPort,
             LocalStackBuilder.LocalStackPort

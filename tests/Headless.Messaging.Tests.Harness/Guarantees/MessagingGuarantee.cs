@@ -331,13 +331,7 @@ public static class MessagingGuarantees
             GuaranteeArea.Settlement,
             realSystem: false,
             "A header builder that throws a transient error leads to redelivery, then dead-letter once the retry budget is spent."
-        ) with
-        {
-            Status = GuaranteeStatus.Unsupported,
-            Rationale =
-                "Amazon SQS, Redis, and Pulsar settle a CustomHeadersBuilder exception as a malformed envelope and drop the message, so a transient builder failure is never redelivered.",
-            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1199",
-        },
+        ),
         // Inbox
         _Bound(
             "MSG-INBOX-01",
@@ -393,13 +387,7 @@ public static class MessagingGuarantees
             GuaranteeArea.CircuitBreaker,
             realSystem: false,
             "An open circuit pauses every client of its consumer identity and lane, and a client added while it half-opens ends resumed."
-        ) with
-        {
-            Status = GuaranteeStatus.Unsupported,
-            Rationale =
-                "SubscriptionHandle.AddClientAsync applies the pause it read outside the circuit's apply gate, so a client added while the circuit half-opens stays paused after the resume.",
-            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1244",
-        },
+        ),
         _Bound(
             "MSG-CB-04",
             GuaranteeArea.CircuitBreaker,
@@ -417,13 +405,7 @@ public static class MessagingGuarantees
             GuaranteeArea.CircuitBreaker,
             realSystem: true,
             "A message store that becomes unreachable fails admission with a fault the default classifier counts as transient, so the consumer's circuit opens at its threshold on every relational provider."
-        ) with
-        {
-            Status = GuaranteeStatus.Unsupported,
-            Rationale =
-                "SqlClient reports a dropped or refused connection as SqlException number 0, which the relational classifier does not count as transient, so a SQL Server outage never opens the circuit.",
-            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1278",
-        },
+        ),
         // Shutdown and drain
         _Bound(
             "MSG-SHUT-01",
@@ -638,13 +620,7 @@ public static class MessagingGuarantees
             GuaranteeArea.Dashboard,
             realSystem: false,
             "Requeue of a Succeeded published row is refused, and requeue of a Failed row sends it once."
-        ) with
-        {
-            Status = GuaranteeStatus.Unsupported,
-            Rationale =
-                "The store refuses to lease a terminal published row, so a requeued Failed row is ended silently without a send.",
-            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1241",
-        },
+        ),
         // Registration and options
         _Bound(
             "MSG-REG-01",
@@ -658,12 +634,7 @@ public static class MessagingGuarantees
             GuaranteeArea.Observability,
             realSystem: false,
             "Log event IDs are unique across the messaging assemblies."
-        ) with
-        {
-            Status = GuaranteeStatus.Unsupported,
-            Rationale = "Eleven event IDs in Headless.Messaging are each declared for two different events.",
-            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1281",
-        },
+        ),
     ];
 
     /// <summary>Returns the catalogued guarantee with <paramref name="id"/>, or <see langword="null"/>.</summary>

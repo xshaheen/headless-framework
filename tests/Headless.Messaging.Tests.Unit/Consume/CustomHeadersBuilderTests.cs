@@ -10,7 +10,7 @@ namespace Tests.Consume;
 /// <summary>
 /// A custom headers builder that fails on a transient error, such as a lookup service being briefly down: the delivery
 /// must go back to the broker to be tried again, and only the broker's own delivery limit dead-letters it. The
-/// simulated client settles a builder failure as Amazon SQS, Redis, and Pulsar do today, as a malformed envelope.
+/// simulated client settles a builder failure as the brokers with a delivery limit do: it rejects the delivery.
 /// </summary>
 public sealed class CustomHeadersBuilderTests : TestBase
 {

@@ -86,7 +86,11 @@ TEST_MAX_PARALLEL ?= 3
 # and 92 s at 8 parallel modules on a 14-core machine. TEST_MAX_PARALLEL stays at 3 for integration
 # modules, which each start containers, and for CI's smaller runners.
 UNIT_TEST_MAX_PARALLEL ?= 6
+# Per test module. The affected test stages pass it too (unless TEST_ARGS already carries a --timeout), so a hung
+# module (a broker suite once hung 57 min) fails its stage instead of holding the machine; the longest module in recent
+# proof runs took about 7 min under load.
 TEST_TIMEOUT ?= 15m
+AFFECTED_TIMEOUT_ARGS = $(if $(findstring --timeout,$(TEST_ARGS)),,--timeout $(TEST_TIMEOUT))
 # Inner-loop build flags. Analyzers are over half of the compiler's CPU on this solution (9 analyzer
 # packs, AnalysisMode=All, AnalysisLevel=latest-all, EnforceCodeStyleInBuild), and MinVer shells out
 # to git once per src project. Neither changes the emitted IL, so a compile-only loop can skip both.
@@ -142,7 +146,8 @@ GRAPH = $(PYTHON) scripts/project-graph.py
 PROOF = $(PYTHON) scripts/proof.py
 # Each proof target keeps the newest PROOF_KEEP bundles of its own kind (-verify, -integration, ...), counting the one
 # it starts, and deletes the older ones; nothing else ever removed a bundle, and one worktree had 52 of them (22 GB).
-# test-failed reads the newest -verify or -test bundle, which is always kept. PROOF_KEEP=0 keeps every bundle.
+# test-failed reads the newest -verify, -test, or -integration bundle, which is always kept. PROOF_KEEP=0 keeps every
+# bundle.
 PROOF_KEEP ?= 3
 # One timestamp per make invocation, so every stage of a target writes into the same bundle.
 PROOF_RUN := $(ARTIFACTS_DIR)/proof/$(shell date -u +%Y%m%dT%H%M%SZ)
@@ -195,17 +200,24 @@ AFFECTED_BUILD_STAGES = if [ -s "$$run/build.txt" ]; then \
 		fi; \
 		$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/build.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo $(PROOF_ERROR_LOG_ARGS) $(MSBUILD_ARGS) || status=1; \
 	fi;
+# An analyzer finding sends the change back for an edit, and that edit re-runs every suite, so the integration gate
+# analyzes right after the build (it reads the build's compiler logs) and skips its suites on a finding instead of finding out from
+# verify-affected after the suites already ran. The skip goes through `status`, as a failed build's does.
+AFFECTED_INTEGRATION_ANALYZER_STAGE = if [ $$status -eq 0 ]; then \
+		$(AFFECTED_ANALYZER_STAGE) \
+		$(PROOF) analyzers-clean --dir "$$run" || { status=1; printf '\033[31m[affected]\033[0m analyzer findings in the changed projects; fix them before the suites run.\n' >&2; }; \
+	fi;
 # The unit stage runs the list the target names in `units` (unit by default; test-affected-integration narrows it).
 AFFECTED_UNIT_STAGE = units="$${units:-unit}"; \
-	if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name unit-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
+	if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name unit-tests --reason "an earlier stage (build or analyzers) failed; fix it first, since the fix re-runs these tests anyway"; \
 	elif [ -s "$$run/$$units.txt" ]; then \
 		$(COVERAGE_ARGS_FN) \
-		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/$$units.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
+		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/$$units.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) $(AFFECTED_TIMEOUT_ARGS) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
 	else printf '\033[33m[affected]\033[0m %s.txt selects no unit-test project; no unit tests ran.\n' "$$units"; fi;
-AFFECTED_INTEGRATION_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name integration-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
+AFFECTED_INTEGRATION_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name integration-tests --reason "an earlier stage (build or analyzers) failed; fix it first, since the fix re-runs these tests anyway"; \
 	elif [ -s "$$run/integration.txt" ]; then \
 		$(COVERAGE_ARGS_FN) \
-		$(PROOF) run --dir "$$run" --name integration-tests -- $(DOTNET) test --solution "$$run/integration.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/integration-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
+		$(PROOF) run --dir "$$run" --name integration-tests -- $(DOTNET) test --solution "$$run/integration.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/integration-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(AFFECTED_TIMEOUT_ARGS) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
 	else printf '\033[33m[affected]\033[0m no integration-test project covers the affected set; nothing ran.\n'; fi;
 # One merged report over whichever suites ran, so the gate reads a line as covered when any test reached it. MTP
 # writes each module's report at the results root and the TRX reporter copies it under _<machine>_<time>/In/, so the
@@ -355,31 +367,35 @@ test-class: ## The inner loop: run tests matching CLASS (MTP --filter-class) ins
 	@$(REPEATED) $(MAKE) --no-print-directory $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-class "$(CLASS)"'
 
 .PHONY: test-method
-test-method: ## Run tests matching METHOD (MTP --filter-method). Solution-wide unless TEST_PROJECT is set.
+test-method: ## Run tests matching METHOD (MTP --filter-method). Solution-wide unless TEST_PROJECT is set; REPEAT=N runs it N times.
 	@test -n "$(METHOD)" || (echo "METHOD is required. Example: make test-method METHOD='*utc_now_should_return_correct_utc_time'" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-method "$(METHOD)"'
+	@case "$(REPEAT)" in ''|*[!0-9]*|0) echo "REPEAT must be a positive whole number." >&2; exit 2;; esac
+	@$(REPEATED) $(MAKE) --no-print-directory $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-method "$(METHOD)"'
 
 .PHONY: test-namespace
-test-namespace: ## Run tests matching NAMESPACE (MTP --filter-namespace). Solution-wide unless TEST_PROJECT is set.
+test-namespace: ## Run tests matching NAMESPACE (MTP --filter-namespace). Solution-wide unless TEST_PROJECT is set; REPEAT=N runs it N times.
 	@test -n "$(NAMESPACE)" || (echo "NAMESPACE is required. Example: make test-namespace NAMESPACE=Headless.Api.Tests" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-namespace "$(NAMESPACE)"'
+	@case "$(REPEAT)" in ''|*[!0-9]*|0) echo "REPEAT must be a positive whole number." >&2; exit 2;; esac
+	@$(REPEATED) $(MAKE) --no-print-directory $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-namespace "$(NAMESPACE)"'
 
 .PHONY: test-trait
-test-trait: ## Run tests matching TRAIT (MTP --filter-trait). Solution-wide unless TEST_PROJECT is set.
+test-trait: ## Run tests matching TRAIT (MTP --filter-trait). Solution-wide unless TEST_PROJECT is set; REPEAT=N runs it N times.
 	@test -n "$(TRAIT)" || (echo "TRAIT is required. Example: make test-trait TRAIT='Category=Unit'" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-trait "$(TRAIT)"'
+	@case "$(REPEAT)" in ''|*[!0-9]*|0) echo "REPEAT must be a positive whole number." >&2; exit 2;; esac
+	@$(REPEATED) $(MAKE) --no-print-directory $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-trait "$(TRAIT)"'
 
 .PHONY: test-query
-test-query: ## Run tests matching QUERY (MTP --filter-query). Solution-wide unless TEST_PROJECT is set.
+test-query: ## Run tests matching QUERY (MTP --filter-query). Solution-wide unless TEST_PROJECT is set; REPEAT=N runs it N times.
 	@test -n "$(QUERY)" || (echo "QUERY is required. Example: make test-query QUERY='/Headless.Extensions.Tests.Unit/Tests.Core/CultureHelperTests/*'" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-query "$(QUERY)"'
+	@case "$(REPEAT)" in ''|*[!0-9]*|0) echo "REPEAT must be a positive whole number." >&2; exit 2;; esac
+	@$(REPEATED) $(MAKE) --no-print-directory $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-query "$(QUERY)"'
 
 # A narrow fix after a failed verify-affected proves itself on the modules that failed, in seconds to a minute,
-# instead of the whole gate again (one Jobs module alone takes ~4 min). It reads the latest -verify or -test
-# bundle's summary.json; the other failed stages are named with the target that repeats them. The final proof
-# is still one full verify-affected.
+# instead of the whole gate again (one Jobs module alone takes ~4 min). It reads the latest -verify, -test, or
+# -integration bundle's summary.json; the other failed stages are named with the target that repeats them. The final
+# proof is still one full run of the gate that failed.
 .PHONY: test-failed
-test-failed: ## Re-run only the unit-test projects whose modules failed in the last verify-affected or test-affected proof (PROOF_BUNDLE=<dir> picks another).
+test-failed: ## Re-run only the test projects whose modules failed in the last verify-affected, test-affected, or test-affected-integration proof (PROOF_BUNDLE=<dir> picks another).
 	@projects="$$($(PROOF) failed --root "$(ARTIFACTS_DIR)/proof" $(if $(PROOF_BUNDLE),--dir "$(PROOF_BUNDLE)",))"; \
 	if [ -z "$$projects" ]; then exit 0; fi; failed=""; \
 	for project in $$projects; do \
@@ -720,12 +736,13 @@ dashboards-test-affected: ## Run dashboard-<name>-test for each SPA changed vs A
 # its lifecycle: `up` builds and starts it in the background, `ready` waits for it, `seed` creates dashboard states,
 # `down` stops only what `up` started. STORE=memory (default) needs nothing beyond the SDK; STORE=postgres also
 # starts sandboxes/compose.yaml so stored state survives a restart and `db-q` can read it. The process, its log, and
-# the generated messaging-dashboard password live under .context/cli/, which git ignores.
+# the generated messaging-dashboard password live under artifacts/sandbox/, which git ignores. Each worktree keeps its
+# own copy, so one worktree's `down` never stops another worktree's sandbox.
 SANDBOX_PROJECT ?= sandboxes/Headless.Dashboards.Sandbox/Headless.Dashboards.Sandbox.csproj
 SANDBOX_DLL ?= sandboxes/Headless.Dashboards.Sandbox/bin/$(CONFIGURATION)/net10.0/Headless.Dashboards.Sandbox.dll
 SANDBOX_PORT ?= 5300
 SANDBOX_URL ?= http://127.0.0.1:$(SANDBOX_PORT)
-SANDBOX_DIR ?= .context/cli
+SANDBOX_DIR ?= $(ARTIFACTS_DIR)/sandbox
 SANDBOX_PID ?= $(SANDBOX_DIR)/sandbox.pid
 SANDBOX_LOG ?= $(SANDBOX_DIR)/sandbox.log
 SANDBOX_STATE ?= $(SANDBOX_DIR)/sandbox.state
@@ -945,6 +962,7 @@ test-affected-integration: ## Build the affected set, run its integration tests,
 	run="$(PROOF_RUN)-integration"; status=0; units=integration-unit; coverage="$(INTEGRATION_COVERAGE)"; \
 	if [ ! -s "$$run/integration-packages.txt" ]; then coverage=false; fi; \
 	$(AFFECTED_BUILD_STAGES) \
+	$(AFFECTED_INTEGRATION_ANALYZER_STAGE) \
 	$(AFFECTED_UNIT_STAGE) \
 	$(AFFECTED_INTEGRATION_STAGE) \
 	$(AFFECTED_COVERAGE_MERGE_STAGE) \

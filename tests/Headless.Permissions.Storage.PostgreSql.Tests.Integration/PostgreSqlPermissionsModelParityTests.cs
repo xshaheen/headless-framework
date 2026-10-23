@@ -2,7 +2,7 @@
 
 using Headless.Caching;
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Permissions;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -87,6 +87,7 @@ public sealed class PostgreSqlPermissionsModelParityTests(PostgreSqlPermissionsF
             setup.UsePostgreSql(fixture.ConnectionString);
         });
 
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         return builder.Build();
     }
 

@@ -2,6 +2,7 @@
 
 using Headless.Context;
 using Headless.Coordination;
+using Headless.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -58,6 +59,7 @@ internal static class Program
             });
         });
 
+        builder.Services.AddDeployStepsOnStartup();
         using var host = builder.Build();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         try

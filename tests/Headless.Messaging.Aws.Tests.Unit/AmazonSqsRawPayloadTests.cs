@@ -247,14 +247,14 @@ public sealed class AmazonSqsRawPayloadTests : TestBase
     }
 
     [Fact]
-    public async Task should_delete_the_message_when_the_custom_headers_builder_throws()
+    public async Task should_release_the_message_for_redelivery_when_the_custom_headers_builder_throws()
     {
-        // given
+        // given: a builder whose lookup is briefly down must not cost the message
         var queueUrl = _QueueUrl(_RawName);
         await using var client = await _SubscribeQueueAsync(
             _RawName,
             queueUrl,
-            options => options.CustomHeadersBuilder = (_, _) => throw new FormatException("bad attribute")
+            options => options.CustomHeadersBuilder = (_, _) => throw new TimeoutException("lookup timed out")
         );
 
         // when
@@ -262,8 +262,15 @@ public sealed class AmazonSqsRawPayloadTests : TestBase
 
         // then
         _received.Should().BeEmpty();
-        _AssertLogged(4202);
-        await _AssertDeletedAsync(queueUrl, "receipt-1");
+        _AssertLogged(4209);
+        await _AssertNotDeletedAsync(queueUrl, "receipt-1");
+        await _sqs.Received(1)
+            .ChangeMessageVisibilityAsync(
+                queueUrl,
+                "receipt-1",
+                Arg.Is<int>(seconds => seconds > 0),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]

@@ -27,7 +27,22 @@ internal interface IConnectionChannelPool
     /// </summary>
     string Exchange { get; }
 
+    /// <summary>
+    /// Gets the largest message body, in bytes, that a consumer on this pool's connections can receive: the connection
+    /// factory's <c>MaxInboundMessageBodySize</c>, which
+    /// <see cref="RabbitMqMessagingOptions.ConnectionFactoryOptions"/> can change.
+    /// </summary>
+    /// <remarks>
+    /// The broker accepts bodies up to its own <c>max_message_size</c>, 128 MiB by default, but the client closes the
+    /// whole connection when it receives a body over this limit, so a publish must not send one.
+    /// </remarks>
+    uint MaxMessageBodySize { get; }
+
     /// <summary>Returns the shared, lazily-established AMQP connection, opening it if necessary.</summary>
+    /// <remarks>
+    /// While RabbitMQ.Client recovers the lost shared connection, this returns that connection, and calls on it fail
+    /// until the recovery completes. Replacing it would cancel the recovery of every consumer on it.
+    /// </remarks>
     /// <param name="cancellationToken">Token to cancel connection setup.</param>
     Task<IConnection> GetConnectionAsync(CancellationToken cancellationToken = default);
 
@@ -70,13 +85,12 @@ internal interface IConnectionChannelPool
     bool Return(IChannel context);
 
     /// <summary>
-    /// Declares and binds the Queue-lane queue of <paramref name="messageName"/>, with the arguments its consumers
-    /// declare it with, once per process; with <see cref="RabbitMqMessagingOptions.AutoProvision"/> off it proves the
-    /// queue exists. A failed attempt is forgotten, so the next call tries again.
+    /// Proves the Queue-lane queue of <paramref name="messageName"/> exists, once per process; <c>resources provision</c>
+    /// created and bound it. A failed attempt is forgotten, so the next call tries again.
     /// </summary>
     /// <remarks>
-    /// A Queue-lane message goes to a direct exchange, which drops a message no queue is bound for. Consumers declare
-    /// the queue too, but a message sent before the first consumer ever started would be lost without this.
+    /// A Queue-lane message goes to a direct exchange, which drops a message no queue is bound for, so a publish to a
+    /// missing queue fails here, naming <c>resources provision</c>, instead of losing the message.
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     Task EnsureQueueForPublishAsync(string messageName, CancellationToken cancellationToken);
@@ -96,7 +110,19 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
     private readonly Func<CancellationToken, Task<IConnection>> _connectionActivator;
     private readonly Func<CancellationToken, Task<IConnection>> _nonRecoveringConnectionActivator;
     private readonly bool _isPublishConfirms;
+    private readonly bool _sharedConnectionRecovers;
+    private readonly TimeProvider _recoveryClock;
     private readonly RabbitMqMessagingOptions _options;
+
+    // How long a lost shared connection is left to the client's recovery before the pool replaces it. The client
+    // retries until the connection is disposed, but a recovery that failed for good (a topology recovery error, a
+    // close the client does not recover from) leaves the connection closed forever, and every publish would fail.
+    // A broker restart recovers well inside this window; replacing the connection after it gives up on the consumers
+    // the recovery would have restored, which the transport health check rebuilds.
+    internal static readonly TimeSpan RecoveryWindow = TimeSpan.FromMinutes(2);
+
+    // The timestamp, on _recoveryClock, at which the current connection was first seen lost; 0 while it is open.
+    private long _lostSince;
 
     // One ensure per Queue-lane queue per process. The Lazy keeps concurrent first publishes on one declare; a failed
     // declare is removed, so the next publish tries again.
@@ -114,16 +140,25 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         IOptions<MessagingOptions> messagingAccessorOptionsAccessor,
         IOptions<RabbitMqMessagingOptions> optionsAccessor
     )
-        : this(logger, messagingAccessorOptionsAccessor, optionsAccessor, connectionActivator: null) { }
+        : this(
+            logger,
+            messagingAccessorOptionsAccessor,
+            optionsAccessor,
+            connectionActivator: null,
+            recoveryClock: TimeProvider.System
+        ) { }
 
     internal ConnectionChannelPool(
         ILogger<ConnectionChannelPool> logger,
         IOptions<MessagingOptions> messagingAccessorOptionsAccessor,
         IOptions<RabbitMqMessagingOptions> optionsAccessor,
-        Func<CancellationToken, Task<IConnection>>? connectionActivator
+        Func<CancellationToken, Task<IConnection>>? connectionActivator,
+        TimeProvider? recoveryClock = null
     )
     {
         _logger = logger;
+        // Real time unless a test steps it: the window bounds a broker outage, not an app schedule.
+        _recoveryClock = recoveryClock ?? TimeProvider.System;
         var messagingOptions = messagingAccessorOptionsAccessor.Value;
         var options = optionsAccessor.Value;
 
@@ -131,8 +166,27 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         _pool = new ConcurrentQueue<IChannel>();
         _poolSemaphore = new SemaphoreSlim(options.ChannelPoolSize, options.ChannelPoolSize);
 
-        _connectionActivator = connectionActivator ?? _CreateConnection(options, automaticRecovery: true);
-        _nonRecoveringConnectionActivator = connectionActivator ?? _CreateConnection(options, automaticRecovery: false);
+        if (connectionActivator is null)
+        {
+            var factory = _CreateFactory(options, automaticRecovery: true);
+            _connectionActivator = _CreateActivator(factory, options.HostName);
+            _nonRecoveringConnectionActivator = _CreateActivator(
+                _CreateFactory(options, automaticRecovery: false),
+                options.HostName
+            );
+
+            // Read through an endpoint, which caps the factory's value at the largest body the client accepts at all.
+            MaxMessageBodySize = factory.Endpoint.MaxInboundMessageBodySize;
+            _sharedConnectionRecovers = factory.AutomaticRecoveryEnabled;
+        }
+        else
+        {
+            _connectionActivator = connectionActivator;
+            _nonRecoveringConnectionActivator = connectionActivator;
+            MaxMessageBodySize = ConnectionFactory.DefaultMaxInboundMessageBodySize;
+            _sharedConnectionRecovers = true;
+        }
+
         _isPublishConfirms = options.PublishConfirms;
         _options = options;
 
@@ -192,22 +246,25 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
 
     public string Exchange { get; }
 
+    public uint MaxMessageBodySize { get; }
+
     public async Task<IConnection> GetConnectionAsync(CancellationToken cancellationToken = default)
     {
-        if (_connection is { IsOpen: true })
+        if (_connection is { } current && _IsUsable(current))
         {
-            return _connection;
+            return current;
         }
 
         await _connectionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_connection is { IsOpen: true })
+            if (_connection is { } connection && _IsUsable(connection))
             {
-                return _connection;
+                return connection;
             }
 
             _connection?.Dispose();
+            Interlocked.Exchange(ref _lostSince, 0);
             _connection = await _connectionActivator(cancellationToken).ConfigureAwait(false);
             return _connection;
         }
@@ -215,6 +272,41 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         {
             _connectionLock.Release();
         }
+    }
+
+    // An open connection, or a lost one the client is still recovering within RecoveryWindow.
+    private bool _IsUsable(IConnection connection)
+    {
+        if (connection.IsOpen)
+        {
+            Interlocked.Exchange(ref _lostSince, 0);
+            return true;
+        }
+
+        if (!_IsRecovering(connection))
+        {
+            return false;
+        }
+
+        var lostSince = Interlocked.Read(ref _lostSince);
+        if (lostSince == 0)
+        {
+            Interlocked.CompareExchange(ref _lostSince, _recoveryClock.GetTimestamp(), 0);
+            return true;
+        }
+
+        return _recoveryClock.GetElapsedTime(lostSince) < RecoveryWindow;
+    }
+
+    // RabbitMQ.Client recovers a connection after any loss it did not cause itself, except the broker's ACCESS_REFUSED,
+    // and retries until the connection is disposed (AutorecoveringConnection, v7). Disposing a connection it is
+    // recovering cancels that recovery, and with it the recovery of every channel and consumer on the connection.
+    private bool _IsRecovering(IConnection connection)
+    {
+        return _sharedConnectionRecovers
+            && connection.CloseReason is { } reason
+            && reason.Initiator is not ShutdownInitiator.Application
+            && !(reason.Initiator is ShutdownInitiator.Peer && reason.ReplyCode == Constants.AccessRefused);
     }
 
     public Task<IConnection> CreateNonRecoveringConnectionAsync(CancellationToken cancellationToken = default)
@@ -229,9 +321,8 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         var queueName = RabbitMqPhysicalAddress.Queue(MessageLane.Queue, messageName, messageName);
         var entry = _publishQueues.GetOrAdd(
             queueName,
-            static (queue, state) =>
-                new Lazy<Task>(() => state.Pool._DeclarePublishQueueAsync(queue, state.MessageName)),
-            (Pool: this, MessageName: messageName)
+            static (queue, pool) => new Lazy<Task>(() => pool._RequirePublishQueueAsync(queue)),
+            this
         );
 
         return entry.Value.IsCompletedSuccessfully
@@ -258,10 +349,10 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         }
     }
 
-    // The declare is shared by every publish waiting on it, so no single caller's token cancels it; the client's own
-    // continuation timeout bounds each broker call. It runs on a channel of its own because a refused declare closes
+    // The check is shared by every publish waiting on it, so no single caller's token cancels it; the client's own
+    // continuation timeout bounds each broker call. It runs on a channel of its own because a refused check closes
     // the channel, and a pooled publish channel must not be the one that dies.
-    private async Task _DeclarePublishQueueAsync(string queueName, string messageName)
+    private async Task _RequirePublishQueueAsync(string queueName)
     {
         var connection = await GetConnectionAsync(CancellationToken.None).ConfigureAwait(false);
         var channel = await connection
@@ -272,24 +363,11 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
             var laneExchange = RabbitMqPhysicalAddress.Exchange(Exchange, MessageLane.Queue);
 
             await RabbitMqQueueTopology
-                .DeclareExchangeAsync(
-                    channel,
-                    _options,
-                    laneExchange,
-                    RabbitMqPhysicalAddress.ExchangeType(MessageLane.Queue),
-                    CancellationToken.None
-                )
+                .RequireExchangeAsync(channel, laneExchange, CancellationToken.None)
                 .ConfigureAwait(false);
 
-            await RabbitMqQueueTopology
-                .DeclareQueueAsync(
-                    channel,
-                    _options,
-                    laneExchange,
-                    queueName,
-                    RabbitMqPhysicalAddress.RoutingKey(MessageLane.Queue, messageName),
-                    CancellationToken.None
-                )
+            _ = await RabbitMqQueueTopology
+                .RequireQueueAsync(channel, queueName, CancellationToken.None)
                 .ConfigureAwait(false);
         }
     }
@@ -326,10 +404,7 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         _connectionLock.Dispose();
     }
 
-    private static Func<CancellationToken, Task<IConnection>> _CreateConnection(
-        RabbitMqMessagingOptions options,
-        bool automaticRecovery
-    )
+    private static ConnectionFactory _CreateFactory(RabbitMqMessagingOptions options, bool automaticRecovery)
     {
         var factory = new ConnectionFactory
         {
@@ -340,22 +415,43 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
             ClientProvidedName = Assembly.GetEntryAssembly()?.GetName().Name!.ToLower(CultureInfo.InvariantCulture),
         };
 
-        if (options.HostName.Contains(',', StringComparison.Ordinal))
+        if (!options.HostName.Contains(',', StringComparison.Ordinal))
         {
-            options.ConnectionFactoryOptions?.Invoke(factory);
-            _ApplyRecovery(factory, automaticRecovery);
-            var endpoints = AmqpTcpEndpoint.ParseMultiple(options.HostName);
-            foreach (var endpoint in endpoints)
-            {
-                endpoint.Ssl = factory.Ssl;
-            }
+            factory.HostName = options.HostName;
+        }
+
+        options.ConnectionFactoryOptions?.Invoke(factory);
+        _ApplyRecovery(factory, automaticRecovery);
+        return factory;
+    }
+
+    private static Func<CancellationToken, Task<IConnection>> _CreateActivator(
+        ConnectionFactory factory,
+        string hostName
+    )
+    {
+        if (hostName.Contains(',', StringComparison.Ordinal))
+        {
+            // A parsed endpoint carries the client's default body limit, not the factory's, so each one is rebuilt
+            // with the factory's body limit; TLS is set first, because an endpoint without a port resolves the default
+            // port from it.
+            var endpoints = AmqpTcpEndpoint
+                .ParseMultiple(hostName)
+                .Select(endpoint =>
+                {
+                    endpoint.Ssl = factory.Ssl;
+                    return new AmqpTcpEndpoint(
+                        endpoint.HostName,
+                        endpoint.Port,
+                        factory.Ssl,
+                        factory.MaxInboundMessageBodySize
+                    );
+                })
+                .ToArray();
 
             return cancellationToken => factory.CreateConnectionAsync(endpoints, cancellationToken);
         }
 
-        factory.HostName = options.HostName;
-        options.ConnectionFactoryOptions?.Invoke(factory);
-        _ApplyRecovery(factory, automaticRecovery);
         return cancellationToken => factory.CreateConnectionAsync(cancellationToken);
     }
 
@@ -405,13 +501,7 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
         {
             await RabbitMqQueueTopology
-                .DeclareExchangeAsync(
-                    channel,
-                    _options,
-                    RabbitMqPhysicalAddress.Exchange(Exchange, lane),
-                    RabbitMqPhysicalAddress.ExchangeType(lane),
-                    cancellationToken
-                )
+                .RequireExchangeAsync(channel, RabbitMqPhysicalAddress.Exchange(Exchange, lane), cancellationToken)
                 .ConfigureAwait(false);
         }
     }

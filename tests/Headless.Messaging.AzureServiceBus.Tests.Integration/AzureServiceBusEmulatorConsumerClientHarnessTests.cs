@@ -31,6 +31,25 @@ public sealed class AzureServiceBusEmulatorConsumerClientHarnessTests(AzureServi
         return fixture.CreateQueueSessionAsync(cancellationToken);
     }
 
+    protected override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
+        TransportConformanceSessionOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        return fixture.CreateQueueSessionAsync(options, cancellationToken);
+    }
+
+    // Service Bus moves a message that spends its max delivery count to the queue's dead-letter subqueue.
+    protected override bool HasDeadLetterDestination => true;
+
+    protected override ValueTask<IReadOnlyList<string>> TakeDeadLetteredMessageIdsAsync(
+        TransportConsumerConformanceSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        return fixture.TakeDeadLetteredMessageIdsAsync(session, cancellationToken);
+    }
+
     [Fact]
     public override Task should_match_production_runtime_capabilities()
     {

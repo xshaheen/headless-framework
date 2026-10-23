@@ -6,7 +6,9 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 
 namespace Tests;
 
@@ -39,7 +41,7 @@ public sealed class ConnectionChannelPoolTests : TestBase
     }
 
     [Fact]
-    public async Task should_declare_both_lane_exchanges_when_channel_created()
+    public async Task should_check_both_lane_exchanges_when_channel_created()
     {
         var connection = Substitute.For<IConnection>();
         var channel = Substitute.For<IChannel>();
@@ -56,12 +58,9 @@ public sealed class ConnectionChannelPoolTests : TestBase
         var rented = await ((IConnectionChannelPool)pool).Rent(AbortToken);
 
         rented.Should().BeSameAs(channel);
-        await channel
-            .Received(1)
-            .ExchangeDeclareAsync("test.exchange.bus", "topic", true, false, null, false, false, AbortToken);
-        await channel
-            .Received(1)
-            .ExchangeDeclareAsync("test.exchange.queue", "direct", true, false, null, false, false, AbortToken);
+        // The deployment's resources provision created them; a publisher only proves they exist.
+        await channel.Received(1).ExchangeDeclarePassiveAsync("test.exchange.bus", AbortToken);
+        await channel.Received(1).ExchangeDeclarePassiveAsync("test.exchange.queue", AbortToken);
         ((IConnectionChannelPool)pool).Return(rented);
     }
 
@@ -121,6 +120,174 @@ public sealed class ConnectionChannelPoolTests : TestBase
 
         // then
         pool.HostAddress.Should().Be("rabbit1.local,rabbit2.local:5672");
+    }
+
+    [Theory]
+    [InlineData(null, ConnectionFactory.DefaultMaxInboundMessageBodySize)]
+    [InlineData(1024u, 1024u)]
+    public void should_take_the_largest_body_from_the_connection_factory(uint? configured, uint expected)
+    {
+        // given
+        var options = Options.Create(
+            new RabbitMqMessagingOptions
+            {
+                HostName = "localhost",
+                UserName = "test_user",
+                Password = "test_pass",
+                ConnectionFactoryOptions = factory =>
+                {
+                    if (configured is { } limit)
+                    {
+                        factory.MaxInboundMessageBodySize = limit;
+                    }
+                },
+            }
+        );
+
+        // when
+        using var pool = new ConnectionChannelPool(_logger, _capOptions, options);
+
+        // then
+        pool.MaxMessageBodySize.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(ShutdownInitiator.Library, 541)] // the socket closed: a network blip or a broker that went away
+    [InlineData(ShutdownInitiator.Peer, 320)] // CONNECTION_FORCED: a broker restart or an operator's close
+    public async Task should_keep_the_shared_connection_while_the_client_recovers_it(
+        ShutdownInitiator initiator,
+        ushort replyCode
+    )
+    {
+        // given
+        var connection = Substitute.For<IConnection>();
+        connection.IsOpen.Returns(true);
+        var activations = 0;
+        await using var pool = new ConnectionChannelPool(
+            _logger,
+            _capOptions,
+            _rabbitOptions,
+            _ =>
+            {
+                activations++;
+#pragma warning disable CA2025 // False positive: the pool awaits the completed task before it owns and disposes the connection.
+                return Task.FromResult(connection);
+#pragma warning restore CA2025
+            }
+        );
+        var opened = await pool.GetConnectionAsync(AbortToken);
+
+        // when — the client recovers this connection, and disposing it would cancel the recovery of every consumer on it
+        connection.IsOpen.Returns(false);
+        connection.CloseReason.Returns(new ShutdownEventArgs(initiator, replyCode, "connection lost"));
+        var duringRecovery = await pool.GetConnectionAsync(AbortToken);
+
+        // then
+        duringRecovery.Should().BeSameAs(opened);
+        activations.Should().Be(1);
+        connection.DidNotReceive().Dispose();
+        await connection.DidNotReceive().DisposeAsync();
+    }
+
+    [Theory]
+    [InlineData(ShutdownInitiator.Application, 200)] // closed by this process, which the client never recovers
+    [InlineData(ShutdownInitiator.Peer, 403)] // ACCESS_REFUSED, which the client does not recover either
+    public async Task should_replace_the_shared_connection_when_the_client_does_not_recover_it(
+        ShutdownInitiator initiator,
+        ushort replyCode
+    )
+    {
+        // given
+        var lost = Substitute.For<IConnection>();
+        lost.IsOpen.Returns(true);
+        var replacement = Substitute.For<IConnection>();
+        replacement.IsOpen.Returns(true);
+        var connections = new Queue<IConnection>([lost, replacement]);
+        await using var pool = new ConnectionChannelPool(
+            _logger,
+            _capOptions,
+            _rabbitOptions,
+            _ => Task.FromResult(connections.Dequeue())
+        );
+        await pool.GetConnectionAsync(AbortToken);
+
+        // when
+        lost.IsOpen.Returns(false);
+        lost.CloseReason.Returns(new ShutdownEventArgs(initiator, replyCode, "connection closed"));
+        var current = await pool.GetConnectionAsync(AbortToken);
+
+        // then
+        current.Should().BeSameAs(replacement);
+        lost.Received(1).Dispose();
+    }
+
+    [Fact]
+    public async Task should_replace_a_connection_the_client_has_not_recovered_within_the_recovery_window()
+    {
+        // given: a lost connection the client is recovering
+        var clock = new FakeTimeProvider();
+        var lost = Substitute.For<IConnection>();
+        lost.IsOpen.Returns(true);
+        var replacement = Substitute.For<IConnection>();
+        replacement.IsOpen.Returns(true);
+        var connections = new Queue<IConnection>([lost, replacement]);
+        await using var pool = new ConnectionChannelPool(
+            _logger,
+            _capOptions,
+            _rabbitOptions,
+            _ => Task.FromResult(connections.Dequeue()),
+            clock
+        );
+        await pool.GetConnectionAsync(AbortToken);
+        lost.IsOpen.Returns(false);
+        lost.CloseReason.Returns(new ShutdownEventArgs(ShutdownInitiator.Library, 541, "connection lost"));
+        (await pool.GetConnectionAsync(AbortToken)).Should().BeSameAs(lost);
+
+        // when: the recovery has not brought it back within the window
+        clock.Advance(ConnectionChannelPool.RecoveryWindow - TimeSpan.FromSeconds(1));
+        var stillRecovering = await pool.GetConnectionAsync(AbortToken);
+        clock.Advance(TimeSpan.FromSeconds(2));
+        var afterWindow = await pool.GetConnectionAsync(AbortToken);
+
+        // then
+        stillRecovering.Should().BeSameAs(lost);
+        afterWindow.Should().BeSameAs(replacement);
+        lost.Received(1).Dispose();
+    }
+
+    [Fact]
+    public async Task should_restart_the_recovery_window_when_the_connection_recovers()
+    {
+        // given: a connection that was lost, recovered, and is lost again
+        var clock = new FakeTimeProvider();
+        var connection = Substitute.For<IConnection>();
+        connection.IsOpen.Returns(true);
+        await using var pool = new ConnectionChannelPool(
+            _logger,
+            _capOptions,
+            _rabbitOptions,
+#pragma warning disable CA2025 // False positive: the pool awaits the completed task before it owns and disposes the connection.
+            _ => Task.FromResult(connection),
+#pragma warning restore CA2025
+            clock
+        );
+        await pool.GetConnectionAsync(AbortToken);
+        connection.IsOpen.Returns(false);
+        connection.CloseReason.Returns(new ShutdownEventArgs(ShutdownInitiator.Library, 541, "connection lost"));
+        await pool.GetConnectionAsync(AbortToken);
+        clock.Advance(ConnectionChannelPool.RecoveryWindow - TimeSpan.FromSeconds(1));
+        connection.IsOpen.Returns(true);
+        await pool.GetConnectionAsync(AbortToken);
+
+        // when: lost again, the earlier outage does not count against the new one
+        connection.IsOpen.Returns(false);
+        await pool.GetConnectionAsync(AbortToken);
+        clock.Advance(TimeSpan.FromSeconds(2));
+        var current = await pool.GetConnectionAsync(AbortToken);
+
+        // then
+        current.Should().BeSameAs(connection);
+        connection.DidNotReceive().Dispose();
     }
 
     [Fact]

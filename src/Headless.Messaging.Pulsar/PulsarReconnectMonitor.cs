@@ -52,8 +52,13 @@ internal static class PulsarReconnectMonitor
         {
             try
             {
-                var lastDisconnected = await consumer.LastDisconnectedTimestamp().ConfigureAwait(false);
-                var connected = await consumer.IsConnected().ConfigureAwait(false);
+                // Each probe goes through the consumer's mailbox, which can stall after a broker restart, so a stop
+                // abandons a probe still waiting instead of holding the receive loop that awaits this monitor.
+                var lastDisconnected = await consumer
+                    .LastDisconnectedTimestamp()
+                    .WaitAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                var connected = await consumer.IsConnected().WaitAsync(cancellationToken).ConfigureAwait(false);
                 onConnectionState(connected);
 
                 // The first read sets the baseline: a disconnect before the monitor started preceded the subscription

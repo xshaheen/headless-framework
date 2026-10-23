@@ -674,11 +674,16 @@ projection, so a sweep keyed on due-ness would skip exactly the definitions that
 projection at or after the current instant, so a tick the changed rules moved into the past is surfaced rather than
 replayed as a misfire.
 
-Startup drains one fixed high-water snapshot before scheduler pickup is enabled. That ordering is enforced by an
-explicit activation barrier rather than by hosted-service registration order, so it also holds when the application
-sets `HostOptions.ServicesStartConcurrently`. Deterministically invalid definitions are durably deferred with a
-provider-time exponential retry (`FingerprintFailureCount` / `FingerprintRetryAfterUtc`, capped at 24h); storage,
-provider, and unknown failures fail startup closed. The periodic sweep runs every `FingerprintSweepInterval`
+After the host starts, a [warm-up](utilities.md#warm-up) (`JobsActivation`) drains one fixed high-water snapshot
+before scheduler pickup is enabled, so the host start does not wait on one store query per page and one write per stale
+row. That ordering is enforced by an explicit activation barrier rather than by hosted-service start order: the
+scheduler, the fallback loop, and the post-commit worker wait on it whether or not the application sets
+`HostOptions.ServicesStartConcurrently`. Deterministically invalid definitions are durably deferred with a
+provider-time exponential retry (`FingerprintFailureCount` / `FingerprintRetryAfterUtc`, capped at 24h). Storage,
+provider, and unknown failures fail closed without stopping the host: the barrier stays shut, nothing is selected, the
+`jobs` readiness check stays `Unhealthy`, and the drain is logged (`WarmupFailed`) and retried with the warm-up
+back-off until it succeeds or the host stops. The warm-up gates the `warmup` readiness check like any other, so a host
+is ready, and `HeadlessTestServer` returns, only once the drain has opened the loops. The periodic sweep runs every `FingerprintSweepInterval`
 (default 1h; rejected at setup above 24h, because it is also the *initial* delay of that capped defer backoff) in
 `FingerprintSweepBatchSize` pages (default 100), drains up to 100 consecutive full pages, performs one bounded keyset
 wrap, and retains its cursor when that pass bound is reached. Custom providers must implement the stale-page,
@@ -1004,8 +1009,14 @@ Core implementation of the Jobs scheduler: in-memory persistence provider, execu
 - **Shared occupied-instant rule**: `CronOccurrenceAccounting` owns the single predicate deciding whether a `(CronJobId, ExecutionTime)` pair is already taken, plus the `CronOccurrenceInstantView` projection every provider reads it through. The raw persisted status is deliberately never materialized, so a status written by a newer binary lands on the fail-closed side instead of throwing. See [When a row already stands for the instant](#when-a-row-already-stands-for-the-instant).
 - **Storage-agnostic recovery planner**: `CronRecoveryPlanner` resolves the whole coalesce decision as a pure value (`CronRecoveryPlan`, `CronRecoveryWindow`, `CronRecoveryRunStep`, `CronRecoveryRunStepKind`, `CronRecoveryResolution`) that every provider — relational, in-memory, or third-party — applies with its own fenced writes. See [Applying a recovery pass](#applying-a-recovery-pass).
 - **`DisableBackgroundServices()`**: suppresses background execution; only the managers are registered (useful for enqueue-only nodes and test projects).
-- **`DisableStartupInitialization()`**: skips `JobsInitializationHostedService` (cron seeding, seeders, fingerprint activation drain) and, on the durable store, `JobsCoordinationStartupGate`. Requires `DisableBackgroundServices()`, because the scheduler dispatches only after the drain and a claim stamps the identity the gate registers.
-- **Seeder API**: `UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task>)` and `UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>)` for startup data seeding; `IgnoreSeedDefinedCronJobs()` to skip auto-seeding of attribute-defined cron jobs.
+- **`DisableStartupInitialization()`**: skips `JobsInitializationHostedService` (catalog checks, the provider's startup action) and the `JobsActivation` warm-up (the fingerprint activation drain) and, on the durable store, `JobsCoordinationStartupGate`. Seeding is not part of it. Requires `DisableBackgroundServices()`, because the scheduler dispatches only after the drain and a claim stamps the identity the gate registers.
+- **Seeding (opt-in)**: the `Jobs` [seeder](utilities.md#database-seeders) writes the code-declared cron jobs (skip them with `IgnoreSeedDefinedCronJobs()`), then runs the `UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task>)` and `UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>)` delegates. The host start does not run it: the deployment runs `dotnet MyApp.dll seed`, or a development or test host calls `AddDeployStepsOnStartup()`, whose seeding finishes before the scheduler's activation barrier opens. Without a seed:
+  - a changed cron expression or time zone is not applied: the old schedule keeps firing, and its Idle and Queued occurrences are not retired;
+  - a cron removed from code keeps its row and keeps firing occurrences that resolve no handler;
+  - a cron added to code gets no row, so it never fires;
+  - on the in-memory store, every restart loses the cron rows, so it needs `AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`.
+
+  A `seed` run while hosts are running updates the rows; a sleeping scheduler picks a new or rescheduled cron up at its next wake or restart. With `UseDistributedLock`, a seed that finds the lock held waits for it, up to the 2-minute lease plus 30 seconds, so a lease a crashed seed left behind expires inside the wait; a lock still held after that fails the seed with event `CronSeedMigrationLockTimedOut`. A seed whose lock acquire faults (the lock store is down, or its provider throws) fails, with event `CronSeedMigrationLockAcquireFailed`: nothing retries a skipped seed, so the `seed` verb exits non-zero and an `AddDeployStepsOnStartup` host fails to start.
 - **Feature-owned storage naming**: `ConfigureStorage(storage => storage.Schema = "…")` on `JobsOptionsBuilder` sets the database schema holding every Jobs table (default `"headless"`, the schema every Headless feature shares; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)). The setting lives here rather than on a store provider's builder, so one value covers every table a provider maps — including non-generic ones like the idempotency reservation table — and cannot be honored by one registration path while another silently keeps the default. A second overload binds a configuration section directly: `ConfigureStorage(configuration.GetSection("Headless:Jobs:Storage"))`. Pass that section itself, so its keys are the option's property names. Using both is allowed — they compose as last call wins, the same rule the other features follow.
 - **GZip request payloads**: `UseGZipCompression()` on `JobsOptionsBuilder` compresses serialized request bytes. Decompression is capped at 64 MiB by default; use `UseGZipCompression(maxDecompressedBytes)` only when the application deliberately supports a different bounded payload size.
 - **Exception handler**: `SetExceptionHandler<THandler>()` registers an `IJobExceptionHandler` singleton.
@@ -1238,8 +1249,8 @@ builder.Services.AddHeadlessJobs(options =>
     options.DisableBackgroundServices(); // test / enqueue-only nodes
     options.DisableStartupInitialization(); // test hosts: no store access at startup (requires the line above)
     options.UseGZipCompression(); // compress request payloads
-    options.IgnoreSeedDefinedCronJobs(); // skip auto-seeding of attribute cron jobs
-    options.UseJobsSeeder(async manager => // startup time-job seeder
+    options.IgnoreSeedDefinedCronJobs(); // the Jobs seeder skips attribute cron jobs
+    options.UseJobsSeeder(async manager => // runs in the Jobs seeder (seed verb or AddDeployStepsOnStartup)
     {
         await manager.AddAsync(new TimeJobEntity { Function = "Init", ExecutionTime = DateTime.UtcNow });
     });
@@ -1254,7 +1265,7 @@ builder.Services.AddHeadlessJobs(options =>
 
 - Registers `ITimeJobManager<TimeJobEntity>`, `ICronJobManager<CronJobEntity>`, and `IJobScheduler` as **singleton** autonomous facades over stateless singleton cores, plus the `IUnitOfWorkJobs` feature that binds the enlisted counterparts to a unit (`unit.Jobs`, `unit.TimeJobs<T>()`, `unit.CronJobs<T>()`; see [Unit of Work](unit-of-work.md)). A hosted service injects the autonomous ones directly.
 - Registers one non-generic `IJobScheduler` facade bound to the same configured time/cron entity pair.
-- Registers background hosted services: `JobsPostCommitSignalService` (always — it drains coordinated post-commit signals; on an enqueue-only host only its dashboard notification does anything), `JobsInitializationHostedService` (unless `DisableStartupInitialization()` is called), and `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
+- Registers background hosted services: `JobsPostCommitSignalService` (always — it drains coordinated post-commit signals; on an enqueue-only host only its dashboard notification does anything), `JobsInitializationHostedService` (unless `DisableStartupInitialization()` is called), and `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called). With background services and startup initialization both on, it also registers the `JobsActivation` warm-up, which drains the cron fingerprints after the host starts and opens the activation barrier.
 - Registers `JobsTaskScheduler` (shared-thread-pool logical workers bounded by active async `MaxConcurrency`; dedicated threads only for `LongRunning`).
 - Registers a per-host `CronScheduleCache` (scheduler timezone) and the per-host `JobsRequestSerializationOptions` singleton (request JSON options, GZip, decompression cap) consumed by `JobsHelper` — no process-global serializer state.
 - Registers the Jobs tenancy primitives: `TenantPropagationScheduleMiddleware` / `TenantRestoreExecuteMiddleware` (`TryAddSingleton`), an `AsyncLocal`-backed `ICurrentTenantAccessor`, and the `ICurrentTenant` fallback (`NullCurrentTenant`, replaced by a real `CurrentTenant` once an HTTP / EF / consumer seam registers one). Inserts the schedule and execute tenancy middleware into the process-global registry once per process at `JobMiddlewarePriority.Tenancy`; both no-op until the tenancy seam enables `JobsTenancyOptions`.
@@ -1486,7 +1497,7 @@ Jobs contributes readiness checks automatically; there is no `AddJobsHealthCheck
 
 | Check | Registered when | Failure status | Fails when |
 | --- | --- | --- | --- |
-| `jobs` | Background services run (no `DisableBackgroundServices()`) | `Unhealthy` | Jobs activation has not completed (the startup drain is still running), or host shutdown has begun. The host stops claiming work at shutdown, so a load balancer stops routing to it before the drain |
+| `jobs` | Background services run (no `DisableBackgroundServices()`) | `Unhealthy` | Jobs activation has not completed (the fingerprint drain that runs after the start is still running or retrying a failure), or host shutdown has begun. The host stops claiming work at shutdown, so a load balancer stops routing to it before the drain |
 | `jobs-scheduler` | Background services run | `Degraded` | The scheduler loop is not running: an operator called `IJobsHostScheduler.StopAsync`, or `StartMode = JobsStartMode.Manual` and nothing has started it. The host stays in rotation while the check tells the operator it dispatches nothing |
 | `jobs-storage-{DbContext full name}` | `UseEntityFramework` with a Jobs context; also tagged `database` | `Unhealthy` | `Database.CanConnectAsync` fails on a context from the store's own pooled factory. The probe writes nothing |
 

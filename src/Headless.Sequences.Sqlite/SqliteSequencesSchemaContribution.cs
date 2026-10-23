@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sql.Sqlite;
 
 namespace Headless.Sequences.Sqlite;
@@ -41,7 +41,7 @@ internal static class SqliteSequencesSchemaContribution
             createConnection: () => dialect.CreateConnection(options.ConnectionString),
             schema: options.Schema,
             steps: [new SchemaStep(StepVersion, "Create the counter table.", sql)],
-            applyOnStartup: options.InitializeOnStartup
+            objects: [SchemaObject.Table(SqliteDialect.QualifiedName(options.Schema, options.TableName))]
         );
     }
 }

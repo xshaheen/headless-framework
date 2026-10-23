@@ -953,6 +953,203 @@ public sealed class KafkaConsumerClientTests : TestBase
         }
     }
 
+    [Theory]
+    [InlineData((byte)1)]
+    [InlineData((byte)2)]
+    public async Task should_seek_back_and_keep_listening_when_the_message_callback_throws(byte concurrency)
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeCallCount = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+                // The seek back makes the broker hand out the same record again.
+                Interlocked.Increment(ref consumeCallCount) <= 2
+                    ? _CreateConsumeResult(5)
+                    : null
+            );
+        var seeks = 0;
+        consumer
+            .When(instance => instance.Seek(Arg.Any<TopicPartitionOffset>()))
+            .Do(_ => Interlocked.Increment(ref seeks));
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            concurrency,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        var attempts = 0;
+        client.OnMessageCallback = (_, _) =>
+            Interlocked.Increment(ref attempts) == 1
+                ? throw new InvalidOperationException("callback failure")
+                : Task.CompletedTask;
+        client.OnLogCallback = _ => { };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var listeningTask = Task.Run(
+            () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
+            AbortToken
+        );
+
+        // when: with two handlers the redelivered record can reach its callback before the failed one seeks back, so
+        // the wait covers both
+        await _WaitUntilAsync(() => Volatile.Read(ref attempts) >= 2 && Volatile.Read(ref seeks) >= 1, AbortToken);
+
+        // then
+        consumer.Received(1).Seek(Arg.Is<TopicPartitionOffset>(offset => offset.Offset == 5));
+        consumer.DidNotReceive().StoreOffset(Arg.Any<TopicPartitionOffset>());
+        listeningTask.IsCompleted.Should().BeFalse("a callback failure must not end the listener");
+
+        await cts.CancelAsync();
+        await listeningTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+    }
+
+    [Fact]
+    public async Task should_seek_back_and_keep_listening_when_a_callback_throws_while_its_partition_revoke_drains()
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeResult = _CreateConsumeResult(5);
+        var consumeCallCount = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ => Interlocked.Increment(ref consumeCallCount) == 1 ? consumeResult : null);
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            2,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        client.PartitionsAssigned([consumeResult.TopicPartition]);
+        var callbackEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseCallback = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = async (_, _) =>
+        {
+            callbackEntered.TrySetResult();
+            await releaseCallback.Task;
+
+            throw new InvalidOperationException("callback failure");
+        };
+        client.OnLogCallback = _ => { };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var listeningTask = Task.Run(
+            () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
+            AbortToken
+        );
+        await callbackEntered.Task.WaitAsync(AbortToken);
+
+        // when: the revoke waits for the handler, which fails while the partition is still assigned
+        var revokeTask = Task.Run(() => client.PartitionsRevoked([consumeResult.TopicPartitionOffset]), AbortToken);
+        releaseCallback.SetResult();
+        await revokeTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then: the failure releases the record to the next owner and is not latched as a listener failure
+        consumer.Received(1).Seek(Arg.Is<TopicPartitionOffset>(offset => offset.Offset == 5));
+        consumer.DidNotReceive().StoreOffset(Arg.Any<TopicPartitionOffset>());
+        await Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
+        listeningTask.IsCompleted.Should().BeFalse("a callback failure must not end the listener");
+
+        await cts.CancelAsync();
+        await listeningTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+    }
+
+    [Fact]
+    public async Task should_skip_the_seek_and_keep_listening_when_a_callback_throws_after_its_partition_is_gone()
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeResult = _CreateConsumeResult(5);
+        var consumeCallCount = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ => Interlocked.Increment(ref consumeCallCount) == 1 ? consumeResult : null);
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            2,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        client.PartitionsAssigned([consumeResult.TopicPartition]);
+        var callbackEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseCallback = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var callbackFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = async (_, _) =>
+        {
+            callbackEntered.TrySetResult();
+            await releaseCallback.Task;
+            callbackFinished.TrySetResult();
+
+            throw new InvalidOperationException("callback failure");
+        };
+        client.OnLogCallback = _ => { };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var listeningTask = Task.Run(
+            () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
+            AbortToken
+        );
+        await callbackEntered.Task.WaitAsync(AbortToken);
+
+        // when: the partition goes without a drain (lost, or a revoke whose drain timed out), then the handler fails
+        client.PartitionsLost([consumeResult.TopicPartitionOffset]);
+        releaseCallback.SetResult();
+        await callbackFinished.Task.WaitAsync(AbortToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
+
+        // then: the new owner reads the record from its committed offset, so this client neither seeks nor fails
+        consumer.DidNotReceive().Seek(Arg.Any<TopicPartitionOffset>());
+        consumer.DidNotReceive().StoreOffset(Arg.Any<TopicPartitionOffset>());
+        listeningTask.IsCompleted.Should().BeFalse("a callback failure on a partition this client lost is not fatal");
+
+        await cts.CancelAsync();
+        await listeningTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+    }
+
+    [Theory]
+    [InlineData((byte)1)]
+    [InlineData((byte)2)]
+    public async Task should_fail_the_listener_when_seeking_back_after_a_callback_failure_throws(byte concurrency)
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeCallCount = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ => Interlocked.Increment(ref consumeCallCount) == 1 ? _CreateConsumeResult(5) : null);
+        consumer
+            .When(instance => instance.Seek(Arg.Any<TopicPartitionOffset>()))
+            .Do(_ => throw new KafkaException(ErrorCode.Local_Fatal));
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            concurrency,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        client.OnMessageCallback = (_, _) => throw new InvalidOperationException("callback failure");
+        client.OnLogCallback = _ => { };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        // when
+        var listening = () =>
+            Task.Run(() => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(), AbortToken)
+                .WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+        // then: the record stays unsettled, so only a rebuilt consumer can read it again from the last commit.
+        await listening.Should().ThrowAsync<KafkaException>();
+        consumer.DidNotReceive().StoreOffset(Arg.Any<TopicPartitionOffset>());
+    }
+
     [Fact]
     public async Task should_terminally_commit_when_required_header_is_missing()
     {

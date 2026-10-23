@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.AuditLog;
+using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -257,6 +258,7 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
             setup.ConfigureStorage(options => options.Schema = _Schema);
             setup.UseSqlServer(fixture.ConnectionString);
         });
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         using var host = builder.Build();
 
         // when
@@ -291,6 +293,7 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         });
         builder.Services.AddSingleton(accessor);
 
+        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         return builder.Build();
     }
 

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Fencing;
+using Headless.Hosting;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
@@ -78,6 +79,9 @@ public sealed class PostgreSqlFencingEntityFrameworkTests(PostgreSqlFencingFixtu
         services.AddEntityFrameworkUnitOfWork();
         services.AddDbContext<ShipmentDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
         services.AddHeadlessFencing(fixture.ConfigureProvider);
+
+        // A host start only verifies the schema, so the test host creates it first, as a development host does.
+        services.AddDeployStepsOnStartup(o => o.Seed = false);
 
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 

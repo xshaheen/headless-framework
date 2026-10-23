@@ -23,7 +23,7 @@ public static class SetupPermissions
     {
         /// <summary>
         /// Registers the full Headless Permissions runtime — grant resolution, caching, authorization handlers, and the
-        /// background initializer — together with the storage provider chosen inside <paramref name="configure"/>.
+        /// <c>PermissionDefinitions</c> seeder — together with the storage provider chosen inside <paramref name="configure"/>.
         /// </summary>
         /// <param name="configure">
         /// Callback that receives a <see cref="HeadlessPermissionsSetupBuilder"/>. Exactly one storage provider must
@@ -135,15 +135,15 @@ public static class SetupPermissions
     {
         services._AddCoreValueProvider();
 
-        if (setup.RegisterStartupInitializer)
-        {
-            // Registered first so the initializer below reuses this instance: its retry back-off runs on the system clock,
-            // never on a faked app TimeProvider that a test host does not advance.
-            services.TryAddSingleton(static sp =>
-                ActivatorUtilities.CreateInstance<PermissionsInitializationBackgroundService>(sp, TimeProvider.System)
-            );
-            services.AddInitializerHostedService<PermissionsInitializationBackgroundService>();
-        }
+        // The seeder's retry back-off runs on the system clock, never on a faked app TimeProvider that a test host
+        // does not advance.
+        services.AddSeeder(static sp =>
+            ActivatorUtilities.CreateInstance<PermissionDefinitionsSeeder>(sp, TimeProvider.System)
+        );
+
+        // Loads the dynamic definitions after the start, behind readiness, so the first request does not pay for it.
+        // It gates itself on the dynamic-store option, which is unknown until options resolve.
+        services.AddWarmup<PermissionDefinitionsWarmup>();
 
         // The definition store keys its cross-instance lock on the application name and the manager stamps
         // its change announcements with the instance id; a host that never registered an identity gets one.

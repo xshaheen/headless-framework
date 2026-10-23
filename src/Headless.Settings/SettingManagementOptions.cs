@@ -11,10 +11,14 @@ public sealed class SettingManagementOptions
     /// Gets or sets whether <see cref="Headless.Settings.IDynamicSettingDefinitionStore"/> is active and should serve definitions
     /// from the database. Default: <see langword="false"/>.
     /// </summary>
+    /// <remarks>
+    /// When enabled, the <c>SettingDefinitions</c> warm-up loads the dynamic definitions after the host starts, and the
+    /// host reports not ready until that load succeeds.
+    /// </remarks>
     public bool IsDynamicSettingStoreEnabled { get; set; }
 
     /// <summary>
-    /// Gets or sets whether static setting definitions are persisted to the database on startup.
+    /// Gets or sets whether the <c>SettingDefinitions</c> seeder persists static setting definitions to the database.
     /// Default: <see langword="true"/>.
     /// </summary>
     public bool SaveStaticSettingsToDatabase { get; set; } = true;

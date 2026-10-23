@@ -49,17 +49,10 @@ public sealed class SqlServerChaosFixture : ChaosStackFixture
         {
             await base.InitializeAsync();
 
-            // The container is reused across runs, and the schema runner trusts the history it finds: tables an older
-            // build created would be kept in their older shape. Start every run from a fresh database.
             await using var connection = new SqlConnection(ConnectionString);
             await connection.OpenAsync();
             await using var command = connection.CreateCommand();
             command.CommandText = $"""
-                IF DB_ID(N'{_Database}') IS NOT NULL
-                BEGIN
-                    ALTER DATABASE [{_Database}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
-                    DROP DATABASE [{_Database}];
-                END;
                 CREATE DATABASE [{_Database}];
                 """;
             await command.ExecuteNonQueryAsync();

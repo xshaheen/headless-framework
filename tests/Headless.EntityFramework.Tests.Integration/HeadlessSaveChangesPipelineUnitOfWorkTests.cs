@@ -401,8 +401,8 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
 
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
-        // The fixture database is shared by the collection: recreate only this suite's table so a stale model
-        // from a reused container never hides a failure.
+        // The fixture database is shared by the collection: recreate only this suite's table so the previous test's
+        // rows never hide a failure.
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PipelineTestDbContext>();
         await db.Database.ExecuteSqlRawAsync("""DROP TABLE IF EXISTS "PipelineProbes";""", AbortToken);

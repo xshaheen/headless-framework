@@ -1,0 +1,118 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Features;
+using Headless.Hosting;
+using Headless.Testing.Tests;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+
+namespace Tests.Definitions;
+
+/// <summary>
+/// The feature definitions warm-up: it loads the dynamic store behind readiness only when the dynamic store is enabled.
+/// </summary>
+public sealed class FeatureDefinitionsWarmupTests : TestBase
+{
+    private readonly IDynamicFeatureDefinitionStore _store = Substitute.For<IDynamicFeatureDefinitionStore>();
+    private readonly IServiceProvider _services = Substitute.For<IServiceProvider>();
+
+    public FeatureDefinitionsWarmupTests()
+    {
+        _services.GetService(typeof(IDynamicFeatureDefinitionStore)).Returns(_store);
+    }
+
+    [Fact]
+    public void should_be_named_feature_definitions()
+    {
+        IWarmup sut = _CreateSut(dynamicStore: true);
+
+        sut.Name.Should().Be("FeatureDefinitions");
+    }
+
+    [Fact]
+    public async Task should_load_the_dynamic_store_and_gate_readiness_when_the_dynamic_store_is_enabled()
+    {
+        IWarmup sut = _CreateSut(dynamicStore: true);
+
+        await sut.WarmUpAsync(AbortToken);
+
+        sut.GatesReadiness.Should().BeTrue();
+        await _store.Received(1).GetGroupsAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_neither_resolve_the_store_nor_gate_readiness_when_the_dynamic_store_is_disabled()
+    {
+        IWarmup sut = _CreateSut(dynamicStore: false);
+
+        await sut.WarmUpAsync(AbortToken);
+
+        sut.GatesReadiness.Should().BeFalse();
+        _services.DidNotReceive().GetService(typeof(IDynamicFeatureDefinitionStore));
+    }
+
+    [Fact]
+    public async Task should_hold_readiness_until_the_dynamic_store_has_loaded_when_enabled()
+    {
+        // given
+        var load = new TaskCompletionSource<IReadOnlyList<FeatureGroupDefinition>>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        _store.GetGroupsAsync(Arg.Any<CancellationToken>()).Returns(load.Task);
+        using var host = _BuildHost(dynamicStore: true);
+
+        // when
+        await host.StartAsync(AbortToken);
+        var warm = host.Services.WaitForWarmupAsync(AbortToken);
+
+        // then
+        warm.IsCompleted.Should().BeFalse();
+
+        load.SetResult([]);
+        await warm.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await _store.Received(1).GetGroupsAsync(Arg.Any<CancellationToken>());
+
+        await host.StopAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_not_hold_readiness_or_load_the_store_when_the_dynamic_store_is_disabled()
+    {
+        // given
+        using var host = _BuildHost(dynamicStore: false);
+
+        // when
+        await host.StartAsync(AbortToken);
+
+        // then
+        await host.Services.WaitForWarmupAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await host.StopAsync(AbortToken);
+        await _store.DidNotReceive().GetGroupsAsync(Arg.Any<CancellationToken>());
+    }
+
+    private FeatureDefinitionsWarmup _CreateSut(bool dynamicStore) =>
+        new(_services, Options.Create(new FeatureManagementOptions { IsDynamicFeatureStoreEnabled = dynamicStore }));
+
+    private IHost _BuildHost(bool dynamicStore)
+    {
+        var builder = Host.CreateApplicationBuilder();
+        var services = builder.Services;
+        services.AddHeadlessFeatures(setup =>
+        {
+            setup.ConfigureManagement(options => options.IsDynamicFeatureStoreEnabled = dynamicStore);
+            setup.UseEntityFramework<WarmupTestDbContext>();
+        });
+        services.Replace(ServiceDescriptor.Singleton(_store));
+
+        // The warm-up is under test, not the storage wiring: the cache and the EF context factory the required-service
+        // check asks for would not be reached with the store replaced.
+        services.RemoveAll<IHeadlessStartupValidator>();
+
+        return builder.Build();
+    }
+
+    private sealed class WarmupTestDbContext(DbContextOptions<WarmupTestDbContext> options) : DbContext(options);
+}

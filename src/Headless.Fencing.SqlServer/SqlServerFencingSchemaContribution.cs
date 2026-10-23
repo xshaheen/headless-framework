@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sql.SqlServer;
 
 namespace Headless.Fencing.SqlServer;
@@ -96,7 +96,11 @@ internal static class SqlServerFencingSchemaContribution
                     sql
                 ),
             ],
-            applyOnStartup: options.InitializeOnStartup
+            objects:
+            [
+                SchemaObject.Sequence(SqlServerFencingSchema.SequenceName),
+                SchemaObject.Table(SqlServerFencingSchema.TableName),
+            ]
         );
     }
 }

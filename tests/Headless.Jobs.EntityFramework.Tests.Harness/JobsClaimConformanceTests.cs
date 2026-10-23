@@ -525,7 +525,10 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             var second = secondHost.Services.GetRequiredService<
                 IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
             >();
-            var executionTime = DateTime.UtcNow;
+            // Due in the future, not now: the peek drops a row more than one second past due, and inserting 101 trees
+            // can take longer than that on a loaded machine, which left the peek empty. A future time also keeps both
+            // hosts' background schedulers from claiming a root before the workers below race for it.
+            var executionTime = DateTime.UtcNow.AddSeconds(30);
             var roots = Enumerable.Range(0, 101).Select(_ => _CreateJobTree(executionTime)).ToArray();
             await first.AddTimeJobsAsync(roots, ct);
 

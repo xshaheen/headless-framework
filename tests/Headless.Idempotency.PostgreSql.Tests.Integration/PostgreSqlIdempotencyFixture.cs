@@ -40,17 +40,6 @@ public sealed class PostgreSqlIdempotencyFixture
     protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
-        await using var connection = new NpgsqlConnection(ConnectionString);
-        await connection.OpenAsync(CancellationToken.None);
-
-        // The container is reused across runs, so start from no storage and let the initializers create it.
-        await using var reset = new NpgsqlCommand(
-            $"""
-            DROP SCHEMA IF EXISTS "{HeadlessStorageDefaults.Schema}" CASCADE;
-            """,
-            connection
-        );
-        await reset.ExecuteNonQueryAsync(CancellationToken.None);
     }
 
     public void ConfigureIdempotency(HeadlessIdempotencySetupBuilder setup)

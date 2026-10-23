@@ -59,7 +59,6 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
         private readonly NatsContainer _container = new NatsBuilder(TestImages.Nats)
             .WithLabel("type", "nats-postgresql-nats")
             .WithResourceMapping(_NatsConfig, "/etc/nats/nats-server.conf")
-            .WithReuse(true)
             .WithWaitStrategy(
                 Wait.ForUnixContainer()
                     .UntilMessageIsLogged("Server is ready")
@@ -155,7 +154,6 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
             .WithDatabase("messages_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
-            .WithReuse(true)
             .Build();
 
         public string ConnectionString => _container.GetConnectionString();
@@ -163,14 +161,6 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
         public async ValueTask InitializeAsync()
         {
             await _container.StartAsync();
-
-            // The container is reused across runs, and the schema runner trusts the history it finds: tables an older
-            // build created would be kept in their older shape. Start every run from an empty messaging schema.
-            await using var connection = new NpgsqlConnection(ConnectionString);
-            await connection.OpenAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText = """DROP SCHEMA IF EXISTS "headless" CASCADE;""";
-            await command.ExecuteNonQueryAsync();
         }
 
         public async ValueTask DisposeAsync()

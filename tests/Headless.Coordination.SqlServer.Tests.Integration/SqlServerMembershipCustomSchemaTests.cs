@@ -20,11 +20,6 @@ public sealed class SqlServerMembershipCustomSchemaTests(SqlServerMembershipFixt
         var schema = $"coord_{Faker.Random.AlphaNumeric(8).ToLowerInvariant()}";
         var cluster = Faker.Random.AlphaNumeric(10);
 
-        // Testcontainers reuses the SQL Server container, so dbo can still hold membership tables written by a
-        // build from before the schema moved off the provider options. Clear them so the dbo assertion below
-        // measures this run rather than the container's history.
-        await _DropDboMembershipTablesAsync();
-
         await using (var node = await fixture.CreateNodeInSchemaAsync(cluster, "node-a", schema, AbortToken))
         {
             var identity = await node.Membership.RegisterAsync(AbortToken);
@@ -65,21 +60,6 @@ public sealed class SqlServerMembershipCustomSchemaTests(SqlServerMembershipFixt
         var tables = await _ListTablesAsync(HeadlessStorageDefaults.Schema);
 
         tables.Should().Contain("CoordinationLiveness");
-    }
-
-    private async Task _DropDboMembershipTablesAsync()
-    {
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            DROP TABLE IF EXISTS dbo.CoordinationLiveness;
-            DROP TABLE IF EXISTS dbo.CoordinationDescriptor;
-            DROP TABLE IF EXISTS dbo.CoordinationNodeGeneration;
-            DROP TABLE IF EXISTS dbo.headless_schema_history;
-            """;
-
-        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task<IReadOnlyList<string>> _ListTablesAsync(string schema)

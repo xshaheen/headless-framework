@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using Headless.Features.Internal;
+using Headless.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

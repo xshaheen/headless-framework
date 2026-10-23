@@ -2,7 +2,7 @@
 
 using Headless.Caching;
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Permissions;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,32 +15,24 @@ namespace Tests;
 public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissionsFixture fixture) : TestBase
 {
     [Fact]
-    public async Task should_throw_and_keep_initializer_unmarked_when_database_unreachable()
+    public async Task should_fail_the_start_with_the_driver_error_when_database_unreachable()
     {
         // given — port 1 is reserved and won't accept connections; short timeout to fail fast.
         // Credentials are placeholders; we never reach the auth handshake because the TCP connect fails first.
         const string unreachable =
             "Host=127.0.0.1;Port=1;Database=missing;Username=postgres;Password=placeholder-never-used;Timeout=2";
-        using var host = _CreateHost(unreachable);
+        using var host = _CreateHost(unreachable, setupResources: false);
 
-        // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is NpgsqlException
-        await FluentActions
-            .Awaiting(() => host.StartAsync(AbortToken))
-            .Should()
-            .ThrowAsync<Exception>()
-            .Where(e => e is NpgsqlException || e.InnerException is NpgsqlException);
-
-        var initializer = host
-            .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .Single(x => x is IHostedLifecycleService);
-        initializer.IsInitialized.Should().BeFalse();
-
-        // The schema runner names the features whose connection failed and keeps the driver error as the cause.
-        await FluentActions
-            .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
-            .Should()
-            .ThrowAsync<SchemaRunnerException>()
-            .WithInnerException(typeof(NpgsqlException));
+        // The startup check fails the start; the schema runner names the features whose connection failed and keeps
+        // the driver error as the cause.
+        (
+            await FluentActions
+                .Awaiting(() => host.StartAsync(AbortToken))
+                .Should()
+                .ThrowAsync<ResourceProvisioningException>()
+        )
+            .WithInnerException<SchemaRunnerException>()
+            .WithInnerException<NpgsqlException>();
     }
 
     [Fact]
@@ -61,18 +53,12 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
             var startTasks = hosts.Select(h => h.StartAsync(AbortToken)).ToArray();
             await Task.WhenAll(startTasks);
 
-            // then — all initializers report ready, exactly one of each table exists, and the
+            // then — every host started, so each verified its schema; exactly one of each table exists, and the
             // full 5-index complement is present (regression guard: a swallowed CREATE INDEX
             // failure would otherwise pass the table-count assertion silently).
-            hosts
-                .Select(h =>
-                    h.Services.GetRequiredService<IEnumerable<IInitializer>>()
-                        .Single(x => x is IHostedLifecycleService)
-                        .IsInitialized
-                )
+            (await _CountTablesAsync("permissions_pg_concurrent", "permission_grants"))
                 .Should()
-                .AllSatisfy(initialized => initialized.Should().BeTrue());
-            (await _CountTablesAsync("permissions_pg_concurrent", "permission_grants")).Should().Be(1);
+                .Be(1);
             (await _CountTablesAsync("permissions_pg_concurrent", "permission_definitions")).Should().Be(1);
             (await _CountTablesAsync("permissions_pg_concurrent", "permission_group_definitions")).Should().Be(1);
             (await _CountIndexesAsync("permissions_pg_concurrent")).Should().Be(6);
@@ -86,7 +72,11 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
         }
     }
 
-    private static IHost _CreateHost(string connectionString, string schema = "permissions_pg_failure")
+    private static IHost _CreateHost(
+        string connectionString,
+        string schema = "permissions_pg_failure",
+        bool setupResources = true
+    )
     {
         var builder = Host.CreateApplicationBuilder();
         // unify: management-core deps
@@ -98,6 +88,11 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
             setup.ConfigureStorage(options => options.Schema = schema);
             setup.UsePostgreSql(connectionString);
         });
+
+        if (setupResources)
+        {
+            builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
+        }
 
         return builder.Build();
     }

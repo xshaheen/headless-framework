@@ -143,7 +143,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_dead_letter_as_malformed_without_a_callback_when_custom_headers_builder_throws()
+    public async Task should_abandon_for_redelivery_without_a_callback_when_custom_headers_builder_throws()
     {
         // given
         var options = Options.Create(
@@ -191,19 +191,78 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
         // when
         await (Task)processMethod.Invoke(client, [args])!;
 
-        // then
+        // then the broker delivers it again, and its max delivery count dead-letters it if the builder keeps failing
         callbackInvoked.Should().BeFalse();
         await receiver
             .Received(1)
+            .AbandonMessageAsync(message, Arg.Any<IDictionary<string, object>>(), Arg.Any<CancellationToken>());
+        await receiver
+            .DidNotReceive()
             .DeadLetterMessageAsync(
-                message,
-                "MalformedEnvelope",
-                nameof(InvalidOperationException),
+                Arg.Any<ServiceBusReceivedMessage>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
                 Arg.Any<CancellationToken>()
             );
         await receiver
             .DidNotReceive()
             .CompleteMessageAsync(Arg.Any<ServiceBusReceivedMessage>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_dead_letter_as_malformed_when_the_envelope_is_invalid_after_the_custom_headers_builder_ran()
+    {
+        // given a builder that succeeds, on a message that carries no message name
+        var options = Options.Create(
+            new AzureServiceBusMessagingOptions
+            {
+                ConnectionString =
+                    "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey",
+                CustomHeadersBuilder = (_, _) => [new("translated", "value")],
+            }
+        );
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            options,
+            _serviceProvider,
+            _clientPool
+        );
+        client.OnMessageCallback = (_, _) => Task.CompletedTask;
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: new BinaryData("test"u8.ToArray()),
+            properties: new Dictionary<string, object>(StringComparer.Ordinal) { [Headers.MessageId] = "message-1" }
+        );
+        var receiver = Substitute.For<ServiceBusReceiver>();
+        var args = new ProcessMessageEventArgs(message, receiver, AbortToken);
+        var processMethod = typeof(AzureServiceBusConsumerClient).GetMethod(
+            "_ServiceBusProcessor_ProcessMessageAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(ProcessMessageEventArgs)],
+            null
+        )!;
+
+        // when
+        await (Task)processMethod.Invoke(client, [args])!;
+
+        // then the envelope check's own failure still settles terminally
+        await receiver
+            .Received(1)
+            .DeadLetterMessageAsync(
+                message,
+                "MalformedEnvelope",
+                nameof(InvalidDataException),
+                Arg.Any<CancellationToken>()
+            );
+        await receiver
+            .DidNotReceive()
+            .AbandonMessageAsync(
+                Arg.Any<ServiceBusReceivedMessage>(),
+                Arg.Any<IDictionary<string, object>>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -498,6 +557,48 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
 
         // then
         await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task should_return_within_the_budget_when_shutting_down_while_a_handler_is_running()
+    {
+        // given a processor whose stop waits on a handler that does not return
+        var handlerReturned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var (client, processor) = await _CreateQueueClientWithProcessorAsync(handlerReturned.Task);
+        var logs = new List<LogMessageEventArgs>();
+        client.AttachCallbacks((_, _) => Task.CompletedTask, logs.Add);
+
+        try
+        {
+            // when
+            var shutdown = ((IConsumerClient)client).ShutdownAsync(TimeSpan.FromMilliseconds(200), AbortToken);
+
+            // then it gives up on the handler once the budget is spent, and says so
+            await shutdown.AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            logs.Should().Contain(log => log.LogType == MqLogType.ConsumeError);
+            await processor.Received(1).CloseAsync(Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            handlerReturned.TrySetResult();
+        }
+    }
+
+    [Fact]
+    public async Task should_not_wait_for_the_budget_when_shutting_down_with_no_handler_running()
+    {
+        // given
+        var (client, processor) = await _CreateQueueClientWithProcessorAsync(Task.CompletedTask);
+        var logs = new List<LogMessageEventArgs>();
+        client.AttachCallbacks((_, _) => Task.CompletedTask, logs.Add);
+
+        // when
+        var shutdown = ((IConsumerClient)client).ShutdownAsync(TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        await shutdown.AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await processor.Received(1).CloseAsync(Arg.Any<CancellationToken>());
+        logs.Should().BeEmpty();
     }
 
     // -------------------------------------------------------------------------
@@ -834,6 +935,35 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
         await client.SubscribeAsync(["test-queue"], AbortToken);
 
         return (client, receiver);
+    }
+
+    // The Azure processor's own stop waits for every handler it dispatched, so a processor that closes only once
+    // handlerReturned completes stands in for one with a handler still running. Its DisposeAsync closes through CloseAsync.
+    private async Task<(
+        AzureServiceBusConsumerClient Client,
+        ServiceBusProcessor Processor
+    )> _CreateQueueClientWithProcessorAsync(Task handlerReturned)
+    {
+        var processor = Substitute.For<ServiceBusProcessor>();
+        processor.CloseAsync(Arg.Any<CancellationToken>()).Returns(_ => handlerReturned);
+        processor.StopProcessingAsync(Arg.Any<CancellationToken>()).Returns(_ => handlerReturned);
+        var serviceBusClient = Substitute.For<ServiceBusClient>();
+        serviceBusClient.CreateProcessor(Arg.Any<string>(), Arg.Any<ServiceBusProcessorOptions>()).Returns(processor);
+        var pool = Substitute.For<IAzureServiceBusClientPool>();
+        pool.GetClient().Returns(serviceBusClient);
+
+        var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            pool,
+            MessageLane.Queue
+        );
+        await client.SubscribeAsync(["test-queue"], AbortToken);
+
+        return (client, processor);
     }
 
     private static Task _RaiseProcessorErrorAsync(

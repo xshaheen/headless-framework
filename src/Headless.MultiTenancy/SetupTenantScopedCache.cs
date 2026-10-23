@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
+using Headless.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.MultiTenancy;

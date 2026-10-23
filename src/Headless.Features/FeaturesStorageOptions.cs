@@ -35,15 +35,6 @@ public sealed class FeaturesStorageOptions
     /// </summary>
     public string? FeatureGroupDefinitionsTableName { get; set; }
 
-    /// <summary>
-    /// When <see langword="true"/> (default), the startup storage initializer creates the schema, tables, and indexes
-    /// on first run. Set to <see langword="false"/> when the schema is provisioned out-of-band (e.g., by a DBA or
-    /// a migrations job); the initializer becomes a no-op but still signals completion so callers that await
-    /// <c>WaitForInitializationAsync</c> do not block. Applies only to raw-DDL self-initializing providers
-    /// (PostgreSQL, SQL Server); EF Core storage is always schema-managed by migrations.
-    /// </summary>
-    public bool InitializeOnStartup { get; set; } = true;
-
     /// <summary>Returns the feature values table name to use on a database with <paramref name="style"/>.</summary>
     /// <param name="style">The naming style of the target database.</param>
     /// <returns>The configured name, or the conventional default for <paramref name="style"/>.</returns>
@@ -79,6 +70,5 @@ public sealed class FeaturesStorageOptions
         target.FeatureValuesTableName = FeatureValuesTableName;
         target.FeatureDefinitionsTableName = FeatureDefinitionsTableName;
         target.FeatureGroupDefinitionsTableName = FeatureGroupDefinitionsTableName;
-        target.InitializeOnStartup = InitializeOnStartup;
     }
 }

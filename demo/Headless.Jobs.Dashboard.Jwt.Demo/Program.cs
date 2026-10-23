@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Dashboard.Jwt.Demo;
 using Headless.Jobs.Dashboard.Jwt.Demo.Data;
@@ -51,6 +52,9 @@ builder.Services.AddHeadlessJobs(options =>
 );
 
 builder.Services.AddHostedService<DemoJobSeeder>();
+
+// Nothing seeds on its own, so this demo seeds as it starts; a deployed app runs `dotnet <app>.dll seed` instead.
+builder.Services.AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None);
 
 var app = builder.Build();
 

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Serializer;
 using Headless.Sql;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,7 +17,7 @@ internal static class RelationalFeaturesStorage
         IServiceCollection services,
         ISqlDialect dialect,
         StorageProvider provider,
-        Func<TOptions, RelationalFeaturesTables, bool, SchemaContribution> createContribution
+        Func<TOptions, RelationalFeaturesTables, SchemaContribution> createContribution
     )
         where TOptions : RelationalFeaturesOptions
     {
@@ -32,13 +32,11 @@ internal static class RelationalFeaturesStorage
             sp.GetRequiredService<IOptions<FeaturesStorageOptions>>().Value
         ));
 
-        // The contribution factory reads options at first resolution, so InitializeOnStartup keeps its contract:
-        // false keeps the steps out of the runner's apply pass while verify and export still see them.
+        // The contribution factory reads options at first resolution, so configured names reach the steps.
         services.AddHeadlessSchemaContribution(sp =>
             createContribution(
                 sp.GetRequiredService<IOptions<TOptions>>().Value,
-                sp.GetRequiredService<RelationalFeaturesTables>(),
-                sp.GetRequiredService<IOptions<FeaturesStorageOptions>>().Value.InitializeOnStartup
+                sp.GetRequiredService<RelationalFeaturesTables>()
             )
         );
 

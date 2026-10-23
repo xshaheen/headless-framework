@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting.Schema;
 using Headless.Sql.Sqlite;
 
 namespace Headless.Fencing.Sqlite;
@@ -98,7 +98,11 @@ internal static class SqliteFencingSchemaContribution
                     sql
                 ),
             ],
-            applyOnStartup: options.InitializeOnStartup
+            objects:
+            [
+                SchemaObject.Sequence(SqliteDialect.QualifiedName(schema, t.SequenceName)),
+                SchemaObject.Table(SqliteDialect.QualifiedName(schema, t.TableName)),
+            ]
         );
     }
 }

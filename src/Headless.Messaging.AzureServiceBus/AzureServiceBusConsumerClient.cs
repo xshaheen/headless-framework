@@ -32,6 +32,9 @@ internal sealed class AzureServiceBusConsumerClient(
 
     private const string _TransportName = "Azure Service Bus";
 
+    // How long disposing the client, rather than a shutdown with the core's budget, waits for running handlers.
+    private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
+
     /// <summary>
     /// How long Azure keeps an every-instance subscription nobody receives from: the shortest idle period Azure allows,
     /// and so the longest a crashed process leaves its subscription behind.
@@ -377,31 +380,84 @@ internal sealed class AzureServiceBusConsumerClient(
 
     public async ValueTask DisposeAsync()
     {
+        await ShutdownAsync(_ShutdownDrainTimeout).ConfigureAwait(false);
+    }
+
+    // A processor's stop waits, without a bound, for every handler it dispatched, so the processors already track the
+    // in-flight handlers and the client bounds that wait instead. A handler still running when the budget is spent keeps
+    // its message lock and can still settle, because the processors close, and this client's own resources are
+    // released, only once it returns; until then the stop runs detached.
+    public async ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
             return;
         }
 
         _pauseGate.Release();
-        _ready.TrySetCanceled();
+        _ready.TrySetCanceled(CancellationToken.None);
         await _disposeCts.CancelAsync().ConfigureAwait(false);
 
-        if (_serviceBusProcessor is not null)
+        var closing = _CloseAsync();
+
+        try
         {
-            await _serviceBusProcessor.DisposeAsync().ConfigureAwait(false);
+            // Measured on the real clock: the wait is for network I/O and handlers, not for anything the app schedules.
+            await closing
+                .WaitAsync(timeout > TimeSpan.Zero ? timeout : TimeSpan.Zero, CancellationToken.None)
+                .ConfigureAwait(false);
         }
-
-        foreach (var processor in _queueProcessors)
+        catch (TimeoutException)
         {
-            await processor.DisposeAsync().ConfigureAwait(false);
+            _ = closing.ContinueWith(
+                static (task, state) =>
+                    ((AzureServiceBusConsumerClient)state!).OnLogCallback?.Invoke(
+                        new LogMessageEventArgs
+                        {
+                            LogType = MqLogType.ConsumeError,
+                            Reason =
+                                $"Azure Service Bus processors failed to close after shutdown gave up on them: {task.Exception!.GetBaseException()}",
+                        }
+                    ),
+                this,
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default
+            );
+
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason =
+                        "Timed out stopping Azure Service Bus processors with handlers still running; they close once those handlers return.",
+                }
+            );
         }
+    }
 
-        // The ServiceBusClient is shared and pool-owned; other consumers and the publish
-        // transports keep using it after this consumer stops. Only processors are ours.
+    // Every processor stops at once, so none keeps receiving while another waits for its handlers.
+    private async Task _CloseAsync()
+    {
+        try
+        {
+            var closing = _queueProcessors.ConvertAll(static processor => processor.DisposeAsync().AsTask());
 
-        _connectionLock.Dispose();
-        _semaphore.Dispose();
-        _disposeCts.Dispose();
+            if (_serviceBusProcessor is not null)
+            {
+                closing.Add(_serviceBusProcessor.DisposeAsync().AsTask());
+            }
+
+            await Task.WhenAll(closing).ConfigureAwait(false);
+        }
+        finally
+        {
+            // The ServiceBusClient is shared and pool-owned; other consumers and the publish
+            // transports keep using it after this consumer stops. Only processors are ours.
+            _connectionLock.Dispose();
+            _semaphore.Dispose();
+            _disposeCts.Dispose();
+        }
     }
 
     // The processor reports a success only by delivering a message, so an idle consumer whose broker came back would read
@@ -557,26 +613,14 @@ internal sealed class AzureServiceBusConsumerClient(
         // A delivered message is the only receive success the processor exposes, so it is what ends an outage.
         _reachability.ReportSuccess(OnLogCallback);
 
-        TransportMessage context;
-        try
+        var commitInput = new AzureServiceBusConsumerCommitInput(arg);
+        if (
+            await _ReadTransportMessageAsync(arg.Message, arg.EntityPath, commitInput).ConfigureAwait(false) is
+            { } context
+        )
         {
-            context = _CreateTransportMessage(arg.Message, arg.EntityPath);
+            await _DispatchAsync(context, commitInput, arg.CancellationToken).ConfigureAwait(false);
         }
-        catch (Exception exception)
-        {
-            _LogMalformedEnvelope(exception);
-            await arg.DeadLetterMessageAsync(
-                    arg.Message,
-                    _MalformedEnvelopeReason,
-                    exception.GetType().Name,
-                    CancellationToken.None
-                )
-                .ConfigureAwait(false);
-            return;
-        }
-
-        await _DispatchAsync(context, new AzureServiceBusConsumerCommitInput(arg), arg.CancellationToken)
-            .ConfigureAwait(false);
     }
 
     // A queue-lane client runs one processor per queue, so the semaphore keeps their sum within the consumer's
@@ -609,26 +653,60 @@ internal sealed class AzureServiceBusConsumerClient(
         // A delivered message is the only receive success the processor exposes, so it is what ends an outage.
         _reachability.ReportSuccess(OnLogCallback);
 
-        TransportMessage context;
+        var commitInput = new AzureServiceBusConsumerCommitInput(arg);
+        if (
+            await _ReadTransportMessageAsync(arg.Message, arg.EntityPath, commitInput).ConfigureAwait(false) is
+            { } context
+        )
+        {
+            await _DispatchAsync(context, commitInput, arg.CancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    // A custom headers builder is application code that may call another service, so its failure says nothing about the
+    // message: the delivery is abandoned for Service Bus to hand over again, and the entity's max delivery count
+    // dead-letters it once the failure outlasts the delivery budget. Only the envelope check's own failure is a verdict on
+    // the message, and it dead-letters at once.
+    private async Task<TransportMessage?> _ReadTransportMessageAsync(
+        ServiceBusReceivedMessage message,
+        string entityPath,
+        AzureServiceBusConsumerCommitInput commitInput
+    )
+    {
+        var headers = _ConvertHeaders(message);
+
         try
         {
-            context = _CreateTransportMessage(arg.Message, arg.EntityPath);
+            _ApplyCustomHeaders(message, headers);
+        }
+        catch (Exception exception)
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason =
+                        $"Azure Service Bus custom headers builder failed; message abandoned for redelivery: {exception.GetType().Name}",
+                }
+            );
+            await commitInput.AbandonMessageAsync(CancellationToken.None).ConfigureAwait(false);
+
+            return null;
+        }
+
+        try
+        {
+            return _CreateTransportMessage(message, entityPath, headers);
         }
         catch (Exception exception)
         {
             _LogMalformedEnvelope(exception);
-            await arg.DeadLetterMessageAsync(
-                    arg.Message,
-                    _MalformedEnvelopeReason,
-                    exception.GetType().Name,
-                    CancellationToken.None
-                )
+            await commitInput
+                .DeadLetterMessageAsync(_MalformedEnvelopeReason, exception.GetType().Name, CancellationToken.None)
                 .ConfigureAwait(false);
-            return;
-        }
 
-        await _DispatchAsync(context, new AzureServiceBusConsumerCommitInput(arg), arg.CancellationToken)
-            .ConfigureAwait(false);
+            return null;
+        }
     }
 
     private void _LogMalformedEnvelope(Exception exception)
@@ -841,12 +919,13 @@ internal sealed class AzureServiceBusConsumerClient(
         }
     }
 
-    // Every failure here, a custom headers builder's included, settles the delivery as a malformed envelope.
-    private TransportMessage _CreateTransportMessage(ServiceBusReceivedMessage message, string entityPath)
+    // Every failure here settles the delivery as a malformed envelope.
+    private TransportMessage _CreateTransportMessage(
+        ServiceBusReceivedMessage message,
+        string entityPath,
+        Dictionary<string, string?> headers
+    )
     {
-        var headers = _ConvertHeaders(message);
-        _ApplyCustomHeaders(message, headers);
-
         // Stamped after the custom headers builder so neither the wire nor the builder can choose the address.
         headers[Headers.TransportAddress] = entityPath;
 

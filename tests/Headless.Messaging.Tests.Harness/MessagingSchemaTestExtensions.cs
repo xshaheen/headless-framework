@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization.Schema;
+using Headless.Hosting;
+using Headless.Hosting.Schema;
+using Headless.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -12,6 +14,20 @@ namespace Tests;
 [PublicAPI]
 public static class MessagingSchemaTestExtensions
 {
+    /// <summary>
+    /// Sets up every registered provisioned resource (a broker's shared topology, a storage's tables), as the deployment
+    /// would, then bootstraps messaging: what a bare service provider needs before it consumes, since no host start
+    /// runs the setup for it.
+    /// </summary>
+    public static async Task SetupResourcesAndBootstrapAsync(
+        this IServiceProvider provider,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await provider.ProvisionResourcesAsync(cancellationToken);
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(cancellationToken);
+    }
+
     /// <summary>
     /// Applies every registered schema contribution through the provider's <see cref="SchemaRunner"/>, and does nothing
     /// when none is registered (the in-memory storage has no schema). Fails as the hosted runner would when a recorded

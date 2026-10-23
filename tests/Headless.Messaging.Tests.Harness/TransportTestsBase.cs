@@ -236,9 +236,13 @@ public abstract class TransportTestsBase : TestBase
         // when
         await Task.WhenAll(tasks);
 
-        // then
+        // then: a failed send names its error, so an intermittent failure shows why it failed and not only that it did
         results.Should().HaveCount(50);
-        results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue());
+        results
+            .Where(r => !r.Succeeded)
+            .Select(r => r.Exception?.ToString() ?? "failed without an exception")
+            .Should()
+            .BeEmpty();
     }
 
     public virtual async Task should_accept_message_with_id()
