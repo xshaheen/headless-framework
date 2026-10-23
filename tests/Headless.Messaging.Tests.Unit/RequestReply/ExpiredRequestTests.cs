@@ -14,6 +14,7 @@ namespace Tests.RequestReply;
 /// and store: the responder never runs, and the request ends with no reply, no <c>OnExhausted</c>, and no failure
 /// counted against the responder's circuit.
 /// </summary>
+[Collection(RequestReplyCollection.Name)]
 public sealed class ExpiredRequestTests : TestBase
 {
     private static readonly TimeSpan _RequestTimeout = TimeSpan.FromSeconds(10);

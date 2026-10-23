@@ -8,6 +8,7 @@ namespace Tests.Contracts;
 /// The shared request/reply suite against hosts on one simulated broker, its reply listeners registered at the broker
 /// the way a real broker holds one reply queue or channel per process.
 /// </summary>
+[Collection(Tests.RequestReply.RequestReplyCollection.Name)]
 public sealed class SimulatorRequestReplyConformanceTests : TransportRequestReplyConformanceTestsBase
 {
     private readonly SimulatorConformance _simulator = new();
