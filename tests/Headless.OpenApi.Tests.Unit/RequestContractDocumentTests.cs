@@ -65,6 +65,43 @@ public sealed class RequestContractDocumentTests : TestBase
     }
 
     [Fact]
+    public async Task should_document_the_missing_body_400_on_dispatched_request_endpoints()
+    {
+        // The ApiResult result types publish no 400, so a dispatched endpoint relies on this transformer alone for
+        // the 400 it answers when the body is missing or a parameter does not bind.
+        var document = await OpenApiTestHost.GetDocumentAsync(
+            builder => builder.Services.AddHeadlessOpenApi(),
+            app =>
+            {
+                app.MapPostRequest<CreateDispatchedItem, string>("/dispatched").AllowAnonymous();
+                app.MapPostRequest<CreateDispatchedItem, string>("/dispatched/created", id => $"/dispatched/{id}")
+                    .AllowAnonymous();
+                app.MapGetRequest<FindDispatchedItem, string>("/dispatched/{id}").AllowAnonymous();
+            },
+            "v1",
+            AbortToken
+        );
+
+        foreach (
+            var (path, method) in new[]
+            {
+                ("/dispatched", "post"),
+                ("/dispatched/created", "post"),
+                ("/dispatched/{id}", "get"),
+            }
+        )
+        {
+            var badRequest = document.Operation(path, method)["responses"]!["400"]!;
+            ((string?)badRequest["description"]).Should().Be(_BindingFailure, $"{method} {path} binds the request");
+            _ProblemSchemaRef(badRequest).Should().Be("#/components/schemas/BadRequestProblemDetails");
+        }
+    }
+
+    public sealed record CreateDispatchedItem(string Name) : Mediator.IRequest<Headless.Primitives.ApiResult<string>>;
+
+    public sealed record FindDispatchedItem(string Id) : Mediator.IRequest<Headless.Primitives.ApiResult<string>>;
+
+    [Fact]
     public async Task should_document_a_413_on_operations_with_a_body_unless_the_endpoint_lifts_the_limit()
     {
         var document = await OpenApiTestHost.GetDocumentAsync(
