@@ -141,6 +141,77 @@ public sealed class ApiResultCreatedHttpResult<T>
 }
 
 /// <summary>
+/// Executes a valued <see cref="ApiResult{T}"/> as 202 Accepted with the value, and a <c>Location</c> field when one
+/// was given, or as the error's problem-details response, and publishes both response types to endpoint metadata.
+/// </summary>
+/// <typeparam name="T">The accepted value type, typically a status or tracking resource.</typeparam>
+/// <remarks>
+/// Use it when the work continues after the response, such as an enqueued job or published message; the value and
+/// the <c>Location</c> field tell the client where to follow it. The problem body is built when the result executes,
+/// from the request's <see cref="IProblemDetailsCreator"/>. <see cref="IValueHttpResult.Value"/> is the accepted value,
+/// and <see langword="null"/> for a failure.
+/// </remarks>
+[PublicAPI]
+public sealed class ApiResultAcceptedHttpResult<T>
+    : IResult,
+        IEndpointMetadataProvider,
+        IStatusCodeHttpResult,
+        IValueHttpResult
+{
+    private readonly T? _value;
+    private readonly ApiResultError? _error;
+
+    internal ApiResultAcceptedHttpResult(ApiResult<T> result, Func<T, string>? location)
+    {
+        if (result.TryGetValue(out var value))
+        {
+            _value = value;
+            Location = location?.Invoke(value);
+        }
+        else
+        {
+            _error = result.Error;
+        }
+    }
+
+    internal ApiResultAcceptedHttpResult(ApiResultError error)
+    {
+        _error = error;
+    }
+
+    /// <summary>
+    /// The <c>Location</c> of the status monitor, or <see langword="null"/> for a failure or when none was given.
+    /// </summary>
+    public string? Location { get; }
+
+    int? IStatusCodeHttpResult.StatusCode =>
+        _error is null ? StatusCodes.Status202Accepted : ApiResultProblemResponse.GetStatusCode(_error);
+
+    object? IValueHttpResult.Value => _value;
+
+    /// <inheritdoc/>
+    /// <exception cref="InvalidOperationException">The result is a failure and no <see cref="IProblemDetailsCreator"/> is registered.</exception>
+    public Task ExecuteAsync(HttpContext httpContext)
+    {
+        Argument.IsNotNull(httpContext);
+
+        return _error is null
+            ? TypedResults.Accepted(Location, _value).ExecuteAsync(httpContext)
+            : ApiResultProblemResponse.ExecuteAsync(httpContext, _error);
+    }
+
+    /// <summary>Publishes the complete HTTP response contract for Minimal API OpenAPI discovery.</summary>
+    /// <param name="method">The endpoint method that returns this result.</param>
+    /// <param name="builder">The endpoint builder receiving response metadata.</param>
+    public static void PopulateMetadata(MethodInfo method, EndpointBuilder builder)
+    {
+        Argument.IsNotNull(method);
+        Argument.IsNotNull(builder);
+        ApiResultResponseMetadata.Populate(builder, StatusCodes.Status202Accepted, typeof(T));
+    }
+}
+
+/// <summary>
 /// Executes a unit <see cref="ApiResult"/> as 204 No Content, or as the error's problem-details response, and
 /// publishes both response types to endpoint metadata.
 /// </summary>
@@ -188,5 +259,66 @@ public sealed class ApiResultHttpResult : IResult, IEndpointMetadataProvider, IS
         Argument.IsNotNull(method);
         Argument.IsNotNull(builder);
         ApiResultResponseMetadata.Populate(builder, StatusCodes.Status204NoContent, successType: null);
+    }
+}
+
+/// <summary>
+/// Executes a unit <see cref="ApiResult"/> as 202 Accepted without a body, with a <c>Location</c> field when one was
+/// given, or as the error's problem-details response, and publishes both response types to endpoint metadata.
+/// </summary>
+/// <remarks>
+/// Use it when the work continues after the response and the client gets nothing to follow but the optional
+/// <c>Location</c>. The problem body is built when the result executes, from the request's
+/// <see cref="IProblemDetailsCreator"/>.
+/// </remarks>
+[PublicAPI]
+public sealed class ApiResultAcceptedHttpResult : IResult, IEndpointMetadataProvider, IStatusCodeHttpResult
+{
+    private readonly ApiResultError? _error;
+
+    internal ApiResultAcceptedHttpResult(ApiResult result, string? location)
+    {
+        if (result.IsSuccess)
+        {
+            Location = location;
+        }
+        else
+        {
+            _error = result.Error;
+        }
+    }
+
+    internal ApiResultAcceptedHttpResult(ApiResultError error)
+    {
+        _error = error;
+    }
+
+    /// <summary>
+    /// The <c>Location</c> of the status monitor, or <see langword="null"/> for a failure or when none was given.
+    /// </summary>
+    public string? Location { get; }
+
+    int? IStatusCodeHttpResult.StatusCode =>
+        _error is null ? StatusCodes.Status202Accepted : ApiResultProblemResponse.GetStatusCode(_error);
+
+    /// <inheritdoc/>
+    /// <exception cref="InvalidOperationException">The result is a failure and no <see cref="IProblemDetailsCreator"/> is registered.</exception>
+    public Task ExecuteAsync(HttpContext httpContext)
+    {
+        Argument.IsNotNull(httpContext);
+
+        return _error is null
+            ? TypedResults.Accepted(Location).ExecuteAsync(httpContext)
+            : ApiResultProblemResponse.ExecuteAsync(httpContext, _error);
+    }
+
+    /// <summary>Publishes the complete HTTP response contract for Minimal API OpenAPI discovery.</summary>
+    /// <param name="method">The endpoint method that returns this result.</param>
+    /// <param name="builder">The endpoint builder receiving response metadata.</param>
+    public static void PopulateMetadata(MethodInfo method, EndpointBuilder builder)
+    {
+        Argument.IsNotNull(method);
+        Argument.IsNotNull(builder);
+        ApiResultResponseMetadata.Populate(builder, StatusCodes.Status202Accepted, successType: null);
     }
 }

@@ -86,6 +86,90 @@ public sealed class HeadlessSenderExtensionsTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_202_with_the_handler_value_for_an_accepted_request()
+    {
+        // given
+        var sender = Substitute.For<ISender>();
+        var request = new CreateItem("Pen");
+        sender.Send(request, AbortToken).Returns(ApiResult<ItemView>.Ok(new ItemView("j1", "Pen")));
+
+        // when
+        var bare = await sender.DispatchAcceptedAsync(request, AbortToken);
+        var located = await sender.DispatchAcceptedAsync(request, item => $"/jobs/{item.Id}", AbortToken);
+
+        // then
+        ((IStatusCodeHttpResult)bare)
+            .StatusCode.Should()
+            .Be(StatusCodes.Status202Accepted);
+        ((IValueHttpResult)bare).Value.Should().Be(new ItemView("j1", "Pen"));
+        bare.Location.Should().BeNull();
+        ((IStatusCodeHttpResult)located).StatusCode.Should().Be(StatusCodes.Status202Accepted);
+        located.Location.Should().Be("/jobs/j1");
+    }
+
+    [Fact]
+    public async Task should_return_a_bodyless_202_for_an_accepted_unit_request()
+    {
+        // given
+        var sender = Substitute.For<ISender>();
+        var request = new ArchiveItem("a1");
+        sender.Send(request, AbortToken).Returns(ApiResult.Ok());
+
+        // when
+        var bare = await sender.DispatchAcceptedAsync(request, AbortToken);
+        var located = await sender.DispatchAcceptedAsync(request, "/jobs/archive-a1", AbortToken);
+
+        // then
+        ((IStatusCodeHttpResult)bare)
+            .StatusCode.Should()
+            .Be(StatusCodes.Status202Accepted);
+        bare.Location.Should().BeNull();
+        ((IStatusCodeHttpResult)located).StatusCode.Should().Be(StatusCodes.Status202Accepted);
+        located.Location.Should().Be("/jobs/archive-a1");
+    }
+
+    [Fact]
+    public async Task should_answer_400_without_sending_when_an_accepted_request_is_null()
+    {
+        // given
+        var sender = Substitute.For<ISender>();
+
+        // when
+        var valued = await sender.DispatchAcceptedAsync((CreateItem?)null, AbortToken);
+        var located = await sender.DispatchAcceptedAsync((CreateItem?)null, item => item.Id, AbortToken);
+        var unit = await sender.DispatchAcceptedAsync((ArchiveItem?)null, "/jobs/x", AbortToken);
+
+        // then
+        ((IStatusCodeHttpResult)valued)
+            .StatusCode.Should()
+            .Be(StatusCodes.Status400BadRequest);
+        ((IStatusCodeHttpResult)located).StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        located.Location.Should().BeNull();
+        ((IStatusCodeHttpResult)unit).StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        unit.Location.Should().BeNull();
+        await sender.DidNotReceiveWithAnyArgs().Send(default(CreateItem)!, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_reject_null_sender_and_location_for_accepted()
+    {
+        // given
+        var sender = Substitute.For<ISender>();
+
+        // when
+        var nullSender = async () => await ((ISender)null!).DispatchAcceptedAsync(new ArchiveItem("a1"), AbortToken);
+        var nullLocation = async () =>
+            await sender.DispatchAcceptedAsync(new CreateItem("Pen"), (Func<ItemView, string>)null!, AbortToken);
+        var nullUnitLocation = async () =>
+            await sender.DispatchAcceptedAsync(new ArchiveItem("a1"), (string)null!, AbortToken);
+
+        // then
+        await nullSender.Should().ThrowAsync<ArgumentNullException>();
+        await nullLocation.Should().ThrowAsync<ArgumentNullException>();
+        await nullUnitLocation.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Fact]
     public async Task should_answer_400_without_sending_when_the_request_is_null()
     {
         // given
