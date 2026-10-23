@@ -171,11 +171,6 @@ public sealed class PostgreSqlConcurrentStopTests(PostgreSqlJobsCoordinationFixt
             ],
             ct
         );
-
-        // Wake the scheduler loop so it dispatches the row now. Left asleep, the row is first picked up by the
-        // fallback sweep once overdue, and that path runs the job under the fallback loop's own token, which a stop
-        // cancels at once instead of draining.
-        host.Services.GetRequiredService<IJobsHostScheduler>().Restart();
     }
 
     private static async Task<TimeJobEntity> _ReadAsync(IHost host, Guid id, CancellationToken ct)

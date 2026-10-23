@@ -464,9 +464,9 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         // deploy is not node death.
         await _WaitForRunningTasksAsync(budget - releaseWindow, cancellationToken).ConfigureAwait(false);
 
-        // Immediate dispatch does not flow through BackgroundService.ExecuteAsync, so it cannot use the base stopping
-        // token. Cancel the task scheduler's execution lifetime, then let base.StopAsync cancel the scheduler-loop
-        // token used by polled and fallback work.
+        // Immediate and fallback dispatch do not flow through this service's ExecuteAsync, so they cannot use its
+        // stopping token. Cancel the task scheduler's execution lifetime they run on, then let base.StopAsync cancel
+        // the scheduler-loop token used by polled work.
         await _taskScheduler.CancelExecutionsAsync().ConfigureAwait(false);
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
 

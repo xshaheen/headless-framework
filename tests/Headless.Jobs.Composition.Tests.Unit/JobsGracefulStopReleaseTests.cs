@@ -171,12 +171,52 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         stored.LockedUntil.Should().BeNull();
     }
 
+    [Fact]
+    public async Task should_drain_a_job_the_fallback_sweep_dispatched_like_a_scheduler_dispatched_one()
+    {
+        // given: an overdue row written straight to the store, so the sleeping scheduler loop is never woken for it
+        // and only the fallback sweep can dispatch it
+        var probe = new StopProbe(StopProbeMode.BlockUntilReleased);
+        using var host = _BuildHost(probe, fallbackInterval: TimeSpan.FromMilliseconds(200));
+        await host.StartAsync(AbortToken);
+        var store = _Store(host);
+        var id = Guid.NewGuid();
+        await store.AddTimeJobsAsync(
+            [
+                new TimeJobEntity
+                {
+                    Id = id,
+                    Function = _Function,
+                    ExecutionTime = DateTime.UtcNow.AddSeconds(-5),
+                    Retries = 0,
+                },
+            ],
+            AbortToken
+        );
+        await probe.Started.WaitAsync(_WaitBudget, AbortToken);
+
+        // when: the host stops while the job is still running, and the job finishes inside the stop budget
+        var stop = host.StopAsync(AbortToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(300), AbortToken);
+        probe.CancelledAt.Should().BeNull("a running job keeps running until the release window opens");
+        probe.Release();
+        await stop;
+
+        // then
+        probe.CancelledAt.Should().BeNull();
+        var stored = await store.GetTimeJobByIdAsync(id, AbortToken);
+        stored!.Status.Should().BeOneOf(JobStatus.Succeeded, JobStatus.DueDone);
+        stored.RetryCount.Should().Be(0);
+        probe.Invocations.Should().Be(1);
+    }
+
     private static IHost _BuildHost(
         StopProbe probe,
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity>? store = null,
         int maxConcurrency = 4,
         TimeSpan? stopBudget = null,
-        TimeSpan? hostShutdownTimeout = null
+        TimeSpan? hostShutdownTimeout = null,
+        TimeSpan? fallbackInterval = null
     )
     {
         return new HostBuilder()
@@ -193,6 +233,11 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
                         {
                             scheduler.MaxConcurrency = maxConcurrency;
                             scheduler.ShutdownTimeout = stopBudget ?? _ShutdownTimeout;
+
+                            if (fallbackInterval is { } interval)
+                            {
+                                scheduler.FallbackIntervalChecker = interval;
+                            }
                         })
                 );
 
@@ -234,11 +279,13 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         BlockUntilCancelled = 0,
         Succeed = 1,
         Fail = 2,
+        BlockUntilReleased = 3,
     }
 
     public sealed class StopProbe(StopProbeMode mode)
     {
         private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _invocations;
         private long _cancelledAt;
 
@@ -248,6 +295,8 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
 
         // Monotonic timestamp at which a blocking run observed cancellation, or null while it has not.
         public long? CancelledAt => Interlocked.Read(ref _cancelledAt) is var at and not 0 ? at : null;
+
+        public void Release() => _released.TrySetResult();
 
         public async Task RunAsync(CancellationToken cancellationToken)
         {
@@ -263,7 +312,11 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
                 default:
                     try
                     {
-                        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+                        var until =
+                            mode == StopProbeMode.BlockUntilReleased
+                                ? _released.Task
+                                : Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None);
+                        await until.WaitAsync(cancellationToken).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException)
                     {

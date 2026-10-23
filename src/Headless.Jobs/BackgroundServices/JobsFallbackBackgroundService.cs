@@ -120,6 +120,11 @@ internal sealed class JobsFallbackBackgroundService(
 
                         try
                         {
+                            // The loop token governs only admission. A dispatched job follows the task scheduler's
+                            // execution lifetime, like immediate dispatch: this service's StopAsync cancels the loop
+                            // token as soon as the host stop begins, so running on it would cut the job off instead of
+                            // letting the scheduler drain it within the stop budget. Membership loss still reaches a
+                            // running job as lease loss through the handler's own MembershipLostToken registration.
                             await jobsTaskScheduler
                                 .QueueAsync(
                                     JobsAdmissionWorkItem.Create(
@@ -131,9 +136,9 @@ internal sealed class JobsFallbackBackgroundService(
                                         isDue: true
                                     ),
                                     function.CachedPriority,
-                                    loopToken,
-                                    loopToken,
-                                    semaphore
+                                    capacityCancellationToken: loopToken,
+                                    executionCancellationToken: jobsTaskScheduler.ExecutionCancellationToken,
+                                    concurrencyGate: semaphore
                                 )
                                 .ConfigureAwait(false);
                         }
