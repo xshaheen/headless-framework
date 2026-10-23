@@ -73,6 +73,13 @@ public interface ITimeJobManager<TTimeJob>
     );
 
     /// <summary>Updates an existing time job and returns the result.</summary>
+    /// <remarks>
+    /// Only a job no node has started can be edited: one that is idle and unclaimed, or queued. Editing a queued job
+    /// releases its claim, so rescheduling the next-due job still works. A running or finished job, or one whose
+    /// loaded descendants belong to a claimed chain, returns a failed result and nothing changes; use
+    /// <c>IJobScheduler.RequeueAsync</c> to run a failed job again. The job's run state (status, owner, retry count,
+    /// outcome) is never taken from the supplied entity.
+    /// </remarks>
     Task<JobResult<TTimeJob>> UpdateAsync(TTimeJob timeJob, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes the time job with the given identifier and returns the result.</summary>
@@ -87,6 +94,10 @@ public interface ITimeJobManager<TTimeJob>
     Task<List<TTimeJob>> AddBatchAsync(List<TTimeJob> entities, CancellationToken cancellationToken = default);
 
     /// <summary>Updates a batch of time jobs and returns the aggregated result.</summary>
+    /// <remarks>
+    /// Each job follows the <see cref="UpdateAsync"/> rule, and the batch is all-or-nothing: one job that cannot be
+    /// edited fails the result and leaves every job unchanged.
+    /// </remarks>
     Task<JobResult<List<TTimeJob>>> UpdateBatchAsync(
         List<TTimeJob> timeJobs,
         CancellationToken cancellationToken = default

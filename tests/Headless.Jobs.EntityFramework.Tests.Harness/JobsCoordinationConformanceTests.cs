@@ -24,9 +24,11 @@ namespace Tests;
 /// Each leaf derives a sealed class with <c>[Collection&lt;TFixture&gt;]</c> and re-declares the methods with
 /// <c>[Fact]</c> so the runner discovers them per provider.
 /// </summary>
-public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixture) : TestBase
+public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IJobsCoordinationFixture
 {
+    protected TFixture Fixture => fixture;
+
     public virtual async Task time_job_cancellation_is_atomic_durable_and_preserves_rejected_audit_state()
     {
         var ct = AbortToken;

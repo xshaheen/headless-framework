@@ -389,6 +389,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .ChangeTracker.Entries<TTimeJob>()
             .Select(entry => (Entry: entry, Values: entry.CurrentValues.Clone()))
             .ToArray();
+        // The rows the caller edits; descendants loaded in their graphs are checked against them.
+        var editedIds = timeJobs.Select(job => job.Id).Distinct().ToArray();
         var (affected, persisted) = await _ExecuteKeyedTransactionAsync(
                 async (context, ct) =>
                 {
@@ -413,14 +415,25 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         );
                     }
 
+                    await _ReleaseEditedTimeJobsAsync(context, editedIds, candidates, ct).ConfigureAwait(false);
+
                     // Ownership, business lineage, and the scheduling trace context are captured at scheduling;
-                    // ordinary edits cannot replace them.
+                    // ordinary edits cannot replace them. The run state belongs to the scheduler and the executing
+                    // node, and the guard above already wrote the release, so the caller's copy never reaches it.
                     foreach (var entry in context.ChangeTracker.Entries<TTimeJob>())
                     {
                         entry.Property(nameof(BaseJobEntity.TenantId)).IsModified = false;
                         entry.Property(nameof(BaseJobEntity.CorrelationId)).IsModified = false;
                         entry.Property(nameof(BaseJobEntity.CausationId)).IsModified = false;
                         entry.Property(nameof(TimeJobEntity.TraceParent)).IsModified = false;
+
+                        if (entry.State == EntityState.Modified)
+                        {
+                            foreach (var runtimeProperty in TimeJobEditGuard.RuntimeProperties)
+                            {
+                                entry.Property(runtimeProperty).IsModified = false;
+                            }
+                        }
                     }
 
                     return (await context.SaveChangesAsync(ct).ConfigureAwait(false), candidates);
@@ -434,6 +447,119 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         }
 
         return affected;
+    }
+
+    // Lets an edit through only on rows no node has started, and releases any claim on them in the same transaction.
+    // Each statement fences its own predicate, so a count short of the rows asked for means a row is running,
+    // finished, or owned by other work; throwing rolls the whole edit back. The stamp is the store's statement clock:
+    // UpdatedAt is the exact-match token a claim compares, and a transaction-start clock or the node's clock could
+    // stamp a value older than one a claim already wrote.
+    private static async Task _ReleaseEditedTimeJobsAsync(
+        TDbContext context,
+        Guid[] editedIds,
+        TTimeJob[] candidates,
+        CancellationToken cancellationToken
+    )
+    {
+        var jobs = context.Set<TTimeJob>();
+        var storeNow = new DateTimeOffset(
+            await JobsStoreClock.GetStatementUtcNowAsync(context, cancellationToken).ConfigureAwait(false),
+            TimeSpan.Zero
+        );
+
+        // Read before the release clears it: a pre-claimed root's loaded children carry this owner.
+        var ownersBeforeEdit = await jobs.AsNoTracking()
+            .Where(row => editedIds.Contains(row.Id))
+            .Select(row => new { row.Id, row.OwnerId })
+            .ToDictionaryAsync(row => row.Id, row => row.OwnerId, cancellationToken)
+            .ConfigureAwait(false);
+
+        var released = await jobs.Where(row =>
+                editedIds.Contains(row.Id)
+                && ((row.Status == JobStatus.Idle && row.OwnerId == null) || row.Status == JobStatus.Queued)
+            )
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(row => row.Status, JobStatus.Idle)
+                        .SetProperty(row => row.OwnerId, _ => null)
+                        .SetProperty(row => row.LockedUntil, _ => null)
+                        .SetProperty(row => row.UpdatedAt, storeNow),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (released != editedIds.Length)
+        {
+            throw TimeJobEditGuard.Refused();
+        }
+
+        var byId = candidates.ToDictionary(candidate => candidate.Id);
+        var descendants = new List<(Guid Id, string? RootOwner)>();
+        foreach (var candidate in candidates)
+        {
+            if (editedIds.Contains(candidate.Id))
+            {
+                candidate.Status = JobStatus.Idle;
+                candidate.OwnerId = null;
+                candidate.LockedUntil = null;
+                candidate.UpdatedAt = storeNow;
+            }
+            else if (context.Entry(candidate).State == EntityState.Modified)
+            {
+                descendants.Add((candidate.Id, ownersBeforeEdit[_EditedRootOf(candidate, byId, editedIds)]));
+            }
+        }
+
+        foreach (var group in descendants.GroupBy(descendant => descendant.RootOwner, StringComparer.Ordinal))
+        {
+            var ids = group.Select(descendant => descendant.Id).ToArray();
+            var rootOwner = group.Key;
+            var cleared = await jobs.Where(row =>
+                    ids.Contains(row.Id)
+                    && row.Status == JobStatus.Idle
+                    && (row.OwnerId == null || row.OwnerId == rootOwner)
+                )
+                .ExecuteUpdateAsync(
+                    setter =>
+                        setter
+                            .SetProperty(row => row.OwnerId, _ => null)
+                            .SetProperty(row => row.LockedUntil, _ => null)
+                            .SetProperty(row => row.UpdatedAt, storeNow),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (cleared != ids.Length)
+            {
+                throw TimeJobEditGuard.Refused();
+            }
+
+            foreach (var id in ids)
+            {
+                byId[id].OwnerId = null;
+                byId[id].LockedUntil = null;
+                byId[id].UpdatedAt = storeNow;
+            }
+        }
+    }
+
+    // Walks a loaded descendant up the caller's graph to the edited row it was carried in.
+    private static Guid _EditedRootOf(TTimeJob descendant, Dictionary<Guid, TTimeJob> byId, Guid[] editedIds)
+    {
+        var current = descendant;
+        while (current.ParentId is { } parentId && byId.TryGetValue(parentId, out var parent))
+        {
+            if (editedIds.Contains(parentId))
+            {
+                return parentId;
+            }
+
+            current = parent;
+        }
+
+        // Not reachable from an edited row: the caller attached an existing row it does not own through this edit.
+        throw TimeJobEditGuard.Refused();
     }
 
     private static async Task _GuardTimeJobParentReferencesAsync(

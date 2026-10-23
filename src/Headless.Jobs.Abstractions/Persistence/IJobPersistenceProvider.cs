@@ -1061,18 +1061,38 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Overwrites existing time jobs and their child chains wholesale.
+    /// Overwrites the schedulable fields of existing time jobs and their child chains, refusing any job a node has
+    /// started.
     /// </summary>
     /// <param name="jobs">The jobs to write back, each identified by its <c>Id</c>.</param>
     /// <param name="cancellationToken">Token that aborts the write.</param>
     /// <returns>The number of rows written, counting updated children as well as roots.</returns>
     /// <remarks>
-    /// Stored tenant, correlation, and causation are preserved regardless of the supplied values.
-    /// This is otherwise a full-row write with <b>no ownership or completion fence</b> — it is the management/dashboard edit
-    /// path, not the execution path. Writing a running job through it can clobber the executing node's state; the
-    /// scheduler must use <see cref="UpdateTimeJobAsync"/> or
-    /// <see cref="UpdateTimeJobsWithUnifiedContextAsync"/> instead.
+    /// This is the management/dashboard edit path, not the execution path; the scheduler uses
+    /// <see cref="UpdateTimeJobAsync"/> or <see cref="UpdateTimeJobsWithUnifiedContextAsync"/>. Implementations
+    /// <b>must</b> keep these rules, all-or-nothing for the whole call:
+    /// <list type="bullet">
+    /// <item>
+    /// Every job in <paramref name="jobs"/> must be stored and either <see cref="JobStatus.Idle"/> with no owner or
+    /// <see cref="JobStatus.Queued"/>. A queued job's claim is released in the same write (<c>Idle</c>, owner and
+    /// lease cleared), so the node that claimed it starts nothing. Any other row refuses the call and no row changes.
+    /// </item>
+    /// <item>
+    /// An existing descendant carried in a job's <c>Children</c> graph must be <see cref="JobStatus.Idle"/> and either
+    /// unowned or owned by that job's owner before the edit (the claim stamps a pre-claimed root's descendants with
+    /// its owner); its owner and lease are cleared. Any other descendant refuses the call. Newly attached children are
+    /// inserted.
+    /// </item>
+    /// <item>
+    /// Stored tenant, correlation, causation, and trace context are preserved, and the run-state columns (status,
+    /// owner, lease, retry count, timestamps, execution outcome, progress, cancel request) are never written from the
+    /// supplied values. <c>UpdatedAt</c> is stamped from the store's clock, since a claim compares it exactly.
+    /// </item>
+    /// </list>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// A job is missing, running, finished, or part of a claimed chain, or a carried descendant is not editable.
+    /// </exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> UpdateTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default);
 

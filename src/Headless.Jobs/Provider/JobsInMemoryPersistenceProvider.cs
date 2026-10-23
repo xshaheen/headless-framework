@@ -1339,17 +1339,60 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         {
             _RejectKeyedTreeUpdates(jobs);
 
+            // Check the whole call before writing any row, so a refused row leaves every other row as it was.
+            var rootOwners = new Dictionary<Guid, string?>(jobs.Length);
+            foreach (var job in jobs)
+            {
+                if (
+                    !_timeJobs.TryGetValue(job.Id, out var stored)
+                    || !TimeJobEditGuard.IsEditable(stored.Status, stored.OwnerId)
+                )
+                {
+                    throw TimeJobEditGuard.Refused();
+                }
+
+                rootOwners[job.Id] = stored.OwnerId;
+                _EnsureCarriedDescendantsEditable(job, stored.OwnerId);
+            }
+
+            var now = _timeProvider.GetUtcNow();
             var count = 0;
             foreach (var job in jobs)
             {
-                count += _UpdateTickerWithChildren(job);
+                count += _UpdateTickerWithChildren(job, rootOwners[job.Id], now);
             }
 
             return Task.FromResult(count);
         }
     }
 
-    private int _UpdateTickerWithChildren(TTimeJob job, Guid? parentId = null)
+    private void _EnsureCarriedDescendantsEditable(TTimeJob root, string? rootOwnerBeforeEdit)
+    {
+        var pending = new Stack<TTimeJob>(root.Children);
+        while (pending.TryPop(out var descendant))
+        {
+            // A descendant first seen here is new and is inserted, not edited.
+            if (
+                _timeJobs.TryGetValue(descendant.Id, out var stored)
+                && !TimeJobEditGuard.IsCarriedDescendantEditable(stored.Status, stored.OwnerId, rootOwnerBeforeEdit)
+            )
+            {
+                throw TimeJobEditGuard.Refused();
+            }
+
+            foreach (var child in descendant.Children)
+            {
+                pending.Push(child);
+            }
+        }
+    }
+
+    private int _UpdateTickerWithChildren(
+        TTimeJob job,
+        string? rootOwnerBeforeEdit,
+        DateTimeOffset now,
+        Guid? parentId = null
+    )
     {
         JobContract.ValidateName(job.Function);
         JobContract.ValidateVersion(job.ContractVersion);
@@ -1361,57 +1404,87 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             job.ParentId = parentId.Value;
         }
 
-        // Update the job itself
-        if (_timeJobs.TryGetValue(job.Id, out var existing))
+        if (!_timeJobs.TryGetValue(job.Id, out var existing))
         {
-            // Ownership, business lineage, and the scheduling trace context are captured at scheduling; ordinary edits
-            // cannot replace them.
-            job.TenantId = existing.TenantId;
-            job.CorrelationId = existing.CorrelationId;
-            job.CausationId = existing.CausationId;
-            job.TraceParent = existing.TraceParent;
+            // An edited row that vanished since the check was deleted concurrently; a missing descendant is a new child.
+            return parentId is null ? throw TimeJobEditGuard.Refused() : _AddTickerWithChildren(job, parentId);
+        }
+
+        // Claims and lifecycle writes swap rows without this lock, so re-check the rule against each row the write
+        // would replace; a row that moved on since the check is refused rather than overwritten.
+        while (true)
+        {
+            var editable = parentId is null
+                ? TimeJobEditGuard.IsEditable(existing.Status, existing.OwnerId)
+                : TimeJobEditGuard.IsCarriedDescendantEditable(existing.Status, existing.OwnerId, rootOwnerBeforeEdit);
+
+            if (!editable)
+            {
+                throw TimeJobEditGuard.Refused();
+            }
+
+            _KeepStoredStateAndRelease(job, existing, now);
 
             if (_TryUpdateTimeJob(job.Id, job, existing))
             {
-                _SyncReconcileCandidate(job);
+                break;
+            }
 
-                // Maintain children index for parent changes
-                if (existing.ParentId != job.ParentId)
-                {
-                    if (existing.ParentId.HasValue)
-                    {
-                        _RemoveChildIndex(existing.ParentId.Value, job.Id);
-                    }
-
-                    if (job.ParentId.HasValue)
-                    {
-                        _AddChildIndex(job.ParentId.Value, job.Id);
-                    }
-                }
-
-                count++;
-
-                // Recursively update all children
-                if (job.Children is { Count: > 0 })
-                {
-                    foreach (var child in job.Children)
-                    {
-                        // Cast to TTimeJob since Children is ICollection<TTimeJob>
-                        if (child is { } childTicker)
-                        {
-                            count += _UpdateTickerWithChildren(childTicker, job.Id);
-                        }
-                    }
-                }
+            if (!_timeJobs.TryGetValue(job.Id, out existing))
+            {
+                throw TimeJobEditGuard.Refused();
             }
         }
-        else
+
+        _SyncReconcileCandidate(job);
+
+        // Maintain children index for parent changes
+        if (existing.ParentId != job.ParentId)
         {
-            // If it doesn't exist, add it (this can happen for new children)
-            count += _AddTickerWithChildren(job, parentId);
+            if (existing.ParentId.HasValue)
+            {
+                _RemoveChildIndex(existing.ParentId.Value, job.Id);
+            }
+
+            if (job.ParentId.HasValue)
+            {
+                _AddChildIndex(job.ParentId.Value, job.Id);
+            }
+        }
+
+        count++;
+
+        foreach (var child in job.Children)
+        {
+            count += _UpdateTickerWithChildren(child, rootOwnerBeforeEdit, now, job.Id);
         }
 
         return count;
+    }
+
+    // An edit writes only what the caller schedules. Ownership, business lineage, and the scheduling trace context are
+    // captured at scheduling, and the run state belongs to the scheduler and the executing node, so they come from the
+    // stored row; then the edit releases any claim, which the rule above only allows on a not-yet-started row.
+    private static void _KeepStoredStateAndRelease(TTimeJob job, TTimeJob stored, DateTimeOffset now)
+    {
+        job.TenantId = stored.TenantId;
+        job.CorrelationId = stored.CorrelationId;
+        job.CausationId = stored.CausationId;
+        job.TraceParent = stored.TraceParent;
+        job.RetryCount = stored.RetryCount;
+        job.CreatedAt = stored.CreatedAt;
+        job.ExecutedAt = stored.ExecutedAt;
+        job.ElapsedTime = stored.ElapsedTime;
+        job.ExceptionMessage = stored.ExceptionMessage;
+        job.SkippedReason = stored.SkippedReason;
+        job.ProgressPercent = stored.ProgressPercent;
+        job.ProgressMessage = stored.ProgressMessage;
+        job.ProgressUpdatedAt = stored.ProgressUpdatedAt;
+        job.CancelRequested = stored.CancelRequested;
+        job.Status = JobStatus.Idle;
+        job.OwnerId = null;
+        job.LockedUntil = null;
+        job.UpdatedAt = now;
     }
 
     public Task<int> RemoveTimeJobsAsync(Guid[] jobIds, CancellationToken cancellationToken = default)

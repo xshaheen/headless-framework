@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Jobs;
+
 namespace Tests;
 
 /// <summary>Runs the cross-provider Jobs+Coordination conformance suite against Postgres.</summary>
@@ -185,6 +187,45 @@ public abstract class PostgreSqlConformanceTestsBase<TFixture>(TFixture fixture)
     {
         return base.time_job_execution_time_survives_read_then_update_under_a_non_utc_scheduler_zone();
     }
+
+    [Theory]
+    [InlineData((int)JobStatus.Idle)]
+    [InlineData((int)JobStatus.InProgress)]
+    [InlineData((int)JobStatus.Succeeded)]
+    [InlineData((int)JobStatus.DueDone)]
+    [InlineData((int)JobStatus.Failed)]
+    [InlineData((int)JobStatus.Cancelled)]
+    [InlineData((int)JobStatus.Skipped)]
+    public override Task update_refuses_and_changes_nothing_when_the_row_is_owned_running_or_finished(int status) =>
+        base.update_refuses_and_changes_nothing_when_the_row_is_owned_running_or_finished(status);
+
+    [Fact]
+    public override Task update_applies_to_an_idle_unowned_row_and_keeps_its_stored_runtime_state() =>
+        base.update_applies_to_an_idle_unowned_row_and_keeps_its_stored_runtime_state();
+
+    [Fact]
+    public override Task update_releases_a_preclaimed_queued_job_and_its_former_owner_cannot_start_it() =>
+        base.update_releases_a_preclaimed_queued_job_and_its_former_owner_cannot_start_it();
+
+    [Fact]
+    public override Task update_batch_with_one_refused_row_rolls_back_every_row() =>
+        base.update_batch_with_one_refused_row_rolls_back_every_row();
+
+    [Fact]
+    public override Task update_inserts_a_new_child_attached_to_an_idle_root() =>
+        base.update_inserts_a_new_child_attached_to_an_idle_root();
+
+    [Fact]
+    public override Task update_of_a_preclaimed_chain_root_releases_its_carried_descendants() =>
+        base.update_of_a_preclaimed_chain_root_releases_its_carried_descendants();
+
+    [Fact]
+    public override Task update_is_refused_when_a_carried_descendant_belongs_to_another_owner() =>
+        base.update_is_refused_when_a_carried_descendant_belongs_to_another_owner();
+
+    [Fact]
+    public override Task update_stamps_the_store_clock_and_a_claim_after_it_succeeds() =>
+        base.update_stamps_the_store_clock_and_a_claim_after_it_succeeds();
 
     [Fact]
     public override Task unified_context_inprogress_stamp_requires_a_queued_row()

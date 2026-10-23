@@ -478,7 +478,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return new JobResult<TTimeJob>(new JobValidatorException("Job ExecutionTime must not be null!"));
         }
 
-        timeJob.UpdatedAt = timeProvider.GetUtcNow();
+        // The store stamps UpdatedAt from its own clock: it is the token a claim compares, so the node clock never
+        // sets it.
         timeJob.ExecutionTime = _ConvertToUtcIfNeeded(timeJob.ExecutionTime.Value);
 
         try
@@ -1422,7 +1423,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
-            timeJob.UpdatedAt = timeProvider.GetUtcNow();
+            // The store stamps UpdatedAt from its own clock, as on the single-job path.
             timeJob.ExecutionTime = _ConvertToUtcIfNeeded(timeJob.ExecutionTime.Value);
 
             // New chain descendants attached through UpdateBatchAsync bypass the Add path's tenant resolution, so
