@@ -797,7 +797,7 @@ public sealed class HeadlessAuthorizationTenancyBuilder
     /// <remarks>
     /// The structured <c>g:tenant_required</c> 403 body is written by
     /// <c>StatusCodesRewriterMiddleware</c> after authorization rejects the request. The middleware
-    /// is wired in by <see cref="SetupApiServices.AddHeadlessProblemDetails"/> /
+    /// is wired in by <see cref="SetupApiServices.AddHeadlessProblemDetails(Microsoft.Extensions.DependencyInjection.IServiceCollection)"/> /
     /// <c>Headless.Api.ServiceDefaults</c>; consumers that do not use ServiceDefaults must register
     /// it via <see cref="SetupMiddlewares.UseStatusCodesRewriter"/> to receive the discriminator.
     ///

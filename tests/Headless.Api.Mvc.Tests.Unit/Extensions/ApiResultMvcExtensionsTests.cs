@@ -455,6 +455,41 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
         conflictResult.Value.Should().BeOfType<ProblemDetails>();
     }
 
+    [Fact]
+    public void should_map_an_error_the_application_mapped_with_its_status()
+    {
+        // given - the mappings come from the request's services, like the creator in a running app
+        var services = new ServiceCollection();
+        services.AddHeadlessProblemDetails(problems =>
+            problems.MapError<QuotaError>(StatusCodes.Status429TooManyRequests)
+        );
+        var controller = new TestController
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() },
+            },
+        };
+
+        // when
+        var actionResult = new QuotaError().ToActionResult(
+            controller,
+            _CreateLocalizingCreator(new OutOfStockLocalizer())
+        );
+
+        // then
+        var objectResult = actionResult.Should().BeOfType<ObjectResult>().Subject;
+        objectResult.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        objectResult.Value.Should().BeOfType<ProblemDetails>().Which.Detail.Should().Be("The quota is used up.");
+    }
+
+    private sealed record QuotaError : ApiResultError
+    {
+        public override string Code => "app:quota";
+
+        public override string Message => "The quota is used up.";
+    }
+
     #endregion
 
     #region Helper Methods

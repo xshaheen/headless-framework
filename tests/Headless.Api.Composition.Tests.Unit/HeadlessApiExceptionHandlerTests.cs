@@ -259,6 +259,132 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
     }
 
     [Fact]
+    public async Task should_write_the_same_problem_for_a_thrown_failure_as_for_the_returned_error_of_its_kind()
+    {
+        // given - one creator for both paths, so its frozen clock and build info cannot differ between them
+        var creator = _CreateRealCreator();
+        var reason = new ErrorDescriptor("app:session_expired", "Your session expired.");
+        var conflicts = new[] { new ErrorDescriptor("app:taken", "The name is taken.") };
+        var failures = new[] { new ValidationFailure("Name", "Name is required") { ErrorCode = "NotEmpty" } };
+        (Exception Thrown, ApiResultError Returned)[] pairs =
+        [
+            (new UnauthorizedException(reason), new UnauthorizedError(reason)),
+            (new ForbiddenException(reason), new ForbiddenError(reason)),
+            (new ConflictException(conflicts), new ConflictError(conflicts)),
+            (
+                new FluentValidation.ValidationException(failures),
+                new ValidationError
+                {
+                    Errors = FluentValidation.HeadlessFluentValidationExtensions.ToErrorDescriptors(failures),
+                }
+            ),
+            (new EntityNotFoundException("Order", "1"), new NotFoundError { Entity = "Order", Key = "1" }),
+        ];
+
+        foreach (var (thrown, returned) in pairs)
+        {
+            ProblemDetails? written = null;
+            var problemDetailsService = Substitute.For<IProblemDetailsService>();
+            problemDetailsService
+                .TryWriteAsync(Arg.Do<ProblemDetailsContext>(c => written = c.ProblemDetails))
+                .Returns(true);
+            var handler = _CreateHandler(problemDetailsService, creator);
+            var httpContext = new DefaultHttpContext();
+
+            // when
+            await handler.TryHandleAsync(httpContext, thrown, AbortToken);
+
+            // then
+            var expected = ApiResultErrorProblemDetails.Create(returned, creator, mappings: null);
+            httpContext.Response.StatusCode.Should().Be(expected.Status, thrown.GetType().Name);
+            written.Should().BeEquivalentTo(expected, thrown.GetType().Name);
+        }
+    }
+
+    [Fact]
+    public async Task should_answer_an_exception_the_application_mapped_with_its_status_and_description()
+    {
+        // given - the base type is mapped, so the derived exception the service throws takes the mapping
+        ProblemDetails? written = null;
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService
+            .TryWriteAsync(Arg.Do<ProblemDetailsContext>(c => written = c.ProblemDetails))
+            .Returns(true);
+        var mappings = new HeadlessProblemDetailsOptions().MapException<PaymentException>(
+            StatusCodes.Status402PaymentRequired,
+            e => new ErrorDescriptor("billing:declined", e.Reason)
+        );
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), mappings: mappings);
+        var httpContext = new DefaultHttpContext();
+
+        // when
+        var result = await handler.TryHandleAsync(
+            httpContext,
+            new CardDeclinedException("The card was declined."),
+            AbortToken
+        );
+
+        // then
+        result.Should().BeTrue();
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status402PaymentRequired);
+        written!.Status.Should().Be(StatusCodes.Status402PaymentRequired);
+        written.Detail.Should().Be("The card was declined.");
+        written.Extensions["error"].Should().BeOfType<ErrorDescriptor>().Which.Code.Should().Be("billing:declined");
+    }
+
+    [Fact]
+    public async Task should_write_only_the_standard_fields_for_a_mapped_exception_without_a_description()
+    {
+        // given
+        ProblemDetails? written = null;
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService
+            .TryWriteAsync(Arg.Do<ProblemDetailsContext>(c => written = c.ProblemDetails))
+            .Returns(true);
+        var mappings = new HeadlessProblemDetailsOptions().MapException<PaymentException>(
+            StatusCodes.Status402PaymentRequired
+        );
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), mappings: mappings);
+
+        // when
+        await handler.TryHandleAsync(new DefaultHttpContext(), new CardDeclinedException("secret detail"), AbortToken);
+
+        // then - the exception's own message stays in the logs
+        written!.Status.Should().Be(StatusCodes.Status402PaymentRequired);
+        written.Extensions.Should().NotContainKey("error");
+        written.Detail.Should().NotBe("secret detail");
+    }
+
+    [Fact]
+    public async Task should_leave_an_exception_no_mapping_covers_to_the_next_handler()
+    {
+        // given
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        var mappings = new HeadlessProblemDetailsOptions().MapException<PaymentException>(
+            StatusCodes.Status402PaymentRequired
+        );
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), mappings: mappings);
+
+        // when
+        var result = await handler.TryHandleAsync(
+            new DefaultHttpContext(),
+            new InvalidOperationException("not mapped"),
+            AbortToken
+        );
+
+        // then
+        result.Should().BeFalse();
+        await problemDetailsService.DidNotReceive().TryWriteAsync(Arg.Any<ProblemDetailsContext>());
+    }
+
+    private class PaymentException(string reason) : Exception(reason)
+    {
+        public string Reason { get; } = reason;
+    }
+
+    private sealed class CardDeclinedException(string reason) : PaymentException(reason);
+
+    [Fact]
     public async Task should_map_db_update_concurrency_exception_to_409_via_type_name_match()
     {
         // given
@@ -992,7 +1118,8 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
     private static HeadlessApiExceptionHandler _CreateHandler(
         IProblemDetailsService problemDetailsService,
         IProblemDetailsCreator creator,
-        ILogger<HeadlessApiExceptionHandler>? logger = null
+        ILogger<HeadlessApiExceptionHandler>? logger = null,
+        HeadlessProblemDetailsOptions? mappings = null
     )
     {
         var jsonOptions = Options.Create(new JsonOptions());
@@ -1000,6 +1127,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
             jsonOptions,
             problemDetailsService,
             creator,
+            Options.Create(mappings ?? new HeadlessProblemDetailsOptions()),
             logger ?? NullLogger<HeadlessApiExceptionHandler>.Instance
         );
     }

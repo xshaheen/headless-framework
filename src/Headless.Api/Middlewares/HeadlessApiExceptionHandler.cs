@@ -41,6 +41,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
     IOptions<JsonOptions> jsonOptions,
     IProblemDetailsService problemDetailsService,
     IProblemDetailsCreator problemDetailsCreator,
+    IOptions<HeadlessProblemDetailsOptions> problemMappings,
     ILogger<HeadlessApiExceptionHandler> logger
 ) : IExceptionHandler
 {
@@ -145,13 +146,23 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     statusCode = StatusCodes.Status403Forbidden;
                     break;
 
+                // The failures an endpoint can also return as an ApiResultError build their body through the same
+                // per-kind builder the result conversion uses, so a thrown failure and a returned one look alike.
                 case UnauthorizedException unauthorized:
-                    problemDetails = problemDetailsCreator.Unauthorized(error: unauthorized.Error);
+                    problemDetails = ApiResultErrorProblemDetails.Unauthorized(
+                        problemDetailsCreator,
+                        unauthorized.Error
+                    );
                     statusCode = StatusCodes.Status401Unauthorized;
                     break;
 
+                case ForbiddenException forbidden:
+                    problemDetails = ApiResultErrorProblemDetails.Forbidden(problemDetailsCreator, forbidden.Error);
+                    statusCode = StatusCodes.Status403Forbidden;
+                    break;
+
                 case ConflictException conflict:
-                    problemDetails = problemDetailsCreator.Conflict(conflict.Errors);
+                    problemDetails = ApiResultErrorProblemDetails.Conflict(problemDetailsCreator, conflict.Errors);
                     statusCode = StatusCodes.Status409Conflict;
                     break;
 
@@ -165,12 +176,15 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     break;
 
                 case ValidationException validation:
-                    problemDetails = problemDetailsCreator.UnprocessableEntity(validation.Errors.ToErrorDescriptors());
+                    problemDetails = ApiResultErrorProblemDetails.Validation(
+                        problemDetailsCreator,
+                        validation.Errors.ToErrorDescriptors()
+                    );
                     statusCode = StatusCodes.Status422UnprocessableEntity;
                     break;
 
                 case EntityNotFoundException:
-                    problemDetails = problemDetailsCreator.EntityNotFound();
+                    problemDetails = ApiResultErrorProblemDetails.NotFound(problemDetailsCreator);
                     statusCode = StatusCodes.Status404NotFound;
                     break;
 
@@ -240,6 +254,18 @@ internal sealed partial class HeadlessApiExceptionHandler(
                         statusCode == StatusCodes.Status400BadRequest
                             ? problemDetailsCreator.BadRequest()
                             : _CreateNormalized(statusCode);
+                    break;
+
+                // The application's own exceptions, mapped through AddHeadlessProblemDetails(problems => ...). Every
+                // framework-known case above runs first, and registering one of those types throws, so a mapping
+                // never changes a framework status.
+                case not null when problemMappings.Value.TryGetMapping(exception, out var mapping):
+                    problemDetails = ApiResultErrorProblemDetails.Mapped(
+                        problemDetailsCreator,
+                        mapping.StatusCode,
+                        mapping.Describe?.Invoke(exception)
+                    );
+                    statusCode = mapping.StatusCode;
                     break;
 
                 default:

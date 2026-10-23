@@ -4,6 +4,7 @@ using Headless.Checks;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Api;
 
@@ -76,14 +77,24 @@ public static class ApiResultExtensions
     /// pattern matching on the concrete error type. Use it to compose a custom <c>Results&lt;...&gt;</c> union.
     /// </summary>
     /// <param name="error">The error to map.</param>
-    /// <param name="creator">The problem-details creator used to build the response body.</param>
+    /// <param name="httpContext">
+    /// The current request; its services supply the <see cref="IProblemDetailsCreator"/> and the application's
+    /// <see cref="HeadlessProblemDetailsOptions"/> mappings.
+    /// </param>
     /// <returns>A problem HTTP result with the appropriate status code and body.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="error"/> or <paramref name="creator"/> is <see langword="null"/>.</exception>
-    public static ProblemHttpResult ToHttpResult(this ApiResultError error, IProblemDetailsCreator creator)
+    /// <exception cref="ArgumentNullException"><paramref name="error"/> or <paramref name="httpContext"/> is <see langword="null"/>.</exception>
+    public static ProblemHttpResult ToHttpResult(this ApiResultError error, HttpContext httpContext)
     {
         Argument.IsNotNull(error);
-        Argument.IsNotNull(creator);
+        Argument.IsNotNull(httpContext);
 
-        return TypedResults.Problem(ApiResultErrorProblemDetails.Create(error, creator));
+        var services = httpContext.RequestServices;
+        var problemDetails = ApiResultErrorProblemDetails.Create(
+            error,
+            services.GetRequiredService<IProblemDetailsCreator>(),
+            ApiResultErrorProblemDetails.GetMappings(services)
+        );
+
+        return TypedResults.Problem(problemDetails);
     }
 }

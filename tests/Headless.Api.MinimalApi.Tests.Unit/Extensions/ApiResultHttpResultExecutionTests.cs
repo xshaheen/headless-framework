@@ -213,8 +213,52 @@ public sealed class ApiResultHttpResultExecutionTests : TestBase
         // when
         var statuses = errors.Select(error => ((IStatusCodeHttpResult)ApiResult.Fail(error).ToHttpResult()).StatusCode);
 
+        // then - an error the framework does not know reports no status before it executes: the application may map
+        // it to another status, and only the request's services can say which
+        statuses.Should().Equal(404, 422, 403, 401, 409, null);
+    }
+
+    [Fact]
+    public async Task should_answer_an_error_the_application_mapped_with_its_status_and_descriptor()
+    {
+        // given
+        await using var services = MinimalApiTestHost.CreateServices(services =>
+            services.AddHeadlessProblemDetails(problems =>
+                problems.MapError<QuotaExceededError>(StatusCodes.Status429TooManyRequests)
+            )
+        );
+        var httpContext = MinimalApiTestHost.CreateHttpContext(services);
+
+        // when
+        await ApiResult.Fail(new QuotaExceededError()).ToHttpResult().ExecuteAsync(httpContext);
+
         // then
-        statuses.Should().Equal(404, 422, 403, 401, 409, 409);
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        var body = await MinimalApiTestHost.ReadJsonAsync(httpContext, AbortToken);
+        body.GetProperty("status").GetInt32().Should().Be(StatusCodes.Status429TooManyRequests);
+        body.GetProperty("detail").GetString().Should().Be("The monthly quota is used up.");
+        body.GetProperty("error").GetProperty("code").GetString().Should().Be("item:quota_exceeded");
+    }
+
+    [Fact]
+    public async Task should_keep_answering_409_for_an_error_no_mapping_covers()
+    {
+        // given
+        await using var services = MinimalApiTestHost.CreateServices();
+        var httpContext = MinimalApiTestHost.CreateHttpContext(services);
+
+        // when
+        await ApiResult.Fail(new QuotaExceededError()).ToHttpResult().ExecuteAsync(httpContext);
+
+        // then
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+    }
+
+    private sealed record QuotaExceededError : ApiResultError
+    {
+        public override string Code => "item:quota_exceeded";
+
+        public override string Message => "The monthly quota is used up.";
     }
 
     private static ApiResultCreatedHttpResult<Item> _CreatedEndpoint() => throw new NotSupportedException();

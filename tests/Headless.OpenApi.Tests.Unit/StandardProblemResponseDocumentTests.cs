@@ -259,6 +259,37 @@ public sealed class StandardProblemResponseDocumentTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_list_a_status_the_application_mapped_with_the_base_problem_schema()
+    {
+        // given
+        var document = await OpenApiTestHost.GetDocumentAsync(
+            builder =>
+            {
+                builder.Services.AddHeadlessProblemDetails(problems =>
+                    problems.MapException<PaymentDeclinedException>(StatusCodes.Status402PaymentRequired)
+                );
+                builder.Services.AddHeadlessOpenApi();
+            },
+            app =>
+            {
+                app.MapGet("/billing/charge", () => "ok").AllowAnonymous();
+                app.MapGet("/health", () => "ok").WithoutStandardProblemResponses().AllowAnonymous();
+            },
+            "v1",
+            AbortToken
+        );
+
+        // then - the mapped status joins the baseline and follows its control
+        var charge = document.Operation("/billing/charge", "get")["responses"]!;
+        charge.ExactStatusCodes().Should().Contain("402");
+        _ProblemSchemaRef(charge["402"]!).Should().Be("#/components/schemas/HeadlessProblemDetails");
+        charge["402"]!["content"]!["application/problem+json"]!["example"]!["status"]!.GetValue<int>().Should().Be(402);
+        document.Operation("/health", "get")["responses"]!.ExactStatusCodes().Should().NotContain("402");
+    }
+
+    private sealed class PaymentDeclinedException : Exception;
+
     private static ApiSurfaceDescriptor _Surface(string name, bool? standardProblemResponses) =>
         new(
             name,

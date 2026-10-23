@@ -2,6 +2,7 @@
 
 using Headless.Api;
 using Microsoft.AspNetCore.OpenApi;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
@@ -57,6 +58,22 @@ internal sealed class StandardProblemResponseTransformer : IOpenApiOperationTran
             OpenApiStatusCodes.UnprocessableEntity,
             new OpenApiResponse { Description = "Unprocessable Entity - The request failed validation." }
         );
+
+        // The statuses the application mapped its own exceptions and errors to can come from any handler or
+        // service too, so they join the baseline and follow the same control.
+        var mappings = context.ApplicationServices.GetService<IOptions<HeadlessProblemDetailsOptions>>()?.Value;
+
+        foreach (var statusCode in mappings?.MappedStatusCodes.Order() ?? Enumerable.Empty<int>())
+        {
+            responses.TryAdd(
+                statusCode.ToString(CultureInfo.InvariantCulture),
+                new OpenApiResponse
+                {
+                    Description =
+                        $"{ReasonPhrases.GetReasonPhrase(statusCode)} - A failure the application maps to this status.",
+                }
+            );
+        }
 
         return Task.CompletedTask;
     }

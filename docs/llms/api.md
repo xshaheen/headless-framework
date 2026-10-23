@@ -235,6 +235,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 
 ### API and behavior
 
+- `AddHeadlessProblemDetails(problems => ...)` — the same registration plus the application's `HeadlessProblemDetailsOptions` mappings (`MapException<TException>(status, describe)`, `MapError<TError>(status)`, read-only `MappedStatusCodes`)
 - `AddHeadlessProblemDetails()` — registers `IProblemDetailsCreator`, a no-op `IErrorDescriptionLocalizer` (`TryAddSingleton`), `HeadlessApiExceptionHandler`, and the `CustomizeProblemDetails` hook that normalizes every response
 - `GeneralMessageDescriber.TenantRequired()` (`g:tenant_required`), `CrossTenantWrite()` (`g:cross_tenant_write`), and `InvalidRequestType()` (`g:invalid_request_type`) — per-call localized descriptors for the framework's tenancy and request-type failures, with their codes on `GeneralErrorCodes`
 - `AddHeadlessApiResponseCompression()` — Brotli + Gzip at `Fastest` level; extends MIME list with `application/problem+json`, `image/svg+xml`, `image/x-icon`
@@ -495,6 +496,8 @@ Exception mapping from `AddHeadlessProblemDetails()`:
 |-----------|----------|
 | `MissingTenantContextException` | 403 with `error.code: g:tenant_required` |
 | `CrossTenantWriteException` | 409 with `error.code: g:cross_tenant_write` |
+| `UnauthorizedException` | 401; a descriptor's description becomes `detail` |
+| `ForbiddenException` | 403 with `error`; its description becomes `detail` |
 | `ConflictException` | 409 with `errors` |
 | `TooManyRequestsException` | 429 with `Retry-After` header (whole seconds, rounded up, at least 1), `retryAfter`, and optional `error` |
 | `FluentValidation.ValidationException` | 422 with field errors |
@@ -507,7 +510,28 @@ Exception mapping from `AddHeadlessProblemDetails()`:
 | `BadHttpRequestException` (a Minimal API body that cannot be bound with `ThrowOnBadRequest` on, the Development default; an unsupported content type; an oversized body) | Its `StatusCode`: 400 `bad-request`, or 413 `payload-too-large`. The exception message, which names the failed parameter or the JSON parse position, stays out of the body and is logged at Information with the exception (event 5015) |
 | `OperationCanceledException` (or inner OCE at any depth) when `HttpContext.RequestAborted` is the source | 499 (no body) |
 
-All other exceptions return `false`; the host default or a downstream handler renders them.
+An exception the application mapped (below) answers with its mapped status. All other exceptions return `false`; the host default or a downstream handler renders them.
+
+Map your own exceptions and result errors with `AddHeadlessProblemDetails(problems => ...)`. It is safe to call alongside `AddHeadless()`, and the mappings from every call add up:
+
+```csharp
+builder.Services.AddHeadlessProblemDetails(problems =>
+{
+    // Thrown anywhere in a request: 402 with the descriptor in `error` and its description as `detail`.
+    problems.MapException<PaymentDeclinedException>(
+        StatusCodes.Status402PaymentRequired,
+        e => new ErrorDescriptor("billing:declined", e.Reason)
+    );
+
+    // Returned as ApiResult.Fail(new QuotaExceededError()): 429 instead of the default 409.
+    problems.MapError<QuotaExceededError>(StatusCodes.Status429TooManyRequests);
+});
+```
+
+- A mapping covers the registered type and every type derived from it; the most derived registration wins, and registering a type again replaces its mapping.
+- Without `describe`, a mapped exception writes only the standard fields. Its own message never reaches the response. A mapped error always carries its `ToErrorDescriptor()`.
+- Mapping a failure the framework already maps throws `InvalidOperationException`: every exception in the table above or derived from one, and `NotFoundError`, `ValidationError`, `ForbiddenError`, `UnauthorizedError`, `ConflictError`, and `AggregateError`. The framework's statuses never change, so the documented baseline stays true.
+- The status must be 400 to 599. `Headless.OpenApi` lists every mapped status on every operation, under the same control as 404/409/422 (see [openapi.md](openapi.md#headlessopenapi)).
 
 `StatusCodesRewriterMiddleware` is required for the `g:tenant_required` discriminator on 403 authorization rejections. It is wired by ServiceDefaults; apps that skip ServiceDefaults must call `UseStatusCodesRewriter()` themselves. `TenantRequirement` must live in `DefaultPolicy` or `FallbackPolicy` — the startup validator does not inspect named policies. `UseHeadlessTenancy()` must run after `UseRouting()` so endpoint metadata is available when `[SkipTenantResolution]` is evaluated. `UseHeadlessTenantCatalogResolution()` runs after `UseRouting()` and before `UseAuthentication()`; placed before `UseRouting()` it still resolves host, header, and delegate sources and only loses the `[SkipTenantResolution]` opt-out (a once-per-process warning), but a registered route source then finds nothing and every request runs as host context, logged once per process at Error level as `HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED` — best-effort, since a host whose requests all 404 or all reject never logs. Behind a proxy, `UseForwardedHeaders()` with `KnownProxies`/`KnownNetworks` and host filtering (`AllowedHosts` scoped to the tenant suffix) must precede it, and `UseCors()` must precede it so preflights short-circuit. CDN caveats: a cache key that omits the host breaks host tenancy, and many CDNs refuse to cache on unknown `Vary` values. Mismatch-check limits: a principal with no tenant claim, or an endpoint where authorization never runs (`[AllowAnonymous]`, policy-less without a fallback policy), passes a source-selected tenant unchecked — map such credentials to a tenant claim so the check applies, and never derive authorization on such endpoints from the ambient tenant.
 
@@ -1046,7 +1070,7 @@ Framework integration for ASP.NET Core Minimal APIs: JSON configuration, mediato
 ### API and behavior
 
 - `ConfigureHeadlessMinimalApi()` — applies the Headless JSON conventions to Minimal API `JsonOptions`, indented in Development and Test. It registers nothing else: exception handling comes from `AddHeadlessProblemDetails()` in `Headless.Api`, and validation is per endpoint or per group (below).
-- `ApiResult<T>.ToHttpResult()`, `ApiResult.ToHttpResult()`, and `ApiResult<T>.ToCreatedHttpResult(value => location)` — 200 with the value, 204, or 201 with a `Location` field on success, and the error's problem-details response on failure. They return `ApiResultHttpResult<T>`, `ApiResultHttpResult`, and `ApiResultCreatedHttpResult<T>`, which publish only the success type to OpenAPI; `Headless.OpenApi` documents the error responses on every operation, whatever the handler returns (see [openapi.md](openapi.md#headlessopenapi)). The problem body is built when the result executes, from the request's `IProblemDetailsCreator`, so the endpoint never injects the creator. `ApiResultError.ToHttpResult(creator)` returns a plain `ProblemHttpResult` for composing your own `Results<...>` union.
+- `ApiResult<T>.ToHttpResult()`, `ApiResult.ToHttpResult()`, and `ApiResult<T>.ToCreatedHttpResult(value => location)` — 200 with the value, 204, or 201 with a `Location` field on success, and the error's problem-details response on failure. They return `ApiResultHttpResult<T>`, `ApiResultHttpResult`, and `ApiResultCreatedHttpResult<T>`, which publish only the success type to OpenAPI; `Headless.OpenApi` documents the error responses on every operation, whatever the handler returns (see [openapi.md](openapi.md#headlessopenapi)). The problem body is built when the result executes, from the request's `IProblemDetailsCreator`, so the endpoint never injects the creator. `ApiResultError.ToHttpResult(httpContext)` returns a plain `ProblemHttpResult` for composing your own `Results<...>` union, built from the request's creator and mappings. Before it executes, a result reports its `IStatusCodeHttpResult.StatusCode` for the framework's errors only; an application error reports `null`, because only the request's mappings can say its status.
 - `ISender.DispatchAsync(request, ct)` and `ISender.DispatchCreatedAsync(request, value => location, ct)` (`HeadlessSenderExtensions`) — send a `Mediator` request whose handler returns `ApiResult` or `ApiResult<T>`, and return the matching result type above. A `null` request answers 400 without reaching the mediator, as the MVC `ApiControllerBase` helpers do.
 - `MapGetRequest`, `MapDeleteRequest`, `MapPostRequest`, `MapPutRequest`, `MapPatchRequest` (`HeadlessRequestEndpointRouteBuilderExtensions`) — map a route whose whole handler is bind, dispatch, respond. `<TRequest, TResponse>` returns 200 with the value; `<TRequest>` returns 204. `MapPostRequest<TRequest, TResponse>(pattern, value => location)` returns 201.
 - `.ValidateArguments()` on a route group or endpoint — validates each handler argument that has a registered `IValidator<T>`. `.Validate<T>()` on one endpoint — validates one argument type with `MinimalApiValidatorFilter<T>`. Both answer 422; `.Validate<T>()` also answers 400 when the argument is missing. Neither adds response metadata: `Headless.OpenApi` documents the 400 on every operation that binds a value and the 422 on every operation.
@@ -1060,7 +1084,7 @@ Framework integration for ASP.NET Core Minimal APIs: JSON configuration, mediato
 - **The dispatch helpers take `IRequest<T>` only.** They mirror the `Headless.Mediator` pipeline behaviors, which constrain on `IRequest<TResponse>`. A `Mediator` `ICommand<T>` or `IQuery<T>` goes through `sender.Send(...)` and `ToHttpResult()`.
 - **No envelope-specific dispatch.** A handler that returns `ApiResult<DataEnvelope<T>>`, `ApiResult<CollectionEnvelope<T>>`, or `ApiResult<MessageEnvelope>` gets that envelope as the 200 body and as the OpenAPI schema.
 - **The `Map*Request` helpers bind the whole request from one source.** GET and DELETE use `[AsParameters]` (route values and the query string); POST, PUT, and PATCH use the JSON body. A request whose body also needs a route value, such as `PUT /orders/{id}`, needs its own handler that binds both and calls `DispatchAsync`.
-- **A result's `Value` is `null` for a failure.** The problem body exists only once the result executes against a request. Assert a failure's body by executing the result, or call `ApiResultError.ToHttpResult(creator)`.
+- **A result's `Value` is `null` for a failure.** The problem body exists only once the result executes against a request. Assert a failure's body by executing the result, or call `ApiResultError.ToHttpResult(httpContext)`.
 - **`ValidateArguments()` decides once per endpoint, at build time.** It closes `IValidator<T>` over each handler parameter type and keeps the parameters with a registration. An endpoint with none gets no filter. A validator registered after the endpoints are built is not seen. Do not also apply `.Validate<T>()` for the same argument, or its validators run twice.
 - **Validate a mediator request in one place.** With `AddMediatorValidationRequestBehavior()` registered (see [mediator.md](mediator.md)), the validators of a request type that a `Map*Request` route or `DispatchAsync` sends run twice: once in the `ValidateArguments()` endpoint filter, which answers 422, and again in the mediator's `ValidationRequestPreProcessor`, which throws `ValidationException`. An async validator that queries a database doubles its I/O. Pick one: leave `ValidateArguments()` off groups that only dispatch through the mediator, or leave the mediator pre-processor unregistered and let the endpoint filter validate. The framework does not detect the overlap at run time, because detecting it would couple `Headless.Api.MinimalApi` to `Headless.Mediator` internals.
 
@@ -1153,7 +1177,7 @@ builder.Services.AddHeadlessMinimalApiEntityTagConcurrency(options =>
 - `MapApiSurface` adds group route, authorization, tenancy, and default-tag conventions using the shared surface registry.
 - `ConfigureHeadlessMinimalApi` configures `JsonOptions` for Minimal APIs and nothing else.
 - Returning an `ApiResult` result type publishes its success response to OpenAPI without manual `.Produces(...)` calls. The error responses come from `Headless.OpenApi`, the same for an endpoint that returns a plain value and throws, so no endpoint needs `.ProducesProblem(...)` for 404, 409, or 422.
-- A `ForbiddenError` writes its descriptor's description, after `IErrorDescriptionLocalizer`, as the problem `detail`; so does an `UnauthorizedError` that carries a descriptor. MVC `ToActionResult` shares the mapping. An error's `Metadata` stays on the wire as the descriptor's `params` in the `errors` extension; it is not copied to top-level problem fields.
+- A `ForbiddenError` writes its descriptor's description, after `IErrorDescriptionLocalizer`, as the problem `detail`; so does an `UnauthorizedError` that carries a descriptor. MVC `ToActionResult` shares the mapping, and so does `HeadlessApiExceptionHandler` for the exception of the same kind: a thrown `UnauthorizedException`, `ForbiddenException`, `ConflictException`, FluentValidation `ValidationException`, or `EntityNotFoundException` writes the same status and body as the returned `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ValidationError`, or `NotFoundError`, so an `UnauthorizedException` that carries a descriptor also puts its description in `detail`. An error's `Metadata` stays on the wire as the descriptor's `params` in the `errors` extension; it is not copied to top-level problem fields.
 - An empty body on a `Map{Post,Put,Patch}Request` route, or a JSON `null`, answers a problem-details 400 before the mediator runs. A body that is not valid JSON gets the framework's bare 400, which `UseStatusCodesRewriter()` turns into problem details.
 - `ValidateArguments()` runs every validator of every validated argument one after another, each with its own validation context, and returns all failures as one 422. An optional argument the request omitted is skipped.
 - When opted in, endpoint filters emit ETags for successful `IHasEntityTag` results and reject missing or invalid `If-Match` preconditions before invoking the handler.

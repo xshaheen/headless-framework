@@ -34,8 +34,8 @@ public sealed class ApiResultErrorProblemDetailsTests : TestBase
         foreach (var error in errors)
         {
             // when
-            var status = ApiResultErrorProblemDetails.GetStatusCode(error);
-            var problem = ApiResultErrorProblemDetails.Create(error, creator);
+            var status = ApiResultErrorProblemDetails.GetStatusCode(error, new HeadlessProblemDetailsOptions());
+            var problem = ApiResultErrorProblemDetails.Create(error, creator, mappings: null);
 
             // then
             problem.Status.Should().Be(status, "the status of {0} must match its body", error.GetType().Name);
@@ -50,7 +50,7 @@ public sealed class ApiResultErrorProblemDetailsTests : TestBase
         var error = new ForbiddenError(new ErrorDescriptor("app:no_access", "Only owners can archive."));
 
         // when
-        var problem = ApiResultErrorProblemDetails.Create(error, creator);
+        var problem = ApiResultErrorProblemDetails.Create(error, creator, mappings: null);
 
         // then
         problem.Status.Should().Be(StatusCodes.Status403Forbidden);
@@ -65,7 +65,7 @@ public sealed class ApiResultErrorProblemDetailsTests : TestBase
         var error = new ForbiddenError(new ErrorDescriptor("app:no_access", "Only owners can archive."));
 
         // when
-        var problem = ApiResultErrorProblemDetails.Create(error, creator);
+        var problem = ApiResultErrorProblemDetails.Create(error, creator, mappings: null);
 
         // then
         problem.Detail.Should().Be("المالك فقط يمكنه الأرشفة");
@@ -80,7 +80,7 @@ public sealed class ApiResultErrorProblemDetailsTests : TestBase
         var error = new UnauthorizedError(new ErrorDescriptor("auth:expired", "Session expired."));
 
         // when
-        var problem = ApiResultErrorProblemDetails.Create(error, creator);
+        var problem = ApiResultErrorProblemDetails.Create(error, creator, mappings: null);
 
         // then
         problem.Status.Should().Be(StatusCodes.Status401Unauthorized);
@@ -94,7 +94,7 @@ public sealed class ApiResultErrorProblemDetailsTests : TestBase
         var creator = _CreateCreator(localizer: null);
 
         // when
-        var problem = ApiResultErrorProblemDetails.Create(UnauthorizedError.Instance, creator);
+        var problem = ApiResultErrorProblemDetails.Create(UnauthorizedError.Instance, creator, mappings: null);
 
         // then
         problem.Detail.Should().Be(creator.Unauthorized().Detail);
