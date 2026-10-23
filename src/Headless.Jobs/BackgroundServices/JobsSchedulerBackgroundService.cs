@@ -29,6 +29,10 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     private int _started;
     private int _manualStartConsumed;
 
+    // The part of the stop budget kept, on the real clock, for jobs the stop cancels to write their release: the
+    // coordination heartbeat's leave budget, capped at half the stop budget so a short budget still lets jobs finish.
+    private static readonly TimeSpan _ReleaseWindow = TimeSpan.FromSeconds(5);
+
     // Store clock minus node clock, as observed on the last poll that reached the store. Zero until the first such
     // poll, which is exactly the assumption the loop made unconditionally before. Written by the loop, read by
     // RestartIfNeeded on arbitrary caller threads, so it moves through Interlocked/Volatile rather than a plain field.
@@ -250,6 +254,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                         await _taskScheduler
                             .QueueAsync(
                                 JobsAdmissionWorkItem.Create(
+                                    _taskScheduler,
                                     _internalJobsManager,
                                     _taskHandler,
                                     _logger,
@@ -397,29 +402,58 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        _taskScheduler.Freeze();
+        // The stop budget is real elapsed time from here, whatever clock the app schedules on, so it lines up with the
+        // host's own shutdown deadline.
+        var stopStarted = TimeProvider.System.GetTimestamp();
+
+        // Draining first: an item still queued in the pool hands its row back instead of starting a job, so the waits
+        // below cover only jobs that were already running.
+        _taskScheduler.BeginDrain();
         Interlocked.Exchange(ref _started, 0);
 
-        // Bounded drain BEFORE cancelling either execution lifetime: in-flight jobs get the host's
-        // remaining shutdown budget to complete and write their terminal status, so a routine deploy stops being
-        // indistinguishable from node death (previously every running job was cancelled with no terminal write,
-        // sat out its lease, and was resolved by OnNodeDeath — including false Failed records for MarkFailed
-        // jobs that never misbehaved). cancellationToken fires when the host's ShutdownTimeout expires;
-        // stragglers are then cancelled cooperatively by base.StopAsync and recovered by the existing sweeps.
-        try
-        {
-            await _taskScheduler.WaitForRunningTasksAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            // Shutdown budget exhausted — fall through to cooperative cancellation of the remaining work.
-        }
+        var budget = _schedulerOptions.ShutdownTimeout;
+        var halfBudget = budget / 2;
+        var releaseWindow = halfBudget < _ReleaseWindow ? halfBudget : _ReleaseWindow;
 
-        // Immediate dispatch does not flow through BackgroundService.ExecuteAsync, so it cannot use the base
-        // stopping token. Cancel the task scheduler's execution lifetime after the same drain boundary, then let
-        // base.StopAsync cancel the scheduler-loop token used by polled and fallback work.
+        // In-flight jobs get the budget, less the release window, to finish and write their own outcome, so a routine
+        // deploy is not node death.
+        await _WaitForRunningTasksAsync(budget - releaseWindow, cancellationToken).ConfigureAwait(false);
+
+        // Immediate dispatch does not flow through BackgroundService.ExecuteAsync, so it cannot use the base stopping
+        // token. Cancel the task scheduler's execution lifetime, then let base.StopAsync cancel the scheduler-loop
+        // token used by polled and fallback work.
         await _taskScheduler.CancelExecutionsAsync().ConfigureAwait(false);
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
+
+        // Every cancelled job now settles its row by its node-death policy, without charging a retry. Returning
+        // before those writes land would let the host dispose the store under them, so spend the rest of the budget
+        // waiting for them; a job that ignores cancellation past it falls to reclaim like a crash.
+        var remaining = budget - TimeProvider.System.GetElapsedTime(stopStarted);
+        await _WaitForRunningTasksAsync(remaining, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task _WaitForRunningTasksAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        if (timeout <= TimeSpan.Zero || cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        try
+        {
+            await _taskScheduler
+                .WaitForRunningTasksAsync()
+                .WaitAsync(timeout, TimeProvider.System, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            // This phase of the stop budget ran out.
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The host's own shutdown deadline arrived first.
+        }
     }
 
     public override void Dispose()

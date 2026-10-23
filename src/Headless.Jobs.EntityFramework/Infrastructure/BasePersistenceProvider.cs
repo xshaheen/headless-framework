@@ -155,6 +155,135 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
+    // The graceful-stop releases below are the dead-node arms without the RetryCount + 1: the node that ran the job
+    // is the one handing it back, so the run is known to have stopped and nothing waits for the lease to lapse. Each
+    // arm is one autocommit statement under CancellationToken.None so a host whose stop token already fired still
+    // lands it. No transaction wraps the arms: each is fenced on InProgress plus the claim owner, so an execution
+    // strategy that re-runs a statement whose commit already landed matches no row and cannot apply it twice.
+    public async Task<int> ReleaseInProgressTimeJobAsync(
+        Guid jobId,
+        string claimOwner,
+        DateTime? executionTime,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(claimOwner);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(CancellationToken.None)
+            .ConfigureAwait(false);
+
+        return await _ReleaseInProgressTimeJobAsync(dbContext, jobId, claimOwner, executionTime, policy: null)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<int> SettleInterruptedTimeJobAsync(
+        Guid jobId,
+        string claimOwner,
+        string reason,
+        DateTime? retryExecutionTime,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(claimOwner);
+        Argument.IsNotNullOrEmpty(reason);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(CancellationToken.None)
+            .ConfigureAwait(false);
+
+        // A running row's policy cannot change under the run (an ordinary edit refuses InProgress rows), so at most
+        // one arm matches; trying Retry first settles the common case in one statement.
+        var released = await _ReleaseInProgressTimeJobAsync(
+                dbContext,
+                jobId,
+                claimOwner,
+                retryExecutionTime,
+                NodeDeathPolicy.Retry
+            )
+            .ConfigureAwait(false);
+
+        if (released != 0)
+        {
+            return released;
+        }
+
+        var failed = await _InterruptedTimeJob(dbContext, jobId, claimOwner, NodeDeathPolicy.MarkFailed)
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.Status, JobStatus.Failed)
+                        .SetProperty(x => x.LockedUntil, _ => null)
+                        .SetProperty(x => x.ExceptionMessage, reason)
+                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
+
+        if (failed != 0)
+        {
+            return failed;
+        }
+
+        return await _InterruptedTimeJob(dbContext, jobId, claimOwner, NodeDeathPolicy.Skip)
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.Status, JobStatus.Skipped)
+                        .SetProperty(x => x.LockedUntil, _ => null)
+                        .SetProperty(x => x.SkippedReason, reason)
+                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
+    }
+
+    private static IQueryable<TTimeJob> _InterruptedTimeJob(
+        TDbContext dbContext,
+        Guid jobId,
+        string claimOwner,
+        NodeDeathPolicy? policy
+    )
+    {
+        var query = dbContext
+            .Set<TTimeJob>()
+            .Where(x => x.Id == jobId && x.Status == JobStatus.InProgress && x.OwnerId == claimOwner);
+
+        return policy is { } required ? query.Where(x => x.OnNodeDeath == required) : query;
+    }
+
+    private static Task<int> _ReleaseInProgressTimeJobAsync(
+        TDbContext dbContext,
+        Guid jobId,
+        string claimOwner,
+        DateTime? executionTime,
+        NodeDeathPolicy? policy
+    )
+    {
+        return _InterruptedTimeJob(dbContext, jobId, claimOwner, policy)
+            .ExecuteUpdateAsync(
+                setter =>
+                {
+                    // UpdatedAt from the DB clock: it doubles as the claim CAS token, so it must stay monotonic.
+                    setter
+                        .SetProperty(x => x.OwnerId, _ => null)
+                        .SetProperty(x => x.LockedUntil, _ => null)
+                        .SetProperty(x => x.Status, JobStatus.Idle)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow);
+
+                    if (executionTime is { } dueAt)
+                    {
+                        setter.SetProperty(x => x.ExecutionTime, (DateTime?)dueAt);
+                    }
+                },
+                CancellationToken.None
+            );
+    }
+
     public async Task<int> UpdateTimeJobAsync(JobExecutionState functionContexts, CancellationToken cancellationToken)
     {
         // #5 completion fence: only the claim owner may write a completion onto a non-terminal row. A node the
@@ -2967,6 +3096,121 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    // The cron mirror of the time-job graceful-stop releases: the dead-node arms without the RetryCount + 1.
+    public async Task<int> ReleaseInProgressCronJobOccurrenceAsync(
+        Guid occurrenceId,
+        string claimOwner,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(claimOwner);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(CancellationToken.None)
+            .ConfigureAwait(false);
+
+        return await _ReleaseInProgressOccurrenceAsync(dbContext, occurrenceId, claimOwner, policy: null)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<int> SettleInterruptedCronJobOccurrenceAsync(
+        Guid occurrenceId,
+        string claimOwner,
+        string reason,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(claimOwner);
+        Argument.IsNotNullOrEmpty(reason);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(CancellationToken.None)
+            .ConfigureAwait(false);
+
+        // Same arm order and single-match reasoning as SettleInterruptedTimeJobAsync.
+        var released = await _ReleaseInProgressOccurrenceAsync(
+                dbContext,
+                occurrenceId,
+                claimOwner,
+                NodeDeathPolicy.Retry
+            )
+            .ConfigureAwait(false);
+
+        if (released != 0)
+        {
+            return released;
+        }
+
+        var failed = await _InterruptedOccurrence(dbContext, occurrenceId, claimOwner, NodeDeathPolicy.MarkFailed)
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.Status, JobStatus.Failed)
+                        .SetProperty(x => x.LockedUntil, _ => null)
+                        .SetProperty(x => x.ExceptionMessage, reason)
+                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
+
+        if (failed != 0)
+        {
+            return failed;
+        }
+
+        return await _InterruptedOccurrence(dbContext, occurrenceId, claimOwner, NodeDeathPolicy.Skip)
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.Status, JobStatus.Skipped)
+                        .SetProperty(x => x.LockedUntil, _ => null)
+                        .SetProperty(x => x.SkippedReason, reason)
+                        // As in the dead-node sweep: the skipped row still accounts for its instant, so recovery
+                        // never materializes a second occurrence at the same time.
+                        .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted)
+                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
+    }
+
+    private static IQueryable<CronJobOccurrenceEntity<TCronJob>> _InterruptedOccurrence(
+        TDbContext dbContext,
+        Guid occurrenceId,
+        string claimOwner,
+        NodeDeathPolicy? policy
+    )
+    {
+        var query = dbContext
+            .Set<CronJobOccurrenceEntity<TCronJob>>()
+            .Where(x => x.Id == occurrenceId && x.Status == JobStatus.InProgress && x.OwnerId == claimOwner);
+
+        return policy is { } required ? query.Where(x => x.OnNodeDeath == required) : query;
+    }
+
+    private static Task<int> _ReleaseInProgressOccurrenceAsync(
+        TDbContext dbContext,
+        Guid occurrenceId,
+        string claimOwner,
+        NodeDeathPolicy? policy
+    )
+    {
+        return _InterruptedOccurrence(dbContext, occurrenceId, claimOwner, policy)
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.OwnerId, _ => null)
+                        .SetProperty(x => x.LockedUntil, _ => null)
+                        .SetProperty(x => x.Status, JobStatus.Idle)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                CancellationToken.None
+            );
     }
 
     // Cron-occurrence creation is intentionally NOT guarded by a coarse 'jobs.cron-occurrence-creation'

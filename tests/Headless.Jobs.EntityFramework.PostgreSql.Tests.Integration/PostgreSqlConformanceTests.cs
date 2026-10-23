@@ -228,6 +228,36 @@ public abstract class PostgreSqlConformanceTestsBase<TFixture>(TFixture fixture)
         base.update_stamps_the_store_clock_and_a_claim_after_it_succeeds();
 
     [Fact]
+    public override Task graceful_release_returns_a_running_job_to_idle_uncharged_at_the_given_instant() =>
+        base.graceful_release_returns_a_running_job_to_idle_uncharged_at_the_given_instant();
+
+    [Theory]
+    [InlineData((int)NodeDeathPolicy.Retry)]
+    [InlineData((int)NodeDeathPolicy.MarkFailed)]
+    [InlineData((int)NodeDeathPolicy.Skip)]
+    public override Task graceful_settlement_applies_the_node_death_policy_without_charging(int policy) =>
+        base.graceful_settlement_applies_the_node_death_policy_without_charging(policy);
+
+    [Fact]
+    public override Task graceful_release_and_settlement_leave_a_row_a_peer_reclaimed_untouched() =>
+        base.graceful_release_and_settlement_leave_a_row_a_peer_reclaimed_untouched();
+
+    [Theory]
+    [InlineData((int)NodeDeathPolicy.Retry)]
+    [InlineData((int)NodeDeathPolicy.MarkFailed)]
+    [InlineData((int)NodeDeathPolicy.Skip)]
+    public override Task graceful_settlement_of_a_cron_occurrence_applies_its_policy_without_charging(int policy) =>
+        base.graceful_settlement_of_a_cron_occurrence_applies_its_policy_without_charging(policy);
+
+    [Fact]
+    public override Task graceful_release_returns_a_running_cron_occurrence_to_idle_uncharged() =>
+        base.graceful_release_returns_a_running_cron_occurrence_to_idle_uncharged();
+
+    [Fact]
+    public override Task graceful_stop_hands_a_zero_retry_job_to_the_next_node_which_runs_it_once() =>
+        base.graceful_stop_hands_a_zero_retry_job_to_the_next_node_which_runs_it_once();
+
+    [Fact]
     public override Task unified_context_inprogress_stamp_requires_a_queued_row()
     {
         return base.unified_context_inprogress_stamp_requires_a_queued_row();

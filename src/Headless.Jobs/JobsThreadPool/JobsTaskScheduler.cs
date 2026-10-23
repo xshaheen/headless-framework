@@ -53,6 +53,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     private volatile int _longRunningSlotsDisposed;
     private volatile bool _disposed;
     private volatile bool _isFrozen;
+    private volatile bool _isDraining;
     private volatile int _nextQueueIndex;
 
     // Cancelled on shutdown and disposal, never disposed: a test host (WebApplicationFactory) runs the application's
@@ -496,7 +497,9 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         var localQueue = _workerQueues[workerId];
         var consecutiveStealFailures = 0;
 
-        while (!_disposed && !_shutdownCts.Token.IsCancellationRequested)
+        // A draining pool keeps dequeuing after its execution lifetime is cancelled: the items still queued only hand
+        // their rows back, and leaving them queued would strand those rows claimed until their leases lapse.
+        while (!_disposed && (!_shutdownCts.Token.IsCancellationRequested || _isDraining))
         {
             var foundWork = false;
 
@@ -526,6 +529,12 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             }
             else
             {
+                if (_shutdownCts.Token.IsCancellationRequested)
+                {
+                    // Draining after cancellation and nothing left to hand back.
+                    return false;
+                }
+
                 // No work found - check if we should exit
                 if (_timeProvider.GetUtcNow().UtcDateTime - lastWorkTime > _idleWorkerTimeout)
                 {
@@ -662,8 +671,13 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
         try
         {
-            // Check cancellation before executing
-            if (!workItem.UserToken.IsCancellationRequested && !_shutdownCts.Token.IsCancellationRequested)
+            // While draining, an item still runs after its token is cancelled: every Jobs work item checks the drain
+            // before it starts a job and hands its row back instead. Skipping it would leave the row claimed until
+            // its lease lapses.
+            if (
+                _isDraining
+                || (!workItem.UserToken.IsCancellationRequested && !_shutdownCts.Token.IsCancellationRequested)
+            )
             {
                 var task = workItem.Work(workItem.UserToken);
 
@@ -772,7 +786,11 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     {
         try
         {
-            if (!cancellationToken.IsCancellationRequested && !_shutdownCts.Token.IsCancellationRequested)
+            // Same drain rule as the shared pool: a draining item runs so it can hand its row back.
+            if (
+                _isDraining
+                || (!cancellationToken.IsCancellationRequested && !_shutdownCts.Token.IsCancellationRequested)
+            )
             {
                 await work(cancellationToken).ConfigureAwait(false);
             }
@@ -809,13 +827,30 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     /// </summary>
     public void Resume()
     {
+        _isDraining = false;
         _isFrozen = false;
+    }
+
+    /// <summary>
+    /// Starts a graceful drain: the scheduler accepts no new work, and work already queued must not start a job.
+    /// Each work item reads <see cref="IsDraining"/> before it starts one and hands its row back uncharged instead,
+    /// so the drain waits only for jobs that were already running.
+    /// </summary>
+    public void BeginDrain()
+    {
+        _isDraining = true;
+        _isFrozen = true;
     }
 
     /// <summary>
     /// Gets whether the scheduler is currently frozen.
     /// </summary>
     public bool IsFrozen => _isFrozen;
+
+    /// <summary>
+    /// Gets whether a graceful stop is draining the scheduler; queued work must not start a job while it is.
+    /// </summary>
+    public bool IsDraining => _isDraining;
 
     /// <summary>
     /// Gets the current number of active logical workers.

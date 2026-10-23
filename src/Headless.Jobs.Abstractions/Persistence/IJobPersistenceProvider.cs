@@ -194,6 +194,68 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     );
 
     /// <summary>
+    /// Hands a started time job back to <c>Idle</c> without charging its retry budget, for a run the node chose not
+    /// to start or finish because the host is stopping gracefully. Owner and lease are cleared, and
+    /// <c>RetryCount</c> keeps its stored value.
+    /// </summary>
+    /// <param name="jobId">The job to release.</param>
+    /// <param name="claimOwner">
+    /// The owner that claimed the run (<see cref="JobExecutionState.ClaimOwner"/>). Only an <c>InProgress</c> row
+    /// still stamped with it is released, so a row a peer already reclaimed is left alone.
+    /// </param>
+    /// <param name="executionTime">
+    /// The instant the job should next become due, or <see langword="null"/> to keep the stored one. A run stopped
+    /// while it waited between retries passes the instant its next attempt was planned for.
+    /// </param>
+    /// <param name="cancellationToken">Token that aborts the release before it starts.</param>
+    /// <returns><c>1</c> when the row was released; <c>0</c> when the fence excluded it.</returns>
+    /// <remarks>
+    /// The write commits even when the host's stop token has fired. It is fenced on the run it releases, so repeating
+    /// it after it landed matches no row.
+    /// </remarks>
+    /// <exception cref="ArgumentException"><paramref name="claimOwner"/> is <see langword="null"/> or empty.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<int> ReleaseInProgressTimeJobAsync(
+        Guid jobId,
+        string claimOwner,
+        DateTime? executionTime,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Settles a time job that a graceful host stop interrupted, by the row's <c>OnNodeDeath</c> policy and without
+    /// charging its retry budget: <c>Retry</c> → <c>Idle</c> with owner and lease cleared, <c>MarkFailed</c> →
+    /// <c>Failed</c>, <c>Skip</c> → <c>Skipped</c>, the last two recording <paramref name="reason"/>.
+    /// </summary>
+    /// <param name="jobId">The interrupted job.</param>
+    /// <param name="claimOwner">
+    /// The owner that claimed the run. Only an <c>InProgress</c> row still stamped with it is settled.
+    /// </param>
+    /// <param name="reason">The exception message (<c>MarkFailed</c>) or skip reason (<c>Skip</c>) to record.</param>
+    /// <param name="retryExecutionTime">
+    /// Under <c>Retry</c>, the instant the job should next become due, or <see langword="null"/> to keep the stored
+    /// one; ignored by the terminal policies.
+    /// </param>
+    /// <param name="cancellationToken">Token that aborts the write before it starts.</param>
+    /// <returns><c>1</c> when the row was settled; <c>0</c> when the fence excluded it.</returns>
+    /// <remarks>
+    /// Unlike the dead-node and stalled-lease reclaims, this never waits for the lease to lapse and never adds to
+    /// <c>RetryCount</c>: the node that ran the job is the one settling it, so the run is known to have stopped. The
+    /// write commits even when the host's stop token has fired, and repeating it after it landed matches no row.
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="claimOwner"/> or <paramref name="reason"/> is <see langword="null"/> or empty.
+    /// </exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<int> SettleInterruptedTimeJobAsync(
+        Guid jobId,
+        string claimOwner,
+        string reason,
+        DateTime? retryExecutionTime,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Reads — without claiming — the batch of acquirable time jobs due in the earliest pending one-second
     /// bucket. This is the scheduler's peek: it decides what to attempt next and how long to sleep, then claims
     /// the result via <see cref="QueueTimeJobsAsync"/>.
@@ -847,6 +909,47 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     Task ReleaseAcquiredCronJobOccurrencesAsync(
         Guid[] occurrenceIds,
         string claimOwner,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Hands a started cron occurrence back to <c>Idle</c> without charging its retry budget. The cron mirror of
+    /// <see cref="ReleaseInProgressTimeJobAsync"/>; the occurrence keeps its execution time, which identifies it.
+    /// </summary>
+    /// <param name="occurrenceId">The occurrence to release.</param>
+    /// <param name="claimOwner">
+    /// The owner that claimed the run. Only an <c>InProgress</c> row still stamped with it is released.
+    /// </param>
+    /// <param name="cancellationToken">Token that aborts the release before it starts.</param>
+    /// <returns><c>1</c> when the row was released; <c>0</c> when the fence excluded it.</returns>
+    /// <exception cref="ArgumentException"><paramref name="claimOwner"/> is <see langword="null"/> or empty.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<int> ReleaseInProgressCronJobOccurrenceAsync(
+        Guid occurrenceId,
+        string claimOwner,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Settles a cron occurrence that a graceful host stop interrupted, by its <c>OnNodeDeath</c> policy and without
+    /// charging its retry budget. The cron mirror of <see cref="SettleInterruptedTimeJobAsync"/>; a <c>Skip</c>
+    /// settlement also marks the occurrence's instant accounted for, as the dead-node sweep does.
+    /// </summary>
+    /// <param name="occurrenceId">The interrupted occurrence.</param>
+    /// <param name="claimOwner">
+    /// The owner that claimed the run. Only an <c>InProgress</c> row still stamped with it is settled.
+    /// </param>
+    /// <param name="reason">The exception message (<c>MarkFailed</c>) or skip reason (<c>Skip</c>) to record.</param>
+    /// <param name="cancellationToken">Token that aborts the write before it starts.</param>
+    /// <returns><c>1</c> when the row was settled; <c>0</c> when the fence excluded it.</returns>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="claimOwner"/> or <paramref name="reason"/> is <see langword="null"/> or empty.
+    /// </exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<int> SettleInterruptedCronJobOccurrenceAsync(
+        Guid occurrenceId,
+        string claimOwner,
+        string reason,
         CancellationToken cancellationToken = default
     );
 

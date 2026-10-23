@@ -123,6 +123,7 @@ internal sealed class JobsFallbackBackgroundService(
                             await jobsTaskScheduler
                                 .QueueAsync(
                                     JobsAdmissionWorkItem.Create(
+                                        jobsTaskScheduler,
                                         internalJobsManager,
                                         tickerExecutionTaskHandler,
                                         logger,

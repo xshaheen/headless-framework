@@ -783,10 +783,11 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task execute_task_async_leaves_the_row_non_terminal_when_shutdown_cancels_a_linked_handler_token()
+    public async Task execute_task_async_does_not_fail_the_row_when_shutdown_cancels_a_linked_handler_token()
     {
         // A handler that links its own timeout to the execution token surfaces the linked token on its
-        // cancellation, not the execution token; host shutdown must still leave the row for recovery.
+        // cancellation, not the execution token; host shutdown must still be told apart from a failure, so the row
+        // is settled by its node-death policy rather than failed and reported as exhausted.
         var exhausted = new List<JobExhaustedContext>();
         var exceptionHandler = Substitute.For<Headless.Jobs.IJobExceptionHandler>();
         var (handler, context, manager, _) = _SetupRetryTestFixture(

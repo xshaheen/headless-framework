@@ -1102,6 +1102,60 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         return affected;
     }
 
+    // What a MarkFailed or Skip settlement records on a run a graceful stop interrupted.
+    private const string _HostShutdownReason = "interrupted by host shutdown";
+
+    public async Task<int> ReleaseInProgressAsync(
+        JobExecutionState context,
+        CancellationToken cancellationToken = default
+    )
+    {
+        // A run with no claim owner names no row it could release.
+        if (context.ClaimOwner is not { Length: > 0 } claimOwner)
+        {
+            return 0;
+        }
+
+        return context.Type == JobType.CronJobOccurrence
+            ? await persistenceProvider
+                .ReleaseInProgressCronJobOccurrenceAsync(context.JobId, claimOwner, cancellationToken)
+                .ConfigureAwait(false)
+            : await persistenceProvider
+                .ReleaseInProgressTimeJobAsync(context.JobId, claimOwner, executionTime: null, cancellationToken)
+                .ConfigureAwait(false);
+    }
+
+    public async Task<int> SettleInterruptedAsync(
+        JobExecutionState context,
+        DateTime? retryExecutionTime,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (context.ClaimOwner is not { Length: > 0 } claimOwner)
+        {
+            return 0;
+        }
+
+        return context.Type == JobType.CronJobOccurrence
+            ? await persistenceProvider
+                .SettleInterruptedCronJobOccurrenceAsync(
+                    context.JobId,
+                    claimOwner,
+                    _HostShutdownReason,
+                    cancellationToken
+                )
+                .ConfigureAwait(false)
+            : await persistenceProvider
+                .SettleInterruptedTimeJobAsync(
+                    context.JobId,
+                    claimOwner,
+                    _HostShutdownReason,
+                    retryExecutionTime,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+    }
+
     public async Task<int> RenewLeaseAsync(
         JobExecutionState functionContext,
         CancellationToken cancellationToken = default

@@ -705,6 +705,26 @@ public sealed class SchedulerOptionsBuilder
     /// </summary>
     public JobsStartMode StartMode { get; set; } = JobsStartMode.Immediate;
 
+    /// <summary>
+    /// Gets or sets the maximum end-to-end time a graceful scheduler stop takes, measured from the moment the stop
+    /// begins. Default is 30 seconds, the Generic Host's default <c>HostOptions.ShutdownTimeout</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Running jobs first get the budget to finish and write their own outcome. When only a release window remains
+    /// (five seconds, or half the budget when that is shorter), the stop cancels the jobs still running and waits for
+    /// each to hand its row back by its node-death policy without charging a retry. The stop returns when every job
+    /// has settled, when the budget ends, or when the host's stop token fires, whichever comes first. A job that
+    /// ignores cancellation through the release window stays <c>InProgress</c> and is reclaimed like a crash.
+    /// </para>
+    /// <para>
+    /// Jobs cannot read the host's shutdown timeout, so set this to the same value whenever you change
+    /// <c>HostOptions.ShutdownTimeout</c>. A shorter host timeout fires the stop token before the release window
+    /// opens, and interrupted jobs fall to reclaim instead of being released.
+    /// </para>
+    /// </remarks>
+    public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
     /// <summary>The default value for <see cref="MaxChainDepth"/> (10).</summary>
     public const int DefaultMaxChainDepth = 10;
 

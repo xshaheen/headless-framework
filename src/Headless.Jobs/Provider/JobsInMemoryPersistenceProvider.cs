@@ -417,6 +417,85 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         return Task.CompletedTask;
     }
 
+    // Graceful-stop releases (mirror of the EF arms): the dead-node transitions without the RetryCount + 1, fenced on
+    // an InProgress row still stamped with the claim owner. A lost compare-and-swap re-reads the row, so a concurrent
+    // writer that left it still owned and running does not turn the release into a miss.
+    public Task<int> ReleaseInProgressTimeJobAsync(
+        Guid jobId,
+        string claimOwner,
+        DateTime? executionTime,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(claimOwner);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult(_SettleInterruptedTimeJob(jobId, claimOwner, reason: null, executionTime));
+    }
+
+    public Task<int> SettleInterruptedTimeJobAsync(
+        Guid jobId,
+        string claimOwner,
+        string reason,
+        DateTime? retryExecutionTime,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(claimOwner);
+        Argument.IsNotNullOrEmpty(reason);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult(_SettleInterruptedTimeJob(jobId, claimOwner, reason, retryExecutionTime));
+    }
+
+    // A null reason releases to Idle whatever the policy; otherwise the row's node-death policy decides.
+    private int _SettleInterruptedTimeJob(Guid jobId, string claimOwner, string? reason, DateTime? executionTime)
+    {
+        while (
+            _timeJobs.TryGetValue(jobId, out var current)
+            && current.Status == JobStatus.InProgress
+            && string.Equals(current.OwnerId, claimOwner, StringComparison.Ordinal)
+        )
+        {
+            var now = _timeProvider.GetUtcNow();
+            var updated = _CloneTicker(current);
+            var policy = reason is null ? NodeDeathPolicy.Retry : current.OnNodeDeath;
+            updated.LockedUntil = null;
+            updated.UpdatedAt = now;
+
+            switch (policy)
+            {
+                case NodeDeathPolicy.MarkFailed:
+                    updated.Status = JobStatus.Failed;
+                    updated.ExceptionMessage = reason;
+                    updated.ExecutedAt = now;
+                    break;
+                case NodeDeathPolicy.Skip:
+                    updated.Status = JobStatus.Skipped;
+                    updated.SkippedReason = reason;
+                    updated.ExecutedAt = now;
+                    break;
+                default:
+                    updated.Status = JobStatus.Idle;
+                    updated.OwnerId = null;
+                    if (executionTime is { } dueAt)
+                    {
+                        updated.ExecutionTime = dueAt;
+                    }
+
+                    break;
+            }
+
+            if (_TryUpdateTimeJob(jobId, updated, current))
+            {
+                _SyncReconcileCandidate(updated);
+                return 1;
+            }
+        }
+
+        return 0;
+    }
+
     private static bool _IsReleasable(JobStatus status, string? ownerId, string claimOwner)
     {
         return status == JobStatus.Queued && string.Equals(ownerId, claimOwner, StringComparison.Ordinal);
@@ -3329,6 +3408,76 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         }
 
         return Task.CompletedTask;
+    }
+
+    // The cron mirror of the time-job graceful-stop releases.
+    public Task<int> ReleaseInProgressCronJobOccurrenceAsync(
+        Guid occurrenceId,
+        string claimOwner,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(claimOwner);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult(_SettleInterruptedOccurrence(occurrenceId, claimOwner, reason: null));
+    }
+
+    public Task<int> SettleInterruptedCronJobOccurrenceAsync(
+        Guid occurrenceId,
+        string claimOwner,
+        string reason,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(claimOwner);
+        Argument.IsNotNullOrEmpty(reason);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult(_SettleInterruptedOccurrence(occurrenceId, claimOwner, reason));
+    }
+
+    private int _SettleInterruptedOccurrence(Guid occurrenceId, string claimOwner, string? reason)
+    {
+        while (
+            _cronOccurrences.TryGetValue(occurrenceId, out var current)
+            && current.Status == JobStatus.InProgress
+            && string.Equals(current.OwnerId, claimOwner, StringComparison.Ordinal)
+        )
+        {
+            var now = _timeProvider.GetUtcNow();
+            var updated = _CloneCronOccurrence(current);
+            var policy = reason is null ? NodeDeathPolicy.Retry : current.OnNodeDeath;
+            updated.LockedUntil = null;
+            updated.UpdatedAt = now;
+
+            switch (policy)
+            {
+                case NodeDeathPolicy.MarkFailed:
+                    updated.Status = JobStatus.Failed;
+                    updated.ExceptionMessage = reason;
+                    updated.ExecutedAt = now;
+                    break;
+                case NodeDeathPolicy.Skip:
+                    updated.Status = JobStatus.Skipped;
+                    updated.SkippedReason = reason;
+                    // As in the dead-node sweep: the skipped row still accounts for its instant.
+                    updated.Disposition = CronOccurrenceDisposition.Accounted;
+                    updated.ExecutedAt = now;
+                    break;
+                default:
+                    updated.Status = JobStatus.Idle;
+                    updated.OwnerId = null;
+                    break;
+            }
+
+            if (_cronOccurrences.TryUpdate(occurrenceId, updated, current))
+            {
+                return 1;
+            }
+        }
+
+        return 0;
     }
 
     public Task<byte[]> GetCronJobOccurrenceRequestAsync(Guid jobId, CancellationToken cancellationToken = default)

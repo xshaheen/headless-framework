@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Internal;
+using Headless.Jobs.JobsThreadPool;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -39,7 +40,11 @@ internal sealed class JobsExecutionTaskHandler
     private readonly bool _propagateTenant;
     private readonly JobsFunctionTagBound _functionTags;
 
-#pragma warning disable IDE0290 // Fix makes the code worse: a primary constructor would capture eleven dependencies and spread the derived lease and retry state across field initializers.
+    // The pool whose graceful drain this handler honors: a run that has not invoked its function yet hands its row
+    // back instead of starting while the pool drains. Null where no pool drives the handler.
+    private readonly JobsTaskScheduler? _taskScheduler;
+
+#pragma warning disable IDE0290 // Fix makes the code worse: a primary constructor would capture twelve dependencies and spread the derived lease and retry state across field initializers.
     public JobsExecutionTaskHandler(
 #pragma warning restore IDE0290
         IServiceProvider serviceProvider,
@@ -53,7 +58,8 @@ internal sealed class JobsExecutionTaskHandler
         JobsFunctionTagBound functionTags,
         JobsRetryOptions? retryOptions = null,
         ICurrentTenant? currentTenant = null,
-        IOptions<JobsTenancyOptions>? tenancyOptions = null
+        IOptions<JobsTenancyOptions>? tenancyOptions = null,
+        JobsTaskScheduler? taskScheduler = null
     )
     {
         _propagateTenant = tenancyOptions?.Value.PropagateTenant ?? false;
@@ -72,6 +78,7 @@ internal sealed class JobsExecutionTaskHandler
         _retryOptions = retryOptions ?? new JobsRetryOptions();
         _retryPipeline = new JobsRetryPipeline(functionRegistry, timeProvider, logger);
         _functionTags = functionTags;
+        _taskScheduler = taskScheduler;
     }
 
     private static TimeSpan _Lateness(DateTime scheduledFor, DateTime startedAt)
@@ -250,6 +257,18 @@ internal sealed class JobsExecutionTaskHandler
         jobActivity?.SetTag("headless.job.is_due", isDue);
         jobActivity?.SetTag("headless.job.is_child", isChild);
 
+        // A run the pool dequeued after a graceful stop began never starts: its row goes back uncharged before any
+        // lease renewal, which a draining node must not extend, and before its token, which the stop may already
+        // have cancelled, is consulted.
+        if (_IsDraining(isChild))
+        {
+            var released = await _internalJobsManager
+                .ReleaseInProgressAsync(context, CancellationToken.None)
+                .ConfigureAwait(false);
+            _CompleteShutdownRelease(context, released, interrupted: false);
+            return;
+        }
+
         _jobsInstrumentation.LogJobStarted(context.JobId, context.FunctionName, _GetJobTypeName(context.Type));
 
         context.SetProperty(x => x.Status, JobStatus.InProgress);
@@ -413,6 +432,39 @@ internal sealed class JobsExecutionTaskHandler
             return _cancellationRegistry.TryBeginCompletion(cancellationRegistration);
         }
 
+        // Set while the run waits between attempts: the instant its next attempt is due.
+        DateTime? plannedRetryAt = null;
+
+        // A graceful stop is not an attempt the job used up: these two exits hand the row back without charging its
+        // retry budget, under CancellationToken.None so the write lands even after the stop token fired.
+        async Task releaseForDrainAsync()
+        {
+            if (!await beginCompletionAsync().ConfigureAwait(false))
+            {
+                return;
+            }
+
+            var released = await _internalJobsManager
+                .ReleaseInProgressAsync(context, CancellationToken.None)
+                .ConfigureAwait(false);
+            _CompleteShutdownRelease(context, released, interrupted: false);
+        }
+
+        async Task settleInterruptedAsync()
+        {
+            if (!await beginCompletionAsync().ConfigureAwait(false))
+            {
+                return;
+            }
+
+            // Only a time job owns its due instant; an occurrence's execution time identifies it.
+            var retryAt = context.Type == JobType.TimeJob ? plannedRetryAt : null;
+            var settled = await _internalJobsManager
+                .SettleInterruptedAsync(context, retryAt, CancellationToken.None)
+                .ConfigureAwait(false);
+            _CompleteShutdownRelease(context, settled, interrupted: true);
+        }
+
         try
         {
             if (context.Type == JobType.TimeJob)
@@ -426,6 +478,12 @@ internal sealed class JobsExecutionTaskHandler
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
+                    // The stop's cancel point can land before the function was ever invoked.
+                    if (_IsDraining(isChild))
+                    {
+                        await releaseForDrainAsync().ConfigureAwait(false);
+                    }
+
                     return;
                 }
                 catch (Exception exception)
@@ -587,6 +645,15 @@ internal sealed class JobsExecutionTaskHandler
                 return;
             }
 
+            // A run the pool queued before a graceful stop began must not start once the drain has: the drain waits
+            // only for work that was already running. A chain child keeps running with its parent, because a released
+            // non-timed child has no due instant any claim would pick it up by.
+            if (_IsDraining(isChild))
+            {
+                await releaseForDrainAsync().ConfigureAwait(false);
+                return;
+            }
+
             Exception? lastException = null;
             var success = false;
             var handlerInvoked = false;
@@ -605,6 +672,7 @@ internal sealed class JobsExecutionTaskHandler
                         context,
                         async (retryCount, attemptToken) =>
                         {
+                            plannedRetryAt = null;
                             jobFunctionContext.RetryCount = retryCount;
                             jobActivity?.SetTag("headless.job.current_attempt", retryCount + 1);
                             handlerInvoked = true;
@@ -639,7 +707,7 @@ internal sealed class JobsExecutionTaskHandler
 
                             success = true;
                         },
-                        async (retryCount, exception, retryToken) =>
+                        async (retryCount, exception, retryDelay, retryToken) =>
                         {
                             if (!executionOwnsRegistration())
                             {
@@ -658,6 +726,7 @@ internal sealed class JobsExecutionTaskHandler
                                 throw new OperationCanceledException(cancellationTokenSource.Token);
                             }
 
+                            plannedRetryAt = _timeProvider.GetUtcNow().UtcDateTime + retryDelay;
                             JobsMetrics.RetryStarted(JobsMetrics.RetryKindInProcess);
 
                             // #278: observe under the job's tenant so a tenant-aware handler is not system-scoped.
@@ -687,6 +756,7 @@ internal sealed class JobsExecutionTaskHandler
 
                 if (cancellationRegistration.Cause == JobsExecutionCancellationCause.HostShutdown)
                 {
+                    await settleInterruptedAsync().ConfigureAwait(false);
                     return;
                 }
 
@@ -952,6 +1022,30 @@ internal sealed class JobsExecutionTaskHandler
             JobType.TimeJob => nameof(JobType.TimeJob),
             _ => type.ToString(),
         };
+    }
+
+    private bool _IsDraining(bool isChild) => !isChild && _taskScheduler?.IsDraining == true;
+
+    // The row stays non-terminal in this context either way, so the parent keeps its children for the next owner
+    // instead of running them during the stop.
+    private void _CompleteShutdownRelease(JobExecutionState context, int affected, bool interrupted)
+    {
+        if (affected == 0)
+        {
+            // A peer reclaimed the row first; it owns the outcome now.
+            context.LeaseLost = true;
+            _logger.LogJobShutdownReleaseFenced(context.JobId, context.FunctionName);
+            return;
+        }
+
+        if (interrupted)
+        {
+            _logger.LogJobSettledOnShutdown(context.JobId, context.FunctionName);
+        }
+        else
+        {
+            _logger.LogJobReleasedForDrain(context.JobId, context.FunctionName);
+        }
     }
 
     // #278: re-establish the job's tenant around consumer code that runs outside execute middleware. Failure callbacks
@@ -1577,4 +1671,28 @@ internal static partial class JobsExecutionTaskHandlerLog
         Guid jobId,
         string contractVersionError
     );
+
+    [LoggerMessage(
+        EventId = 3118,
+        Level = LogLevel.Information,
+        Message = "Job {JobId} ({Function}) was queued when the host began a graceful stop; it was handed back "
+            + "unstarted for another node to run, with its retry budget unchanged."
+    )]
+    public static partial void LogJobReleasedForDrain(this ILogger logger, Guid jobId, string function);
+
+    [LoggerMessage(
+        EventId = 3123,
+        Level = LogLevel.Information,
+        Message = "Job {JobId} ({Function}) was interrupted by a graceful host stop and settled by its node-death "
+            + "policy, with its retry budget unchanged."
+    )]
+    public static partial void LogJobSettledOnShutdown(this ILogger logger, Guid jobId, string function);
+
+    [LoggerMessage(
+        EventId = 3124,
+        Level = LogLevel.Warning,
+        Message = "Job {JobId} ({Function}) could not be handed back during a graceful host stop because another "
+            + "node had already reclaimed it; that node now owns the outcome."
+    )]
+    public static partial void LogJobShutdownReleaseFenced(this ILogger logger, Guid jobId, string function);
 }
