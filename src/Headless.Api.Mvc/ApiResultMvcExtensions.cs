@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -41,6 +42,126 @@ public static class ApiResultMvcExtensions
         // Branch instead of Match: both lambdas would capture `controller`/`creator` and allocate on every response.
         return new ApiActionResult<T>(
             result.TryGetValue(out var value) ? controller.Ok(value) : result.Error.ToActionResult(controller, creator)
+        );
+    }
+
+    /// <summary>
+    /// Converts a valued <see cref="ApiResult{T}"/> to an MVC action result: 201 Created with the value and a
+    /// <c>Location</c> field on success, or the appropriate problem-details response on failure.
+    /// </summary>
+    /// <typeparam name="T">The created resource type.</typeparam>
+    /// <param name="result">The result to convert.</param>
+    /// <param name="controller">The controller instance used to create action results.</param>
+    /// <param name="creator">The problem-details creator used to build error responses.</param>
+    /// <param name="location">Builds the created resource's URI from the success value; called only on success.</param>
+    /// <returns>An OpenAPI-aware action result representing the HTTP response.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="location"/> is <see langword="null"/>.</exception>
+    public static ApiCreatedActionResult<T> ToCreatedActionResult<T>(
+        this ApiResult<T> result,
+        ControllerBase controller,
+        IProblemDetailsCreator creator,
+        Func<T, string> location
+    )
+    {
+        Argument.IsNotNull(location);
+
+        return new ApiCreatedActionResult<T>(
+            result.TryGetValue(out var value)
+                ? controller.Created(location(value), value)
+                : result.Error.ToActionResult(controller, creator)
+        );
+    }
+
+    /// <summary>
+    /// Converts a valued <see cref="ApiResult{T}"/> to an MVC action result: 202 Accepted with the value on success,
+    /// or the appropriate problem-details response on failure. Use it when the work continues after the response.
+    /// </summary>
+    /// <typeparam name="T">The accepted value type, typically a status or tracking resource.</typeparam>
+    /// <param name="result">The result to convert.</param>
+    /// <param name="controller">The controller instance used to create action results.</param>
+    /// <param name="creator">The problem-details creator used to build error responses.</param>
+    /// <returns>An OpenAPI-aware action result representing the HTTP response.</returns>
+    public static ApiAcceptedActionResult<T> ToAcceptedActionResult<T>(
+        this ApiResult<T> result,
+        ControllerBase controller,
+        IProblemDetailsCreator creator
+    )
+    {
+        return new ApiAcceptedActionResult<T>(
+            result.TryGetValue(out var value)
+                // Pass the URI explicitly: Accepted(value) binds to Accepted(string uri) when T is string.
+                ? controller.Accepted(uri: (string?)null, value)
+                : result.Error.ToActionResult(controller, creator)
+        );
+    }
+
+    /// <summary>
+    /// Converts a valued <see cref="ApiResult{T}"/> to an MVC action result: 202 Accepted with the value and a
+    /// <c>Location</c> field on success, or the appropriate problem-details response on failure.
+    /// </summary>
+    /// <typeparam name="T">The accepted value type, typically a status or tracking resource.</typeparam>
+    /// <param name="result">The result to convert.</param>
+    /// <param name="controller">The controller instance used to create action results.</param>
+    /// <param name="creator">The problem-details creator used to build error responses.</param>
+    /// <param name="location">Builds the status monitor's URI from the success value; called only on success.</param>
+    /// <returns>An OpenAPI-aware action result representing the HTTP response.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="location"/> is <see langword="null"/>.</exception>
+    public static ApiAcceptedActionResult<T> ToAcceptedActionResult<T>(
+        this ApiResult<T> result,
+        ControllerBase controller,
+        IProblemDetailsCreator creator,
+        Func<T, string> location
+    )
+    {
+        Argument.IsNotNull(location);
+
+        return new ApiAcceptedActionResult<T>(
+            result.TryGetValue(out var value)
+                ? controller.Accepted(location(value), value)
+                : result.Error.ToActionResult(controller, creator)
+        );
+    }
+
+    /// <summary>
+    /// Converts a unit <see cref="ApiResult"/> to an MVC action result: 202 Accepted without a body on success, or
+    /// the appropriate problem-details response on failure. Use it when the work continues after the response.
+    /// </summary>
+    /// <param name="result">The result to convert.</param>
+    /// <param name="controller">The controller instance used to create action results.</param>
+    /// <param name="creator">The problem-details creator used to build error responses.</param>
+    /// <returns>An OpenAPI-aware action result representing the HTTP response.</returns>
+    public static ApiAcceptedActionResult ToAcceptedActionResult(
+        this ApiResult result,
+        ControllerBase controller,
+        IProblemDetailsCreator creator
+    )
+    {
+        return new ApiAcceptedActionResult(
+            result.IsSuccess ? controller.Accepted() : result.Error.ToActionResult(controller, creator)
+        );
+    }
+
+    /// <summary>
+    /// Converts a unit <see cref="ApiResult"/> to an MVC action result: 202 Accepted without a body and with a
+    /// <c>Location</c> field on success, or the appropriate problem-details response on failure.
+    /// </summary>
+    /// <param name="result">The result to convert.</param>
+    /// <param name="controller">The controller instance used to create action results.</param>
+    /// <param name="creator">The problem-details creator used to build error responses.</param>
+    /// <param name="location">The status monitor's URI; written only on success.</param>
+    /// <returns>An OpenAPI-aware action result representing the HTTP response.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="location"/> is <see langword="null"/>.</exception>
+    public static ApiAcceptedActionResult ToAcceptedActionResult(
+        this ApiResult result,
+        ControllerBase controller,
+        IProblemDetailsCreator creator,
+        string location
+    )
+    {
+        Argument.IsNotNull(location);
+
+        return new ApiAcceptedActionResult(
+            result.IsSuccess ? controller.Accepted(location) : result.Error.ToActionResult(controller, creator)
         );
     }
 

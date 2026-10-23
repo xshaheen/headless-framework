@@ -61,6 +61,67 @@ public static class ApiResultExtensions
     }
 
     /// <summary>
+    /// Converts a valued <see cref="ApiResult{T}"/> to an HTTP response: 202 Accepted with the value on success, or
+    /// the appropriate problem-details response on failure. Use it when the work continues after the response.
+    /// </summary>
+    /// <typeparam name="T">The accepted value type, typically a status or tracking resource.</typeparam>
+    /// <param name="result">The result to convert.</param>
+    /// <returns>An OpenAPI-aware HTTP result representing the response.</returns>
+    /// <exception cref="InvalidOperationException"><paramref name="result"/> is <see langword="default"/>.</exception>
+    public static ApiResultAcceptedHttpResult<T> ToAcceptedHttpResult<T>(this ApiResult<T> result)
+    {
+        return new ApiResultAcceptedHttpResult<T>(result, location: null);
+    }
+
+    /// <summary>
+    /// Converts a valued <see cref="ApiResult{T}"/> to an HTTP response: 202 Accepted with the value and a
+    /// <c>Location</c> field on success, or the appropriate problem-details response on failure.
+    /// </summary>
+    /// <typeparam name="T">The accepted value type, typically a status or tracking resource.</typeparam>
+    /// <param name="result">The result to convert.</param>
+    /// <param name="location">Builds the status monitor's URI from the success value; called only on success.</param>
+    /// <returns>An OpenAPI-aware HTTP result representing the response.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="location"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException"><paramref name="result"/> is <see langword="default"/>.</exception>
+    public static ApiResultAcceptedHttpResult<T> ToAcceptedHttpResult<T>(
+        this ApiResult<T> result,
+        Func<T, string> location
+    )
+    {
+        Argument.IsNotNull(location);
+
+        return new ApiResultAcceptedHttpResult<T>(result, location);
+    }
+
+    /// <summary>
+    /// Converts a unit <see cref="ApiResult"/> to an HTTP response: 202 Accepted without a body on success, or the
+    /// appropriate problem-details response on failure. Use it when the work continues after the response.
+    /// </summary>
+    /// <param name="result">The result to convert.</param>
+    /// <returns>An OpenAPI-aware HTTP result representing the response.</returns>
+    /// <exception cref="InvalidOperationException"><paramref name="result"/> is <see langword="default"/>.</exception>
+    public static ApiResultAcceptedHttpResult ToAcceptedHttpResult(this ApiResult result)
+    {
+        return new ApiResultAcceptedHttpResult(result, location: null);
+    }
+
+    /// <summary>
+    /// Converts a unit <see cref="ApiResult"/> to an HTTP response: 202 Accepted without a body and with a
+    /// <c>Location</c> field on success, or the appropriate problem-details response on failure.
+    /// </summary>
+    /// <param name="result">The result to convert.</param>
+    /// <param name="location">The status monitor's URI; written only on success.</param>
+    /// <returns>An OpenAPI-aware HTTP result representing the response.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="location"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException"><paramref name="result"/> is <see langword="default"/>.</exception>
+    public static ApiResultAcceptedHttpResult ToAcceptedHttpResult(this ApiResult result, string location)
+    {
+        Argument.IsNotNull(location);
+
+        return new ApiResultAcceptedHttpResult(result, location);
+    }
+
+    /// <summary>
     /// Converts a unit <see cref="ApiResult"/> to an HTTP response: 204 No Content on success,
     /// or the appropriate problem-details response on failure.
     /// </summary>

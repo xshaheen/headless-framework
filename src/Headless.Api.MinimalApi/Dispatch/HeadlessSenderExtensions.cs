@@ -103,4 +103,126 @@ public static class HeadlessSenderExtensions
 
         return new ApiResultCreatedHttpResult<T>(result, location);
     }
+
+    /// <summary>
+    /// Sends <paramref name="request"/> and returns 202 Accepted with the handler's value on success, or the error's
+    /// problem-details response. Use it when the handler only starts the work, such as enqueuing a job.
+    /// </summary>
+    /// <typeparam name="T">The accepted value type, typically a status or tracking resource.</typeparam>
+    /// <param name="sender">The mediator sender.</param>
+    /// <param name="request">The request to send, or <see langword="null"/> when binding produced none.</param>
+    /// <param name="cancellationToken">The request-aborted token.</param>
+    /// <returns>The HTTP result for the handler's outcome.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="sender"/> is <see langword="null"/>.</exception>
+    public static ValueTask<ApiResultAcceptedHttpResult<T>> DispatchAcceptedAsync<T>(
+        this ISender sender,
+        IRequest<ApiResult<T>>? request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(sender);
+
+        return _DispatchAcceptedAsync(sender, request, location: null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Sends <paramref name="request"/> and returns 202 Accepted with the handler's value and a <c>Location</c> field
+    /// on success, or the error's problem-details response.
+    /// </summary>
+    /// <typeparam name="T">The accepted value type, typically a status or tracking resource.</typeparam>
+    /// <param name="sender">The mediator sender.</param>
+    /// <param name="request">The request to send, or <see langword="null"/> when binding produced none.</param>
+    /// <param name="location">Builds the status monitor's URI from the success value; called only on success.</param>
+    /// <param name="cancellationToken">The request-aborted token.</param>
+    /// <returns>The HTTP result for the handler's outcome.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="sender"/> or <paramref name="location"/> is <see langword="null"/>.</exception>
+    public static ValueTask<ApiResultAcceptedHttpResult<T>> DispatchAcceptedAsync<T>(
+        this ISender sender,
+        IRequest<ApiResult<T>>? request,
+        Func<T, string> location,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(sender);
+        Argument.IsNotNull(location);
+
+        return _DispatchAcceptedAsync(sender, request, location, cancellationToken);
+    }
+
+    /// <summary>
+    /// Sends <paramref name="request"/> and returns 202 Accepted without a body on success, or the error's
+    /// problem-details response. Use it when the handler only starts the work, such as enqueuing a job.
+    /// </summary>
+    /// <param name="sender">The mediator sender.</param>
+    /// <param name="request">The request to send, or <see langword="null"/> when binding produced none.</param>
+    /// <param name="cancellationToken">The request-aborted token.</param>
+    /// <returns>The HTTP result for the handler's outcome.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="sender"/> is <see langword="null"/>.</exception>
+    public static ValueTask<ApiResultAcceptedHttpResult> DispatchAcceptedAsync(
+        this ISender sender,
+        IRequest<ApiResult>? request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(sender);
+
+        return _DispatchAcceptedAsync(sender, request, location: null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Sends <paramref name="request"/> and returns 202 Accepted without a body and with a <c>Location</c> field on
+    /// success, or the error's problem-details response.
+    /// </summary>
+    /// <param name="sender">The mediator sender.</param>
+    /// <param name="request">The request to send, or <see langword="null"/> when binding produced none.</param>
+    /// <param name="location">The status monitor's URI; written only on success.</param>
+    /// <param name="cancellationToken">The request-aborted token.</param>
+    /// <returns>The HTTP result for the handler's outcome.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="sender"/> or <paramref name="location"/> is <see langword="null"/>.</exception>
+    public static ValueTask<ApiResultAcceptedHttpResult> DispatchAcceptedAsync(
+        this ISender sender,
+        IRequest<ApiResult>? request,
+        string location,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(sender);
+        Argument.IsNotNull(location);
+
+        return _DispatchAcceptedAsync(sender, request, location, cancellationToken);
+    }
+
+    private static async ValueTask<ApiResultAcceptedHttpResult<T>> _DispatchAcceptedAsync<T>(
+        ISender sender,
+        IRequest<ApiResult<T>>? request,
+        Func<T, string>? location,
+        CancellationToken cancellationToken
+    )
+    {
+        if (request is null)
+        {
+            return new ApiResultAcceptedHttpResult<T>(MalformedRequestError.Instance);
+        }
+
+        var result = await sender.Send(request, cancellationToken).ConfigureAwait(false);
+
+        return new ApiResultAcceptedHttpResult<T>(result, location);
+    }
+
+    private static async ValueTask<ApiResultAcceptedHttpResult> _DispatchAcceptedAsync(
+        ISender sender,
+        IRequest<ApiResult>? request,
+        string? location,
+        CancellationToken cancellationToken
+    )
+    {
+        if (request is null)
+        {
+            return new ApiResultAcceptedHttpResult(MalformedRequestError.Instance);
+        }
+
+        var result = await sender.Send(request, cancellationToken).ConfigureAwait(false);
+
+        return new ApiResultAcceptedHttpResult(result, location);
+    }
 }

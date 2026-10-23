@@ -167,6 +167,185 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
 
     #endregion
 
+    #region Created and Accepted
+
+    [Fact]
+    public void should_return_created_with_location_and_value_when_success()
+    {
+        // given
+        var controller = _CreateController();
+        var result = ApiResult<string>.Ok("a1");
+
+        // when
+        var actionResult = result.ToCreatedActionResult(
+            controller,
+            _CreateProblemDetailsCreator(),
+            id => $"/items/{id}"
+        );
+
+        // then
+        var created = actionResult.Result.Should().BeOfType<CreatedResult>().Subject;
+        created.StatusCode.Should().Be(StatusCodes.Status201Created);
+        created.Location.Should().Be("/items/a1");
+        created.Value.Should().Be("a1");
+        ((IConvertToActionResult)actionResult).Convert().Should().BeSameAs(created);
+    }
+
+    [Fact]
+    public void should_not_build_a_location_when_created_fails()
+    {
+        // given
+        var controller = _CreateController();
+        var result = ApiResult<string>.Fail(new NotFoundError { Entity = "Item", Key = "a1" });
+        var locationCalls = 0;
+
+        // when
+        var actionResult = result.ToCreatedActionResult(
+            controller,
+            _CreateProblemDetailsCreator(),
+            id =>
+            {
+                locationCalls++;
+                return $"/items/{id}";
+            }
+        );
+
+        // then
+        locationCalls.Should().Be(0);
+        actionResult.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public void should_return_accepted_with_the_value_and_no_location_when_success()
+    {
+        // given - a string value must stay the body, not become the Location
+        var controller = _CreateController();
+        var result = ApiResult<string>.Ok("job-1");
+
+        // when
+        var actionResult = result.ToAcceptedActionResult(controller, _CreateProblemDetailsCreator());
+
+        // then
+        var accepted = actionResult.Result.Should().BeOfType<AcceptedResult>().Subject;
+        accepted.StatusCode.Should().Be(StatusCodes.Status202Accepted);
+        accepted.Value.Should().Be("job-1");
+        accepted.Location.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_return_accepted_with_location_when_success()
+    {
+        // given
+        var controller = _CreateController();
+        var result = ApiResult<string>.Ok("job-1");
+
+        // when
+        var actionResult = result.ToAcceptedActionResult(
+            controller,
+            _CreateProblemDetailsCreator(),
+            id => $"/jobs/{id}"
+        );
+
+        // then
+        var accepted = actionResult.Result.Should().BeOfType<AcceptedResult>().Subject;
+        accepted.Location.Should().Be("/jobs/job-1");
+        accepted.Value.Should().Be("job-1");
+    }
+
+    [Fact]
+    public void should_return_bodyless_accepted_for_a_unit_success()
+    {
+        // given
+        var controller = _CreateController();
+        var creator = _CreateProblemDetailsCreator();
+
+        // when
+        var withoutLocation = ApiResult.Ok().ToAcceptedActionResult(controller, creator);
+        var withLocation = ApiResult.Ok().ToAcceptedActionResult(controller, creator, "/jobs/job-1");
+
+        // then
+        var bare = withoutLocation.Result.Should().BeOfType<AcceptedResult>().Subject;
+        bare.Value.Should().BeNull();
+        bare.Location.Should().BeNull();
+        var located = withLocation.Result.Should().BeOfType<AcceptedResult>().Subject;
+        located.Value.Should().BeNull();
+        located.Location.Should().Be("/jobs/job-1");
+    }
+
+    [Fact]
+    public void should_return_problem_when_accepted_fails()
+    {
+        // given
+        var controller = _CreateController();
+        var creator = _CreateProblemDetailsCreator();
+
+        // when
+        var valued = ApiResult<string>
+            .Fail(new ConflictError("job:busy", "Busy."))
+            .ToAcceptedActionResult(controller, creator);
+        var unit = ApiResult
+            .Fail(new ConflictError("job:busy", "Busy."))
+            .ToAcceptedActionResult(controller, creator, "/jobs/x");
+
+        // then
+        valued.Result.Should().BeOfType<ConflictObjectResult>();
+        unit.Result.Should().BeOfType<ConflictObjectResult>();
+    }
+
+    [Fact]
+    public void should_reject_a_null_location_for_created_and_accepted()
+    {
+        // given
+        var controller = _CreateController();
+        var creator = _CreateProblemDetailsCreator();
+
+        // when
+        var created = () => ApiResult<string>.Ok("a1").ToCreatedActionResult(controller, creator, null!);
+        var accepted = () =>
+            ApiResult<string>.Ok("a1").ToAcceptedActionResult(controller, creator, (Func<string, string>)null!);
+        var unit = () => ApiResult.Ok().ToAcceptedActionResult(controller, creator, (string)null!);
+
+        // then
+        created.Should().Throw<ArgumentNullException>();
+        accepted.Should().Throw<ArgumentNullException>();
+        unit.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void should_publish_the_created_and_accepted_success_responses()
+    {
+        // given
+        var created = new RouteEndpointBuilder(_ => Task.CompletedTask, RoutePatternFactory.Parse("/"), order: 0);
+        var accepted = new RouteEndpointBuilder(_ => Task.CompletedTask, RoutePatternFactory.Parse("/"), order: 0);
+        var acceptedUnit = new RouteEndpointBuilder(_ => Task.CompletedTask, RoutePatternFactory.Parse("/"), order: 0);
+
+        // when
+        ApiCreatedActionResult<string>.PopulateMetadata(_ActionMethod, created);
+        ApiAcceptedActionResult<string>.PopulateMetadata(_ActionMethod, accepted);
+        ApiAcceptedActionResult.PopulateMetadata(_ActionMethod, acceptedUnit);
+
+        // then
+        var createdResponse = created.Metadata.OfType<IProducesResponseTypeMetadata>().Should().ContainSingle().Subject;
+        createdResponse.StatusCode.Should().Be(201);
+        createdResponse.Type.Should().Be<string>();
+        var acceptedResponse = accepted
+            .Metadata.OfType<IProducesResponseTypeMetadata>()
+            .Should()
+            .ContainSingle()
+            .Subject;
+        acceptedResponse.StatusCode.Should().Be(202);
+        acceptedResponse.Type.Should().Be<string>();
+        var unitResponse = acceptedUnit
+            .Metadata.OfType<IProducesResponseTypeMetadata>()
+            .Should()
+            .ContainSingle()
+            .Subject;
+        unitResponse.StatusCode.Should().Be(202);
+        unitResponse.Type.Should().Be(typeof(void));
+    }
+
+    #endregion
+
     #region ApiResultError Mapping Tests
 
     [Fact]
