@@ -29,6 +29,11 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     private int _started;
     private int _manualStartConsumed;
 
+    // Completed when a stop has finished draining and writing its releases. Null until the first start, so a host
+    // whose scheduler never started has nothing to wait for; replaced on a start after a stop, so a restarted
+    // scheduler is waited on again.
+    private TaskCompletionSource? _drained;
+
     // The part of the stop budget kept, on the real clock, for jobs the stop cancels to write their release: the
     // coordination heartbeat's leave budget, capped at half the stop budget so a short budget still lets jobs finish.
     private static readonly TimeSpan _ReleaseWindow = TimeSpan.FromSeconds(5);
@@ -82,6 +87,8 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
 
     public override Task StartAsync(CancellationToken ct)
     {
+        _ArmDrainSignal();
+
         // JobsStartMode.Manual is consumed exactly once, on the host's first start of this service: freeze the pool
         // and return without running the loop, so nothing dispatches until an explicit IJobsHostScheduler.StartAsync.
         // The mode is read from THIS service's own configuration rather than pushed in beforehand by
@@ -400,7 +407,45 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         _restartThrottle.RequestRestart();
     }
 
+    /// <summary>
+    /// Completes when the last started scheduler has stopped, that is once <see cref="StopAsync"/> has drained running
+    /// jobs and written their releases, or at once when the scheduler never started.
+    /// </summary>
+    internal Task WaitUntilDrainedAsync(CancellationToken cancellationToken)
+    {
+        var drained = Volatile.Read(ref _drained);
+
+        return drained is null ? Task.CompletedTask : drained.Task.WaitAsync(cancellationToken);
+    }
+
+    private void _ArmDrainSignal()
+    {
+        var current = Volatile.Read(ref _drained);
+        if (current is not null && !current.Task.IsCompleted)
+        {
+            return;
+        }
+
+        Interlocked.CompareExchange(
+            ref _drained,
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+            current
+        );
+    }
+
     public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _StopCoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Volatile.Read(ref _drained)?.TrySetResult();
+        }
+    }
+
+    private async Task _StopCoreAsync(CancellationToken cancellationToken)
     {
         // The stop budget is real elapsed time from here, whatever clock the app schedules on, so it lines up with the
         // host's own shutdown deadline.

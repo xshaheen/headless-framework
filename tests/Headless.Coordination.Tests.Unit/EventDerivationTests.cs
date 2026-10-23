@@ -155,6 +155,7 @@ public sealed class EventDerivationTests : TestBase
             new CoordinationOptions(),
             new FakeTimeProvider(),
             new FakeTimeProvider(),
+            [],
             NullLogger<MembershipHeartbeatBackgroundService>.Instance
         );
         _disposables.Add(heartbeat);

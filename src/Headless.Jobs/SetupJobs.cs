@@ -518,6 +518,13 @@ public static class SetupJobs
         services.AddSingleton<JobsDeadOwnerReclaimer>();
         services.AddHostedService<DeadOwnerRecoveryBridge<JobsDeadOwnerReclaimer>>();
 
+        // A node that claims rows keeps beating until its scheduler has drained and released them: leaving first
+        // lets a peer reclaim a row this node is still settling, charging a retry or running the job twice.
+        if (claimsWork)
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<INodeDrainParticipant, JobsDrainParticipant>());
+        }
+
         if (registerStartupGate)
         {
             services.AddHostedService<JobsCoordinationStartupGate>();

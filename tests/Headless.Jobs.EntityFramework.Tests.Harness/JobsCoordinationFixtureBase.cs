@@ -215,7 +215,8 @@ public static partial class JobsCoordinationFixtureExtensions
         IInterceptor? interceptor = null,
         Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? configureJobs = null,
         bool runBackgroundServices = false,
-        bool fastMembership = false
+        bool fastMembership = false,
+        Action<IServiceCollection>? configureServices = null
     )
     {
         return _BuildHost<JobsDbContext>(
@@ -229,7 +230,8 @@ public static partial class JobsCoordinationFixtureExtensions
             interceptor,
             configureJobs,
             membershipTimings: fastMembership ? null : _SteadyMembershipTimings,
-            runBackgroundServices: runBackgroundServices
+            runBackgroundServices: runBackgroundServices,
+            configureServices: configureServices
         );
     }
 
@@ -289,7 +291,8 @@ public static partial class JobsCoordinationFixtureExtensions
         IInterceptor? interceptor = null,
         Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? configureJobs = null,
         (TimeSpan Heartbeat, TimeSpan Suspicion, TimeSpan Dead, TimeSpan DeadRetention)? membershipTimings = null,
-        bool runBackgroundServices = false
+        bool runBackgroundServices = false,
+        Action<IServiceCollection>? configureServices = null
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
@@ -362,6 +365,7 @@ public static partial class JobsCoordinationFixtureExtensions
             builder.Services.AddSingleton(timeProvider);
         }
 
+        configureServices?.Invoke(builder.Services);
         builder.Services.AddDeployStepsOnStartup();
         return builder.Build();
     }
