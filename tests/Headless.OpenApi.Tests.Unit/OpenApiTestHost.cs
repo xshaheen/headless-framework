@@ -88,6 +88,15 @@ internal static class OpenApiTestHost
         }
     }
 
+    /// <summary>
+    /// The exact status keys of a <c>responses</c> object, without the <c>4XX</c>/<c>5XX</c> ranges every operation
+    /// carries; the ranges are pinned once in <c>ProblemResponseRangeDocumentTests</c>.
+    /// </summary>
+    public static string[] ExactStatusCodes(this JsonNode responses)
+    {
+        return [.. responses.AsObject().Select(x => x.Key).Where(key => !key.EndsWith("XX", StringComparison.Ordinal))];
+    }
+
     public static JsonNode Operation(this JsonNode document, string path, string method)
     {
         var operation = document["paths"]?[path]?[method];

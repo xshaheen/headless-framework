@@ -5,6 +5,7 @@ using Tests.Capabilities;
 
 namespace Tests.Contracts;
 
+[Collection(Tests.RequestReply.RequestReplyCollection.Name)]
 public sealed class ProviderConformanceEvidenceTests : TestBase
 {
     [Fact]

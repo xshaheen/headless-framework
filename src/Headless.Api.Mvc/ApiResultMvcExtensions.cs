@@ -78,7 +78,11 @@ public static class ApiResultMvcExtensions
         IProblemDetailsCreator creator
     )
     {
-        var problemDetails = ApiResultErrorProblemDetails.Create(error, creator);
+        var problemDetails = ApiResultErrorProblemDetails.Create(
+            error,
+            creator,
+            ApiResultErrorProblemDetails.GetMappings(controller.HttpContext?.RequestServices)
+        );
 
         // The controller helpers keep the typed results (ConflictObjectResult, ...) callers and filters may match on.
         return problemDetails.Status switch

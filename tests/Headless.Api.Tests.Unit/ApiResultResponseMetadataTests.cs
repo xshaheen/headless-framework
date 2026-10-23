@@ -13,7 +13,7 @@ namespace Tests;
 public sealed class ApiResultResponseMetadataTests : TestBase
 {
     [Fact]
-    public void should_publish_the_json_success_response_and_every_mapped_problem_status()
+    public void should_publish_only_the_json_success_response()
     {
         // given
         var builder = _CreateEndpointBuilder();
@@ -23,17 +23,10 @@ public sealed class ApiResultResponseMetadataTests : TestBase
 
         // then
         var responses = builder.Metadata.OfType<IProducesResponseTypeMetadata>().ToList();
-        responses.Select(x => x.StatusCode).Should().Equal(200, 401, 403, 404, 409, 422);
+        // The error responses come from the OpenAPI layer, so they are the same whatever the handler returns.
+        responses.Select(x => x.StatusCode).Should().Equal(200);
         responses[0].Type.Should().Be<string>();
         responses[0].ContentTypes.Should().Equal("application/json");
-        responses
-            .Skip(1)
-            .Should()
-            .AllSatisfy(response =>
-            {
-                response.Type.Should().Be<ProblemDetails>();
-                response.ContentTypes.Should().Equal("application/problem+json");
-            });
     }
 
     [Fact]

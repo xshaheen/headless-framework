@@ -9,6 +9,9 @@
     <InternalsVisibleTo Include="Headless.Api.MinimalApi.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Mediator.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.Api\Headless.Api.csproj" />
   </ItemGroup>
 </Project>

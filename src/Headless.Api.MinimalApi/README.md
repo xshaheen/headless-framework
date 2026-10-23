@@ -1,10 +1,10 @@
 # Headless.Api.MinimalApi
 
-Framework integration for ASP.NET Core Minimal APIs with JSON configuration, validation filters, and exception handling.
+Framework integration for ASP.NET Core Minimal APIs with JSON configuration, mediator dispatch, `ApiResult` responses, and validation filters.
 
 ## Why use this package
 
-Provides consistent JSON serialization and validation for Minimal API endpoints matching the framework's conventions. Exception-to-ProblemDetails mapping is handled globally by `Headless.Api`'s `HeadlessApiExceptionHandler` (registered via `AddHeadlessProblemDetails()`).
+Provides consistent JSON serialization, validation, and one-line mediator endpoints whose `ApiResult` responses document themselves in OpenAPI, matching the framework's conventions. Exception-to-ProblemDetails mapping is handled globally by `Headless.Api`'s `HeadlessApiExceptionHandler` (registered via `AddHeadlessProblemDetails()`).
 
 ## Install
 

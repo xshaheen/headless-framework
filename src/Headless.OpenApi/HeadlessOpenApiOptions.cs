@@ -36,6 +36,29 @@ public sealed class HeadlessOpenApiOptions
     public bool AddBearerSecurity { get; set; } = true;
 
     /// <summary>
+    /// Whether every operation documents the 404, 409, and 422 problem responses. Default is <see langword="true"/>.
+    /// </summary>
+    /// <remarks>
+    /// These are the statuses the exception handler and the <c>ApiResult</c> conversion write for not-found,
+    /// conflict, and validation failures. Any handler or service can raise them, so endpoint metadata cannot tell
+    /// which operations return them; the document lists them on every operation instead.
+    /// </remarks>
+    public bool StandardProblemResponses { get; set; } = true;
+
+    /// <summary>
+    /// Whether every operation documents the <c>4XX</c> and <c>5XX</c> range responses typed with
+    /// <c>HeadlessProblemDetails</c>. Default is <see langword="true"/>.
+    /// </summary>
+    /// <remarks>
+    /// The ranges let a generated client read a status no rule predicts (a timeout, an unavailable dependency, an
+    /// application's mapped exception) as a typed problem. Turn them off API-wide when the document feeds a client
+    /// generator that mishandles range keys: NSwag's C# generator emits code that does not compile for them, and
+    /// openapi-generator's <c>typescript-fetch</c> ignores them. The endpoint markers and the surface setting do not
+    /// remove the ranges; only this option does.
+    /// </remarks>
+    public bool ProblemResponseRanges { get; set; } = true;
+
+    /// <summary>
     /// Whether to register an API-key security scheme named <see cref="ApiKeySchemeName"/> that reads the
     /// <see cref="ApiKeyHeaderName"/> header. Default is <see langword="false"/>.
     /// </summary>

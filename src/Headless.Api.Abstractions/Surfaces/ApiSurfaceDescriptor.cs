@@ -27,4 +27,11 @@ public sealed class ApiSurfaceOpenApiDescriptor(string documentName, string titl
 {
     public string DocumentName { get; } = Argument.IsNotNullOrWhiteSpace(documentName);
     public string Title { get; } = Argument.IsNotNullOrWhiteSpace(title);
+
+    /// <summary>
+    /// Whether the surface's endpoints document the standard 404, 409, and 422 problem responses, or
+    /// <see langword="null"/> to inherit the API-wide setting. An endpoint, route group, controller, or action marked
+    /// with <see cref="StandardProblemResponsesAttribute"/> overrides it.
+    /// </summary>
+    public bool? StandardProblemResponses { get; init; }
 }

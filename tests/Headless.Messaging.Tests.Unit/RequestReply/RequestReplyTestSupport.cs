@@ -27,7 +27,8 @@ internal static class PriceQuoteContract
 
 /// <summary>
 /// The request/reply tests share process-wide meters, so they run one class at a time to keep each class's measurements
-/// its own.
+/// its own. Every class that sends a request or a reply belongs here, the conformance suites included: one running
+/// beside <c>RequestClientTests</c> adds its outcomes to that class's counts.
 /// </summary>
 [CollectionDefinition(Name)]
 public sealed class RequestReplyCollection

@@ -1,10 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json.Nodes;
+using Headless.Api;
 using Headless.Api.Resources;
 using Headless.Http;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.OpenApi;
+using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 using Constants = Headless.Api.HeadlessProblemDetailsConstants;
 
@@ -63,7 +67,10 @@ internal sealed class ProblemDetailsTransformer : IOpenApiOperationTransformer
         CancellationToken cancellationToken
     )
     {
-        if (!_Problems.TryGetValue(statusCode, out var problem))
+        if (
+            !_Problems.TryGetValue(statusCode, out var problem)
+            && !_TryGetMappedProblem(statusCode, context, out problem)
+        )
         {
             return;
         }
@@ -108,6 +115,34 @@ internal sealed class ProblemDetailsTransformer : IOpenApiOperationTransformer
         mediaType.Example = problem.Example.DeepClone();
 
         _AddRetryAfterHeader(response, statusCode);
+    }
+
+    // A status the application mapped its own failures to has no entry of its own, so it gets the base shape every
+    // Headless problem shares. Only mapped statuses: another status an endpoint documents keeps whatever it declared.
+    private static bool _TryGetMappedProblem(
+        string statusCode,
+        OpenApiOperationTransformerContext context,
+        out (Type SchemaType, JsonObject Example) problem
+    )
+    {
+        var mappings = context.ApplicationServices.GetService<IOptions<HeadlessProblemDetailsOptions>>()?.Value;
+
+        if (
+            mappings is null
+            || !int.TryParse(statusCode, NumberStyles.None, CultureInfo.InvariantCulture, out var status)
+            || !mappings.MappedStatusCodes.Contains(status)
+        )
+        {
+            problem = default;
+            return false;
+        }
+
+        problem = (
+            typeof(HeadlessProblemDetails),
+            _Example("about:blank", ReasonPhrases.GetReasonPhrase(status), status, "The request failed.")
+        );
+
+        return true;
     }
 
     // The Headless shape replaces only the generic problem types an endpoint declares by default (ProducesProblem(),
@@ -295,6 +330,26 @@ internal sealed class ProblemDetailsTransformer : IOpenApiOperationTransformer
         ),
         [OpenApiStatusCodes.InternalServerError] = (
             typeof(InternalServerErrorProblemDetails),
+            _Example(
+                Constants.Types.InternalError,
+                Constants.Titles.InternalError,
+                StatusCodes.Status500InternalServerError,
+                "An error occurred while processing your request."
+            )
+        ),
+        // A range covers statuses no rule predicts, so it gets the base shape every Headless problem shares; its example
+        // shows one such status.
+        [OpenApiStatusCodes.ClientErrorRange] = (
+            typeof(HeadlessProblemDetails),
+            _Example(
+                Constants.Types.RequestTimeout,
+                Constants.Titles.RequestTimeout,
+                StatusCodes.Status408RequestTimeout,
+                "The request timed out."
+            )
+        ),
+        [OpenApiStatusCodes.ServerErrorRange] = (
+            typeof(HeadlessProblemDetails),
             _Example(
                 Constants.Types.InternalError,
                 Constants.Titles.InternalError,

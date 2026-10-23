@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.IO.Compression;
+using Headless.Checks;
 using Headless.Http;
 using Headless.MultiTenancy;
 using Headless.Serializer;
@@ -114,6 +115,27 @@ public static class SetupApiServices
             // AddExceptionHandler<T>() uses plain AddSingleton which is not idempotent; using
             // TryAddEnumerable directly collapses duplicate registrations to a single descriptor.
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IExceptionHandler, HeadlessApiExceptionHandler>());
+
+            return services;
+        }
+
+        /// <summary>
+        /// Registers the problem-details services and maps the application's own exceptions and
+        /// <see cref="Headless.Primitives.ApiResultError"/> types to statuses.
+        /// </summary>
+        /// <remarks>
+        /// Safe to call alongside <c>AddHeadless()</c>, which registers the same services: the mappings from every
+        /// call add up.
+        /// </remarks>
+        /// <param name="configure">Registers the mappings.</param>
+        /// <returns>The service collection, for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        public IServiceCollection AddHeadlessProblemDetails(Action<HeadlessProblemDetailsOptions> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            services.AddHeadlessProblemDetails();
+            services.Configure(configure);
 
             return services;
         }
