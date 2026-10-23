@@ -189,6 +189,7 @@ public sealed class InternalJobsManagerTests : TestBase
             FunctionName = "owned",
             Type = JobType.TimeJob,
             Status = JobStatus.Queued,
+            ClaimOwner = _ClaimOwner,
         };
         var lost = new JobExecutionState
         {
@@ -196,6 +197,7 @@ public sealed class InternalJobsManagerTests : TestBase
             FunctionName = "lost",
             Type = JobType.TimeJob,
             Status = JobStatus.Queued,
+            ClaimOwner = _ClaimOwner,
         };
 
         provider
@@ -210,6 +212,34 @@ public sealed class InternalJobsManagerTests : TestBase
         lost.Status.Should().Be(JobStatus.Queued);
         await sender.Received(1).UpdateTimeJobFromExecutionState<FakeTimeJob>(owned);
         await sender.DidNotReceive().UpdateTimeJobFromExecutionState<FakeTimeJob>(lost);
+    }
+
+    [Fact]
+    public async Task set_tickers_in_progress_admits_each_row_under_the_owner_that_claimed_it()
+    {
+        // A provider admits a row only under the owner stamped on it, so a batch holding claims from two incarnations
+        // must reach the store once per claim owner, or the rows of the second owner are never admitted.
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var manager = _CreateManager(provider);
+        var first = _ReleaseState(Guid.NewGuid(), JobType.TimeJob);
+        var second = _ReleaseState(Guid.NewGuid(), JobType.TimeJob);
+        second.ClaimOwner = "node-a@2";
+        provider
+            .UpdateTimeJobsWithUnifiedContextAsync(Arg.Any<Guid[]>(), Arg.Any<JobExecutionState>(), AbortToken)
+            .Returns(call =>
+            {
+                var owner = call.Arg<JobExecutionState>().ClaimOwner;
+                return Task.FromResult<Guid[]>([
+                    .. call.Arg<Guid[]>()
+                        .Where(id =>
+                            (id == first.JobId && owner == _ClaimOwner) || (id == second.JobId && owner == "node-a@2")
+                        ),
+                ]);
+            });
+
+        var stamped = await manager.SetTickersInProgress([first, second], AbortToken);
+
+        stamped.Should().Equal(first, second);
     }
 
     [Fact]
@@ -330,7 +360,9 @@ public sealed class InternalJobsManagerTests : TestBase
         context.RetryIntervals.Should().Equal(10, 30, 60);
         context.ExecutionTime.Should().Be(occurrence.ExecutionTime);
         await sender.Received(2).UpdateCronOccurrenceFromExecutionState<FakeCronJob>(Arg.Any<JobExecutionState>());
-        await provider.DidNotReceiveWithAnyArgs().ReleaseAcquiredCronJobOccurrencesAsync(default!, AbortToken);
+        await provider
+            .DidNotReceiveWithAnyArgs()
+            .ReleaseAcquiredCronJobOccurrencesAsync(default!, default!, AbortToken);
     }
 
     /// <summary>
@@ -506,24 +538,47 @@ public sealed class InternalJobsManagerTests : TestBase
         // The scheduler's fault path cannot know which rows a failed tick claimed, so both the null and the
         // empty-batch forms must reach the providers as the (owner-scoped) release-everything call. Previously []
         // short-circuited to a no-op and a faulted tick left its claims leased for a full LeaseDuration.
+        // Without a list there is no claim owner to read, so the release runs under the node's live identity.
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
-        var manager = _CreateManager(provider);
+        var manager = _CreateManager(provider, liveOwner: _ClaimOwner);
 
         await manager.ReleaseAcquiredResources(resources: null, AbortToken);
 
-        await provider.Received(1).ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Length == 0), AbortToken);
         await provider
             .Received(1)
-            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Is<Guid[]>(x => x.Length == 0), AbortToken);
+            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Length == 0), _ClaimOwner, AbortToken);
+        await provider
+            .Received(1)
+            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Is<Guid[]>(x => x.Length == 0), _ClaimOwner, AbortToken);
 
         provider.ClearReceivedCalls();
 
         await manager.ReleaseAcquiredResources([], AbortToken);
 
-        await provider.Received(1).ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Length == 0), AbortToken);
         await provider
             .Received(1)
-            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Is<Guid[]>(x => x.Length == 0), AbortToken);
+            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Length == 0), _ClaimOwner, AbortToken);
+        await provider
+            .Received(1)
+            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Is<Guid[]>(x => x.Length == 0), _ClaimOwner, AbortToken);
+    }
+
+    [Fact]
+    public async Task release_acquired_resources_without_a_list_releases_nothing_when_the_node_has_no_live_identity()
+    {
+        // A node that left membership cannot name the rows it claimed without a list; they lapse to reclaim rather
+        // than being released under some other owner.
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var manager = _CreateManager(provider, liveOwner: null);
+
+        await manager.ReleaseAcquiredResources([], AbortToken);
+
+        await provider
+            .DidNotReceive()
+            .ReleaseAcquiredTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await provider
+            .DidNotReceive()
+            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Any<Guid[]>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -541,10 +596,14 @@ public sealed class InternalJobsManagerTests : TestBase
 
         await provider
             .Received(1)
-            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Single() == timeJobId), AbortToken);
+            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Single() == timeJobId), _ClaimOwner, AbortToken);
         await provider
             .Received(1)
-            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Is<Guid[]>(x => x.Single() == occurrenceId), AbortToken);
+            .ReleaseAcquiredCronJobOccurrencesAsync(
+                Arg.Is<Guid[]>(x => x.Single() == occurrenceId),
+                _ClaimOwner,
+                AbortToken
+            );
 
         provider.ClearReceivedCalls();
 
@@ -553,10 +612,31 @@ public sealed class InternalJobsManagerTests : TestBase
         // A one-type batch must not escalate the other type into the release-everything form.
         await provider
             .Received(1)
-            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Single() == timeJobId), AbortToken);
+            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Single() == timeJobId), _ClaimOwner, AbortToken);
         await provider
             .DidNotReceive()
-            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
+            .ReleaseAcquiredCronJobOccurrencesAsync(Arg.Any<Guid[]>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task release_acquired_resources_releases_each_row_under_the_owner_that_claimed_it()
+    {
+        // The release fences on the owner stamped on the row, so a draining node hands back each claim under the
+        // owner that took it, whatever its live identity is now.
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var manager = _CreateManager(provider, liveOwner: null);
+        var first = _ReleaseState(Guid.NewGuid(), JobType.TimeJob);
+        var second = _ReleaseState(Guid.NewGuid(), JobType.TimeJob);
+        second.ClaimOwner = "node-a@2";
+
+        await manager.ReleaseAcquiredResources([first, second], AbortToken);
+
+        await provider
+            .Received(1)
+            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Single() == first.JobId), _ClaimOwner, AbortToken);
+        await provider
+            .Received(1)
+            .ReleaseAcquiredTimeJobsAsync(Arg.Is<Guid[]>(x => x.Single() == second.JobId), "node-a@2", AbortToken);
     }
 
     [Fact]
@@ -585,11 +665,25 @@ public sealed class InternalJobsManagerTests : TestBase
         await provider.Received(1).ApplyParentTerminalRunConditionsAsync(parentId: null, AbortToken);
     }
 
+    private const string _ClaimOwner = "node-a@1";
+
     private static InternalJobsManager<FakeTimeJob, FakeCronJob> _CreateManager(
         IJobPersistenceProvider<FakeTimeJob, FakeCronJob> provider,
-        IJobsNotificationHubSender? sender = null
+        IJobsNotificationHubSender? sender = null,
+        string? liveOwner = null
     )
     {
+        var services = Substitute.For<IServiceProvider>();
+        var ownerIdentity = Substitute.For<IJobsOwnerIdentity>();
+        ownerIdentity
+            .TryGetStampOwner(out Arg.Any<string?>())
+            .Returns(call =>
+            {
+                call[0] = liveOwner;
+                return liveOwner is not null;
+            });
+        services.GetService(typeof(IJobsOwnerIdentity)).Returns(ownerIdentity);
+
         return new InternalJobsManager<FakeTimeJob, FakeCronJob>(
             provider,
             new Microsoft.Extensions.Time.Testing.FakeTimeProvider(
@@ -600,7 +694,7 @@ public sealed class InternalJobsManagerTests : TestBase
             NullLogger<InternalJobsManager<FakeTimeJob, FakeCronJob>>.Instance,
             JobsRequestSerializationOptions.Default,
             Substitute.For<IGuidGenerator>(),
-            Substitute.For<IServiceProvider>(),
+            services,
             new SchedulerOptionsBuilder()
         );
     }
@@ -616,6 +710,7 @@ public sealed class InternalJobsManagerTests : TestBase
             RetryIntervals = [0],
             Status = JobStatus.Queued,
             RunCondition = RunCondition.OnSuccess,
+            ClaimOwner = _ClaimOwner,
         };
     }
 
@@ -673,7 +768,7 @@ public sealed class InternalJobsManagerTests : TestBase
 
         functions.Select(x => x.JobId).Should().Equal(first.Id, second.Id);
         // Best-effort means best-effort: the claims stand, so nothing is released back to Idle.
-        await provider.DidNotReceiveWithAnyArgs().ReleaseAcquiredTimeJobsAsync(default!, AbortToken);
+        await provider.DidNotReceiveWithAnyArgs().ReleaseAcquiredTimeJobsAsync(default!, default!, AbortToken);
     }
 
     /// <summary>
@@ -701,6 +796,7 @@ public sealed class InternalJobsManagerTests : TestBase
             Id = Guid.NewGuid(),
             Function = "claimed",
             ExecutionTime = DateTime.UtcNow.AddSeconds(30),
+            OwnerId = _ClaimOwner,
         };
 
         provider
@@ -721,6 +817,7 @@ public sealed class InternalJobsManagerTests : TestBase
             .Received(1)
             .ReleaseAcquiredTimeJobsAsync(
                 Arg.Is<Guid[]>(ids => ids.Single() == claimed.Id),
+                _ClaimOwner,
                 Arg.Any<CancellationToken>()
             );
     }

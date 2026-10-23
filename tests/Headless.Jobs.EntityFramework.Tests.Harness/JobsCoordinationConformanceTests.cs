@@ -642,14 +642,18 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             var terminalId = Guid.NewGuid();
             await fixture.SeedTimeJobAsync(terminalId, "terminal", (int)JobStatus.Failed, "node-a@5", ct);
 
-            var foreignCompletion = new JobExecutionState { FunctionName = "foreign", JobId = foreignId }.SetProperty(
-                x => x.Status,
-                JobStatus.Succeeded
-            );
+            // Both completions claim as "node-a@5": the foreign row fails the owner arm, the terminal row the status arm.
+            var foreignCompletion = new JobExecutionState
+            {
+                FunctionName = "foreign",
+                JobId = foreignId,
+                ClaimOwner = "node-a@5",
+            }.SetProperty(x => x.Status, JobStatus.Succeeded);
             var terminalCompletion = new JobExecutionState
             {
                 FunctionName = "terminal",
                 JobId = terminalId,
+                ClaimOwner = "node-a@5",
             }.SetProperty(x => x.Status, JobStatus.Succeeded);
 
             (await persistence.UpdateTimeJobAsync(foreignCompletion, ct)).Should().Be(0);
@@ -839,8 +843,8 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            (await persistence.RenewTimeJobLeaseAsync(ownedId, ct)).Should().Be(1);
-            (await persistence.RenewTimeJobLeaseAsync(foreignId, ct)).Should().Be(0); // lease lost -> cancel-on-loss
+            (await persistence.RenewTimeJobLeaseAsync(ownedId, owner, ct)).Should().Be(1);
+            (await persistence.RenewTimeJobLeaseAsync(foreignId, owner, ct)).Should().Be(0); // lease lost -> cancel-on-loss
 
             var (ownedStatus, _, ownedLockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(ownedId, ct);
             ownedStatus.Should().Be((int)JobStatus.InProgress);
@@ -859,35 +863,282 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     }
 
     /// <summary>
-    /// #461: when coordination membership is not currently established (the host hasn't started / a transient blip),
-    /// the renewal returns a negative sentinel — distinct from <c>0</c> (lost) — and touches no row. The caller skips
-    /// the tick rather than cancelling a healthy job.
+    /// Renewal extends ownership, so a node with no live identity (it left membership or passed its self-fence
+    /// deadline) cannot renew even a row still stamped with its claim owner: the renewal reports the lease lost and
+    /// touches no row, leaving the row for a peer to reclaim.
     /// </summary>
-    public virtual async Task renewal_returns_the_membership_sentinel_when_membership_is_not_established()
+    public virtual async Task renewal_is_lost_and_touches_no_row_when_the_node_identity_is_gone()
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
 
-        // No StartAsync: coordination membership is not established, so TryGetStampOwner returns false.
+        // No StartAsync: coordination membership is not established, so the node has no live identity.
         using var host = fixture.BuildHost("node-a");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
 
-        var id = Guid.NewGuid();
+        const string claimOwner = "node-a@1";
         var lease = DateTime.UtcNow.AddMinutes(5);
-        await fixture.SeedTimeJobAsync(id, "Job", (int)JobStatus.InProgress, "node-a@1", ct, lockedUntil: lease);
+        var timeJobId = Guid.NewGuid();
+        await fixture.SeedTimeJobAsync(timeJobId, "Job", (int)JobStatus.InProgress, claimOwner, ct, lockedUntil: lease);
+
+        var cronId = Guid.NewGuid();
+        var occurrenceId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(cronId, "Cron", "* * * * *", NodeDeathPolicy.Retry, ct);
+        await fixture.SeedCronOccurrenceAsync(
+            occurrenceId,
+            cronId,
+            (int)JobStatus.InProgress,
+            claimOwner,
+            NodeDeathPolicy.Retry,
+            lease,
+            DateTime.UtcNow.AddHours(-1),
+            ct
+        );
 
         var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-        // Negative sentinel (skip-the-tick), NOT 0 (lost) and NOT a renewal.
-        (await persistence.RenewTimeJobLeaseAsync(id, ct))
-            .Should()
-            .BeNegative();
+        (await persistence.RenewTimeJobLeaseAsync(timeJobId, claimOwner, ct)).Should().Be(0);
+        (await persistence.RenewCronJobOccurrenceLeaseAsync(occurrenceId, claimOwner, ct)).Should().Be(0);
 
-        // The row is untouched: ownership and lease are exactly as seeded (no UPDATE ran).
-        var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(id, ct);
+        // The rows are untouched: ownership and lease are exactly as seeded (no UPDATE ran).
+        var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(timeJobId, ct);
         status.Should().Be((int)JobStatus.InProgress);
-        ownerId.Should().Be("node-a@1");
+        ownerId.Should().Be(claimOwner);
         lockedUntil.Should().BeCloseTo(lease, TimeSpan.FromSeconds(5));
+
+        var occurrenceClaim = await fixture.ReadCronOccurrenceClaimAsync(occurrenceId, ct);
+        occurrenceClaim.OwnerId.Should().Be(claimOwner);
+        occurrenceClaim.LockedUntil.Should().BeCloseTo(lease, TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>
+    /// A restarted process is a new incarnation. Its live identity differs from the owner a predecessor stamped, so
+    /// renewing under that older claim owner reports the lease lost and leaves the row as it was, even though the row
+    /// still carries the claim owner.
+    /// </summary>
+    public virtual async Task renewal_is_lost_when_the_live_identity_is_a_newer_incarnation_than_the_claim_owner()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            const string staleOwner = "node-a@0";
+            var liveOwner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            liveOwner.Should().NotBe(staleOwner);
+
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var id = Guid.NewGuid();
+            var lease = DateTime.UtcNow.AddMinutes(5);
+            await fixture.SeedTimeJobAsync(id, "Job", (int)JobStatus.InProgress, staleOwner, ct, lockedUntil: lease);
+
+            (await persistence.RenewTimeJobLeaseAsync(id, staleOwner, ct)).Should().Be(0);
+
+            var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(id, ct);
+            status.Should().Be((int)JobStatus.InProgress);
+            ownerId.Should().Be(staleOwner);
+            lockedUntil.Should().BeCloseTo(lease, TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// A chain descendant runs under its root's claim. The claim's projection of the descendant carries no owner, so
+    /// the descendant settles through the root's claim owner, and its completion persists.
+    /// </summary>
+    public virtual async Task chain_child_completion_uses_the_root_claim_owner()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var manager = host.Services.GetRequiredService<IInternalJobManager>();
+            var child = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "child",
+                RunCondition = RunCondition.OnSuccess,
+            };
+            var root = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "root",
+                ExecutionTime = DateTime.UtcNow.AddMinutes(-1),
+                Children = [child],
+            };
+            await persistence.AddTimeJobsAsync([root], ct);
+
+            var claimed = await manager.RunTimedOutTickers(ct);
+
+            var rootContext = claimed.Should().ContainSingle(x => x.JobId == root.Id).Subject;
+            var childContext = rootContext.TimeJobChildren.Should().ContainSingle().Subject;
+            childContext.SetProperty(x => x.Status, JobStatus.Succeeded);
+
+            (await manager.UpdateTickerAsync(childContext, ct)).Should().Be(1);
+            (await fixture.ReadTimeJobAsync(child.Id, ct)).Status.Should().Be((int)JobStatus.Succeeded);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// A run that finishes after its node left membership (or passed its self-fence deadline) still records its
+    /// outcome while no peer has reclaimed the row: completion fences on the owner that claimed the row, not on the
+    /// node's live identity, which is gone by then.
+    /// </summary>
+    public virtual async Task completion_with_the_claim_owner_persists_after_the_node_identity_is_gone()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        // No StartAsync: the node has no live identity, which is the state after LeaveAsync or the self-fence.
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+
+        const string claimOwner = "node-a@1";
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        var timeJobId = Guid.NewGuid();
+        await fixture.SeedTimeJobAsync(
+            timeJobId,
+            "Job",
+            (int)JobStatus.InProgress,
+            claimOwner,
+            ct,
+            lockedUntil: DateTime.UtcNow.AddMinutes(5)
+        );
+
+        var cronId = Guid.NewGuid();
+        var occurrenceId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(cronId, "Cron", "* * * * *", NodeDeathPolicy.Retry, ct);
+        await fixture.SeedCronOccurrenceAsync(
+            occurrenceId,
+            cronId,
+            (int)JobStatus.InProgress,
+            claimOwner,
+            NodeDeathPolicy.Retry,
+            DateTime.UtcNow.AddMinutes(5),
+            DateTime.UtcNow.AddHours(-1),
+            ct
+        );
+
+        var timeCompletion = new JobExecutionState
+        {
+            FunctionName = "Job",
+            JobId = timeJobId,
+            ClaimOwner = claimOwner,
+        }.SetProperty(x => x.Status, JobStatus.Succeeded);
+        var cronCompletion = new JobExecutionState
+        {
+            FunctionName = "Cron",
+            JobId = occurrenceId,
+            Type = JobType.CronJobOccurrence,
+            ClaimOwner = claimOwner,
+        }.SetProperty(x => x.Status, JobStatus.Succeeded);
+
+        (await persistence.UpdateTimeJobAsync(timeCompletion, ct)).Should().Be(1);
+        (await persistence.UpdateCronJobOccurrenceAsync(cronCompletion, ct)).Should().Be(1);
+
+        (await fixture.ReadTimeJobAsync(timeJobId, ct)).Status.Should().Be((int)JobStatus.Succeeded);
+        (await fixture.ReadCronOccurrenceAsync(occurrenceId, ct)).Status.Should().Be((int)JobStatus.Succeeded);
+    }
+
+    /// <summary>
+    /// Once a peer reclaimed the row, a late completion from the former owner matches nothing: neither the released
+    /// row (owner cleared) nor the row a peer claimed again is touched.
+    /// </summary>
+    public virtual async Task completion_with_the_claim_owner_matches_no_row_once_a_peer_reclaimed_it()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+
+        const string claimOwner = "node-a@1";
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        var releasedId = Guid.NewGuid();
+        var reclaimedId = Guid.NewGuid();
+        await fixture.SeedTimeJobAsync(releasedId, "Released", (int)JobStatus.Idle, ownerId: null, ct);
+        await fixture.SeedTimeJobAsync(reclaimedId, "Reclaimed", (int)JobStatus.InProgress, "node-b@1", ct);
+
+        foreach (var id in new[] { releasedId, reclaimedId })
+        {
+            var completion = new JobExecutionState
+            {
+                FunctionName = "Job",
+                JobId = id,
+                ClaimOwner = claimOwner,
+            }.SetProperty(x => x.Status, JobStatus.Succeeded);
+
+            (await persistence.UpdateTimeJobAsync(completion, ct)).Should().Be(0);
+        }
+
+        (await fixture.ReadTimeJobAsync(releasedId, ct)).Should().Be(((int)JobStatus.Idle, (string?)null));
+        (await fixture.ReadTimeJobAsync(reclaimedId, ct)).Should().Be(((int)JobStatus.InProgress, "node-b@1"));
+    }
+
+    /// <summary>
+    /// Admission (<c>Queued → InProgress</c>) starts ownership, so it needs the live identity to equal the claim
+    /// owner. After the node left membership it affects no row and the claim stays <c>Queued</c> for release or
+    /// reclaim.
+    /// </summary>
+    public virtual async Task admission_affects_no_row_after_the_node_identity_is_gone()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+
+        const string claimOwner = "node-a@1";
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        var timeJobId = Guid.NewGuid();
+        await fixture.SeedTimeJobAsync(timeJobId, "Job", (int)JobStatus.Queued, claimOwner, ct);
+
+        var cronId = Guid.NewGuid();
+        var occurrenceId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(cronId, "Cron", "* * * * *", NodeDeathPolicy.Retry, ct);
+        await fixture.SeedCronOccurrenceAsync(
+            occurrenceId,
+            cronId,
+            (int)JobStatus.Queued,
+            claimOwner,
+            NodeDeathPolicy.Retry,
+            DateTime.UtcNow.AddMinutes(5),
+            DateTime.UtcNow.AddHours(-1),
+            ct
+        );
+
+        var start = new JobExecutionState { FunctionName = string.Empty, ClaimOwner = claimOwner }.SetProperty(
+            x => x.Status,
+            JobStatus.InProgress
+        );
+
+        (await persistence.UpdateTimeJobsWithUnifiedContextAsync([timeJobId], start, ct)).Should().BeEmpty();
+        (await persistence.UpdateCronJobOccurrencesWithUnifiedContextAsync([occurrenceId], start, ct))
+            .Should()
+            .BeEmpty();
+
+        (await fixture.ReadTimeJobAsync(timeJobId, ct)).Should().Be(((int)JobStatus.Queued, claimOwner));
+        (await fixture.ReadCronOccurrenceAsync(occurrenceId, ct)).Should().Be(((int)JobStatus.Queued, claimOwner));
     }
 
     /// <summary>
@@ -1195,9 +1446,9 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            (await persistence.RenewCronJobOccurrenceLeaseAsync(runningId, ct)).Should().Be(1);
-            (await persistence.RenewCronJobOccurrenceLeaseAsync(queuedId, ct)).Should().Be(0); // not running -> InProgress fence
-            (await persistence.RenewCronJobOccurrenceLeaseAsync(foreignId, ct)).Should().Be(0); // not ours -> cancel-on-loss
+            (await persistence.RenewCronJobOccurrenceLeaseAsync(runningId, owner, ct)).Should().Be(1);
+            (await persistence.RenewCronJobOccurrenceLeaseAsync(queuedId, owner, ct)).Should().Be(0); // not running -> InProgress fence
+            (await persistence.RenewCronJobOccurrenceLeaseAsync(foreignId, owner, ct)).Should().Be(0); // not ours -> cancel-on-loss
         }
         finally
         {
@@ -1261,18 +1512,24 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 ct
             );
 
-            var owned = new JobExecutionState { FunctionName = "Cron", JobId = ownedId }.SetProperty(
-                x => x.Status,
-                JobStatus.Succeeded
-            );
-            var foreign = new JobExecutionState { FunctionName = "Cron", JobId = foreignId }.SetProperty(
-                x => x.Status,
-                JobStatus.Succeeded
-            );
-            var terminal = new JobExecutionState { FunctionName = "Cron", JobId = terminalId }.SetProperty(
-                x => x.Status,
-                JobStatus.Succeeded
-            );
+            var owned = new JobExecutionState
+            {
+                FunctionName = "Cron",
+                JobId = ownedId,
+                ClaimOwner = owner,
+            }.SetProperty(x => x.Status, JobStatus.Succeeded);
+            var foreign = new JobExecutionState
+            {
+                FunctionName = "Cron",
+                JobId = foreignId,
+                ClaimOwner = owner,
+            }.SetProperty(x => x.Status, JobStatus.Succeeded);
+            var terminal = new JobExecutionState
+            {
+                FunctionName = "Cron",
+                JobId = terminalId,
+                ClaimOwner = "node-a@5",
+            }.SetProperty(x => x.Status, JobStatus.Succeeded);
 
             (await persistence.UpdateCronJobOccurrenceAsync(owned, ct)).Should().Be(1);
             (await persistence.UpdateCronJobOccurrenceAsync(foreign, ct)).Should().Be(0);
@@ -1513,7 +1770,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             var id = Guid.NewGuid();
             await fixture.SeedTimeJobAsync(id, "unified-start", (int)JobStatus.Queued, owner, ct);
 
-            var start = new JobExecutionState { FunctionName = "unified-start" }.SetProperty(
+            var start = new JobExecutionState { FunctionName = "unified-start", ClaimOwner = owner }.SetProperty(
                 x => x.Status,
                 JobStatus.InProgress
             );
@@ -1570,7 +1827,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 ct
             );
 
-            var start = new JobExecutionState { FunctionName = "cron-start" }.SetProperty(
+            var start = new JobExecutionState { FunctionName = "cron-start", ClaimOwner = owner }.SetProperty(
                 x => x.Status,
                 JobStatus.InProgress
             );

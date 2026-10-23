@@ -97,9 +97,39 @@ public abstract class SqlServerConformanceTestsBase<TFixture>(TFixture fixture)
     }
 
     [Fact]
-    public override Task renewal_returns_the_membership_sentinel_when_membership_is_not_established()
+    public override Task completion_with_the_claim_owner_persists_after_the_node_identity_is_gone()
     {
-        return base.renewal_returns_the_membership_sentinel_when_membership_is_not_established();
+        return base.completion_with_the_claim_owner_persists_after_the_node_identity_is_gone();
+    }
+
+    [Fact]
+    public override Task completion_with_the_claim_owner_matches_no_row_once_a_peer_reclaimed_it()
+    {
+        return base.completion_with_the_claim_owner_matches_no_row_once_a_peer_reclaimed_it();
+    }
+
+    [Fact]
+    public override Task admission_affects_no_row_after_the_node_identity_is_gone()
+    {
+        return base.admission_affects_no_row_after_the_node_identity_is_gone();
+    }
+
+    [Fact]
+    public override Task renewal_is_lost_and_touches_no_row_when_the_node_identity_is_gone()
+    {
+        return base.renewal_is_lost_and_touches_no_row_when_the_node_identity_is_gone();
+    }
+
+    [Fact]
+    public override Task renewal_is_lost_when_the_live_identity_is_a_newer_incarnation_than_the_claim_owner()
+    {
+        return base.renewal_is_lost_when_the_live_identity_is_a_newer_incarnation_than_the_claim_owner();
+    }
+
+    [Fact]
+    public override Task chain_child_completion_uses_the_root_claim_owner()
+    {
+        return base.chain_child_completion_uses_the_root_claim_owner();
     }
 
     [Fact]

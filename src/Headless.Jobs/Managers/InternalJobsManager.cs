@@ -267,6 +267,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             TenantId = timeJob.TenantId,
             ParentId = timeJob.ParentId,
             ExecutionTime = timeJob.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
+            ClaimOwner = timeJob.OwnerId,
         };
 
         // The provider already hydrated the tree bounded to MaxChainDepth; recurse the whole thing so a chain
@@ -274,13 +275,15 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         // (omitting RetryCount here would reset the retry budget after restart, a regression that shipped once).
         foreach (var child in timeJob.Children)
         {
-            context.TimeJobChildren.Add(_BuildQueuedTimeJobChildContext(child));
+            context.TimeJobChildren.Add(_BuildQueuedTimeJobChildContext(child, context.ClaimOwner));
         }
 
         return context;
     }
 
-    private static JobExecutionState _BuildQueuedTimeJobChildContext(TimeJobEntity child)
+    // Descendants run under the root's claim, and the providers' flat child projection does not carry OwnerId, so
+    // every descendant settles its writes on the root's claim owner.
+    private static JobExecutionState _BuildQueuedTimeJobChildContext(TimeJobEntity child, string? claimOwner)
     {
         var childContext = new JobExecutionState
         {
@@ -297,11 +300,12 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             RetryIntervals = child.RetryIntervals,
             ParentId = child.ParentId,
             RunCondition = child.RunCondition ?? RunCondition.OnAnyCompletedStatus,
+            ClaimOwner = claimOwner,
         };
 
         foreach (var grandChild in child.Children)
         {
-            childContext.TimeJobChildren.Add(_BuildQueuedTimeJobChildContext(grandChild));
+            childContext.TimeJobChildren.Add(_BuildQueuedTimeJobChildContext(grandChild, claimOwner));
         }
 
         return childContext;
@@ -952,6 +956,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         if (resources.Length == 1)
         {
             var only = resources[0];
+            unifiedFunctionContext.ClaimOwner = only.ClaimOwner;
             var singleStamped =
                 only.Type == JobType.TimeJob
                     ? await persistenceProvider
@@ -986,58 +991,8 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             return [only];
         }
 
-        var cronJobIds = resources.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
-        var timeJobIds = resources.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
-
-        Guid[] stampedCronJobIds = [];
-        Guid[] stampedTimeJobIds = [];
-
-        if (cronJobIds.Length != 0 && timeJobIds.Length != 0)
-        {
-            var updateCronJobOccurrencesTask = persistenceProvider.UpdateCronJobOccurrencesWithUnifiedContextAsync(
-                cronJobIds,
-                unifiedFunctionContext,
-                cancellationToken
-            );
-            var updateTimeJobsTask = persistenceProvider.UpdateTimeJobsWithUnifiedContextAsync(
-                timeJobIds,
-                unifiedFunctionContext,
-                cancellationToken
-            );
-            await Task.WhenAll(updateCronJobOccurrencesTask, updateTimeJobsTask).ConfigureAwait(false);
-            stampedCronJobIds = await updateCronJobOccurrencesTask.ConfigureAwait(false);
-            stampedTimeJobIds = await updateTimeJobsTask.ConfigureAwait(false);
-        }
-        else
-        {
-            if (cronJobIds.Length != 0)
-            {
-                stampedCronJobIds = await persistenceProvider
-                    .UpdateCronJobOccurrencesWithUnifiedContextAsync(
-                        cronJobIds,
-                        unifiedFunctionContext,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
-
-            if (timeJobIds.Length != 0)
-            {
-                stampedTimeJobIds = await persistenceProvider
-                    .UpdateTimeJobsWithUnifiedContextAsync(timeJobIds, unifiedFunctionContext, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-        }
-
-        var stampedCronJobIdSet = new HashSet<Guid>(stampedCronJobIds);
-        var stampedTimeJobIdSet = new HashSet<Guid>(stampedTimeJobIds);
-        var stampedResources = resources
-            .Where(resource =>
-                resource.Type == JobType.TimeJob
-                    ? stampedTimeJobIdSet.Contains(resource.JobId)
-                    : stampedCronJobIdSet.Contains(resource.JobId)
-            )
-            .ToArray();
+        var stampedResources = await _ApplyUnifiedContextAsync(resources, unifiedFunctionContext, cancellationToken)
+            .ConfigureAwait(false);
 
         foreach (var resource in stampedResources)
         {
@@ -1070,28 +1025,50 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         // sides now agree on the owner-scoped release-everything form.
         if (resources is null || resources.Length == 0)
         {
+            // Without a list there is no claim owner to read, so release what the node's live identity claimed. A
+            // node with no live identity has nothing it can name here; its claims lapse to reclaim.
+            if (
+                serviceProvider.GetService<IJobsOwnerIdentity>() is not { } ownerIdentity
+                || !ownerIdentity.TryGetStampOwner(out var liveOwner)
+            )
+            {
+                return;
+            }
+
             await Task.WhenAll(
-                    persistenceProvider.ReleaseAcquiredCronJobOccurrencesAsync([], cancellationToken),
-                    persistenceProvider.ReleaseAcquiredTimeJobsAsync([], cancellationToken)
+                    persistenceProvider.ReleaseAcquiredCronJobOccurrencesAsync([], liveOwner, cancellationToken),
+                    persistenceProvider.ReleaseAcquiredTimeJobsAsync([], liveOwner, cancellationToken)
                 )
                 .ConfigureAwait(false);
             return;
         }
 
-        var cronJobIds = resources.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
-
-        if (cronJobIds.Length != 0)
+        // Each row is released under the owner that claimed it, so a draining node can hand claims back after it left
+        // membership. A context without a claim owner names no row it could release.
+        foreach (
+            var group in resources
+                .Where(static x => x.ClaimOwner is { Length: > 0 })
+                .GroupBy(static x => x.ClaimOwner!, StringComparer.Ordinal)
+        )
         {
-            await persistenceProvider
-                .ReleaseAcquiredCronJobOccurrencesAsync(cronJobIds, cancellationToken)
-                .ConfigureAwait(false);
-        }
+            var claimOwner = group.Key;
+            var cronJobIds = group.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
 
-        var timeJobIds = resources.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
+            if (cronJobIds.Length != 0)
+            {
+                await persistenceProvider
+                    .ReleaseAcquiredCronJobOccurrencesAsync(cronJobIds, claimOwner, cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
-        if (timeJobIds.Length != 0)
-        {
-            await persistenceProvider.ReleaseAcquiredTimeJobsAsync(timeJobIds, cancellationToken).ConfigureAwait(false);
+            var timeJobIds = group.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
+
+            if (timeJobIds.Length != 0)
+            {
+                await persistenceProvider
+                    .ReleaseAcquiredTimeJobsAsync(timeJobIds, claimOwner, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
     }
 
@@ -1130,12 +1107,18 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
+        // A run with no claim owner holds no lease it could renew.
+        if (functionContext.ClaimOwner is not { Length: > 0 } claimOwner)
+        {
+            return 0;
+        }
+
         return functionContext.Type == JobType.CronJobOccurrence
             ? await persistenceProvider
-                .RenewCronJobOccurrenceLeaseAsync(functionContext.JobId, cancellationToken)
+                .RenewCronJobOccurrenceLeaseAsync(functionContext.JobId, claimOwner, cancellationToken)
                 .ConfigureAwait(false)
             : await persistenceProvider
-                .RenewTimeJobLeaseAsync(functionContext.JobId, cancellationToken)
+                .RenewTimeJobLeaseAsync(functionContext.JobId, claimOwner, cancellationToken)
                 .ConfigureAwait(false);
     }
 
@@ -1145,13 +1128,18 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
+        if (context.ClaimOwner is not { Length: > 0 } claimOwner)
+        {
+            return false;
+        }
+
         var written =
             context.Type == JobType.CronJobOccurrence
                 ? await persistenceProvider
-                    .UpdateCronJobOccurrenceProgressAsync(context.JobId, progress, cancellationToken)
+                    .UpdateCronJobOccurrenceProgressAsync(context.JobId, claimOwner, progress, cancellationToken)
                     .ConfigureAwait(false)
                 : await persistenceProvider
-                    .UpdateTimeJobProgressAsync(context.JobId, progress, cancellationToken)
+                    .UpdateTimeJobProgressAsync(context.JobId, claimOwner, progress, cancellationToken)
                     .ConfigureAwait(false);
 
         if (written)
@@ -1308,58 +1296,8 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             .SetProperty(x => x.ExecutedAt, now)
             .SetProperty(x => x.ExceptionDetails, ChainRunConditionRules.RunConditionMismatchReason);
 
-        var cronJobIds = resources.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
-        var timeJobIds = resources.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
-
-        Guid[] skippedCronJobIds = [];
-        Guid[] skippedTimeJobIds = [];
-
-        if (cronJobIds.Length != 0 && timeJobIds.Length != 0)
-        {
-            var updateCronJobOccurrencesTask = persistenceProvider.UpdateCronJobOccurrencesWithUnifiedContextAsync(
-                cronJobIds,
-                unifiedFunctionContext,
-                cancellationToken
-            );
-            var updateTimeJobsTask = persistenceProvider.UpdateTimeJobsWithUnifiedContextAsync(
-                timeJobIds,
-                unifiedFunctionContext,
-                cancellationToken
-            );
-            await Task.WhenAll(updateCronJobOccurrencesTask, updateTimeJobsTask).ConfigureAwait(false);
-            skippedCronJobIds = await updateCronJobOccurrencesTask.ConfigureAwait(false);
-            skippedTimeJobIds = await updateTimeJobsTask.ConfigureAwait(false);
-        }
-        else
-        {
-            if (cronJobIds.Length != 0)
-            {
-                skippedCronJobIds = await persistenceProvider
-                    .UpdateCronJobOccurrencesWithUnifiedContextAsync(
-                        cronJobIds,
-                        unifiedFunctionContext,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
-
-            if (timeJobIds.Length != 0)
-            {
-                skippedTimeJobIds = await persistenceProvider
-                    .UpdateTimeJobsWithUnifiedContextAsync(timeJobIds, unifiedFunctionContext, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-        }
-
-        var skippedCronJobIdSet = new HashSet<Guid>(skippedCronJobIds);
-        var skippedTimeJobIdSet = new HashSet<Guid>(skippedTimeJobIds);
-        var skippedResources = resources
-            .Where(resource =>
-                resource.Type == JobType.TimeJob
-                    ? skippedTimeJobIdSet.Contains(resource.JobId)
-                    : skippedCronJobIdSet.Contains(resource.JobId)
-            )
-            .ToArray();
+        var skippedResources = await _ApplyUnifiedContextAsync(resources, unifiedFunctionContext, cancellationToken)
+            .ConfigureAwait(false);
 
         foreach (var resource in skippedResources)
         {
@@ -1377,6 +1315,57 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                     .ConfigureAwait(false);
             }
         }
+    }
+
+    // Applies one shared state to many rows and returns the resources whose rows took it, in input order. The
+    // providers fence the write on the state's claim owner, so rows are written one claim owner at a time; a batch
+    // claimed in one pass normally has exactly one.
+    private async Task<JobExecutionState[]> _ApplyUnifiedContextAsync(
+        JobExecutionState[] resources,
+        JobExecutionState unifiedFunctionContext,
+        CancellationToken cancellationToken
+    )
+    {
+        var stampedIds = new HashSet<(JobType Type, Guid JobId)>();
+
+        foreach (var group in resources.GroupBy(static x => x.ClaimOwner, StringComparer.Ordinal))
+        {
+            unifiedFunctionContext.ClaimOwner = group.Key;
+
+            var cronJobIds = group.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
+            var timeJobIds = group.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
+
+            var cronTask =
+                cronJobIds.Length != 0
+                    ? persistenceProvider.UpdateCronJobOccurrencesWithUnifiedContextAsync(
+                        cronJobIds,
+                        unifiedFunctionContext,
+                        cancellationToken
+                    )
+                    : Task.FromResult<Guid[]>([]);
+            var timeTask =
+                timeJobIds.Length != 0
+                    ? persistenceProvider.UpdateTimeJobsWithUnifiedContextAsync(
+                        timeJobIds,
+                        unifiedFunctionContext,
+                        cancellationToken
+                    )
+                    : Task.FromResult<Guid[]>([]);
+
+            await Task.WhenAll(cronTask, timeTask).ConfigureAwait(false);
+
+            foreach (var id in await cronTask.ConfigureAwait(false))
+            {
+                stampedIds.Add((JobType.CronJobOccurrence, id));
+            }
+
+            foreach (var id in await timeTask.ConfigureAwait(false))
+            {
+                stampedIds.Add((JobType.TimeJob, id));
+            }
+        }
+
+        return [.. resources.Where(resource => stampedIds.Contains((resource.Type, resource.JobId)))];
     }
 
     public async Task<T?> GetRequestAsync<T>(Guid jobId, JobType type, CancellationToken cancellationToken = default)

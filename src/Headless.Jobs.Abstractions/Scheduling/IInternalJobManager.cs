@@ -29,10 +29,10 @@ internal interface IInternalJobManager
     Task<int> UpdateTickerAsync(JobExecutionState context, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Renews the running job's lease (#316), dispatching to the time or cron occurrence renew by
-    /// <see cref="JobExecutionState.Type"/>. Returns the affected row count: <c>0</c> means the lease was
-    /// lost and the caller should cancel the job (cancel-on-loss); a <b>negative</b> value means coordination
-    /// membership is not currently established (#461) and the caller should skip the tick rather than cancel.
+    /// Renews the running job's lease (#316) under its <see cref="JobExecutionState.ClaimOwner"/>, dispatching to the
+    /// time or cron occurrence renew by <see cref="JobExecutionState.Type"/>. Returns the affected row count:
+    /// <c>0</c> means the lease was lost — including when the node's live identity is gone or is no longer the claim
+    /// owner — and the caller should cancel the job (cancel-on-loss).
     /// </summary>
     Task<int> RenewLeaseAsync(JobExecutionState context, CancellationToken cancellationToken = default);
 

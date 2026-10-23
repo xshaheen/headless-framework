@@ -46,7 +46,22 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     // Runtime owner accessor. Stamp/acquire sites read the current node@incarnation via TryGetStampOwner
     // and refuse to touch rows when membership is not established (registration pending or membership lost).
+    // Writes on a row this node already claimed take the claim owner from the caller instead.
     protected IJobsOwnerIdentity OwnerIdentity { get; } = ownerIdentity;
+
+    // Writes that extend or start ownership (renewal, admission) need the node to still be the claim owner. Settling
+    // writes fence on the claim owner alone and do not call this.
+    private bool _IsLiveOwner(string claimOwner)
+    {
+        return OwnerIdentity.TryGetStampOwner(out var liveOwner)
+            && string.Equals(liveOwner, claimOwner, StringComparison.Ordinal);
+    }
+
+    private static bool _StartsExecution(JobExecutionState functionContext)
+    {
+        return functionContext.PropertiesToUpdate.Contains(nameof(JobExecutionState.Status))
+            && functionContext.Status == JobStatus.InProgress;
+    }
 
     protected TimeProvider TimeProvider { get; } = timeProvider;
 
@@ -105,12 +120,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return claimStrategy.ClaimTimedOutTimeJobsAsync(cancellationToken);
     }
 
-    public async Task ReleaseAcquiredTimeJobsAsync(Guid[] timeJobIds, CancellationToken cancellationToken)
+    public async Task ReleaseAcquiredTimeJobsAsync(
+        Guid[] timeJobIds,
+        string claimOwner,
+        CancellationToken cancellationToken
+    )
     {
-        if (!OwnerIdentity.TryGetStampOwner(out var owner))
-        {
-            return;
-        }
+        Argument.IsNotNullOrEmpty(claimOwner);
 
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -126,7 +142,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // and bump their UpdatedAt CAS tokens. Release is scoped to this owner's own not-yet-started claims.
         // UpdatedAt from the DB clock: it doubles as the claim CAS token, so it must stay monotonic per row.
         await baseQuery
-            .WhereReleasableBy(owner)
+            .WhereReleasableBy(claimOwner)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -141,11 +157,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task<int> UpdateTimeJobAsync(JobExecutionState functionContexts, CancellationToken cancellationToken)
     {
-        // #5 completion fence: only the still-owning node may write a completion onto a non-terminal row.
-        // A node the dead-node sweep already transitioned (MarkFailed/Skip -> terminal, or released -> owner
-        // cleared) but which is actually alive must match 0 rows here instead of clobbering the sweep's result.
+        // #5 completion fence: only the claim owner may write a completion onto a non-terminal row. A node the
+        // dead-node sweep already transitioned (MarkFailed/Skip -> terminal, or released -> owner cleared) but which
+        // is actually alive must match 0 rows here instead of clobbering the sweep's result.
         // WhereOwnedBy = (Idle|Queued|InProgress) && OwnerId == owner, so terminal rows and reclaimed rows are excluded.
-        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        // The fence uses the claim owner, not the live identity: a run that finishes after its node left membership
+        // must still record its outcome while no peer has reclaimed the row.
+        if (functionContexts.ClaimOwner is not { Length: > 0 } owner)
         {
             return 0;
         }
@@ -167,10 +185,19 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        // #316 claim→start ownership recheck: all unified writes are fenced by owner and non-terminal state.
-        // Queued→InProgress additionally requires the row to still be Queued, so duplicate same-owner scheduler
-        // wrappers cannot revalidate an already-running row. Run-condition skip writes retain the broader fence.
-        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        // #316 claim→start ownership recheck: all unified writes are fenced by the claim owner and non-terminal
+        // state. Queued→InProgress additionally requires the row to still be Queued, so duplicate same-owner scheduler
+        // wrappers cannot revalidate an already-running row, and the live identity to still be the claim owner, so a
+        // node that left membership never starts work. Run-condition skip writes settle the run and keep the broader
+        // fence.
+        if (functionContext.ClaimOwner is not { Length: > 0 } owner)
+        {
+            return [];
+        }
+
+        var startsExecution = _StartsExecution(functionContext);
+
+        if (startsExecution && !_IsLiveOwner(owner))
         {
             return [];
         }
@@ -184,10 +211,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Where(x => ((IEnumerable<Guid>)timeJobIds).Contains(x.Id))
             .WhereOwnedBy(owner);
 
-        if (
-            functionContext.PropertiesToUpdate.Contains(nameof(JobExecutionState.Status))
-            && functionContext.Status == JobStatus.InProgress
-        )
+        if (startsExecution)
         {
             rowsToUpdate = rowsToUpdate.Where(x => x.Status == JobStatus.Queued);
         }
@@ -1124,6 +1148,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // The hydrated tree may include nodes the lease walk stopped at; execute strictly the claimed set.
         foreach (var root in acquired)
         {
+            // The flat projection does not carry OwnerId. The run fences its settling writes on the owner that
+            // claimed the root, so hand back the one this call stamped.
+            root.OwnerId = owner;
+
             if (claimedIdsByRoot.TryGetValue(root.Id, out var claimedIds))
             {
                 TimeJobSubtreeOperations.PruneToClaimedSet(root, claimedIds);
@@ -1135,16 +1163,14 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task<bool> UpdateTimeJobProgressAsync(
         Guid jobId,
+        string claimOwner,
         JobProgress progress,
         CancellationToken cancellationToken = default
     )
     {
-        // Same fence as RenewTimeJobLeaseAsync: only the running row this node owns, so a node that lost the lease
-        // cannot overwrite the new owner's progress. Without membership there is no owner to fence on.
-        if (!OwnerIdentity.TryGetStampOwner(out var owner))
-        {
-            return false;
-        }
+        // Only the running row still stamped with the claim owner, so a node that lost the lease cannot overwrite the
+        // new owner's progress. Progress settles nothing about ownership, so it does not need the live identity.
+        Argument.IsNotNullOrEmpty(claimOwner);
 
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -1154,7 +1180,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Set<TTimeJob>()
             .Where(x => x.Id == jobId)
             .Where(x => x.Status == JobStatus.InProgress)
-            .WhereOwnedBy(owner)
+            .WhereOwnedBy(claimOwner)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -1170,19 +1196,24 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return affected > 0;
     }
 
-    public async Task<int> RenewTimeJobLeaseAsync(Guid jobId, CancellationToken cancellationToken = default)
+    public async Task<int> RenewTimeJobLeaseAsync(
+        Guid jobId,
+        string claimOwner,
+        CancellationToken cancellationToken = default
+    )
     {
         // #316 sliding lease: slide LockedUntil forward while the job runs. Fenced on WhereOwnedBy (the #5
         // completion-fence shape: still owned + non-terminal), so a row the dead-node/stalled sweep already
         // reclaimed, terminalized, or whose owner changed matches 0 rows — the signal the caller turns into
         // cancel-on-loss. No separate liveness query: this UPDATE is the loss detector.
-        // #461: a NEGATIVE return means coordination membership is not currently established (registration pending
-        // or a transient blip) — distinct from 0 (genuinely not owned). The caller skips this renewal tick instead of
-        // cancelling, so a momentary membership hiccup doesn't kill a healthy job; if it persists the lease lapses and
-        // the stalled-reclaim sweep recovers the row per OnNodeDeath (same bound as a dead node).
-        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        // Renewal extends ownership, so the node must still BE the claim owner: once it left membership, passed its
+        // self-fence deadline, or restarted as a new incarnation, renewing would keep a fenced node's rows alive
+        // against the peers that are entitled to reclaim them. That is a lost lease, not a tick to skip.
+        Argument.IsNotNullOrEmpty(claimOwner);
+
+        if (!_IsLiveOwner(claimOwner))
         {
-            return -1;
+            return 0;
         }
 
         await using var dbContext = await DbContextFactory
@@ -1200,7 +1231,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             // would return 1 ("lease held") and suppress the cancel-on-loss signal. WhereOwnedBy alone permits
             // Idle|Queued|InProgress, so the explicit InProgress filter is required here.
             .Where(x => x.Status == JobStatus.InProgress)
-            .WhereOwnedBy(owner)
+            .WhereOwnedBy(claimOwner)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -2609,9 +2640,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken
     )
     {
-        // #5 completion fence (see UpdateTimeJobAsync): only the still-owning node may complete a non-terminal occurrence.
-        // Returns 0 when fenced out (foreign owner / terminal row), 1 when applied — mirroring UpdateTimeJobAsync.
-        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        // #5 completion fence (see UpdateTimeJobAsync): only the claim owner may complete a non-terminal occurrence,
+        // whether or not the node is still a member. Returns 0 when fenced out (foreign owner / terminal row), 1 when
+        // applied — mirroring UpdateTimeJobAsync.
+        if (functionContext.ClaimOwner is not { Length: > 0 } owner)
         {
             return 0;
         }
@@ -2752,16 +2784,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task<bool> UpdateCronJobOccurrenceProgressAsync(
         Guid occurrenceId,
+        string claimOwner,
         JobProgress progress,
         CancellationToken cancellationToken = default
     )
     {
-        // Same fence as RenewCronJobOccurrenceLeaseAsync: only the running row this node owns, so a node that lost the lease
-        // cannot overwrite the new owner's progress. Without membership there is no owner to fence on.
-        if (!OwnerIdentity.TryGetStampOwner(out var owner))
-        {
-            return false;
-        }
+        // See UpdateTimeJobProgressAsync: fenced on the claim owner and a running row, not on the live identity.
+        Argument.IsNotNullOrEmpty(claimOwner);
 
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -2771,7 +2800,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .Where(x => x.Id == occurrenceId)
             .Where(x => x.Status == JobStatus.InProgress)
-            .WhereOwnedBy(owner)
+            .WhereOwnedBy(claimOwner)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -2789,16 +2818,17 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task<int> RenewCronJobOccurrenceLeaseAsync(
         Guid occurrenceId,
+        string claimOwner,
         CancellationToken cancellationToken = default
     )
     {
-        // #316 sliding lease — mirror of RenewTimeJobLeaseAsync for cron occurrences. WhereOwnedBy fence makes a
-        // lost/reclaimed/terminalized occurrence match 0 rows -> cancel-on-loss.
-        // #461: a NEGATIVE return means coordination membership is not established (see RenewTimeJobLeaseAsync) — the
-        // caller skips the renewal tick rather than cancelling.
-        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        // #316 sliding lease — mirror of RenewTimeJobLeaseAsync for cron occurrences, including the live-identity
+        // check. WhereOwnedBy fence makes a lost/reclaimed/terminalized occurrence match 0 rows -> cancel-on-loss.
+        Argument.IsNotNullOrEmpty(claimOwner);
+
+        if (!_IsLiveOwner(claimOwner))
         {
-            return -1;
+            return 0;
         }
 
         await using var dbContext = await DbContextFactory
@@ -2813,7 +2843,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Where(x => x.Id == occurrenceId)
             // Renewal slides a RUNNING lease only (see RenewTimeJobLeaseAsync) — InProgress filter required.
             .Where(x => x.Status == JobStatus.InProgress)
-            .WhereOwnedBy(owner)
+            .WhereOwnedBy(claimOwner)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -2907,15 +2937,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task ReleaseAcquiredCronJobOccurrencesAsync(
         Guid[] occurrenceIds,
+        string claimOwner,
         CancellationToken cancellationToken = default
     )
     {
-        if (!OwnerIdentity.TryGetStampOwner(out var owner))
-        {
-            return;
-        }
+        Argument.IsNotNullOrEmpty(claimOwner);
 
-        var now = TimeProvider.GetUtcNow();
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -2929,7 +2956,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         // See ReleaseAcquiredTimeJobsAsync: owner-scoped release predicate, never the cluster-wide acquire arms.
         await baseQuery
-            .WhereReleasableBy(owner)
+            .WhereReleasableBy(claimOwner)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -3018,9 +3045,16 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        // #316 — cron mirror of UpdateTimeJobsWithUnifiedContextAsync, including the strict Queued→InProgress
-        // transition that rejects duplicate same-owner scheduler wrappers.
-        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        // #316 — cron mirror of UpdateTimeJobsWithUnifiedContextAsync, including the claim-owner fence, the live-identity
+        // check on start, and the strict Queued→InProgress transition that rejects duplicate same-owner wrappers.
+        if (functionContext.ClaimOwner is not { Length: > 0 } owner)
+        {
+            return [];
+        }
+
+        var startsExecution = _StartsExecution(functionContext);
+
+        if (startsExecution && !_IsLiveOwner(owner))
         {
             return [];
         }
@@ -3028,10 +3062,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-
-        var startsExecution =
-            functionContext.PropertiesToUpdate.Contains(nameof(JobExecutionState.Status))
-            && functionContext.Status == JobStatus.InProgress;
 
         // Starting execution fences every definition against a concurrent pause, so the fence and the transition
         // share one transaction; any other unified update is a single autocommit statement.
