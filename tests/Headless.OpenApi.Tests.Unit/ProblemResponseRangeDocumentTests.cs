@@ -45,6 +45,25 @@ public sealed class ProblemResponseRangeDocumentTests : TestBase
     }
 
     [Fact]
+    public async Task should_leave_the_ranges_out_when_the_api_turns_them_off()
+    {
+        // given - an API whose document feeds a client generator that mishandles range keys
+        var document = await _GetDocumentAsync(options => options.ProblemResponseRanges = false);
+
+        var responses = _Operations(document).Select(operation => operation["responses"]!).ToList();
+
+        // then - only the ranges go; the exact problem statuses stay
+        responses.Should().NotBeEmpty();
+        responses
+            .Should()
+            .AllSatisfy(response =>
+            {
+                response.AsObject().Select(pair => pair.Key).Should().NotContain(["4XX", "5XX"]);
+                response.ExactStatusCodes().Should().Contain(["404", "409", "422"]);
+            });
+    }
+
+    [Fact]
     public async Task should_keep_the_ranges_when_the_standard_problems_are_off()
     {
         // given the 404/409/422 baseline turned off for the whole API

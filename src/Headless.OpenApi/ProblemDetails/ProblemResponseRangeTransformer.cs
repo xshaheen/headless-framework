@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Microsoft.AspNetCore.OpenApi;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 
 namespace Headless.OpenApi;
@@ -15,6 +17,8 @@ namespace Headless.OpenApi;
 /// mapped exception: a client generator that falls back from an exact status to its range still deserializes the body
 /// instead of raising an untyped error. Registered last, so an operation's exact statuses are already in place and keep
 /// their specific schemas; an operation that declares a range itself keeps its own.
+/// <see cref="HeadlessOpenApiOptions.ProblemResponseRanges"/> turns them off API-wide, for a client generator that
+/// mishandles range keys.
 /// </remarks>
 internal sealed class ProblemResponseRangeTransformer : IOpenApiOperationTransformer
 {
@@ -24,6 +28,14 @@ internal sealed class ProblemResponseRangeTransformer : IOpenApiOperationTransfo
         CancellationToken cancellationToken
     )
     {
+        if (
+            context.ApplicationServices.GetService<IOptions<HeadlessOpenApiOptions>>()?.Value is
+            { ProblemResponseRanges: false }
+        )
+        {
+            return;
+        }
+
         var responses = operation.Responses ??= [];
 
         await _AddAsync(

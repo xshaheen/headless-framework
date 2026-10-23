@@ -46,6 +46,19 @@ public sealed class HeadlessOpenApiOptions
     public bool StandardProblemResponses { get; set; } = true;
 
     /// <summary>
+    /// Whether every operation documents the <c>4XX</c> and <c>5XX</c> range responses typed with
+    /// <c>HeadlessProblemDetails</c>. Default is <see langword="true"/>.
+    /// </summary>
+    /// <remarks>
+    /// The ranges let a generated client read a status no rule predicts (a timeout, an unavailable dependency, an
+    /// application's mapped exception) as a typed problem. Turn them off API-wide when the document feeds a client
+    /// generator that mishandles range keys: NSwag's C# generator emits code that does not compile for them, and
+    /// openapi-generator's <c>typescript-fetch</c> ignores them. The endpoint markers and the surface setting do not
+    /// remove the ranges; only this option does.
+    /// </remarks>
+    public bool ProblemResponseRanges { get; set; } = true;
+
+    /// <summary>
     /// Whether to register an API-key security scheme named <see cref="ApiKeySchemeName"/> that reads the
     /// <see cref="ApiKeyHeaderName"/> header. Default is <see langword="false"/>.
     /// </summary>
