@@ -202,7 +202,63 @@ public sealed class JobsExecutionTaskHandlerTenancyTests : TestBase
         observed.Should().NotBeEmpty().And.AllSatisfy(id => id.Should().BeNull());
     }
 
-    private sealed class CapturingExceptionHandler(Action onHandle) : IJobExceptionHandler
+    [Fact]
+    public async Task cancellation_callback_observes_the_job_tenant_scope()
+    {
+        var tenant = new AsyncLocalTenant();
+
+        var manager = Substitute.For<IInternalJobManager>();
+        manager.RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(1));
+        manager
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(1));
+        manager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(true));
+
+        string? observedByCancellationHandler = null;
+        var services = new ServiceCollection();
+        services.AddSingleton<IJobExceptionHandler>(
+            new CapturingExceptionHandler(
+                onHandle: static () => { },
+                onCanceled: () => observedByCancellationHandler = tenant.Id
+            )
+        );
+        await using var serviceProvider = services.BuildServiceProvider();
+
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            TimeProvider.System,
+            Substitute.For<IJobsInstrumentation>(),
+            manager,
+            JobFunctionRegistryBuilder.Build([], [], []),
+            new JobsExecutionCancellationRegistry(),
+            new SchedulerOptionsBuilder(),
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(JobFunctionRegistryBuilder.Build([], [], [])),
+            currentTenant: tenant
+        );
+
+        var job = new JobExecutionState
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "cancelled-fn",
+            Type = JobType.TimeJob,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Status = JobStatus.Queued,
+            TenantId = "t1",
+            CachedDelegate = async (_, _, token) => await Task.Delay(Timeout.InfiniteTimeSpan, token),
+        };
+
+        await handler.ExecuteTaskAsync(job, isDue: false, cancellationToken: AbortToken);
+
+        job.Status.Should().Be(JobStatus.Cancelled);
+        observedByCancellationHandler.Should().Be("t1");
+        tenant.Id.Should().BeNull("the job tenant scope must not leak past the handler");
+    }
+
+    private sealed class CapturingExceptionHandler(Action onHandle, Action? onCanceled = null) : IJobExceptionHandler
     {
         public Task HandleExceptionAsync(
             Exception exception,
@@ -223,6 +279,8 @@ public sealed class JobsExecutionTaskHandlerTenancyTests : TestBase
             CancellationToken cancellationToken = default
         )
         {
+            onCanceled?.Invoke();
+
             return Task.CompletedTask;
         }
     }

@@ -1421,42 +1421,34 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task execute_task_async_skips_the_tick_without_cancelling_when_renewal_reports_membership_unknown()
+    public async Task execute_task_async_does_not_run_or_fail_the_row_when_membership_is_unknown_and_the_release_fails()
     {
-        // #461: a negative RenewLeaseAsync result means coordination membership is momentarily unestablished, NOT a
-        // lost lease. The renewal loop must skip the tick and let the healthy job keep running, not cancel it.
+        // With no identity to write under, a failed hand-back leaves the row for reclaim instead of failing it.
+        var writes = new List<JobStatus>();
         var services = new ServiceCollection();
         var internalManager = Substitute.For<IInternalJobManager>();
         var instrumentation = Substitute.For<IJobsInstrumentation>();
         internalManager
+            .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(1));
+        internalManager
             .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<bool?>(false));
+        internalManager
+            .ReleaseInProgressAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<int>(new TimeoutException("store unreachable")));
+        internalManager
+            .UpdateTickerAsync(
+                Arg.Do<JobExecutionState>(state => writes.Add(state.Status)),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult(1));
         services.AddSingleton(internalManager);
-        services.AddSingleton(instrumentation);
         var serviceProvider = services.BuildServiceProvider();
 
-        // Every renewal reports membership-unknown (sentinel < 0); the loop must skip, not cancel. The delegate blocks
-        // until the SECOND renewal tick so the test is deterministic (no real-clock margins): by the 2nd call the 1st
-        // tick's skip has already been logged, and we know the loop chose to keep running rather than cancel.
-        var secondRenewalReached = new TaskCompletionSource();
-        var renewalCalls = 0;
-        internalManager
-            .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                if (Interlocked.Increment(ref renewalCalls) >= 2)
-                {
-                    secondRenewalReached.TrySetResult();
-                }
+        // An identity that is not established yields no owner.
+        var ownerIdentity = Substitute.For<IJobsOwnerIdentity>();
 
-                return Task.FromResult(-1);
-            });
-        // Completion write applies (1) so the #462 reconciliation path is not triggered here.
-        internalManager
-            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(1));
-
-        var logger = new CapturingLogger<JobsExecutionTaskHandler>();
         var handler = new JobsExecutionTaskHandler(
             serviceProvider,
             TimeProvider.System,
@@ -1464,95 +1456,114 @@ public sealed class RetryBehaviorTests : TestBase
             internalManager,
             _EmptyRegistry,
             new JobsExecutionCancellationRegistry(),
-            new SchedulerOptionsBuilder
-            {
-                LeaseDuration = TimeSpan.FromMinutes(5),
-                LeaseRenewalInterval = TimeSpan.FromMilliseconds(20),
-            },
-            logger,
-            new JobsFunctionTagBound(_EmptyRegistry)
+            new SchedulerOptionsBuilder(),
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(_EmptyRegistry),
+            ownerIdentity: ownerIdentity
         );
 
+        var invoked = false;
         var context = new JobExecutionState
         {
             JobId = Guid.NewGuid(),
-            FunctionName = "LongJob",
-            Type = JobType.CronJobOccurrence,
+            FunctionName = "UnknownMembership",
+            Type = JobType.TimeJob,
             ExecutionTime = DateTime.UtcNow,
             RetryIntervals = [0],
             Retries = 0,
             RetryCount = 0,
-            Status = JobStatus.Idle,
-            // Completes only after the renewal loop has ticked twice — deterministic, not timing-dependent.
-            CachedDelegate = async (_, _, ct) =>
-                await secondRenewalReached.Task.WaitAsync(TimeSpan.FromSeconds(10), ct),
+            Status = JobStatus.Queued,
+            ClaimOwner = "node-a@1",
+            CachedDelegate = (_, _, _) =>
+            {
+                invoked = true;
+                return Task.CompletedTask;
+            },
         };
+
+        var execute = () => handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
+
+        await execute.Should().NotThrowAsync();
+        invoked.Should().BeFalse();
+        context.Status.Should().Be(JobStatus.InProgress);
+        writes.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task execute_task_async_leaves_the_row_running_when_the_retry_count_write_is_lost(bool writeThrows)
+    {
+        // A retry count that did not reach the store means this node can no longer vouch for the row: the run stops
+        // as lease loss and the row stays non-terminal for reclaim, never Failed.
+        var writes = new List<JobStatus>();
+        var (handler, context, manager, attempts) = _SetupRetryTestFixture([0], retries: 1);
+        manager
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var state = call.Arg<JobExecutionState>();
+                if (state.Status == JobStatus.InProgress && state.RetryCount == 1)
+                {
+                    return writeThrows
+                        ? Task.FromException<int>(new TimeoutException("store unreachable"))
+                        : Task.FromResult(0);
+                }
+
+                writes.Add(state.Status);
+                return Task.FromResult(1);
+            });
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
 
-        context.LeaseLost.Should().BeFalse(); // membership-unknown must NOT trip cancel-on-loss
-        context.Status.Should().Be(JobStatus.DueDone);
-        logger.Entries.Should().Contain(e => e.EventId == 3103); // membership-unknown skip was logged
+        attempts.Should().ContainSingle();
+        context.LeaseLost.Should().BeTrue();
+        context.Status.Should().Be(JobStatus.InProgress);
+        writes.Should().NotContain(JobStatus.Failed);
     }
 
     [Fact]
-    public async Task execute_task_async_cancels_on_loss_when_membership_stays_unknown_past_the_lease_window()
+    public async Task execute_task_async_runs_no_exception_callback_when_the_failed_write_is_fenced()
     {
-        // #461 bound: a membership blip is tolerated only within the lease window. If membership stays unestablished
-        // for the whole LeaseDuration (e.g. a permanent partition), the lease has lapsed and the row is being
-        // reclaimed elsewhere — the loop must stop the local zombie via cancel-on-loss (leaving the row for the sweep).
-        var services = new ServiceCollection();
-        var internalManager = Substitute.For<IInternalJobManager>();
-        var instrumentation = Substitute.For<IJobsInstrumentation>();
-        internalManager
-            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<bool?>(false));
-        services.AddSingleton(internalManager);
-        services.AddSingleton(instrumentation);
-        var serviceProvider = services.BuildServiceProvider();
-
-        // Membership never re-establishes — every renewal reports membership-unknown.
-        internalManager
-            .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(-1));
-
-        var handler = new JobsExecutionTaskHandler(
-            serviceProvider,
-            TimeProvider.System,
-            instrumentation,
-            internalManager,
-            _EmptyRegistry,
-            new JobsExecutionCancellationRegistry(),
-            new SchedulerOptionsBuilder
-            {
-                LeaseDuration = TimeSpan.FromMilliseconds(250),
-                LeaseRenewalInterval = TimeSpan.FromMilliseconds(40),
-            },
-            NullLogger<JobsExecutionTaskHandler>.Instance,
-            new JobsFunctionTagBound(_EmptyRegistry)
+        var exceptionHandler = Substitute.For<Headless.Jobs.IJobExceptionHandler>();
+        var (handler, context, manager, _) = _SetupRetryTestFixture(
+            [],
+            retries: 0,
+            configureServices: services => services.AddSingleton(exceptionHandler)
         );
-
-        var context = new JobExecutionState
-        {
-            JobId = Guid.NewGuid(),
-            FunctionName = "LongJob",
-            Type = JobType.CronJobOccurrence,
-            ExecutionTime = DateTime.UtcNow,
-            RetryIntervals = [0],
-            Retries = 0,
-            RetryCount = 0,
-            Status = JobStatus.Idle,
-            // Runs until cancel-on-loss fires — deterministic: the lease-window bound WILL trip once membership has
-            // been unknown for LeaseDuration (load only delays the moment, never changes the outcome).
-            CachedDelegate = async (_, _, ct) => await Task.Delay(Timeout.Infinite, ct),
-        };
+        manager
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(call.Arg<JobExecutionState>().Status == JobStatus.Failed ? 0 : 1));
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
 
-        context.LeaseLost.Should().BeTrue(); // bound tripped -> cancel-on-loss, no terminal write
-        await internalManager
-            .DidNotReceive()
-            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>());
+        context.LeaseLost.Should().BeTrue();
+        exceptionHandler.ReceivedCalls().Should().BeEmpty("a peer owns the row, so its outcome is not this run's");
+    }
+
+    [Fact]
+    public async Task execute_task_async_runs_no_cancellation_callback_when_the_cancelled_write_is_fenced()
+    {
+        var exceptionHandler = Substitute.For<Headless.Jobs.IJobExceptionHandler>();
+        var (handler, context, manager, _) = _SetupRetryTestFixture(
+            [],
+            retries: 0,
+            configureServices: services => services.AddSingleton(exceptionHandler)
+        );
+        context.Type = JobType.TimeJob;
+        context.CachedDelegate = async (_, _, token) => await Task.Delay(Timeout.InfiniteTimeSpan, token);
+        manager
+            .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(true));
+        manager
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(0));
+
+        await handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
+
+        context.Status.Should().Be(JobStatus.Cancelled);
+        context.LeaseLost.Should().BeTrue();
+        exceptionHandler.ReceivedCalls().Should().BeEmpty("a peer owns the row, so its outcome is not this run's");
     }
 
     [Fact]
