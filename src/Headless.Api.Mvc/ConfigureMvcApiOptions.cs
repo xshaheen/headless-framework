@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.IO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Formatters;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
 using Microsoft.Extensions.Options;
 
@@ -18,6 +20,7 @@ namespace Headless.Api.Options;
 ///   <item>Enables 406 Not Acceptable when the client's <c>Accept</c> header cannot be satisfied.</item>
 ///   <item>Clears the default model-validator providers and substitutes <c>SystemTextJsonValidationMetadataProvider</c>.</item>
 ///   <item>Applies <c>ProblemDetailsOptions.CustomizeProblemDetails</c> once to Headless-normalized MVC problem-details object results.</item>
+///   <item>Binds an <see cref="IUploadedFile"/> from the multipart form and marks it as form-file input, so API Explorer describes it as a file part rather than expanding the interface.</item>
 /// </list>
 /// Behavior applied to <see cref="ApiBehaviorOptions"/>:
 /// <list type="bullet">
@@ -49,6 +52,14 @@ internal sealed class ConfigureMvcApiOptions : IConfigureOptions<MvcOptions>, IC
         )
         {
             options.Filters.Add<HeadlessProblemDetailsResultFilter>();
+        }
+
+        if (!options.ModelBinderProviders.OfType<UploadedFileModelBinderProvider>().Any())
+        {
+            options.ModelBinderProviders.Insert(0, new UploadedFileModelBinderProvider());
+            options.ModelMetadataDetailsProviders.Add(
+                new BindingSourceMetadataProvider(typeof(IUploadedFile), BindingSource.FormFile)
+            );
         }
 
         // Exception mapping is handled globally by HeadlessApiExceptionHandler (registered in

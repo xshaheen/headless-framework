@@ -180,6 +180,9 @@ public static class SetupHeadlessOpenApi
         return services;
     }
 
+    // Stateless, so every document shares one.
+    private static readonly UploadedFileTransformer _UploadedFiles = new();
+
     /// <summary>Adds the Headless document, operation, and schema transformers to one OpenAPI document.</summary>
     /// <param name="options">The native options of the document.</param>
     /// <returns>The same <paramref name="options"/> instance for chaining.</returns>
@@ -206,6 +209,7 @@ public static class SetupHeadlessOpenApi
 
         // Schema transformers each walk the whole schema tree in turn, so a later one sees the earlier ones' output.
         options.AddSchemaTransformer(new PrimitiveSchemaTransformer());
+        options.AddSchemaTransformer(_UploadedFiles);
         options.AddSchemaTransformer(new NumberSchemaTransformer());
         options.AddSchemaTransformer(new FluentValidationSchemaTransformer());
         options.AddSchemaTransformer(new RequiredSchemaTransformer());
@@ -222,6 +226,8 @@ public static class SetupHeadlessOpenApi
         options.AddOperationTransformer(new HttpContractTransformer());
         // After the feature contracts, so a feature's own description of a 400 or 413 wins over the generic one.
         options.AddOperationTransformer(new RequestReadingResponseTransformer());
+        // Before the file rules, which write a part's encoding only into a multipart body.
+        options.AddOperationTransformer(_UploadedFiles);
         options.AddOperationTransformer(new FormFileValidationTransformer());
         options.AddOperationTransformer(new SecurityRequirementTransformer());
         // After every feature-specific adder, so a feature's own 404, 409, or 422 description wins over the generic one.

@@ -16,7 +16,9 @@ namespace Headless.OpenApi;
 /// <remarks>
 /// A primitive serializes through its own converter, which the native generator cannot see through, so without this
 /// it publishes an empty schema that accepts any value. Generated primitives need no per-assembly registration: the
-/// interface identifies them.
+/// interface identifies them. A collection of primitives (<c>IReadOnlyList&lt;UserId&gt;</c>) gets the same description
+/// as its <c>items</c>: the generator leaves a converter-backed element out of the array altogether, so the array would
+/// otherwise publish no <c>items</c> and a generated client could not type its elements.
 /// </remarks>
 internal sealed class PrimitiveSchemaTransformer : IOpenApiSchemaTransformer
 {
@@ -34,6 +36,8 @@ internal sealed class PrimitiveSchemaTransformer : IOpenApiSchemaTransformer
 
         if (!_TryGetValueType(nullableUnderlying ?? type, out var valueType))
         {
+            _DescribeItems(schema, context.JsonTypeInfo.ElementType);
+
             return Task.CompletedTask;
         }
 
@@ -54,6 +58,30 @@ internal sealed class PrimitiveSchemaTransformer : IOpenApiSchemaTransformer
         _ApplyStringLength(schema, nullableUnderlying ?? type, valueType);
 
         return Task.CompletedTask;
+    }
+
+    private static void _DescribeItems(OpenApiSchema schema, Type? elementType)
+    {
+        if (schema.Items is not null || elementType is null)
+        {
+            return;
+        }
+
+        var elementUnderlying = Nullable.GetUnderlyingType(elementType);
+
+        if (!_TryGetValueType(elementUnderlying ?? elementType, out var valueType))
+        {
+            return;
+        }
+
+        var (jsonType, format) = _Describe(valueType);
+        var items = new OpenApiSchema
+        {
+            Type = elementUnderlying is null ? jsonType : jsonType | JsonSchemaType.Null,
+            Format = format,
+        };
+        _ApplyStringLength(items, elementUnderlying ?? elementType, valueType);
+        schema.Items = items;
     }
 
     // The generated constructor enforces the attribute's bounds unless it opts out with validate: false, in which case
