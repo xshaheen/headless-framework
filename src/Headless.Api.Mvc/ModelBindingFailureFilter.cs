@@ -8,8 +8,9 @@ using Microsoft.AspNetCore.Mvc.Filters;
 namespace Headless.Api.Options;
 
 /// <summary>
-/// Answers 400 <c>g:invalid_parameter_value</c> when a request value could not be bound, naming the first value that
-/// failed, instead of running the action with that parameter left at its default.
+/// Answers 400 <c>g:invalid_parameter_value</c> when a route, query, header, or form value could not be bound, naming
+/// the first value that failed, and the plain bad-request problem when the body could not be read, instead of running
+/// the action with the value left at its default.
 /// </summary>
 /// <remarks>
 /// Headless turns off the automatic <c>[ApiController]</c> 400 and clears MVC's validator providers, leaving rule
@@ -27,18 +28,35 @@ internal sealed class ModelBindingFailureFilter(IProblemDetailsCreator problemDe
             return;
         }
 
-        var parameter = context
-            .ModelState.Where(x => x.Value?.Errors.Count > 0)
-            .Select(x => x.Key)
-            .FirstOrDefault(key => !string.IsNullOrEmpty(key));
+        string? parameter = null;
 
-        var error = GeneralMessageDescriber.InvalidParameterValue(parameter ?? "body");
-
-        context.Result = new ObjectResult(problemDetailsCreator.BadRequest(error.Description, error))
+        foreach (var (key, entry) in context.ModelState)
         {
-            StatusCode = StatusCodes.Status400BadRequest,
-        };
+            if (entry.Errors.Count > 0 && !_IsBodyKey(key))
+            {
+                parameter = key;
+
+                break;
+            }
+        }
+
+        // A body that is missing or does not read as JSON is not a parameter value: answer the bad-request problem a
+        // Minimal API endpoint answers for the same body.
+        var problem = parameter is null ? problemDetailsCreator.BadRequest() : _InvalidParameter(parameter);
+
+        context.Result = new ObjectResult(problem) { StatusCode = StatusCodes.Status400BadRequest };
     }
 
     public void OnActionExecuted(ActionExecutedContext context) { }
+
+    private ProblemDetails _InvalidParameter(string parameter)
+    {
+        var error = GeneralMessageDescriber.InvalidParameterValue(parameter);
+
+        return problemDetailsCreator.BadRequest(error.Description, error);
+    }
+
+    // The JSON input formatter files a missing body under the empty key and a member it cannot read under its JSON
+    // path, which always starts at the document root ("$.status").
+    private static bool _IsBodyKey(string key) => key.Length == 0 || key[0] == '$';
 }

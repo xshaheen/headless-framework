@@ -52,6 +52,7 @@ internal sealed class UploadedFileModelBinderProvider : IModelBinderProvider
 {
     private static readonly UploadedFileModelBinder _Binder = new();
 
+    // Registered ahead of MVC's providers, so an explicit [ModelBinder] has to be let through by hand.
     public IModelBinder? GetBinder(ModelBinderProviderContext context) =>
-        context.Metadata.ModelType == typeof(IUploadedFile) ? _Binder : null;
+        context.Metadata.ModelType == typeof(IUploadedFile) && context.BindingInfo.BinderType is null ? _Binder : null;
 }

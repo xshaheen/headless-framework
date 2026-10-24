@@ -78,4 +78,38 @@ public static class RouteBuilderExtensions
 
         return builder;
     }
+
+    /// <summary>
+    /// Binds route, query, header, and form values on every endpoint the builder configures with the rules an MVC
+    /// action follows under <c>ConfigureHeadlessMvc()</c>: an enum is read by the names the JSON body accepts for it,
+    /// and a value that cannot be bound answers 400 <c>g:invalid_parameter_value</c> naming it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// ASP.NET Core parses an enum outside the body with a case-sensitive <c>Enum.TryParse</c> that also accepts
+    /// numbers, so <c>?status=active</c> fails while the OpenAPI document advertises <c>active</c>, and <c>?status=1</c>
+    /// binds. Here an enum value is read as the body reads the same text (a name the naming policy derives in any
+    /// casing, a <c>[JsonStringEnumMemberName]</c> alias as written, comma-separated <c>[Flags]</c> names, no numbers), and any other simple value is checked with the parse ASP.NET Core applies, so the 400 names the value
+    /// instead of answering the generic bad-request problem. A body that cannot be read keeps that problem, as in MVC.
+    /// </para>
+    /// <para>
+    /// <see cref="HeadlessApiSurfaceEndpointRouteBuilderExtensions.MapApiSurface"/> applies it to every endpoint of a
+    /// surface; call it on any other group or endpoint. The values to check are chosen once per endpoint when the
+    /// endpoint is built, an endpoint with none runs unchanged, and applying it twice has no further effect.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="TBuilder">The endpoint convention builder type, such as a route group or a route handler.</typeparam>
+    /// <param name="builder">The builder to configure.</param>
+    /// <returns><paramref name="builder"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
+    public static TBuilder BindRequestValues<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        Argument.IsNotNull(builder);
+
+        // It wraps the request delegate, which exists only once the endpoint is built, so it is a final convention.
+        builder.Finally(static endpoint => RequestValueBinder.Apply(endpoint));
+
+        return builder;
+    }
 }

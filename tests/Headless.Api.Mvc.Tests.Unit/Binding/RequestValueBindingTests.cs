@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ApplicationParts;
 using Microsoft.AspNetCore.Mvc.Controllers;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -41,6 +42,8 @@ public sealed class RequestValueBindingTests : TestBase
     [InlineData("1")]
     [InlineData("-1")]
     [InlineData("bogus")]
+    // The body rejects a member name its [JsonStringEnumMemberName] alias replaces, so the query does too.
+    [InlineData("OnHold")]
     public async Task should_answer_400_naming_the_parameter_when_an_enum_query_value_is_not_a_name(string value)
     {
         await using var app = await _StartAsync();
@@ -96,7 +99,7 @@ public sealed class RequestValueBindingTests : TestBase
     }
 
     [Fact]
-    public async Task should_bind_a_json_body_enum_by_name_and_answer_400_for_its_number()
+    public async Task should_bind_a_json_body_enum_by_name_and_answer_the_bad_request_problem_for_its_number()
     {
         await using var app = await _StartAsync();
         var client = app.GetTestClient();
@@ -104,9 +107,54 @@ public sealed class RequestValueBindingTests : TestBase
         using var byName = await client.PostAsJsonAsync("/bindings/body", new { status = "active" }, AbortToken);
         (await byName.Content.ReadAsStringAsync(AbortToken)).Should().Be("Active");
 
+        // A body that does not read is not a parameter value; a Minimal API endpoint answers the same problem.
         using var byNumber = await client.PostAsJsonAsync("/bindings/body", new { status = 1 }, AbortToken);
         byNumber.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await byNumber.Content.ReadAsStringAsync(AbortToken)).Should().Contain("g:invalid_parameter_value");
+        using var body = JsonDocument.Parse(await byNumber.Content.ReadAsStringAsync(AbortToken));
+        body.RootElement.GetProperty("title")
+            .GetString()
+            .Should()
+            .Be(HeadlessProblemDetailsConstants.Titles.BadRequest);
+        body.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_bind_an_enum_header_value_by_name_and_reject_its_number()
+    {
+        await using var app = await _StartAsync();
+        var client = app.GetTestClient();
+
+        using var byName = new HttpRequestMessage(HttpMethod.Get, "/bindings/header");
+        byName.Headers.Add("X-Status", "inactive");
+        using var named = await client.SendAsync(byName, AbortToken);
+        (await named.Content.ReadAsStringAsync(AbortToken)).Should().Be("Inactive");
+
+        using var byNumber = new HttpRequestMessage(HttpMethod.Get, "/bindings/header");
+        byNumber.Headers.Add("X-Status", "2");
+        using var numbered = await client.SendAsync(byNumber, AbortToken);
+        await _ShouldBeInvalidParameterAsync(numbered, "X-Status");
+    }
+
+    [Fact]
+    public async Task should_bind_an_enum_route_value_by_name_and_reject_its_number()
+    {
+        await using var app = await _StartAsync();
+        var client = app.GetTestClient();
+
+        (await client.GetStringAsync("/bindings/route/on-hold", AbortToken)).Should().Be("OnHold");
+
+        using var byNumber = await client.GetAsync("/bindings/route/3", AbortToken);
+        await _ShouldBeInvalidParameterAsync(byNumber, "status");
+    }
+
+    [Fact]
+    public async Task should_use_an_explicit_model_binder_over_the_enum_binder()
+    {
+        await using var app = await _StartAsync();
+
+        var status = await app.GetTestClient().GetStringAsync("/bindings/custom?status=active", AbortToken);
+
+        status.Should().Be("OnHold");
     }
 
     private static async Task _ShouldBeInvalidParameterAsync(HttpResponseMessage response, string parameter)
@@ -195,4 +243,24 @@ public sealed class BindingsController : ControllerBase
 
     [HttpPost("body")]
     public string Body(StatusBody body) => body.Status.ToString();
+
+    [HttpGet("header")]
+    public string Header([FromHeader(Name = "X-Status")] MemberStatus? status) => status?.ToString() ?? "none";
+
+    [HttpGet("route/{status}")]
+    public string Route([FromRoute] MemberStatus status) => status.ToString();
+
+    [HttpGet("custom")]
+    public string Custom([FromQuery, ModelBinder(typeof(OnHoldBinder))] MemberStatus status) => status.ToString();
+}
+
+/// <summary>Binds every value as <see cref="MemberStatus.OnHold"/>, so a test can tell it ran.</summary>
+public sealed class OnHoldBinder : IModelBinder
+{
+    public Task BindModelAsync(ModelBindingContext bindingContext)
+    {
+        bindingContext.Result = ModelBindingResult.Success(MemberStatus.OnHold);
+
+        return Task.CompletedTask;
+    }
 }
