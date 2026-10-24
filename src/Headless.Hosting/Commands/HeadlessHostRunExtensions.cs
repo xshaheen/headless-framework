@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Globalization;
+using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using Headless.Checks;
 using Headless.Hosting;
@@ -21,6 +23,9 @@ public static class HeadlessHostRunExtensions
     private const string _SeedCommand = SeedCommand.Name;
     private const string _DeployCommand = "deploy";
     private const string _CheckCommand = "check";
+
+    // The value stored for an exception thrown while the host was stopping; only the key's presence matters.
+    private static readonly object _ThrownWhileStopping = new();
 
     extension(IHost host)
     {
@@ -139,19 +144,51 @@ public static class HeadlessHostRunExtensions
             // (or, when the host ignores such faults, leaves a dead component) but lets the process end normally, so
             // without this a crash reads as a clean exit to an orchestrator.
             var backgroundServices = host.Services.GetServices<IHostedService>().OfType<BackgroundService>().ToList();
+            var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
             var faulted = new List<BackgroundService>();
 
-            // Counted when the host starts stopping, not after: a service that throws while it shuts down (a disposed
-            // client, say) must not turn a clean rollout into a failed exit.
-            var stopping = host
-                .Services.GetRequiredService<IHostApplicationLifetime>()
-                .ApplicationStopping.Register(() =>
-                    faulted.AddRange(backgroundServices.Where(static s => s.ExecuteTask?.IsFaulted == true))
-                );
+            // A stop requested while the host is still starting also cancels the token the host passed each
+            // StartAsync, and that cancellation can run, and fault a service, before the count below. A fault the
+            // stop caused is always thrown after ApplicationStopping reports cancellation, which happens before any of
+            // its callbacks run, so the exceptions thrown from then until the count tell the stop's faults apart
+            // whatever order the callbacks run in. Recording ends at the count, so the process-wide event does no
+            // work while the host runs.
+            var thrownWhileStopping = new ConditionalWeakTable<Exception, object>();
 
-            await using (stopping.ConfigureAwait(false))
+            void recordThrownWhileStopping(object? sender, FirstChanceExceptionEventArgs e)
             {
-                await host.RunAsync(cancellationToken).ConfigureAwait(false);
+                if (lifetime.ApplicationStopping.IsCancellationRequested)
+                {
+                    thrownWhileStopping.AddOrUpdate(e.Exception, _ThrownWhileStopping);
+                }
+            }
+
+            AppDomain.CurrentDomain.FirstChanceException += recordThrownWhileStopping;
+
+            try
+            {
+                // Counted when the host starts stopping, not after: a service that throws while it shuts down (a
+                // disposed client, say) must not turn a clean rollout into a failed exit.
+                var stopping = lifetime.ApplicationStopping.Register(() =>
+                {
+                    AppDomain.CurrentDomain.FirstChanceException -= recordThrownWhileStopping;
+
+                    faulted.AddRange(
+                        backgroundServices.Where(s =>
+                            s.ExecuteTask is { IsFaulted: true } task
+                            && !task.Exception!.InnerExceptions.All(ex => thrownWhileStopping.TryGetValue(ex, out _))
+                        )
+                    );
+                });
+
+                await using (stopping.ConfigureAwait(false))
+                {
+                    await host.RunAsync(cancellationToken).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                AppDomain.CurrentDomain.FirstChanceException -= recordThrownWhileStopping;
             }
 
             foreach (var service in faulted)
