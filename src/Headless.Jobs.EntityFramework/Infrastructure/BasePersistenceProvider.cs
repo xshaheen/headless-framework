@@ -162,7 +162,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     public async Task<int> ReleaseInProgressTimeJobAsync(
         Guid jobId,
         string claimOwner,
-        DateTime? executionTime,
         CancellationToken cancellationToken = default
     )
     {
@@ -175,20 +174,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         return await _InterruptedTimeJob(dbContext, jobId, claimOwner)
             .ExecuteUpdateAsync(
+                // UpdatedAt from the DB clock: it doubles as the claim CAS token, so it must stay monotonic.
                 setter =>
-                {
-                    // UpdatedAt from the DB clock: it doubles as the claim CAS token, so it must stay monotonic.
                     setter
                         .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow);
-
-                    if (executionTime is { } dueAt)
-                    {
-                        setter.SetProperty(x => x.ExecutionTime, (DateTime?)dueAt);
-                    }
-                },
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
             .ConfigureAwait(false);

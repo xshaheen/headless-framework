@@ -1086,7 +1086,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 .ReleaseInProgressCronJobOccurrenceAsync(context.JobId, claimOwner, cancellationToken)
                 .ConfigureAwait(false)
             : await persistenceProvider
-                .ReleaseInProgressTimeJobAsync(context.JobId, claimOwner, executionTime: null, cancellationToken)
+                .ReleaseInProgressTimeJobAsync(context.JobId, claimOwner, cancellationToken)
                 .ConfigureAwait(false);
     }
 

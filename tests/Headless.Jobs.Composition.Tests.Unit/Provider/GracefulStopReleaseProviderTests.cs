@@ -32,10 +32,9 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
         var provider = _Create();
         var job = _TimeJob(JobStatus.InProgress, _Owner, NodeDeathPolicy.MarkFailed, retryCount: 1);
         await provider.AddTimeJobsAsync([job], AbortToken);
-        var dueAt = _Now.UtcDateTime.AddMinutes(10);
 
         // when
-        var affected = await provider.ReleaseInProgressTimeJobAsync(job.Id, _Owner, dueAt, AbortToken);
+        var affected = await provider.ReleaseInProgressTimeJobAsync(job.Id, _Owner, AbortToken);
 
         // then: the release ignores the policy, because the job never ran
         affected.Should().Be(1);
@@ -44,24 +43,7 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
         stored.OwnerId.Should().BeNull();
         stored.LockedUntil.Should().BeNull();
         stored.RetryCount.Should().Be(1);
-        stored.ExecutionTime.Should().Be(dueAt);
-    }
-
-    [Fact]
-    public async Task should_keep_the_stored_execution_time_when_the_release_names_none()
-    {
-        // given
-        var provider = _Create();
-        var job = _TimeJob(JobStatus.InProgress, _Owner, NodeDeathPolicy.Retry);
-        await provider.AddTimeJobsAsync([job], AbortToken);
-
-        // when
-        await provider.ReleaseInProgressTimeJobAsync(job.Id, _Owner, executionTime: null, AbortToken);
-
-        // then
-        (await provider.GetTimeJobByIdAsync(job.Id, AbortToken))!
-            .ExecutionTime.Should()
-            .Be(job.ExecutionTime);
+        stored.ExecutionTime.Should().Be(job.ExecutionTime, "the release keeps the row due at its stored instant");
     }
 
     [Theory]
@@ -81,7 +63,7 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         // when
-        var released = await provider.ReleaseInProgressTimeJobAsync(job.Id, _Owner, executionTime: null, AbortToken);
+        var released = await provider.ReleaseInProgressTimeJobAsync(job.Id, _Owner, AbortToken);
         var settled = await provider.SettleInterruptedTimeJobAsync(job.Id, _Owner, _Reason, null, AbortToken);
 
         // then

@@ -420,7 +420,6 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     public Task<int> ReleaseInProgressTimeJobAsync(
         Guid jobId,
         string claimOwner,
-        DateTime? executionTime,
         CancellationToken cancellationToken = default
     )
     {
@@ -428,7 +427,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         cancellationToken.ThrowIfCancellationRequested();
 
         return Task.FromResult(
-            _SettleInterruptedTimeJob(jobId, claimOwner, reason: null, executionTime, NodeDeathPolicy.Retry)
+            _SettleInterruptedTimeJob(jobId, claimOwner, reason: null, executionTime: null, NodeDeathPolicy.Retry)
         );
     }
 

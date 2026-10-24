@@ -722,6 +722,9 @@ public sealed class SchedulerOptionsBuilder
     /// <c>HostOptions.ShutdownTimeout</c>. A shorter host timeout fires the stop token before the release window
     /// opens, and interrupted jobs fall to reclaim instead of being released.
     /// </para>
+    /// <para>
+    /// Must be greater than zero and at most 5 minutes; registration rejects any other value.
+    /// </para>
     /// </remarks>
     public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
 

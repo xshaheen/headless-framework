@@ -15,7 +15,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
     private const string _StopPeer = "node-b@1";
     private const string _StopReason = "interrupted by host shutdown";
 
-    public virtual async Task graceful_release_returns_a_running_job_to_idle_uncharged_at_the_given_instant()
+    public virtual async Task graceful_release_returns_a_running_job_to_idle_uncharged_at_its_stored_instant()
     {
         var ct = AbortToken;
         await Fixture.ResetDatabaseAsync(ct);
@@ -34,9 +34,9 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
             NodeDeathPolicy.MarkFailed,
             lockedUntil: DateTime.UtcNow.AddMinutes(5)
         );
-        var dueAt = new DateTime(2035, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+        var before = await persistence.GetTimeJobByIdAsync(id, ct);
 
-        (await persistence.ReleaseInProgressTimeJobAsync(id, _StopOwner, dueAt, ct)).Should().Be(1);
+        (await persistence.ReleaseInProgressTimeJobAsync(id, _StopOwner, ct)).Should().Be(1);
 
         // The release ignores the policy: the job never ran.
         var detail = await Fixture.ReadTimeJobDetailAsync(id, ct);
@@ -44,7 +44,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
         detail.OwnerId.Should().BeNull();
         detail.LockedUntil.Should().BeNull();
         (await Fixture.ReadTimeJobRetryCountAsync(id, ct)).Should().Be(0);
-        (await persistence.GetTimeJobByIdAsync(id, ct))!.ExecutionTime.Should().Be(dueAt);
+        (await persistence.GetTimeJobByIdAsync(id, ct))!.ExecutionTime.Should().Be(before!.ExecutionTime);
     }
 
     public virtual async Task graceful_settlement_applies_the_node_death_policy_without_charging(int policy)
@@ -130,7 +130,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
 
         foreach (var id in new[] { reclaimed, notStarted })
         {
-            (await persistence.ReleaseInProgressTimeJobAsync(id, _StopOwner, executionTime: null, ct)).Should().Be(0);
+            (await persistence.ReleaseInProgressTimeJobAsync(id, _StopOwner, ct)).Should().Be(0);
             (await persistence.SettleInterruptedTimeJobAsync(id, _StopOwner, _StopReason, null, ct)).Should().Be(0);
         }
 

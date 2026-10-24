@@ -194,18 +194,16 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     );
 
     /// <summary>
-    /// Hands a started time job back to <c>Idle</c> without charging its retry budget, for a run the node chose not
-    /// to start or finish because the host is stopping gracefully. Owner and lease are cleared, and
-    /// <c>RetryCount</c> keeps its stored value.
+    /// Hands a claimed <c>InProgress</c> time job back to <c>Idle</c> without charging its retry budget, for a run the
+    /// node chose not to start because the host is stopping gracefully or its pool accepts no work. Owner and lease
+    /// are cleared, and <c>RetryCount</c> and <c>ExecutionTime</c> keep their stored values, so the row is due again at
+    /// once. A run the stop interrupted, including one waiting between retries, is settled by
+    /// <see cref="SettleInterruptedTimeJobAsync"/> instead.
     /// </summary>
     /// <param name="jobId">The job to release.</param>
     /// <param name="claimOwner">
     /// The owner that claimed the run (<see cref="JobExecutionState.ClaimOwner"/>). Only an <c>InProgress</c> row
     /// still stamped with it is released, so a row a peer already reclaimed is left alone.
-    /// </param>
-    /// <param name="executionTime">
-    /// The instant the job should next become due, or <see langword="null"/> to keep the stored one. A run stopped
-    /// while it waited between retries passes the instant its next attempt was planned for.
     /// </param>
     /// <param name="cancellationToken">Token that aborts the release before it starts.</param>
     /// <returns><c>1</c> when the row was released; <c>0</c> when the fence excluded it.</returns>
@@ -218,7 +216,6 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     Task<int> ReleaseInProgressTimeJobAsync(
         Guid jobId,
         string claimOwner,
-        DateTime? executionTime,
         CancellationToken cancellationToken = default
     );
 

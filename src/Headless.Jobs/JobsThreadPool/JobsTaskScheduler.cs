@@ -124,7 +124,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     /// dedicated-thread permit is awaited on a detached lane so a saturated long-running pool never blocks the
     /// caller's dispatch loop. The detached backlog is capped at two parked admissions per slot; beyond the cap
     /// the admission is rejected outright. A rejected or dropped (cancellation/shutdown) admission never runs;
-    /// the claimed job is recovered by the fallback reclaim sweep when its pickup lease lapses.
+    /// the claimed job is recovered by the fallback reclaim sweep when its pickup lease lapses. While a graceful stop
+    /// drains, an admission whose wait is cancelled still runs its work, which hands the claimed row back.
     /// </summary>
     public Task QueueAsync(
         Func<CancellationToken, Task> work,
@@ -180,8 +181,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
             // Admission is decoupled from the caller: a saturated long-running pool must not head-of-line-block a
             // sequential dispatch batch that still has ordinary-priority work to queue. A dropped admission
-            // (caller cancellation or shutdown while parked) never runs; the claimed job is recovered by the
-            // fallback reclaim sweep once its pickup lease lapses.
+            // (caller cancellation or shutdown while parked, outside a drain) never runs; the claimed job is
+            // recovered by the fallback reclaim sweep once its pickup lease lapses.
             _ = _AdmitAndStartLongRunningAsync(work, capacityCancellationToken, executionCancellationToken);
 
             return;
@@ -212,7 +213,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         _SignalWork();
     }
 
-    private static Func<CancellationToken, Task> _WithGate(Func<CancellationToken, Task> work, SemaphoreSlim? gate)
+    private Func<CancellationToken, Task> _WithGate(Func<CancellationToken, Task> work, SemaphoreSlim? gate)
     {
         if (gate is null)
         {
@@ -221,7 +222,23 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
         return async ct =>
         {
-            await gate.WaitAsync(ct).ConfigureAwait(false);
+            // While draining, the work only hands its row back and starts no job, so it needs no permit. A wait the stop
+            // cancels must still run the work: dropping it would leave the claimed row running for a charged reclaim.
+            if (_isDraining)
+            {
+                await work(ct).ConfigureAwait(false);
+                return;
+            }
+
+            try
+            {
+                await gate.WaitAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (_isDraining)
+            {
+                await work(ct).ConfigureAwait(false);
+                return;
+            }
 
             try
             {
@@ -719,6 +736,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     )
     {
         var admitted = false;
+        var drained = false;
 
 #pragma warning disable ERP022 // A detached admission has no caller to observe faults; dropping it lets the reclaim sweep recover the job.
         try
@@ -729,6 +747,14 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             );
             await _longRunningSlots.WaitAsync(admissionCts.Token).ConfigureAwait(false);
             admitted = true;
+            // Counted active before the backlog slot is freed, so a drain never sees a gap between the two.
+            Interlocked.Increment(ref _activeTasks);
+        }
+        catch when (_isDraining)
+        {
+            // The stop cancelled the wait, but the work still has a claimed row to hand back.
+            drained = true;
+            Interlocked.Increment(ref _activeTasks);
         }
         catch
         {
@@ -744,13 +770,16 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         }
 #pragma warning restore ERP022
 
+        if (drained)
+        {
+            await _HandBackDrainedLongRunningWorkAsync(work, executionCancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         if (!admitted)
         {
             return;
         }
-
-        // Bypass the shared pool only after reserving a bounded dedicated-thread slot.
-        Interlocked.Increment(ref _activeTasks);
 
         try
         {
@@ -776,6 +805,33 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             _TryDisposeLongRunningSlots();
         }
 #pragma warning restore ERP022
+    }
+
+    // Runs work whose slot wait the stop cancelled. It holds no slot and needs none: a draining work item starts no job
+    // and only hands its claimed row back, which is brief enough to run on the admission's own continuation.
+    private async Task _HandBackDrainedLongRunningWorkAsync(
+        Func<CancellationToken, Task> work,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await work(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected - task was cancelled
+        }
+        catch (Exception exception)
+        {
+            _logger.WorkItemFaulted(exception);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _outstandingLongRunningOperations);
+            Interlocked.Decrement(ref _activeTasks);
+            _TryDisposeLongRunningSlots();
+        }
     }
 
     private async Task _ExecuteLongRunningWorkAsync(
@@ -932,7 +988,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     {
         var deadline = timeout.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.Add(timeout.Value) : DateTime.MaxValue;
 
-        while (_totalQueuedTasks > 0 || _activeTasks > 0)
+        // A long-running admission still waiting for a slot holds a claimed row it must hand back while draining.
+        while (_totalQueuedTasks > 0 || _activeTasks > 0 || _pendingLongRunningAdmissions > 0)
         {
             if (_timeProvider.GetUtcNow().UtcDateTime > deadline)
             {

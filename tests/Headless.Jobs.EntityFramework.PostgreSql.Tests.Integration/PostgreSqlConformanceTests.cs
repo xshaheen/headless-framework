@@ -228,8 +228,8 @@ public abstract class PostgreSqlConformanceTestsBase<TFixture>(TFixture fixture)
         base.update_stamps_the_store_clock_and_a_claim_after_it_succeeds();
 
     [Fact]
-    public override Task graceful_release_returns_a_running_job_to_idle_uncharged_at_the_given_instant() =>
-        base.graceful_release_returns_a_running_job_to_idle_uncharged_at_the_given_instant();
+    public override Task graceful_release_returns_a_running_job_to_idle_uncharged_at_its_stored_instant() =>
+        base.graceful_release_returns_a_running_job_to_idle_uncharged_at_its_stored_instant();
 
     [Theory]
     [InlineData((int)NodeDeathPolicy.Retry)]

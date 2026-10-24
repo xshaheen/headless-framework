@@ -125,21 +125,39 @@ internal sealed class JobsExecutionTaskHandler
         }
         else
         {
+            // A root the drain hands back never runs, so neither does any child: the next owner re-runs the tree.
+            if (_IsDraining(isChild))
+            {
+                await _ReleaseForDrainAsync(context).ConfigureAwait(false);
+                return;
+            }
+
             // Persisted chains may carry more than the two children the typed builder authors (and the deeper
             // hydration now reaches nodes the old two-level cap never surfaced as executing parents), so the sibling
             // buffers are lists rather than the old fixed 5/6-slot arrays that overflowed past that count.
             var tasksToRunNow = new List<Task>(context.TimeJobChildren.Count + 1);
             var childrenToRunAfter = new List<JobExecutionState>(context.TimeJobChildren.Count);
 
+            // The children that run alongside the parent wait for the parent's last drain decision: the drain can still
+            // hand a root back after it started, and a child that ran meanwhile would run again under the next owner.
+            // Only a root can be handed back, so a child's own children need no such wait.
+            var parentStart = isChild
+                ? null
+                : new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
             // Add parent task
-            tasksToRunNow.Add(_RunContextFunctionAsync(context, isDue, runNow, cancellationToken, isChild));
+            tasksToRunNow.Add(
+                _RunContextFunctionAsync(context, isDue, runNow, cancellationToken, isChild, parentStart)
+            );
 
             // Process children - separate InProgress from others
             foreach (var child in context.TimeJobChildren)
             {
                 if (child.RunCondition == RunCondition.InProgress)
                 {
-                    tasksToRunNow.Add(_SafeRecursiveExecution(child, isDue, runNow, cancellationToken));
+                    tasksToRunNow.Add(
+                        _RunAlongsideParentAsync(child, parentStart?.Task, isDue, runNow, cancellationToken)
+                    );
                 }
                 else
                 {
@@ -240,12 +258,53 @@ internal sealed class JobsExecutionTaskHandler
         return !context.LeaseLost && ChainRunConditionRules.IsTerminal(context.Status);
     }
 
+    // Starts a child that runs while its parent runs, once the parent is past the point where the drain could still
+    // hand it back. A parent released for the drain leaves the child unstarted, still Idle under the root's claim.
+    private async Task _RunAlongsideParentAsync(
+        JobExecutionState child,
+        Task<bool>? parentStart,
+        bool isDue,
+        bool runNow,
+        CancellationToken cancellationToken
+    )
+    {
+        if (parentStart is not null && !await parentStart.ConfigureAwait(false))
+        {
+            return;
+        }
+
+        await _SafeRecursiveExecution(child, isDue, runNow, cancellationToken).ConfigureAwait(false);
+    }
+
+    // parentStart, when given, learns whether the children running alongside this run may start: false once the drain
+    // hands the row back, true on every other path, which keeps their start unchanged when no drain intervenes.
     private async Task _RunContextFunctionAsync(
         JobExecutionState context,
         bool isDue,
         bool runNow,
         CancellationToken cancellationToken,
-        bool isChild = false
+        bool isChild = false,
+        TaskCompletionSource<bool>? parentStart = null
+    )
+    {
+        try
+        {
+            await _RunContextFunctionCoreAsync(context, isDue, runNow, isChild, parentStart, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            parentStart?.TrySetResult(true);
+        }
+    }
+
+    private async Task _RunContextFunctionCoreAsync(
+        JobExecutionState context,
+        bool isDue,
+        bool runNow,
+        bool isChild,
+        TaskCompletionSource<bool>? parentStart,
+        CancellationToken cancellationToken
     )
     {
         // Each run is its own trace, linked to the span that scheduled it, so it must not inherit whatever is ambient
@@ -263,6 +322,7 @@ internal sealed class JobsExecutionTaskHandler
         // have cancelled, is consulted.
         if (_IsDraining(isChild))
         {
+            parentStart?.TrySetResult(false);
             await _ReleaseForDrainAsync(context).ConfigureAwait(false);
             return;
         }
@@ -440,6 +500,7 @@ internal sealed class JobsExecutionTaskHandler
         // retry budget, under CancellationToken.None so the write lands even after the stop token fired.
         async Task releaseForDrainAsync()
         {
+            parentStart?.TrySetResult(false);
             if (!await beginCompletionAsync().ConfigureAwait(false))
             {
                 return;
@@ -655,6 +716,9 @@ internal sealed class JobsExecutionTaskHandler
                 await releaseForDrainAsync().ConfigureAwait(false);
                 return;
             }
+
+            // Past its last drain check the run is committed: the drain now waits for it, and its children with it.
+            parentStart?.TrySetResult(true);
 
             Exception? lastException = null;
             var success = false;
@@ -1073,6 +1137,22 @@ internal sealed class JobsExecutionTaskHandler
         if (_cancellationRegistry.TrySignalLeaseLoss(registration))
         {
             context.LeaseLost = true;
+        }
+    }
+
+    /// <summary>
+    /// Hands back, uncharged, a row claimed for an immediate run that the pool refused because it accepts no work: the
+    /// host is stopping, or processing has not started. The row is Idle and due again, so the next poll runs it.
+    /// </summary>
+    public async Task ReleaseUndispatchedAsync(JobExecutionState context)
+    {
+        var released = await _internalJobsManager
+            .ReleaseInProgressAsync(context, CancellationToken.None)
+            .ConfigureAwait(false);
+
+        if (_ShutdownWriteLanded(context, released))
+        {
+            _logger.LogJobReleasedUndispatched(context.JobId, context.FunctionName);
         }
     }
 
@@ -1731,6 +1811,14 @@ internal static partial class JobsExecutionTaskHandlerLog
             + "unstarted for another node to run, with its retry budget unchanged."
     )]
     public static partial void LogJobReleasedForDrain(this ILogger logger, Guid jobId, string function);
+
+    [LoggerMessage(
+        EventId = 3126,
+        Level = LogLevel.Information,
+        Message = "Job {JobId} ({Function}) was claimed for an immediate run while the scheduler accepted no work; it "
+            + "was handed back unstarted for the next poll to run, with its retry budget unchanged."
+    )]
+    public static partial void LogJobReleasedUndispatched(this ILogger logger, Guid jobId, string function);
 
     [LoggerMessage(
         EventId = 3119,

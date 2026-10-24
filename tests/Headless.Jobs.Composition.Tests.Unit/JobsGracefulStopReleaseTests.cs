@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Jobs;
+using Headless.Jobs.JobsThreadPool;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -15,6 +16,8 @@ namespace Tests;
 public sealed class JobsGracefulStopReleaseTests : TestBase
 {
     private const string _Function = "graceful.stop";
+    private const string _LongRunningFunction = "graceful.stop.long-running";
+    private const string _GatedLongRunningFunction = "graceful.stop.long-running.gated";
     private const string _ShutdownReason = "interrupted by host shutdown";
     private static readonly TimeSpan _WaitBudget = TimeSpan.FromSeconds(20);
 
@@ -210,6 +213,93 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         probe.Invocations.Should().Be(1);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_release_a_claimed_long_running_job_still_waiting_to_start_uncharged(
+        bool waitsOnFunctionGate
+    )
+    {
+        // given: a long-running run that ignores cancellation past the stop budget holds either its function's only
+        // permit or the pool's only long-running slot, and a second run is already claimed and waiting behind it. The
+        // long-running slots follow the worker count, so four workers leave the gated run a free slot to wait in.
+        var probe = new StopProbe(StopProbeMode.BlockIgnoringCancellation);
+        using var host = _BuildHost(probe, maxConcurrency: waitsOnFunctionGate ? 4 : 1);
+        await host.StartAsync(AbortToken);
+        var scheduler = _Scheduler(host);
+        var store = _Store(host);
+        var waiting = Guid.Empty;
+        try
+        {
+            if (waitsOnFunctionGate)
+            {
+                await scheduler.EnqueueAsync<GatedLongRunningStopJob>(o => o.WithRetries(3), AbortToken);
+            }
+            else
+            {
+                await scheduler.EnqueueAsync<LongRunningStopJob>(o => o.WithRetries(3), AbortToken);
+            }
+
+            await probe.Started.WaitAsync(_WaitBudget, AbortToken);
+            waiting = waitsOnFunctionGate
+                ? await scheduler.EnqueueAsync<GatedLongRunningStopJob>(o => o.WithRetries(3), AbortToken)
+                : await scheduler.EnqueueAsync<LongRunningStopJob>(o => o.WithRetries(3), AbortToken);
+            (await store.GetTimeJobByIdAsync(waiting, AbortToken))!.Status.Should().Be(JobStatus.InProgress);
+
+            // when
+            await host.StopAsync(AbortToken);
+        }
+        finally
+        {
+            probe.Release();
+        }
+
+        // then
+        probe.Invocations.Should().Be(1, "the waiting run must not start once the stop began");
+        var stored = await store.GetTimeJobByIdAsync(waiting, AbortToken);
+        stored!.Status.Should().Be(JobStatus.Idle);
+        stored.RetryCount.Should().Be(0, "a graceful stop is not an attempt the job used up");
+        stored.OwnerId.Should().BeNull();
+        stored.LockedUntil.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_accept_an_enqueue_while_the_scheduler_drains_and_leave_the_job_idle_for_the_next_owner()
+    {
+        // given: a running job keeps the drain open
+        var probe = new StopProbe(StopProbeMode.BlockUntilReleased);
+        using var host = _BuildHost(probe, stopBudget: TimeSpan.FromSeconds(10), hostShutdownTimeout: _WaitBudget);
+        await host.StartAsync(AbortToken);
+        var scheduler = _Scheduler(host);
+        var store = _Store(host);
+        await scheduler.EnqueueAsync<StopJob>(o => o.WithRetries(0), AbortToken);
+        await probe.Started.WaitAsync(_WaitBudget, AbortToken);
+        var pool = host.Services.GetRequiredService<JobsTaskScheduler>();
+        var stop = host.StopAsync(AbortToken);
+        Guid enqueued;
+        try
+        {
+            await _WaitUntilAsync(() => pool.IsDraining);
+
+            // when
+            enqueued = await scheduler.EnqueueAsync<StopJob>(o => o.WithRetries(2), AbortToken);
+        }
+        finally
+        {
+            probe.Release();
+            await stop;
+        }
+
+        // then
+        probe.Invocations.Should().Be(1, "a job enqueued during the drain must not start on the stopping node");
+        var stored = await store.GetTimeJobByIdAsync(enqueued, AbortToken);
+        stored!.Status.Should().Be(JobStatus.Idle);
+        stored.RetryCount.Should().Be(0);
+        stored.OwnerId.Should().BeNull();
+        stored.LockedUntil.Should().BeNull();
+        stored.ExecutionTime.Should().BeOnOrBefore(DateTime.UtcNow, "the next owner claims it as soon as it polls");
+    }
+
     private static IHost _BuildHost(
         StopProbe probe,
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity>? store = null,
@@ -274,12 +364,24 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         }
     }
 
+    private static async Task _WaitUntilAsync(Func<bool> condition)
+    {
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        budget.CancelAfter(_WaitBudget);
+
+        while (!condition())
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(10), budget.Token);
+        }
+    }
+
     public enum StopProbeMode
     {
         BlockUntilCancelled = 0,
         Succeed = 1,
         Fail = 2,
         BlockUntilReleased = 3,
+        BlockIgnoringCancellation = 4,
     }
 
     public sealed class StopProbe(StopProbeMode mode)
@@ -312,6 +414,12 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
                 default:
                     try
                     {
+                        if (mode == StopProbeMode.BlockIgnoringCancellation)
+                        {
+                            await _released.Task.ConfigureAwait(false);
+                            return;
+                        }
+
                         var until =
                             mode == StopProbeMode.BlockUntilReleased
                                 ? _released.Task
@@ -335,6 +443,18 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
             ValueTask.CompletedTask;
     }
 
+    public sealed class LongRunningStopJob : IJob
+    {
+        public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+    }
+
+    public sealed class GatedLongRunningStopJob : IJob
+    {
+        public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+    }
+
     public sealed class StopJobsModule : IJobsModule
     {
         private StopJobsModule() { }
@@ -344,23 +464,42 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
             catalog.AddFunctions(
                 new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
                 {
-                    [_Function] = new()
-                    {
-                        CronExpression = string.Empty,
-                        Priority = JobPriority.Normal,
-                        Delegate = static (services, _, cancellationToken) =>
-                            services.GetRequiredService<StopProbe>().RunAsync(cancellationToken),
-                        MaxConcurrency = 0,
-                        JobType = typeof(StopJob),
-                    },
+                    [_Function] = _Registration(JobPriority.Normal, 0, typeof(StopJob)),
+                    [_LongRunningFunction] = _Registration(JobPriority.LongRunning, 0, typeof(LongRunningStopJob)),
+                    [_GatedLongRunningFunction] = _Registration(
+                        JobPriority.LongRunning,
+                        1,
+                        typeof(GatedLongRunningStopJob)
+                    ),
                 }
             );
             catalog.AddDescriptors(
                 new Dictionary<string, JobFunctionDescriptor>(StringComparer.Ordinal)
                 {
                     [_Function] = new(_Function, null, string.Empty, JobPriority.Normal, 0),
+                    [_LongRunningFunction] = new(_LongRunningFunction, null, string.Empty, JobPriority.LongRunning, 0),
+                    [_GatedLongRunningFunction] = new(
+                        _GatedLongRunningFunction,
+                        null,
+                        string.Empty,
+                        JobPriority.LongRunning,
+                        1
+                    ),
                 }
             );
+        }
+
+        private static JobFunctionRegistration _Registration(JobPriority priority, int maxConcurrency, Type jobType)
+        {
+            return new()
+            {
+                CronExpression = string.Empty,
+                Priority = priority,
+                Delegate = static (services, _, cancellationToken) =>
+                    services.GetRequiredService<StopProbe>().RunAsync(cancellationToken),
+                MaxConcurrency = maxConcurrency,
+                JobType = jobType,
+            };
         }
     }
 }
