@@ -398,7 +398,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         await provider.ReleaseAsync(resource, handle!.LeaseId, AbortToken);
         ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, handle.LeaseId));
         _timeProvider.Advance(TimeSpan.FromSeconds(6));
-        await DistributedLockTestSupport.DrainUntilAsync(
+        await DistributedLockTestSupport.WaitUntilAsync(
             () => provider.GetActiveMonitorCount(resource) == 0,
             AbortToken
         );
@@ -520,11 +520,11 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         await using var handle = await _AcquireAsync(provider, TimeSpan.FromSeconds(10), LockMonitoringMode.AutoExtend);
 
         await timeProvider.AdvanceCadenceAsync(cancellationToken: AbortToken);
-        await DistributedLockTestSupport.DrainUntilAsync(() => storage.RenewCalls == 1, AbortToken);
+        await DistributedLockTestSupport.WaitUntilAsync(() => storage.RenewCalls == 1, AbortToken);
         storage.RenewCalls.Should().Be(1, "pre-condition: the first renew is in flight");
         timeProvider.Advance(TimeSpan.FromSeconds(3));
         firstRenew.SetResult(true);
-        await DistributedLockTestSupport.DrainUntilAsync(() => handle.RenewalCount == 1, AbortToken);
+        await DistributedLockTestSupport.WaitUntilAsync(() => handle.RenewalCount == 1, AbortToken);
         handle.RenewalCount.Should().Be(1, "pre-condition: the slow renew succeeded");
 
         // when - just short of send + lease - margin
@@ -558,7 +558,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         await using var handle = await _AcquireAsync(provider, TimeSpan.FromSeconds(10), LockMonitoringMode.AutoExtend);
 
         await timeProvider.AdvanceCadenceAsync(cancellationToken: AbortToken);
-        await DistributedLockTestSupport.DrainUntilAsync(() => handle.RenewalCount == 1, AbortToken);
+        await DistributedLockTestSupport.WaitUntilAsync(() => handle.RenewalCount == 1, AbortToken);
         handle.RenewalCount.Should().Be(1, "pre-condition: the renew sent at 5s succeeded");
 
         // when - just short of last renew send + lease - margin = 14s
