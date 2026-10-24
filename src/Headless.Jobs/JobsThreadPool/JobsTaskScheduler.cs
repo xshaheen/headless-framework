@@ -531,7 +531,6 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             {
                 if (_shutdownCts.Token.IsCancellationRequested)
                 {
-                    // Draining after cancellation and nothing left to hand back.
                     return false;
                 }
 
@@ -786,7 +785,6 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     {
         try
         {
-            // Same drain rule as the shared pool: a draining item runs so it can hand its row back.
             if (
                 _isDraining
                 || (!cancellationToken.IsCancellationRequested && !_shutdownCts.Token.IsCancellationRequested)

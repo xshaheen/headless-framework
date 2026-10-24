@@ -893,8 +893,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         return [.. jobs.Select(job => _BuildContextFromNonGeneric(job, job.OwnerId))];
     }
 
-    // Descendants run under the root's claim and the acquire's flat child projection does not carry OwnerId, so every
-    // node of the tree settles its writes on the root's claim owner.
     private JobExecutionState _BuildContextFromNonGeneric(TimeJobEntity job, string? claimOwner)
     {
         var context = new JobExecutionState

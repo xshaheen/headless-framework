@@ -46,22 +46,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     // Runtime owner accessor. Stamp/acquire sites read the current node@incarnation via TryGetStampOwner
     // and refuse to touch rows when membership is not established (registration pending or membership lost).
-    // Writes on a row this node already claimed take the claim owner from the caller instead.
     protected IJobsOwnerIdentity OwnerIdentity { get; } = ownerIdentity;
-
-    // Writes that extend or start ownership (renewal, admission) need the node to still be the claim owner. Settling
-    // writes fence on the claim owner alone and do not call this.
-    private bool _IsLiveOwner(string claimOwner)
-    {
-        return OwnerIdentity.TryGetStampOwner(out var liveOwner)
-            && string.Equals(liveOwner, claimOwner, StringComparison.Ordinal);
-    }
-
-    private static bool _StartsExecution(JobExecutionState functionContext)
-    {
-        return functionContext.PropertiesToUpdate.Contains(nameof(JobExecutionState.Status))
-            && functionContext.Status == JobStatus.InProgress;
-    }
 
     protected TimeProvider TimeProvider { get; } = timeProvider;
 
@@ -104,6 +89,20 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     // transaction-open and silently SHORTEN the lease by the transaction's duration. A short lease is the dangerous
     // direction: it lets a second node reclaim the row while the owner still believes it holds it — the exact
     // double-dispatch this design exists to prevent. No analyzer enforces this.
+
+    // Writes on a row this node already claimed fence on the caller's claim owner. Only writes that extend or start
+    // ownership (renewal, admission) also need the live identity to still be that owner.
+    private bool _IsLiveOwner(string claimOwner)
+    {
+        return OwnerIdentity.TryGetStampOwner(out var liveOwner)
+            && string.Equals(liveOwner, claimOwner, StringComparison.Ordinal);
+    }
+
+    private static bool _StartsExecution(JobExecutionState functionContext)
+    {
+        return functionContext.PropertiesToUpdate.Contains(nameof(JobExecutionState.Status))
+            && functionContext.Status == JobStatus.InProgress;
+    }
 
     #region Core_Time_Ticker_Methods
 
@@ -155,11 +154,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-    // The graceful-stop releases below are the dead-node arms without the RetryCount + 1: the node that ran the job
+    // The graceful-stop writes below are the dead-node arms without the RetryCount + 1: the node that ran the job
     // is the one handing it back, so the run is known to have stopped and nothing waits for the lease to lapse. Each
-    // arm is one autocommit statement under CancellationToken.None so a host whose stop token already fired still
-    // lands it. No transaction wraps the arms: each is fenced on InProgress plus the claim owner, so an execution
-    // strategy that re-runs a statement whose commit already landed matches no row and cannot apply it twice.
+    // is one autocommit statement under CancellationToken.None so a host whose stop token already fired still lands
+    // it. No transaction wraps them: each is fenced on InProgress plus the claim owner, so an execution strategy that
+    // re-runs a statement whose commit already landed matches no row and cannot apply it twice.
     public async Task<int> ReleaseInProgressTimeJobAsync(
         Guid jobId,
         string claimOwner,
@@ -174,7 +173,24 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(CancellationToken.None)
             .ConfigureAwait(false);
 
-        return await _ReleaseInProgressTimeJobAsync(dbContext, jobId, claimOwner, executionTime, policy: null)
+        return await _InterruptedTimeJob(dbContext, jobId, claimOwner)
+            .ExecuteUpdateAsync(
+                setter =>
+                {
+                    // UpdatedAt from the DB clock: it doubles as the claim CAS token, so it must stay monotonic.
+                    setter
+                        .SetProperty(x => x.OwnerId, _ => null)
+                        .SetProperty(x => x.LockedUntil, _ => null)
+                        .SetProperty(x => x.Status, JobStatus.Idle)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow);
+
+                    if (executionTime is { } dueAt)
+                    {
+                        setter.SetProperty(x => x.ExecutionTime, (DateTime?)dueAt);
+                    }
+                },
+                CancellationToken.None
+            )
             .ConfigureAwait(false);
     }
 
@@ -194,104 +210,61 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(CancellationToken.None)
             .ConfigureAwait(false);
 
-        // A running row's policy cannot change under the run (an ordinary edit refuses InProgress rows), so at most
-        // one arm matches; trying Retry first settles the common case in one statement.
-        var released = await _ReleaseInProgressTimeJobAsync(
-                dbContext,
-                jobId,
-                claimOwner,
-                retryExecutionTime,
-                NodeDeathPolicy.Retry
-            )
-            .ConfigureAwait(false);
-
-        if (released != 0)
-        {
-            return released;
-        }
-
-        var failed = await _InterruptedTimeJob(dbContext, jobId, claimOwner, NodeDeathPolicy.MarkFailed)
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.Status, JobStatus.Failed)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.ExceptionMessage, reason)
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
-
-        if (failed != 0)
-        {
-            return failed;
-        }
-
-        return await _InterruptedTimeJob(dbContext, jobId, claimOwner, NodeDeathPolicy.Skip)
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.Status, JobStatus.Skipped)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.SkippedReason, reason)
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
-    }
-
-    private static IQueryable<TTimeJob> _InterruptedTimeJob(
-        TDbContext dbContext,
-        Guid jobId,
-        string claimOwner,
-        NodeDeathPolicy? policy
-    )
-    {
-        var query = dbContext
-            .Set<TTimeJob>()
-            .Where(x => x.Id == jobId && x.Status == JobStatus.InProgress && x.OwnerId == claimOwner);
-
-        return policy is { } required ? query.Where(x => x.OnNodeDeath == required) : query;
-    }
-
-    private static Task<int> _ReleaseInProgressTimeJobAsync(
-        TDbContext dbContext,
-        Guid jobId,
-        string claimOwner,
-        DateTime? executionTime,
-        NodeDeathPolicy? policy
-    )
-    {
-        return _InterruptedTimeJob(dbContext, jobId, claimOwner, policy)
+        // One statement settles the row by its own OnNodeDeath: Retry releases it to Idle, MarkFailed and Skip end it
+        // and keep the owner. A running row's policy cannot change under the run (an ordinary edit refuses InProgress
+        // rows), so the statement reads the policy the run started with.
+        return await _InterruptedTimeJob(dbContext, jobId, claimOwner)
             .ExecuteUpdateAsync(
                 setter =>
                 {
-                    // UpdatedAt from the DB clock: it doubles as the claim CAS token, so it must stay monotonic.
                     setter
-                        .SetProperty(x => x.OwnerId, _ => null)
+                        .SetProperty(
+                            x => x.Status,
+                            x =>
+                                x.OnNodeDeath == NodeDeathPolicy.MarkFailed ? JobStatus.Failed
+                                : x.OnNodeDeath == NodeDeathPolicy.Skip ? JobStatus.Skipped
+                                : JobStatus.Idle
+                        )
+                        .SetProperty(x => x.OwnerId, x => x.OnNodeDeath == NodeDeathPolicy.Retry ? null : x.OwnerId)
                         .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.Status, JobStatus.Idle)
+                        .SetProperty(
+                            x => x.ExceptionMessage,
+                            x => x.OnNodeDeath == NodeDeathPolicy.MarkFailed ? reason : x.ExceptionMessage
+                        )
+                        .SetProperty(
+                            x => x.SkippedReason,
+                            x => x.OnNodeDeath == NodeDeathPolicy.Skip ? reason : x.SkippedReason
+                        )
+                        .SetProperty(
+                            x => x.ExecutedAt,
+                            x => x.OnNodeDeath == NodeDeathPolicy.Retry ? x.ExecutedAt : DateTime.UtcNow
+                        )
                         .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow);
 
-                    if (executionTime is { } dueAt)
+                    if (retryExecutionTime is { } dueAt)
                     {
-                        setter.SetProperty(x => x.ExecutionTime, (DateTime?)dueAt);
+                        setter.SetProperty(
+                            x => x.ExecutionTime,
+                            x => x.OnNodeDeath == NodeDeathPolicy.Retry ? dueAt : x.ExecutionTime
+                        );
                     }
                 },
                 CancellationToken.None
-            );
+            )
+            .ConfigureAwait(false);
+    }
+
+    private static IQueryable<TTimeJob> _InterruptedTimeJob(TDbContext dbContext, Guid jobId, string claimOwner)
+    {
+        return dbContext.Set<TTimeJob>().Where(x => x.Id == jobId).WhereRunningBy(claimOwner);
     }
 
     public async Task<int> UpdateTimeJobAsync(JobExecutionState functionContexts, CancellationToken cancellationToken)
     {
-        // #5 completion fence: only the claim owner may write a completion onto a non-terminal row. A node the
+        // Completion fence: only the claim owner may write a completion onto a non-terminal row. A node the
         // dead-node sweep already transitioned (MarkFailed/Skip -> terminal, or released -> owner cleared) but which
         // is actually alive must match 0 rows here instead of clobbering the sweep's result.
         // WhereOwnedBy = (Idle|Queued|InProgress) && OwnerId == owner, so terminal rows and reclaimed rows are excluded.
-        // The fence uses the claim owner, not the live identity: a run that finishes after its node left membership
-        // must still record its outcome while no peer has reclaimed the row.
         if (functionContexts.ClaimOwner is not { Length: > 0 } owner)
         {
             return 0;
@@ -316,9 +289,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     {
         // #316 claim→start ownership recheck: all unified writes are fenced by the claim owner and non-terminal
         // state. Queued→InProgress additionally requires the row to still be Queued, so duplicate same-owner scheduler
-        // wrappers cannot revalidate an already-running row, and the live identity to still be the claim owner, so a
-        // node that left membership never starts work. Run-condition skip writes settle the run and keep the broader
-        // fence.
+        // wrappers cannot revalidate an already-running row. Run-condition skip writes settle the run and keep the
+        // broader fence.
         if (functionContext.ClaimOwner is not { Length: > 0 } owner)
         {
             return [];
@@ -1277,8 +1249,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // The hydrated tree may include nodes the lease walk stopped at; execute strictly the claimed set.
         foreach (var root in acquired)
         {
-            // The flat projection does not carry OwnerId. The run fences its settling writes on the owner that
-            // claimed the root, so hand back the one this call stamped.
+            // The flat projection does not carry OwnerId, so hand back the claim owner this call stamped.
             root.OwnerId = owner;
 
             if (claimedIdsByRoot.TryGetValue(root.Id, out var claimedIds))
@@ -1298,7 +1269,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     )
     {
         // Only the running row still stamped with the claim owner, so a node that lost the lease cannot overwrite the
-        // new owner's progress. Progress settles nothing about ownership, so it does not need the live identity.
+        // new owner's progress.
         Argument.IsNotNullOrEmpty(claimOwner);
 
         await using var dbContext = await DbContextFactory
@@ -1335,9 +1306,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // completion-fence shape: still owned + non-terminal), so a row the dead-node/stalled sweep already
         // reclaimed, terminalized, or whose owner changed matches 0 rows — the signal the caller turns into
         // cancel-on-loss. No separate liveness query: this UPDATE is the loss detector.
-        // Renewal extends ownership, so the node must still BE the claim owner: once it left membership, passed its
-        // self-fence deadline, or restarted as a new incarnation, renewing would keep a fenced node's rows alive
-        // against the peers that are entitled to reclaim them. That is a lost lease, not a tick to skip.
+        // Renewing for a node that left membership, passed its self-fence deadline, or restarted would keep a fenced
+        // node's rows alive against the peers entitled to reclaim them. That is a lost lease, not a tick to skip.
         Argument.IsNotNullOrEmpty(claimOwner);
 
         if (!_IsLiveOwner(claimOwner))
@@ -2769,9 +2739,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken
     )
     {
-        // #5 completion fence (see UpdateTimeJobAsync): only the claim owner may complete a non-terminal occurrence,
-        // whether or not the node is still a member. Returns 0 when fenced out (foreign owner / terminal row), 1 when
-        // applied — mirroring UpdateTimeJobAsync.
+        // Completion fence (see UpdateTimeJobAsync). Returns 0 when fenced out (foreign owner / terminal row), 1 when
+        // applied.
         if (functionContext.ClaimOwner is not { Length: > 0 } owner)
         {
             return 0;
@@ -2918,7 +2887,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        // See UpdateTimeJobProgressAsync: fenced on the claim owner and a running row, not on the live identity.
         Argument.IsNotNullOrEmpty(claimOwner);
 
         await using var dbContext = await DbContextFactory
@@ -2951,8 +2919,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        // #316 sliding lease — mirror of RenewTimeJobLeaseAsync for cron occurrences, including the live-identity
-        // check. WhereOwnedBy fence makes a lost/reclaimed/terminalized occurrence match 0 rows -> cancel-on-loss.
+        // #316 sliding lease for cron occurrences. WhereOwnedBy fence makes a lost/reclaimed/terminalized occurrence
+        // match 0 rows -> cancel-on-loss.
         Argument.IsNotNullOrEmpty(claimOwner);
 
         if (!_IsLiveOwner(claimOwner))
@@ -3098,7 +3066,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-    // The cron mirror of the time-job graceful-stop releases: the dead-node arms without the RetryCount + 1.
+    // The cron graceful-stop writes follow the time-job ones above, without a due instant to move.
     public async Task<int> ReleaseInProgressCronJobOccurrenceAsync(
         Guid occurrenceId,
         string claimOwner,
@@ -3112,7 +3080,16 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(CancellationToken.None)
             .ConfigureAwait(false);
 
-        return await _ReleaseInProgressOccurrenceAsync(dbContext, occurrenceId, claimOwner, policy: null)
+        return await _InterruptedOccurrence(dbContext, occurrenceId, claimOwner)
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.OwnerId, _ => null)
+                        .SetProperty(x => x.LockedUntil, _ => null)
+                        .SetProperty(x => x.Status, JobStatus.Idle)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                CancellationToken.None
+            )
             .ConfigureAwait(false);
     }
 
@@ -3131,49 +3108,40 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(CancellationToken.None)
             .ConfigureAwait(false);
 
-        // Same arm order and single-match reasoning as SettleInterruptedTimeJobAsync.
-        var released = await _ReleaseInProgressOccurrenceAsync(
-                dbContext,
-                occurrenceId,
-                claimOwner,
-                NodeDeathPolicy.Retry
-            )
-            .ConfigureAwait(false);
-
-        if (released != 0)
-        {
-            return released;
-        }
-
-        var failed = await _InterruptedOccurrence(dbContext, occurrenceId, claimOwner, NodeDeathPolicy.MarkFailed)
+        return await _InterruptedOccurrence(dbContext, occurrenceId, claimOwner)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
-                        .SetProperty(x => x.Status, JobStatus.Failed)
+                        .SetProperty(
+                            x => x.Status,
+                            x =>
+                                x.OnNodeDeath == NodeDeathPolicy.MarkFailed ? JobStatus.Failed
+                                : x.OnNodeDeath == NodeDeathPolicy.Skip ? JobStatus.Skipped
+                                : JobStatus.Idle
+                        )
+                        .SetProperty(x => x.OwnerId, x => x.OnNodeDeath == NodeDeathPolicy.Retry ? null : x.OwnerId)
                         .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.ExceptionMessage, reason)
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
-
-        if (failed != 0)
-        {
-            return failed;
-        }
-
-        return await _InterruptedOccurrence(dbContext, occurrenceId, claimOwner, NodeDeathPolicy.Skip)
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.Status, JobStatus.Skipped)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.SkippedReason, reason)
-                        // As in the dead-node sweep: the skipped row still accounts for its instant, so recovery
-                        // never materializes a second occurrence at the same time.
-                        .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted)
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                        .SetProperty(
+                            x => x.ExceptionMessage,
+                            x => x.OnNodeDeath == NodeDeathPolicy.MarkFailed ? reason : x.ExceptionMessage
+                        )
+                        .SetProperty(
+                            x => x.SkippedReason,
+                            x => x.OnNodeDeath == NodeDeathPolicy.Skip ? reason : x.SkippedReason
+                        )
+                        // As in the dead-node sweep: a skipped row still accounts for its instant, so recovery never
+                        // materializes a second occurrence at the same time.
+                        .SetProperty(
+                            x => x.Disposition,
+                            x =>
+                                x.OnNodeDeath == NodeDeathPolicy.Skip
+                                    ? CronOccurrenceDisposition.Accounted
+                                    : x.Disposition
+                        )
+                        .SetProperty(
+                            x => x.ExecutedAt,
+                            x => x.OnNodeDeath == NodeDeathPolicy.Retry ? x.ExecutedAt : DateTime.UtcNow
+                        )
                         .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                 CancellationToken.None
             )
@@ -3183,34 +3151,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     private static IQueryable<CronJobOccurrenceEntity<TCronJob>> _InterruptedOccurrence(
         TDbContext dbContext,
         Guid occurrenceId,
-        string claimOwner,
-        NodeDeathPolicy? policy
+        string claimOwner
     )
     {
-        var query = dbContext
+        return dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .Where(x => x.Id == occurrenceId && x.Status == JobStatus.InProgress && x.OwnerId == claimOwner);
-
-        return policy is { } required ? query.Where(x => x.OnNodeDeath == required) : query;
-    }
-
-    private static Task<int> _ReleaseInProgressOccurrenceAsync(
-        TDbContext dbContext,
-        Guid occurrenceId,
-        string claimOwner,
-        NodeDeathPolicy? policy
-    )
-    {
-        return _InterruptedOccurrence(dbContext, occurrenceId, claimOwner, policy)
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.OwnerId, _ => null)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                CancellationToken.None
-            );
+            .Where(x => x.Id == occurrenceId)
+            .WhereRunningBy(claimOwner);
     }
 
     // Cron-occurrence creation is intentionally NOT guarded by a coarse 'jobs.cron-occurrence-creation'
@@ -3289,8 +3236,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        // #316 — cron mirror of UpdateTimeJobsWithUnifiedContextAsync, including the claim-owner fence, the live-identity
-        // check on start, and the strict Queued→InProgress transition that rejects duplicate same-owner wrappers.
+        // #316: the claim→start ownership recheck of the time-job path, including the strict Queued→InProgress
+        // transition that rejects duplicate same-owner scheduler wrappers.
         if (functionContext.ClaimOwner is not { Length: > 0 } owner)
         {
             return [];

@@ -384,6 +384,26 @@ public static class HeadlessJobsQueryExtensions
     }
 
     /// <summary>
+    /// Selects the rows <paramref name="owner"/> is running: <c>InProgress</c> and still stamped with that claim owner.
+    /// A row a sweep already reclaimed, terminalized, or handed to another owner matches nothing.
+    /// </summary>
+    internal static IQueryable<TTimeJob> WhereRunningBy<TTimeJob>(this IQueryable<TTimeJob> q, string owner)
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        return q.Where(e => e.Status == JobStatus.InProgress && e.OwnerId == owner);
+    }
+
+    /// <inheritdoc cref="WhereRunningBy{TTimeJob}(System.Linq.IQueryable{TTimeJob},string)"/>
+    internal static IQueryable<CronJobOccurrenceEntity<TCronJob>> WhereRunningBy<TCronJob>(
+        this IQueryable<CronJobOccurrenceEntity<TCronJob>> q,
+        string owner
+    )
+        where TCronJob : CronJobEntity
+    {
+        return q.Where(e => e.Status == JobStatus.InProgress && e.OwnerId == owner);
+    }
+
+    /// <summary>
     /// Selects the rows a release may return to <c>Idle</c>: <c>Queued</c> rows this owner claimed but has not
     /// started. Never matches <c>InProgress</c> work, foreign or unowned rows, or <c>Idle</c> rows — chain
     /// descendants sit <c>Idle</c> with the root's owner while the root runs, so a release (including the

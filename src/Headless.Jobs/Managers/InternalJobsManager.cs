@@ -56,6 +56,14 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         return _functionTags ??= serviceProvider.GetRequiredService<JobsFunctionTagBound>();
     }
 
+    // Resolved lazily, like the instrumentation above; AddHeadlessJobs always registers an owner identity.
+    private IJobsOwnerIdentity? _ownerIdentity;
+
+    private IJobsOwnerIdentity _ResolveOwnerIdentity()
+    {
+        return _ownerIdentity ??= serviceProvider.GetRequiredService<IJobsOwnerIdentity>();
+    }
+
     private readonly TimeSpan _strandedSweepInterval = schedulerOptions.FallbackIntervalChecker;
 
     // Claim the sweep slot at most once per FallbackIntervalChecker. GetNextJobs is the scheduler's hot path
@@ -318,6 +326,8 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     // Concurrent advances per wave. Sized so one wave covers a single advance's round-trip latency without letting a
     // cluster open (nodes x tie-group) connections at once; the pool, not the CPU, is the scarce resource here.
     private const int _MaxAdvanceConcurrency = 8;
+
+    private const string _HostShutdownReason = "interrupted by host shutdown";
 
     private async Task<(
         DateTime Key,
@@ -946,52 +956,15 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        var unifiedFunctionContext = new JobExecutionState { FunctionName = string.Empty }.SetProperty(
-            x => x.Status,
-            JobStatus.InProgress
-        );
-
-        // Admission stamps one function at a time (JobsAdmissionWorkItem), so the single-resource shape is the hot one:
-        // it needs neither the type partitioning nor the stamped-id sets used to reconcile a mixed batch.
-        if (resources.Length == 1)
-        {
-            var only = resources[0];
-            unifiedFunctionContext.ClaimOwner = only.ClaimOwner;
-            var singleStamped =
-                only.Type == JobType.TimeJob
-                    ? await persistenceProvider
-                        .UpdateTimeJobsWithUnifiedContextAsync([only.JobId], unifiedFunctionContext, cancellationToken)
-                        .ConfigureAwait(false)
-                    : await persistenceProvider
-                        .UpdateCronJobOccurrencesWithUnifiedContextAsync(
-                            [only.JobId],
-                            unifiedFunctionContext,
-                            cancellationToken
-                        )
-                        .ConfigureAwait(false);
-
-            if (!singleStamped.Contains(only.JobId))
-            {
-                return [];
-            }
-
-            only.Status = JobStatus.InProgress;
-
-            if (only.Type == JobType.TimeJob)
-            {
-                await notificationHubSender.UpdateTimeJobFromExecutionState<TTimeJob>(only).ConfigureAwait(false);
-            }
-            else
-            {
-                await notificationHubSender
-                    .UpdateCronOccurrenceFromExecutionState<TCronJob>(only)
-                    .ConfigureAwait(false);
-            }
-
-            return [only];
-        }
-
-        var stampedResources = await _ApplyUnifiedContextAsync(resources, unifiedFunctionContext, cancellationToken)
+        var stampedResources = await _ApplyUnifiedContextAsync(
+                resources,
+                static claimOwner =>
+                    new JobExecutionState { FunctionName = string.Empty, ClaimOwner = claimOwner }.SetProperty(
+                        x => x.Status,
+                        JobStatus.InProgress
+                    ),
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         foreach (var resource in stampedResources)
@@ -1027,10 +1000,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         {
             // Without a list there is no claim owner to read, so release what the node's live identity claimed. A
             // node with no live identity has nothing it can name here; its claims lapse to reclaim.
-            if (
-                serviceProvider.GetService<IJobsOwnerIdentity>() is not { } ownerIdentity
-                || !ownerIdentity.TryGetStampOwner(out var liveOwner)
-            )
+            if (!_ResolveOwnerIdentity().TryGetStampOwner(out var liveOwner))
             {
                 return;
             }
@@ -1053,22 +1023,21 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         {
             var claimOwner = group.Key;
             var cronJobIds = group.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
-
-            if (cronJobIds.Length != 0)
-            {
-                await persistenceProvider
-                    .ReleaseAcquiredCronJobOccurrencesAsync(cronJobIds, claimOwner, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
             var timeJobIds = group.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();
 
-            if (timeJobIds.Length != 0)
-            {
-                await persistenceProvider
-                    .ReleaseAcquiredTimeJobsAsync(timeJobIds, claimOwner, cancellationToken)
-                    .ConfigureAwait(false);
-            }
+            await Task.WhenAll(
+                    cronJobIds.Length != 0
+                        ? persistenceProvider.ReleaseAcquiredCronJobOccurrencesAsync(
+                            cronJobIds,
+                            claimOwner,
+                            cancellationToken
+                        )
+                        : Task.CompletedTask,
+                    timeJobIds.Length != 0
+                        ? persistenceProvider.ReleaseAcquiredTimeJobsAsync(timeJobIds, claimOwner, cancellationToken)
+                        : Task.CompletedTask
+                )
+                .ConfigureAwait(false);
         }
     }
 
@@ -1102,15 +1071,11 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         return affected;
     }
 
-    // What a MarkFailed or Skip settlement records on a run a graceful stop interrupted.
-    private const string _HostShutdownReason = "interrupted by host shutdown";
-
     public async Task<int> ReleaseInProgressAsync(
         JobExecutionState context,
         CancellationToken cancellationToken = default
     )
     {
-        // A run with no claim owner names no row it could release.
         if (context.ClaimOwner is not { Length: > 0 } claimOwner)
         {
             return 0;
@@ -1161,7 +1126,6 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        // A run with no claim owner holds no lease it could renew.
         if (functionContext.ClaimOwner is not { Length: > 0 } claimOwner)
         {
             return 0;
@@ -1345,12 +1309,15 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     )
     {
         var now = timeProvider.GetUtcNow();
-        var unifiedFunctionContext = new JobExecutionState { FunctionName = string.Empty }
-            .SetProperty(x => x.Status, JobStatus.Skipped)
-            .SetProperty(x => x.ExecutedAt, now)
-            .SetProperty(x => x.ExceptionDetails, ChainRunConditionRules.RunConditionMismatchReason);
-
-        var skippedResources = await _ApplyUnifiedContextAsync(resources, unifiedFunctionContext, cancellationToken)
+        var skippedResources = await _ApplyUnifiedContextAsync(
+                resources,
+                claimOwner =>
+                    new JobExecutionState { FunctionName = string.Empty, ClaimOwner = claimOwner }
+                        .SetProperty(x => x.Status, JobStatus.Skipped)
+                        .SetProperty(x => x.ExecutedAt, now)
+                        .SetProperty(x => x.ExceptionDetails, ChainRunConditionRules.RunConditionMismatchReason),
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         foreach (var resource in skippedResources)
@@ -1372,11 +1339,11 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     }
 
     // Applies one shared state to many rows and returns the resources whose rows took it, in input order. The
-    // providers fence the write on the state's claim owner, so rows are written one claim owner at a time; a batch
-    // claimed in one pass normally has exactly one.
+    // providers fence the write on the state's claim owner, so rows are written one claim owner at a time, each under
+    // its own state; a batch claimed in one pass normally has exactly one.
     private async Task<JobExecutionState[]> _ApplyUnifiedContextAsync(
         JobExecutionState[] resources,
-        JobExecutionState unifiedFunctionContext,
+        Func<string?, JobExecutionState> createUnifiedContext,
         CancellationToken cancellationToken
     )
     {
@@ -1384,7 +1351,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
 
         foreach (var group in resources.GroupBy(static x => x.ClaimOwner, StringComparer.Ordinal))
         {
-            unifiedFunctionContext.ClaimOwner = group.Key;
+            var unifiedFunctionContext = createUnifiedContext(group.Key);
 
             var cronJobIds = group.Where(x => x.Type == JobType.CronJobOccurrence).Select(x => x.JobId).ToArray();
             var timeJobIds = group.Where(x => x.Type == JobType.TimeJob).Select(x => x.JobId).ToArray();

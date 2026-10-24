@@ -5,6 +5,7 @@ using Headless.Caching;
 using Headless.Checks;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.Retry;
@@ -389,7 +390,6 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .ChangeTracker.Entries<TTimeJob>()
             .Select(entry => (Entry: entry, Values: entry.CurrentValues.Clone()))
             .ToArray();
-        // The rows the caller edits; descendants loaded in their graphs are checked against them.
         var editedIds = timeJobs.Select(job => job.Id).Distinct().ToArray();
         var (affected, persisted) = await _ExecuteKeyedTransactionAsync(
                 async (context, ct) =>
@@ -474,10 +474,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .ToDictionaryAsync(row => row.Id, row => row.OwnerId, cancellationToken)
             .ConfigureAwait(false);
 
-        var released = await jobs.Where(row =>
-                editedIds.Contains(row.Id)
-                && ((row.Status == JobStatus.Idle && row.OwnerId == null) || row.Status == JobStatus.Queued)
-            )
+        var released = await jobs.Where(row => editedIds.Contains(row.Id))
+            .Where(TimeJobEditGuard.EditableRule<TTimeJob>())
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -514,12 +512,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         foreach (var group in descendants.GroupBy(descendant => descendant.RootOwner, StringComparer.Ordinal))
         {
             var ids = group.Select(descendant => descendant.Id).ToArray();
-            var rootOwner = group.Key;
-            var cleared = await jobs.Where(row =>
-                    ids.Contains(row.Id)
-                    && row.Status == JobStatus.Idle
-                    && (row.OwnerId == null || row.OwnerId == rootOwner)
-                )
+            var cleared = await jobs.Where(row => ids.Contains(row.Id))
+                .Where(_CarriedDescendantEditable(group.Key))
                 .ExecuteUpdateAsync(
                     setter =>
                         setter
@@ -544,7 +538,18 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         }
     }
 
-    // Walks a loaded descendant up the caller's graph to the edited row it was carried in.
+    // Binds the guard's root-owner parameter to a captured value, so EF sends it as a query parameter.
+    private static Expression<Func<TTimeJob, bool>> _CarriedDescendantEditable(string? rootOwnerBeforeEdit)
+    {
+        var rule = TimeJobEditGuard.CarriedDescendantEditableRule<TTimeJob>();
+        Expression<Func<string?>> rootOwner = () => rootOwnerBeforeEdit;
+
+        return Expression.Lambda<Func<TTimeJob, bool>>(
+            ReplacingExpressionVisitor.Replace(rule.Parameters[1], rootOwner.Body, rule.Body),
+            rule.Parameters[0]
+        );
+    }
+
     private static Guid _EditedRootOf(TTimeJob descendant, Dictionary<Guid, TTimeJob> byId, Guid[] editedIds)
     {
         var current = descendant;

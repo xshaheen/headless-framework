@@ -902,7 +902,6 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
         (await persistence.RenewTimeJobLeaseAsync(timeJobId, claimOwner, ct)).Should().Be(0);
         (await persistence.RenewCronJobOccurrenceLeaseAsync(occurrenceId, claimOwner, ct)).Should().Be(0);
 
-        // The rows are untouched: ownership and lease are exactly as seeded (no UPDATE ran).
         var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(timeJobId, ct);
         status.Should().Be((int)JobStatus.InProgress);
         ownerId.Should().Be(claimOwner);

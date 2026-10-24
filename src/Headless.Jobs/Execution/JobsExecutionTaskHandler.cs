@@ -263,10 +263,7 @@ internal sealed class JobsExecutionTaskHandler
         // have cancelled, is consulted.
         if (_IsDraining(isChild))
         {
-            var released = await _internalJobsManager
-                .ReleaseInProgressAsync(context, CancellationToken.None)
-                .ConfigureAwait(false);
-            _CompleteShutdownRelease(context, released, interrupted: false);
+            await _ReleaseForDrainAsync(context).ConfigureAwait(false);
             return;
         }
 
@@ -448,10 +445,7 @@ internal sealed class JobsExecutionTaskHandler
                 return;
             }
 
-            var released = await _internalJobsManager
-                .ReleaseInProgressAsync(context, CancellationToken.None)
-                .ConfigureAwait(false);
-            _CompleteShutdownRelease(context, released, interrupted: false);
+            await _ReleaseForDrainAsync(context).ConfigureAwait(false);
         }
 
         async Task settleInterruptedAsync()
@@ -466,7 +460,11 @@ internal sealed class JobsExecutionTaskHandler
             var settled = await _internalJobsManager
                 .SettleInterruptedAsync(context, retryAt, CancellationToken.None)
                 .ConfigureAwait(false);
-            _CompleteShutdownRelease(context, settled, interrupted: true);
+
+            if (_ShutdownWriteLanded(context, settled))
+            {
+                _logger.LogJobSettledOnShutdown(context.JobId, context.FunctionName);
+            }
         }
 
         try
@@ -1078,26 +1076,31 @@ internal sealed class JobsExecutionTaskHandler
         }
     }
 
-    // The row stays non-terminal in this context either way, so the parent keeps its children for the next owner
-    // instead of running them during the stop.
-    private void _CompleteShutdownRelease(JobExecutionState context, int affected, bool interrupted)
+    private async Task _ReleaseForDrainAsync(JobExecutionState context)
     {
-        if (affected == 0)
-        {
-            // A peer reclaimed the row first; it owns the outcome now.
-            context.LeaseLost = true;
-            _logger.LogJobShutdownReleaseFenced(context.JobId, context.FunctionName);
-            return;
-        }
+        var released = await _internalJobsManager
+            .ReleaseInProgressAsync(context, CancellationToken.None)
+            .ConfigureAwait(false);
 
-        if (interrupted)
-        {
-            _logger.LogJobSettledOnShutdown(context.JobId, context.FunctionName);
-        }
-        else
+        if (_ShutdownWriteLanded(context, released))
         {
             _logger.LogJobReleasedForDrain(context.JobId, context.FunctionName);
         }
+    }
+
+    // The row stays non-terminal in this context either way, so the parent keeps its children for the next owner
+    // instead of running them during the stop.
+    private bool _ShutdownWriteLanded(JobExecutionState context, int affected)
+    {
+        if (affected != 0)
+        {
+            return true;
+        }
+
+        // A peer reclaimed the row first; it owns the outcome now.
+        context.LeaseLost = true;
+        _logger.LogJobShutdownReleaseFenced(context.JobId, context.FunctionName);
+        return false;
     }
 
     // #278: re-establish the job's tenant around consumer code that runs outside execute middleware. Failure callbacks
@@ -1466,7 +1469,6 @@ internal sealed class JobsExecutionTaskHandler
 
         if (released == 0)
         {
-            // A peer reclaimed the row first; it owns the outcome now.
             context.LeaseLost = true;
             _logger.LogJobLeaseLostBeforeExecution(context.JobId, context.FunctionName);
             return;

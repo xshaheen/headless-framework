@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Linq.Expressions;
+
 namespace Headless.Jobs;
 
 /// <summary>
@@ -37,17 +39,28 @@ internal static class TimeJobEditGuard
     /// releases the claim in the same write, so the claiming node drops it at admission. An idle row that carries an
     /// owner is a descendant inside a claimed tree, and anything running or finished belongs to its run.
     /// </summary>
-    internal static bool IsEditable(JobStatus status, string? ownerId) =>
-        (status == JobStatus.Idle && ownerId is null) || status == JobStatus.Queued;
+    /// <remarks>The relational store filters with this expression; the in-memory store runs it compiled.</remarks>
+    internal static Expression<Func<TTimeJob, bool>> EditableRule<TTimeJob>()
+        where TTimeJob : TimeJobEntity<TTimeJob> => Rules<TTimeJob>.Editable;
+
+    /// <inheritdoc cref="EditableRule{TTimeJob}"/>
+    internal static bool IsEditable<TTimeJob>(TTimeJob row)
+        where TTimeJob : TimeJobEntity<TTimeJob> => Rules<TTimeJob>.IsEditable(row);
 
     /// <summary>
-    /// Whether an existing descendant carried in an edited root's graph may be written. Reading a pre-claimed root
-    /// loads its children, which the claim stamped idle with the root's owner; the edit releases them with the root.
-    /// A descendant owned by anyone else, or no longer idle, belongs to other work.
+    /// Whether an existing descendant carried in an edited root's graph may be written, given the root's owner before
+    /// the edit. Reading a pre-claimed root loads its children, which the claim stamped idle with the root's owner;
+    /// the edit releases them with the root. A descendant owned by anyone else, or no longer idle, belongs to other
+    /// work.
     /// </summary>
-    internal static bool IsCarriedDescendantEditable(JobStatus status, string? ownerId, string? rootOwnerBeforeEdit) =>
-        status == JobStatus.Idle
-        && (ownerId is null || string.Equals(ownerId, rootOwnerBeforeEdit, StringComparison.Ordinal));
+    /// <remarks>The relational store filters with this expression; the in-memory store runs it compiled.</remarks>
+    internal static Expression<Func<TTimeJob, string?, bool>> CarriedDescendantEditableRule<TTimeJob>()
+        where TTimeJob : TimeJobEntity<TTimeJob> => Rules<TTimeJob>.CarriedDescendantEditable;
+
+    /// <inheritdoc cref="CarriedDescendantEditableRule{TTimeJob}"/>
+    internal static bool IsCarriedDescendantEditable<TTimeJob>(TTimeJob row, string? rootOwnerBeforeEdit)
+        where TTimeJob : TimeJobEntity<TTimeJob> =>
+        Rules<TTimeJob>.IsCarriedDescendantEditable(row, rootOwnerBeforeEdit);
 
     internal static InvalidOperationException Refused() =>
         new(
@@ -55,4 +68,22 @@ internal static class TimeJobEditGuard
                 + "edited. The job, or a descendant in its graph, is running, finished, or part of a claimed chain; "
                 + "a failed job goes back to the queue through IJobScheduler.RequeueAsync."
         );
+
+    private static class Rules<TTimeJob>
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        // String equality in the tree is ordinal when compiled and the column comparison when translated.
+        public static readonly Expression<Func<TTimeJob, bool>> Editable = row =>
+            (row.Status == JobStatus.Idle && row.OwnerId == null) || row.Status == JobStatus.Queued;
+
+        public static readonly Expression<Func<TTimeJob, string?, bool>> CarriedDescendantEditable = (
+            row,
+            rootOwnerBeforeEdit
+        ) => row.Status == JobStatus.Idle && (row.OwnerId == null || row.OwnerId == rootOwnerBeforeEdit);
+
+        public static readonly Func<TTimeJob, bool> IsEditable = Editable.Compile();
+
+        public static readonly Func<TTimeJob, string?, bool> IsCarriedDescendantEditable =
+            CarriedDescendantEditable.Compile();
+    }
 }
