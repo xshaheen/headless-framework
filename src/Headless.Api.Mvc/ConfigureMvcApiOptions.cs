@@ -20,6 +20,8 @@ namespace Headless.Api.Options;
 ///   <item>Enables 406 Not Acceptable when the client's <c>Accept</c> header cannot be satisfied.</item>
 ///   <item>Clears the default model-validator providers and substitutes <c>SystemTextJsonValidationMetadataProvider</c>.</item>
 ///   <item>Applies <c>ProblemDetailsOptions.CustomizeProblemDetails</c> once to Headless-normalized MVC problem-details object results.</item>
+///   <item>Binds an enum from a route, query, header, or form value by member name in any casing, rejecting numbers and unknown names, as a JSON body does.</item>
+///   <item>Answers 400 <c>g:invalid_parameter_value</c> when a value cannot be bound, instead of running the action with it left at its default.</item>
 ///   <item>Binds an <see cref="IUploadedFile"/> from the multipart form and marks it as form-file input, so API Explorer describes it as a file part rather than expanding the interface.</item>
 /// </list>
 /// Behavior applied to <see cref="ApiBehaviorOptions"/>:
@@ -60,6 +62,20 @@ internal sealed class ConfigureMvcApiOptions : IConfigureOptions<MvcOptions>, IC
             options.ModelMetadataDetailsProviders.Add(
                 new BindingSourceMetadataProvider(typeof(IUploadedFile), BindingSource.FormFile)
             );
+        }
+
+        if (!options.ModelBinderProviders.OfType<EnumNameModelBinderProvider>().Any())
+        {
+            options.ModelBinderProviders.Insert(0, new EnumNameModelBinderProvider());
+        }
+
+        if (
+            !options
+                .Filters.OfType<TypeFilterAttribute>()
+                .Any(filter => filter.ImplementationType == typeof(ModelBindingFailureFilter))
+        )
+        {
+            options.Filters.Add<ModelBindingFailureFilter>();
         }
 
         // Exception mapping is handled globally by HeadlessApiExceptionHandler (registered in

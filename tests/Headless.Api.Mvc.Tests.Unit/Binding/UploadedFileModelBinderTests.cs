@@ -68,7 +68,6 @@ public sealed class UploadedFileModelBinderTests : TestBase
         configure.Configure(options);
 
         options.ModelBinderProviders.OfType<UploadedFileModelBinderProvider>().Should().ContainSingle();
-        options.ModelBinderProviders[0].Should().BeOfType<UploadedFileModelBinderProvider>();
         options
             .ModelMetadataDetailsProviders.OfType<BindingSourceMetadataProvider>()
             .Should()

@@ -97,6 +97,22 @@ public static class GeneralMessageDescriber
     }
 
     /// <summary>
+    /// Returns a descriptor for a request value that could not be converted to its parameter's type
+    /// (<c>g:invalid_parameter_value</c>), naming the parameter in its <c>parameter</c> value.
+    /// </summary>
+    /// <param name="parameter">The name the value was bound under, such as <c>accountType</c>.</param>
+    public static ErrorDescriptor InvalidParameterValue(string parameter)
+    {
+        return new(
+            code: GeneralErrorCodes.InvalidParameterValue,
+#pragma warning disable CA1863 // False positive: the format is a localized resource read per call, so a cached CompositeFormat would freeze one language.
+            description: string.Format(CultureInfo.CurrentCulture, Messages.g_invalid_parameter_value, parameter),
+#pragma warning restore CA1863
+            ("parameter", parameter)
+        );
+    }
+
+    /// <summary>
     /// Returns a descriptor for an endpoint whose validation filter received no argument of its
     /// configured request type (<c>g:invalid_request_type</c>).
     /// </summary>

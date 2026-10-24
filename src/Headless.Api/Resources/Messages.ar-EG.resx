@@ -61,6 +61,9 @@
   <data name="g:cross_tenant_write" xml:space="preserve">
     <value>عملية الكتابة دي مش مطابقة للمستأجر الحالي.</value>
   </data>
+  <data name="g:invalid_parameter_value" xml:space="preserve">
+    <value>تعذّرت قراءة قيمة '{0}': صيغتها مش صحيحة أو مش من القيم المقبولة.</value>
+  </data>
   <data name="g:invalid_request_type" xml:space="preserve">
     <value>نوع الطلب المتحدد لنقطة النهاية دي مش صالح.</value>
   </data>
