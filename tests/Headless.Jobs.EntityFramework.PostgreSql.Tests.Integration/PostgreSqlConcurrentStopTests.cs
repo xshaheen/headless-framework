@@ -111,7 +111,10 @@ public sealed class PostgreSqlConcurrentStopTests(PostgreSqlJobsCoordinationFixt
             while (!stop.IsCompleted)
             {
                 var row = await _ReadAsync(peer, id, ct);
-                if (row.Status == JobStatus.InProgress && row.OwnerId == nodeIdentity.ToString())
+                if (
+                    row.Status == JobStatus.InProgress
+                    && string.Equals(row.OwnerId, nodeIdentity.ToString(), StringComparison.Ordinal)
+                )
                 {
                     (await _IsAliveAsync(peer, nodeIdentity, ct))
                         .Should()
@@ -125,9 +128,9 @@ public sealed class PostgreSqlConcurrentStopTests(PostgreSqlJobsCoordinationFixt
 
             // then: handed back uncharged, and still so once the peer has seen the node leave and run its reclaim
             await _NextEventAsync(peerEvents, e => e is NodeLeft left && left.Identity == nodeIdentity);
-            var detail = await fixture.ReadTimeJobDetailAsync(id, ct);
-            detail.Status.Should().Be((int)JobStatus.Idle);
-            detail.OwnerId.Should().BeNull();
+            var (status, ownerId, _, _, _) = await fixture.ReadTimeJobDetailAsync(id, ct);
+            status.Should().Be((int)JobStatus.Idle);
+            ownerId.Should().BeNull();
             (await fixture.ReadTimeJobRetryCountAsync(id, ct))
                 .Should()
                 .Be(0, "a graceful stop is not a used-up attempt and no peer reclaim charged it");

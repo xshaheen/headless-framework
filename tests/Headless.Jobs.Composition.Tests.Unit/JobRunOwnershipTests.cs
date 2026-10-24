@@ -41,7 +41,8 @@ public sealed class JobRunOwnershipTests : TestBase
             {
                 invoked = true;
                 return Task.CompletedTask;
-            }
+            },
+            AbortToken
         );
 
         // then
@@ -106,7 +107,8 @@ public sealed class JobRunOwnershipTests : TestBase
             {
                 started.SetResult();
                 await proceed.Task.WaitAsync(token);
-            }
+            },
+            AbortToken
         );
         await started.Task.WaitAsync(_RunBound, AbortToken);
         harness.Scheduler.BeginDrain();
@@ -144,7 +146,7 @@ public sealed class JobRunOwnershipTests : TestBase
 
         // when
         await harness
-            .ExecuteAsync(context, (_, _) => throw new InvalidOperationException("permanent"))
+            .ExecuteAsync(context, (_, _) => throw new InvalidOperationException("permanent"), AbortToken)
             .WaitAsync(_RunBound, AbortToken);
 
         // then

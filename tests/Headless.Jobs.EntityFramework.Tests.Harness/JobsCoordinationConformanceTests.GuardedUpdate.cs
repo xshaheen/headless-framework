@@ -110,10 +110,10 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
 
             _ShouldSucceed(await manager.UpdateAsync(copy, ct));
 
-            var detail = await Fixture.ReadTimeJobDetailAsync(job.Id, ct);
-            detail.Status.Should().Be((int)JobStatus.Idle);
-            detail.OwnerId.Should().BeNull();
-            detail.LockedUntil.Should().BeNull();
+            var (status, ownerId, lockedUntil, _, _) = await Fixture.ReadTimeJobDetailAsync(job.Id, ct);
+            status.Should().Be((int)JobStatus.Idle);
+            ownerId.Should().BeNull();
+            lockedUntil.Should().BeNull();
             (await persistence.GetTimeJobByIdAsync(job.Id, ct))!.ExecutionTime.Should().Be(newTime);
 
             var start = new JobExecutionState { FunctionName = string.Empty, ClaimOwner = owner }.SetProperty(
@@ -237,10 +237,10 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
 
             foreach (var id in new[] { root.Id, child.Id })
             {
-                var detail = await Fixture.ReadTimeJobDetailAsync(id, ct);
-                detail.Status.Should().Be((int)JobStatus.Idle);
-                detail.OwnerId.Should().BeNull();
-                detail.LockedUntil.Should().BeNull();
+                var (status, ownerId, lockedUntil, _, _) = await Fixture.ReadTimeJobDetailAsync(id, ct);
+                status.Should().Be((int)JobStatus.Idle);
+                ownerId.Should().BeNull();
+                lockedUntil.Should().BeNull();
             }
 
             (await persistence.GetTimeJobByIdAsync(child.Id, ct))!.Description.Should().Be("edited child");

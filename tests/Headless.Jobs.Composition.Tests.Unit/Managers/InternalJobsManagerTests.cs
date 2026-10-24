@@ -232,7 +232,8 @@ public sealed class InternalJobsManagerTests : TestBase
                 return Task.FromResult<Guid[]>([
                     .. call.Arg<Guid[]>()
                         .Where(id =>
-                            (id == first.JobId && owner == _ClaimOwner) || (id == second.JobId && owner == "node-a@2")
+                            (id == first.JobId && string.Equals(owner, _ClaimOwner, StringComparison.Ordinal))
+                            || (id == second.JobId && string.Equals(owner, "node-a@2", StringComparison.Ordinal))
                         ),
                 ]);
             });

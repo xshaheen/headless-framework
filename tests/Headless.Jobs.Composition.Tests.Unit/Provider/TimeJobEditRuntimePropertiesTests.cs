@@ -90,8 +90,10 @@ public sealed class TimeJobEditRuntimePropertiesTests : TestBase
     {
         return typeof(FakeTimeJob)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(property => property.GetSetMethod(nonPublic: true) is not null)
-            .Where(property => !_NotVaried.Contains(property.Name, StringComparer.Ordinal));
+            .Where(property =>
+                property.GetSetMethod(nonPublic: true) is not null
+                && !_NotVaried.Contains(property.Name, StringComparer.Ordinal)
+            );
     }
 
     private static object _DifferentValue(Type type, object? current)

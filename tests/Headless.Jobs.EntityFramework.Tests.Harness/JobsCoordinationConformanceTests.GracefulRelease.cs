@@ -39,10 +39,10 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
         (await persistence.ReleaseInProgressTimeJobAsync(id, _StopOwner, ct)).Should().Be(1);
 
         // The release ignores the policy: the job never ran.
-        var detail = await Fixture.ReadTimeJobDetailAsync(id, ct);
-        detail.Status.Should().Be((int)JobStatus.Idle);
-        detail.OwnerId.Should().BeNull();
-        detail.LockedUntil.Should().BeNull();
+        var (status, ownerId, lockedUntil, _, _) = await Fixture.ReadTimeJobDetailAsync(id, ct);
+        status.Should().Be((int)JobStatus.Idle);
+        ownerId.Should().BeNull();
+        lockedUntil.Should().BeNull();
         (await Fixture.ReadTimeJobRetryCountAsync(id, ct)).Should().Be(0);
         (await persistence.GetTimeJobByIdAsync(id, ct))!.ExecutionTime.Should().Be(before!.ExecutionTime);
     }
@@ -72,28 +72,31 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
 
         (await persistence.SettleInterruptedTimeJobAsync(id, _StopOwner, _StopReason, retryAt, ct)).Should().Be(1);
 
-        var detail = await Fixture.ReadTimeJobDetailAsync(id, ct);
+        var (status, ownerId, lockedUntil, exceptionMessage, skippedReason) = await Fixture.ReadTimeJobDetailAsync(
+            id,
+            ct
+        );
         var stored = (await persistence.GetTimeJobByIdAsync(id, ct))!;
         (await Fixture.ReadTimeJobRetryCountAsync(id, ct)).Should().Be(0);
-        detail.LockedUntil.Should().BeNull();
+        lockedUntil.Should().BeNull();
 
         switch (nodeDeathPolicy)
         {
             case NodeDeathPolicy.Retry:
-                detail.Status.Should().Be((int)JobStatus.Idle);
-                detail.OwnerId.Should().BeNull();
+                status.Should().Be((int)JobStatus.Idle);
+                ownerId.Should().BeNull();
                 stored.ExecutionTime.Should().Be(retryAt);
                 break;
             case NodeDeathPolicy.MarkFailed:
-                detail.Status.Should().Be((int)JobStatus.Failed);
-                detail.OwnerId.Should().Be(_StopOwner);
-                detail.ExceptionMessage.Should().Be(_StopReason);
+                status.Should().Be((int)JobStatus.Failed);
+                ownerId.Should().Be(_StopOwner);
+                exceptionMessage.Should().Be(_StopReason);
                 stored.ExecutionTime.Should().Be(before!.ExecutionTime);
                 break;
             default:
-                detail.Status.Should().Be((int)JobStatus.Skipped);
-                detail.OwnerId.Should().Be(_StopOwner);
-                detail.SkippedReason.Should().Be(_StopReason);
+                status.Should().Be((int)JobStatus.Skipped);
+                ownerId.Should().Be(_StopOwner);
+                skippedReason.Should().Be(_StopReason);
                 stored.ExecutionTime.Should().Be(before!.ExecutionTime);
                 break;
         }
@@ -272,9 +275,9 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
             await first.StopAsync(ct);
         }
 
-        var released = await Fixture.ReadTimeJobDetailAsync(id, ct);
-        released.Status.Should().Be((int)JobStatus.Idle);
-        released.OwnerId.Should().BeNull();
+        var (releasedStatus, releasedOwnerId, _, _, _) = await Fixture.ReadTimeJobDetailAsync(id, ct);
+        releasedStatus.Should().Be((int)JobStatus.Idle);
+        releasedOwnerId.Should().BeNull();
         (await Fixture.ReadTimeJobRetryCountAsync(id, ct)).Should().Be(0, "a graceful stop is not a used-up attempt");
 
         using var second = _BuildGracefulStopHost("node-b");

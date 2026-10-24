@@ -907,9 +907,9 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
         ownerId.Should().Be(claimOwner);
         lockedUntil.Should().BeCloseTo(lease, TimeSpan.FromSeconds(5));
 
-        var occurrenceClaim = await fixture.ReadCronOccurrenceClaimAsync(occurrenceId, ct);
-        occurrenceClaim.OwnerId.Should().Be(claimOwner);
-        occurrenceClaim.LockedUntil.Should().BeCloseTo(lease, TimeSpan.FromSeconds(5));
+        var (occurrenceOwnerId, occurrenceLockedUntil) = await fixture.ReadCronOccurrenceClaimAsync(occurrenceId, ct);
+        occurrenceOwnerId.Should().Be(claimOwner);
+        occurrenceLockedUntil.Should().BeCloseTo(lease, TimeSpan.FromSeconds(5));
     }
 
     /// <summary>

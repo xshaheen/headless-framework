@@ -421,7 +421,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     private void _ArmDrainSignal()
     {
         var current = Volatile.Read(ref _drained);
-        if (current is not null && !current.Task.IsCompleted)
+        if (current?.Task.IsCompleted == false)
         {
             return;
         }

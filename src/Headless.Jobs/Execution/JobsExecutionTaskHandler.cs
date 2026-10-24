@@ -1503,7 +1503,7 @@ internal sealed class JobsExecutionTaskHandler
         // Without a live identity no node can vouch for this claim, so the run must not start. A root hands its row back
         // uncharged under the claim owner, since starting nothing used no attempt. A chain child stays with its root,
         // which reclaim re-runs as a whole, because a released non-timed child has no due instant to be claimed by.
-        if (_ownerIdentity is not null && !_ownerIdentity.TryGetStampOwner(out _))
+        if (_ownerIdentity?.TryGetStampOwner(out _) == false)
         {
             if (!isChild)
             {
