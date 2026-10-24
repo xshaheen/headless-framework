@@ -52,10 +52,10 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
             await fixture.SeedTimeJobAsync(queued, _Function, (int)JobStatus.Queued, owner, ct, lockedUntil: lease);
             var store = _Store(writer);
 
-            (await store.UpdateTimeJobProgressAsync(owned, new(10, "warming up"), ct)).Should().BeTrue();
-            (await store.UpdateTimeJobProgressAsync(owned, new(42.5, "halfway"), ct)).Should().BeTrue();
-            (await store.UpdateTimeJobProgressAsync(foreign, new(99, "not mine"), ct)).Should().BeFalse();
-            (await store.UpdateTimeJobProgressAsync(queued, new(99, "not running"), ct)).Should().BeFalse();
+            (await store.UpdateTimeJobProgressAsync(owned, owner, new(10, "warming up"), ct)).Should().BeTrue();
+            (await store.UpdateTimeJobProgressAsync(owned, owner, new(42.5, "halfway"), ct)).Should().BeTrue();
+            (await store.UpdateTimeJobProgressAsync(foreign, owner, new(99, "not mine"), ct)).Should().BeFalse();
+            (await store.UpdateTimeJobProgressAsync(queued, owner, new(99, "not running"), ct)).Should().BeFalse();
 
             // A dashboard refresh is a fresh read through any node's store, here one that never wrote anything.
             var page = await _Store(reader).GetTimeJobsPaginatedAsync(x => x.Function == _Function, 1, 10, ct);
@@ -67,7 +67,7 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
             page.Items.Single(x => x.Id == queued).ProgressPercent.Should().BeNull();
 
             // Each report replaces the stored one whole, so a report without a message clears it.
-            (await store.UpdateTimeJobProgressAsync(owned, new(50), ct))
+            (await store.UpdateTimeJobProgressAsync(owned, owner, new(50), ct))
                 .Should()
                 .BeTrue();
             var cleared = (await _Store(reader).GetTimeJobByIdAsync(owned, ct))!;
@@ -121,8 +121,8 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
             );
             var store = _Store(writer);
 
-            (await store.UpdateCronJobOccurrenceProgressAsync(owned, new(75, "nearly"), ct)).Should().BeTrue();
-            (await store.UpdateCronJobOccurrenceProgressAsync(foreign, new(75), ct)).Should().BeFalse();
+            (await store.UpdateCronJobOccurrenceProgressAsync(owned, owner, new(75, "nearly"), ct)).Should().BeTrue();
+            (await store.UpdateCronJobOccurrenceProgressAsync(foreign, owner, new(75), ct)).Should().BeFalse();
 
             var rows = await _Store(reader).GetAllCronJobOccurrencesAsync(x => x.CronJobId == cronId, ct);
             var ownedRow = rows.Single(x => x.Id == owned);
@@ -150,18 +150,19 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
 
         try
         {
+            var owner = _Owner(host);
             var id = Guid.NewGuid();
             await fixture.SeedTimeJobAsync(
                 id,
                 _Function,
                 (int)JobStatus.InProgress,
-                _Owner(host),
+                owner,
                 ct,
                 lockedUntil: DateTime.UtcNow.AddMinutes(5)
             );
             var store = _Store(host);
 
-            (await store.UpdateTimeJobProgressAsync(id, new(5), ct)).Should().BeTrue();
+            (await store.UpdateTimeJobProgressAsync(id, owner, new(5), ct)).Should().BeTrue();
 
             (await store.GetTimeJobByIdAsync(id, ct))!
                 .ProgressUpdatedAt.Should()
@@ -173,26 +174,39 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
         }
     }
 
-    public virtual async Task progress_writes_nothing_while_membership_is_not_established()
+    public virtual async Task progress_fences_on_the_claim_owner_after_the_node_identity_is_gone()
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        // Not started: there is no owner identity to fence on.
+        // Not started: the node has no live identity, the state after it left membership. Progress settles nothing
+        // about ownership, so the row still stamped with the claim owner takes it and a reclaimed row does not.
         using var host = fixture.BuildHost("progress-unstarted");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        const string claimOwner = "progress-unstarted@1";
         var id = Guid.NewGuid();
+        var reclaimed = Guid.NewGuid();
         await fixture.SeedTimeJobAsync(
             id,
             _Function,
             (int)JobStatus.InProgress,
-            "progress-unstarted@1",
+            claimOwner,
+            ct,
+            lockedUntil: DateTime.UtcNow.AddMinutes(5)
+        );
+        await fixture.SeedTimeJobAsync(
+            reclaimed,
+            _Function,
+            (int)JobStatus.InProgress,
+            _ForeignOwner,
             ct,
             lockedUntil: DateTime.UtcNow.AddMinutes(5)
         );
         var store = _Store(host);
 
-        (await store.UpdateTimeJobProgressAsync(id, new(5), ct)).Should().BeFalse();
-        (await store.GetTimeJobByIdAsync(id, ct))!.ProgressPercent.Should().BeNull();
+        (await store.UpdateTimeJobProgressAsync(id, claimOwner, new(5), ct)).Should().BeTrue();
+        (await store.UpdateTimeJobProgressAsync(reclaimed, claimOwner, new(5), ct)).Should().BeFalse();
+        (await store.GetTimeJobByIdAsync(id, ct))!.ProgressPercent.Should().Be(5);
+        (await store.GetTimeJobByIdAsync(reclaimed, ct))!.ProgressPercent.Should().BeNull();
     }
 
     public virtual async Task terminal_writes_store_the_report_the_throttle_had_not_written()
@@ -230,14 +244,20 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
                 ct
             );
             var store = _Store(host);
-            await store.UpdateTimeJobProgressAsync(timeJob, new(60, "last written"), ct);
+            await store.UpdateTimeJobProgressAsync(timeJob, owner, new(60, "last written"), ct);
 
             var timeJobAffected = await store.UpdateTimeJobAsync(
-                _Terminal(timeJob, JobType.TimeJob, JobStatus.Succeeded, new JobProgress(100, "done")),
+                _Terminal(timeJob, owner, JobType.TimeJob, JobStatus.Succeeded, new JobProgress(100, "done")),
                 ct
             );
             var occurrenceAffected = await store.UpdateCronJobOccurrenceAsync(
-                _Terminal(occurrence, JobType.CronJobOccurrence, JobStatus.Failed, new JobProgress(30, "failed here")),
+                _Terminal(
+                    occurrence,
+                    owner,
+                    JobType.CronJobOccurrence,
+                    JobStatus.Failed,
+                    new JobProgress(30, "failed here")
+                ),
                 ct
             );
 
@@ -283,8 +303,8 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
             );
             await fixture.SeedTimeJobAsync(failed, _Function, (int)JobStatus.InProgress, owner, ct, lockedUntil: lease);
             var store = _Store(host);
-            await store.UpdateTimeJobProgressAsync(crashed, new(80, "before the crash"), ct);
-            await store.UpdateTimeJobProgressAsync(failed, new(40, "failed here"), ct);
+            await store.UpdateTimeJobProgressAsync(crashed, owner, new(80, "before the crash"), ct);
+            await store.UpdateTimeJobProgressAsync(failed, owner, new(40, "failed here"), ct);
 
             // The crashed run's lease lapses; the stalled sweep releases it for another attempt.
             await _ExpireLeaseAsync(crashed, ct);
@@ -296,7 +316,12 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
             released.ProgressMessage.Should().Be("before the crash");
 
             // A requeue starts a new run, so the failed run's progress goes.
-            (await store.UpdateTimeJobAsync(_Terminal(failed, JobType.TimeJob, JobStatus.Failed, progress: null), ct))
+            (
+                await store.UpdateTimeJobAsync(
+                    _Terminal(failed, owner, JobType.TimeJob, JobStatus.Failed, progress: null),
+                    ct
+                )
+            )
                 .Should()
                 .Be(1);
             (await store.GetTimeJobByIdAsync(failed, ct))!.ProgressPercent.Should().Be(40);
@@ -374,6 +399,7 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
 
         try
         {
+            var owner = _Owner(host);
             var cronId = Guid.NewGuid();
             await fixture.SeedCronJobAsync(cronId, _Function, "* * * * *", NodeDeathPolicy.Retry, ct);
             var occurrence = Guid.NewGuid();
@@ -381,16 +407,16 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
                 occurrence,
                 cronId,
                 (int)JobStatus.InProgress,
-                _Owner(host),
+                owner,
                 NodeDeathPolicy.Retry,
                 DateTime.UtcNow.AddMinutes(5),
                 DateTime.UtcNow.AddHours(-1),
                 ct
             );
             var store = _Store(host);
-            await store.UpdateCronJobOccurrenceProgressAsync(occurrence, new(40, "failed here"), ct);
+            await store.UpdateCronJobOccurrenceProgressAsync(occurrence, owner, new(40, "failed here"), ct);
             await store.UpdateCronJobOccurrenceAsync(
-                _Terminal(occurrence, JobType.CronJobOccurrence, JobStatus.Failed, progress: null),
+                _Terminal(occurrence, owner, JobType.CronJobOccurrence, JobStatus.Failed, progress: null),
                 ct
             );
 
@@ -428,13 +454,20 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static JobExecutionState _Terminal(Guid id, JobType type, JobStatus status, JobProgress? progress)
+    private static JobExecutionState _Terminal(
+        Guid id,
+        string claimOwner,
+        JobType type,
+        JobStatus status,
+        JobProgress? progress
+    )
     {
         var state = new JobExecutionState
         {
             JobId = id,
             FunctionName = _Function,
             Type = type,
+            ClaimOwner = claimOwner,
         }
             .SetProperty(x => x.Status, status)
             .SetProperty(x => x.ExecutedAt, DateTimeOffset.UtcNow);

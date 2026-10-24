@@ -144,6 +144,14 @@ public static class SetupJobs
                 + "the maximum backoff applied when a deterministically invalid cron definition is durably deferred."
         );
         Ensure.True(
+            schedulerOptionsBuilder.ShutdownTimeout > TimeSpan.Zero,
+            "SchedulerOptionsBuilder.ShutdownTimeout must be greater than zero."
+        );
+        Ensure.True(
+            schedulerOptionsBuilder.ShutdownTimeout <= TimeSpan.FromMinutes(5),
+            "SchedulerOptionsBuilder.ShutdownTimeout must not exceed 5 minutes."
+        );
+        Ensure.True(
             schedulerOptionsBuilder.FingerprintSweepBatchSize > 0,
             "SchedulerOptionsBuilder.FingerprintSweepBatchSize must be greater than zero."
         );
@@ -509,6 +517,13 @@ public static class SetupJobs
         // leaves registration to the coordination heartbeat or to its own code.
         services.AddSingleton<JobsDeadOwnerReclaimer>();
         services.AddHostedService<DeadOwnerRecoveryBridge<JobsDeadOwnerReclaimer>>();
+
+        // A node that claims rows keeps beating until its scheduler has drained and released them: leaving first
+        // lets a peer reclaim a row this node is still settling, charging a retry or running the job twice.
+        if (claimsWork)
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<INodeDrainParticipant, JobsDrainParticipant>());
+        }
 
         if (registerStartupGate)
         {

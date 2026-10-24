@@ -164,6 +164,7 @@ public static class SetupCoordinationCore
                 sp.GetRequiredService<CoordinationOptions>(),
                 sp.GetRequiredService<TimeProvider>(),
                 TimeProvider.System,
+                [.. sp.GetServices<INodeDrainParticipant>()],
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MembershipHeartbeatBackgroundService>>()
             ));
 

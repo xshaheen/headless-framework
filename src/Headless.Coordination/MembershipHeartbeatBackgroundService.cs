@@ -5,7 +5,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Coordination;
 
-/// <summary>Registers this node, heartbeats it, publishes membership events, and leaves on shutdown.</summary>
+/// <summary>
+/// Registers this node, heartbeats it, publishes membership events, and on shutdown leaves once every
+/// <see cref="INodeDrainParticipant"/> has drained.
+/// </summary>
 /// <remarks>
 /// The beat loop starts in <see cref="StartingAsync"/>, before any hosted service's <c>StartAsync</c>, and waits there
 /// for whichever caller registers first (the Jobs startup gate, or this service's own register-if-null in
@@ -19,15 +22,21 @@ namespace Headless.Coordination;
 /// The clock for waits that ride out a store failure: the registration back-off and the bounded leave on stop.
 /// Registration passes <see cref="TimeProvider.System"/>; tests pass a fake to step through those waits.
 /// </param>
+/// <param name="drainParticipants">
+/// Awaited on stop, while the loop still beats, before the node leaves.
+/// </param>
 internal sealed class MembershipHeartbeatBackgroundService(
     MembershipService membership,
     MembershipEventSource eventSource,
     CoordinationOptions options,
     TimeProvider timeProvider,
     TimeProvider realTimeProvider,
+    IReadOnlyList<INodeDrainParticipant> drainParticipants,
     ILogger<MembershipHeartbeatBackgroundService> logger
 ) : BackgroundService, IHostedLifecycleService
 {
+    private static readonly TimeSpan _LeaveBudget = TimeSpan.FromSeconds(5);
+
     private readonly CancellationTokenSource _loopCts = new();
     private Dictionary<NodeIdentity, NodeLivenessState> _previous = [];
     private Task? _loop;
@@ -83,6 +92,10 @@ internal sealed class MembershipHeartbeatBackgroundService(
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
+        // Keep beating while the participants drain: a node that leaves, or stops beating until it self-fences, is
+        // dead to its peers, which then reclaim the rows its in-flight work is still settling.
+        await _WaitForDrainParticipantsAsync(cancellationToken).ConfigureAwait(false);
+
         if (Volatile.Read(ref _disposed) == 0)
         {
             await _loopCts.CancelAsync().ConfigureAwait(false);
@@ -90,13 +103,15 @@ internal sealed class MembershipHeartbeatBackgroundService(
 
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
 
-        // Best-effort graceful leave under a bounded budget so a store outage can't hang host shutdown.
-        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5), realTimeProvider);
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+        // Best-effort graceful leave under its own bounded budget so a store outage can't hang host shutdown. It is
+        // deliberately not linked to the host token: the drain wait may already have spent that token, and
+        // LeaveAsync throws at once on a cancelled token, so the leave would never reach the store and peers would
+        // wait out DeadThreshold before reclaiming.
+        using var timeoutCts = new CancellationTokenSource(_LeaveBudget, realTimeProvider);
 
         try
         {
-            await membership.LeaveAsync(linkedCts.Token).ConfigureAwait(false);
+            await membership.LeaveAsync(timeoutCts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -105,6 +120,51 @@ internal sealed class MembershipHeartbeatBackgroundService(
         catch (Exception ex)
         {
             logger.LeaveOnShutdownFailed(ex);
+        }
+    }
+
+    private async Task _WaitForDrainParticipantsAsync(CancellationToken cancellationToken)
+    {
+        if (drainParticipants.Count == 0)
+        {
+            return;
+        }
+
+        var waits = new Task[drainParticipants.Count];
+        for (var i = 0; i < drainParticipants.Count; i++)
+        {
+            waits[i] = _WaitForDrainParticipantAsync(drainParticipants[i], cancellationToken);
+        }
+
+        try
+        {
+            // WaitAsync bounds the wait even for a participant that ignores the token.
+            await Task.WhenAll(waits).WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.DrainWaitCutShort();
+        }
+    }
+
+    private async Task _WaitForDrainParticipantAsync(
+        INodeDrainParticipant participant,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await participant.WaitUntilDrainedAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The caller reports the cut-short wait once, for every participant.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // One failing participant must not stop the others from holding the node, nor stop the leave.
+            logger.DrainParticipantFailed(ex, participant.GetType().FullName ?? participant.GetType().Name);
         }
     }
 

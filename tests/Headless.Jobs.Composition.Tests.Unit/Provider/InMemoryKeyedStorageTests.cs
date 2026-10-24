@@ -169,20 +169,22 @@ public sealed class InMemoryKeyedStorageTests : TestBase
             updates = Task.Run(
                 async () =>
                 {
-                    (await store.QueueTimeJobsAsync([job], AbortToken).ToArrayAsync(AbortToken))
+                    var claimed = (await store.QueueTimeJobsAsync([job], AbortToken).ToArrayAsync(AbortToken))
                         .Should()
-                        .ContainSingle();
+                        .ContainSingle()
+                        .Subject;
                     var state = new JobExecutionState
                     {
                         JobId = job.Id,
                         FunctionName = job.Function,
                         Status = JobStatus.InProgress,
+                        ClaimOwner = claimed.OwnerId,
                     };
                     state.SetProperty(x => x.Status, JobStatus.InProgress);
                     (await store.UpdateTimeJobsWithUnifiedContextAsync([job.Id], state, AbortToken))
                         .Should()
                         .ContainSingle();
-                    (await store.RenewTimeJobLeaseAsync(job.Id, AbortToken)).Should().Be(1);
+                    (await store.RenewTimeJobLeaseAsync(job.Id, claimed.OwnerId!, AbortToken)).Should().Be(1);
                 },
                 AbortToken
             );

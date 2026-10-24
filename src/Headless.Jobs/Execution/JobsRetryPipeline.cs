@@ -51,7 +51,7 @@ internal sealed class JobsRetryPipeline
     public async Task ExecuteAsync(
         JobExecutionState job,
         Func<int, CancellationToken, ValueTask> attempt,
-        Func<int, Exception, CancellationToken, ValueTask> onRetry,
+        Func<int, Exception, TimeSpan, CancellationToken, ValueTask> onRetry,
         CancellationToken cancellationToken
     )
     {
@@ -152,8 +152,11 @@ internal sealed class JobsRetryPipeline
     {
         var execution = args.Context.Properties.GetValue(_ExecutionKey, null!);
         var retryCount = execution.StartingRetryCount + args.AttemptNumber + 1;
+
+        // The wait that follows is handed over so a stop that lands inside it can park the job at the instant its
+        // next attempt was due, rather than recomputing the schedule outside the pipeline.
         await execution
-            .OnRetry(retryCount, args.Outcome.Exception!, args.Context.CancellationToken)
+            .OnRetry(retryCount, args.Outcome.Exception!, args.RetryDelay, args.Context.CancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -162,6 +165,6 @@ internal sealed class JobsRetryPipeline
         int StartingRetryCount,
         FailurePolicyDefinition Policy,
         Func<int, CancellationToken, ValueTask> Attempt,
-        Func<int, Exception, CancellationToken, ValueTask> OnRetry
+        Func<int, Exception, TimeSpan, CancellationToken, ValueTask> OnRetry
     );
 }

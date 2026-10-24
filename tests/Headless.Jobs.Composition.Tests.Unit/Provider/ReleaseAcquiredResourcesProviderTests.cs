@@ -41,7 +41,7 @@ public sealed class ReleaseAcquiredResourcesProviderTests : TestBase
         );
         var unownedBefore = await provider.GetTimeJobByIdAsync(unownedIdle.Id, AbortToken);
 
-        await provider.ReleaseAcquiredTimeJobsAsync([], AbortToken);
+        await provider.ReleaseAcquiredTimeJobsAsync([], _NodeA, AbortToken);
 
         var released = await provider.GetTimeJobByIdAsync(mineQueued.Id, AbortToken);
         released!.Status.Should().Be(JobStatus.Idle);
@@ -71,7 +71,7 @@ public sealed class ReleaseAcquiredResourcesProviderTests : TestBase
         var listedForeign = _TimeJob(JobStatus.Queued, _NodeB, _Now.UtcDateTime.Add(_Lease));
         await provider.AddTimeJobsAsync([listedMine, unlistedMine, listedForeign], AbortToken);
 
-        await provider.ReleaseAcquiredTimeJobsAsync([listedMine.Id, listedForeign.Id], AbortToken);
+        await provider.ReleaseAcquiredTimeJobsAsync([listedMine.Id, listedForeign.Id], _NodeA, AbortToken);
 
         (await provider.GetTimeJobByIdAsync(listedMine.Id, AbortToken))!.Status.Should().Be(JobStatus.Idle);
         (await provider.GetTimeJobByIdAsync(unlistedMine.Id, AbortToken))!.Status.Should().Be(JobStatus.Queued);
@@ -100,7 +100,7 @@ public sealed class ReleaseAcquiredResourcesProviderTests : TestBase
         );
         await provider.InsertCronJobOccurrencesAsync([mineQueued, mineInProgress, foreignQueued], AbortToken);
 
-        await provider.ReleaseAcquiredCronJobOccurrencesAsync([], AbortToken);
+        await provider.ReleaseAcquiredCronJobOccurrencesAsync([], _NodeA, AbortToken);
 
         var all = await provider.GetAllCronJobOccurrencesAsync(predicate: null, AbortToken);
         var released = all.Single(x => x.Id == mineQueued.Id);

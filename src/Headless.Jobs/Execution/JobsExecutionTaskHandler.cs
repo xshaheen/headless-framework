@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Internal;
+using Headless.Jobs.JobsThreadPool;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -22,10 +23,6 @@ internal sealed class JobsExecutionTaskHandler
 
     // #316 sliding lease: cadence at which a running job renews its own lease (≈ LeaseDuration/3 by default).
     private readonly TimeSpan _leaseRenewalInterval;
-
-    // #461: how long a running job may tolerate unestablished coordination membership before the renewal loop treats
-    // it as a lost lease — the lease window, after which the row is certainly being reclaimed elsewhere.
-    private readonly TimeSpan _leaseDuration;
     private readonly TimeSpan _cancellationObservationInterval;
     private readonly TimeSpan _progressReportInterval;
     private readonly JobsRetryOptions _retryOptions;
@@ -39,7 +36,15 @@ internal sealed class JobsExecutionTaskHandler
     private readonly bool _propagateTenant;
     private readonly JobsFunctionTagBound _functionTags;
 
-#pragma warning disable IDE0290 // Fix makes the code worse: a primary constructor would capture eleven dependencies and spread the derived lease and retry state across field initializers.
+    // The pool whose graceful drain this handler honors: a run that has not invoked its function yet hands its row
+    // back instead of starting while the pool drains. Null where no pool drives the handler.
+    private readonly JobsTaskScheduler? _taskScheduler;
+
+    // The node's live identity. A run starts only while it is known, and its loss cancels the run as lease loss. Null
+    // where no identity is registered, which behaves as an identity that is always known and never lost.
+    private readonly IJobsOwnerIdentity? _ownerIdentity;
+
+#pragma warning disable IDE0290 // Fix makes the code worse: a primary constructor would capture fourteen dependencies and spread the derived lease and retry state across field initializers.
     public JobsExecutionTaskHandler(
 #pragma warning restore IDE0290
         IServiceProvider serviceProvider,
@@ -53,7 +58,9 @@ internal sealed class JobsExecutionTaskHandler
         JobsFunctionTagBound functionTags,
         JobsRetryOptions? retryOptions = null,
         ICurrentTenant? currentTenant = null,
-        IOptions<JobsTenancyOptions>? tenancyOptions = null
+        IOptions<JobsTenancyOptions>? tenancyOptions = null,
+        JobsTaskScheduler? taskScheduler = null,
+        IJobsOwnerIdentity? ownerIdentity = null
     )
     {
         _propagateTenant = tenancyOptions?.Value.PropagateTenant ?? false;
@@ -66,12 +73,13 @@ internal sealed class JobsExecutionTaskHandler
         _logger = logger;
         _currentTenant = currentTenant;
         _leaseRenewalInterval = schedulerOptions.ResolveLeaseRenewalInterval();
-        _leaseDuration = schedulerOptions.LeaseDuration;
         _cancellationObservationInterval = schedulerOptions.ResolveCancellationObservationInterval();
         _progressReportInterval = schedulerOptions.ProgressReportInterval;
         _retryOptions = retryOptions ?? new JobsRetryOptions();
         _retryPipeline = new JobsRetryPipeline(functionRegistry, timeProvider, logger);
         _functionTags = functionTags;
+        _taskScheduler = taskScheduler;
+        _ownerIdentity = ownerIdentity;
     }
 
     private static TimeSpan _Lateness(DateTime scheduledFor, DateTime startedAt)
@@ -117,21 +125,39 @@ internal sealed class JobsExecutionTaskHandler
         }
         else
         {
+            // A root the drain hands back never runs, so neither does any child: the next owner re-runs the tree.
+            if (_IsDraining(isChild))
+            {
+                await _ReleaseForDrainAsync(context).ConfigureAwait(false);
+                return;
+            }
+
             // Persisted chains may carry more than the two children the typed builder authors (and the deeper
             // hydration now reaches nodes the old two-level cap never surfaced as executing parents), so the sibling
             // buffers are lists rather than the old fixed 5/6-slot arrays that overflowed past that count.
             var tasksToRunNow = new List<Task>(context.TimeJobChildren.Count + 1);
             var childrenToRunAfter = new List<JobExecutionState>(context.TimeJobChildren.Count);
 
+            // The children that run alongside the parent wait for the parent's last drain decision: the drain can still
+            // hand a root back after it started, and a child that ran meanwhile would run again under the next owner.
+            // Only a root can be handed back, so a child's own children need no such wait.
+            var parentStart = isChild
+                ? null
+                : new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
             // Add parent task
-            tasksToRunNow.Add(_RunContextFunctionAsync(context, isDue, runNow, cancellationToken, isChild));
+            tasksToRunNow.Add(
+                _RunContextFunctionAsync(context, isDue, runNow, cancellationToken, isChild, parentStart)
+            );
 
             // Process children - separate InProgress from others
             foreach (var child in context.TimeJobChildren)
             {
                 if (child.RunCondition == RunCondition.InProgress)
                 {
-                    tasksToRunNow.Add(_SafeRecursiveExecution(child, isDue, runNow, cancellationToken));
+                    tasksToRunNow.Add(
+                        _RunAlongsideParentAsync(child, parentStart?.Task, isDue, runNow, cancellationToken)
+                    );
                 }
                 else
                 {
@@ -232,12 +258,53 @@ internal sealed class JobsExecutionTaskHandler
         return !context.LeaseLost && ChainRunConditionRules.IsTerminal(context.Status);
     }
 
+    // Starts a child that runs while its parent runs, once the parent is past the point where the drain could still
+    // hand it back. A parent released for the drain leaves the child unstarted, still Idle under the root's claim.
+    private async Task _RunAlongsideParentAsync(
+        JobExecutionState child,
+        Task<bool>? parentStart,
+        bool isDue,
+        bool runNow,
+        CancellationToken cancellationToken
+    )
+    {
+        if (parentStart is not null && !await parentStart.ConfigureAwait(false))
+        {
+            return;
+        }
+
+        await _SafeRecursiveExecution(child, isDue, runNow, cancellationToken).ConfigureAwait(false);
+    }
+
+    // parentStart, when given, learns whether the children running alongside this run may start: false once the drain
+    // hands the row back, true on every other path, which keeps their start unchanged when no drain intervenes.
     private async Task _RunContextFunctionAsync(
         JobExecutionState context,
         bool isDue,
         bool runNow,
         CancellationToken cancellationToken,
-        bool isChild = false
+        bool isChild = false,
+        TaskCompletionSource<bool>? parentStart = null
+    )
+    {
+        try
+        {
+            await _RunContextFunctionCoreAsync(context, isDue, runNow, isChild, parentStart, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            parentStart?.TrySetResult(true);
+        }
+    }
+
+    private async Task _RunContextFunctionCoreAsync(
+        JobExecutionState context,
+        bool isDue,
+        bool runNow,
+        bool isChild,
+        TaskCompletionSource<bool>? parentStart,
+        CancellationToken cancellationToken
     )
     {
         // Each run is its own trace, linked to the span that scheduled it, so it must not inherit whatever is ambient
@@ -250,6 +317,16 @@ internal sealed class JobsExecutionTaskHandler
         jobActivity?.SetTag("headless.job.is_due", isDue);
         jobActivity?.SetTag("headless.job.is_child", isChild);
 
+        // A run the pool dequeued after a graceful stop began never starts: its row goes back uncharged before any
+        // lease renewal, which a draining node must not extend, and before its token, which the stop may already
+        // have cancelled, is consulted.
+        if (_IsDraining(isChild))
+        {
+            parentStart?.TrySetResult(false);
+            await _ReleaseForDrainAsync(context).ConfigureAwait(false);
+            return;
+        }
+
         _jobsInstrumentation.LogJobStarted(context.JobId, context.FunctionName, _GetJobTypeName(context.Type));
 
         context.SetProperty(x => x.Status, JobStatus.InProgress);
@@ -259,7 +336,7 @@ internal sealed class JobsExecutionTaskHandler
             await _internalJobsManager.UpdateTickerAsync(context, cancellationToken).ConfigureAwait(false);
         }
 
-        if (!await _VerifyLeaseBeforeExecutionAsync(context, cancellationToken).ConfigureAwait(false))
+        if (!await _VerifyLeaseBeforeExecutionAsync(context, isChild, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
@@ -272,9 +349,12 @@ internal sealed class JobsExecutionTaskHandler
         // IMPORTANT: Register the job FIRST, before creating the skip-if-already-running callback
         // This ensures the current occurrence is properly tracked when the callback checks for siblings
         var cancellationRegistration = _cancellationRegistry.Register(cancellationTokenSource, context);
-        await using var hostShutdownRegistration = cancellationToken.Register(() =>
-            _cancellationRegistry.TrySignalHostShutdown(cancellationRegistration)
+        await using var runTokenRegistration = cancellationToken.Register(() =>
+            _SignalRunTokenCancelled(context, cancellationRegistration)
         );
+        await using var membershipLossRegistration = (
+            _ownerIdentity?.MembershipLostToken ?? CancellationToken.None
+        ).Register(() => _SignalMembershipLoss(context, cancellationRegistration));
 
         var jobFunctionContext = new JobContext
         {
@@ -413,6 +493,41 @@ internal sealed class JobsExecutionTaskHandler
             return _cancellationRegistry.TryBeginCompletion(cancellationRegistration);
         }
 
+        // Set while the run waits between attempts: the instant its next attempt is due.
+        DateTime? plannedRetryAt = null;
+
+        // A graceful stop is not an attempt the job used up: these two exits hand the row back without charging its
+        // retry budget, under CancellationToken.None so the write lands even after the stop token fired.
+        async Task releaseForDrainAsync()
+        {
+            parentStart?.TrySetResult(false);
+            if (!await beginCompletionAsync().ConfigureAwait(false))
+            {
+                return;
+            }
+
+            await _ReleaseForDrainAsync(context).ConfigureAwait(false);
+        }
+
+        async Task settleInterruptedAsync()
+        {
+            if (!await beginCompletionAsync().ConfigureAwait(false))
+            {
+                return;
+            }
+
+            // Only a time job owns its due instant; an occurrence's execution time identifies it.
+            var retryAt = context.Type == JobType.TimeJob ? plannedRetryAt : null;
+            var settled = await _internalJobsManager
+                .SettleInterruptedAsync(context, retryAt, CancellationToken.None)
+                .ConfigureAwait(false);
+
+            if (_ShutdownWriteLanded(context, settled))
+            {
+                _logger.LogJobSettledOnShutdown(context.JobId, context.FunctionName);
+            }
+        }
+
         try
         {
             if (context.Type == JobType.TimeJob)
@@ -426,6 +541,12 @@ internal sealed class JobsExecutionTaskHandler
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
+                    // The stop's cancel point can land before the function was ever invoked.
+                    if (_IsDraining(isChild))
+                    {
+                        await releaseForDrainAsync().ConfigureAwait(false);
+                    }
+
                     return;
                 }
                 catch (Exception exception)
@@ -587,6 +708,18 @@ internal sealed class JobsExecutionTaskHandler
                 return;
             }
 
+            // A run the pool queued before a graceful stop began must not start once the drain has: the drain waits
+            // only for work that was already running. A chain child keeps running with its parent, because a released
+            // non-timed child has no due instant any claim would pick it up by.
+            if (_IsDraining(isChild))
+            {
+                await releaseForDrainAsync().ConfigureAwait(false);
+                return;
+            }
+
+            // Past its last drain check the run is committed: the drain now waits for it, and its children with it.
+            parentStart?.TrySetResult(true);
+
             Exception? lastException = null;
             var success = false;
             var handlerInvoked = false;
@@ -605,6 +738,7 @@ internal sealed class JobsExecutionTaskHandler
                         context,
                         async (retryCount, attemptToken) =>
                         {
+                            plannedRetryAt = null;
                             jobFunctionContext.RetryCount = retryCount;
                             jobActivity?.SetTag("headless.job.current_attempt", retryCount + 1);
                             handlerInvoked = true;
@@ -639,7 +773,7 @@ internal sealed class JobsExecutionTaskHandler
 
                             success = true;
                         },
-                        async (retryCount, exception, retryToken) =>
+                        async (retryCount, exception, retryDelay, retryToken) =>
                         {
                             if (!executionOwnsRegistration())
                             {
@@ -647,10 +781,30 @@ internal sealed class JobsExecutionTaskHandler
                             }
 
                             context.SetProperty(x => x.RetryCount, retryCount);
-                            var affected = await _internalJobsManager
-                                .UpdateTickerAsync(context, retryToken)
-                                .ConfigureAwait(false);
-                            context.ResetUpdateProps();
+                            int affected;
+                            try
+                            {
+                                affected = await _internalJobsManager
+                                    .UpdateTickerAsync(context, retryToken)
+                                    .ConfigureAwait(false);
+                            }
+                            catch (Exception writeException) when (writeException is not OperationCanceledException)
+                            {
+                                // A retry count the store never confirmed leaves this node unable to vouch for the row,
+                                // so the run stops as lease loss: failing it here would record Failed for a run whose
+                                // attempts are not spent, and reclaim settles the row by its node-death policy instead.
+                                _logger.LogJobRetryCountWriteFailed(
+                                    writeException,
+                                    context.JobId,
+                                    context.FunctionName
+                                );
+                                affected = 0;
+                            }
+                            finally
+                            {
+                                context.ResetUpdateProps();
+                            }
+
                             if (affected == 0)
                             {
                                 context.LeaseLost = true;
@@ -658,6 +812,7 @@ internal sealed class JobsExecutionTaskHandler
                                 throw new OperationCanceledException(cancellationTokenSource.Token);
                             }
 
+                            plannedRetryAt = _timeProvider.GetUtcNow().UtcDateTime + retryDelay;
                             JobsMetrics.RetryStarted(JobsMetrics.RetryKindInProcess);
 
                             // #278: observe under the job's tenant so a tenant-aware handler is not system-scoped.
@@ -687,6 +842,7 @@ internal sealed class JobsExecutionTaskHandler
 
                 if (cancellationRegistration.Cause == JobsExecutionCancellationCause.HostShutdown)
                 {
+                    await settleInterruptedAsync().ConfigureAwait(false);
                     return;
                 }
 
@@ -719,17 +875,6 @@ internal sealed class JobsExecutionTaskHandler
                         handlerInvoked ? stopWatch.Elapsed : null
                     );
 
-                    if (_serviceProvider.GetService(typeof(IJobExceptionHandler)) is IJobExceptionHandler handler)
-                    {
-                        // #278: run the consumer cancellation handler under the job's tenant scope.
-                        using (_EnterTenantScope(context))
-                        {
-                            await handler
-                                .HandleCanceledExceptionAsync(ex, context.JobId, context.Type, CancellationToken.None)
-                                .ConfigureAwait(false);
-                        }
-                    }
-
                     var cancelAffected = await _internalJobsManager
                         .UpdateTickerAsync(context, CancellationToken.None)
                         .ConfigureAwait(false);
@@ -738,6 +883,14 @@ internal sealed class JobsExecutionTaskHandler
                         // Fenced terminal write — this Cancelled status was not persisted (the row was
                         // reclaimed). Flag lease loss so the child-processing guard leaves children for reclaim.
                         context.LeaseLost = true;
+                        return;
+                    }
+
+                    // The consumer hears about the cancellation only once it is the stored outcome, so a slow or
+                    // throwing handler can neither delay nor replace it. #278: under the job's tenant scope.
+                    using (_EnterTenantScope(context))
+                    {
+                        await _ObserveJobCancellationAsync(ex, context).ConfigureAwait(false);
                     }
 
                     return;
@@ -895,13 +1048,6 @@ internal sealed class JobsExecutionTaskHandler
                     handlerInvoked ? stopWatch.Elapsed : null
                 );
 
-                // #278: observe under the job's tenant so tenant-aware alerting/compensation is not system-scoped;
-                // keep the scope tight around the consumer callback, not the terminal persistence write below.
-                using (_EnterTenantScope(context))
-                {
-                    await _ObserveJobExceptionAsync(lastException, context, cancellationToken).ConfigureAwait(false);
-                }
-
                 // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
                 var affected = await _internalJobsManager
                     .UpdateTickerAsync(context, CancellationToken.None)
@@ -912,9 +1058,18 @@ internal sealed class JobsExecutionTaskHandler
                     // user code so the renewal loop cannot mistake the expected terminal fence for loss.
                     await stopRenewalAsync().ConfigureAwait(false);
 
+                    // Consumer callbacks follow the stored Failed, so a slow or throwing one can neither delay nor
+                    // replace it. #278: each runs under the job's tenant scope, so tenant-aware alerting or
+                    // compensation is not system-scoped.
+                    using (_EnterTenantScope(context))
+                    {
+                        await _ObserveJobExceptionAsync(lastException, context, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+
                     // Every Failed transition this execution owns is reported once, whether the budget ran out, a fail
                     // rule matched, or cancellation the executor does not own ended the run, so a consumer alerting on
-                    // OnExhausted never misses a terminal failure. #278: run it under the job's tenant scope.
+                    // OnExhausted never misses a terminal failure.
                     using (_EnterTenantScope(context))
                     {
                         await _InvokeOnExhaustedAsync(context, lastException, cancellationToken).ConfigureAwait(false);
@@ -954,6 +1109,80 @@ internal sealed class JobsExecutionTaskHandler
         };
     }
 
+    private bool _IsDraining(bool isChild) => !isChild && _taskScheduler?.IsDraining == true;
+
+    // The scheduler's run token is linked to the membership-loss token, so its cancel is lease loss whenever the node
+    // lost membership outside a drain: settling it as a graceful stop would hand back, uncharged, a row a peer may
+    // already be reclaiming.
+    private void _SignalRunTokenCancelled(JobExecutionState context, JobsExecutionCancellationRegistration registration)
+    {
+        if (_ownerIdentity?.MembershipLostToken.IsCancellationRequested == true && _taskScheduler?.IsDraining != true)
+        {
+            _SignalMembershipLoss(context, registration);
+            return;
+        }
+
+        _cancellationRegistry.TrySignalHostShutdown(registration);
+    }
+
+    // Losing membership is losing the lease: a peer reclaims the row, so the run stops without writing. Once the drain
+    // has begun it is already settling the run and owns the outcome, so the loss is ignored for the whole tree.
+    private void _SignalMembershipLoss(JobExecutionState context, JobsExecutionCancellationRegistration registration)
+    {
+        if (_taskScheduler?.IsDraining == true)
+        {
+            return;
+        }
+
+        if (_cancellationRegistry.TrySignalLeaseLoss(registration))
+        {
+            context.LeaseLost = true;
+        }
+    }
+
+    /// <summary>
+    /// Hands back, uncharged, a row claimed for an immediate run that the pool refused because it accepts no work: the
+    /// host is stopping, or processing has not started. The row is Idle and due again, so the next poll runs it.
+    /// </summary>
+    public async Task ReleaseUndispatchedAsync(JobExecutionState context)
+    {
+        var released = await _internalJobsManager
+            .ReleaseInProgressAsync(context, CancellationToken.None)
+            .ConfigureAwait(false);
+
+        if (_ShutdownWriteLanded(context, released))
+        {
+            _logger.LogJobReleasedUndispatched(context.JobId, context.FunctionName);
+        }
+    }
+
+    private async Task _ReleaseForDrainAsync(JobExecutionState context)
+    {
+        var released = await _internalJobsManager
+            .ReleaseInProgressAsync(context, CancellationToken.None)
+            .ConfigureAwait(false);
+
+        if (_ShutdownWriteLanded(context, released))
+        {
+            _logger.LogJobReleasedForDrain(context.JobId, context.FunctionName);
+        }
+    }
+
+    // The row stays non-terminal in this context either way, so the parent keeps its children for the next owner
+    // instead of running them during the stop.
+    private bool _ShutdownWriteLanded(JobExecutionState context, int affected)
+    {
+        if (affected != 0)
+        {
+            return true;
+        }
+
+        // A peer reclaimed the row first; it owns the outcome now.
+        context.LeaseLost = true;
+        _logger.LogJobShutdownReleaseFenced(context.JobId, context.FunctionName);
+        return false;
+    }
+
     // #278: re-establish the job's tenant around consumer code that runs outside execute middleware. Failure callbacks
     // run after the middleware's tenant scope has unwound, and older generated assemblies can execute without a
     // descriptor. Returns null — a no-op scope — without a tenant source, or for a tenant-free job when propagation is
@@ -973,9 +1202,32 @@ internal sealed class JobsExecutionTaskHandler
         return _currentTenant.Change(context.TenantId);
     }
 
-    private async ValueTask _ObserveJobExceptionAsync(
+    private ValueTask _ObserveJobExceptionAsync(
         Exception exception,
         JobExecutionState context,
+        CancellationToken cancellationToken
+    )
+    {
+        return _InvokeExceptionHandlerAsync(
+            context,
+            (handler, token) => handler.HandleExceptionAsync(exception, context.JobId, context.Type, token),
+            cancellationToken
+        );
+    }
+
+    // The stop token is not passed: the Cancelled outcome is already stored, so only the timeout bounds the handler.
+    private ValueTask _ObserveJobCancellationAsync(Exception exception, JobExecutionState context)
+    {
+        return _InvokeExceptionHandlerAsync(
+            context,
+            (handler, token) => handler.HandleCanceledExceptionAsync(exception, context.JobId, context.Type, token),
+            CancellationToken.None
+        );
+    }
+
+    private async ValueTask _InvokeExceptionHandlerAsync(
+        JobExecutionState context,
+        Func<IJobExceptionHandler, CancellationToken, Task> invoke,
         CancellationToken cancellationToken
     )
     {
@@ -986,14 +1238,15 @@ internal sealed class JobsExecutionTaskHandler
 
         // Bound the handler with the same hard-timeout + orphan-handling mechanics as _InvokeOnExhaustedAsync: on the
         // per-retry path this call runs inline before the pipeline computes the next delay, so a slow / hanging
-        // IJobExceptionHandler would otherwise stall every retry of a failing job until lease loss. The linked token is
-        // passed to the handler and cancelled on timeout so a cooperative handler can short-circuit; the CTS is
-        // disposed only once an orphaned handler can no longer observe it (deferred continuation), never underneath it.
+        // IJobExceptionHandler would otherwise stall every retry of a failing job until lease loss, and after a
+        // terminal write it would hold the worker slot. The linked token is passed to the handler and cancelled on
+        // timeout so a cooperative handler can short-circuit; the CTS is disposed only once an orphaned handler can no
+        // longer observe it (deferred continuation), never underneath it.
         var handlerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         Task? handlerTask = null;
         try
         {
-            handlerTask = handler.HandleExceptionAsync(exception, context.JobId, context.Type, handlerCts.Token);
+            handlerTask = invoke(handler, handlerCts.Token);
             await handlerTask
                 .WaitAsync(_retryOptions.OnExhaustedTimeout, _timeProvider, cancellationToken)
                 .ConfigureAwait(false);
@@ -1177,9 +1430,6 @@ internal sealed class JobsExecutionTaskHandler
     {
         // #316 sliding-lease renewal loop (renews the lease and cancels on loss). Runs concurrently with the job for its
         // whole execution and stops when renewalLoopToken is cancelled by StopRenewalAsync on completion.
-        // The lease was freshly stamped when the job was claimed (≈ loop start), so seed the last-confirmed time here:
-        // it bounds how long a membership blip may be tolerated before the lease has certainly lapsed (#461).
-        var lastConfirmedAt = _timeProvider.GetUtcNow();
         try
         {
             while (!renewalLoopToken.IsCancellationRequested)
@@ -1187,33 +1437,15 @@ internal sealed class JobsExecutionTaskHandler
                 // Delay BEFORE the first renew: a job finishing within one cadence writes no renewal.
                 await _timeProvider.Delay(_leaseRenewalInterval, renewalLoopToken).ConfigureAwait(false);
 
-                var outcome = await _TryRenewLeaseAsync(context, renewalLoopToken).ConfigureAwait(false);
-
-                if (outcome is RenewalOutcome.Held)
+                if (await _TryRenewLeaseAsync(context, renewalLoopToken).ConfigureAwait(false))
                 {
-                    lastConfirmedAt = _timeProvider.GetUtcNow();
                     continue;
                 }
 
-                if (
-                    outcome is RenewalOutcome.MembershipUnknown
-                    && _timeProvider.GetUtcNow() - lastConfirmedAt < _leaseDuration
-                )
-                {
-                    // #461: coordination membership is momentarily unestablished (registration pending / transient
-                    // blip) — distinct from a lost lease. While still inside the lease window, skip this tick and keep
-                    // the healthy job running; renewal resumes once membership re-establishes. Logged at Debug since it
-                    // can repeat during a partition.
-                    _logger.LogJobLeaseRenewalSkippedMembershipUnknown(context.JobId, context.FunctionName);
-                    continue;
-                }
-
-                // Lease lost (reclaimed / owner changed / terminalized, or the store could not confirm within the
-                // cadence — #463), OR membership has stayed unestablished for the whole lease window (#461 bound: the
-                // lease has now lapsed and the row is being reclaimed elsewhere, so stop the local zombie). Flag
-                // lease-loss so the cancellation handler leaves the row InProgress for the stalled-reclaim/OnNodeDeath
-                // sweep (#1) rather than writing a terminal Cancelled, then best-effort cancel the running job (a job
-                // ignoring its token still relies on OnNodeDeath for correctness).
+                // Lease lost (reclaimed / owner changed / terminalized, no live identity, or the store could not confirm
+                // within the cadence — #463). Flag lease-loss so the cancellation handler leaves the row InProgress for
+                // the stalled-reclaim/OnNodeDeath sweep (#1) rather than writing a terminal Cancelled, then best-effort
+                // cancel the running job (a job ignoring its token still relies on OnNodeDeath for correctness).
                 context.LeaseLost = true;
                 _cancellationRegistry.TrySignalLeaseLoss(registration);
                 return;
@@ -1225,26 +1457,12 @@ internal sealed class JobsExecutionTaskHandler
         }
     }
 
-    // Outcome of a single renewal attempt. Held -> keep running; Lost -> cancel-on-loss; MembershipUnknown ->
-    // coordination membership not currently established (#461), skip this tick without cancelling.
-    private enum RenewalOutcome
-    {
-        Held,
-        Lost,
-        MembershipUnknown,
-    }
-
     /// <summary>
-    /// One renewal attempt. <see cref="RenewalOutcome.Held"/> while the lease is still held;
-    /// <see cref="RenewalOutcome.Lost"/> when it was lost OR the renewal could not be confirmed within the cadence
-    /// (#463: a hung / slow / unreachable store, or an error, must not silently let the lease lapse — treated as a
-    /// loss so the caller cancels and OnNodeDeath governs); <see cref="RenewalOutcome.MembershipUnknown"/> when
-    /// coordination membership is not currently established (#461), which the caller skips rather than cancels.
+    /// One renewal attempt: <see langword="true"/> while the lease is still held; <see langword="false"/> when it was
+    /// lost OR the renewal could not be confirmed within the cadence (#463: a hung / slow / unreachable store, or an
+    /// error, must not silently let the lease lapse — treated as a loss so the caller cancels and OnNodeDeath governs).
     /// </summary>
-    private async Task<RenewalOutcome> _TryRenewLeaseAsync(
-        JobExecutionState context,
-        CancellationToken renewalLoopToken
-    )
+    private async Task<bool> _TryRenewLeaseAsync(JobExecutionState context, CancellationToken renewalLoopToken)
     {
         // Bound the renewal DB call to one cadence so a hung store can't block the loop past the lease deadline.
         using var timeoutCts = new CancellationTokenSource(_leaseRenewalInterval, _timeProvider);
@@ -1252,13 +1470,7 @@ internal sealed class JobsExecutionTaskHandler
 
         try
         {
-            var affected = await _internalJobsManager.RenewLeaseAsync(context, renewalCts.Token).ConfigureAwait(false);
-
-            // >0 renewed (held); 0 the row matched no rows (genuinely lost); <0 the renew was gated because
-            // coordination membership is not established (#461) — skip, not loss.
-            return affected > 0 ? RenewalOutcome.Held
-                : affected < 0 ? RenewalOutcome.MembershipUnknown
-                : RenewalOutcome.Lost;
+            return await _internalJobsManager.RenewLeaseAsync(context, renewalCts.Token).ConfigureAwait(false) > 0;
         }
         catch (OperationCanceledException) when (renewalLoopToken.IsCancellationRequested)
         {
@@ -1269,7 +1481,7 @@ internal sealed class JobsExecutionTaskHandler
         catch (OperationCanceledException)
         {
             // Renewal deadline elapsed: the store did not confirm the lease within the cadence. Treat as lost.
-            return RenewalOutcome.Lost;
+            return false;
         }
         catch (Exception exception)
         {
@@ -1278,26 +1490,36 @@ internal sealed class JobsExecutionTaskHandler
             // treat it as lost so OnNodeDeath governs correctness (Retry re-runs, MarkFailed/Skip stay terminal). Log
             // at Warning so a DB-error renewal loss is observable and distinguishable from a programming bug (#463).
             _logger.LogJobLeaseRenewalFailed(exception, context.JobId, context.FunctionName);
-            return RenewalOutcome.Lost;
+            return false;
         }
     }
 
     private async Task<bool> _VerifyLeaseBeforeExecutionAsync(
         JobExecutionState context,
+        bool isChild,
         CancellationToken cancellationToken
     )
     {
-        var outcome = await _TryRenewLeaseAsync(context, cancellationToken).ConfigureAwait(false);
-
-        if (outcome is RenewalOutcome.Held)
+        // Without a live identity no node can vouch for this claim, so the run must not start. A root hands its row back
+        // uncharged under the claim owner, since starting nothing used no attempt. A chain child stays with its root,
+        // which reclaim re-runs as a whole, because a released non-timed child has no due instant to be claimed by.
+        if (_ownerIdentity?.TryGetStampOwner(out _) == false)
         {
-            return true;
+            if (!isChild)
+            {
+                await _ReleaseUnstartedOnUnknownMembershipAsync(context).ConfigureAwait(false);
+            }
+            else
+            {
+                context.LeaseLost = true;
+                _logger.LogJobLeaseLostBeforeExecution(context.JobId, context.FunctionName);
+            }
+
+            return false;
         }
 
-        if (outcome is RenewalOutcome.MembershipUnknown)
+        if (await _TryRenewLeaseAsync(context, cancellationToken).ConfigureAwait(false))
         {
-            _logger.LogJobStartLeaseVerificationSkippedMembershipUnknown(context.JobId, context.FunctionName);
-
             return true;
         }
 
@@ -1305,6 +1527,34 @@ internal sealed class JobsExecutionTaskHandler
         _logger.LogJobLeaseLostBeforeExecution(context.JobId, context.FunctionName);
 
         return false;
+    }
+
+    private async Task _ReleaseUnstartedOnUnknownMembershipAsync(JobExecutionState context)
+    {
+        int released;
+        try
+        {
+            // The node may be stopping, so the hand-back must not depend on its token.
+            released = await _internalJobsManager
+                .ReleaseInProgressAsync(context, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            // With no identity there is nothing to retry under: the lease lapses and reclaim recovers the row.
+            context.LeaseLost = true;
+            _logger.LogJobStartReleaseFailedMembershipUnknown(exception, context.JobId, context.FunctionName);
+            return;
+        }
+
+        if (released == 0)
+        {
+            context.LeaseLost = true;
+            _logger.LogJobLeaseLostBeforeExecution(context.JobId, context.FunctionName);
+            return;
+        }
+
+        _logger.LogJobReleasedMembershipUnknown(context.JobId, context.FunctionName);
     }
 
     private static Exception _GetRootException(Exception ex)
@@ -1427,18 +1677,6 @@ internal static partial class JobsExecutionTaskHandlerLog
     );
 
     [LoggerMessage(
-        EventId = 3103,
-        Level = LogLevel.Debug,
-        Message = "Lease renewal for job {JobId} ({Function}) skipped: coordination membership is not currently "
-            + "established. The job keeps running; the renewal will resume once membership re-establishes (#461)."
-    )]
-    public static partial void LogJobLeaseRenewalSkippedMembershipUnknown(
-        this ILogger logger,
-        Guid jobId,
-        string function
-    );
-
-    [LoggerMessage(
         EventId = 3104,
         Level = LogLevel.Warning,
         Message = "Job {JobId} ({Function}) completed successfully but its completion write matched 0 rows — the row "
@@ -1456,21 +1694,9 @@ internal static partial class JobsExecutionTaskHandlerLog
     public static partial void LogJobLeaseLostBeforeExecution(this ILogger logger, Guid jobId, string function);
 
     [LoggerMessage(
-        EventId = 3106,
-        Level = LogLevel.Debug,
-        Message = "Start lease verification for job {JobId} ({Function}) skipped: coordination membership is not "
-            + "currently established. The job will start and the renewal loop will keep checking membership."
-    )]
-    public static partial void LogJobStartLeaseVerificationSkippedMembershipUnknown(
-        this ILogger logger,
-        Guid jobId,
-        string function
-    );
-
-    [LoggerMessage(
         EventId = 3107,
         Level = LogLevel.Warning,
-        Message = "Job exception observer failed for job {JobId} ({Function}); retry and durable state continue."
+        Message = "Job exception handler failed for job {JobId} ({Function}); the stored job state is unaffected."
     )]
     public static partial void LogJobExceptionObserverFailed(
         this ILogger logger,
@@ -1508,7 +1734,7 @@ internal static partial class JobsExecutionTaskHandlerLog
         EventId = 3110,
         Level = LogLevel.Warning,
         Message = "Job exception observer for job {JobId} ({Function}) exceeded its {TimeoutSeconds}s bound and was "
-            + "cancelled; retry and durable state continue."
+            + "cancelled; the stored job state is unaffected."
     )]
     public static partial void LogJobExceptionObserverTimedOut(
         this ILogger logger,
@@ -1577,4 +1803,71 @@ internal static partial class JobsExecutionTaskHandlerLog
         Guid jobId,
         string contractVersionError
     );
+
+    [LoggerMessage(
+        EventId = 3118,
+        Level = LogLevel.Information,
+        Message = "Job {JobId} ({Function}) was queued when the host began a graceful stop; it was handed back "
+            + "unstarted for another node to run, with its retry budget unchanged."
+    )]
+    public static partial void LogJobReleasedForDrain(this ILogger logger, Guid jobId, string function);
+
+    [LoggerMessage(
+        EventId = 3126,
+        Level = LogLevel.Information,
+        Message = "Job {JobId} ({Function}) was claimed for an immediate run while the scheduler accepted no work; it "
+            + "was handed back unstarted for the next poll to run, with its retry budget unchanged."
+    )]
+    public static partial void LogJobReleasedUndispatched(this ILogger logger, Guid jobId, string function);
+
+    [LoggerMessage(
+        EventId = 3119,
+        Level = LogLevel.Warning,
+        Message = "Job {JobId} ({Function}) was not started because this node's coordination membership is not "
+            + "established; it was handed back for another node to run, with its retry budget unchanged."
+    )]
+    public static partial void LogJobReleasedMembershipUnknown(this ILogger logger, Guid jobId, string function);
+
+    [LoggerMessage(
+        EventId = 3120,
+        Level = LogLevel.Warning,
+        Message = "Job {JobId} ({Function}) was not started because this node's coordination membership is not "
+            + "established, and handing it back failed; the row stays InProgress until its lease lapses and the "
+            + "stalled-reclaim sweep recovers it per OnNodeDeath."
+    )]
+    public static partial void LogJobStartReleaseFailedMembershipUnknown(
+        this ILogger logger,
+        Exception exception,
+        Guid jobId,
+        string function
+    );
+
+    [LoggerMessage(
+        EventId = 3121,
+        Level = LogLevel.Warning,
+        Message = "Persisting the retry count of job {JobId} ({Function}) failed; the run stops as lease loss and the "
+            + "row is left InProgress for the stalled-reclaim sweep to recover per OnNodeDeath."
+    )]
+    public static partial void LogJobRetryCountWriteFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid jobId,
+        string function
+    );
+
+    [LoggerMessage(
+        EventId = 3123,
+        Level = LogLevel.Information,
+        Message = "Job {JobId} ({Function}) was interrupted by a graceful host stop and settled by its node-death "
+            + "policy, with its retry budget unchanged."
+    )]
+    public static partial void LogJobSettledOnShutdown(this ILogger logger, Guid jobId, string function);
+
+    [LoggerMessage(
+        EventId = 3124,
+        Level = LogLevel.Warning,
+        Message = "Job {JobId} ({Function}) could not be handed back during a graceful host stop because another "
+            + "node had already reclaimed it; that node now owns the outcome."
+    )]
+    public static partial void LogJobShutdownReleaseFenced(this ILogger logger, Guid jobId, string function);
 }

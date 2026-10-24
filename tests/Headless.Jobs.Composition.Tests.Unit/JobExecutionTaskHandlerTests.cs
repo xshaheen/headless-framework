@@ -157,6 +157,7 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
                 Status = claimed.Status,
                 RetryCount = claimed.RetryCount,
                 Retries = claimed.Retries,
+                ClaimOwner = claimed.OwnerId,
             };
             var registry = JobFunctionRegistryBuilder.Build(
                 [

@@ -26,9 +26,9 @@ public sealed class SqlServerProgressTests(SqlServerJobsCoordinationFixture fixt
     }
 
     [Fact]
-    public override Task progress_writes_nothing_while_membership_is_not_established()
+    public override Task progress_fences_on_the_claim_owner_after_the_node_identity_is_gone()
     {
-        return base.progress_writes_nothing_while_membership_is_not_established();
+        return base.progress_fences_on_the_claim_owner_after_the_node_identity_is_gone();
     }
 
     [Fact]

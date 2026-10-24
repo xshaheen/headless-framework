@@ -301,7 +301,7 @@ public sealed class TimedDescendantGatingProviderTests : TestBase
         storedGrandChild!.OwnerId.Should().Be(_NodeA, "and so must the rest of the non-timed subtree");
 
         // The executor's pre-execution fence: an unleased child renews 0 rows, is marked LeaseLost, and never runs.
-        var renewed = await provider.RenewTimeJobLeaseAsync(child.Id, AbortToken);
+        var renewed = await provider.RenewTimeJobLeaseAsync(child.Id, _NodeA, AbortToken);
         renewed.Should().Be(0, "renewal only slides a RUNNING lease; this asserts the child is not silently running");
     }
 }
