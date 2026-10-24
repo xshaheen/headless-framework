@@ -23,6 +23,12 @@ public static class GeneralErrorCodes
     /// </summary>
     public const string InvalidRequestType = "g:invalid_request_type";
 
+    /// <summary>
+    /// A route, query, header, or form value could not be converted to its parameter's type, such as an unknown enum
+    /// name or text where a number belongs. The error's <c>parameter</c> names it. Maps to 400.
+    /// </summary>
+    public const string InvalidParameterValue = "g:invalid_parameter_value";
+
     /// <summary>An optimistic-concurrency conflict prevented the operation from completing. Maps to 409.</summary>
     public const string ConcurrencyFailure = "g:concurrency_failure";
 

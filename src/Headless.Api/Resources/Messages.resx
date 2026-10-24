@@ -64,6 +64,9 @@
   <data name="g:cross_tenant_write" xml:space="preserve">
     <value>This write does not match the current tenant.</value>
   </data>
+  <data name="g:invalid_parameter_value" xml:space="preserve">
+    <value>The value of '{0}' could not be read: it is malformed or not one of the accepted values.</value>
+  </data>
   <data name="g:invalid_request_type" xml:space="preserve">
     <value>The request type configured for this endpoint is invalid.</value>
   </data>

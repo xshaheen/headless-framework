@@ -46,7 +46,7 @@ app.MapScalarOpenApi();
 - Call `AddHeadlessTransformers()` before adding your own transformers in the same callback. Transformers run in registration order, so yours then see the Headless output and can override it. `AddHeadlessOpenApi`'s `configure` callback and `AddHeadlessApiSurfaceDocuments`' per-surface callback already run after the Headless transformers.
 - `MapOpenApi()` and `MapHeadlessEndpoints()` map endpoints, so authorization applies to the documents. Under a fallback authorization policy they answer 401; chain `.AllowAnonymous()` on `MapOpenApi()` to publish them. There is no middleware ordering rule any more.
 - The document is OpenAPI 3.1. Exclusive bounds are numbers (`exclusiveMinimum: 1`), nullability is a `null` type or a `oneOf` with `null`, and examples are JSON values. Do not set `OpenApiOptions.OpenApiVersion` to 3.0 unless a client generator requires it.
-- XML documentation of your own types reaches the document only when your project calls `AddOpenApi(...)` itself. The native XML-comment source generator intercepts `AddOpenApi` call sites in the compiling project, so a document registered through `AddHeadlessOpenApi` or `AddHeadless()` carries the Headless types' comments but not yours. To include yours, reference `Microsoft.AspNetCore.OpenApi` directly, set `GenerateDocumentationFile`, disable the `AddHeadless()` registration, and register `builder.Services.AddOpenApi("v1", options => options.AddHeadlessTransformers())`.
+- XML documentation reaches every Headless document from the `.xml` file each assembly ships (`GenerateDocumentationFile`): a type's and a property's summary (or a positional record's `param`) become schema descriptions, and an action's summary, remarks, and parameter comments become the operation's. Turn on `GenerateDocumentationFile` in the project that declares the type or action; an assembly without the file contributes nothing. A description already set by an attribute or by the native XML-comment generator wins.
 - A project that calls `AddOpenApi(...)` while referencing `Microsoft.AspNetCore.OpenApi` only transitively fails with CS9137 (interceptors not enabled), because the package's build targets do not flow transitively. Reference the package directly.
 - Swagger UI is gone. Use `MapScalarOpenApi()` or any UI that reads `/openapi/{documentName}.json`.
 
@@ -56,7 +56,8 @@ app.MapScalarOpenApi();
 
 | Kind | Transformer behavior |
 |---|---|
-| Schema | Headless primitives (`IPrimitive<T>`: `MoneyAmount`, `Month`, `AccountId`, `UserId`, and every generated primitive) become their underlying JSON type, inlined rather than published as components |
+| Schema | Headless primitives (`IPrimitive<T>`: `MoneyAmount`, `Month`, `AccountId`, `UserId`, and every generated primitive) become their underlying JSON type, inlined rather than published as components; a collection of them (`IReadOnlyList<UserId>`) gets that type as its `items`, which the native generator leaves out |
+| Schema | `IUploadedFile` becomes `type: string, format: binary`, as `IFormFile` does |
 | Schema | Numbers become plain `integer`/`number`. The Headless web JSON options read numbers from strings, so the native generator writes `["integer", "string"]` plus a digits pattern; the string alternative and its pattern are removed, except where `JsonNumberHandling.WriteAsString` applies (property, declaring type, or options), because those numbers are written as strings |
 | Schema | FluentValidation rules become constraints (see below) |
 | Schema | Every non-nullable property joins the object's `required` set |
@@ -68,6 +69,7 @@ app.MapScalarOpenApi();
 | Operation | The rate limiter's rejection status (429 under `UseHeadlessProblemDetails()`, else 503) on endpoints a limiter applies to |
 | Operation | `ETag` header on 2xx responses whose body type implements `IHasEntityTag` |
 | Operation | 400 on operations that bind a body or a route, query, header, or form value; 413 on operations with a request body; the antiforgery token header and its 400 on endpoints that validate one |
+| Operation | A form body that binds an `IUploadedFile` is published as `multipart/form-data` instead of url-encoded |
 | Operation | The multipart encoding `contentType` and a description of each file part a form's `ContentTypes`, `FileNotEmpty`, `GreaterThanOrEqualTo`, or `LessThanOrEqualTo` rule constrains |
 | Operation | Security requirements on operations that require authentication |
 | Operation | 404, 409, and 422 on every operation, the standard problem responses, unless a marker, the surface, or `StandardProblemResponses` turns them off |
@@ -79,6 +81,7 @@ app.MapScalarOpenApi();
 | Document | Every configured security scheme, and one per credential of each authentication scheme that describes its credentials, under `components.securitySchemes` |
 | Document | A `servers` entry with a `tenant` variable per tenant host template |
 | Document | Duplicate operation ids numbered (`Orders_Find`, `Orders_Find2`) |
+| Document | The `null` alternative of every `oneOf`/`anyOf` listed last, so a nullable object reads as the object first in generated clients |
 | Document | Native `ProblemDetails`, `HttpValidationProblemDetails`, and `ValidationProblemDetails` components removed once no response references them |
 
 Before any transformer runs, an endpoint whose `IEnvironmentRestrictionMetadata` (`Headless.Api.Abstractions`) says it answers 404 in the current host environment is left out of every Headless document, path and schemas alike.
