@@ -175,6 +175,43 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
     }
 
     [Fact]
+    public async Task should_count_the_stop_budget_from_the_host_stop_when_a_later_service_stops_first()
+    {
+        // given: a service registered after Jobs stops first under the default sequential stop and spends most of the
+        // four-second budget, so the two-second release window already opened before the scheduler's own stop begins
+        var budget = TimeSpan.FromSeconds(4);
+        var laterServiceStop = TimeSpan.FromSeconds(3);
+        var probe = new StopProbe(StopProbeMode.BlockUntilCancelled);
+        using var host = _BuildHost(
+            probe,
+            stopBudget: budget,
+            hostShutdownTimeout: TimeSpan.FromSeconds(15),
+            laterServiceStop: laterServiceStop
+        );
+        await host.StartAsync(AbortToken);
+        var id = await _Scheduler(host).EnqueueAsync<StopJob>(o => o.WithRetries(0), AbortToken);
+        await probe.Started.WaitAsync(_WaitBudget, AbortToken);
+
+        // when
+        var stopStarted = TimeProvider.System.GetTimestamp();
+        await host.StopAsync(AbortToken);
+        var stopElapsed = TimeProvider.System.GetElapsedTime(stopStarted);
+
+        // then: the job is cancelled as soon as the scheduler stops, not a further release-window wait later
+        var cancelledAfter = TimeProvider.System.GetElapsedTime(stopStarted, probe.CancelledAt!.Value);
+        cancelledAfter.Should().BeGreaterThan(laterServiceStop - TimeSpan.FromMilliseconds(250));
+        cancelledAfter.Should().BeLessThan(laterServiceStop + TimeSpan.FromMilliseconds(750));
+        stopElapsed.Should().BeLessThan(budget, "the budget counts from the host's stop, not the scheduler's");
+
+        // and its uncharged release had committed when the stop returned
+        var stored = await _Store(host).GetTimeJobByIdAsync(id, AbortToken);
+        stored!.Status.Should().Be(JobStatus.Idle);
+        stored.RetryCount.Should().Be(0);
+        stored.OwnerId.Should().BeNull();
+        stored.LockedUntil.Should().BeNull();
+    }
+
+    [Fact]
     public async Task should_drain_a_job_the_fallback_sweep_dispatched_like_a_scheduler_dispatched_one()
     {
         // given: an overdue row written straight to the store, so the sleeping scheduler loop is never woken for it
@@ -306,7 +343,8 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         int maxConcurrency = 4,
         TimeSpan? stopBudget = null,
         TimeSpan? hostShutdownTimeout = null,
-        TimeSpan? fallbackInterval = null
+        TimeSpan? fallbackInterval = null,
+        TimeSpan? laterServiceStop = null
     )
     {
         return new HostBuilder()
@@ -334,6 +372,12 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
                 if (store is not null)
                 {
                     services.AddSingleton(store);
+                }
+
+                // Registered after Jobs, so the host stops it first.
+                if (laterServiceStop is { } stopDuration)
+                {
+                    services.AddHostedService(_ => new SlowStopService(stopDuration));
                 }
             })
             .Build();
@@ -435,6 +479,15 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
                     return;
             }
         }
+    }
+
+    // A service whose own graceful stop takes a fixed time, which is what the scenario models, not a stand-in for
+    // ordering: the host's sequential stop already orders it before Jobs.
+    private sealed class SlowStopService(TimeSpan stopDuration) : IHostedService
+    {
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.Delay(stopDuration, cancellationToken);
     }
 
     public sealed class StopJob : IJob

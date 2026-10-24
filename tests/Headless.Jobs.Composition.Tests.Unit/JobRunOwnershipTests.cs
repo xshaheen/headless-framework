@@ -21,6 +21,7 @@ namespace Tests;
 public sealed class JobRunOwnershipTests : TestBase
 {
     private const string _Function = "ownership.job";
+    private const string _ChildFunction = "ownership.job.child";
 
     // Only a failure guard: every scenario below ends on its own once the behavior holds.
     private static readonly TimeSpan _RunBound = TimeSpan.FromSeconds(10);
@@ -42,7 +43,7 @@ public sealed class JobRunOwnershipTests : TestBase
                 invoked = true;
                 return Task.CompletedTask;
             },
-            AbortToken
+            runToken: AbortToken
         );
 
         // then
@@ -76,7 +77,7 @@ public sealed class JobRunOwnershipTests : TestBase
                 started.SetResult();
                 await Task.Delay(Timeout.InfiniteTimeSpan, token);
             },
-            runToken.Token
+            runToken: runToken.Token
         );
         await started.Task.WaitAsync(_RunBound, AbortToken);
         await harness.Identity.LoseAsync();
@@ -108,7 +109,7 @@ public sealed class JobRunOwnershipTests : TestBase
                 started.SetResult();
                 await proceed.Task.WaitAsync(token);
             },
-            AbortToken
+            runToken: AbortToken
         );
         await started.Task.WaitAsync(_RunBound, AbortToken);
         harness.Scheduler.BeginDrain();
@@ -119,6 +120,82 @@ public sealed class JobRunOwnershipTests : TestBase
         // then
         context.LeaseLost.Should().BeFalse();
         (await harness.StoredAsync()).Status.Should().Be(JobStatus.Succeeded);
+    }
+
+    [Fact]
+    public async Task should_let_an_in_progress_child_run_and_store_its_outcome_when_the_drain_begins_after_its_root_committed()
+    {
+        // given: the drain begins as the child confirms its owner, which is after its root's last drain check
+        await using var harness = await Harness.CreateAsync(retries: 3, withChild: true);
+        var context = await harness.ClaimAsync();
+        harness.Identity.OnStamp = stamp =>
+        {
+            if (stamp == 2)
+            {
+                harness.Scheduler.BeginDrain();
+            }
+        };
+        var childRan = false;
+
+        // when
+        await harness
+            .ExecuteAsync(
+                context,
+                (_, _) => Task.CompletedTask,
+                childBody: (_, _) =>
+                {
+                    childRan = true;
+                    return Task.CompletedTask;
+                },
+                runToken: AbortToken
+            )
+            .WaitAsync(_RunBound, AbortToken);
+
+        // then: a released non-timed child has no due instant to be claimed by, so it finishes with its root
+        harness.Scheduler.IsDraining.Should().BeTrue();
+        childRan.Should().BeTrue();
+        context.TimeJobChildren[0].LeaseLost.Should().BeFalse();
+        (await harness.StoredChildAsync()).Status.Should().BeOneOf(JobStatus.Succeeded, JobStatus.DueDone);
+        (await harness.StoredAsync()).Status.Should().BeOneOf(JobStatus.Succeeded, JobStatus.DueDone);
+    }
+
+    [Fact]
+    public async Task should_not_run_or_hand_back_a_child_when_membership_is_unknown_at_its_start()
+    {
+        // given: the identity is forgotten as the child confirms its owner, after its root started
+        await using var harness = await Harness.CreateAsync(retries: 3, withChild: true);
+        var context = await harness.ClaimAsync();
+        harness.Identity.OnStamp = stamp =>
+        {
+            if (stamp == 2)
+            {
+                harness.Identity.Forget();
+            }
+        };
+        var childRan = false;
+
+        // when
+        await harness
+            .ExecuteAsync(
+                context,
+                (_, _) => Task.CompletedTask,
+                childBody: (_, _) =>
+                {
+                    childRan = true;
+                    return Task.CompletedTask;
+                },
+                runToken: AbortToken
+            )
+            .WaitAsync(_RunBound, AbortToken);
+
+        // then: the child stays claimed with its root's tree for reclaim instead of being handed back on its own
+        childRan.Should().BeFalse();
+        var child = context.TimeJobChildren[0];
+        child.LeaseLost.Should().BeTrue();
+        var storedChild = await harness.StoredChildAsync();
+        storedChild.Status.Should().Be(JobStatus.InProgress);
+        storedChild.OwnerId.Should().Be(child.ClaimOwner);
+        storedChild.ExecutedAt.Should().BeNull();
     }
 
     [Fact]
@@ -146,7 +223,7 @@ public sealed class JobRunOwnershipTests : TestBase
 
         // when
         await harness
-            .ExecuteAsync(context, (_, _) => throw new InvalidOperationException("permanent"), AbortToken)
+            .ExecuteAsync(context, (_, _) => throw new InvalidOperationException("permanent"), runToken: AbortToken)
             .WaitAsync(_RunBound, AbortToken);
 
         // then
@@ -195,6 +272,7 @@ public sealed class JobRunOwnershipTests : TestBase
         private readonly SchedulerOptionsBuilder _options;
         private readonly JobsRetryOptions? _retryOptions;
         private readonly TimeJobEntity _job;
+        private readonly TimeJobEntity? _child;
 
         private Harness(
             ServiceProvider services,
@@ -202,7 +280,8 @@ public sealed class JobRunOwnershipTests : TestBase
             InternalJobsManager<TimeJobEntity, CronJobEntity> manager,
             SchedulerOptionsBuilder options,
             JobsRetryOptions? retryOptions,
-            TimeJobEntity job
+            TimeJobEntity job,
+            TimeJobEntity? child
         )
         {
             _services = services;
@@ -211,6 +290,7 @@ public sealed class JobRunOwnershipTests : TestBase
             _options = options;
             _retryOptions = retryOptions;
             _job = job;
+            _child = child;
         }
 
         public FakeOwnerIdentity Identity { get; } = new();
@@ -221,7 +301,8 @@ public sealed class JobRunOwnershipTests : TestBase
             int retries,
             int retryCount = 0,
             IJobExceptionHandler? exceptionHandler = null,
-            JobsRetryOptions? retryOptions = null
+            JobsRetryOptions? retryOptions = null,
+            bool withChild = false
         )
         {
             var registrations = new ServiceCollection();
@@ -255,15 +336,28 @@ public sealed class JobRunOwnershipTests : TestBase
                 RetryCount = retryCount,
                 RetryIntervals = [0],
             };
-            (await store.AddTimeJobsAsync([job], AbortToken)).Should().Be(1);
-            return new Harness(services, store, manager, options, retryOptions, job);
+            // A child that runs while its root runs, claimed with the root's tree.
+            var child = withChild
+                ? new TimeJobEntity
+                {
+                    Id = Guid.NewGuid(),
+                    Function = _ChildFunction,
+                    ParentId = job.Id,
+                    RunCondition = RunCondition.InProgress,
+                    Retries = 0,
+                    RetryIntervals = [0],
+                }
+                : null;
+            TimeJobEntity[] rows = child is null ? [job] : [job, child];
+            (await store.AddTimeJobsAsync(rows, AbortToken)).Should().Be(rows.Length);
+            return new Harness(services, store, manager, options, retryOptions, job, child);
         }
 
         public async Task<JobExecutionState> ClaimAsync()
         {
             var claimed = (await _store.AcquireImmediateTimeJobsAsync([_job.Id], AbortToken)).Single();
             Identity.Owner = claimed.OwnerId!;
-            return new JobExecutionState
+            var context = new JobExecutionState
             {
                 JobId = claimed.Id,
                 FunctionName = claimed.Function,
@@ -276,6 +370,29 @@ public sealed class JobRunOwnershipTests : TestBase
                 RetryIntervals = claimed.RetryIntervals,
                 ClaimOwner = claimed.OwnerId,
             };
+
+            if (_child is not null)
+            {
+                context.TimeJobChildren.Add(
+                    new JobExecutionState
+                    {
+                        JobId = _child.Id,
+                        ParentId = _child.ParentId,
+                        FunctionName = _child.Function,
+                        ContractVersion = _child.ContractVersion,
+                        Type = JobType.TimeJob,
+                        ExecutionTime = DateTime.UtcNow,
+                        Status = _child.Status,
+                        RunCondition = RunCondition.InProgress,
+                        RetryCount = _child.RetryCount,
+                        Retries = _child.Retries,
+                        RetryIntervals = _child.RetryIntervals,
+                        ClaimOwner = claimed.OwnerId,
+                    }
+                );
+            }
+
+            return context;
         }
 
         public Task<bool> RequestCancellationAsync() => _store.RequestTimeJobCancellationAsync(_job.Id, AbortToken);
@@ -283,31 +400,24 @@ public sealed class JobRunOwnershipTests : TestBase
         public async Task ExecuteAsync(
             JobExecutionState context,
             Func<JobContext, CancellationToken, Task> body,
+            Func<JobContext, CancellationToken, Task>? childBody = null,
             CancellationToken runToken = default
         )
         {
             var registry = JobFunctionRegistryBuilder.Build(
                 [
-                    new KeyValuePair<string, JobFunctionRegistration>(
-                        _Function,
-                        new()
-                        {
-                            CronExpression = "",
-                            Priority = JobPriority.Normal,
-                            MaxConcurrency = 0,
-                            Delegate = (_, execution, token) => body(execution, token),
-                        }
-                    ),
+                    _Registration(_Function, body),
+                    _Registration(_ChildFunction, childBody ?? ((_, _) => Task.CompletedTask)),
                 ],
                 [],
-                [
-                    new KeyValuePair<string, JobFunctionDescriptor>(
-                        _Function,
-                        new(_Function, null, "", JobPriority.Normal, 0, context.ContractVersion)
-                    ),
-                ]
+                [_Descriptor(_Function, context.ContractVersion), _Descriptor(_ChildFunction, context.ContractVersion)]
             );
             JobsExecutionContext.CacheFunctionReferences(context, registry);
+            foreach (var child in context.TimeJobChildren)
+            {
+                JobsExecutionContext.CacheFunctionReferences(child, registry);
+            }
+
             var handler = new JobsExecutionTaskHandler(
                 _services,
                 TimeProvider.System,
@@ -335,6 +445,33 @@ public sealed class JobRunOwnershipTests : TestBase
             return (await _store.GetTimeJobByIdAsync(_job.Id, AbortToken))!;
         }
 
+        public async Task<TimeJobEntity> StoredChildAsync()
+        {
+            return (await _store.GetTimeJobByIdAsync(_child!.Id, AbortToken))!;
+        }
+
+        private static KeyValuePair<string, JobFunctionRegistration> _Registration(
+            string function,
+            Func<JobContext, CancellationToken, Task> body
+        )
+        {
+            return new(
+                function,
+                new()
+                {
+                    CronExpression = "",
+                    Priority = JobPriority.Normal,
+                    MaxConcurrency = 0,
+                    Delegate = (_, execution, token) => body(execution, token),
+                }
+            );
+        }
+
+        private static KeyValuePair<string, JobFunctionDescriptor> _Descriptor(string function, string? version)
+        {
+            return new(function, new(function, null, "", JobPriority.Normal, 0, version));
+        }
+
         public async ValueTask DisposeAsync()
         {
             Identity.Dispose();
@@ -349,6 +486,7 @@ public sealed class JobRunOwnershipTests : TestBase
     {
         private readonly CancellationTokenSource _lost = new();
         private volatile bool _known = true;
+        private int _stamps;
 
         public string Owner { get; set; } = "node-a@1";
 
@@ -356,8 +494,13 @@ public sealed class JobRunOwnershipTests : TestBase
 
         public CancellationToken MembershipLostToken => _lost.Token;
 
+        // Runs with each stamp's ordinal before it is answered, so a test can change the node's state at the moment a
+        // given run confirms its owner: a root confirms first, and its children only once it has committed to run.
+        public Action<int>? OnStamp { get; set; }
+
         public bool TryGetStampOwner([NotNullWhen(true)] out string? owner)
         {
+            OnStamp?.Invoke(Interlocked.Increment(ref _stamps));
             owner = _known ? Owner : null;
             return owner is not null;
         }

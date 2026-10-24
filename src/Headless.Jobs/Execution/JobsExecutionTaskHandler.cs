@@ -518,11 +518,13 @@ internal sealed class JobsExecutionTaskHandler
 
             // Only a time job owns its due instant; an occurrence's execution time identifies it.
             var retryAt = context.Type == JobType.TimeJob ? plannedRetryAt : null;
-            var settled = await _internalJobsManager
-                .SettleInterruptedAsync(context, retryAt, CancellationToken.None)
+            var settled = await _TryShutdownWriteAsync(
+                    context,
+                    () => _internalJobsManager.SettleInterruptedAsync(context, retryAt, CancellationToken.None)
+                )
                 .ConfigureAwait(false);
 
-            if (_ShutdownWriteLanded(context, settled))
+            if (settled)
             {
                 _logger.LogJobSettledOnShutdown(context.JobId, context.FunctionName);
             }
@@ -1146,11 +1148,7 @@ internal sealed class JobsExecutionTaskHandler
     /// </summary>
     public async Task ReleaseUndispatchedAsync(JobExecutionState context)
     {
-        var released = await _internalJobsManager
-            .ReleaseInProgressAsync(context, CancellationToken.None)
-            .ConfigureAwait(false);
-
-        if (_ShutdownWriteLanded(context, released))
+        if (await _TryShutdownWriteAsync(context, () => _ReleaseInProgressAsync(context)).ConfigureAwait(false))
         {
             _logger.LogJobReleasedUndispatched(context.JobId, context.FunctionName);
         }
@@ -1158,14 +1156,34 @@ internal sealed class JobsExecutionTaskHandler
 
     private async Task _ReleaseForDrainAsync(JobExecutionState context)
     {
-        var released = await _internalJobsManager
-            .ReleaseInProgressAsync(context, CancellationToken.None)
-            .ConfigureAwait(false);
-
-        if (_ShutdownWriteLanded(context, released))
+        if (await _TryShutdownWriteAsync(context, () => _ReleaseInProgressAsync(context)).ConfigureAwait(false))
         {
             _logger.LogJobReleasedForDrain(context.JobId, context.FunctionName);
         }
+    }
+
+    private Task<int> _ReleaseInProgressAsync(JobExecutionState context) =>
+        _internalJobsManager.ReleaseInProgressAsync(context, CancellationToken.None);
+
+    // A stop-time hand-back is the run's last write, so a store fault must not escape to the pool, which swallows it
+    // unlogged. Nor is it retried: a fault raised at commit may already have committed, so a retry cannot tell a write
+    // that landed from one that did not. The node can no longer vouch for the row, so the run ends as lease loss and
+    // reclaim settles the row by its node-death policy.
+    private async Task<bool> _TryShutdownWriteAsync(JobExecutionState context, Func<Task<int>> write)
+    {
+        int affected;
+        try
+        {
+            affected = await write().ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            context.LeaseLost = true;
+            _logger.LogJobShutdownWriteFailed(exception, context.JobId, context.FunctionName);
+            return false;
+        }
+
+        return _ShutdownWriteLanded(context, affected);
     }
 
     // The row stays non-terminal in this context either way, so the parent keeps its children for the next owner
@@ -1870,4 +1888,18 @@ internal static partial class JobsExecutionTaskHandlerLog
             + "node had already reclaimed it; that node now owns the outcome."
     )]
     public static partial void LogJobShutdownReleaseFenced(this ILogger logger, Guid jobId, string function);
+
+    [LoggerMessage(
+        EventId = 3127,
+        Level = LogLevel.Warning,
+        Message = "Job {JobId} ({Function}) could not be handed back during a graceful host stop because the store "
+            + "write failed; the row stays InProgress until its lease lapses and the stalled-reclaim sweep recovers it "
+            + "per OnNodeDeath."
+    )]
+    public static partial void LogJobShutdownWriteFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid jobId,
+        string function
+    );
 }

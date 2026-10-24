@@ -706,10 +706,16 @@ public sealed class SchedulerOptionsBuilder
     public JobsStartMode StartMode { get; set; } = JobsStartMode.Immediate;
 
     /// <summary>
-    /// Gets or sets the maximum end-to-end time a graceful scheduler stop takes, measured from the moment the stop
-    /// begins. Default is 30 seconds, the Generic Host's default <c>HostOptions.ShutdownTimeout</c>.
+    /// Gets or sets the maximum end-to-end time a graceful scheduler stop takes, measured from the moment the host's
+    /// stop begins. Default is 30 seconds, the Generic Host's default <c>HostOptions.ShutdownTimeout</c>.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// The budget counts from <c>IHostApplicationLifetime.ApplicationStopping</c>, not from the scheduler's own stop.
+    /// The host stops hosted services one after another, so time that services registered after Jobs spend stopping
+    /// comes out of this budget, as it comes out of the host's timeout. A stop outside a host stop, such as a manual
+    /// <c>IJobsHostScheduler</c> stop, counts from the scheduler's own stop.
+    /// </para>
     /// <para>
     /// Running jobs first get the budget to finish and write their own outcome. When only a release window remains
     /// (five seconds, or half the budget when that is shorter), the stop cancels the jobs still running and waits for
