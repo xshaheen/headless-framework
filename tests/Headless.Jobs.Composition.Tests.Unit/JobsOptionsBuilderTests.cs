@@ -433,8 +433,7 @@ public sealed class JobsOptionsBuilderTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    [InlineData(301)]
-    public void add_headless_jobs_rejects_a_shutdown_timeout_outside_the_supported_range(int seconds)
+    public void add_headless_jobs_rejects_a_shutdown_timeout_that_is_not_positive(int seconds)
     {
         var services = new ServiceCollection();
 
@@ -447,13 +446,13 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void add_headless_jobs_accepts_a_shutdown_timeout_of_exactly_five_minutes()
+    public void add_headless_jobs_accepts_a_long_shutdown_timeout()
     {
         var services = new ServiceCollection();
 
         var act = () =>
             services.AddHeadlessJobs(options =>
-                options.ConfigureScheduler(scheduler => scheduler.ShutdownTimeout = TimeSpan.FromMinutes(5))
+                options.ConfigureScheduler(scheduler => scheduler.ShutdownTimeout = TimeSpan.FromMinutes(30))
             );
 
         act.Should().NotThrow();

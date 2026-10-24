@@ -148,10 +148,6 @@ public static class SetupJobs
             "SchedulerOptionsBuilder.ShutdownTimeout must be greater than zero."
         );
         Ensure.True(
-            schedulerOptionsBuilder.ShutdownTimeout <= TimeSpan.FromMinutes(5),
-            "SchedulerOptionsBuilder.ShutdownTimeout must not exceed 5 minutes."
-        );
-        Ensure.True(
             schedulerOptionsBuilder.FingerprintSweepBatchSize > 0,
             "SchedulerOptionsBuilder.FingerprintSweepBatchSize must be greater than zero."
         );

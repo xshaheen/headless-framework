@@ -729,7 +729,8 @@ public sealed class SchedulerOptionsBuilder
     /// opens, and interrupted jobs fall to reclaim instead of being released.
     /// </para>
     /// <para>
-    /// Must be greater than zero and at most 5 minutes; registration rejects any other value.
+    /// Must be greater than zero; registration rejects any other value. There is no upper limit, so a host that waits
+    /// a long time for long-running jobs can give them the same budget.
     /// </para>
     /// </remarks>
     public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
