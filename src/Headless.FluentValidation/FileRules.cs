@@ -6,9 +6,9 @@ using Headless.FluentValidation.Resources;
 namespace Headless.FluentValidation;
 
 /// <summary>
-/// Builds the file rules once for every file type: each entry point (<c>IUploadedFile</c> here, ASP.NET Core
-/// <c>IFormFile</c> in Headless.Api.FluentValidation) passes how to read the size and the declared content type, so the
-/// checks, error descriptors, and documented bounds cannot drift between them. The signature rule lives in
+/// Builds the file rules for any file type, given how to read its size and declared content type. They live here, beside
+/// <see cref="IFileSizeValidator"/> and <see cref="IFileContentTypeValidator"/> that they implement, and
+/// Headless.Api.FluentValidation reads them from an <c>IFormFile</c>. The signature rule lives in
 /// Headless.Api.FluentValidation, which carries the file-format dependency.
 /// </summary>
 internal static class FileRules

@@ -8,9 +8,8 @@ using Headless.FluentValidation.Resources;
 namespace Headless.FluentValidation;
 
 /// <summary>
-/// Builds the signature rule once for every file type: each entry point (<c>IUploadedFile</c> here, ASP.NET Core
-/// <c>IFormFile</c> in Headless.Api.FluentValidation) passes how to open the content, so the check and its error
-/// descriptor cannot drift between them.
+/// Builds the signature rule for any file type, given how to open its content. <c>HeadlessFormFileValidators</c> reads it
+/// from an <c>IFormFile</c>.
 /// </summary>
 internal static class FileSignatureRules
 {

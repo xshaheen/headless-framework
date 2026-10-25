@@ -110,32 +110,4 @@ public static class HeadlessFormFileExtensions
 
         return await stream.GetAllBytesAsync(cancellationToken).ConfigureAwait(false);
     }
-
-    /// <summary>
-    /// Adapts the uploaded file to an <see cref="IUploadedFile"/>, so an endpoint can pass it to a command or service
-    /// that must not depend on ASP.NET Core.
-    /// </summary>
-    /// <param name="formFile">The uploaded file.</param>
-    /// <returns>
-    /// A view over <paramref name="formFile"/> that reads through to it; it is valid only while the request that
-    /// carried the file is in flight.
-    /// </returns>
-    /// <exception cref="ArgumentNullException"><paramref name="formFile"/> is <see langword="null"/>.</exception>
-    public static IUploadedFile ToUploadedFile(this IFormFile formFile)
-    {
-        Argument.IsNotNull(formFile);
-
-        return new FormUploadedFile(formFile);
-    }
-
-    private sealed class FormUploadedFile(IFormFile formFile) : IUploadedFile
-    {
-        public string FileName => formFile.FileName;
-
-        public string ContentType => formFile.ContentType;
-
-        public long Length => formFile.Length;
-
-        public Stream OpenReadStream() => formFile.OpenReadStream();
-    }
 }

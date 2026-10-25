@@ -9,8 +9,7 @@ namespace Headless.FluentValidation;
 /// describe the accepted types without depending on the package that implements the rule.
 /// </summary>
 /// <remarks>
-/// The <c>ContentTypes</c> file rule implements it, for an <c>IUploadedFile</c> and for an ASP.NET Core
-/// <c>IFormFile</c> alike. Headless.OpenApi writes the types to the multipart encoding of the file part and to its
+/// The <c>ContentTypes</c> rule for an ASP.NET Core <c>IFormFile</c> in Headless.Api.FluentValidation implements it. Headless.OpenApi writes the types to the multipart encoding of the file part and to its
 /// description.
 /// </remarks>
 [PublicAPI]
