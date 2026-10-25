@@ -21,10 +21,9 @@ namespace Tests.Binding;
 public sealed class RequestValueBinderTests : TestBase
 {
     [Theory]
-    [InlineData("active")]
     [InlineData("Active")]
-    [InlineData("ACTIVE")]
-    public async Task should_bind_an_enum_query_value_by_name_in_any_casing(string value)
+    [InlineData(" Active ")]
+    public async Task should_bind_an_enum_query_value_by_its_member_name(string value)
     {
         var context = await _InvokeAsync(
             group => group.MapGet("/query", (MemberStatus? status) => status?.ToString() ?? "none"),
@@ -37,6 +36,9 @@ public sealed class RequestValueBinderTests : TestBase
     [Theory]
     [InlineData("1")]
     [InlineData("bogus")]
+    // ASP.NET Core reads the member name case-sensitively, and rewriting other casing would allocate, so it is refused.
+    [InlineData("active")]
+    [InlineData("ACTIVE")]
     // The body rejects a member name its [JsonStringEnumMemberName] alias replaces, so the query does too.
     [InlineData("OnHold")]
     public async Task should_answer_400_naming_the_parameter_when_an_enum_query_value_is_not_a_name(string value)
@@ -58,7 +60,7 @@ public sealed class RequestValueBinderTests : TestBase
         );
         var flags = await _InvokeAsync(
             group => group.MapGet("/access", (Access access) => access.ToString()),
-            request => request.QueryString = new QueryString("?access=read,Write")
+            request => request.QueryString = new QueryString("?access=Read,Write")
         );
 
         (await _ReadTextAsync(alias)).Should().Be("OnHold");
@@ -70,7 +72,7 @@ public sealed class RequestValueBinderTests : TestBase
     {
         var context = await _InvokeAsync(
             group => group.MapGet("/list", ([FromQuery] MemberStatus[] status) => string.Join('|', status)),
-            request => request.QueryString = new QueryString("?status=active&status=INACTIVE")
+            request => request.QueryString = new QueryString("?status=Active&status=Inactive")
         );
 
         (await _ReadTextAsync(context)).Should().Be("Active|Inactive");
@@ -85,7 +87,7 @@ public sealed class RequestValueBinderTests : TestBase
                 ([FromHeader(Name = "X-Status")] MemberStatus? status) => status?.ToString() ?? "none"
             );
 
-        var named = await _InvokeAsync(map, request => request.Headers["X-Status"] = "inactive");
+        var named = await _InvokeAsync(map, request => request.Headers["X-Status"] = "Inactive");
         var numbered = await _InvokeAsync(map, request => request.Headers["X-Status"] = "2");
 
         (await _ReadTextAsync(named)).Should().Be("Inactive");
@@ -111,7 +113,7 @@ public sealed class RequestValueBinderTests : TestBase
                 .MapPost("/form", ([FromForm] StatusForm form) => form.Status?.ToString() ?? "none")
                 .DisableAntiforgery();
 
-        var named = await _InvokeAsync(map, request => _SetForm(request, "Status", "inactive"));
+        var named = await _InvokeAsync(map, request => _SetForm(request, "Status", "Inactive"));
         var numbered = await _InvokeAsync(map, request => _SetForm(request, "Status", "2"));
 
         (await _ReadTextAsync(named)).Should().Be("Inactive");
@@ -123,7 +125,7 @@ public sealed class RequestValueBinderTests : TestBase
     {
         var context = await _InvokeAsync(
             group => group.MapPost("/form", ([FromForm] MemberStatus status) => status.ToString()).DisableAntiforgery(),
-            request => _SetForm(request, "status", "ACTIVE")
+            request => _SetForm(request, "status", "Active")
         );
 
         (await _ReadTextAsync(context)).Should().Be("Active");
@@ -150,7 +152,7 @@ public sealed class RequestValueBinderTests : TestBase
 
         var valid = await _InvokeAsync(
             map,
-            request => request.QueryString = new QueryString("?status=inactive&page=3")
+            request => request.QueryString = new QueryString("?status=Inactive&page=3")
         );
         var invalid = await _InvokeAsync(map, request => request.QueryString = new QueryString("?status=3"));
 
@@ -169,7 +171,7 @@ public sealed class RequestValueBinderTests : TestBase
             // A second application must not wrap the endpoint twice.
             .BindRequestValues();
         var context = MinimalApiTestHost.CreateHttpContext(services);
-        context.Request.QueryString = new QueryString("?status=inactive");
+        context.Request.QueryString = new QueryString("?status=Inactive");
 
         await MinimalApiTestHost.SingleEndpoint(endpoints).RequestDelegate!(context);
 
@@ -183,11 +185,120 @@ public sealed class RequestValueBinderTests : TestBase
         var endpoints = new TestEndpointRouteBuilder(services);
         endpoints.MapGet("/query", (MemberStatus? status) => status?.ToString() ?? "none");
         var context = MinimalApiTestHost.CreateHttpContext(services);
-        context.Request.QueryString = new QueryString("?status=active");
+        context.Request.QueryString = new QueryString("?status=1");
 
         await MinimalApiTestHost.SingleEndpoint(endpoints).RequestDelegate!(context);
 
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        // ASP.NET Core binds a number; the convention is what refuses it.
+        (await _ReadTextAsync(context))
+            .Should()
+            .Be("Active");
+    }
+
+    [Theory]
+    [InlineData("?status=Active&page=2")]
+    [InlineData("?status=Active&status=Inactive&page=2")]
+    [InlineData("?status=Active&page=2&tag=x&tag=y&sort=name")]
+    public void should_add_no_allocation_to_a_query_spelled_as_the_body_writes_it(string query)
+    {
+        static void map(IEndpointRouteBuilder builder) =>
+            builder.MapGet("/q", ([FromQuery] MemberStatus[] status, int page) => Results.Ok());
+
+        var extra = _ExtraBytesPerRequest(map, request => request.QueryString = new QueryString(query));
+
+        extra.Should().Be(0);
+    }
+
+    [Fact]
+    public void should_add_no_allocation_to_route_and_header_values_spelled_as_the_body_writes_them()
+    {
+        static void map(IEndpointRouteBuilder builder) =>
+            builder.MapGet(
+                "/r/{status}",
+                (MemberStatus status, [FromHeader(Name = "X-Access")] Access access) => Results.Ok()
+            );
+
+        var extra = _ExtraBytesPerRequest(
+            map,
+            request =>
+            {
+                request.RouteValues["status"] = "Inactive";
+                request.Headers["X-Access"] = "Read, Write";
+            }
+        );
+
+        extra.Should().Be(0);
+    }
+
+    [Fact]
+    public void should_add_no_allocation_to_a_form_spelled_as_the_body_writes_it()
+    {
+        static void map(IEndpointRouteBuilder builder) =>
+            builder.MapPost("/f", ([FromForm] StatusForm form) => Results.Ok()).DisableAntiforgery();
+
+        var extra = _ExtraBytesPerRequest(map, request => _SetForm(request, "Status", "Inactive"));
+
+        extra.Should().Be(0);
+    }
+
+    // The bytes one request allocates with the convention, less the bytes the same request allocates without it. Each
+    // request gets a fresh context built outside the measured window, and both endpoints are warmed up first.
+    private static long _ExtraBytesPerRequest(Action<IEndpointRouteBuilder> map, Action<HttpRequest> arrange)
+    {
+        using var services = _CreateServices();
+        var plain = new TestEndpointRouteBuilder(services);
+        map(plain);
+        var wrapped = new TestEndpointRouteBuilder(services);
+        map(wrapped.MapGroup("").BindRequestValues());
+
+        var withoutConvention = _BytesPerRequest(
+            MinimalApiTestHost.SingleEndpoint(plain).RequestDelegate!,
+            services,
+            arrange
+        );
+        var withConvention = _BytesPerRequest(
+            MinimalApiTestHost.SingleEndpoint(wrapped).RequestDelegate!,
+            services,
+            arrange
+        );
+
+        return withConvention - withoutConvention;
+    }
+
+    private static long _BytesPerRequest(
+        RequestDelegate endpoint,
+        IServiceProvider services,
+        Action<HttpRequest> arrange
+    )
+    {
+        const int warmUp = 200;
+        const int measured = 500;
+        long total = 0;
+
+        for (var i = 0; i < warmUp + measured; i++)
+        {
+            var context = MinimalApiTestHost.CreateHttpContext(services);
+            arrange(context.Request);
+            // The server parses the query before binding either way, so parse it outside the window. DefaultHttpContext
+            // creates its request-lifetime feature on first use, where Kestrel's connection already implements it, so
+            // touch it outside the window too.
+            _ = context.Request.Query.Count;
+            _ = context.RequestAborted;
+
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            var task = endpoint(context);
+            var after = GC.GetAllocatedBytesForCurrentThread();
+
+            task.IsCompletedSuccessfully.Should().BeTrue("the measured endpoints complete synchronously");
+            context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+            if (i >= warmUp)
+            {
+                total += after - before;
+            }
+        }
+
+        return total / measured;
     }
 
     private static async Task<DefaultHttpContext> _InvokeAsync(

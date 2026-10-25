@@ -41,6 +41,7 @@ internal sealed class RequestValueBinder
     private readonly BoundValue[] _query;
     private readonly BoundValue[] _headers;
     private readonly BoundValue[] _form;
+    private readonly bool _hasFormCollection;
     private readonly RequestDelegate _next;
 
     private RequestValueBinder(List<BoundValue> values, RequestDelegate next)
@@ -49,6 +50,7 @@ internal sealed class RequestValueBinder
         _query = [.. values.Where(x => x.Source == ValueSource.Query)];
         _headers = [.. values.Where(x => x.Source == ValueSource.Header)];
         _form = [.. values.Where(x => x.Source == ValueSource.Form)];
+        _hasFormCollection = _form.Any(x => x.IsCollection);
         _next = next;
     }
 
@@ -101,35 +103,74 @@ internal sealed class RequestValueBinder
             return _WriteInvalidAsync(context, failed);
         }
 
-        return _form.Length > 0 && request.HasFormContentType ? _InvokeWithFormAsync(context) : _next(context);
+        if (_form.Length == 0 || !_HasFormContentType(request.ContentType))
+        {
+            return _next(context);
+        }
+
+        // ASP.NET Core reads the form before it binds, so reading it here costs nothing extra; awaiting it costs a state
+        // machine only when the body has not arrived yet.
+        var reading = request.ReadFormAsync(context.RequestAborted);
+
+        if (!reading.IsCompletedSuccessfully)
+        {
+            return _InvokeAfterFormAsync(context, reading);
+        }
+
+#pragma warning disable CA1849 // False positive: the task completed successfully above, so Result returns without blocking.
+        failed = _NormalizeForm(request, reading.Result);
+#pragma warning restore CA1849
+
+        return failed is null ? _next(context) : _WriteInvalidAsync(context, failed);
     }
 
-    private async Task _InvokeWithFormAsync(HttpContext context)
+    private async Task _InvokeAfterFormAsync(HttpContext context, Task<IFormCollection> reading)
     {
-        var request = context.Request;
-        var form = await request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
+        var form = await reading.ConfigureAwait(false);
+        var failed = _NormalizeForm(context.Request, form);
+
+        await (failed is null ? _next(context) : _WriteInvalidAsync(context, failed)).ConfigureAwait(false);
+    }
+
+    private string? _NormalizeForm(HttpRequest request, IFormCollection form)
+    {
         Dictionary<string, StringValues>? rewritten = null;
 
         foreach (var value in _form)
         {
-            foreach (var (key, raw) in form)
+            if (
+                form.TryGetValue(value.Name, out var raw)
+                && !_NormalizeFormEntry(form, value, value.Name, raw, ref rewritten)
+            )
             {
-                if (!value.MatchesFormKey(key))
+                return value.Name;
+            }
+        }
+
+        // An indexed list member ("Items[0]") is found only by walking the keys, so only an endpoint that binds a list
+        // from a form pays for the walk.
+        if (_hasFormCollection)
+        {
+            // FormCollection's struct enumerator walks the keys without boxing; another collection type goes through
+            // the interface.
+            if (form is FormCollection collection)
+            {
+                foreach (var (key, raw) in collection)
                 {
-                    continue;
+                    if (_NormalizeIndexed(form, key, raw, ref rewritten) is { } failedKey)
+                    {
+                        return failedKey;
+                    }
                 }
-
-                if (!value.TryNormalize(raw, out var normalized))
+            }
+            else
+            {
+                foreach (var (key, raw) in form)
                 {
-                    await _WriteInvalidAsync(context, key).ConfigureAwait(false);
-
-                    return;
-                }
-
-                if (normalized is { } changed)
-                {
-                    rewritten ??= _Copy(form);
-                    rewritten[key] = changed;
+                    if (_NormalizeIndexed(form, key, raw, ref rewritten) is { } failedKey)
+                    {
+                        return failedKey;
+                    }
                 }
             }
         }
@@ -139,8 +180,60 @@ internal sealed class RequestValueBinder
             request.Form = new FormCollection(rewritten, form.Files);
         }
 
-        await _next(context).ConfigureAwait(false);
+        return null;
     }
+
+    private string? _NormalizeIndexed(
+        IFormCollection form,
+        string key,
+        StringValues raw,
+        ref Dictionary<string, StringValues>? rewritten
+    )
+    {
+        foreach (var value in _form)
+        {
+            if (
+                value.IsCollection
+                && value.MatchesIndexedKey(key)
+                && !_NormalizeFormEntry(form, value, key, raw, ref rewritten)
+            )
+            {
+                return key;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool _NormalizeFormEntry(
+        IFormCollection form,
+        BoundValue value,
+        string key,
+        StringValues raw,
+        ref Dictionary<string, StringValues>? rewritten
+    )
+    {
+        if (!value.TryNormalize(raw, out var normalized))
+        {
+            return false;
+        }
+
+        if (normalized is { } changed)
+        {
+            rewritten ??= _Copy(form);
+            rewritten[key] = changed;
+        }
+
+        return true;
+    }
+
+    // The two form media types, compared without parsing the header into an object.
+    private static bool _HasFormContentType(string? contentType) =>
+        contentType is not null
+        && (
+            contentType.StartsWith("application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase)
+            || contentType.StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase)
+        );
 
     private string? _NormalizeRoute(HttpRequest request)
     {
@@ -439,16 +532,10 @@ internal sealed class RequestValueBinder
         Func<string, bool>? Parse
     )
     {
-        // A collection member arrives as repeated "Name" fields or as indexed "Name[0]" fields.
-        public bool MatchesFormKey(string key)
+        // A collection member arrives as repeated "Name" fields, found by name, or as indexed "Name[0]" fields.
+        public bool MatchesIndexedKey(string key)
         {
-            if (string.Equals(key, Name, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            return IsCollection
-                && key.Length > Name.Length + 2
+            return key.Length > Name.Length + 2
                 && key.StartsWith(Name, StringComparison.OrdinalIgnoreCase)
                 && key[Name.Length] == '['
                 && key[^1] == ']'
@@ -476,15 +563,23 @@ internal sealed class RequestValueBinder
 
                 if (Enum is not null)
                 {
-                    if (!Enum.TryGetCanonical(text, out var canonical))
+                    if (!Enum.TryGetExact(text, out var rewrite))
                     {
                         return false;
                     }
 
-                    if (!string.Equals(canonical, text, StringComparison.Ordinal))
+                    if (rewrite is not null)
                     {
+                        // A single value needs no array: StringValues wraps the member name the table already holds.
+                        if (raw.Count == 1)
+                        {
+                            normalized = new StringValues(rewrite);
+
+                            return true;
+                        }
+
                         rewritten ??= [.. raw];
-                        rewritten[i] = canonical;
+                        rewritten[i] = rewrite;
                     }
                 }
                 else if (!Parse!(text))

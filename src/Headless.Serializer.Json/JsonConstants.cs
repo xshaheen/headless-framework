@@ -29,10 +29,11 @@ namespace Headless.Serializer;
 /// diagnostics.
 /// </para>
 /// <para>
-/// All three presets include <see cref="System.Text.Json.Serialization.JsonStringEnumConverter"/> (camelCase unless
-/// an internal naming policy is given, integer values disallowed) and
-/// <see cref="Converters.IpAddressJsonConverter"/> via the shared <see cref="ConfigureWebJsonOptions"/> /
-/// <see cref="ConfigureInternalJsonOptions"/> helpers.
+/// All three presets include <see cref="System.Text.Json.Serialization.JsonStringEnumConverter"/>, with integer values
+/// disallowed, and <see cref="Converters.IpAddressJsonConverter"/>, via the shared
+/// <see cref="ConfigureWebJsonOptions"/> / <see cref="ConfigureInternalJsonOptions"/> helpers. The web and pretty
+/// presets write an enum under its member name as declared (<c>Active</c>, or a <c>[JsonStringEnumMemberName]</c>
+/// alias); the internal preset writes it camelCase unless given a naming policy.
 /// </para>
 /// <para>
 /// The three shared presets are frozen (<see cref="JsonSerializerOptions.IsReadOnly"/> is <see langword="true"/>)
@@ -118,7 +119,9 @@ public static class JsonConstants
         options.AllowTrailingCommas = true;
         options.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.DictionaryKeyPolicy = JsonNamingPolicy.CamelCase;
-        _AddDefaultConverters(options, JsonNamingPolicy.CamelCase);
+        // Enums go out under their member names, so a route, query, or header value a client copies from a response or
+        // the OpenAPI document is the text Enum.TryParse already reads, and binding it needs no rewrite or allocation.
+        _AddDefaultConverters(options, enumNamingPolicy: null);
 
         return options;
     }
@@ -191,7 +194,7 @@ public static class JsonConstants
         "IL3050:RequiresDynamicCode",
         Justification = "JsonStringEnumConverter is used for serialization options and consumers should use source generation for AOT scenarios."
     )]
-    private static void _AddDefaultConverters(JsonSerializerOptions options, JsonNamingPolicy enumNamingPolicy)
+    private static void _AddDefaultConverters(JsonSerializerOptions options, JsonNamingPolicy? enumNamingPolicy)
     {
         var enumConverter = options.Converters.FirstOrDefault(x => x is JsonStringEnumConverter);
 
