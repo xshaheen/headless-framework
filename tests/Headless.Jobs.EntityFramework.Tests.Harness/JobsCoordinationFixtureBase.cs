@@ -716,16 +716,18 @@ public static partial class JobsCoordinationFixtureExtensions
         string? ownerId,
         CancellationToken cancellationToken,
         NodeDeathPolicy onNodeDeath = NodeDeathPolicy.Retry,
-        DateTime? lockedUntil = null
+        DateTime? lockedUntil = null,
+        DateTime? executionTime = null
     )
     {
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = fixture.Sql(
-            $"INSERT INTO {fixture.QualifiedTimeJobsTable} ({_InsertColumns}, \"ContractVersion\") "
+            $"INSERT INTO {fixture.QualifiedTimeJobsTable} ({_InsertColumns}, \"ContractVersion\", \"ExecutionTime\") "
                 + "VALUES (@id, @function, @function, @status, @ownerId, "
-                + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath, @lockedUntil, '1');"
+                + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath, @lockedUntil, '1', "
+                + "@executionTime);"
         );
 
         // Status and OnNodeDeath persist as enum names (HasConversion<string>), so seed the names, not ordinals.
@@ -735,6 +737,7 @@ public static partial class JobsCoordinationFixtureExtensions
         AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
         AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
         AddParameter(command, "@lockedUntil", (object?)lockedUntil ?? DBNull.Value);
+        AddParameter(command, "@executionTime", (object?)executionTime ?? DBNull.Value);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

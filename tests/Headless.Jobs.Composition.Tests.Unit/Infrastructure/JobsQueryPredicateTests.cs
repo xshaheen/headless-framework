@@ -189,53 +189,50 @@ public sealed class JobsQueryPredicateTests
 
     #endregion
 
-    #region WhereCanAcquire OnNodeDeath gate (#315)
+    #region WhereCanAcquire ignores OnNodeDeath
 
-    [Fact]
-    public void where_can_acquire_re_claims_an_expired_lease_only_when_policy_is_retry()
+    // An Idle/Queued row never started, so a lapsed lease makes it reclaimable whatever its policy: the policy only
+    // decides what happens to a started (InProgress) run.
+
+    [Theory]
+    [InlineData(NodeDeathPolicy.Retry)]
+    [InlineData(NodeDeathPolicy.MarkFailed)]
+    [InlineData(NodeDeathPolicy.Skip)]
+    public void where_can_acquire_re_claims_an_expired_lease_under_every_node_death_policy(NodeDeathPolicy policy)
     {
-        var retry = _TimeJob(JobStatus.Idle, "node-b@2", _Now.AddMinutes(-1), NodeDeathPolicy.Retry);
-        var markFailed = _TimeJob(JobStatus.Idle, "node-b@2", _Now.AddMinutes(-1), NodeDeathPolicy.MarkFailed);
-        var skip = _TimeJob(JobStatus.Idle, "node-b@2", _Now.AddMinutes(-1), NodeDeathPolicy.Skip);
+        var idle = _TimeJob(JobStatus.Idle, "node-b@2", _Now.AddMinutes(-1), policy);
+        var queued = _TimeJob(JobStatus.Queued, "node-b@2", _Now.AddMinutes(-1), policy);
 
-        var selected = new[] { retry, markFailed, skip }.AsQueryable().WhereCanAcquire(_Owner, _Now).ToArray();
+        var selected = new[] { idle, queued }.AsQueryable().WhereCanAcquire(_Owner, _Now).ToArray();
 
-        // Only the idempotent (Retry) row is speculatively re-claimed on lease expiry; the others are left for the sweep.
-        selected.Should().ContainSingle().Which.Should().Be(retry);
+        selected.Should().BeEquivalentTo([idle, queued]);
     }
 
-    [Fact]
-    public void where_can_acquire_gate_does_not_block_the_unowned_arm_for_non_retry_policies()
+    [Theory]
+    [InlineData(NodeDeathPolicy.MarkFailed)]
+    [InlineData(NodeDeathPolicy.Skip)]
+    public void where_can_acquire_never_re_claims_a_live_foreign_lease_or_a_started_row(NodeDeathPolicy policy)
     {
-        // A never-leased Skip/MarkFailed row is still freely claimable — the gate narrows only the lease-expiry arm.
-        var skipUnowned = _TimeJob(JobStatus.Idle, ownerId: null, lockedUntil: null, NodeDeathPolicy.Skip);
-        var failUnowned = _TimeJob(JobStatus.Queued, ownerId: null, lockedUntil: null, NodeDeathPolicy.MarkFailed);
+        var liveForeign = _TimeJob(JobStatus.Queued, "node-b@2", _Now.AddMinutes(5), policy);
+        var started = _TimeJob(JobStatus.InProgress, "node-b@2", _Now.AddMinutes(-1), policy);
 
-        var selected = new[] { skipUnowned, failUnowned }.AsQueryable().WhereCanAcquire(_Owner, _Now).ToArray();
+        var selected = new[] { liveForeign, started }.AsQueryable().WhereCanAcquire(_Owner, _Now).ToArray();
 
-        selected.Should().BeEquivalentTo([skipUnowned, failUnowned]);
+        selected.Should().BeEmpty();
     }
 
-    [Fact]
-    public void where_can_acquire_gate_does_not_block_the_self_owned_arm_for_non_retry_policies()
+    [Theory]
+    [InlineData(NodeDeathPolicy.Retry)]
+    [InlineData(NodeDeathPolicy.MarkFailed)]
+    [InlineData(NodeDeathPolicy.Skip)]
+    public void where_can_acquire_re_claims_an_expired_occurrence_under_every_node_death_policy(NodeDeathPolicy policy)
     {
-        // A future-leased Skip row owned by ME is still re-claimable (crash recovery) regardless of policy.
-        var skipMine = _TimeJob(JobStatus.Queued, _Owner, _Now.AddMinutes(5), NodeDeathPolicy.Skip);
+        var expired = _Occurrence(JobStatus.Queued, "node-b@2", _Now.AddMinutes(-1), policy);
+        var started = _Occurrence(JobStatus.InProgress, "node-b@2", _Now.AddMinutes(-1), policy);
 
-        var selected = new[] { skipMine }.AsQueryable().WhereCanAcquire(_Owner, _Now).ToArray();
+        var selected = new[] { expired, started }.AsQueryable().WhereCanAcquire(_Owner, _Now).ToArray();
 
-        selected.Should().ContainSingle().Which.Should().Be(skipMine);
-    }
-
-    [Fact]
-    public void where_can_acquire_gate_applies_to_occurrences_too()
-    {
-        var retry = _Occurrence(JobStatus.Idle, "node-b@2", _Now.AddMinutes(-1), NodeDeathPolicy.Retry);
-        var skip = _Occurrence(JobStatus.Idle, "node-b@2", _Now.AddMinutes(-1), NodeDeathPolicy.Skip);
-
-        var selected = new[] { retry, skip }.AsQueryable().WhereCanAcquire(_Owner, _Now).ToArray();
-
-        selected.Should().ContainSingle().Which.Should().Be(retry);
+        selected.Should().ContainSingle().Which.Should().Be(expired);
     }
 
     #endregion

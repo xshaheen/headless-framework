@@ -391,9 +391,9 @@ public abstract class PostgreSqlClaimConformanceTestsBase<TFixture>(TFixture fix
     }
 
     [Fact]
-    public override Task expired_existing_cron_claim_requires_retry_policy()
+    public override Task expired_existing_cron_claim_reclaims_under_every_node_death_policy()
     {
-        return base.expired_existing_cron_claim_requires_retry_policy();
+        return base.expired_existing_cron_claim_reclaims_under_every_node_death_policy();
     }
 
     [Fact]
@@ -419,9 +419,9 @@ public abstract class PostgreSqlClaimConformanceTestsBase<TFixture>(TFixture fix
     }
 
     [Fact]
-    public override Task expired_fallback_cron_claim_requires_retry_policy()
+    public override Task expired_fallback_claim_reclaims_an_unstarted_row_under_every_node_death_policy()
     {
-        return base.expired_fallback_cron_claim_requires_retry_policy();
+        return base.expired_fallback_claim_reclaims_an_unstarted_row_under_every_node_death_policy();
     }
 
     [Fact]

@@ -74,11 +74,7 @@ public static class HeadlessJobsQueryExtensions
     {
         return q.Where(e =>
             (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
-            && (
-                e.OwnerId == ownerId
-                || e.LockedUntil == null
-                || (e.LockedUntil <= now && e.OnNodeDeath == NodeDeathPolicy.Retry)
-            )
+            && (e.OwnerId == ownerId || e.LockedUntil == null || e.LockedUntil <= now)
         );
     }
 
@@ -91,11 +87,7 @@ public static class HeadlessJobsQueryExtensions
     {
         return q.Where(e =>
             (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
-            && (
-                e.OwnerId == ownerId
-                || e.LockedUntil == null
-                || (e.LockedUntil <= now && e.OnNodeDeath == NodeDeathPolicy.Retry)
-            )
+            && (e.OwnerId == ownerId || e.LockedUntil == null || e.LockedUntil <= now)
         );
     }
 
@@ -109,15 +101,12 @@ public static class HeadlessJobsQueryExtensions
         // A non-terminal row is claimable if it is already mine (crash re-pickup), never leased, or its lease
         // deadline has passed (lease-expiry self-heal). DateTime.UtcNow is provider-translated to the database clock,
         // so comparison and stamping share one authority without a separate scalar query.
-        // The lease-expiry arm is gated on OnNodeDeath == Retry (#315): only idempotent jobs are speculatively
-        // re-claimed when their lease lapses; MarkFailed/Skip rows are left for the dead-node sweep to transition.
+        // The lease-expiry arm holds for every OnNodeDeath policy: an Idle/Queued row never invoked user code (a run
+        // starts only after its owner-fenced admission to InProgress), so reclaiming it starts the job's first run,
+        // and the previous owner's admission then matches no row. The policy governs only a started attempt.
         return q.Where(e =>
             (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
-            && (
-                e.OwnerId == ownerId
-                || e.LockedUntil == null
-                || (e.LockedUntil <= DateTime.UtcNow && e.OnNodeDeath == NodeDeathPolicy.Retry)
-            )
+            && (e.OwnerId == ownerId || e.LockedUntil == null || e.LockedUntil <= DateTime.UtcNow)
         );
     }
 
@@ -129,11 +118,7 @@ public static class HeadlessJobsQueryExtensions
     {
         return q.Where(e =>
             (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
-            && (
-                e.OwnerId == ownerId
-                || e.LockedUntil == null
-                || (e.LockedUntil <= DateTime.UtcNow && e.OnNodeDeath == NodeDeathPolicy.Retry)
-            )
+            && (e.OwnerId == ownerId || e.LockedUntil == null || e.LockedUntil <= DateTime.UtcNow)
         );
     }
 

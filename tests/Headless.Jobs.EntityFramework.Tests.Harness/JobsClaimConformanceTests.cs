@@ -638,7 +638,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
-    public virtual async Task expired_existing_cron_claim_requires_retry_policy()
+    public virtual async Task expired_existing_cron_claim_reclaims_under_every_node_death_policy()
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
@@ -682,9 +682,8 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                     .CountAsync(ct);
             }
 
-            results[NodeDeathPolicy.Retry].Should().Be(1);
-            results[NodeDeathPolicy.MarkFailed].Should().Be(0);
-            results[NodeDeathPolicy.Skip].Should().Be(0);
+            // The occurrence never started, so its policy cannot make a reclaim run it twice.
+            results.Should().AllSatisfy(result => result.Value.Should().Be(1, $"{result.Key} must be reclaimable"));
         }
         finally
         {
@@ -748,9 +747,9 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                     "old@3",
                     NodeDeathPolicy.MarkFailed,
                     expired,
-                    false
+                    true
                 ),
-                new DirectClaimCase("expired_skip", JobStatus.Queued, "old@4", NodeDeathPolicy.Skip, expired, false),
+                new DirectClaimCase("expired_skip", JobStatus.Queued, "old@4", NodeDeathPolicy.Skip, expired, true),
                 new DirectClaimCase(
                     "in_progress_unleased",
                     JobStatus.InProgress,
@@ -865,9 +864,9 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                     "old@3",
                     NodeDeathPolicy.MarkFailed,
                     expired,
-                    false
+                    true
                 ),
-                new DirectClaimCase("expired_skip", JobStatus.Queued, "old@4", NodeDeathPolicy.Skip, expired, false),
+                new DirectClaimCase("expired_skip", JobStatus.Queued, "old@4", NodeDeathPolicy.Skip, expired, true),
                 new DirectClaimCase("succeeded", JobStatus.Succeeded, "foreign@3", NodeDeathPolicy.Retry, null, false),
             };
 
@@ -990,42 +989,73 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         lockedUntil.Should().BeNull();
     }
 
-    public virtual async Task expired_fallback_cron_claim_requires_retry_policy()
+    public virtual async Task expired_fallback_claim_reclaims_an_unstarted_row_under_every_node_death_policy()
     {
         var ct = AbortToken;
-        await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("fallback-policy-a");
-        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
-        await host.StartAsync(ct);
 
-        try
+        // Native and portable CAS claims must agree: a Queued row whose lease lapsed never started, so the fallback
+        // reclaims it whatever its policy (a MarkFailed or Skip row whose admission write failed is otherwise stuck).
+        foreach (var useNativeClaims in new[] { true, false })
         {
-            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-            var expired = DateTime.UtcNow.AddMinutes(-1);
-            var executionTime = DateTime.UtcNow.AddMinutes(-2);
-            foreach (var policy in Enum.GetValues<NodeDeathPolicy>())
+            var strategy = useNativeClaims ? "native" : "portable CAS";
+            await fixture.ResetDatabaseAsync(ct);
+            using var host = fixture.BuildHost(
+                $"fallback-policy-{(useNativeClaims ? "native" : "cas")}",
+                useNativeClaims: useNativeClaims
+            );
+            await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+            await host.StartAsync(ct);
+
+            try
             {
-                var cronId = Guid.NewGuid();
-                await fixture.SeedCronJobAsync(cronId, policy.ToString(), "* * * * *", policy, ct);
-                await fixture.SeedCronOccurrenceAsync(
-                    Guid.NewGuid(),
-                    cronId,
-                    (int)JobStatus.Queued,
-                    "old@1",
-                    policy,
-                    expired,
-                    executionTime.AddSeconds((int)policy),
-                    ct
-                );
+                var persistence = host.Services.GetRequiredService<
+                    IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
+                >();
+                var expired = DateTime.UtcNow.AddMinutes(-1);
+                var executionTime = DateTime.UtcNow.AddMinutes(-2);
+                var policies = Enum.GetValues<NodeDeathPolicy>();
+                foreach (var policy in policies)
+                {
+                    var cronId = Guid.NewGuid();
+                    await fixture.SeedCronJobAsync(cronId, policy.ToString(), "* * * * *", policy, ct);
+                    await fixture.SeedCronOccurrenceAsync(
+                        Guid.NewGuid(),
+                        cronId,
+                        (int)JobStatus.Queued,
+                        "old@1",
+                        policy,
+                        expired,
+                        executionTime.AddSeconds((int)policy),
+                        ct
+                    );
+                    await fixture.SeedTimeJobAsync(
+                        Guid.NewGuid(),
+                        policy.ToString(),
+                        (int)JobStatus.Queued,
+                        "old@1",
+                        ct,
+                        policy,
+                        expired,
+                        executionTime.AddSeconds((int)policy)
+                    );
+                }
+
+                var occurrences = await persistence.QueueTimedOutCronJobOccurrencesAsync(ct).ToArrayAsync(ct);
+                var timeJobs = await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
+
+                occurrences
+                    .Select(x => x.OnNodeDeath)
+                    .Should()
+                    .BeEquivalentTo(policies, $"the {strategy} fallback reclaims every unstarted occurrence");
+                timeJobs
+                    .Select(x => x.OnNodeDeath)
+                    .Should()
+                    .BeEquivalentTo(policies, $"the {strategy} fallback reclaims every unstarted time job");
             }
-
-            var claims = await persistence.QueueTimedOutCronJobOccurrencesAsync(ct).ToArrayAsync(ct);
-
-            claims.Should().ContainSingle().Which.OnNodeDeath.Should().Be(NodeDeathPolicy.Retry);
-        }
-        finally
-        {
-            await host.StopAsync(ct);
+            finally
+            {
+                await host.StopAsync(ct);
+            }
         }
     }
 
