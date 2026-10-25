@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Headless.IO;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.OpenApi;
@@ -83,8 +82,6 @@ internal sealed class XmlCommentTransformer : IOpenApiSchemaTransformer, IOpenAp
         return Task.CompletedTask;
     }
 
-    // A primitive is sent as its underlying value and an uploaded file as raw bytes, so their type comments describe a
-    // .NET wrapper a client never sees.
-    private static bool _IsWireValueWrapper(Type type) =>
-        type == typeof(IUploadedFile) || PrimitiveSchemaTransformer.IsPrimitive(type);
+    // A primitive is sent as its underlying value, so its type comment describes a .NET wrapper a client never sees.
+    private static bool _IsWireValueWrapper(Type type) => PrimitiveSchemaTransformer.IsPrimitive(type);
 }

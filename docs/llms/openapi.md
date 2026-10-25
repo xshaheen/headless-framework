@@ -57,7 +57,6 @@ app.MapScalarOpenApi();
 | Kind | Transformer behavior |
 |---|---|
 | Schema | Headless primitives (`IPrimitive<T>`: `MoneyAmount`, `Month`, `AccountId`, `UserId`, and every generated primitive) become their underlying JSON type, inlined rather than published as components; a collection of them (`IReadOnlyList<UserId>`) gets that type as its `items`, which the native generator leaves out |
-| Schema | `IUploadedFile` becomes `type: string, format: binary`, as `IFormFile` does |
 | Schema | Numbers become plain `integer`/`number`. The Headless web JSON options read numbers from strings, so the native generator writes `["integer", "string"]` plus a digits pattern; the string alternative and its pattern are removed, except where `JsonNumberHandling.WriteAsString` applies (property, declaring type, or options), because those numbers are written as strings |
 | Schema | FluentValidation rules become constraints (see below) |
 | Schema | Every non-nullable property joins the object's `required` set |
@@ -69,7 +68,6 @@ app.MapScalarOpenApi();
 | Operation | The rate limiter's rejection status (429 under `UseHeadlessProblemDetails()`, else 503) on endpoints a limiter applies to |
 | Operation | `ETag` header on 2xx responses whose body type implements `IHasEntityTag` |
 | Operation | 400 on operations that bind a body or a route, query, header, or form value; 413 on operations with a request body; the antiforgery token header and its 400 on endpoints that validate one |
-| Operation | A form body that binds an `IUploadedFile` is published as `multipart/form-data` instead of url-encoded |
 | Operation | The multipart encoding `contentType` and a description of each file part a form's `ContentTypes`, `FileNotEmpty`, `GreaterThanOrEqualTo`, or `LessThanOrEqualTo` rule constrains |
 | Operation | Security requirements on operations that require authentication |
 | Operation | 404, 409, and 422 on every operation, the standard problem responses, unless a marker, the surface, or `StandardProblemResponses` turns them off |

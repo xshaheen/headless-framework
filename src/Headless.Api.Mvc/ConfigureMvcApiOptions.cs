@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.IO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Formatters;
-using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
 using Microsoft.Extensions.Options;
 
@@ -22,7 +20,6 @@ namespace Headless.Api.Options;
 ///   <item>Applies <c>ProblemDetailsOptions.CustomizeProblemDetails</c> once to Headless-normalized MVC problem-details object results.</item>
 ///   <item>Binds an enum from a route, query, header, or form value by the names a JSON body accepts for it, rejecting numbers and unknown names, as the body does.</item>
 ///   <item>Answers 400 <c>g:invalid_parameter_value</c> when a value cannot be bound, instead of running the action with it left at its default.</item>
-///   <item>Binds an <see cref="IUploadedFile"/> from the multipart form and marks it as form-file input, so API Explorer describes it as a file part rather than expanding the interface.</item>
 /// </list>
 /// Behavior applied to <see cref="ApiBehaviorOptions"/>:
 /// <list type="bullet">
@@ -56,26 +53,15 @@ internal sealed class ConfigureMvcApiOptions : IConfigureOptions<MvcOptions>, IC
             options.Filters.Add<HeadlessProblemDetailsResultFilter>();
         }
 
-        if (!options.ModelBinderProviders.OfType<UploadedFileModelBinderProvider>().Any())
-        {
-            options.ModelBinderProviders.Insert(0, new UploadedFileModelBinderProvider());
-            options.ModelMetadataDetailsProviders.Add(
-                new BindingSourceMetadataProvider(typeof(IUploadedFile), BindingSource.FormFile)
-            );
-        }
-
         if (!options.ModelBinderProviders.OfType<EnumNameModelBinderProvider>().Any())
         {
             options.ModelBinderProviders.Insert(0, new EnumNameModelBinderProvider());
         }
 
-        if (
-            !options
-                .Filters.OfType<TypeFilterAttribute>()
-                .Any(filter => filter.ImplementationType == typeof(ModelBindingFailureFilter))
-        )
+        // One shared instance: a type-registered filter is built again for every action invocation.
+        if (!options.Filters.OfType<ModelBindingFailureFilter>().Any())
         {
-            options.Filters.Add<ModelBindingFailureFilter>();
+            options.Filters.Add(ModelBindingFailureFilter.Instance);
         }
 
         // Exception mapping is handled globally by HeadlessApiExceptionHandler (registered in

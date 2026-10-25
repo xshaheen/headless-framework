@@ -4,6 +4,7 @@ using Headless.Api.Resources;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Api.Options;
 
@@ -19,8 +20,12 @@ namespace Headless.Api.Options;
 /// <c>?status=bogus</c> was silently ignored and the endpoint answered as if it had not been sent. It runs after
 /// authorization, so a caller who may not reach the endpoint still gets 401 or 403.
 /// </remarks>
-internal sealed class ModelBindingFailureFilter(IProblemDetailsCreator problemDetailsCreator) : IActionFilter
+internal sealed class ModelBindingFailureFilter : IActionFilter
 {
+    public static readonly ModelBindingFailureFilter Instance = new();
+
+    private ModelBindingFailureFilter() { }
+
     public void OnActionExecuting(ActionExecutingContext context)
     {
         if (context.ModelState.IsValid)
@@ -42,14 +47,18 @@ internal sealed class ModelBindingFailureFilter(IProblemDetailsCreator problemDe
 
         // A body that is missing or does not read as JSON is not a parameter value: answer the bad-request problem a
         // Minimal API endpoint answers for the same body.
-        var problem = parameter is null ? problemDetailsCreator.BadRequest() : _InvalidParameter(parameter);
+        // Resolved only on the failure path, so a valid request costs nothing here.
+        var problemDetailsCreator = context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsCreator>();
+        var problem = parameter is null
+            ? problemDetailsCreator.BadRequest()
+            : _InvalidParameter(problemDetailsCreator, parameter);
 
         context.Result = new ObjectResult(problem) { StatusCode = StatusCodes.Status400BadRequest };
     }
 
     public void OnActionExecuted(ActionExecutedContext context) { }
 
-    private ProblemDetails _InvalidParameter(string parameter)
+    private static ProblemDetails _InvalidParameter(IProblemDetailsCreator problemDetailsCreator, string parameter)
     {
         var error = GeneralMessageDescriber.InvalidParameterValue(parameter);
 

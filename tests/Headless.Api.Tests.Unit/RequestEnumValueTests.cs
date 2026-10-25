@@ -90,6 +90,31 @@ public sealed class RequestEnumValueTests : TestBase
     }
 
     [Fact]
+    public void should_parse_a_single_member_without_allocating()
+    {
+        var names = RequestEnumValue.For(typeof(Status), JsonConstants.DefaultWebJsonOptions)!;
+        var accepted = 0;
+
+        // Warm up first, so the measured calls see only steady-state work.
+        for (var i = 0; i < 1_000; i++)
+        {
+            accepted += names.TryParse("active", out _) && names.TryGetCanonical("active", out _) ? 1 : 0;
+        }
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+
+        for (var i = 0; i < 1_000; i++)
+        {
+            accepted += names.TryParse("active", out _) ? 1 : 0;
+            accepted += names.TryGetCanonical(" Active ", out _) ? 1 : 0;
+            accepted += names.TryParse("1", out _) ? 1 : 0;
+        }
+
+        (GC.GetAllocatedBytesForCurrentThread() - before).Should().Be(0);
+        accepted.Should().Be(3_000, "the names are accepted and the number is not");
+    }
+
+    [Fact]
     public void should_have_no_names_when_the_options_write_the_enum_as_a_number()
     {
         RequestEnumValue.For(typeof(Status), new JsonSerializerOptions(JsonSerializerDefaults.Web)).Should().BeNull();

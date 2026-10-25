@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -29,14 +30,14 @@ internal sealed class RequestEnumValue
 {
     private static readonly ConcurrentDictionary<(Type, JsonSerializerOptions), RequestEnumValue?> _Cache = new();
 
-    private readonly FrozenDictionary<string, (ulong Bits, string Name)> _names;
-    private readonly FrozenDictionary<string, (ulong Bits, string Name)> _aliases;
+    private readonly FrozenDictionary<string, Member> _names;
+    private readonly FrozenDictionary<string, Member> _aliases;
     private readonly bool _isFlags;
 
     private RequestEnumValue(
         Type enumType,
-        FrozenDictionary<string, (ulong Bits, string Name)> names,
-        FrozenDictionary<string, (ulong Bits, string Name)> aliases
+        FrozenDictionary<string, Member> names,
+        FrozenDictionary<string, Member> aliases
     )
     {
         EnumType = enumType;
@@ -58,9 +59,10 @@ internal sealed class RequestEnumValue
     /// <summary>Parses <paramref name="value"/> to the member the body would read from the same JSON string.</summary>
     public bool TryParse(string value, out object? result)
     {
-        if (_TryGetBits(value, out var bits, out _))
+        if (_TryGetBits(value, out var bits, out var single))
         {
-            result = Enum.ToObject(EnumType, bits);
+            // A single member returns the value boxed when the table was built, so binding it allocates nothing.
+            result = single?.Boxed ?? Enum.ToObject(EnumType, bits);
 
             return true;
         }
@@ -77,32 +79,32 @@ internal sealed class RequestEnumValue
     /// <returns><see langword="true"/> when the body would accept <paramref name="value"/>.</returns>
     public bool TryGetCanonical(string value, out string canonical)
     {
-        if (!_TryGetBits(value, out var bits, out var singleName))
+        if (!_TryGetBits(value, out var bits, out var single))
         {
             canonical = string.Empty;
 
             return false;
         }
 
-        canonical = singleName ?? Enum.ToObject(EnumType, bits).ToString()!;
+        canonical = single?.Name ?? Enum.ToObject(EnumType, bits).ToString()!;
 
         return true;
     }
 
-    private bool _TryGetBits(string value, out ulong bits, out string? singleName)
+    private bool _TryGetBits(string value, out ulong bits, out Member? single)
     {
         var trimmed = value.AsSpan().Trim();
 
         if (_TryFind(trimmed, out var member))
         {
             bits = member.Bits;
-            singleName = member.Name;
+            single = member;
 
             return true;
         }
 
         bits = 0;
-        singleName = null;
+        single = null;
 
         if (!_isFlags || trimmed.IndexOf(',') < 0)
         {
@@ -124,7 +126,7 @@ internal sealed class RequestEnumValue
         return true;
     }
 
-    private bool _TryFind(ReadOnlySpan<char> name, out (ulong Bits, string Name) member) =>
+    private bool _TryFind(ReadOnlySpan<char> name, [MaybeNullWhen(false)] out Member member) =>
         _aliases.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(name, out member)
         || _names.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(name, out member);
 
@@ -139,8 +141,8 @@ internal sealed class RequestEnumValue
         }
 
         var typeInfo = options.GetTypeInfo(enumType);
-        var names = new Dictionary<string, (ulong, string)>(StringComparer.OrdinalIgnoreCase);
-        var aliases = new Dictionary<string, (ulong, string)>(StringComparer.Ordinal);
+        var names = new Dictionary<string, Member>(StringComparer.OrdinalIgnoreCase);
+        var aliases = new Dictionary<string, Member>(StringComparer.Ordinal);
 
         foreach (var member in Enum.GetValues(enumType))
         {
@@ -155,7 +157,7 @@ internal sealed class RequestEnumValue
             var wireName = JsonSerializer.Deserialize<string>(json)!;
             var memberName = member.ToString()!;
             var isAlias = enumType.GetField(memberName)?.IsDefined(typeof(JsonStringEnumMemberNameAttribute)) == true;
-            (isAlias ? aliases : names).TryAdd(wireName, (_ToBits(member), memberName));
+            (isAlias ? aliases : names).TryAdd(wireName, new Member(_ToBits(member), memberName, member));
         }
 
         return new RequestEnumValue(
@@ -170,4 +172,7 @@ internal sealed class RequestEnumValue
         Type.GetTypeCode(Enum.GetUnderlyingType(member.GetType())) is TypeCode.UInt64
             ? Convert.ToUInt64(member, CultureInfo.InvariantCulture)
             : unchecked((ulong)Convert.ToInt64(member, CultureInfo.InvariantCulture));
+
+    /// <summary>One accepted name: the member's bits, its name as <c>Enum.TryParse</c> reads it, and its boxed value.</summary>
+    private sealed record Member(ulong Bits, string Name, object Boxed);
 }
