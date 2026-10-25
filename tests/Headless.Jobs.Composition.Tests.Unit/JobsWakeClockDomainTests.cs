@@ -80,6 +80,26 @@ public sealed class JobsWakeClockDomainTests : TestBase
     }
 
     [Fact]
+    public async Task peek_skips_a_row_this_node_holds_and_returns_a_row_whose_foreign_lease_lapsed()
+    {
+        // A row this node holds was dispatched by an earlier wake; peeking it again would admit it to the pool a second
+        // time. A lapsed foreign lease frees the row for anyone, so the peek keeps returning it.
+        var (_, provider) = _CreateManager();
+        var held = _TimeJob(_StoreNow.AddSeconds(2));
+        held.Status = JobStatus.Queued;
+        held.OwnerId = "node-a";
+        held.LockedUntil = _StoreNow.AddMinutes(5);
+        var lapsed = _TimeJob(_StoreNow.AddSeconds(2));
+        lapsed.OwnerId = "node-b";
+        lapsed.LockedUntil = _StoreNow.AddMinutes(-1);
+        await provider.AddTimeJobsAsync([held, lapsed], AbortToken);
+
+        var peek = await provider.GetEarliestTimeJobsAsync(AbortToken);
+
+        peek.Jobs.Select(x => x.Id).Should().Equal(lapsed.Id);
+    }
+
+    [Fact]
     public async Task the_planned_wake_is_recorded_in_the_store_domain()
     {
         // JobsSchedulerBackgroundService used to record `nodeNow + remaining`. With a store-derived remaining that

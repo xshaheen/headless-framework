@@ -334,7 +334,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task<EarliestTimeJobs> GetEarliestTimeJobsAsync(CancellationToken cancellationToken)
     {
-        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        // A node without an owner identity cannot claim, so it has nothing to wake for.
+        if (!OwnerIdentity.TryGetStampOwner(out _))
         {
             return EarliestTimeJobs.None;
         }
@@ -342,10 +343,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        var now = TimeProvider.GetUtcNow();
-
-        // Define the window: ignore anything older than 1 second ago
-        var oneSecondAgo = now.UtcDateTime.AddSeconds(-1);
 
         // A due row of a limited function with no free slot cannot be claimed, so peeking it would keep the
         // scheduler's wake at now and spin it until the row ages into the fallback sweep's window. The count takes no
@@ -368,11 +365,16 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             peekable = peekable.Where(x => !saturated.Contains(x.Function));
         }
 
+        // Rows older than one second belong to the fallback sweep, whose bound is ExecutionTime <= db now - 1s; this
+        // bound mirrors it on the same clock, so no due row falls between the two. Both read the database clock (DateTime.UtcNow is
+        // provider-translated): the scheduler claims at its wake, so a bound on this node's clock would hide due rows
+        // from a node that leads the store, and it would sleep through them until the sweep. The peek also drops the
+        // claim's owner arm, so a row this node already holds and dispatched is not peeked and admitted again.
         var baseQuery = peekable
             .Where(x => x.ExecutionTime != null)
-            .Where(x => x.ExecutionTime >= oneSecondAgo) // Ignore old jobs (fallback handles them)
+            .Where(x => x.ExecutionTime >= DateTime.UtcNow.AddSeconds(-1))
             .WhereRunnable(RunFilter)
-            .WhereCanAcquireUsingDatabaseClock(owner)
+            .WhereCanPeekUsingDatabaseClock()
             // A timed descendant surfaces here as its own candidate (excluded from the in-tree walk); the
             // parent gate keeps it out of the peek until its parent reached its matching terminal state.
             .WhereClaimableUnderParentTerminalGate(dbContext.Set<TTimeJob>());

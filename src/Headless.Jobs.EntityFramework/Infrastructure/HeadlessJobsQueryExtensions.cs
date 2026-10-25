@@ -110,6 +110,21 @@ public static class HeadlessJobsQueryExtensions
         );
     }
 
+    /// <summary>
+    /// The time-job peek's predicate: the acquire predicate without its owner arm, on the database clock. A row this
+    /// node already holds was dispatched by an earlier wake, so peeking it again would admit it to the pool twice; the
+    /// claim keeps the owner arm so a crashed node still re-claims its own rows. Unlike the fallback predicate, an
+    /// <c>Idle</c> row with a live foreign lease stays out, because no claim could take it.
+    /// </summary>
+    internal static IQueryable<TTimeJob> WhereCanPeekUsingDatabaseClock<TTimeJob>(this IQueryable<TTimeJob> q)
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        return q.Where(e =>
+            (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
+            && (e.LockedUntil == null || e.LockedUntil <= DateTime.UtcNow)
+        );
+    }
+
     internal static IQueryable<CronJobOccurrenceEntity<TCronJob>> WhereCanAcquireUsingDatabaseClock<TCronJob>(
         this IQueryable<CronJobOccurrenceEntity<TCronJob>> q,
         string ownerId

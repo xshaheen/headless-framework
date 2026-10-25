@@ -529,7 +529,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var baseQuery = _timeJobs
             .Values.Where(x =>
                 x.ExecutionTime != null
-                && _CanAcquire(x)
+                && _CanPeek(x, now.UtcDateTime)
                 && x.ExecutionTime >= oneSecondAgo
                 && !saturated.Contains(x.Function)
                 && _ParentGateAllowsClaim(x)
@@ -4047,6 +4047,15 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 || job.LockedUntil == null
                 || job.LockedUntil <= now.UtcDateTime
             );
+    }
+
+    private bool _CanPeek(TTimeJob job, DateTime now)
+    {
+        // Mirror EF WhereCanPeekUsingDatabaseClock: the acquire predicate without its owner arm. A row this node holds
+        // was dispatched by an earlier wake, and peeking it again would admit it to the pool twice.
+        return (job.Status == JobStatus.Idle || job.Status == JobStatus.Queued)
+            && _runFilter.Allows(job.Function)
+            && (job.LockedUntil == null || job.LockedUntil <= now);
     }
 
     private bool _CanAcquireCronOccurrence(CronJobOccurrenceEntity<TCronJob> occurrence)
