@@ -1617,7 +1617,8 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             {
                 Id = Guid.NewGuid(),
                 Function = "root",
-                ExecutionTime = DateTime.UtcNow.AddSeconds(5),
+                // Due now, so the claim below takes it: a direct claim refuses a row that is not yet due.
+                ExecutionTime = DateTime.UtcNow.AddMilliseconds(500),
                 Children = [child],
             };
             await persistence.AddTimeJobsAsync([root], ct);
@@ -1735,8 +1736,12 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             reread.ExecutionTime.Should().Be(executionTime);
             reread.ExecutionTime!.Value.Kind.Should().Be(DateTimeKind.Utc);
 
-            // The lease is stamped by a claim, so claim the row to read back a stored LockedUntil.
-            var claimed = await persistence.QueueTimeJobsAsync([reread], ct).ToArrayAsync(ct);
+            // The lease is stamped by a claim, so claim the row to read back a stored LockedUntil. A claim takes only a
+            // due row, so the row is moved due first.
+            reread.ExecutionTime = DateTime.UtcNow;
+            (await manager.UpdateAsync(reread, ct)).IsSucceeded.Should().BeTrue();
+            var due = await persistence.GetTimeJobByIdAsync(added.Id, ct);
+            var claimed = await persistence.QueueTimeJobsAsync([due!], ct).ToArrayAsync(ct);
             claimed.Should().ContainSingle();
             var leased = await persistence.GetTimeJobByIdAsync(added.Id, ct);
             leased!.LockedUntil.Should().NotBeNull();

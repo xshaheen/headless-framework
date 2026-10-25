@@ -29,6 +29,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
+    private static readonly string _DueSlackSeconds = JobsDueSlack.Seconds.ToString(CultureInfo.InvariantCulture);
+
     private static readonly SqlColumnType[] _DirectCandidateTypes = [SqlColumnType.Guid, SqlColumnType.Timestamp];
 
     // Function names are matched as the column stores them, in the database's default collation.
@@ -752,11 +754,15 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     // The CAS pairs each id with its own expected UpdatedAt, so the pairs are matched as whole rows: two separate
     // lists would also match an id against another job's stamp. One list parameter carries every pair, so the
     // candidate page size no longer approaches the engine's parameter limit.
+    // The due test reads the statement's own clock, so a node whose clock runs ahead of the store cannot take a row
+    // early, and a row rescheduled after the peek is refused even when its edit kept the peeked stamp. An
+    // unscheduled root (no ExecutionTime) is due at once.
     private static string _DirectCandidateFilter(TimeJobRelationalMapping mapping)
     {
         return PostgreSqlDialect.Instance.InTuples([mapping.Id, mapping.UpdatedAt], "requested", _DirectCandidateTypes)
             + " AND "
-            + AcquirePredicateSql.Build(mapping.Status, mapping.OwnerId, mapping.LockedUntil);
+            + AcquirePredicateSql.Build(mapping.Status, mapping.OwnerId, mapping.LockedUntil)
+            + $" AND ({mapping.ExecutionTime} IS NULL OR {mapping.ExecutionTime} <= {SqlDialectTokens.Now} + INTERVAL '{_DueSlackSeconds} second')";
     }
 
     // The acquire predicate's @owner is bound by _ClaimRootsAsync, which every root claim runs through.

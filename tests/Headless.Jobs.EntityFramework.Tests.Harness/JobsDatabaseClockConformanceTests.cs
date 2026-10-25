@@ -67,6 +67,7 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
             var candidates = (await persistence.GetEarliestTimeJobsAsync(ct)).Jobs;
             var claimed = await persistence.QueueTimeJobsAsync(candidates, ct).ToArrayAsync(ct);
             claimed.Should().ContainSingle().Which.Id.Should().Be(scheduled.Id);
+            _AssertDatabaseDecidesTheClaimIsDue(capture, scheduled.Id);
 
             // Fallback claim (timed-out sweep) — same lease stamp, different eligibility predicate.
             var timedOut = new TimeJobEntity
@@ -478,6 +479,46 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
         }
     }
 
+    // The direct claim refuses a row that is not yet due. Which rows are due is an ownership decision, so the
+    // comparison must read the server clock in the claim statement itself, not an instant this node bound.
+    private void _AssertDatabaseDecidesTheClaimIsDue(LeaseSqlCapture capture, Guid claimedId)
+    {
+        var claimStatements = capture
+            .Statements.Where(statement =>
+                statement.Parameters.Values.Any(parameter => parameter.Value is Guid id && id == claimedId)
+                && LeaseSqlAnalysis.LeaseDeadlineWrites(statement).Any()
+            )
+            .ToArray();
+        claimStatements.Should().NotBeEmpty("the direct claim must have leased the scheduled row");
+
+        var duePredicates = claimStatements
+            .SelectMany(statement =>
+                LeaseSqlAnalysis.ExecutionTimeDuePredicates(statement).Select(fragment => (statement, fragment))
+            )
+            .ToArray();
+        duePredicates.Should().NotBeEmpty("the direct claim must test the row's ExecutionTime before it takes the row");
+
+        foreach (var (statement, predicate) in duePredicates)
+        {
+            predicate
+                .TemporalParameters.Should()
+                .BeEmpty(
+                    "the due comparison in '{0}' must be made by the database, but it binds the timestamp "
+                        + "parameter(s) {1}. Statement: {2}",
+                    predicate.Fragment,
+                    string.Join(", ", predicate.TemporalParameters.Select(name => _Describe(statement, name))),
+                    statement.Sql
+                );
+
+            predicate
+                .Fragment.Should()
+                .Contain(
+                    fixture.EfTranslatedDatabaseClockSql,
+                    "the due comparison must be evaluated against the provider's server clock"
+                );
+        }
+    }
+
     private static string _Describe(CapturedSqlStatement statement, string name) =>
         statement.Parameters.TryGetValue(name, out var parameter)
             ? $"{name} ({parameter.DbType} = {parameter.Value})"
@@ -701,6 +742,15 @@ public static partial class LeaseSqlAnalysis
             .Select(fragment => _Describe(fragment, statement));
     }
 
+    /// <summary>Due comparisons on a time job's schedule: <c>ExecutionTime &lt;= &lt;clock&gt;</c> and friends.</summary>
+    public static IEnumerable<LeaseSqlFragment> ExecutionTimeDuePredicates(CapturedSqlStatement statement)
+    {
+        return _Clauses(statement, ExecutionTimeColumn)
+            .Where(clause => !string.Equals(clause.Operator, "=", StringComparison.Ordinal))
+            .Select(clause => clause.Fragment)
+            .Select(fragment => _Describe(fragment, statement));
+    }
+
     private static LeaseSqlFragment _Describe(string fragment, CapturedSqlStatement statement)
     {
         // An unresolvable parameter reference means the capture and the SQL disagree; count it as temporal so the
@@ -880,4 +930,11 @@ public static partial class LeaseSqlAnalysis
         matchTimeoutMilliseconds: 1000
     )]
     private static partial Regex ProjectionColumn { get; }
+
+    [GeneratedRegex(
+        """["\[]ExecutionTime["\]]|\bexecution_time\b""",
+        RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: 1000
+    )]
+    private static partial Regex ExecutionTimeColumn { get; }
 }

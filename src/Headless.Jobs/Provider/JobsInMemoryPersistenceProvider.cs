@@ -216,8 +216,13 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
             if (_timeJobs.TryGetValue(timeJob.Id, out var existingTicker))
             {
-                // Check if we can update (similar to optimistic concurrency)
-                if (existingTicker.UpdatedAt == timeJob.UpdatedAt && _CanAcquire(existingTicker))
+                // Check if we can update (similar to optimistic concurrency). The due test reads the stored row, so
+                // a reschedule after the peek that kept its stamp still keeps the row from running early.
+                if (
+                    existingTicker.UpdatedAt == timeJob.UpdatedAt
+                    && _IsDue(existingTicker, now)
+                    && _CanAcquire(existingTicker)
+                )
                 {
                     // Update the job
                     var updatedTicker = _CloneTicker(existingTicker);
@@ -250,6 +255,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 }
             }
         }
+    }
+
+    private static bool _IsDue(TTimeJob timeJob, DateTimeOffset now)
+    {
+        return timeJob.ExecutionTime is null || timeJob.ExecutionTime <= now.UtcDateTime.Add(JobsDueSlack.Duration);
     }
 
     private HashSet<Guid> _ClaimIdleDescendants(Guid rootId, DateTimeOffset now)

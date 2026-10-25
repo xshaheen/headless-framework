@@ -326,7 +326,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     )
     {
         // Only try to dispatch immediately if dispatcher is enabled (background services running)
-        if (_dispatcher.IsEnabled && executionTime <= now.UtcDateTime.AddSeconds(1))
+        if (_dispatcher.IsEnabled && executionTime <= now.UtcDateTime.Add(JobsDueSlack.Duration))
         {
             // Acquire and mark InProgress in one provider call
             var acquired = await persistenceProvider
@@ -1006,7 +1006,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 entity.ExecutionTime = _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
                 _NormalizeDescendantExecutionTimes(entity);
 
-                if (entity.ExecutionTime.Value <= nowUtc.AddSeconds(1))
+                if (entity.ExecutionTime.Value <= nowUtc.Add(JobsDueSlack.Duration))
                 {
                     immediateTickers.Add(entity.Id);
                 }

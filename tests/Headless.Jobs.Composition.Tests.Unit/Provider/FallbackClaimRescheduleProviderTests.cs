@@ -10,9 +10,10 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests.Provider;
 
 /// <summary>
-/// The in-memory fallback sweep peeks its due roots, then claims them one at a time as the caller enumerates. A root
-/// rescheduled between the peek and its claim must not run early, whether the edit kept its UpdatedAt or moved it
-/// back: neither stamp proves the row is unchanged, so the claim re-checks the due time.
+/// The in-memory claims read a root, then take it in a later step. A root rescheduled between the two must not run
+/// early, whether the edit kept its UpdatedAt or moved it back: neither stamp proves the row is unchanged, so each
+/// claim re-checks the stored row's due time. The fallback sweep takes only overdue roots; the direct claim takes a
+/// root once its ExecutionTime is at most one second away.
 /// </summary>
 public sealed class FallbackClaimRescheduleProviderTests : TestBase
 {
@@ -27,15 +28,7 @@ public sealed class FallbackClaimRescheduleProviderTests : TestBase
     [InlineData(false)]
     public async Task should_not_claim_a_root_rescheduled_after_the_peek(bool lowerStamp)
     {
-        // The clock is never advanced, so an unchanged stamp collides with the peeked one exactly.
-        var time = new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero));
-        var services = new ServiceCollection();
-        services.AddSingleton<TimeProvider>(time);
-        services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
-        services.AddSingleton(
-            new SchedulerOptionsBuilder { NodeId = "node-a", LeaseDuration = TimeSpan.FromMinutes(5) }
-        );
-        var provider = new JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>(services.BuildServiceProvider());
+        var provider = _CreateProvider();
 
         var first = _DueRoot(_Now.AddMinutes(-10));
         var second = _DueRoot(_Now.AddMinutes(-5));
@@ -59,6 +52,80 @@ public sealed class FallbackClaimRescheduleProviderTests : TestBase
         stored!.Status.Should().Be(JobStatus.Idle);
         stored.OwnerId.Should().BeNull();
         stored.LockedUntil.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(-60_000, true)]
+    [InlineData(500, true)]
+    [InlineData(1_000, true)]
+    [InlineData(1_001, false)]
+    [InlineData(600_000, false)]
+    public async Task should_claim_a_root_directly_only_when_it_is_due(int dueInMilliseconds, bool expectedClaim)
+    {
+        var provider = _CreateProvider();
+        var root = _DueRoot(_Now.AddMilliseconds(dueInMilliseconds));
+        await provider.AddTimeJobsAsync([root], AbortToken);
+        var candidate = await _ReadCandidateAsync(provider, root.Id);
+
+        var claimed = await provider.QueueTimeJobsAsync([candidate], AbortToken).ToArrayAsync(AbortToken);
+
+        Guid[] expectedIds = expectedClaim ? [root.Id] : [];
+        claimed.Select(x => x.Id).Should().Equal(expectedIds);
+        var stored = await provider.GetTimeJobByIdAsync(root.Id, AbortToken);
+        stored!.Status.Should().Be(expectedClaim ? JobStatus.Queued : JobStatus.Idle);
+    }
+
+    [Fact]
+    public async Task should_not_directly_claim_a_root_rescheduled_after_it_was_read()
+    {
+        var provider = _CreateProvider();
+        var root = _DueRoot(_Now.AddMinutes(-1));
+        await provider.AddTimeJobsAsync([root], AbortToken);
+        var candidate = await _ReadCandidateAsync(provider, root.Id);
+
+        var rescheduled = await provider.GetTimeJobByIdAsync(root.Id, AbortToken);
+        rescheduled!.ExecutionTime = _Now.AddHours(1);
+        (await provider.UpdateTimeJobsAsync([rescheduled], AbortToken)).Should().Be(1);
+        // The frozen clock stamps the edit with the stamp the candidate already carries.
+        (await provider.GetTimeJobByIdAsync(root.Id, AbortToken))!
+            .UpdatedAt.Should()
+            .Be(candidate.UpdatedAt);
+
+        var claimed = await provider.QueueTimeJobsAsync([candidate], AbortToken).ToArrayAsync(AbortToken);
+
+        claimed.Should().BeEmpty();
+        var stored = await provider.GetTimeJobByIdAsync(root.Id, AbortToken);
+        stored!.Status.Should().Be(JobStatus.Idle);
+        stored.OwnerId.Should().BeNull();
+        stored.LockedUntil.Should().BeNull();
+    }
+
+    // The scheduler's peek hands the claim the row's id, function, and the UpdatedAt it read.
+    private static async Task<TimeJobEntity> _ReadCandidateAsync(
+        JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> provider,
+        Guid id
+    )
+    {
+        var stored = await provider.GetTimeJobByIdAsync(id, AbortToken);
+        return new TimeJobEntity
+        {
+            Id = stored!.Id,
+            Function = stored.Function,
+            UpdatedAt = stored.UpdatedAt,
+        };
+    }
+
+    private static JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> _CreateProvider()
+    {
+        // The clock is never advanced, so an unchanged stamp collides with the read one exactly.
+        var time = new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero));
+        var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(time);
+        services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
+        services.AddSingleton(
+            new SchedulerOptionsBuilder { NodeId = "node-a", LeaseDuration = TimeSpan.FromMinutes(5) }
+        );
+        return new JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>(services.BuildServiceProvider());
     }
 
     private static FakeTimeJob _DueRoot(DateTime executionTime)
