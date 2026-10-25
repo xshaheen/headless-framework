@@ -242,7 +242,9 @@ public sealed class RequestValueBinderTests : TestBase
     }
 
     // The bytes one request allocates with the convention, less the bytes the same request allocates without it. Each
-    // request gets a fresh context built outside the measured window, and both endpoints are warmed up first.
+    // request gets a fresh context built outside the measured window, and both endpoints are warmed up first. Each side
+    // reports its fewest bytes over many requests: a one-off allocation inside the window (a lazy cache, the JIT) can
+    // only raise a single request, while a cost the convention adds to every request raises the fewest too.
     private static long _ExtraBytesPerRequest(Action<IEndpointRouteBuilder> map, Action<HttpRequest> arrange)
     {
         using var services = _CreateServices();
@@ -273,7 +275,7 @@ public sealed class RequestValueBinderTests : TestBase
     {
         const int warmUp = 200;
         const int measured = 500;
-        long total = 0;
+        var fewest = long.MaxValue;
 
         for (var i = 0; i < warmUp + measured; i++)
         {
@@ -294,11 +296,11 @@ public sealed class RequestValueBinderTests : TestBase
 
             if (i >= warmUp)
             {
-                total += after - before;
+                fewest = Math.Min(fewest, after - before);
             }
         }
 
-        return total / measured;
+        return fewest;
     }
 
     private static async Task<DefaultHttpContext> _InvokeAsync(
