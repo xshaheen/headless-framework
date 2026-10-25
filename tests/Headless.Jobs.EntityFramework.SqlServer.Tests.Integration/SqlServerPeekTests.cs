@@ -16,6 +16,12 @@ public sealed class SqlServerPeekTests(SqlServerJobsCoordinationFixture fixture)
     }
 
     [Fact]
+    public override Task peek_returns_a_row_a_lagging_node_stamped_with_its_own_now()
+    {
+        return base.peek_returns_a_row_a_lagging_node_stamped_with_its_own_now();
+    }
+
+    [Fact]
     public override Task peek_skips_a_row_this_node_holds_and_returns_a_row_whose_foreign_lease_lapsed()
     {
         return base.peek_skips_a_row_this_node_holds_and_returns_a_row_whose_foreign_lease_lapsed();

@@ -138,9 +138,9 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </para>
     /// <para>
     /// The due test is the store's, not the caller's. A row that is not yet due is left untouched even when the
-    /// caller's clock says otherwise, so a node whose clock runs ahead cannot start a job early, and a job never holds
-    /// a lease or a cluster-concurrency slot before it is due. A job may start up to one second before its scheduled
-    /// instant; the fallback sweep takes only rows overdue by the same second, so the two paths never overlap.
+    /// caller's clock says otherwise, so a node whose clock runs ahead cannot claim a job early through this path, and
+    /// a job never holds a lease or a cluster-concurrency slot before it is due. A job may start up to one second
+    /// before its scheduled instant.
     /// </para>
     /// <para>
     /// A candidate collection therefore belongs to exactly one claim: <b>never share one across concurrent claims
@@ -280,8 +280,9 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <para>
     /// <see cref="EarliestTimeJobs.StoreUtcNow"/> must be read in the same statement as the peek, matching
     /// <see cref="CronDispatchCandidates.StoreUtcNow"/>: the caller derives its sleep from it, so a node-clock value
-    /// here makes a skewed node oversleep past a job the store already considers due. The pending-window bound is read
-    /// on the store clock for the same reason.
+    /// here makes a skewed node oversleep past a job the store already considers due. For the same reason the pending
+    /// window must reach back at least one second on the store clock; it may reach further, to rows a node stamped
+    /// with its own lagging clock, because the claim still arbitrates every row.
     /// </para>
     /// <para>
     /// The peek omits rows this node already holds. A row the scheduler claimed and dispatched stays <c>Queued</c>

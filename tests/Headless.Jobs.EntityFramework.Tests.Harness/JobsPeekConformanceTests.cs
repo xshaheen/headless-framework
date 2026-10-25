@@ -50,6 +50,36 @@ public abstract class JobsPeekConformanceTests<TFixture>(TFixture fixture) : Tes
     }
 
     /// <summary>
+    /// A node whose clock lags the store stamps a run-now job with its own now, which the store already sees as more
+    /// than a second overdue. Immediate dispatch leaves a cluster-limited job for the scheduler it wakes, so the peek
+    /// must still return that row; bounding it on the store clock alone left it to the fallback sweep.
+    /// </summary>
+    public virtual async Task peek_returns_a_row_a_lagging_node_stamped_with_its_own_now()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("peek-lag", timeProvider: new SkewedTimeProvider(TimeSpan.FromSeconds(-5)));
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var id = Guid.NewGuid();
+            await fixture.SeedTimeJobAsync(id, "peek-lag", (int)JobStatus.Idle, null, ct);
+            await _SetExecutionTimeOnStoreClockAsync([id], offsetSeconds: -5, ct);
+
+            var peek = await persistence.GetEarliestTimeJobsAsync(ct);
+
+            peek.Jobs.Select(x => x.Id).Should().Equal(id);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
     /// A row this node already holds was dispatched by an earlier wake; peeking it again would admit it to the pool a
     /// second time. A row whose foreign lease lapsed is free for anyone, so the peek keeps returning it.
     /// </summary>

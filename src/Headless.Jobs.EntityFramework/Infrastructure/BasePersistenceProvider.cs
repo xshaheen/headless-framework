@@ -365,13 +365,16 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             peekable = peekable.Where(x => !saturated.Contains(x.Function));
         }
 
-        // Rows older than one second belong to the fallback sweep, whose bound is ExecutionTime <= db now - 1s; this
-        // bound mirrors it on the same clock (DateTime.UtcNow is provider-translated), so no due row falls between the
-        // two. The scheduler claims at its wake, so a bound on this node's clock would hide due rows from a node that
-        // leads the store, and it would sleep through them until the sweep.
+        // Rows older than one second belong to the fallback sweep, whose bound is ExecutionTime <= db now - 1s. The
+        // window starts at the earlier of that bound on the database clock (DateTime.UtcNow is provider-translated) and
+        // the same bound on this node's clock. The database bound keeps a node that leads the store from sleeping
+        // through due rows until the sweep. The node bound keeps a run-now row this node just stamped with its own,
+        // lagging clock in the window, so the scheduler that immediate dispatch woke for it can claim it. Where the two
+        // windows overlap the sweep, the claim's compare-and-swap still lets only one of them take the row.
+        var nodeWindowStart = TimeProvider.GetUtcNow().UtcDateTime.AddSeconds(-1);
         var baseQuery = peekable
             .Where(x => x.ExecutionTime != null)
-            .Where(x => x.ExecutionTime >= DateTime.UtcNow.AddSeconds(-1))
+            .Where(x => x.ExecutionTime >= DateTime.UtcNow.AddSeconds(-1) || x.ExecutionTime >= nodeWindowStart)
             .WhereRunnable(RunFilter)
             .WhereCanPeekUsingDatabaseClock()
             // A timed descendant surfaces here as its own candidate (excluded from the in-tree walk); the
