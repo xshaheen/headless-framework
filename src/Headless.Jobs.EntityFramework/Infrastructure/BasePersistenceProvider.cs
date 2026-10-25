@@ -366,10 +366,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         }
 
         // Rows older than one second belong to the fallback sweep, whose bound is ExecutionTime <= db now - 1s; this
-        // bound mirrors it on the same clock, so no due row falls between the two. Both read the database clock (DateTime.UtcNow is
-        // provider-translated): the scheduler claims at its wake, so a bound on this node's clock would hide due rows
-        // from a node that leads the store, and it would sleep through them until the sweep. The peek also drops the
-        // claim's owner arm, so a row this node already holds and dispatched is not peeked and admitted again.
+        // bound mirrors it on the same clock (DateTime.UtcNow is provider-translated), so no due row falls between the
+        // two. The scheduler claims at its wake, so a bound on this node's clock would hide due rows from a node that
+        // leads the store, and it would sleep through them until the sweep.
         var baseQuery = peekable
             .Where(x => x.ExecutionTime != null)
             .Where(x => x.ExecutionTime >= DateTime.UtcNow.AddSeconds(-1))

@@ -336,7 +336,6 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
             TimeSpan sleepDuration;
             if (timeRemaining == Timeout.InfiniteTimeSpan || timeRemaining > TimeSpan.FromDays(1))
             {
-                // Nothing was claimed: GetNextJobs claims only work that is due now, and due work never sleeps.
                 sleepDuration = TimeSpan.FromDays(1);
                 _executionContext.SetNextPlannedOccurrence(dt: null);
             }

@@ -3,6 +3,7 @@
 using System.Data;
 using System.Data.Common;
 using Headless.Jobs.BackgroundServices;
+using Headless.Jobs.Internal;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Logging;
 
@@ -234,7 +235,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
 
             foreach (var job in Jobs)
             {
-                if (job.ExecutionTimeUtc <= nowUtc.AddSeconds(1))
+                if (job.ExecutionTimeUtc <= nowUtc.Add(JobsDueSlack.Duration))
                 {
                     immediateTickers.Add(job.Id);
                 }

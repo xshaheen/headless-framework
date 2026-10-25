@@ -4051,8 +4051,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     private bool _CanPeek(TTimeJob job, DateTime now)
     {
-        // Mirror EF WhereCanPeekUsingDatabaseClock: the acquire predicate without its owner arm. A row this node holds
-        // was dispatched by an earlier wake, and peeking it again would admit it to the pool twice.
+        // Mirror EF WhereCanPeekUsingDatabaseClock: the acquire predicate without its owner arm.
         return (job.Status == JobStatus.Idle || job.Status == JobStatus.Queued)
             && _runFilter.Allows(job.Function)
             && (job.LockedUntil == null || job.LockedUntil <= now);

@@ -121,8 +121,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// Claims the supplied due time jobs for this node on the main scheduler path: each row that is still
     /// acquirable and unchanged since <paramref name="timeJobs"/> was read is stamped with this node's owner id,
     /// a fresh lease, and <c>Queued</c> status. Idle descendants of a claimed root are claimed alongside it so a
-    /// job chain does not fragment across nodes. A row is claimed only when it is due: its execution time is unset or
-    /// at most one second past the store's own clock, read in the claiming statement.
+    /// job chain does not fragment across nodes. A row is claimed only when it is due on the store's own clock.
     /// </summary>
     /// <param name="timeJobs">Candidate jobs previously read via <see cref="GetEarliestTimeJobsAsync"/>.</param>
     /// <param name="cancellationToken">Token that aborts the claim sweep between rows.</param>

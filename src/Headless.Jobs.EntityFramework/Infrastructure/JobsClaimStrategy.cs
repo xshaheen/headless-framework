@@ -291,8 +291,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             // Gate = CAS token + full claimability, applied INLINE on the updated row (see _ClaimTimeJobTreeAsync
             // for why a subquery gate is unsound). The acquire predicate closes the same-clock-tick token residue:
             // even if a racing winner's DB-clock UpdatedAt lands on the peeked value, its fresh foreign lease
-            // fails the loser's re-evaluated claimability arms. The due test reads the database clock too, so neither a
-            // node clock ahead of the store nor a reschedule that kept the peeked stamp lets a root run early.
+            // fails the loser's re-evaluated claimability arms.
             var claimedIds = await _ClaimTimeJobTreeAsync(
                     context,
                     q =>
