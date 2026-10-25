@@ -22,7 +22,7 @@ public sealed class LeaseMonitorTests : TestBase
 
         // when
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.DrainUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
+        await DistributedLockTestSupport.WaitUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
 
         // then
         sut.LostToken.IsCancellationRequested.Should().BeTrue();
@@ -41,14 +41,16 @@ public sealed class LeaseMonitorTests : TestBase
         // when - Unknown then Renewed within budget — must NOT cancel. A real handle reports the renew it sent at 3s,
         // which moves the deadline from 9s to 3s + 10s - 1s = 12s.
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.DrainUntilAsync(() => handle.InvocationCount == 1, AbortToken);
+        await DistributedLockTestSupport.WaitUntilAsync(() => handle.InvocationCount == 1, AbortToken);
         _timeProvider.Advance(TimeSpan.FromSeconds(3));
         sut.OnLeaseRenewed(_timeProvider.GetTimestamp(), handle.LeaseDuration);
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.DrainUntilAsync(() => handle.InvocationCount == 2, AbortToken);
+        await DistributedLockTestSupport.WaitUntilAsync(() => handle.InvocationCount == 2, AbortToken);
         _timeProvider.Advance(TimeSpan.FromSeconds(6));
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.DrainUntilAsync(() => handle.InvocationCount == 3, AbortToken);
+        // The advance also fires the cadence wait armed at 3s, so the cadence and the nudge can each run a probe and
+        // the count can pass 3 before it is read.
+        await DistributedLockTestSupport.WaitUntilAsync(() => handle.InvocationCount >= 3, AbortToken);
 
         // then - still alive after Unknown → Renewed.
         sut.LostToken.IsCancellationRequested.Should().BeFalse();
@@ -57,7 +59,7 @@ public sealed class LeaseMonitorTests : TestBase
         // confirm the monitor DOES react when storage subsequently confirms loss.
         handle.Enqueue(LeaseMonitor.LeaseState.Lost);
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.DrainUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
+        await DistributedLockTestSupport.WaitUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
         sut.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
@@ -76,7 +78,7 @@ public sealed class LeaseMonitorTests : TestBase
 
         // when
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.DrainUntilAsync(() => handle.InvocationCount == 1, AbortToken);
+        await DistributedLockTestSupport.WaitUntilAsync(() => handle.InvocationCount == 1, AbortToken);
         _timeProvider.Advance(handle.LeaseDuration);
         sut.TriggerImmediateValidation();
         await lostSignal.Task.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
@@ -175,7 +177,7 @@ public sealed class LeaseMonitorTests : TestBase
 
         // when
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.DrainUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
+        await DistributedLockTestSupport.WaitUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
 
         // then
         sut.LostToken.IsCancellationRequested.Should().BeTrue();
@@ -262,7 +264,7 @@ public sealed class LeaseMonitorTests : TestBase
 
         // Trigger an iteration that will block inside RenewOrValidateLeaseAsync.
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.DrainUntilAsync(() => handle.IsBlocking, AbortToken);
+        await DistributedLockTestSupport.WaitUntilAsync(() => handle.IsBlocking, AbortToken);
 
         // when — the bound is what proves the point: the blocking call ends only on a cancellation, and the
         // handle's other cancellation source (blockSignal) is not released until this method returns, so a
@@ -392,7 +394,7 @@ public sealed class LeaseMonitorTests : TestBase
     private static async Task _RunIterationAndWait(LeaseMonitor sut, FakeLeaseHandle handle, int expectedCount)
     {
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.DrainUntilAsync(() => handle.InvocationCount >= expectedCount, AbortToken);
+        await DistributedLockTestSupport.WaitUntilAsync(() => handle.InvocationCount >= expectedCount, AbortToken);
     }
 
     private LeaseMonitor _CreateMonitor(FakeLeaseHandle handle)
