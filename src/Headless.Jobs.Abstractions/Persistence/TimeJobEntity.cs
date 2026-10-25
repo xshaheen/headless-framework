@@ -92,9 +92,9 @@ public class TimeJobEntity<TTicker> : BaseJobEntity
     public virtual bool CancelRequested { get; internal set; }
 
     /// <summary>
-    /// Policy applied when the owning node dies mid-execution. Gates the claim predicate's lease-expiry arm
-    /// (only <see cref="NodeDeathPolicy.Retry"/> is speculatively re-claimable) and drives the dead-node
-    /// sweep's terminal transitions. Defaults to <see cref="NodeDeathPolicy.Retry"/>.
+    /// Policy applied to a started run whose owning node dies or stops renewing its lease: it drives the dead-node
+    /// and stalled-lease sweeps' transitions. It does not affect reclaiming a row that never started. Defaults to
+    /// <see cref="NodeDeathPolicy.Retry"/>.
     /// </summary>
     public virtual NodeDeathPolicy OnNodeDeath { get; set; } = NodeDeathPolicy.Retry;
 

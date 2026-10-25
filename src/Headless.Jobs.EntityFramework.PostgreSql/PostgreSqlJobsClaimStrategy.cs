@@ -157,8 +157,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                           AND ({mapping.Status} = @idle
                                OR ({mapping.Status} = @queued
                                    AND ({mapping.LockedUntil} IS NULL
-                                        OR ({mapping.LockedUntil} <= {SqlDialectTokens.Now}
-                                            AND {mapping.OnNodeDeath} = @retry))))
+                                        OR {mapping.LockedUntil} <= {SqlDialectTokens.Now})))
                           {TimedChildGateSql.Build(mapping)}
                           {_RunnableClause(_runFilter, mapping.Function)}
                         """;
@@ -174,7 +173,6 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                                 [
                                     new NpgsqlParameter("idle", nameof(JobStatus.Idle)),
                                     new NpgsqlParameter("queued", nameof(JobStatus.Queued)),
-                                    new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry)),
                                     .. _RunnableParameters(_runFilter),
                                 ],
                             ct
@@ -667,12 +665,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 $"""
                 {mapping.Id} = @id
                   AND {mapping.ExecutionTime} = @executionTime
-                  AND {AcquirePredicateSql.Build(
-                    mapping.Status,
-                    mapping.OwnerId,
-                    mapping.LockedUntil,
-                    mapping.OnNodeDeath
-                )}
+                  AND {AcquirePredicateSql.Build(mapping.Status, mapping.OwnerId, mapping.LockedUntil)}
                 """,
                 [mapping.Id],
                 $"""
@@ -691,7 +684,6 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         command.Parameters.Add(new NpgsqlParameter("idle", nameof(JobStatus.Idle)));
         command.Parameters.Add(new NpgsqlParameter("queued", nameof(JobStatus.Queued)));
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
-        command.Parameters.Add(new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry)));
         dialect.AddDuration(command, "lease", leaseDuration);
         command.Parameters.Add(new NpgsqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
         var claimed = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -723,8 +715,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                   AND ({mapping.Status} = @idle
                        OR ({mapping.Status} = @queued
                            AND ({mapping.LockedUntil} IS NULL
-                                OR ({mapping.LockedUntil} <= {SqlDialectTokens.Now}
-                                    AND {mapping.OnNodeDeath} = @retry))))
+                                OR {mapping.LockedUntil} <= {SqlDialectTokens.Now})))
                   {_RunnableClause(runFilter, mapping.Function)}{part.Filter}
                 """,
                 [mapping.ExecutionTime, mapping.Id],
@@ -742,7 +733,6 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
         command.Parameters.Add(new NpgsqlParameter("idle", nameof(JobStatus.Idle)));
         command.Parameters.Add(new NpgsqlParameter("queued", nameof(JobStatus.Queued)));
-        command.Parameters.Add(new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry)));
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
         dialect.AddDuration(command, "lease", leaseDuration);
         command.Parameters.Add(_BatchSizeParameter(part.BatchSize));
@@ -766,7 +756,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     {
         return PostgreSqlDialect.Instance.InTuples([mapping.Id, mapping.UpdatedAt], "requested", _DirectCandidateTypes)
             + " AND "
-            + AcquirePredicateSql.Build(mapping.Status, mapping.OwnerId, mapping.LockedUntil, mapping.OnNodeDeath);
+            + AcquirePredicateSql.Build(mapping.Status, mapping.OwnerId, mapping.LockedUntil);
     }
 
     // The acquire predicate's @owner is bound by _ClaimRootsAsync, which every root claim runs through.
@@ -781,7 +771,6 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             ),
             new NpgsqlParameter("idle", nameof(JobStatus.Idle)),
             new NpgsqlParameter("queued", nameof(JobStatus.Queued)),
-            new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry)),
         ];
     }
 

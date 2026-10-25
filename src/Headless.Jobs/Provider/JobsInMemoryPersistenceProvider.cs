@@ -4025,9 +4025,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     private bool _CanAcquire(TTimeJob job)
     {
-        // Mirror EF WhereCanAcquire: (Status is Idle OR Queued) AND (mine OR never leased OR (lease expired AND
-        // OnNodeDeath == Retry)). `now` comes from the injected TimeProvider (application clock, not a DB clock)
-        // for InMemory↔SQL parity. The lease-expiry arm is gated on Retry (#315).
+        // Mirror EF WhereCanAcquire: (Status is Idle OR Queued) AND (mine OR never leased OR lease expired), whatever
+        // the row's OnNodeDeath, since such a row never started. `now` comes from the injected TimeProvider
+        // (application clock, not a DB clock) for InMemory↔SQL parity.
         var now = _timeProvider.GetUtcNow();
 
         return (job.Status == JobStatus.Idle || job.Status == JobStatus.Queued)
@@ -4035,14 +4035,13 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             && (
                 string.Equals(job.OwnerId, _ownerId, StringComparison.Ordinal)
                 || job.LockedUntil == null
-                || (job.LockedUntil <= now.UtcDateTime && job.OnNodeDeath == NodeDeathPolicy.Retry)
+                || job.LockedUntil <= now.UtcDateTime
             );
     }
 
     private bool _CanAcquireCronOccurrence(CronJobOccurrenceEntity<TCronJob> occurrence)
     {
-        // Mirror EF WhereCanAcquire: (Status is Idle OR Queued) AND (mine OR never leased OR (lease expired AND
-        // OnNodeDeath == Retry)). The lease-expiry arm is gated on Retry (#315).
+        // Mirror EF WhereCanAcquire: (Status is Idle OR Queued) AND (mine OR never leased OR lease expired).
         var now = _timeProvider.GetUtcNow();
 
         return _cronJobs.TryGetValue(occurrence.CronJobId, out var definition)
@@ -4052,7 +4051,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             && (
                 string.Equals(occurrence.OwnerId, _ownerId, StringComparison.Ordinal)
                 || occurrence.LockedUntil == null
-                || (occurrence.LockedUntil <= now.UtcDateTime && occurrence.OnNodeDeath == NodeDeathPolicy.Retry)
+                || occurrence.LockedUntil <= now.UtcDateTime
             );
     }
 

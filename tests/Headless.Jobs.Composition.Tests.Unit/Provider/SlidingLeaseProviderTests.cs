@@ -653,4 +653,50 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var stored = await provider.GetAllCronJobOccurrencesAsync(x => x.Id == occId, AbortToken);
         stored.Should().ContainSingle().Which.OnNodeDeath.Should().Be(NodeDeathPolicy.Skip);
     }
+
+    // ── A lapsed claim that never started is reclaimable under every policy ─────────────────────────────────
+
+    [Theory]
+    [InlineData(NodeDeathPolicy.Retry)]
+    [InlineData(NodeDeathPolicy.MarkFailed)]
+    [InlineData(NodeDeathPolicy.Skip)]
+    public async Task acquire_reclaims_a_lapsed_queued_row_of_another_owner_under_every_policy(NodeDeathPolicy policy)
+    {
+        var (provider, _) = _Create();
+        var job = _TimeJob(JobStatus.Queued, _NodeB, _Now.UtcDateTime.AddMinutes(-1), policy);
+        await provider.AddTimeJobsAsync([job], AbortToken);
+
+        var claimed = await provider.AcquireImmediateTimeJobsAsync([job.Id], AbortToken);
+
+        claimed.Should().ContainSingle().Which.OwnerId.Should().Be(_NodeA);
+    }
+
+    [Theory]
+    [InlineData(NodeDeathPolicy.Retry)]
+    [InlineData(NodeDeathPolicy.MarkFailed)]
+    [InlineData(NodeDeathPolicy.Skip)]
+    public async Task fallback_reclaims_a_lapsed_queued_row_of_another_owner_under_every_policy(NodeDeathPolicy policy)
+    {
+        var (provider, _) = _Create();
+        var job = _TimeJob(JobStatus.Queued, _NodeB, _Now.UtcDateTime.AddMinutes(-1), policy);
+        await provider.AddTimeJobsAsync([job], AbortToken);
+
+        var claimed = await provider.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken);
+
+        claimed.Should().ContainSingle().Which.OwnerId.Should().Be(_NodeA);
+    }
+
+    [Theory]
+    [InlineData(NodeDeathPolicy.MarkFailed)]
+    [InlineData(NodeDeathPolicy.Skip)]
+    public async Task acquire_leaves_a_live_queued_row_of_another_owner(NodeDeathPolicy policy)
+    {
+        var (provider, _) = _Create();
+        var job = _TimeJob(JobStatus.Queued, _NodeB, _Now.UtcDateTime.AddMinutes(1), policy);
+        await provider.AddTimeJobsAsync([job], AbortToken);
+
+        var claimed = await provider.AcquireImmediateTimeJobsAsync([job.Id], AbortToken);
+
+        claimed.Should().BeEmpty();
+    }
 }

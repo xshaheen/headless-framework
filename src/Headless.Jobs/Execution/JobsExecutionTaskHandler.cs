@@ -137,10 +137,12 @@ internal sealed class JobsExecutionTaskHandler
             // buffers are lists rather than the old fixed 5/6-slot arrays that overflowed past that count.
             var tasksToRunNow = new List<Task>(context.TimeJobChildren.Count + 1);
             var childrenToRunAfter = new List<JobExecutionState>(context.TimeJobChildren.Count);
+            var childrenAlongside = new List<(JobExecutionState Child, Task<bool> Started)>();
 
-            // The children that run alongside the parent wait for the parent's last drain decision: the drain can still
-            // hand a root back after it started, and a child that ran meanwhile would run again under the next owner.
-            // Only a root can be handed back, so a child's own children need no such wait.
+            // The children that run alongside the parent wait until the parent commits to invoking its handler: a root
+            // can still be handed back before that (a drain, a lost lease, unknown membership, an unregistered function
+            // or contract version), and a child that ran meanwhile would run again under the next owner. Only a root
+            // can be handed back, so a child's own children need no such wait.
             var parentStart = isChild
                 ? null
                 : new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -155,9 +157,9 @@ internal sealed class JobsExecutionTaskHandler
             {
                 if (child.RunCondition == RunCondition.InProgress)
                 {
-                    tasksToRunNow.Add(
-                        _RunAlongsideParentAsync(child, parentStart?.Task, isDue, runNow, cancellationToken)
-                    );
+                    var started = _RunAlongsideParentAsync(child, parentStart?.Task, isDue, runNow, cancellationToken);
+                    childrenAlongside.Add((child, started));
+                    tasksToRunNow.Add(started);
                 }
                 else
                 {
@@ -173,10 +175,21 @@ internal sealed class JobsExecutionTaskHandler
             // WITHOUT a terminal status — the row is left InProgress for the stalled-reclaim sweep. Evaluating children
             // against that non-terminal status would wrongly Skip every OnSuccess/OnFailure child while the parent is
             // still due to run elsewhere; leaving them unprocessed lets reclaim re-run the whole subtree correctly.
-            if (childrenToRunAfter.Count > 0 && _ParentReachedTerminalStatus(context))
+            if (_ParentReachedTerminalStatus(context))
             {
                 var childrenToSkip = new List<JobExecutionState>(childrenToRunAfter.Count);
                 var childrenToRunAfterTask = new List<Task>(childrenToRunAfter.Count);
+
+                // A parent that ended terminal without invoking its handler (the crash-recovery exhaustion gate) was
+                // never InProgress, so the children held for it never met their condition: they are skipped with their
+                // subtree rather than left claimed under a finished root that no reclaim re-runs.
+                foreach (var (child, started) in childrenAlongside)
+                {
+                    if (!await started.ConfigureAwait(false))
+                    {
+                        _SkipChild(child, context, childrenToSkip);
+                    }
+                }
 
                 foreach (var child in childrenToRunAfter)
                 {
@@ -186,16 +199,7 @@ internal sealed class JobsExecutionTaskHandler
                     }
                     else
                     {
-                        _jobsInstrumentation.LogJobSkipped(
-                            child.JobId,
-                            child.FunctionName,
-                            $"Condition {child.RunCondition} not met (Parent status: {context.Status})"
-                        );
-                        child.ParentId = context.JobId;
-                        childrenToSkip.Add(child);
-
-                        // Recursively gather all descendants to skip
-                        _GatherDescendantsToSkip(child, childrenToSkip);
+                        _SkipChild(child, context, childrenToSkip);
                     }
                 }
 
@@ -258,9 +262,22 @@ internal sealed class JobsExecutionTaskHandler
         return !context.LeaseLost && ChainRunConditionRules.IsTerminal(context.Status);
     }
 
-    // Starts a child that runs while its parent runs, once the parent is past the point where the drain could still
-    // hand it back. A parent released for the drain leaves the child unstarted, still Idle under the root's claim.
-    private async Task _RunAlongsideParentAsync(
+    private void _SkipChild(JobExecutionState child, JobExecutionState parent, List<JobExecutionState> childrenToSkip)
+    {
+        _jobsInstrumentation.LogJobSkipped(
+            child.JobId,
+            child.FunctionName,
+            $"Condition {child.RunCondition} not met (Parent status: {parent.Status})"
+        );
+        child.ParentId = parent.JobId;
+        childrenToSkip.Add(child);
+        _GatherDescendantsToSkip(child, childrenToSkip);
+    }
+
+    // Starts a child that runs while its parent runs, once the parent has committed to invoking its handler, and
+    // returns whether it started. A parent that never gets that far leaves the child unstarted, still Idle under the
+    // root's claim.
+    private async Task<bool> _RunAlongsideParentAsync(
         JobExecutionState child,
         Task<bool>? parentStart,
         bool isDue,
@@ -270,14 +287,15 @@ internal sealed class JobsExecutionTaskHandler
     {
         if (parentStart is not null && !await parentStart.ConfigureAwait(false))
         {
-            return;
+            return false;
         }
 
         await _SafeRecursiveExecution(child, isDue, runNow, cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
-    // parentStart, when given, learns whether the children running alongside this run may start: false once the drain
-    // hands the row back, true on every other path, which keeps their start unchanged when no drain intervenes.
+    // parentStart, when given, learns whether the children running alongside this run may start: true once the run
+    // passes its last drain check and commits to invoking the handler, false on every exit before that.
     private async Task _RunContextFunctionAsync(
         JobExecutionState context,
         bool isDue,
@@ -294,7 +312,7 @@ internal sealed class JobsExecutionTaskHandler
         }
         finally
         {
-            parentStart?.TrySetResult(true);
+            parentStart?.TrySetResult(false);
         }
     }
 

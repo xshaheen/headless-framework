@@ -199,6 +199,87 @@ public sealed class JobRunOwnershipTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_start_an_in_progress_child_when_its_root_is_handed_back_before_it_starts()
+    {
+        // given: membership is unknown as the root confirms its owner and back by the time the child would
+        await using var harness = await Harness.CreateAsync(retries: 3, withChild: true);
+        var context = await harness.ClaimAsync();
+        harness.Identity.OnStamp = stamp =>
+        {
+            if (stamp == 1)
+            {
+                harness.Identity.Forget();
+            }
+            else
+            {
+                harness.Identity.Remember();
+            }
+        };
+        var rootRan = false;
+        var childRan = false;
+
+        // when
+        await harness
+            .ExecuteAsync(
+                context,
+                (_, _) =>
+                {
+                    rootRan = true;
+                    return Task.CompletedTask;
+                },
+                childBody: (_, _) =>
+                {
+                    childRan = true;
+                    return Task.CompletedTask;
+                },
+                runToken: AbortToken
+            )
+            .WaitAsync(_RunBound, AbortToken);
+
+        // then: the next owner re-claims the root with its tree, so a child run here would run twice
+        rootRan.Should().BeFalse();
+        childRan.Should().BeFalse();
+        (await harness.StoredAsync()).Status.Should().Be(JobStatus.Idle);
+        var storedChild = await harness.StoredChildAsync();
+        storedChild.Status.Should().NotBe(JobStatus.InProgress);
+        storedChild.ExecutedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_skip_an_in_progress_child_when_its_root_is_failed_by_crash_recovery_without_running()
+    {
+        // given: reclaims already consumed the root's whole retry budget
+        await using var harness = await Harness.CreateAsync(retries: 0, retryCount: 1, withChild: true);
+        var context = await harness.ClaimAsync();
+        var rootRan = false;
+        var childRan = false;
+
+        // when
+        await harness
+            .ExecuteAsync(
+                context,
+                (_, _) =>
+                {
+                    rootRan = true;
+                    return Task.CompletedTask;
+                },
+                childBody: (_, _) =>
+                {
+                    childRan = true;
+                    return Task.CompletedTask;
+                },
+                runToken: AbortToken
+            )
+            .WaitAsync(_RunBound, AbortToken);
+
+        // then: the root was never InProgress, so the child's condition never held
+        rootRan.Should().BeFalse();
+        childRan.Should().BeFalse();
+        (await harness.StoredAsync()).Status.Should().Be(JobStatus.Failed);
+        (await harness.StoredChildAsync()).Status.Should().Be(JobStatus.Skipped);
+    }
+
+    [Fact]
     public async Task should_store_failed_before_a_hanging_exception_handler_runs_and_keep_it_after_the_timeout()
     {
         // given
@@ -506,6 +587,8 @@ public sealed class JobRunOwnershipTests : TestBase
         }
 
         public void Forget() => _known = false;
+
+        public void Remember() => _known = true;
 
         public Task LoseAsync()
         {
