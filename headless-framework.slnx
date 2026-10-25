@@ -336,7 +336,6 @@
         <Project Path="src\Headless.Context\Headless.Context.csproj" />
         <Project Path="src\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />
         <Project Path="src/Headless.FluentValidation/Headless.FluentValidation.csproj" />
-        <Project Path="src/Headless.FluentValidation.FileSignatures/Headless.FluentValidation.FileSignatures.csproj" />
         <Project Path="src\Headless.Checks\Headless.Checks.csproj" />
         <Project Path="src\Headless.Domain.EventDispatcher\Headless.Domain.EventDispatcher.csproj" />
         <Project Path="src\Headless.Domain\Headless.Domain.csproj" />
@@ -350,7 +349,6 @@
         <Project Path="src\Headless.Testing\Headless.Testing.csproj" />
     </Folder>
     <Folder Name="/Kernel/Tests/">
-        <Project Path="tests/Headless.FluentValidation.FileSignatures.Tests.Unit/Headless.FluentValidation.FileSignatures.Tests.Unit.csproj" />
         <Project Path="tests/Headless.FluentValidation.Tests.Unit/Headless.FluentValidation.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Http.Resilience.Tests.Unit\Headless.Http.Resilience.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Checks.Tests.Unit\Headless.Checks.Tests.Unit.csproj" />

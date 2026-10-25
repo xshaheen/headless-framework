@@ -81,7 +81,6 @@ Headless.Fencing.PostgreSql
 Headless.Fencing.SqlServer
 Headless.Fencing.Sqlite
 Headless.FluentValidation
-Headless.FluentValidation.FileSignatures
 Headless.Generator.Primitives
 Headless.Generator.Primitives.Abstractions
 Headless.Hosting

@@ -9,7 +9,7 @@ namespace Headless.FluentValidation;
 /// Builds the file rules once for every file type: each entry point (<c>IUploadedFile</c> here, ASP.NET Core
 /// <c>IFormFile</c> in Headless.Api.FluentValidation) passes how to read the size and the declared content type, so the
 /// checks, error descriptors, and documented bounds cannot drift between them. The signature rule lives in
-/// Headless.FluentValidation.FileSignatures, which carries the file-format dependency.
+/// Headless.Api.FluentValidation, which carries the file-format dependency.
 /// </summary>
 internal static class FileRules
 {

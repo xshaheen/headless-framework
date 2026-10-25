@@ -14,7 +14,7 @@ namespace FluentValidation;
 /// An ASP.NET Core request model whose property is an <c>IFormFile</c> uses the same rules from
 /// <c>Headless.Api.FluentValidation</c>; both emit the same error codes and messages. Adapt an <c>IFormFile</c> to an
 /// <see cref="IUploadedFile"/> at the edge with <c>IFormFile.ToUploadedFile()</c>. The binary signature rule,
-/// <c>HaveSignatures</c>, lives in <c>Headless.FluentValidation.FileSignatures</c>, so this package carries no file-format
+/// <c>HaveSignatures</c>, lives in <c>Headless.Api.FluentValidation</c>, so this package carries no file-format
 /// dependency.
 /// </para>
 /// <para>
@@ -73,7 +73,7 @@ public static class HeadlessFileValidators
         /// <returns>Rule builder options for further chaining.</returns>
         /// <remarks>
         /// This rule validates only the <em>declared</em> content type sent by the client and can be spoofed. Use
-        /// <c>HaveSignatures</c> from Headless.FluentValidation.FileSignatures in addition to verify the actual binary
+        /// <c>HaveSignatures</c> from Headless.Api.FluentValidation in addition to verify the actual binary
         /// signature. The validation error message includes a <c>{ContentTypes}</c> placeholder listing the allowed
         /// types.
         /// </remarks>

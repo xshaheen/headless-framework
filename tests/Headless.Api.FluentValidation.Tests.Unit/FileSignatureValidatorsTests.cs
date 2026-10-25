@@ -87,9 +87,8 @@ public sealed class FileSignatureValidatorsTests : TestBase
     }
 
     [Fact]
-    public async Task should_chain_with_the_base_file_rules_as_the_utilities_guide_shows()
+    public async Task should_chain_with_the_base_file_rules()
     {
-        // Mirrors the "Setup and use" sample of docs/llms/utilities.md#headlessfluentvalidationfilesignatures.
         var validator = new UpdateAvatarValidator(_Inspector);
 
         var accepted = await validator.ValidateAsync(new UpdateAvatar(new BytesFile(_PngBytes)), AbortToken);

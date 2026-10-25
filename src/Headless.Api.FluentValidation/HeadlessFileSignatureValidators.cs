@@ -12,10 +12,9 @@ namespace FluentValidation;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A separate package so <c>Headless.FluentValidation</c>, which nearly every Headless package references, does not
-/// carry FileSignatures and its OpenMcdf dependency. An ASP.NET Core request model whose property is an
-/// <c>IFormFile</c> uses the same rule from <c>Headless.Api.FluentValidation</c>; both emit the same error code and
-/// message.
+/// It lives here rather than in <c>Headless.FluentValidation</c>, which nearly every Headless package references, so
+/// only file-handling API hosts carry FileSignatures and its OpenMcdf dependency. An ASP.NET Core request model whose
+/// property is an <c>IFormFile</c> uses the same rule; both emit the same error code and message.
 /// </para>
 /// <para>
 /// <b>Security note:</b> the rule checks the binary signature only; it does not scan for malware. A virus/malware
