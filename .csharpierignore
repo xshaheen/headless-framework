@@ -2,6 +2,7 @@
 .vscode/
 .worktrees/
 .wiki/
+.local/
 artifacts/
 **/Snapshots/**/*.verified.cs
 nuget.config
