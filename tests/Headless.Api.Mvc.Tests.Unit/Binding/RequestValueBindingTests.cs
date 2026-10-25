@@ -42,8 +42,8 @@ public sealed class RequestValueBindingTests : TestBase
     [InlineData("1")]
     [InlineData("-1")]
     [InlineData("bogus")]
-    // The body rejects a member name its [JsonStringEnumMemberName] alias replaces, so the query does too.
-    [InlineData("OnHold")]
+    // A [JsonStringEnumMemberName] alias binds only from the body.
+    [InlineData("on-hold")]
     public async Task should_answer_400_naming_the_parameter_when_an_enum_query_value_is_not_a_name(string value)
     {
         await using var app = await _StartAsync();
@@ -64,13 +64,24 @@ public sealed class RequestValueBindingTests : TestBase
     }
 
     [Fact]
-    public async Task should_bind_a_json_enum_member_name_and_a_flags_combination()
+    public async Task should_bind_an_aliased_member_by_its_name_and_a_flags_combination()
     {
         await using var app = await _StartAsync();
         var client = app.GetTestClient();
 
-        (await client.GetStringAsync("/bindings/query?status=on-hold", AbortToken)).Should().Be("OnHold");
+        (await client.GetStringAsync("/bindings/query?status=onhold", AbortToken)).Should().Be("OnHold");
         (await client.GetStringAsync("/bindings/access?access=read,Write", AbortToken)).Should().Be("Read, Write");
+    }
+
+    [Fact]
+    public async Task should_answer_400_when_a_flags_combination_mixes_in_a_number()
+    {
+        await using var app = await _StartAsync();
+
+        // MVC's own enum converter would bind this as Read, Write.
+        using var response = await app.GetTestClient().GetAsync("/bindings/access?access=Read,2", AbortToken);
+
+        await _ShouldBeInvalidParameterAsync(response, "access");
     }
 
     [Fact]
@@ -141,7 +152,7 @@ public sealed class RequestValueBindingTests : TestBase
         await using var app = await _StartAsync();
         var client = app.GetTestClient();
 
-        (await client.GetStringAsync("/bindings/route/on-hold", AbortToken)).Should().Be("OnHold");
+        (await client.GetStringAsync("/bindings/route/OnHold", AbortToken)).Should().Be("OnHold");
 
         using var byNumber = await client.GetAsync("/bindings/route/3", AbortToken);
         await _ShouldBeInvalidParameterAsync(byNumber, "status");

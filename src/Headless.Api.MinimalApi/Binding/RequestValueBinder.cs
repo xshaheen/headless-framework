@@ -125,7 +125,11 @@ internal sealed class RequestValueBinder
     {
         foreach (var value in _route)
         {
-            if (request.RouteValues.TryGetValue(value.Name, out var raw) && raw is string text && _IsNumeric(text))
+            if (
+                request.RouteValues.TryGetValue(value.Name, out var raw)
+                && raw is string text
+                && RequestEnumText.IsNumeric(text)
+            )
             {
                 return value.Name;
             }
@@ -227,24 +231,7 @@ internal sealed class RequestValueBinder
     {
         for (var i = 0; i < raw.Count; i++)
         {
-            if (raw[i] is { } text && _IsNumeric(text))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    // Enum.TryParse reads a value as a number when it starts with a digit or a sign, and a [Flags] list may mix names
-    // with numbers, so each comma-separated part is checked. An empty value is ASP.NET Core's to judge.
-    private static bool _IsNumeric(string text)
-    {
-        foreach (var range in text.AsSpan().Split(','))
-        {
-            var part = text.AsSpan()[range].TrimStart();
-
-            if (part.Length > 0 && (char.IsAsciiDigit(part[0]) || part[0] is '-' or '+'))
+            if (raw[i] is { } text && RequestEnumText.IsNumeric(text))
             {
                 return true;
             }

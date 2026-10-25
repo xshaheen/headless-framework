@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Reflection;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Http;
@@ -26,11 +25,6 @@ namespace Headless.Api.Options;
 internal sealed class ArgumentValidationActionFilter : IAsyncActionFilter
 {
     public static readonly ArgumentValidationActionFilter Instance = new();
-
-    private static readonly MethodInfo _ValidateArgumentMethod = typeof(ArgumentValidationActionFilter).GetMethod(
-        nameof(_ValidateArgumentAsync),
-        BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly
-    )!;
 
     private readonly ConcurrentDictionary<ActionDescriptor, ValidatedArgument[]> _plans = new();
 
@@ -92,53 +86,21 @@ internal sealed class ArgumentValidationActionFilter : IAsyncActionFilter
 
         foreach (var parameter in descriptor.Parameters)
         {
-            var type = parameter.ParameterType;
             var source = parameter.BindingInfo?.BindingSource;
 
-            if (
-                type.IsByRef
-                || type.IsPointer
-                || type.ContainsGenericParameters
-                || source == BindingSource.Services
-                || source == BindingSource.Special
-            )
+            if (source == BindingSource.Services || source == BindingSource.Special)
             {
                 continue;
             }
 
-            if (isService.IsService(typeof(IValidator<>).MakeGenericType(type)))
+            if (ArgumentValidation.For(parameter.ParameterType, isService) is { } validate)
             {
-                // Closed once here so each request validates through the typed IValidator<T> contract, the same call
-                // a Minimal API endpoint makes, instead of the non-generic one a custom validator may not implement.
-                var validate = _ValidateArgumentMethod.MakeGenericMethod(type).CreateDelegate<ArgumentValidator>();
                 (arguments ??= []).Add(new ValidatedArgument(parameter.Name, validate));
             }
         }
 
         return arguments is null ? [] : [.. arguments];
     }
-
-    private static ValueTask<List<ValidationFailure>?> _ValidateArgumentAsync<T>(
-        IServiceProvider services,
-        object argument,
-        List<ValidationFailure>? failures,
-        CancellationToken cancellationToken
-    )
-    {
-        return ArgumentValidation.CollectFailuresAsync(
-            services.GetServices<IValidator<T>>(),
-            (T)argument,
-            failures,
-            cancellationToken
-        );
-    }
-
-    private delegate ValueTask<List<ValidationFailure>?> ArgumentValidator(
-        IServiceProvider services,
-        object argument,
-        List<ValidationFailure>? failures,
-        CancellationToken cancellationToken
-    );
 
     private readonly record struct ValidatedArgument(string Name, ArgumentValidator Validate);
 }

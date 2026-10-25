@@ -19,11 +19,6 @@ namespace Headless.Api;
 /// </remarks>
 internal sealed class ArgumentValidationEndpointFilter : IEndpointFilter
 {
-    private static readonly MethodInfo _ValidateArgumentMethod = typeof(ArgumentValidationEndpointFilter).GetMethod(
-        nameof(_ValidateArgumentAsync),
-        BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly
-    )!;
-
     private readonly ValidatedArgument[] _arguments;
 
     private ArgumentValidationEndpointFilter(ValidatedArgument[] arguments)
@@ -48,20 +43,8 @@ internal sealed class ArgumentValidationEndpointFilter : IEndpointFilter
 
         for (var i = 0; i < parameters.Length; i++)
         {
-            var type = parameters[i].ParameterType;
-
-            if (type.IsByRef || type.IsPointer || type.ContainsGenericParameters)
+            if (ArgumentValidation.For(parameters[i].ParameterType, isService) is { } validate)
             {
-                continue;
-            }
-
-            var validatorType = typeof(IValidator<>).MakeGenericType(type);
-
-            if (isService.IsService(validatorType))
-            {
-                // Closed once here so each request validates through the typed IValidator<T> contract, the same call
-                // Validate<T>() makes, instead of the non-generic one a custom validator may not implement.
-                var validate = _ValidateArgumentMethod.MakeGenericMethod(type).CreateDelegate<ArgumentValidator>();
                 (arguments ??= []).Add(new ValidatedArgument(i, validate));
             }
         }
@@ -94,28 +77,6 @@ internal sealed class ArgumentValidationEndpointFilter : IEndpointFilter
             ? await next(context).ConfigureAwait(false)
             : EndpointValidation.UnprocessableEntity(context.HttpContext, failures);
     }
-
-    private static ValueTask<List<ValidationFailure>?> _ValidateArgumentAsync<T>(
-        IServiceProvider services,
-        object argument,
-        List<ValidationFailure>? failures,
-        CancellationToken cancellationToken
-    )
-    {
-        return EndpointValidation.CollectFailuresAsync(
-            services.GetServices<IValidator<T>>(),
-            (T)argument,
-            failures,
-            cancellationToken
-        );
-    }
-
-    private delegate ValueTask<List<ValidationFailure>?> ArgumentValidator(
-        IServiceProvider services,
-        object argument,
-        List<ValidationFailure>? failures,
-        CancellationToken cancellationToken
-    );
 
     private readonly record struct ValidatedArgument(int Index, ArgumentValidator Validate);
 }

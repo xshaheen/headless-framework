@@ -18,7 +18,7 @@ namespace Headless.Api.Options;
 ///   <item>Enables 406 Not Acceptable when the client's <c>Accept</c> header cannot be satisfied.</item>
 ///   <item>Clears the default model-validator providers and substitutes <c>SystemTextJsonValidationMetadataProvider</c>.</item>
 ///   <item>Applies <c>ProblemDetailsOptions.CustomizeProblemDetails</c> once to Headless-normalized MVC problem-details object results.</item>
-///   <item>Binds an enum from a route, query, header, or form value by the names a JSON body accepts for it, rejecting numbers and unknown names, as the body does.</item>
+///   <item>Refuses an enum sent as a number in a route, query, header, or form value, as the JSON body does; names bind as MVC binds them, in any casing.</item>
 ///   <item>Runs every registered FluentValidation <c>IValidator&lt;T&gt;</c> of each action argument and answers one 422 with all their failures, as <c>ValidateArguments()</c> does for Minimal APIs.</item>
 /// </list>
 /// Behavior applied to <see cref="ApiBehaviorOptions"/>:
@@ -53,9 +53,9 @@ internal sealed class ConfigureMvcApiOptions : IConfigureOptions<MvcOptions>, IC
             options.Filters.Add<HeadlessProblemDetailsResultFilter>();
         }
 
-        if (!options.ModelBinderProviders.OfType<EnumNameModelBinderProvider>().Any())
+        if (!options.ModelBinderProviders.OfType<EnumNumberRefusingModelBinderProvider>().Any())
         {
-            options.ModelBinderProviders.Insert(0, new EnumNameModelBinderProvider());
+            options.ModelBinderProviders.Insert(0, new EnumNumberRefusingModelBinderProvider());
         }
 
         // One shared instance: a type-registered filter is built again for every action invocation.
