@@ -7,10 +7,73 @@ namespace Tests;
 
 public abstract class DistributedReadWriteLockTestsBase : TestBase
 {
+    private static readonly TimeSpan _WaitBound = TimeSpan.FromSeconds(30);
+
     protected abstract IDistributedReadWriteLock GetReaderWriterLockProvider(DistributedLockOptions? options = null);
     protected abstract TimeProvider TimeProvider { get; }
     protected abstract Task AdvanceTimeAsync(TimeSpan amount, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Waits on the wall clock until <paramref name="condition"/> holds, so a test can assert that background work
+    /// happened. Throws <see cref="TimeoutException"/> when it still does not hold after the wait bound.
+    /// </summary>
+    /// <remarks>
+    /// Use this, not <see cref="DrainUntilAsync"/>, before asserting that something happened. Advancing a fake clock
+    /// only queues the monitor's continuation on the thread pool; on a loaded machine that continuation can stay
+    /// undispatched for longer than any fixed number of yields, and a wait that gave up then fails an assertion the
+    /// code was about to meet.
+    /// </remarks>
+    protected static Task WaitUntilAsync(Func<bool> condition, CancellationToken cancellationToken = default)
+    {
+        return WaitUntilAsync(() => Task.FromResult(condition()), cancellationToken);
+    }
+
+    /// <summary>
+    /// Waits on the wall clock until <paramref name="condition"/> returns <see langword="true"/>, calling it every
+    /// millisecond, so a condition can also drive time forward between checks. Throws
+    /// <see cref="TimeoutException"/> when it still does not hold after the wait bound.
+    /// </summary>
+    protected static async Task WaitUntilAsync(
+        Func<Task<bool>> condition,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (!await EventuallyAsync(condition, _WaitBound, TimeSpan.FromMilliseconds(1), cancellationToken))
+        {
+            throw new TimeoutException($"The condition did not hold within {_WaitBound}.");
+        }
+    }
+
+    /// <summary>Advances time one second at a time until <paramref name="lostToken"/> fires.</summary>
+    /// <remarks>
+    /// One advance is not enough on a fake clock: the monitor re-arms its poll delay only once its continuation runs,
+    /// so an advance that lands before it re-arms leaves the poll parked. Each round advances again until the loss is
+    /// observed, within the wall-clock wait bound.
+    /// </remarks>
+    private Task _AdvanceUntilLostAsync(CancellationToken lostToken)
+    {
+        return WaitUntilAsync(
+            async () =>
+            {
+                if (lostToken.IsCancellationRequested)
+                {
+                    return true;
+                }
+
+                await AdvanceTimeAsync(TimeSpan.FromSeconds(1), AbortToken);
+
+                return lostToken.IsCancellationRequested;
+            },
+            AbortToken
+        );
+    }
+
+    /// <summary>
+    /// Gives queued background work a short, bounded chance to run, stopping early once <paramref name="condition"/>
+    /// holds. Use it only to let work settle or before asserting that something did <em>not</em> happen; the budget is
+    /// a fixed number of scheduler turns, so it can end before slow work finishes. To wait for something that must
+    /// happen, use <see cref="WaitUntilAsync(Func{bool}, CancellationToken)"/>.
+    /// </summary>
     protected static async Task DrainUntilAsync(Func<bool> condition, CancellationToken cancellationToken = default)
     {
         for (var i = 0; i < 2000 && !condition(); i++)
@@ -379,11 +442,7 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
             AbortToken
         );
 
-        for (var i = 0; i < 10 && !handle.LostToken.IsCancellationRequested; i++)
-        {
-            await AdvanceTimeAsync(TimeSpan.FromSeconds(1), AbortToken);
-            await DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
-        }
+        await _AdvanceUntilLostAsync(handle.LostToken);
 
         handle.LostToken.IsCancellationRequested.Should().BeTrue();
     }
@@ -402,11 +461,7 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
             AbortToken
         );
 
-        for (var i = 0; i < 10 && !handle.LostToken.IsCancellationRequested; i++)
-        {
-            await AdvanceTimeAsync(TimeSpan.FromSeconds(1), AbortToken);
-            await DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
-        }
+        await _AdvanceUntilLostAsync(handle.LostToken);
 
         handle.LostToken.IsCancellationRequested.Should().BeTrue();
     }
@@ -429,7 +484,7 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
         );
 
         await AdvanceTimeAsync(TimeSpan.FromSeconds(3), AbortToken);
-        await DrainUntilAsync(() => writer.RenewalCount > 0, AbortToken);
+        await WaitUntilAsync(() => writer.RenewalCount > 0, AbortToken);
 
         writer.RenewalCount.Should().BePositive();
         (await provider.IsWriteLockedAsync(resource, AbortToken)).Should().BeTrue();
