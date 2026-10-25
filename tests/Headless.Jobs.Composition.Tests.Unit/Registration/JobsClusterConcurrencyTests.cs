@@ -178,6 +178,31 @@ public sealed class JobsClusterConcurrencyTests : TestBase
         (await store.GetTimeJobByIdAsync(limited.Id, AbortToken))!.Status.Should().Be(JobStatus.Idle);
     }
 
+    [Fact]
+    public async Task should_hold_no_slot_for_a_limited_job_that_is_not_due_after_every_claim_path()
+    {
+        // given
+        var clock = _Clock();
+        await using var provider = _Provider(clock);
+        var store = _Store(provider);
+        var future = _TimeJob(TestJobs.BillingCloseDay, clock.GetUtcNow().UtcDateTime.AddMinutes(10));
+        await store.AddTimeJobsAsync([future], AbortToken);
+
+        // when the scheduler polls, and the peek, direct, and timed-out claims all run
+        var (_, functions) = await provider.GetRequiredService<IInternalJobManager>().GetNextJobs(AbortToken);
+        var peeked = await store.GetEarliestTimeJobsAsync(AbortToken);
+        var direct = await store.QueueTimeJobsAsync(peeked.Jobs, AbortToken).ToArrayAsync(AbortToken);
+        var swept = await store.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken);
+
+        // then
+        functions.Should().BeEmpty();
+        direct.Concat(swept).Should().BeEmpty();
+        (await _LiveLeasesAsync(store, clock)).Should().Be(0);
+        var stored = await store.GetTimeJobByIdAsync(future.Id, AbortToken);
+        stored!.Status.Should().Be(JobStatus.Idle);
+        stored.OwnerId.Should().BeNull();
+    }
+
     private static FakeTimeProvider _Clock() => new(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero));
 
     private static async Task<int> _LiveLeasesAsync(

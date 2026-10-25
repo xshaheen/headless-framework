@@ -44,6 +44,12 @@ public sealed class PostgreSqlClusterConcurrencyTests(PostgreSqlJobsCoordination
     }
 
     [Fact]
+    public override Task a_limited_job_due_later_holds_no_slot_after_every_claim_path()
+    {
+        return base.a_limited_job_due_later_holds_no_slot_after_every_claim_path();
+    }
+
+    [Fact]
     public override Task optimistic_claim_fallback_refuses_a_cluster_limit()
     {
         return base.optimistic_claim_fallback_refuses_a_cluster_limit();

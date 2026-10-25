@@ -507,7 +507,7 @@ public sealed class InternalJobsManagerTests : TestBase
         {
             Id = Guid.NewGuid(),
             Function = "root",
-            ExecutionTime = DateTime.UtcNow.AddSeconds(30),
+            ExecutionTime = _StoreNow,
             TenantId = "t-root",
             Children = [child],
         };
@@ -515,7 +515,7 @@ public sealed class InternalJobsManagerTests : TestBase
         // Route the cron side to empty so only the time-job pickup flows through GetNextJobs.
         provider
             .GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>())
-            .Returns(new EarliestTimeJobs { StoreUtcNow = DateTime.UtcNow, Jobs = [root] });
+            .Returns(new EarliestTimeJobs { StoreUtcNow = _StoreNow, Jobs = [root] });
         provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns([]);
         provider
             .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
@@ -668,6 +668,8 @@ public sealed class InternalJobsManagerTests : TestBase
 
     private const string _ClaimOwner = "node-a@1";
 
+    private static readonly DateTime _StoreNow = new(2026, 8, 15, 12, 0, 0, DateTimeKind.Utc);
+
     private static InternalJobsManager<FakeTimeJob, FakeCronJob> _CreateManager(
         IJobPersistenceProvider<FakeTimeJob, FakeCronJob> provider,
         IJobsNotificationHubSender? sender = null,
@@ -742,18 +744,18 @@ public sealed class InternalJobsManagerTests : TestBase
         {
             Id = Guid.NewGuid(),
             Function = "first",
-            ExecutionTime = DateTime.UtcNow.AddSeconds(30),
+            ExecutionTime = _StoreNow,
         };
         var second = new TimeJobEntity
         {
             Id = Guid.NewGuid(),
             Function = "second",
-            ExecutionTime = DateTime.UtcNow.AddSeconds(30),
+            ExecutionTime = _StoreNow,
         };
 
         provider
             .GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>())
-            .Returns(new EarliestTimeJobs { StoreUtcNow = DateTime.UtcNow, Jobs = [first, second] });
+            .Returns(new EarliestTimeJobs { StoreUtcNow = _StoreNow, Jobs = [first, second] });
         provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns([]);
         provider
             .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
@@ -796,13 +798,13 @@ public sealed class InternalJobsManagerTests : TestBase
         {
             Id = Guid.NewGuid(),
             Function = "claimed",
-            ExecutionTime = DateTime.UtcNow.AddSeconds(30),
+            ExecutionTime = _StoreNow,
             OwnerId = _ClaimOwner,
         };
 
         provider
             .GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>())
-            .Returns(new EarliestTimeJobs { StoreUtcNow = DateTime.UtcNow, Jobs = [claimed] });
+            .Returns(new EarliestTimeJobs { StoreUtcNow = _StoreNow, Jobs = [claimed] });
         provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns([]);
         provider
             .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
@@ -821,6 +823,118 @@ public sealed class InternalJobsManagerTests : TestBase
                 _ClaimOwner,
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    /// <summary>
+    /// A row that is not due yet only sets the wake. Claiming it at the peek would hold a lease and a cluster slot for
+    /// work that is not running, and the store refuses such a claim anyway.
+    /// </summary>
+    [Fact]
+    public async Task get_next_jobs_sleeps_toward_a_future_time_job_without_claiming_it()
+    {
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var manager = _CreateManager(provider);
+        var future = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "future",
+            ExecutionTime = _StoreNow.AddSeconds(30),
+        };
+        _PeekReturns(provider, new EarliestTimeJobs { StoreUtcNow = _StoreNow, Jobs = [future] });
+
+        var (wake, functions) = await manager.GetNextJobs(AbortToken);
+
+        functions.Should().BeEmpty();
+        wake.WakeAtStoreUtc.Should().Be(future.ExecutionTime);
+        wake.Remaining.Should().Be(TimeSpan.FromSeconds(30));
+        provider.DidNotReceiveWithAnyArgs().QueueTimeJobsAsync(default!, AbortToken);
+    }
+
+    /// <summary>
+    /// The peek groups rows by their second. Polled before that second, nothing is claimed, so the store is never asked
+    /// for rows it would refuse; at the due poll the earliest row is due and the claim's slack covers the rest of the
+    /// second, so both are claimed together.
+    /// </summary>
+    [Fact]
+    public async Task get_next_jobs_claims_a_second_of_time_jobs_only_once_its_earliest_row_is_due()
+    {
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var manager = _CreateManager(provider);
+        var early = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "early",
+            ExecutionTime = _StoreNow.AddMilliseconds(100),
+        };
+        var late = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "late",
+            ExecutionTime = _StoreNow.AddMilliseconds(900),
+        };
+        _PeekReturns(
+            provider,
+            new EarliestTimeJobs { StoreUtcNow = _StoreNow.AddMilliseconds(-500), Jobs = [early, late] }
+        );
+        provider
+            .QueueTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new[] { early, late }.ToAsyncEnumerable());
+
+        var (beforeWake, beforeFunctions) = await manager.GetNextJobs(AbortToken);
+
+        beforeFunctions.Should().BeEmpty();
+        beforeWake.Remaining.Should().Be(TimeSpan.FromMilliseconds(600));
+        provider.DidNotReceiveWithAnyArgs().QueueTimeJobsAsync(default!, AbortToken);
+
+        _PeekReturns(provider, new EarliestTimeJobs { StoreUtcNow = early.ExecutionTime, Jobs = [early, late] });
+
+        var (dueWake, dueFunctions) = await manager.GetNextJobs(AbortToken);
+
+        dueFunctions.Select(x => x.JobId).Should().Equal(early.Id, late.Id);
+        // Returned functions always come with a wake that is due now; nothing claimed is left to sleep on.
+        dueWake.Remaining.Should().Be(TimeSpan.Zero);
+        provider
+            .Received(1)
+            .QueueTimeJobsAsync(
+                Arg.Is<TimeJobEntity[]>(x => x.Length == 2 && x[0] == early && x[1] == late),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    /// <summary>
+    /// A provider that reports no store instant gives the manager nothing to measure due-ness against, so the claim is
+    /// made and the provider's own due filter decides.
+    /// </summary>
+    [Fact]
+    public async Task get_next_jobs_claims_a_time_job_when_the_provider_reports_no_store_anchor()
+    {
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        var manager = _CreateManager(provider);
+        var due = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = "anchorless",
+            ExecutionTime = _StoreNow,
+        };
+        _PeekReturns(provider, new EarliestTimeJobs { StoreUtcNow = null, Jobs = [due] });
+        provider
+            .QueueTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>())
+            .Returns(new[] { due }.ToAsyncEnumerable());
+
+        var (wake, functions) = await manager.GetNextJobs(AbortToken);
+
+        functions.Select(x => x.JobId).Should().Equal(due.Id);
+        wake.Remaining.Should().Be(TimeSpan.Zero);
+    }
+
+    private static void _PeekReturns(IJobPersistenceProvider<FakeTimeJob, FakeCronJob> provider, EarliestTimeJobs peek)
+    {
+        // Route the cron side to empty so only the time-job pickup flows through GetNextJobs.
+        provider.GetEarliestTimeJobsAsync(Arg.Any<CancellationToken>()).Returns(peek);
+        provider.GetAllCronJobExpressionsAsync(Arg.Any<CancellationToken>()).Returns([]);
+        provider
+            .GetEarliestAvailableCronOccurrenceAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns((CronJobOccurrenceEntity<FakeCronJob>)null!);
     }
 
     private static async IAsyncEnumerable<TimeJobEntity> _ClaimThenFail(TimeJobEntity claimed)

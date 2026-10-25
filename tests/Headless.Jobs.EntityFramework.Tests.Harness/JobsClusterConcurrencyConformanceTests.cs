@@ -270,6 +270,36 @@ public abstract class JobsClusterConcurrencyConformanceTests<TFixture>(TFixture 
         }
     }
 
+    public virtual async Task a_limited_job_due_later_holds_no_slot_after_every_claim_path()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        var hosts = await _StartHostsAsync(["cluster-future"], ct);
+
+        try
+        {
+            var store = _Store(hosts[0]);
+            var future = _TimeJob(_Limited, DateTime.UtcNow);
+            await store.AddTimeJobsAsync([future], ct);
+            // Ten minutes ahead on the database clock, so no node-to-database skew can make the row look due.
+            await _SetExecutionTimeOnStoreClockAsync(future.Id, offsetSeconds: 600, ct);
+
+            // The scheduler poll sleeps toward the row; a lease taken now would hold a slot for work that is not running.
+            var (wake, functions) = await hosts[0].Services.GetRequiredService<IInternalJobManager>().GetNextJobs(ct);
+            await _ClaimEverythingAsync(store, ct);
+
+            functions.Should().BeEmpty();
+            wake.WakeAtStoreUtc.Should().NotBeNull();
+            wake.Remaining.Should().BeGreaterThan(TimeSpan.FromMinutes(9));
+            (await _LiveLeasesAsync(store, _Limited, ct)).Should().Be(0);
+            (await fixture.ReadTimeJobAsync(future.Id, ct)).Should().Be(((int)JobStatus.Idle, (string?)null));
+        }
+        finally
+        {
+            await _StopHostsAsync(hosts, ct);
+        }
+    }
+
     private async Task<IHost[]> _StartHostsAsync(
         string[] nodeIds,
         CancellationToken cancellationToken,
@@ -342,6 +372,22 @@ public abstract class JobsClusterConcurrencyConformanceTests<TFixture>(TFixture 
         );
         JobsCoordinationFixtureExtensions.AddParameter(command, "@past", DateTime.UtcNow.AddMinutes(-1));
         JobsCoordinationFixtureExtensions.AddParameter(command, "@owner", ownerId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task _SetExecutionTimeOnStoreClockAsync(
+        Guid id,
+        int offsetSeconds,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = fixture.Sql(
+            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"ExecutionTime\" = {fixture.UtcNowOffsetSqlExpression(offsetSeconds)} WHERE \"Id\" = @id;"
+        );
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@id", id);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

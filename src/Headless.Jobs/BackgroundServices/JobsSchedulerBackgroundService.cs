@@ -336,22 +336,9 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
             TimeSpan sleepDuration;
             if (timeRemaining == Timeout.InfiniteTimeSpan || timeRemaining > TimeSpan.FromDays(1))
             {
+                // Nothing was claimed: GetNextJobs claims only work that is due now, and due work never sleeps.
                 sleepDuration = TimeSpan.FromDays(1);
                 _executionContext.SetNextPlannedOccurrence(dt: null);
-
-                // GetNextJobs already claimed these far-future rows (Queued + lease). Nothing dispatches them for
-                // at least a day — far past any lease — so release them instead of leaving claimed rows to churn
-                // through lease-lapse recovery on every wake. Explicit ids only: the empty form would also release
-                // rows whose admissions from earlier ticks are still parked in the pool.
-                var farFutureClaims = _executionContext.Functions;
-                if (farFutureClaims.Length != 0)
-                {
-                    await _internalJobsManager
-                        .ReleaseAcquiredResources(farFutureClaims, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-
-                _executionContext.ClearFunctions();
             }
             else
             {

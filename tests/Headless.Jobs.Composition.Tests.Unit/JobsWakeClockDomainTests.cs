@@ -65,6 +65,42 @@ public sealed class JobsWakeClockDomainTests : TestBase
     }
 
     [Fact]
+    public async Task a_time_job_due_in_ten_minutes_sets_the_wake_and_stays_unclaimed()
+    {
+        // A claim taken at the peek would hold a lease for ten minutes of nothing running; the scheduler claims when
+        // it wakes instead.
+        var (manager, provider) = _CreateManager();
+        var future = _TimeJob(_StoreNow.AddMinutes(10));
+        await provider.AddTimeJobsAsync([future], AbortToken);
+
+        var (wake, functions) = await manager.GetNextJobs(AbortToken);
+
+        functions.Should().BeEmpty();
+        wake.WakeAtStoreUtc.Should().Be(future.ExecutionTime);
+        var stored = await provider.GetTimeJobByIdAsync(future.Id, AbortToken);
+        stored!.Status.Should().Be(JobStatus.Idle);
+        stored.OwnerId.Should().BeNull();
+        stored.LockedUntil.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task a_due_time_job_is_dispatched_by_one_poll_only()
+    {
+        // The row stays Queued under this node until a worker starts it; a second poll in that gap must not hand it to
+        // the pool again.
+        var (manager, provider) = _CreateManager();
+        var due = _TimeJob(_StoreNow);
+        await provider.AddTimeJobsAsync([due], AbortToken);
+
+        var (firstWake, firstFunctions) = await manager.GetNextJobs(AbortToken);
+        var (_, secondFunctions) = await manager.GetNextJobs(AbortToken);
+
+        firstFunctions.Select(x => x.JobId).Should().Equal(due.Id);
+        firstWake.Remaining.Should().Be(TimeSpan.Zero);
+        secondFunctions.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task nothing_pending_still_reports_the_store_anchor()
     {
         // The anchor is what keeps the scheduler's node/store offset fresh, so an empty poll must still carry it —
