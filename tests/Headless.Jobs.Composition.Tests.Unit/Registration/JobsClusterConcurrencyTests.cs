@@ -42,15 +42,10 @@ public sealed class JobsClusterConcurrencyTests : TestBase
         (await _LiveLeasesAsync(store, clock)).Should().Be(_Limit);
 
         // when a run is released, exactly one more is leased
-        await store.ReleaseAcquiredTimeJobsAsync(
-            [
-                direct
-                    .Concat(swept)
-                    .First(x => string.Equals(x.Function, TestJobs.BillingCloseDay, StringComparison.Ordinal))
-                    .Id,
-            ],
-            AbortToken
-        );
+        var released = direct
+            .Concat(swept)
+            .First(x => string.Equals(x.Function, TestJobs.BillingCloseDay, StringComparison.Ordinal));
+        await store.ReleaseAcquiredTimeJobsAsync([released.Id], released.OwnerId!, AbortToken);
         var refilled = await store.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken);
 
         // then
@@ -94,7 +89,8 @@ public sealed class JobsClusterConcurrencyTests : TestBase
             [.. Enumerable.Range(0, _Limit).Select(_ => _TimeJob(TestJobs.BillingCloseDay, overdue))],
             AbortToken
         );
-        (await store.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken)).Should().HaveCount(_Limit);
+        var saturating = await store.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken);
+        saturating.Should().HaveCount(_Limit);
         var limited = _TimeJob(TestJobs.BillingCloseDay, clock.GetUtcNow().UtcDateTime.AddSeconds(30));
         var unlimited = _TimeJob(TestJobs.OrdersShip, clock.GetUtcNow().UtcDateTime.AddSeconds(60));
         await store.AddTimeJobsAsync([limited, unlimited], AbortToken);
@@ -102,7 +98,7 @@ public sealed class JobsClusterConcurrencyTests : TestBase
         // when
         var saturatedPeek = await store.GetEarliestTimeJobsAsync(AbortToken);
         clock.Advance(TimeSpan.FromSeconds(1));
-        await store.ReleaseAcquiredTimeJobsAsync([], AbortToken);
+        await store.ReleaseAcquiredTimeJobsAsync([], saturating[0].OwnerId!, AbortToken);
         var freedPeek = await store.GetEarliestTimeJobsAsync(AbortToken);
 
         // then

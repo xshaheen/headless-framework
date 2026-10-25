@@ -29,10 +29,29 @@ internal interface IInternalJobManager
     Task<int> UpdateTickerAsync(JobExecutionState context, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Renews the running job's lease (#316), dispatching to the time or cron occurrence renew by
-    /// <see cref="JobExecutionState.Type"/>. Returns the affected row count: <c>0</c> means the lease was
-    /// lost and the caller should cancel the job (cancel-on-loss); a <b>negative</b> value means coordination
-    /// membership is not currently established (#461) and the caller should skip the tick rather than cancel.
+    /// Hands a started run back to <c>Idle</c> under its <see cref="JobExecutionState.ClaimOwner"/> without charging
+    /// its retry budget, because a graceful stop kept it from starting. Returns the affected row count; <c>0</c>
+    /// means a peer already owns the row.
+    /// </summary>
+    Task<int> ReleaseInProgressAsync(JobExecutionState context, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Settles a run a graceful stop interrupted, by the row's node-death policy and without charging its retry
+    /// budget. <paramref name="retryExecutionTime"/> is the instant a time job's next attempt was planned for when the
+    /// stop caught it waiting between retries. Returns the affected row count; <c>0</c> means a peer already owns the
+    /// row.
+    /// </summary>
+    Task<int> SettleInterruptedAsync(
+        JobExecutionState context,
+        DateTime? retryExecutionTime,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Renews the running job's lease (#316) under its <see cref="JobExecutionState.ClaimOwner"/>, dispatching to the
+    /// time or cron occurrence renew by <see cref="JobExecutionState.Type"/>. Returns the affected row count:
+    /// <c>0</c> means the lease was lost — including when the node's live identity is gone or is no longer the claim
+    /// owner — and the caller should cancel the job (cancel-on-loss).
     /// </summary>
     Task<int> RenewLeaseAsync(JobExecutionState context, CancellationToken cancellationToken = default);
 

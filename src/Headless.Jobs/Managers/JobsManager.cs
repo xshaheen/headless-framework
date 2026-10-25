@@ -478,7 +478,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return new JobResult<TTimeJob>(new JobValidatorException("Job ExecutionTime must not be null!"));
         }
 
-        timeJob.UpdatedAt = timeProvider.GetUtcNow();
+        // The store stamps UpdatedAt from its own clock: it is the token a claim compares, so the node clock never
+        // sets it.
         timeJob.ExecutionTime = _ConvertToUtcIfNeeded(timeJob.ExecutionTime.Value);
 
         try
@@ -889,10 +890,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     private JobExecutionState[] _BuildImmediateContextsFromNonGeneric(IEnumerable<TimeJobEntity> jobs)
     {
-        return [.. jobs.Select(_BuildContextFromNonGeneric)];
+        return [.. jobs.Select(job => _BuildContextFromNonGeneric(job, job.OwnerId))];
     }
 
-    private JobExecutionState _BuildContextFromNonGeneric(TimeJobEntity job)
+    private JobExecutionState _BuildContextFromNonGeneric(TimeJobEntity job, string? claimOwner)
     {
         var context = new JobExecutionState
         {
@@ -910,9 +911,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             ParentId = job.ParentId,
             ExecutionTime = job.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
             RunCondition = job.RunCondition ?? RunCondition.OnAnyCompletedStatus,
+            ClaimOwner = claimOwner,
         };
 
-        context.TimeJobChildren.AddRange(job.Children.Select(_BuildContextFromNonGeneric));
+        context.TimeJobChildren.AddRange(job.Children.Select(child => _BuildContextFromNonGeneric(child, claimOwner)));
 
         return context;
     }
@@ -1419,7 +1421,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
-            timeJob.UpdatedAt = timeProvider.GetUtcNow();
+            // The store stamps UpdatedAt from its own clock, as on the single-job path.
             timeJob.ExecutionTime = _ConvertToUtcIfNeeded(timeJob.ExecutionTime.Value);
 
             // New chain descendants attached through UpdateBatchAsync bypass the Add path's tenant resolution, so

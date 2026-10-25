@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Jobs.JobsThreadPool;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.BackgroundServices;
@@ -11,6 +12,7 @@ internal static class JobsAdmissionWorkItem
     /// lost races logged because the worker pool swallows delegate exceptions. The function's concurrency permit is
     /// held by the scheduler around this delegate, so a full gate never occupies a worker slot.</summary>
     public static Func<CancellationToken, Task> Create(
+        JobsTaskScheduler taskScheduler,
         IInternalJobManager internalJobsManager,
         JobsExecutionTaskHandler taskHandler,
         ILogger logger,
@@ -20,6 +22,19 @@ internal static class JobsAdmissionWorkItem
     {
         return async ct =>
         {
+            // A graceful stop began after this item was queued: hand the Queued claim back instead of starting it,
+            // so the drain waits only for jobs that were already running. The release fences on the claim owner, so
+            // it still lands after this node left membership, and it ignores the item's token, which the stop may
+            // already have cancelled.
+            if (taskScheduler.IsDraining)
+            {
+                await internalJobsManager
+                    .ReleaseAcquiredResources([function], CancellationToken.None)
+                    .ConfigureAwait(false);
+                logger.LogJobAdmissionReleasedForDrain(function.JobId, function.FunctionName);
+                return;
+            }
+
             JobExecutionState[] claimed;
             try
             {
@@ -67,4 +82,11 @@ internal static partial class JobsAdmissionClaimLog
         Message = "Admission-time claim for job {JobId} ({FunctionName}) affected no rows (ownership lapsed or another wrapper won); skipping execution."
     )]
     public static partial void LogJobAdmissionClaimLost(this ILogger logger, Guid jobId, string functionName);
+
+    [LoggerMessage(
+        EventId = 3125,
+        Level = LogLevel.Information,
+        Message = "Job {JobId} ({FunctionName}) was queued when the host began a graceful stop; its claim was released unstarted."
+    )]
+    public static partial void LogJobAdmissionReleasedForDrain(this ILogger logger, Guid jobId, string functionName);
 }
