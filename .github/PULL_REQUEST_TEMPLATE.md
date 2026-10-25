@@ -6,10 +6,27 @@
 
 <!-- TL;DR, at most 35 words: what is different now, and what was wrong before. -->
 
-**Review:** <!-- ~N min · risk low, medium, or high · authored by a human, by an agent and read by a human, or by an
-agent only; name what a human read line by line -->
+**Review:** <!-- ~N min · risk low, medium, or high · the files a reviewer must read line by line -->
 
-## Review guide
+## Problem
+
+<!-- What was wrong or missing, and who it hurt, in the words of the person who hit it: the call, the input, and
+     the wrong result. -->
+
+Fixes #
+
+## Solution
+
+<!-- One sentence on what is different now. Then, when behavior changed, one row per behavior a consumer or operator
+     can observe, each backed by a test. When the change moves a flow, a lifecycle, or a dependency direction, add a
+     mermaid diagram of the new shape. Don't restate the diff. -->
+
+| Situation | Before | After |
+| --- | --- | --- |
+
+> **Rollout risk:** <!-- what can go wrong when this deploys, and how to back out of it. Write "none" if nothing can. -->
+
+<details><summary><h2>Review guide</h2></summary>
 
 <!-- The questions you want the reviewer to answer, most consequential first, each linked to the hunk that carries
      it (Files changed, line number, Copy permalink). Ask for a decision, not a reading order: "Is a 30 s lease the
@@ -24,23 +41,7 @@ follow a signature change, generated code, lockfiles. Delete if nothing. -->
 
 **Least sure about:** <!-- the one or two places the author would check first if this broke after merge. -->
 
-## Problem
-
-<!-- What was wrong or missing, and who it hurt, in the words of the person who hit it: the call, the input, and
-     the wrong result. -->
-
-> **Rollout risk:** <!-- what can go wrong when this deploys, and how to back out of it. Write "none" if nothing can. -->
-
-Fixes #
-
-## Solution
-
-<!-- One sentence on what is different now. Then, when behavior changed, one row per behavior a consumer or operator
-     can observe, each backed by a test. When the change moves a flow, a lifecycle, or a dependency direction, add a
-     mermaid diagram of the new shape. Don't restate the diff. -->
-
-| Situation | Before | After |
-| --- | --- | --- |
+</details>
 
 ## Decisions
 
@@ -65,7 +66,7 @@ Fixes #
 
 </details>
 
-## Verification
+<details><summary><h2>Verification</h2></summary>
 
 <!-- The state on the head commit only. How the branch got there (checks run on earlier commits, reruns, merges
      from main) goes in the collapsed Branch history block, never in these lines. -->
@@ -81,11 +82,14 @@ Fixes #
   integration-only behavior, unreachable branch, cost above risk; see AGENTS.md). Delete if none. -->
 - **Unrelated failures:** <!-- each test that failed, with the evidence it also fails on main. Delete if none. -->
 
-<!-- Paste each proof's artifacts/proof/<run>/summary.md here, each inside its own collapsed <details> block. -->
+<!-- Paste each proof's artifacts/proof/<run>/summary.md here as it is. Each one is already its own collapsed
+     <details> block with the verdict in its summary line, so do not wrap it again. -->
 
 <details><summary>Branch history</summary>
 
 <!-- Delete if the branch has one commit worth describing. What each later commit added, and the checks run on it. -->
+
+</details>
 
 </details>
 
