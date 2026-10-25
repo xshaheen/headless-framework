@@ -10,8 +10,8 @@ using System.Text.Json.Serialization;
 namespace Headless.Api;
 
 /// <summary>
-/// Reads an enum from a route, query, header, or form value by the names the JSON body accepts for it, so every request
-/// source agrees with the body.
+/// Reads an enum from an MVC action's route, query, header, or form value by the names the JSON body accepts for it, so
+/// those values agree with the body. A Minimal API endpoint leaves names to ASP.NET Core and only refuses numbers.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -32,20 +32,17 @@ internal sealed class RequestEnumValue
 
     private readonly FrozenDictionary<string, Member> _names;
     private readonly FrozenDictionary<string, Member> _aliases;
-    private readonly FrozenDictionary<string, ExactName> _exact;
     private readonly bool _isFlags;
 
     private RequestEnumValue(
         Type enumType,
         FrozenDictionary<string, Member> names,
-        FrozenDictionary<string, Member> aliases,
-        FrozenDictionary<string, ExactName> exact
+        FrozenDictionary<string, Member> aliases
     )
     {
         EnumType = enumType;
         _names = names;
         _aliases = aliases;
-        _exact = exact;
         _isFlags = enumType.IsDefined(typeof(FlagsAttribute), inherit: false);
     }
 
@@ -73,64 +70,6 @@ internal sealed class RequestEnumValue
         result = null;
 
         return false;
-    }
-
-    /// <summary>
-    /// Checks <paramref name="value"/> for a binder that hands the text on to <c>Enum.TryParse</c>, which is
-    /// case-sensitive: the value must be spelled exactly as the body writes it or as the member is declared.
-    /// </summary>
-    /// <param name="value">The raw request value, not empty.</param>
-    /// <param name="rewrite">
-    /// <see langword="null"/> when <c>Enum.TryParse</c> reads <paramref name="value"/> as it is; otherwise the member
-    /// name to put in its place, for an alias or a name the naming policy derived.
-    /// </param>
-    /// <returns>
-    /// <see langword="false"/> for a number, an unknown name, a name in other casing, or a member name an alias replaces.
-    /// </returns>
-    /// <remarks>
-    /// When the wire names are the member names, which the Headless web preset writes, every accepted single value
-    /// passes through as it is: one lookup, nothing allocated. Only a <c>[Flags]</c> list with a part to rewrite builds a
-    /// new string.
-    /// </remarks>
-    public bool TryGetExact(string value, out string? rewrite)
-    {
-        var lookup = _exact.GetAlternateLookup<ReadOnlySpan<char>>();
-        var trimmed = value.AsSpan().Trim();
-
-        if (lookup.TryGetValue(trimmed, out var exact))
-        {
-            rewrite = exact.IsMemberName ? null : exact.Member.Name;
-
-            return true;
-        }
-
-        rewrite = null;
-
-        if (!_isFlags || trimmed.IndexOf(',') < 0)
-        {
-            return false;
-        }
-
-        ulong bits = 0;
-        var rewritten = false;
-
-        foreach (var range in trimmed.Split(','))
-        {
-            if (!lookup.TryGetValue(trimmed[range].Trim(), out var part))
-            {
-                return false;
-            }
-
-            bits |= part.Member.Bits;
-            rewritten |= !part.IsMemberName;
-        }
-
-        if (rewritten)
-        {
-            rewrite = Enum.ToObject(EnumType, bits).ToString();
-        }
-
-        return true;
     }
 
     private bool _TryGetBits(string value, out ulong bits, out Member? single)
@@ -185,7 +124,6 @@ internal sealed class RequestEnumValue
         var typeInfo = options.GetTypeInfo(enumType);
         var names = new Dictionary<string, Member>(StringComparer.OrdinalIgnoreCase);
         var aliases = new Dictionary<string, Member>(StringComparer.Ordinal);
-        var exact = new Dictionary<string, ExactName>(StringComparer.Ordinal);
 
         foreach (var member in Enum.GetValues(enumType))
         {
@@ -202,24 +140,12 @@ internal sealed class RequestEnumValue
             var isAlias = enumType.GetField(memberName)?.IsDefined(typeof(JsonStringEnumMemberNameAttribute)) == true;
             var entry = new Member(_ToBits(member), memberName, member);
             (isAlias ? aliases : names).TryAdd(wireName, entry);
-            exact.TryAdd(
-                wireName,
-                new ExactName(entry, IsMemberName: string.Equals(wireName, memberName, StringComparison.Ordinal))
-            );
-
-            // The declared name is what Enum.TryParse reads, so it passes as it is, unless an alias replaced it: the
-            // body rejects a replaced name, and so does every other source.
-            if (!isAlias)
-            {
-                exact.TryAdd(memberName, new ExactName(entry, IsMemberName: true));
-            }
         }
 
         return new RequestEnumValue(
             enumType,
             names.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase),
-            aliases.ToFrozenDictionary(StringComparer.Ordinal),
-            exact.ToFrozenDictionary(StringComparer.Ordinal)
+            aliases.ToFrozenDictionary(StringComparer.Ordinal)
         );
     }
 
@@ -231,7 +157,4 @@ internal sealed class RequestEnumValue
 
     /// <summary>One accepted name: the member's bits, its name as <c>Enum.TryParse</c> reads it, and its boxed value.</summary>
     private sealed record Member(ulong Bits, string Name, object Boxed);
-
-    /// <summary>A spelling accepted as written, and whether it is already the name <c>Enum.TryParse</c> reads.</summary>
-    private sealed record ExactName(Member Member, bool IsMemberName);
 }

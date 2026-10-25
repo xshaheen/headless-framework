@@ -11,34 +11,15 @@ namespace Headless.Api;
 /// <summary>The validation step the Minimal API validation filters share: run validators, answer 422.</summary>
 internal static class EndpointValidation
 {
-    /// <summary>
-    /// Runs every validator against <paramref name="instance"/> and appends their failures to
-    /// <paramref name="failures"/>, creating the list on the first failure.
-    /// </summary>
-    /// <returns><paramref name="failures"/>, or a new list when it was <see langword="null"/> and a validator failed.</returns>
-    public static async ValueTask<List<ValidationFailure>?> CollectFailuresAsync<T>(
+    /// <inheritdoc cref="ArgumentValidation.CollectFailuresAsync{T}"/>
+    public static ValueTask<List<ValidationFailure>?> CollectFailuresAsync<T>(
         IEnumerable<IValidator<T>> validators,
         T instance,
         List<ValidationFailure>? failures,
         CancellationToken cancellationToken
     )
     {
-        // Sequential, one context per validator: a FluentValidation result wraps its context's failure list, so a
-        // shared context would hand every validator's failures to every result (and race when run concurrently),
-        // and validators commonly share scoped services such as a DbContext that are not safe for concurrent use.
-        foreach (var validator in validators)
-        {
-            var result = await validator
-                .ValidateAsync(new ValidationContext<T>(instance), cancellationToken)
-                .ConfigureAwait(false);
-
-            if (!result.IsValid)
-            {
-                (failures ??= []).AddRange(result.Errors);
-            }
-        }
-
-        return failures;
+        return ArgumentValidation.CollectFailuresAsync(validators, instance, failures, cancellationToken);
     }
 
     /// <summary>Builds the 422 problem response for <paramref name="failures"/> with the request's creator.</summary>

@@ -15,7 +15,7 @@ namespace Headless.Api.Options;
 /// MVC's default converter also accepts the member's number (<c>?status=1</c>) and any number at all, and a value it
 /// cannot parse leaves the parameter at its default while the action runs. Here a value the body would reject (a
 /// number, an unknown name, a member name its <c>[JsonStringEnumMemberName]</c> alias replaces) is a model-state error,
-/// which <see cref="ModelBindingFailureFilter"/> answers with 400.
+/// which <see cref="ModelBindingFailureResponse"/> answers with 400.
 /// </remarks>
 internal sealed class EnumNameModelBinder(RequestEnumValue names, bool nullable) : IModelBinder
 {

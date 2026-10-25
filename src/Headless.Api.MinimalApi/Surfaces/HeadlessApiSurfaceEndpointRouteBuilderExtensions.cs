@@ -17,9 +17,8 @@ public static class HeadlessApiSurfaceEndpointRouteBuilderExtensions
     /// tags take precedence.
     /// </summary>
     /// <remarks>
-    /// An endpoint with no tag of its own is tagged with the surface's OpenAPI title. Every endpoint binds its route,
-    /// query, header, and form values as <see cref="RouteBuilderExtensions.BindRequestValues{TBuilder}"/> describes, so
-    /// an enum reads by the names the JSON body accepts and an unbindable value answers 400 naming it. Chain
+    /// An endpoint with no tag of its own is tagged with the surface's OpenAPI title. Every endpoint refuses an enum sent
+    /// as a number, as <see cref="RouteBuilderExtensions.BindRequestValues{TBuilder}"/> describes. Chain
     /// <see cref="RouteBuilderExtensions.ValidateArguments{TBuilder}"/> on the returned group to validate arguments
     /// across the surface.
     /// </remarks>

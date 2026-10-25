@@ -80,22 +80,22 @@ public static class RouteBuilderExtensions
     }
 
     /// <summary>
-    /// Binds route, query, header, and form values on every endpoint the builder configures with the rules an MVC
-    /// action follows under <c>ConfigureHeadlessMvc()</c>: an enum is read by the names the JSON body accepts for it,
-    /// and a value that cannot be bound answers 400 <c>g:invalid_parameter_value</c> naming it.
+    /// Refuses an enum sent as a number in a route, query, header, or form value on every endpoint the builder
+    /// configures, answering 400 <c>g:invalid_parameter_value</c> naming it, as the JSON body and an MVC action refuse it.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// ASP.NET Core parses an enum outside the body with a case-sensitive <c>Enum.TryParse</c> that also accepts
-    /// numbers, so <c>?status=active</c> fails while the OpenAPI document advertises <c>active</c>, and <c>?status=1</c>
-    /// binds. Here an enum value is read as the body reads the same text (a name the naming policy derives in any
-    /// casing, a <c>[JsonStringEnumMemberName]</c> alias as written, comma-separated <c>[Flags]</c> names, no numbers), and any other simple value is checked with the parse ASP.NET Core applies, so the 400 names the value
-    /// instead of answering the generic bad-request problem. A body that cannot be read keeps that problem, as in MVC.
+    /// ASP.NET Core parses an enum outside the body with <c>Enum.TryParse</c>, which binds the member name exactly as
+    /// declared and refuses anything else, but also binds a number. The Headless web preset writes enums under their
+    /// member names, so everything except the number is left to ASP.NET Core: other casing, an unknown name, and a
+    /// <c>[JsonStringEnumMemberName]</c> alias answer its own generic 400, as does any other value it cannot parse. The
+    /// check reads the values in place and allocates nothing.
     /// </para>
     /// <para>
     /// <see cref="HeadlessApiSurfaceEndpointRouteBuilderExtensions.MapApiSurface"/> applies it to every endpoint of a
     /// surface; call it on any other group or endpoint. The values to check are chosen once per endpoint when the
-    /// endpoint is built, an endpoint with none runs unchanged, and applying it twice has no further effect.
+    /// endpoint is built, an endpoint with no enum parameter runs unchanged, and applying it twice has no further
+    /// effect.
     /// </para>
     /// </remarks>
     /// <typeparam name="TBuilder">The endpoint convention builder type, such as a route group or a route handler.</typeparam>

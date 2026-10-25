@@ -14,9 +14,10 @@ public static class SetupMvc
     /// <list type="bullet">
     ///   <item>Headless JSON serialization options for <c>Microsoft.AspNetCore.Mvc.JsonOptions</c>
     ///         (camel-case, enum strings, etc.) with indented output in Development and Test environments.</item>
-    ///   <item>MVC behavior options: disables the automatic 400 model-state filter, enables
-    ///         406 Not Acceptable for unsupported MIME types, and clears default model-validator
-    ///         providers in favour of <c>SystemTextJsonValidationMetadataProvider</c>.</item>
+    ///   <item>MVC behavior options: enables 406 Not Acceptable for unsupported MIME types, clears the
+    ///         default model-validator providers, shapes the automatic <c>[ApiController]</c> 400 for a value
+    ///         that cannot be bound, and validates action arguments with their registered FluentValidation
+    ///         validators.</item>
     /// </list>
     /// </summary>
     /// <param name="services">The service collection to configure.</param>

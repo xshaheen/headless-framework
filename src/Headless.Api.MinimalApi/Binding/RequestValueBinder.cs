@@ -1,41 +1,35 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using System.Text.Json;
 using Headless.Api.Resources;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
-using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
 namespace Headless.Api;
 
 /// <summary>
-/// Gives a Minimal API endpoint the request-value rules an MVC action has: an enum outside the body is read by the
-/// names the JSON body accepts, and a value that cannot be bound answers 400 <c>g:invalid_parameter_value</c> naming
-/// it.
+/// Refuses an enum sent as a number in a route, query, header, or form value of a Minimal API endpoint, answering 400
+/// <c>g:invalid_parameter_value</c> naming it, as the JSON body and an MVC action refuse it.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The request delegate factory parses an enum with a case-sensitive <c>Enum.TryParse</c> that also accepts numbers,
-/// and it offers no way to replace that. So this wraps the endpoint's built request delegate and runs before the
-/// factory binds anything: each enum value is rewritten to the member name <c>Enum.TryParse</c> accepts, or answered
-/// with 400 when the body would reject it, and every other simple value is checked with the factory's own parse.
+/// ASP.NET Core parses an enum outside the body with <c>Enum.TryParse</c>, which accepts the member name as declared,
+/// refuses anything else, and also accepts a number; it offers no way to change that. Every other rule is left to it:
+/// the Headless web preset writes enums under their member names, so the text a client copies from a response is the
+/// text <c>Enum.TryParse</c> reads. Only the number has to be refused here, before ASP.NET Core binds it.
 /// </para>
 /// <para>
-/// The values to check are chosen once, when the endpoint is built, from the handler's parameters, so an endpoint with
-/// none is left unwrapped. A request copies the query, headers, or form only when a value has to be rewritten.
+/// The enum values to check are chosen once, when the endpoint is built, from the handler's parameters, so an endpoint
+/// with none is left unwrapped. A request reads its values in place and allocates nothing.
 /// </para>
 /// </remarks>
 internal sealed class RequestValueBinder
 {
     private const int _MaxFormDepth = 4;
-
-    private static readonly JsonSerializerOptions _DefaultOptions = new JsonOptions().SerializerOptions;
 
     private readonly BoundValue[] _route;
     private readonly BoundValue[] _query;
@@ -54,7 +48,7 @@ internal sealed class RequestValueBinder
         _next = next;
     }
 
-    /// <summary>Wraps <paramref name="endpoint"/>'s request delegate when its handler binds a value to check.</summary>
+    /// <summary>Wraps <paramref name="endpoint"/>'s request delegate when its handler binds an enum to check.</summary>
     public static void Apply(EndpointBuilder endpoint)
     {
         // A surface and an explicit call on the same endpoint must not wrap it twice.
@@ -76,15 +70,11 @@ internal sealed class RequestValueBinder
         var routeNames = endpoint is RouteEndpointBuilder route
             ? route.RoutePattern.Parameters.Select(x => x.Name).ToHashSet(StringComparer.OrdinalIgnoreCase)
             : [];
-        // Without registered options ASP.NET Core reads the body with its defaults, which write enums as numbers.
-        var options =
-            endpoint.ApplicationServices.GetService<IOptions<JsonOptions>>()?.Value.SerializerOptions
-            ?? _DefaultOptions;
         var values = new List<BoundValue>();
 
         foreach (var parameter in method.GetParameters())
         {
-            _CollectParameter(parameter, parameter.ParameterType, parameter.Name, routeNames, options, values);
+            _CollectParameter(parameter, parameter.ParameterType, parameter.Name, routeNames, values);
         }
 
         if (values.Count > 0)
@@ -96,7 +86,7 @@ internal sealed class RequestValueBinder
     private Task _InvokeAsync(HttpContext context)
     {
         var request = context.Request;
-        var failed = _NormalizeRoute(request) ?? _NormalizeQuery(request) ?? _NormalizeHeaders(request);
+        var failed = _CheckRoute(request) ?? _CheckQuery(request) ?? _CheckHeaders(request);
 
         if (failed is not null)
         {
@@ -118,7 +108,7 @@ internal sealed class RequestValueBinder
         }
 
 #pragma warning disable CA1849 // False positive: the task completed successfully above, so Result returns without blocking.
-        failed = _NormalizeForm(request, reading.Result);
+        failed = _CheckForm(reading.Result);
 #pragma warning restore CA1849
 
         return failed is null ? _next(context) : _WriteInvalidAsync(context, failed);
@@ -126,22 +116,62 @@ internal sealed class RequestValueBinder
 
     private async Task _InvokeAfterFormAsync(HttpContext context, Task<IFormCollection> reading)
     {
-        var form = await reading.ConfigureAwait(false);
-        var failed = _NormalizeForm(context.Request, form);
+        var failed = _CheckForm(await reading.ConfigureAwait(false));
 
         await (failed is null ? _next(context) : _WriteInvalidAsync(context, failed)).ConfigureAwait(false);
     }
 
-    private string? _NormalizeForm(HttpRequest request, IFormCollection form)
+    private string? _CheckRoute(HttpRequest request)
     {
-        Dictionary<string, StringValues>? rewritten = null;
+        foreach (var value in _route)
+        {
+            if (request.RouteValues.TryGetValue(value.Name, out var raw) && raw is string text && _IsNumeric(text))
+            {
+                return value.Name;
+            }
+        }
 
+        return null;
+    }
+
+    private string? _CheckQuery(HttpRequest request)
+    {
+        if (_query.Length == 0)
+        {
+            return null;
+        }
+
+        var query = request.Query;
+
+        foreach (var value in _query)
+        {
+            if (query.TryGetValue(value.Name, out var raw) && _HasNumber(raw))
+            {
+                return value.Name;
+            }
+        }
+
+        return null;
+    }
+
+    private string? _CheckHeaders(HttpRequest request)
+    {
+        foreach (var value in _headers)
+        {
+            if (request.Headers.TryGetValue(value.Name, out var raw) && _HasNumber(raw))
+            {
+                return value.Name;
+            }
+        }
+
+        return null;
+    }
+
+    private string? _CheckForm(IFormCollection form)
+    {
         foreach (var value in _form)
         {
-            if (
-                form.TryGetValue(value.Name, out var raw)
-                && !_NormalizeFormEntry(form, value, value.Name, raw, ref rewritten)
-            )
+            if (form.TryGetValue(value.Name, out var raw) && _HasNumber(raw))
             {
                 return value.Name;
             }
@@ -149,54 +179,29 @@ internal sealed class RequestValueBinder
 
         // An indexed list member ("Items[0]") is found only by walking the keys, so only an endpoint that binds a list
         // from a form pays for the walk.
-        if (_hasFormCollection)
+        if (!_hasFormCollection)
         {
-            // FormCollection's struct enumerator walks the keys without boxing; another collection type goes through
-            // the interface.
-            if (form is FormCollection collection)
-            {
-                foreach (var (key, raw) in collection)
-                {
-                    if (_NormalizeIndexed(form, key, raw, ref rewritten) is { } failedKey)
-                    {
-                        return failedKey;
-                    }
-                }
-            }
-            else
-            {
-                foreach (var (key, raw) in form)
-                {
-                    if (_NormalizeIndexed(form, key, raw, ref rewritten) is { } failedKey)
-                    {
-                        return failedKey;
-                    }
-                }
-            }
+            return null;
         }
 
-        if (rewritten is not null)
+        // FormCollection's struct enumerator walks the keys without boxing; another collection type goes through the
+        // interface.
+        if (form is FormCollection collection)
         {
-            request.Form = new FormCollection(rewritten, form.Files);
+            foreach (var (key, raw) in collection)
+            {
+                if (_IndexedNumber(key, raw))
+                {
+                    return key;
+                }
+            }
+
+            return null;
         }
 
-        return null;
-    }
-
-    private string? _NormalizeIndexed(
-        IFormCollection form,
-        string key,
-        StringValues raw,
-        ref Dictionary<string, StringValues>? rewritten
-    )
-    {
-        foreach (var value in _form)
+        foreach (var (key, raw) in form)
         {
-            if (
-                value.IsCollection
-                && value.MatchesIndexedKey(key)
-                && !_NormalizeFormEntry(form, value, key, raw, ref rewritten)
-            )
+            if (_IndexedNumber(key, raw))
             {
                 return key;
             }
@@ -205,115 +210,47 @@ internal sealed class RequestValueBinder
         return null;
     }
 
-    private static bool _NormalizeFormEntry(
-        IFormCollection form,
-        BoundValue value,
-        string key,
-        StringValues raw,
-        ref Dictionary<string, StringValues>? rewritten
-    )
+    private bool _IndexedNumber(string key, StringValues raw)
     {
-        if (!value.TryNormalize(raw, out var normalized))
+        foreach (var value in _form)
         {
-            return false;
+            if (value.IsCollection && value.MatchesIndexedKey(key) && _HasNumber(raw))
+            {
+                return true;
+            }
         }
 
-        if (normalized is { } changed)
-        {
-            rewritten ??= _Copy(form);
-            rewritten[key] = changed;
-        }
-
-        return true;
+        return false;
     }
 
-    // The two form media types, compared without parsing the header into an object.
-    private static bool _HasFormContentType(string? contentType) =>
-        contentType is not null
-        && (
-            contentType.StartsWith("application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase)
-            || contentType.StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase)
-        );
-
-    private string? _NormalizeRoute(HttpRequest request)
+    private static bool _HasNumber(StringValues raw)
     {
-        foreach (var value in _route)
+        for (var i = 0; i < raw.Count; i++)
         {
-            if (request.RouteValues.TryGetValue(value.Name, out var raw) && raw?.ToString() is { } text)
+            if (raw[i] is { } text && _IsNumeric(text))
             {
-                if (!value.TryNormalize(text, out var normalized))
-                {
-                    return value.Name;
-                }
-
-                if (normalized is { } changed)
-                {
-                    request.RouteValues[value.Name] = changed.ToString();
-                }
+                return true;
             }
         }
 
-        return null;
+        return false;
     }
 
-    private string? _NormalizeQuery(HttpRequest request)
+    // Enum.TryParse reads a value as a number when it starts with a digit or a sign, and a [Flags] list may mix names
+    // with numbers, so each comma-separated part is checked. An empty value is ASP.NET Core's to judge.
+    private static bool _IsNumeric(string text)
     {
-        if (_query.Length == 0)
+        foreach (var range in text.AsSpan().Split(','))
         {
-            return null;
-        }
+            var part = text.AsSpan()[range].TrimStart();
 
-        var query = request.Query;
-        Dictionary<string, StringValues>? rewritten = null;
-
-        foreach (var value in _query)
-        {
-            if (!query.TryGetValue(value.Name, out var raw))
+            if (part.Length > 0 && (char.IsAsciiDigit(part[0]) || part[0] is '-' or '+'))
             {
-                continue;
-            }
-
-            if (!value.TryNormalize(raw, out var normalized))
-            {
-                return value.Name;
-            }
-
-            if (normalized is { } changed)
-            {
-                rewritten ??= _Copy(query);
-                rewritten[value.Name] = changed;
+                return true;
             }
         }
 
-        if (rewritten is not null)
-        {
-            request.Query = new QueryCollection(rewritten);
-        }
-
-        return null;
-    }
-
-    private string? _NormalizeHeaders(HttpRequest request)
-    {
-        foreach (var value in _headers)
-        {
-            if (!request.Headers.TryGetValue(value.Name, out var raw))
-            {
-                continue;
-            }
-
-            if (!value.TryNormalize(raw, out var normalized))
-            {
-                return value.Name;
-            }
-
-            if (normalized is { } changed)
-            {
-                request.Headers[value.Name] = changed;
-            }
-        }
-
-        return null;
+        return false;
     }
 
     private static Task _WriteInvalidAsync(HttpContext context, string parameter)
@@ -324,24 +261,19 @@ internal sealed class RequestValueBinder
         return TypedResults.Problem(creator.BadRequest(error.Description, error)).ExecuteAsync(context);
     }
 
-    private static Dictionary<string, StringValues> _Copy(IEnumerable<KeyValuePair<string, StringValues>> source)
-    {
-        var copy = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var (key, value) in source)
-        {
-            copy[key] = value;
-        }
-
-        return copy;
-    }
+    // The two form media types, compared without parsing the header into an object.
+    private static bool _HasFormContentType(string? contentType) =>
+        contentType is not null
+        && (
+            contentType.StartsWith("application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase)
+            || contentType.StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase)
+        );
 
     private static void _CollectParameter(
         ICustomAttributeProvider attributes,
         Type type,
         string? name,
         HashSet<string> routeNames,
-        JsonSerializerOptions options,
         List<BoundValue> values
     )
     {
@@ -356,7 +288,7 @@ internal sealed class RequestValueBinder
         {
             foreach (var (member, memberType, memberName) in _Members(type))
             {
-                _CollectParameter(member, memberType, memberName, routeNames, options, values);
+                _CollectParameter(member, memberType, memberName, routeNames, values);
             }
 
             return;
@@ -369,39 +301,33 @@ internal sealed class RequestValueBinder
 
         if (metadata.OfType<IFromRouteMetadata>().FirstOrDefault() is { } fromRoute)
         {
-            _AddSimple(ValueSource.Route, fromRoute.Name ?? name, type, options, values);
+            _AddEnum(ValueSource.Route, fromRoute.Name ?? name, type, values);
         }
         else if (metadata.OfType<IFromQueryMetadata>().FirstOrDefault() is { } fromQuery)
         {
-            _AddSimple(ValueSource.Query, fromQuery.Name ?? name, type, options, values);
+            _AddEnum(ValueSource.Query, fromQuery.Name ?? name, type, values);
         }
         else if (metadata.OfType<IFromHeaderMetadata>().FirstOrDefault() is { } fromHeader)
         {
-            _AddSimple(ValueSource.Header, fromHeader.Name ?? name, type, options, values);
+            _AddEnum(ValueSource.Header, fromHeader.Name ?? name, type, values);
         }
         else if (metadata.OfType<IFromFormMetadata>().FirstOrDefault() is { } fromForm)
         {
             // A simple form value binds under its own name; a complex one binds its members by property path.
-            if (!_AddSimple(ValueSource.Form, fromForm.Name ?? name, type, options, values))
+            if (!_AddEnum(ValueSource.Form, fromForm.Name ?? name, type, values) && !_IsSimple(type))
             {
-                _CollectForm(type, prefix: string.Empty, depth: 0, options, values);
+                _CollectForm(type, prefix: string.Empty, depth: 0, values);
             }
         }
         else
         {
-            // The factory's inference: a simple value named in the route template is a route value, else a query one.
+            // ASP.NET Core's inference: a simple value named in the route template is a route value, else a query one.
             var source = routeNames.Contains(name) ? ValueSource.Route : ValueSource.Query;
-            _AddSimple(source, name, type, options, values);
+            _AddEnum(source, name, type, values);
         }
     }
 
-    private static void _CollectForm(
-        Type type,
-        string prefix,
-        int depth,
-        JsonSerializerOptions options,
-        List<BoundValue> values
-    )
+    private static void _CollectForm(Type type, string prefix, int depth, List<BoundValue> values)
     {
         if (depth >= _MaxFormDepth || type == typeof(string) || type.IsValueType || type.IsAbstract)
         {
@@ -412,49 +338,43 @@ internal sealed class RequestValueBinder
         {
             var key = prefix + memberName;
 
-            if (!_AddSimple(ValueSource.Form, key, memberType, options, values))
+            if (!_AddEnum(ValueSource.Form, key, memberType, values) && !_IsSimple(memberType))
             {
-                _CollectForm(memberType, key + ".", depth + 1, options, values);
+                _CollectForm(memberType, key + ".", depth + 1, values);
             }
         }
     }
 
-    private static bool _AddSimple(
-        ValueSource source,
-        string name,
-        Type type,
-        JsonSerializerOptions options,
-        List<BoundValue> values
-    )
+    // Adds the value when it is an enum or a collection of enums, and says whether it was.
+    private static bool _AddEnum(ValueSource source, string name, Type type, List<BoundValue> values)
     {
         var element = _ElementType(type);
         var isCollection = element != type;
         element = Nullable.GetUnderlyingType(element) ?? element;
 
-        if (element.IsEnum)
+        if (!element.IsEnum)
         {
-            // Options that write the enum as a number give the body no names, so the factory's parsing stays.
-            if (RequestEnumValue.For(element, options) is { } names)
-            {
-                values.Add(new BoundValue(source, name, isCollection, names, Parse: null));
-            }
-
-            return true;
+            return false;
         }
 
-        if (element == typeof(string))
-        {
-            return true;
-        }
+        values.Add(new BoundValue(source, name, isCollection));
 
-        if (SimpleValueParser.For(element) is { } parse)
-        {
-            values.Add(new BoundValue(source, name, isCollection, Enum: null, parse));
+        return true;
+    }
 
-            return true;
-        }
+    // A value ASP.NET Core parses from text rather than maps member by member, so the form walk does not descend into it.
+    private static bool _IsSimple(Type type)
+    {
+        var element = _ElementType(type);
+        element = Nullable.GetUnderlyingType(element) ?? element;
 
-        return false;
+        return element.IsPrimitive
+            || element == typeof(string)
+            || element == typeof(decimal)
+            || element == typeof(Uri)
+            || element
+                .GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+                .Any(x => string.Equals(x.Name, "TryParse", StringComparison.Ordinal));
     }
 
     private static Type _ElementType(Type type)
@@ -484,7 +404,7 @@ internal sealed class RequestValueBinder
         return type;
     }
 
-    // The members the factory binds for [AsParameters] and a form maps for a complex type: the constructor's
+    // The members ASP.NET Core binds for [AsParameters] and a form maps for a complex type: the constructor's
     // parameters when it has some, else the settable public properties. A constructor parameter's attributes are
     // read from the property it initializes too, where a record declares them.
     private static IEnumerable<(ICustomAttributeProvider Attributes, Type Type, string Name)> _Members(Type type)
@@ -524,13 +444,7 @@ internal sealed class RequestValueBinder
         Form = 4,
     }
 
-    private sealed record BoundValue(
-        ValueSource Source,
-        string Name,
-        bool IsCollection,
-        RequestEnumValue? Enum,
-        Func<string, bool>? Parse
-    )
+    private sealed record BoundValue(ValueSource Source, string Name, bool IsCollection)
     {
         // A collection member arrives as repeated "Name" fields, found by name, or as indexed "Name[0]" fields.
         public bool MatchesIndexedKey(string key)
@@ -540,60 +454,6 @@ internal sealed class RequestValueBinder
                 && key[Name.Length] == '['
                 && key[^1] == ']'
                 && key.IndexOf('.', Name.Length) < 0;
-        }
-
-        /// <summary>
-        /// Checks every value; <paramref name="normalized"/> is the rewritten values when an enum name had to change,
-        /// else <see langword="null"/>, so a request whose values are already canonical allocates nothing.
-        /// </summary>
-        public bool TryNormalize(StringValues raw, out StringValues? normalized)
-        {
-            normalized = null;
-            string?[]? rewritten = null;
-
-            for (var i = 0; i < raw.Count; i++)
-            {
-                var text = raw[i];
-
-                // An empty value is the factory's to judge: null for an optional parameter, a missing one otherwise.
-                if (string.IsNullOrEmpty(text))
-                {
-                    continue;
-                }
-
-                if (Enum is not null)
-                {
-                    if (!Enum.TryGetExact(text, out var rewrite))
-                    {
-                        return false;
-                    }
-
-                    if (rewrite is not null)
-                    {
-                        // A single value needs no array: StringValues wraps the member name the table already holds.
-                        if (raw.Count == 1)
-                        {
-                            normalized = new StringValues(rewrite);
-
-                            return true;
-                        }
-
-                        rewritten ??= [.. raw];
-                        rewritten[i] = rewrite;
-                    }
-                }
-                else if (!Parse!(text))
-                {
-                    return false;
-                }
-            }
-
-            if (rewritten is not null)
-            {
-                normalized = new StringValues(rewritten);
-            }
-
-            return true;
         }
     }
 

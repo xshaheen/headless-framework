@@ -35,13 +35,11 @@ public sealed class RequestValueBinderTests : TestBase
 
     [Theory]
     [InlineData("1")]
-    [InlineData("bogus")]
-    // ASP.NET Core reads the member name case-sensitively, and rewriting other casing would allocate, so it is refused.
-    [InlineData("active")]
-    [InlineData("ACTIVE")]
-    // The body rejects a member name its [JsonStringEnumMemberName] alias replaces, so the query does too.
-    [InlineData("OnHold")]
-    public async Task should_answer_400_naming_the_parameter_when_an_enum_query_value_is_not_a_name(string value)
+    [InlineData("-1")]
+    [InlineData(" 2")]
+    // A [Flags] list may mix a number in among names.
+    [InlineData("Active,2")]
+    public async Task should_answer_400_naming_the_parameter_when_an_enum_query_value_is_a_number(string value)
     {
         var context = await _InvokeAsync(
             group => group.MapGet("/query", (MemberStatus? status) => status?.ToString() ?? "none"),
@@ -51,20 +49,30 @@ public sealed class RequestValueBinderTests : TestBase
         await _ShouldBeInvalidParameterAsync(context, "status");
     }
 
-    [Fact]
-    public async Task should_bind_a_json_enum_member_name_and_a_flags_combination_from_the_query()
+    [Theory]
+    [InlineData("bogus")]
+    // ASP.NET Core reads the member name case-sensitively and knows no [JsonStringEnumMemberName] alias.
+    [InlineData("active")]
+    [InlineData("on-hold")]
+    public async Task should_leave_a_name_asp_net_core_refuses_to_its_own_400(string value)
     {
-        var alias = await _InvokeAsync(
-            group => group.MapGet("/query", (MemberStatus status) => status.ToString()),
-            request => request.QueryString = new QueryString("?status=on-hold")
+        var context = await _InvokeAsync(
+            group => group.MapGet("/query", (MemberStatus? status) => status?.ToString() ?? "none"),
+            request => request.QueryString = new QueryString($"?status={value}")
         );
-        var flags = await _InvokeAsync(
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [Fact]
+    public async Task should_bind_a_flags_combination_from_the_query()
+    {
+        var context = await _InvokeAsync(
             group => group.MapGet("/access", (Access access) => access.ToString()),
             request => request.QueryString = new QueryString("?access=Read,Write")
         );
 
-        (await _ReadTextAsync(alias)).Should().Be("OnHold");
-        (await _ReadTextAsync(flags)).Should().Be("Read, Write");
+        (await _ReadTextAsync(context)).Should().Be("Read, Write");
     }
 
     [Fact]
@@ -99,7 +107,7 @@ public sealed class RequestValueBinderTests : TestBase
     {
         var context = await _InvokeAsync(
             group => group.MapGet("/route/{status}", (MemberStatus status) => status.ToString()),
-            request => request.RouteValues["status"] = "on-hold"
+            request => request.RouteValues["status"] = "OnHold"
         );
 
         (await _ReadTextAsync(context)).Should().Be("OnHold");
@@ -132,7 +140,7 @@ public sealed class RequestValueBinderTests : TestBase
     }
 
     [Fact]
-    public async Task should_answer_400_naming_the_parameter_when_a_number_query_value_is_not_a_number()
+    public async Task should_leave_a_value_that_is_not_a_number_to_asp_net_core()
     {
         static void map(RouteGroupBuilder group) =>
             group.MapGet("/page", (int page) => page.ToString(CultureInfo.InvariantCulture));
@@ -141,7 +149,7 @@ public sealed class RequestValueBinderTests : TestBase
         var invalid = await _InvokeAsync(map, request => request.QueryString = new QueryString("?page=abc"));
 
         (await _ReadTextAsync(valid)).Should().Be("2");
-        await _ShouldBeInvalidParameterAsync(invalid, "page");
+        invalid.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
     }
 
     [Fact]

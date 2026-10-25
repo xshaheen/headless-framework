@@ -63,51 +63,17 @@ public sealed class RequestEnumValueTests : TestBase
     }
 
     [Theory]
-    // The web preset writes member names, so a member name passes as it is.
-    [InlineData("Active", true, null)]
-    [InlineData(" Active ", true, null)]
-    [InlineData("Negative", true, null)]
-    // An alias is the wire name; Enum.TryParse does not know it, so the member name takes its place.
-    [InlineData("held", true, nameof(Status.OnHold))]
-    // Enum.TryParse is case-sensitive, so other casing, a replaced member name, and numbers are refused.
-    [InlineData("active", false, null)]
-    [InlineData("Held", false, null)]
-    [InlineData("OnHold", false, null)]
-    [InlineData("1", false, null)]
-    [InlineData("bogus", false, null)]
-    public void should_pass_only_the_exact_spelling_enum_try_parse_reads(string value, bool expected, string? rewrite)
-    {
-        var names = RequestEnumValue.For(typeof(Status), JsonConstants.DefaultWebJsonOptions)!;
-
-        names.TryGetExact(value, out var result).Should().Be(expected);
-        result.Should().Be(rewrite);
-    }
-
-    [Theory]
-    [InlineData("Read", true, null)]
-    [InlineData("Read, Write", true, null)]
-    [InlineData("Read,Write", true, null)]
-    [InlineData("READ,write", false, null)]
-    [InlineData("Read,bogus", false, null)]
-    [InlineData("3", false, null)]
-    public void should_pass_an_exact_flags_combination_as_it_is(string value, bool expected, string? rewrite)
+    [InlineData("Read", true)]
+    [InlineData("Read, Write", true)]
+    [InlineData("read,WRITE", true)]
+    [InlineData("Read,bogus", false)]
+    [InlineData("3", false)]
+    public void should_read_a_flags_combination_as_the_body_does(string value, bool expected)
     {
         var names = RequestEnumValue.For(typeof(Permissions), JsonConstants.DefaultWebJsonOptions)!;
 
-        names.TryGetExact(value, out var result).Should().Be(expected);
-        result.Should().Be(rewrite);
-    }
-
-    [Fact]
-    public void should_rewrite_names_a_camel_case_policy_derives_to_member_names()
-    {
-        var names = RequestEnumValue.For(typeof(Permissions), _Options("camel"))!;
-
-        names.TryGetExact("read", out var single).Should().BeTrue();
-        names.TryGetExact("read,write", out var flags).Should().BeTrue();
-
-        single.Should().Be(nameof(Permissions.Read));
-        Enum.Parse<Permissions>(flags!).Should().Be(Permissions.Read | Permissions.Write);
+        names.TryParse(value, out _).Should().Be(expected);
+        _ReadBody<Permissions>(value, JsonConstants.DefaultWebJsonOptions).HasValue.Should().Be(expected);
     }
 
     [Fact]
@@ -119,7 +85,7 @@ public sealed class RequestEnumValueTests : TestBase
         // Warm up first, so the measured calls see only steady-state work.
         for (var i = 0; i < 1_000; i++)
         {
-            accepted += names.TryParse("Active", out _) && names.TryGetExact("held", out _) ? 1 : 0;
+            accepted += names.TryParse("Active", out _) && names.TryParse("held", out _) ? 1 : 0;
         }
 
         var before = GC.GetAllocatedBytesForCurrentThread();
@@ -127,8 +93,8 @@ public sealed class RequestEnumValueTests : TestBase
         for (var i = 0; i < 1_000; i++)
         {
             accepted += names.TryParse("active", out _) ? 1 : 0;
-            accepted += names.TryGetExact(" Active ", out _) ? 1 : 0;
-            accepted += names.TryGetExact("held", out _) ? 1 : 0;
+            accepted += names.TryParse(" Active ", out _) ? 1 : 0;
+            accepted += names.TryParse("held", out _) ? 1 : 0;
             accepted += names.TryParse("1", out _) ? 1 : 0;
         }
 
