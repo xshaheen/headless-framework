@@ -82,7 +82,7 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
             return TypedResults.Problem(creator.BadRequest(detail: error.Description, error: error));
         }
 
-        var failures = await EndpointValidation
+        var failures = await ArgumentValidation
             .CollectFailuresAsync(validatorList, request, failures: null, context.HttpContext.RequestAborted)
             .ConfigureAwait(false);
 

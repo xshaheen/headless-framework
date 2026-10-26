@@ -27,24 +27,20 @@ namespace Headless.Api;
 /// with none is left unwrapped. A request reads its values in place and allocates nothing.
 /// </para>
 /// </remarks>
-internal sealed class RequestValueBinder
+internal sealed class EnumNumberGuard
 {
-    private const int _MaxFormDepth = 4;
-
     private readonly BoundValue[] _route;
     private readonly BoundValue[] _query;
     private readonly BoundValue[] _headers;
     private readonly BoundValue[] _form;
-    private readonly bool _hasFormCollection;
     private readonly RequestDelegate _next;
 
-    private RequestValueBinder(List<BoundValue> values, RequestDelegate next)
+    private EnumNumberGuard(List<BoundValue> values, RequestDelegate next)
     {
         _route = [.. values.Where(x => x.Source == ValueSource.Route)];
         _query = [.. values.Where(x => x.Source == ValueSource.Query)];
         _headers = [.. values.Where(x => x.Source == ValueSource.Header)];
         _form = [.. values.Where(x => x.Source == ValueSource.Form)];
-        _hasFormCollection = _form.Any(x => x.IsCollection);
         _next = next;
     }
 
@@ -79,7 +75,7 @@ internal sealed class RequestValueBinder
 
         if (values.Count > 0)
         {
-            endpoint.RequestDelegate = new RequestValueBinder(values, next)._InvokeAsync;
+            endpoint.RequestDelegate = new EnumNumberGuard(values, next)._InvokeAsync;
         }
     }
 
@@ -181,50 +177,7 @@ internal sealed class RequestValueBinder
             }
         }
 
-        // An indexed list member ("Items[0]") is found only by walking the keys, so only an endpoint that binds a list
-        // from a form pays for the walk.
-        if (!_hasFormCollection)
-        {
-            return null;
-        }
-
-        // FormCollection's struct enumerator walks the keys without boxing; another collection type goes through the
-        // interface.
-        if (form is FormCollection collection)
-        {
-            foreach (var (key, raw) in collection)
-            {
-                if (_IndexedNumber(key, raw))
-                {
-                    return key;
-                }
-            }
-
-            return null;
-        }
-
-        foreach (var (key, raw) in form)
-        {
-            if (_IndexedNumber(key, raw))
-            {
-                return key;
-            }
-        }
-
         return null;
-    }
-
-    private bool _IndexedNumber(string key, StringValues raw)
-    {
-        foreach (var value in _form)
-        {
-            if (value.IsCollection && value.MatchesIndexedKey(key) && _HasNumber(raw))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static bool _HasNumber(StringValues raw)
@@ -300,10 +253,14 @@ internal sealed class RequestValueBinder
         }
         else if (metadata.OfType<IFromFormMetadata>().FirstOrDefault() is { } fromForm)
         {
-            // A simple form value binds under its own name; a complex one binds its members by property path.
+            // A simple form value binds under its own name; a form type binds its direct members by name. A member
+            // nested deeper is left to ASP.NET Core.
             if (!_AddEnum(ValueSource.Form, fromForm.Name ?? name, type, values) && !_IsSimple(type))
             {
-                _CollectForm(type, prefix: string.Empty, depth: 0, values);
+                foreach (var (_, memberType, memberName) in _Members(type))
+                {
+                    _AddEnum(ValueSource.Form, memberName, memberType, values);
+                }
             }
         }
         else
@@ -314,29 +271,10 @@ internal sealed class RequestValueBinder
         }
     }
 
-    private static void _CollectForm(Type type, string prefix, int depth, List<BoundValue> values)
-    {
-        if (depth >= _MaxFormDepth || type == typeof(string) || type.IsValueType || type.IsAbstract)
-        {
-            return;
-        }
-
-        foreach (var (_, memberType, memberName) in _Members(type))
-        {
-            var key = prefix + memberName;
-
-            if (!_AddEnum(ValueSource.Form, key, memberType, values) && !_IsSimple(memberType))
-            {
-                _CollectForm(memberType, key + ".", depth + 1, values);
-            }
-        }
-    }
-
     // Adds the value when it is an enum or a collection of enums, and says whether it was.
     private static bool _AddEnum(ValueSource source, string name, Type type, List<BoundValue> values)
     {
         var element = _ElementType(type);
-        var isCollection = element != type;
         element = Nullable.GetUnderlyingType(element) ?? element;
 
         if (!element.IsEnum)
@@ -344,7 +282,8 @@ internal sealed class RequestValueBinder
             return false;
         }
 
-        values.Add(new BoundValue(source, name, isCollection));
+        // A collection's repeated values arrive under the same name, so one lookup checks them all.
+        values.Add(new BoundValue(source, name));
 
         return true;
     }
@@ -431,18 +370,7 @@ internal sealed class RequestValueBinder
         Form = 4,
     }
 
-    private sealed record BoundValue(ValueSource Source, string Name, bool IsCollection)
-    {
-        // A collection member arrives as repeated "Name" fields, found by name, or as indexed "Name[0]" fields.
-        public bool MatchesIndexedKey(string key)
-        {
-            return key.Length > Name.Length + 2
-                && key.StartsWith(Name, StringComparison.OrdinalIgnoreCase)
-                && key[Name.Length] == '['
-                && key[^1] == ']'
-                && key.IndexOf('.', Name.Length) < 0;
-        }
-    }
+    private sealed record BoundValue(ValueSource Source, string Name);
 
     private sealed class CombinedAttributes(ICustomAttributeProvider first, ICustomAttributeProvider second)
         : ICustomAttributeProvider

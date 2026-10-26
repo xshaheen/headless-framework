@@ -18,7 +18,7 @@ namespace Tests.Binding;
 /// Pins that a Minimal API endpoint binds an enum outside the body by the names the JSON body accepts, and answers a
 /// value it cannot bind with 400 naming it, as an MVC action does under ConfigureHeadlessMvc().
 /// </summary>
-public sealed class RequestValueBinderTests : TestBase
+public sealed class EnumNumberGuardTests : TestBase
 {
     [Theory]
     [InlineData("Active")]
@@ -177,7 +177,7 @@ public sealed class RequestValueBinderTests : TestBase
             .MapApiSurface("portal")
             .MapGet("/query", (MemberStatus? status) => status?.ToString() ?? "none")
             // A second application must not wrap the endpoint twice.
-            .BindRequestValues();
+            .RejectEnumNumbers();
         var context = MinimalApiTestHost.CreateHttpContext(services);
         context.Request.QueryString = new QueryString("?status=Inactive");
 
@@ -259,7 +259,7 @@ public sealed class RequestValueBinderTests : TestBase
         var plain = new TestEndpointRouteBuilder(services);
         map(plain);
         var wrapped = new TestEndpointRouteBuilder(services);
-        map(wrapped.MapGroup("").BindRequestValues());
+        map(wrapped.MapGroup("").RejectEnumNumbers());
 
         var withoutConvention = _BytesPerRequest(
             MinimalApiTestHost.SingleEndpoint(plain).RequestDelegate!,
@@ -319,7 +319,7 @@ public sealed class RequestValueBinderTests : TestBase
         // The response is read after the call, which needs no service, so the container ends with it.
         await using var services = _CreateServices();
         var endpoints = new TestEndpointRouteBuilder(services);
-        map(endpoints.MapGroup("").BindRequestValues());
+        map(endpoints.MapGroup("").RejectEnumNumbers());
         var context = MinimalApiTestHost.CreateHttpContext(services);
         arrange(context.Request);
 

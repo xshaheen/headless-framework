@@ -18,7 +18,7 @@ public static class HeadlessApiSurfaceEndpointRouteBuilderExtensions
     /// </summary>
     /// <remarks>
     /// An endpoint with no tag of its own is tagged with the surface's OpenAPI title. Every endpoint refuses an enum sent
-    /// as a number, as <see cref="RouteBuilderExtensions.BindRequestValues{TBuilder}"/> describes. Chain
+    /// as a number, as <see cref="RouteBuilderExtensions.RejectEnumNumbers{TBuilder}"/> describes. Chain
     /// <see cref="RouteBuilderExtensions.ValidateArguments{TBuilder}"/> on the returned group to validate arguments
     /// across the surface.
     /// </remarks>
@@ -74,7 +74,7 @@ public static class HeadlessApiSurfaceEndpointRouteBuilderExtensions
                 builder.Metadata.Add(new TagsAttribute(descriptor.OpenApi.Title));
             }
         });
-        group.BindRequestValues();
+        group.RejectEnumNumbers();
         configure?.Invoke(group);
         return group;
     }

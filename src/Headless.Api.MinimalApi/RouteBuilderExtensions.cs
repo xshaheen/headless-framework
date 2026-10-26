@@ -102,13 +102,13 @@ public static class RouteBuilderExtensions
     /// <param name="builder">The builder to configure.</param>
     /// <returns><paramref name="builder"/> for chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
-    public static TBuilder BindRequestValues<TBuilder>(this TBuilder builder)
+    public static TBuilder RejectEnumNumbers<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder
     {
         Argument.IsNotNull(builder);
 
         // It wraps the request delegate, which exists only once the endpoint is built, so it is a final convention.
-        builder.Finally(static endpoint => RequestValueBinder.Apply(endpoint));
+        builder.Finally(static endpoint => EnumNumberGuard.Apply(endpoint));
 
         return builder;
     }
