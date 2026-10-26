@@ -121,7 +121,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// Claims the supplied due time jobs for this node on the main scheduler path: each row that is still
     /// acquirable and unchanged since <paramref name="timeJobs"/> was read is stamped with this node's owner id,
     /// a fresh lease, and <c>Queued</c> status. Idle descendants of a claimed root are claimed alongside it so a
-    /// job chain does not fragment across nodes.
+    /// job chain does not fragment across nodes. A row is claimed only when it is due on the store's own clock.
     /// </summary>
     /// <param name="timeJobs">Candidate jobs previously read via <see cref="GetEarliestTimeJobsAsync"/>.</param>
     /// <param name="cancellationToken">Token that aborts the claim sweep between rows.</param>
@@ -135,6 +135,12 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <paramref name="timeJobs"/>, not copies: on a won row the provider stamps this node's owner id, the granted
     /// lease, <c>Queued</c> status, and the post-claim concurrency token onto the caller's object, and prunes its
     /// child collection to the descendants the claim actually leased. Lost rows are left untouched.
+    /// </para>
+    /// <para>
+    /// The due test is the store's, not the caller's. A row that is not yet due is left untouched even when the
+    /// caller's clock says otherwise, so a node whose clock runs ahead cannot claim a job early, and a job never holds
+    /// a lease or a cluster-concurrency slot before it is due. A job may start up to one second
+    /// before its scheduled instant.
     /// </para>
     /// <para>
     /// A candidate collection therefore belongs to exactly one claim: <b>never share one across concurrent claims
@@ -254,8 +260,9 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
 
     /// <summary>
     /// Reads — without claiming — the batch of acquirable time jobs due in the earliest pending one-second
-    /// bucket. This is the scheduler's peek: it decides what to attempt next and how long to sleep, then claims
-    /// the result via <see cref="QueueTimeJobsAsync"/>.
+    /// bucket. This is the scheduler's peek: it decides what to attempt next and how long to sleep, and the
+    /// scheduler claims the result via <see cref="QueueTimeJobsAsync"/> only once the earliest job is due by the
+    /// returned <see cref="EarliestTimeJobs.StoreUtcNow"/>.
     /// </summary>
     /// <param name="cancellationToken">Token that aborts the query.</param>
     /// <returns>
@@ -273,7 +280,14 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <para>
     /// <see cref="EarliestTimeJobs.StoreUtcNow"/> must be read in the same statement as the peek, matching
     /// <see cref="CronDispatchCandidates.StoreUtcNow"/>: the caller derives its sleep from it, so a node-clock value
-    /// here makes a skewed node oversleep past a job the store already considers due.
+    /// here makes a skewed node oversleep past a job the store already considers due. For the same reason the pending
+    /// window must reach back at least one second on the store clock; it may reach further, to rows a node stamped
+    /// with its own lagging clock, because the claim still arbitrates every row.
+    /// </para>
+    /// <para>
+    /// The peek omits rows this node already holds. A row the scheduler claimed and dispatched stays <c>Queued</c>
+    /// under this node's lease until a worker starts it; peeking it again would admit it to the pool a second time.
+    /// The claim keeps accepting such rows, so a node can still re-claim its own rows.
     /// </para>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
@@ -449,12 +463,19 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <param name="cancellationToken">Token that aborts the claim.</param>
     /// <returns>
     /// Only the jobs this node actually claimed, with unscheduled children attached for chain execution. Rows that
-    /// were not acquirable — terminal, or leased by another node — are omitted, so an empty result means the
-    /// request was fully lost and nothing should be executed.
+    /// were not acquirable — terminal, leased by another node, or not yet due on the store's clock — are omitted, so
+    /// an empty result means the request was fully lost and nothing should be executed.
     /// </returns>
     /// <remarks>
+    /// <para>
+    /// The caller decides a row is due on its own clock; the store applies the same due test as
+    /// <see cref="QueueTimeJobsAsync"/>, on its own clock, and leaves a row that is not yet due untouched for the
+    /// scheduler's claim. A node whose clock runs ahead therefore cannot start a scheduled job early through enqueue.
+    /// </para>
+    /// <para>
     /// The relational provider returns empty when coordination membership is not established, because it has no
     /// owner identity to stamp.
+    /// </para>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(Guid[] ids, CancellationToken cancellationToken = default);

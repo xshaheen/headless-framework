@@ -29,6 +29,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
+    private static readonly string _DueSlackSeconds = JobsDueSlack.Seconds.ToString(CultureInfo.InvariantCulture);
+
     private static readonly SqlColumnType[] _DirectCandidateTypes = [SqlColumnType.Guid, SqlColumnType.Timestamp];
 
     // Function names are matched as the column stores them, in the database's default collation.
@@ -756,7 +758,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     {
         return PostgreSqlDialect.Instance.InTuples([mapping.Id, mapping.UpdatedAt], "requested", _DirectCandidateTypes)
             + " AND "
-            + AcquirePredicateSql.Build(mapping.Status, mapping.OwnerId, mapping.LockedUntil);
+            + AcquirePredicateSql.Build(mapping.Status, mapping.OwnerId, mapping.LockedUntil)
+            + $" AND ({mapping.ExecutionTime} IS NULL OR {mapping.ExecutionTime} <= {SqlDialectTokens.Now} + INTERVAL '{_DueSlackSeconds} second')";
     }
 
     // The acquire predicate's @owner is bound by _ClaimRootsAsync, which every root claim runs through.

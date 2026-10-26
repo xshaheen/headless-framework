@@ -224,7 +224,14 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
         }
 
-        if (includeTimeJobs && minTimeJobs.Jobs.Length > 0)
+        // Time jobs are claimed when the scheduler wakes for them, not when it first sees them: a claim made earlier
+        // would hold a lease and a cluster-concurrency slot for work that is not running. Gating on the earliest row of
+        // the peeked second is enough, because the claim's own slack covers the rest of that second, so the store is
+        // never asked for a row it would refuse and the claim-conflict count stays truthful. With no store anchor there
+        // is nothing to measure due-ness against, so the provider's own due filter decides.
+        var timeJobsDue = storeUtcNow is not { } anchor || timeJobTime <= anchor;
+
+        if (includeTimeJobs && minTimeJobs.Jobs.Length > 0 && timeJobsDue)
         {
             timeFunctions = await _QueueNextTimeJobsAsync(minTimeJobs.Jobs, cancellationToken).ConfigureAwait(false);
         }

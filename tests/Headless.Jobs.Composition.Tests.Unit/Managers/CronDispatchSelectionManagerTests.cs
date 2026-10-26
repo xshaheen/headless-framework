@@ -296,8 +296,11 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
         await provider.AddTimeJobsAsync([_TimeJob(_Now.AddMilliseconds(-600))], AbortToken);
 
         // Twice: the first wake records the suppression, the second proves a suppressed definition stays skipped
-        // rather than re-failing the cycle once the durable defer is no longer there to hide it.
-        await manager.GetNextJobs(AbortToken);
+        // rather than re-failing the cycle once the durable defer is no longer there to hide it. Each wake gets its own
+        // due time job, because the first wake's row is now held by this node and is not dispatched again.
+        var (_, firstFunctions) = await manager.GetNextJobs(AbortToken);
+        firstFunctions.Should().Contain(x => x.Type == JobType.TimeJob);
+        await provider.AddTimeJobsAsync([_TimeJob(_Now.AddMilliseconds(-600))], AbortToken);
         var (_, functions) = await manager.GetNextJobs(AbortToken);
 
         functions

@@ -65,6 +65,60 @@ public sealed class JobsWakeClockDomainTests : TestBase
     }
 
     [Fact]
+    public async Task a_time_job_due_in_ten_minutes_sets_the_wake_and_stays_unclaimed()
+    {
+        // A claim taken at the peek would hold a lease for ten minutes of nothing running; the scheduler claims when
+        // it wakes instead.
+        var (manager, provider) = _CreateManager();
+        var future = _TimeJob(_StoreNow.AddMinutes(10));
+        await provider.AddTimeJobsAsync([future], AbortToken);
+
+        var (wake, functions) = await manager.GetNextJobs(AbortToken);
+
+        functions.Should().BeEmpty();
+        wake.WakeAtStoreUtc.Should().Be(future.ExecutionTime);
+        var stored = await provider.GetTimeJobByIdAsync(future.Id, AbortToken);
+        stored!.Status.Should().Be(JobStatus.Idle);
+        stored.OwnerId.Should().BeNull();
+        stored.LockedUntil.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task a_due_time_job_is_dispatched_by_one_poll_only()
+    {
+        // The row stays Queued under this node until a worker starts it; a second poll in that gap must not hand it to
+        // the pool again.
+        var (manager, provider) = _CreateManager();
+        var due = _TimeJob(_StoreNow);
+        await provider.AddTimeJobsAsync([due], AbortToken);
+
+        var (firstWake, firstFunctions) = await manager.GetNextJobs(AbortToken);
+        var (_, secondFunctions) = await manager.GetNextJobs(AbortToken);
+
+        firstFunctions.Select(x => x.JobId).Should().Equal(due.Id);
+        firstWake.Remaining.Should().Be(TimeSpan.Zero);
+        secondFunctions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task immediate_acquire_takes_only_rows_due_on_the_store_clock()
+    {
+        // A node whose clock runs ahead of the store believes a row 30 seconds out is due and asks for it at enqueue;
+        // the store must still refuse it so the job runs at its scheduled instant, not the node's.
+        var (_, provider) = _CreateManager();
+        var due = _TimeJob(_StoreNow.AddSeconds(1));
+        var future = _TimeJob(_StoreNow.AddSeconds(30));
+        await provider.AddTimeJobsAsync([due, future], AbortToken);
+
+        var acquired = await provider.AcquireImmediateTimeJobsAsync([due.Id, future.Id], AbortToken);
+
+        acquired.Select(x => x.Id).Should().Equal(due.Id);
+        var stored = await provider.GetTimeJobByIdAsync(future.Id, AbortToken);
+        stored!.Status.Should().Be(JobStatus.Idle);
+        stored.OwnerId.Should().BeNull();
+    }
+
+    [Fact]
     public async Task nothing_pending_still_reports_the_store_anchor()
     {
         // The anchor is what keeps the scheduler's node/store offset fresh, so an empty poll must still carry it —
@@ -77,6 +131,26 @@ public sealed class JobsWakeClockDomainTests : TestBase
         wake.WakeAtStoreUtc.Should().BeNull();
         wake.Remaining.Should().Be(Timeout.InfiniteTimeSpan);
         wake.StoreUtcNow.Should().Be(_StoreNow);
+    }
+
+    [Fact]
+    public async Task peek_skips_a_row_this_node_holds_and_returns_a_row_whose_foreign_lease_lapsed()
+    {
+        // A row this node holds was dispatched by an earlier wake; peeking it again would admit it to the pool a second
+        // time. A lapsed foreign lease frees the row for anyone, so the peek keeps returning it.
+        var (_, provider) = _CreateManager();
+        var held = _TimeJob(_StoreNow.AddSeconds(2));
+        held.Status = JobStatus.Queued;
+        held.OwnerId = "node-a";
+        held.LockedUntil = _StoreNow.AddMinutes(5);
+        var lapsed = _TimeJob(_StoreNow.AddSeconds(2));
+        lapsed.OwnerId = "node-b";
+        lapsed.LockedUntil = _StoreNow.AddMinutes(-1);
+        await provider.AddTimeJobsAsync([held, lapsed], AbortToken);
+
+        var peek = await provider.GetEarliestTimeJobsAsync(AbortToken);
+
+        peek.Jobs.Select(x => x.Id).Should().Equal(lapsed.Id);
     }
 
     [Fact]
