@@ -9,8 +9,8 @@ namespace Headless.FluentValidation;
 /// without depending on the package that implements the rule.
 /// </summary>
 /// <remarks>
-/// The <c>FileNotEmpty</c>, <c>GreaterThanOrEqualTo</c>, and <c>LessThanOrEqualTo</c> file rules implement it, for an
-/// <c>IUploadedFile</c> and for an ASP.NET Core <c>IFormFile</c> alike. Headless.OpenApi adds the bound to the
+/// The <c>FileNotEmpty</c>, <c>GreaterThanOrEqualTo</c>, and <c>LessThanOrEqualTo</c> rules for an ASP.NET Core
+/// <c>IFormFile</c> in Headless.Api.FluentValidation implement it. Headless.OpenApi adds the bound to the
 /// description of the file part in a multipart request body.
 /// </remarks>
 [PublicAPI]

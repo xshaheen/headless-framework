@@ -1,6 +1,6 @@
 ---
 domain: Utilities
-packages: FluentValidation, FluentValidation.FileSignatures, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, Http.Resilience, NetTopologySuite, PhoneNumbers, Redis, Sitemaps, Slugs
+packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, Http.Resilience, NetTopologySuite, PhoneNumbers, Redis, Sitemaps, Slugs
 ---
 
 # Utilities
@@ -13,7 +13,6 @@ Install individually as needed -- these packages are independent of each other:
 
 - **Generator.Primitives + Generator.Primitives.Abstractions** -- Roslyn source generator for strongly-typed domain primitives (IDs, value types). Install both together. Define types implementing `IPrimitive<T>` and get auto-generated equality, JSON converters, EF Core value converters, Dapper handlers, and TypeConverters.
 - **FluentValidation** -- Enterprise validators on top of FluentValidation: national IDs, collections, geo, pagination, URLs, IP addresses, string formats (slug/username/hex color/Base64/…), relative date/time (`InThePast()`/`MinimumAge()`, `TimeProvider`-based), enum names, and markup rejection (`NoScripts()`). Use `ErrorDescriptor` for structured API errors.
-- **FluentValidation.FileSignatures** -- the binary signature (magic bytes) rule `HaveSignatures` for an `IUploadedFile`, kept out of FluentValidation so packages that never handle files do not carry FileSignatures and OpenMcdf.
 - **Http.Resilience** -- declare an outbound provider client's side-effect class (`OutboundEffect.Safe | Idempotent | Unsafe`) and derive its HttpClient resilience pipeline from it with `AddEffectResilienceHandler`. Used by the SMS and Paymob packages.
 - **Hosting** -- DI extensions (`AddIf`, `AddOrReplace*`, `Unregister<T>`), options validation with FluentValidation (`AddOptionsWithFluentValidation<T,V>`), database seeder infrastructure (`ISeeder`).
 - **PhoneNumbers** -- libphonenumber-backed phone number formatting, normalization, and parsing for the `PhoneNumber` value object, mobile-number validation, and the phone FluentValidation rules (`InternationalPhoneNumber()`, `MobilePhoneNumber()`, …).
@@ -52,7 +51,7 @@ Extension library for FluentValidation providing additional validators and utili
 - String-format validators (slug, username, ZIP code, hex color, decimal, Base64, trimmed, culture name)
 - Relative date/time validators (`InThePast`/`InTheFuture`/`MinimumAge`, …) that read "now" from an injectable `TimeProvider`
 - Enum-name and markup-rejection (`NoScripts`) validators
-- File validators for an `IUploadedFile` property (`FileNotEmpty`, `GreaterThanOrEqualTo`, `LessThanOrEqualTo`, `ContentTypes`), so a command or request handled in process (through the mediator, for example) validates a file without depending on ASP.NET Core. An `IUploadedFile` wraps live content and is not a broker message payload; a message carries a reference to stored content instead. `Headless.Api.FluentValidation` offers the same rules for `IFormFile`, with the same error codes (`FluentValidatorErrorCodes.File*`, descriptors in `FluentValidatorErrorDescriber.Files`) and messages. A content-type failure reports `g:file_unexpected_content_type` with the accepted types in `{ContentTypes}`; a signature failure reports `g:file_unexpected_signature`. The size and content-type rules implement `IFileSizeValidator` / `IFileContentTypeValidator`, which Headless.OpenApi reads. The signature rule ships in [`Headless.FluentValidation.FileSignatures`](#headlessfluentvalidationfilesignatures). A null file passes every rule
+- File error codes and messages (`FluentValidatorErrorCodes.File*`, descriptors in `FluentValidatorErrorDescriber.Files`) and the `IFileSizeValidator` / `IFileContentTypeValidator` contracts. The file rules themselves (`FileNotEmpty`, `GreaterThanOrEqualTo`, `LessThanOrEqualTo`, `ContentTypes`, `HaveSignatures`) validate an `IFormFile` and ship in `Headless.Api.FluentValidation`. A content-type failure reports `g:file_unexpected_content_type` with the accepted types in `{ContentTypes}`; a signature failure reports `g:file_unexpected_signature`. The size and content-type rules implement those contracts, which Headless.OpenApi reads (see [api.md](api.md#headlessapifluentvalidation)). A null file passes every rule
 - `ErrorDescriptor` integration for structured API responses
 - Automatic camelCase property path normalization
 - Messages in English, formal Arabic (`ar`), and Egyptian Arabic (`ar-EG`), including Arabic wording for FluentValidation's own built-in messages
@@ -151,56 +150,6 @@ if (ValidatorOptions.Global.LanguageManager is LanguageManager languageManager)
 | ID | `Id` (validates non-empty Guid, positive int/long) |
 
 The phone rules ship in [`Headless.PhoneNumbers`](#headlessphonenumbers), so this package carries no libphonenumber dependency. Their error codes (`g:invalid_phone_number`, `g:invalid_country_code`, `g:local_phone_number`, `g:invalid_mobile_number`) stay in `FluentValidatorErrorCodes` and `FluentValidatorErrorDescriber.PhoneNumbers`.
-
-### Configuration
-
-No configuration required.
-
-### Runtime behavior
-
-None.
----
-## Headless.FluentValidation.FileSignatures
-
-The binary signature (magic bytes) rule for an `IUploadedFile` property, built on FileSignatures. It is a separate package because `Headless.FluentValidation` sits under nearly every Headless package (through `Headless.Hosting`), and FileSignatures brings OpenMcdf with it.
-
-### API and behavior
-
-- `HaveSignatures(inspector, predicate)` opens a new stream through `IUploadedFile.OpenReadStream()`, asks the `IFileFormatInspector` for the format, and passes it (or `null` when no format matches) to the predicate. The stream is disposed afterwards, so the code that stores the file still reads the whole content.
-- The inspector requires a seekable stream; `IUploadedFile.OpenReadStream()` promises one. A forward-only implementation fails with `NotSupportedException` from the inspector rather than with a validation error.
-- A failure reports `g:file_unexpected_signature` (`FluentValidatorErrorCodes.FileUnexpectedSignature`). A null file passes.
-- The rule is asynchronous: validate with `ValidateAsync`, as the mediator's validation behavior does. It checks the validation's cancellation token before it opens the content.
-- `Headless.Api.FluentValidation` exposes the same rule for `IFormFile` and references this package.
-
-### Install
-
-```bash
-dotnet add package Headless.FluentValidation.FileSignatures
-```
-
-### Setup and use
-
-```csharp
-using FileSignatures;
-using FileSignatures.Formats;
-using FluentValidation;
-using Headless.IO;
-
-public sealed record UpdateAvatar(IUploadedFile Avatar);
-
-public sealed class UpdateAvatarValidator : AbstractValidator<UpdateAvatar>
-{
-    public UpdateAvatarValidator(IFileFormatInspector inspector)
-    {
-        RuleFor(x => x.Avatar)
-            .FileNotEmpty()
-            .LessThanOrEqualTo(5 * 1024 * 1024)
-            .HaveSignatures(inspector, format => format is Jpeg or Png);
-    }
-}
-```
-
-`Headless.Api.ServiceDefaults` registers an `IFileFormatInspector` over the FileSignatures built-in formats; outside an API host, register one yourself (`new FileFormatInspector()`).
 
 ### Configuration
 

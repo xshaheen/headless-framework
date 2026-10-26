@@ -83,8 +83,8 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         order.Required().Should().NotContain("shippingAddress");
         var alternatives = order["properties"]!["shippingAddress"]!["oneOf"]!.AsArray();
         alternatives.Should().HaveCount(2);
-        ((string?)alternatives[0]!["type"]).Should().Be("null");
-        ((string?)alternatives[1]!["$ref"]).Should().Be("#/components/schemas/Address");
+        ((string?)alternatives[0]!["$ref"]).Should().Be("#/components/schemas/Address");
+        ((string?)alternatives[1]!["type"]).Should().Be("null");
         document.Schema("Address").Required().Should().Equal("street");
     }
 
@@ -280,8 +280,8 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         var badRequest = document.Schema("BadRequestProblemDetails");
         badRequest.Required().Should().NotContain("error").And.Contain(["type", "status", "traceId", "timestamp"]);
         var error = badRequest["properties"]!["error"]!["oneOf"]!.AsArray();
-        ((string?)error[0]!["type"]).Should().Be("null");
-        ((string?)error[1]!["$ref"]).Should().Be("#/components/schemas/ErrorDescriptor");
+        ((string?)error[0]!["$ref"]).Should().Be("#/components/schemas/ErrorDescriptor");
+        ((string?)error[1]!["type"]).Should().Be("null");
     }
 
     [Fact]

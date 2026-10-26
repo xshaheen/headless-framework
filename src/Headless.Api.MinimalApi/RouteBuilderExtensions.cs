@@ -78,4 +78,38 @@ public static class RouteBuilderExtensions
 
         return builder;
     }
+
+    /// <summary>
+    /// Refuses an enum sent as a number in a route, query, header, or form value on every endpoint the builder
+    /// configures, answering 400 <c>g:invalid_parameter_value</c> naming it, as the JSON body and an MVC action refuse it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// ASP.NET Core parses an enum outside the body with <c>Enum.TryParse</c>, which binds the member name exactly as
+    /// declared and refuses anything else, but also binds a number. The Headless web preset writes enums under their
+    /// member names, so everything except the number is left to ASP.NET Core: other casing, an unknown name, and a
+    /// <c>[JsonStringEnumMemberName]</c> alias answer its own generic 400, as does any other value it cannot parse. The
+    /// check reads the values in place and allocates nothing.
+    /// </para>
+    /// <para>
+    /// <see cref="HeadlessApiSurfaceEndpointRouteBuilderExtensions.MapApiSurface"/> applies it to every endpoint of a
+    /// surface; call it on any other group or endpoint. The values to check are chosen once per endpoint when the
+    /// endpoint is built, an endpoint with no enum parameter runs unchanged, and applying it twice has no further
+    /// effect.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="TBuilder">The endpoint convention builder type, such as a route group or a route handler.</typeparam>
+    /// <param name="builder">The builder to configure.</param>
+    /// <returns><paramref name="builder"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
+    public static TBuilder RejectEnumNumbers<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        Argument.IsNotNull(builder);
+
+        // It wraps the request delegate, which exists only once the endpoint is built, so it is a final convention.
+        builder.Finally(static endpoint => EnumNumberGuard.Apply(endpoint));
+
+        return builder;
+    }
 }

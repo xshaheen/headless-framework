@@ -180,6 +180,9 @@ public static class SetupHeadlessOpenApi
         return services;
     }
 
+    // Stateless, so every document shares one.
+    private static readonly XmlCommentTransformer _XmlComments = new();
+
     /// <summary>Adds the Headless document, operation, and schema transformers to one OpenAPI document.</summary>
     /// <param name="options">The native options of the document.</param>
     /// <returns>The same <paramref name="options"/> instance for chaining.</returns>
@@ -206,12 +209,14 @@ public static class SetupHeadlessOpenApi
 
         // Schema transformers each walk the whole schema tree in turn, so a later one sees the earlier ones' output.
         options.AddSchemaTransformer(new PrimitiveSchemaTransformer());
+        options.AddSchemaTransformer(_XmlComments);
         options.AddSchemaTransformer(new NumberSchemaTransformer());
         options.AddSchemaTransformer(new FluentValidationSchemaTransformer());
         options.AddSchemaTransformer(new RequiredSchemaTransformer());
 
         // The response transformers must precede ProblemDetails, which types every error response that exists then.
         options.AddOperationTransformer(new OperationIdTransformer());
+        options.AddOperationTransformer(_XmlComments);
         options.AddOperationTransformer(new ApiExtraInformationTransformer());
         options.AddOperationTransformer(new CamelCaseQueryParameterTransformer());
         options.AddOperationTransformer(new UnauthorizedResponseTransformer());
@@ -238,6 +243,7 @@ public static class SetupHeadlessOpenApi
         options.AddDocumentTransformer(new SecuritySchemesTransformer());
         options.AddDocumentTransformer(new TenantServersTransformer());
         options.AddDocumentTransformer(new OperationIdDeduplicationTransformer());
+        options.AddDocumentTransformer(new NullAlternativeLastTransformer());
         options.AddDocumentTransformer(new ProblemDetailsComponentsTransformer());
 
         return options;

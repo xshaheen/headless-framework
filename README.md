@@ -703,7 +703,6 @@ Cross-cutting utilities that belong to no single domain.
 |---------|-------------|
 | [Headless.Dashboard.Authentication](src/Headless.Dashboard.Authentication/README.md) | Shared authentication for the Jobs and Messaging dashboards |
 | [Headless.FluentValidation](src/Headless.FluentValidation/README.md) | FluentValidation extensions |
-| [Headless.FluentValidation.FileSignatures](src/Headless.FluentValidation.FileSignatures/README.md) | File signature (magic bytes) validation rule |
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Primitive types source generator |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | Generator abstractions |
 | [Headless.Hosting](src/Headless.Hosting/README.md) | .NET hosting utilities |

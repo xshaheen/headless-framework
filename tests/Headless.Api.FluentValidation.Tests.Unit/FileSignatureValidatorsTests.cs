@@ -6,6 +6,7 @@ using FluentValidation;
 using FluentValidation.TestHelper;
 using Headless.IO;
 using Headless.Testing.Tests;
+using Microsoft.AspNetCore.Http;
 
 namespace Tests;
 
@@ -87,9 +88,8 @@ public sealed class FileSignatureValidatorsTests : TestBase
     }
 
     [Fact]
-    public async Task should_chain_with_the_base_file_rules_as_the_utilities_guide_shows()
+    public async Task should_chain_with_the_base_file_rules()
     {
-        // Mirrors the "Setup and use" sample of docs/llms/utilities.md#headlessfluentvalidationfilesignatures.
         var validator = new UpdateAvatarValidator(_Inspector);
 
         var accepted = await validator.ValidateAsync(new UpdateAvatar(new BytesFile(_PngBytes)), AbortToken);
@@ -102,7 +102,7 @@ public sealed class FileSignatureValidatorsTests : TestBase
         rejected.Errors.Should().ContainSingle().Which.ErrorCode.Should().Be("g:file_unexpected_signature");
     }
 
-    private sealed record UpdateAvatar(IUploadedFile Avatar);
+    private sealed record UpdateAvatar(IFormFile Avatar);
 
     private sealed class UpdateAvatarValidator : AbstractValidator<UpdateAvatar>
     {
@@ -115,7 +115,7 @@ public sealed class FileSignatureValidatorsTests : TestBase
         }
     }
 
-    private static InlineValidator<Command> _Validator(Action<IRuleBuilderInitial<Command, IUploadedFile?>> configure)
+    private static InlineValidator<Command> _Validator(Action<IRuleBuilderInitial<Command, IFormFile?>> configure)
     {
         var validator = new InlineValidator<Command>();
         configure(validator.RuleFor(x => x.Avatar));
@@ -123,15 +123,22 @@ public sealed class FileSignatureValidatorsTests : TestBase
         return validator;
     }
 
-    private sealed record Command(IUploadedFile? Avatar);
+    private sealed record Command(IFormFile? Avatar);
 
-    private sealed class BytesFile(byte[] content, string contentType = "image/png") : IUploadedFile
+    // Counts how often the rule opens the content, which FormFile does not expose.
+    private sealed class BytesFile(byte[] content, string contentType = "image/png") : IFormFile
     {
         public int Opened { get; private set; }
 
         public string FileName => "avatar.png";
 
+        public string Name => "Avatar";
+
         public string ContentType => contentType;
+
+        public string ContentDisposition => "form-data; name=\"Avatar\"; filename=\"avatar.png\"";
+
+        public IHeaderDictionary Headers { get; } = new HeaderDictionary();
 
         public long Length => content.Length;
 
@@ -141,5 +148,10 @@ public sealed class FileSignatureValidatorsTests : TestBase
 
             return new MemoryStream(content, writable: false);
         }
+
+        public void CopyTo(Stream target) => target.Write(content);
+
+        public Task CopyToAsync(Stream target, CancellationToken cancellationToken = default) =>
+            target.WriteAsync(content, cancellationToken).AsTask();
     }
 }

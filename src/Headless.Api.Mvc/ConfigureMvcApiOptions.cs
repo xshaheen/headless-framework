@@ -18,10 +18,12 @@ namespace Headless.Api.Options;
 ///   <item>Enables 406 Not Acceptable when the client's <c>Accept</c> header cannot be satisfied.</item>
 ///   <item>Clears the default model-validator providers and substitutes <c>SystemTextJsonValidationMetadataProvider</c>.</item>
 ///   <item>Applies <c>ProblemDetailsOptions.CustomizeProblemDetails</c> once to Headless-normalized MVC problem-details object results.</item>
+///   <item>Refuses an enum sent as a number in a route, query, header, or form value, as the JSON body does; names bind as MVC binds them, in any casing.</item>
+///   <item>Runs every registered FluentValidation <c>IValidator&lt;T&gt;</c> of each action argument and answers one 422 with all their failures, as <c>ValidateArguments()</c> does for Minimal APIs.</item>
 /// </list>
 /// Behavior applied to <see cref="ApiBehaviorOptions"/>:
 /// <list type="bullet">
-///   <item>Suppresses the automatic 400 model-state filter added by <c>[ApiController]</c>, deferring validation to application-level handlers.</item>
+///   <item>Keeps the automatic 400 that <c>[ApiController]</c> answers when a value cannot be bound, and shapes it as 400 <c>g:invalid_parameter_value</c> naming the value, or the plain bad-request problem for a body.</item>
 /// </list>
 /// </remarks>
 internal sealed class ConfigureMvcApiOptions : IConfigureOptions<MvcOptions>, IConfigureOptions<ApiBehaviorOptions>
@@ -51,6 +53,18 @@ internal sealed class ConfigureMvcApiOptions : IConfigureOptions<MvcOptions>, IC
             options.Filters.Add<HeadlessProblemDetailsResultFilter>();
         }
 
+        if (!options.ModelBinderProviders.OfType<EnumNumberRefusingModelBinderProvider>().Any())
+        {
+            options.ModelBinderProviders.Insert(0, new EnumNumberRefusingModelBinderProvider());
+        }
+
+        // One instance per host: a type-registered filter is built again for every action invocation, and a static one
+        // would keep every host's action descriptors alive for the process.
+        if (!options.Filters.OfType<ArgumentValidationActionFilter>().Any())
+        {
+            options.Filters.Add(new ArgumentValidationActionFilter());
+        }
+
         // Exception mapping is handled globally by HeadlessApiExceptionHandler (registered in
         // AddHeadlessProblemDetails). No MVC IExceptionFilter needed.
     }
@@ -59,8 +73,9 @@ internal sealed class ConfigureMvcApiOptions : IConfigureOptions<MvcOptions>, IC
     /// <param name="options">The <see cref="ApiBehaviorOptions"/> instance to configure.</param>
     public void Configure(ApiBehaviorOptions options)
     {
-        // Disable the behavior that [ApiController] attribute makes model
-        // validation errors automatically trigger an HTTP 400 response.
-        options.SuppressModelStateInvalidFilter = true;
+        // MVC's validator providers are cleared, so model state holds only binding failures, and the [ApiController]
+        // filter answers them before the action runs; rule validation stays with FluentValidation.
+        options.SuppressModelStateInvalidFilter = false;
+        options.InvalidModelStateResponseFactory = ModelBindingFailureResponse.Create;
     }
 }

@@ -9,7 +9,7 @@
     <PackageReference Include="FluentValidation" />
   </ItemGroup>
   <ItemGroup>
-    <!-- The IFormFile file rules build on the same internal FileRules as the IUploadedFile ones, so both stay one implementation. -->
+    <!-- Headless.Api.FluentValidation reads the internal FileRules from an IFormFile, so the file rules stay beside the IFileSizeValidator and IFileContentTypeValidator contracts they implement. -->
     <InternalsVisibleTo Include="Headless.Api.FluentValidation" />
   </ItemGroup>
   <ItemGroup>

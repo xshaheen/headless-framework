@@ -741,7 +741,6 @@ Base classes وbuilders وfixtures وتكامل Testcontainers لـ integration 
 |---------|-------|
 | [Headless.Dashboard.Authentication](src/Headless.Dashboard.Authentication/README.md) | Authentication مشتركة للـ dashboards بتاعة الـ Jobs والـ Messaging |
 | [Headless.FluentValidation](src/Headless.FluentValidation/README.md) | Extensions لـ FluentValidation |
-| [Headless.FluentValidation.FileSignatures](src/Headless.FluentValidation.FileSignatures/README.md) | Validation rule للـ file signature (الـ magic bytes) |
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Source generator للـ primitive types |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | الـ abstractions بتاعة الـ generator |
 | [Headless.Hosting](src/Headless.Hosting/README.md) | أدوات للـ .NET hosting |
