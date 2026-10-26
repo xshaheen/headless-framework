@@ -22,6 +22,12 @@ public sealed class PostgreSqlPeekTests(PostgreSqlJobsCoordinationFixture fixtur
     }
 
     [Fact]
+    public override Task immediate_acquire_takes_only_rows_due_on_the_store_clock()
+    {
+        return base.immediate_acquire_takes_only_rows_due_on_the_store_clock();
+    }
+
+    [Fact]
     public override Task peek_skips_a_row_this_node_holds_and_returns_a_row_whose_foreign_lease_lapsed()
     {
         return base.peek_skips_a_row_this_node_holds_and_returns_a_row_whose_foreign_lease_lapsed();

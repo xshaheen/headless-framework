@@ -7,7 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests;
 
 /// <summary>
-/// Provider-neutral behavior of the time-job peek, the read the scheduler sleeps on before it claims at the wake.
+/// Provider-neutral due-time behavior of the time-job peek, the read the scheduler sleeps on before it claims at the
+/// wake, and of the immediate acquire that enqueue uses.
 /// Every instant is seeded on the store clock, so a node clock that leads or lags the store shows up only through
 /// the host's <see cref="TimeProvider"/>.
 /// </summary>
@@ -72,6 +73,42 @@ public abstract class JobsPeekConformanceTests<TFixture>(TFixture fixture) : Tes
             var peek = await persistence.GetEarliestTimeJobsAsync(ct);
 
             peek.Jobs.Select(x => x.Id).Should().Equal(id);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// Immediate dispatch asks for a row when this node's clock says it is due. A node a minute ahead of the store would
+    /// otherwise start a job scheduled 30 seconds out at once; the store's own clock must decide, as it does for the
+    /// scheduler's claim.
+    /// </summary>
+    public virtual async Task immediate_acquire_takes_only_rows_due_on_the_store_clock()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost(
+            "acquire-lead",
+            timeProvider: new SkewedTimeProvider(TimeSpan.FromSeconds(60))
+        );
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var dueId = Guid.NewGuid();
+            var futureId = Guid.NewGuid();
+            await fixture.SeedTimeJobAsync(dueId, "acquire-lead", (int)JobStatus.Idle, null, ct);
+            await fixture.SeedTimeJobAsync(futureId, "acquire-lead", (int)JobStatus.Idle, null, ct);
+            await _SetExecutionTimeOnStoreClockAsync([dueId], offsetSeconds: -1, ct);
+            await _SetExecutionTimeOnStoreClockAsync([futureId], offsetSeconds: 30, ct);
+
+            var acquired = await persistence.AcquireImmediateTimeJobsAsync([dueId, futureId], ct);
+
+            acquired.Select(x => x.Id).Should().Equal(dueId);
         }
         finally
         {

@@ -966,7 +966,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             }
 
             // A cluster-limited row is left for the scheduler's claim, the one path that counts it against the limit.
-            if (!_CanAcquire(job) || !_ParentGateAllowsClaim(job) || _clusterConcurrency.IsLimited(job.Function))
+            if (
+                !_IsDue(job, now)
+                || !_CanAcquire(job)
+                || !_ParentGateAllowsClaim(job)
+                || _clusterConcurrency.IsLimited(job.Function)
+            )
             {
                 continue;
             }

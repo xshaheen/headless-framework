@@ -1184,6 +1184,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var affected = await dbContext
             .Set<TTimeJob>()
             .Where(x => ((IEnumerable<Guid>)ids).Contains(x.Id))
+            // The caller judged these rows due on its own clock; the store's clock decides, so a node that runs ahead
+            // cannot start a scheduled job early through enqueue. A refused row stays Idle for the scheduler's claim.
+            .Where(x => x.ExecutionTime == null || x.ExecutionTime <= DateTime.UtcNow.AddSeconds(JobsDueSlack.Seconds))
             .WhereRunnable(RunFilter)
             .WhereNotClusterLimited(ClusterConcurrency)
             .WhereCanAcquireUsingDatabaseClock(owner)

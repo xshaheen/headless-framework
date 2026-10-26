@@ -101,6 +101,24 @@ public sealed class JobsWakeClockDomainTests : TestBase
     }
 
     [Fact]
+    public async Task immediate_acquire_takes_only_rows_due_on_the_store_clock()
+    {
+        // A node whose clock runs ahead of the store believes a row 30 seconds out is due and asks for it at enqueue;
+        // the store must still refuse it so the job runs at its scheduled instant, not the node's.
+        var (_, provider) = _CreateManager();
+        var due = _TimeJob(_StoreNow.AddSeconds(1));
+        var future = _TimeJob(_StoreNow.AddSeconds(30));
+        await provider.AddTimeJobsAsync([due, future], AbortToken);
+
+        var acquired = await provider.AcquireImmediateTimeJobsAsync([due.Id, future.Id], AbortToken);
+
+        acquired.Select(x => x.Id).Should().Equal(due.Id);
+        var stored = await provider.GetTimeJobByIdAsync(future.Id, AbortToken);
+        stored!.Status.Should().Be(JobStatus.Idle);
+        stored.OwnerId.Should().BeNull();
+    }
+
+    [Fact]
     public async Task nothing_pending_still_reports_the_store_anchor()
     {
         // The anchor is what keeps the scheduler's node/store offset fresh, so an empty poll must still carry it —

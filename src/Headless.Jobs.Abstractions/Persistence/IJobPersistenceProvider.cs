@@ -138,8 +138,8 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </para>
     /// <para>
     /// The due test is the store's, not the caller's. A row that is not yet due is left untouched even when the
-    /// caller's clock says otherwise, so a node whose clock runs ahead cannot claim a job early through this path, and
-    /// a job never holds a lease or a cluster-concurrency slot before it is due. A job may start up to one second
+    /// caller's clock says otherwise, so a node whose clock runs ahead cannot claim a job early, and a job never holds
+    /// a lease or a cluster-concurrency slot before it is due. A job may start up to one second
     /// before its scheduled instant.
     /// </para>
     /// <para>
@@ -463,12 +463,19 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <param name="cancellationToken">Token that aborts the claim.</param>
     /// <returns>
     /// Only the jobs this node actually claimed, with unscheduled children attached for chain execution. Rows that
-    /// were not acquirable — terminal, or leased by another node — are omitted, so an empty result means the
-    /// request was fully lost and nothing should be executed.
+    /// were not acquirable — terminal, leased by another node, or not yet due on the store's clock — are omitted, so
+    /// an empty result means the request was fully lost and nothing should be executed.
     /// </returns>
     /// <remarks>
+    /// <para>
+    /// The caller decides a row is due on its own clock; the store applies the same due test as
+    /// <see cref="QueueTimeJobsAsync"/>, on its own clock, and leaves a row that is not yet due untouched for the
+    /// scheduler's claim. A node whose clock runs ahead therefore cannot start a scheduled job early through enqueue.
+    /// </para>
+    /// <para>
     /// The relational provider returns empty when coordination membership is not established, because it has no
     /// owner identity to stamp.
+    /// </para>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(Guid[] ids, CancellationToken cancellationToken = default);
