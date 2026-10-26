@@ -19,7 +19,7 @@ make down                                 # stop what `up` started
 | Dashboard | URL | Auth |
 | --- | --- | --- |
 | Jobs | `http://127.0.0.1:5300/jobs/dashboard` | none by default; `Sandbox__JobsDashboardAuth` picks another mode |
-| Messaging | `http://127.0.0.1:5300/messaging` | Basic: user `sandbox`, password `Sandbox__MessagingDashboardPassword` in `artifacts/sandbox/sandbox.env`, generated on the first `make up` |
+| Messaging | `http://127.0.0.1:5300/messaging` | Basic: user `sandbox`, password `Sandbox__MessagingDashboardPassword` in `sandbox.env` under the checkout's `.local/cli/` folder, generated on the first `make up` |
 
 Messaging uses Basic auth because inbox and scheduled operations refuse an anonymous operator.
 

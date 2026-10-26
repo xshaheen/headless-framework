@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -47,10 +48,11 @@ public abstract class JobsClusterConcurrencyConformanceTests<TFixture>(TFixture 
             var held = (await store.GetTimeJobsAsync(x => x.Function == _Limited, ct)).First(x =>
                 x.Status == JobStatus.Queued
             );
-            // Only the owning node's release matches the row, so asking every node releases it exactly once.
+            // A release matches only rows still stamped with the owner that claimed them, so releasing under every
+            // node's owner frees the row exactly once.
             foreach (var host in hosts)
             {
-                await _Store(host).ReleaseAcquiredTimeJobsAsync([held.Id], ct);
+                await _Store(host).ReleaseAcquiredTimeJobsAsync([held.Id], _Owner(host), ct);
             }
 
             (await _LiveLeasesAsync(store, _Limited, ct)).Should().Be(_Limit - 1);
@@ -345,6 +347,9 @@ public abstract class JobsClusterConcurrencyConformanceTests<TFixture>(TFixture 
 
     private static IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Store(IHost host) =>
         host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+    private static string _Owner(IHost host) =>
+        host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
 
     private static TimeJobEntity _TimeJob(string function, DateTime executionTime) =>
         new()

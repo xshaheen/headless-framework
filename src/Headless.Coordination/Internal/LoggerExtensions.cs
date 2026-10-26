@@ -98,4 +98,20 @@ internal static partial class LoggerExtensions
         Message = "Coordination self-fence for {Identity} failed while signalling local membership loss."
     )]
     public static partial void SelfFenceFailed(this ILogger logger, Exception exception, NodeIdentity identity);
+
+    [LoggerMessage(
+        EventId = 12,
+        EventName = "DrainWaitCutShort",
+        Level = LogLevel.Warning,
+        Message = "Coordination stopped waiting for drain participants because the host stop deadline arrived; the node leaves membership while work may still be settling."
+    )]
+    public static partial void DrainWaitCutShort(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 13,
+        EventName = "DrainParticipantFailed",
+        Level = LogLevel.Error,
+        Message = "Coordination drain participant {Participant} failed during host shutdown; the node stops waiting for it."
+    )]
+    public static partial void DrainParticipantFailed(this ILogger logger, Exception exception, string participant);
 }

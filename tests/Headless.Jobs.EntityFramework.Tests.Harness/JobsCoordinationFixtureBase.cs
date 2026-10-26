@@ -215,7 +215,8 @@ public static partial class JobsCoordinationFixtureExtensions
         IInterceptor? interceptor = null,
         Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? configureJobs = null,
         bool runBackgroundServices = false,
-        bool fastMembership = false
+        bool fastMembership = false,
+        Action<IServiceCollection>? configureServices = null
     )
     {
         return _BuildHost<JobsDbContext>(
@@ -229,7 +230,8 @@ public static partial class JobsCoordinationFixtureExtensions
             interceptor,
             configureJobs,
             membershipTimings: fastMembership ? null : _SteadyMembershipTimings,
-            runBackgroundServices: runBackgroundServices
+            runBackgroundServices: runBackgroundServices,
+            configureServices: configureServices
         );
     }
 
@@ -289,7 +291,8 @@ public static partial class JobsCoordinationFixtureExtensions
         IInterceptor? interceptor = null,
         Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? configureJobs = null,
         (TimeSpan Heartbeat, TimeSpan Suspicion, TimeSpan Dead, TimeSpan DeadRetention)? membershipTimings = null,
-        bool runBackgroundServices = false
+        bool runBackgroundServices = false,
+        Action<IServiceCollection>? configureServices = null
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
@@ -362,6 +365,7 @@ public static partial class JobsCoordinationFixtureExtensions
             builder.Services.AddSingleton(timeProvider);
         }
 
+        configureServices?.Invoke(builder.Services);
         builder.Services.AddDeployStepsOnStartup();
         return builder.Build();
     }
@@ -712,16 +716,18 @@ public static partial class JobsCoordinationFixtureExtensions
         string? ownerId,
         CancellationToken cancellationToken,
         NodeDeathPolicy onNodeDeath = NodeDeathPolicy.Retry,
-        DateTime? lockedUntil = null
+        DateTime? lockedUntil = null,
+        DateTime? executionTime = null
     )
     {
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = fixture.Sql(
-            $"INSERT INTO {fixture.QualifiedTimeJobsTable} ({_InsertColumns}, \"ContractVersion\") "
+            $"INSERT INTO {fixture.QualifiedTimeJobsTable} ({_InsertColumns}, \"ContractVersion\", \"ExecutionTime\") "
                 + "VALUES (@id, @function, @function, @status, @ownerId, "
-                + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath, @lockedUntil, '1');"
+                + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath, @lockedUntil, '1', "
+                + "@executionTime);"
         );
 
         // Status and OnNodeDeath persist as enum names (HasConversion<string>), so seed the names, not ordinals.
@@ -731,6 +737,7 @@ public static partial class JobsCoordinationFixtureExtensions
         AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
         AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
         AddParameter(command, "@lockedUntil", (object?)lockedUntil ?? DBNull.Value);
+        AddParameter(command, "@executionTime", (object?)executionTime ?? DBNull.Value);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

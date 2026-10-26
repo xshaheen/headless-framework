@@ -45,6 +45,37 @@ internal static class DistributedLockTestSupport
     /// <summary>Mirrors <c>_NonBlockingAcquireDeadline</c> in the providers (seconds).</summary>
     public const int NonBlockingAcquireDeadlineSeconds = 10;
 
+    /// <summary>
+    /// Waits on the wall clock until <paramref name="condition"/> holds, so a test can assert that background work
+    /// happened. Throws <see cref="TimeoutException"/> when it still does not hold after the wait bound.
+    /// </summary>
+    /// <remarks>
+    /// Use this, not <see cref="DrainUntilAsync"/>, before asserting that something happened. Advancing a
+    /// <see cref="FakeTimeProvider"/> only queues the monitor's continuation on the thread pool; on a loaded machine
+    /// that continuation can stay undispatched for longer than any fixed number of yields, and a wait that gave up
+    /// then fails a pre-condition the code was about to meet.
+    /// </remarks>
+    public static async Task WaitUntilAsync(Func<bool> condition, CancellationToken cancellationToken = default)
+    {
+        var start = TimeProvider.System.GetTimestamp();
+
+        while (!condition())
+        {
+            if (TimeProvider.System.GetElapsedTime(start) >= _WaitBound)
+            {
+                throw new TimeoutException($"The condition did not hold within {_WaitBound}.");
+            }
+
+            await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(1), cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Gives queued background work a short, bounded chance to run, stopping early once <paramref name="condition"/>
+    /// holds. Use it only before asserting that something did <em>not</em> happen; the budget is a fixed number of
+    /// scheduler turns, so it can end before slow work finishes. To wait for something that must happen, use
+    /// <see cref="WaitUntilAsync"/>.
+    /// </summary>
     public static async Task DrainUntilAsync(Func<bool> condition, CancellationToken cancellationToken = default)
     {
         for (var i = 0; i < 2000 && !condition(); i++)

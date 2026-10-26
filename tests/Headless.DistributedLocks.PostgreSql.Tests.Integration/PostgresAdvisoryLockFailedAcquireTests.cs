@@ -109,7 +109,26 @@ public sealed class PostgresAdvisoryLockFailedAcquireTests(PostgreSqlDistributed
         var act = async () => await strategy.TryAcquireAsync(connection, resourceName, TimeSpan.Zero, AbortToken);
 
         (await act.Should().ThrowAsync<NpgsqlException>()).Which.Should().BeSameAs(acquireFailure);
-        (await _TryAcquireExclusiveOnAnotherSessionAsync(strategy, resourceName)).Should().BeTrue();
+
+        // The server releases the dead session's advisory lock only once its backend process exits, which happens
+        // after the client close returns, so another session can briefly still see the lock held. A lock that leaked
+        // never frees, so waiting for it keeps the check meaningful.
+        await _WaitUntilAcquirableOnAnotherSessionAsync(strategy, resourceName);
+    }
+
+    private async Task _WaitUntilAcquirableOnAnotherSessionAsync(PostgresAdvisoryLock strategy, string resourceName)
+    {
+        var started = TimeProvider.System.GetTimestamp();
+
+        while (!await _TryAcquireExclusiveOnAnotherSessionAsync(strategy, resourceName))
+        {
+            if (TimeProvider.System.GetElapsedTime(started) > TimeSpan.FromSeconds(30))
+            {
+                throw new TimeoutException("The advisory lock was still held 30 s after its session died.");
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken);
+        }
     }
 
     [Fact]

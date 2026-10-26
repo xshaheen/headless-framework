@@ -430,6 +430,34 @@ public sealed class JobsOptionsBuilderTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*FingerprintSweepBatchSize*");
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void add_headless_jobs_rejects_a_shutdown_timeout_that_is_not_positive(int seconds)
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler => scheduler.ShutdownTimeout = TimeSpan.FromSeconds(seconds))
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ShutdownTimeout*");
+    }
+
+    [Fact]
+    public void add_headless_jobs_accepts_a_long_shutdown_timeout()
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler => scheduler.ShutdownTimeout = TimeSpan.FromMinutes(30))
+            );
+
+        act.Should().NotThrow();
+    }
+
     [Fact]
     public void add_headless_jobs_rejects_a_custom_scheduler_time_zone()
     {

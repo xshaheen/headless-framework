@@ -250,7 +250,7 @@ public sealed class JobsRetryPipelineTests : TestBase
                     attempts.Add(attemptRetryCount);
                     return ValueTask.FromException(failure());
                 },
-                (nextRetryCount, _, _) =>
+                (nextRetryCount, _, _, _) =>
                 {
                     // The executor persists the advanced count before the next attempt runs.
                     retryCounts.Add(nextRetryCount);

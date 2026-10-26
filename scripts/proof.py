@@ -520,8 +520,9 @@ def summarize(
 
 def render_markdown(summary: dict) -> str:
     tests = summary["tests"]
-    # The PR template's Verification section holds this bundle. The summary line keeps the verdict and
-    # totals visible while the tables fold away; a failing bundle stays open so the failure is seen.
+    # The PR template's Verification section holds this bundle, pasted as is: this block is its only fold, so the
+    # author never wraps it again. The summary line keeps the verdict and totals visible while the tables fold away;
+    # a failing bundle stays open so the failure is seen.
     verdict = summary["verdict"].upper()
     lines = [
         f"<details{' open' if verdict == 'FAIL' else ''}><summary><strong>{summary.get('target', 'make verify-affected')}: {verdict}</strong>. "

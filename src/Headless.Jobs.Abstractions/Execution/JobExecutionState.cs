@@ -114,6 +114,22 @@ public class JobExecutionState
     /// </summary>
     public bool LeaseLost { get; set; }
 
+    /// <summary>
+    /// Transient, non-persisted <c>node@incarnation</c> owner that claimed this row, captured from the claimed root
+    /// and shared by every chain descendant that runs under the root's claim. It is never part of
+    /// <see cref="PropertiesToUpdate"/>.
+    /// </summary>
+    /// <remarks>
+    /// Writes that settle the run (completion, failure, retry count, progress, release) fence on this owner rather
+    /// than on the node's live identity: the live identity disappears once the node leaves membership or passes its
+    /// self-fence deadline, and a correct run that finishes in that window must still record its outcome while no
+    /// peer has reclaimed the row. Writes that extend or start ownership (lease renewal, admission to
+    /// <c>InProgress</c>) additionally require the live identity to equal this owner, so a fenced node cannot keep
+    /// its rows alive. <see langword="null"/> means no claim is known, and every owner-fenced write then matches no
+    /// row.
+    /// </remarks>
+    public string? ClaimOwner { get; set; }
+
     /// <summary>The time the job was scheduled to run (UTC).</summary>
     public DateTime ExecutionTime { get; set; }
 

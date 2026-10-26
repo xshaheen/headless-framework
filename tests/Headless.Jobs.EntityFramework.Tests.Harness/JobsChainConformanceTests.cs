@@ -655,8 +655,8 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var successId = children.Single(c => c.Condition == RunCondition.OnSuccess).Id;
             var failureId = children.Single(c => c.Condition == RunCondition.OnFailure).Id;
 
-            await _ClaimRootAsync(persistence, rootId, ct);
-            await _MarkTerminalAsync(persistence, rootId, JobStatus.Succeeded, ct);
+            var claimedRoot = await _ClaimRootAsync(persistence, rootId, ct);
+            await _MarkTerminalAsync(persistence, rootId, claimedRoot.OwnerId!, JobStatus.Succeeded, ct);
 
             var beforeReconcile = DateTime.UtcNow;
             await persistence.ApplyParentTerminalRunConditionsAsync(rootId, ct);
@@ -708,8 +708,8 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var rootId = await scheduler.EnqueueAsync(builder.Build(), ct);
             var childId = (await _ChildrenAsync(rootId, ct)).Single().Id;
 
-            await _ClaimRootAsync(persistence, rootId, ct);
-            await _MarkTerminalAsync(persistence, rootId, JobStatus.Succeeded, ct);
+            var claimedRoot = await _ClaimRootAsync(persistence, rootId, ct);
+            await _MarkTerminalAsync(persistence, rootId, claimedRoot.OwnerId!, JobStatus.Succeeded, ct);
             await persistence.ApplyParentTerminalRunConditionsAsync(rootId, ct);
 
             var row = await _ReadNodeAsync(childId, ct);
@@ -766,8 +766,8 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var failureId = rootChildren.Single(c => c.Condition == RunCondition.OnFailure).Id;
             var grandchildId = (await _ChildrenAsync(successId, ct)).Single().Id;
 
-            await _ClaimRootAsync(persistence, rootId, ct);
-            await _MarkTerminalAsync(persistence, rootId, JobStatus.Failed, ct);
+            var claimedRoot = await _ClaimRootAsync(persistence, rootId, ct);
+            await _MarkTerminalAsync(persistence, rootId, claimedRoot.OwnerId!, JobStatus.Failed, ct);
 
             // Skip-only safety net over the failed parent's timed children. The return COUNT is deliberately not
             // asserted: BuildHost keeps the dead-node recovery bridge running even with background services disabled
@@ -1788,14 +1788,17 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     private static async Task _MarkTerminalAsync(
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity> persistence,
         Guid id,
+        string claimOwner,
         JobStatus status,
         CancellationToken ct
     )
     {
-        var completion = new JobExecutionState { FunctionName = "chain", JobId = id }.SetProperty(
-            x => x.Status,
-            status
-        );
+        var completion = new JobExecutionState
+        {
+            FunctionName = "chain",
+            JobId = id,
+            ClaimOwner = claimOwner,
+        }.SetProperty(x => x.Status, status);
         (await persistence.UpdateTimeJobAsync(completion, ct))
             .Should()
             .Be(1, "the owning node's terminal write must land on the claimed row");

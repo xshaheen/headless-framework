@@ -15,18 +15,17 @@ internal static class AcquirePredicateSql
 {
     /// <summary>
     /// Returns a parenthesized clause that holds when the row is Idle or Queued and is unleased, leased by
-    /// <c>@owner</c>, or leased past the statement clock with a <c>Retry</c> node-death policy. The command must bind
-    /// <c>@idle</c>, <c>@queued</c>, <c>@owner</c>, and <c>@retry</c>; the dialect replaces
+    /// <c>@owner</c>, or leased past the statement clock, whatever its node-death policy: such a row never started.
+    /// The command must bind <c>@idle</c>, <c>@queued</c>, and <c>@owner</c>; the dialect replaces
     /// <see cref="SqlDialectTokens.Now"/> with the statement's database clock.
     /// </summary>
-    public static string Build(string status, string ownerId, string lockedUntil, string onNodeDeath)
+    public static string Build(string status, string ownerId, string lockedUntil)
     {
         return $"""
             ({status} = @idle OR {status} = @queued)
               AND ({ownerId} = @owner
                    OR {lockedUntil} IS NULL
-                   OR ({lockedUntil} <= {SqlDialectTokens.Now}
-                       AND {onNodeDeath} = @retry))
+                   OR {lockedUntil} <= {SqlDialectTokens.Now})
             """;
     }
 }

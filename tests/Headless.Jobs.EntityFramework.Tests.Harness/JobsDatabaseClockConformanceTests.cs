@@ -128,7 +128,10 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
 
             var timeJob = new TimeJobEntity { Id = Guid.NewGuid(), Function = "clock-renew-time" };
             await persistence.AddTimeJobsAsync([timeJob], ct);
-            (await persistence.AcquireImmediateTimeJobsAsync([timeJob.Id], ct)).Should().ContainSingle();
+            var acquired = (await persistence.AcquireImmediateTimeJobsAsync([timeJob.Id], ct))
+                .Should()
+                .ContainSingle()
+                .Subject;
 
             var cronId = Guid.NewGuid();
             var occurrenceId = Guid.NewGuid();
@@ -143,13 +146,18 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
                 DateTime.UtcNow,
                 ct
             );
-            (await persistence.AcquireImmediateCronOccurrencesAsync([occurrenceId], ct)).Should().ContainSingle();
+            var acquiredOccurrence = (await persistence.AcquireImmediateCronOccurrencesAsync([occurrenceId], ct))
+                .Should()
+                .ContainSingle()
+                .Subject;
 
             // The renewals only match because the acquires above really ran and really own the rows — an affected
             // count of 1 is what proves the captured SQL is the live lease path, not a shape we merely rehearsed.
             capture.Clear();
-            (await persistence.RenewTimeJobLeaseAsync(timeJob.Id, ct)).Should().Be(1);
-            (await persistence.RenewCronJobOccurrenceLeaseAsync(occurrenceId, ct)).Should().Be(1);
+            (await persistence.RenewTimeJobLeaseAsync(timeJob.Id, acquired.OwnerId!, ct)).Should().Be(1);
+            (await persistence.RenewCronJobOccurrenceLeaseAsync(occurrenceId, acquiredOccurrence.OwnerId!, ct))
+                .Should()
+                .Be(1);
 
             _AssertDatabaseOwnsTheLeaseClock(capture, expectDeadlineWrites: true, expectPredicates: false);
         }
@@ -208,7 +216,10 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
 
             var timeJob = new TimeJobEntity { Id = Guid.NewGuid(), Function = "clock-sweep-time" };
             await persistence.AddTimeJobsAsync([timeJob], ct);
-            (await persistence.AcquireImmediateTimeJobsAsync([timeJob.Id], ct)).Should().ContainSingle();
+            var acquired = (await persistence.AcquireImmediateTimeJobsAsync([timeJob.Id], ct))
+                .Should()
+                .ContainSingle()
+                .Subject;
 
             capture.Clear();
 
@@ -219,8 +230,8 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
             await persistence.ReclaimStalledCronJobOccurrencesAsync(ct);
             await persistence.ReleaseDeadNodeTimeJobResourcesAsync("dead-node@1", ct);
             await persistence.ReleaseDeadNodeOccurrenceResourcesAsync("dead-node@1", ct);
-            await persistence.ReleaseAcquiredTimeJobsAsync([timeJob.Id], ct);
-            await persistence.ReleaseAcquiredCronJobOccurrencesAsync([Guid.NewGuid()], ct);
+            await persistence.ReleaseAcquiredTimeJobsAsync([timeJob.Id], acquired.OwnerId!, ct);
+            await persistence.ReleaseAcquiredCronJobOccurrencesAsync([Guid.NewGuid()], acquired.OwnerId!, ct);
 
             _AssertDatabaseOwnsTheLeaseClock(capture, expectDeadlineWrites: false, expectPredicates: true);
             capture

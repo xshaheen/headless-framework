@@ -26,13 +26,29 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     private readonly SchedulerOptionsBuilder _schedulerOptions;
     private readonly JobsActivationBarrier _activationBarrier;
     private readonly ILogger<JobsSchedulerBackgroundService> _logger;
+    private readonly CancellationTokenRegistration _hostStoppingRegistration;
     private int _started;
     private int _manualStartConsumed;
+
+    // Completed when a stop has finished draining and writing its releases. Null until the first start, so a host
+    // whose scheduler never started has nothing to wait for; replaced on a start after a stop, so a restarted
+    // scheduler is waited on again.
+    private TaskCompletionSource? _drained;
+
+    // The part of the stop budget kept, on the real clock, for jobs the stop cancels to write their release: the
+    // coordination heartbeat's leave budget, capped at half the stop budget so a short budget still lets jobs finish.
+    private static readonly TimeSpan _ReleaseWindow = TimeSpan.FromSeconds(5);
 
     // Store clock minus node clock, as observed on the last poll that reached the store. Zero until the first such
     // poll, which is exactly the assumption the loop made unconditionally before. Written by the loop, read by
     // RestartIfNeeded on arbitrary caller threads, so it moves through Interlocked/Volatile rather than a plain field.
     private long _storeClockOffsetTicks;
+
+    // Real-clock timestamp of the host's stop start, or zero until ApplicationStopping fires. The host stops hosted
+    // services one after another, so services registered after Jobs stop first and spend part of the host's shutdown
+    // timeout before StopAsync runs here; counting the budget from the host's stop keeps the release window inside the
+    // host's deadline.
+    private long _hostStopStartedAt;
 
     public bool IsRunning => _started == 1;
 
@@ -56,7 +72,8 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         IJobsOwnerIdentity ownerIdentity,
         SchedulerOptionsBuilder schedulerOptions,
         JobsActivationBarrier activationBarrier,
-        ILogger<JobsSchedulerBackgroundService> logger
+        ILogger<JobsSchedulerBackgroundService> logger,
+        IHostApplicationLifetime? hostLifetime = null
     )
     {
         _executionContext = Argument.IsNotNull(executionContext);
@@ -74,10 +91,26 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
             () => Volatile.Read(ref _schedulerLoopCancellationTokenSource)?.Cancel(),
             timeProvider
         );
+
+        // Registered here rather than in StartAsync so a scheduler that never started, or one started manually after
+        // the host started, still measures from the host's stop.
+        _hostStoppingRegistration =
+            hostLifetime?.ApplicationStopping.Register(
+                static state =>
+                    Interlocked.CompareExchange(
+                        ref ((JobsSchedulerBackgroundService)state!)._hostStopStartedAt,
+                        TimeProvider.System.GetTimestamp(),
+                        0
+                    ),
+                this
+            )
+            ?? default;
     }
 
     public override Task StartAsync(CancellationToken ct)
     {
+        _ArmDrainSignal();
+
         // JobsStartMode.Manual is consumed exactly once, on the host's first start of this service: freeze the pool
         // and return without running the loop, so nothing dispatches until an explicit IJobsHostScheduler.StartAsync.
         // The mode is read from THIS service's own configuration rather than pushed in beforehand by
@@ -250,6 +283,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                         await _taskScheduler
                             .QueueAsync(
                                 JobsAdmissionWorkItem.Create(
+                                    _taskScheduler,
                                     _internalJobsManager,
                                     _taskHandler,
                                     _logger,
@@ -395,35 +429,106 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         _restartThrottle.RequestRestart();
     }
 
+    /// <summary>
+    /// Completes when the last started scheduler has stopped, that is once <see cref="StopAsync"/> has drained running
+    /// jobs and written their releases, or at once when the scheduler never started.
+    /// </summary>
+    internal Task WaitUntilDrainedAsync(CancellationToken cancellationToken)
+    {
+        var drained = Volatile.Read(ref _drained);
+
+        return drained is null ? Task.CompletedTask : drained.Task.WaitAsync(cancellationToken);
+    }
+
+    private void _ArmDrainSignal()
+    {
+        var current = Volatile.Read(ref _drained);
+        if (current?.Task.IsCompleted == false)
+        {
+            return;
+        }
+
+        Interlocked.CompareExchange(
+            ref _drained,
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+            current
+        );
+    }
+
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        _taskScheduler.Freeze();
-        Interlocked.Exchange(ref _started, 0);
-
-        // Bounded drain BEFORE cancelling either execution lifetime: in-flight jobs get the host's
-        // remaining shutdown budget to complete and write their terminal status, so a routine deploy stops being
-        // indistinguishable from node death (previously every running job was cancelled with no terminal write,
-        // sat out its lease, and was resolved by OnNodeDeath — including false Failed records for MarkFailed
-        // jobs that never misbehaved). cancellationToken fires when the host's ShutdownTimeout expires;
-        // stragglers are then cancelled cooperatively by base.StopAsync and recovered by the existing sweeps.
         try
         {
-            await _taskScheduler.WaitForRunningTasksAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
+            await _StopCoreAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        finally
         {
-            // Shutdown budget exhausted — fall through to cooperative cancellation of the remaining work.
+            Volatile.Read(ref _drained)?.TrySetResult();
         }
+    }
 
-        // Immediate dispatch does not flow through BackgroundService.ExecuteAsync, so it cannot use the base
-        // stopping token. Cancel the task scheduler's execution lifetime after the same drain boundary, then let
-        // base.StopAsync cancel the scheduler-loop token used by polled and fallback work.
+    private async Task _StopCoreAsync(CancellationToken cancellationToken)
+    {
+        // The stop budget is real elapsed time, whatever clock the app schedules on, so it lines up with the host's own
+        // shutdown deadline. It counts from the host's stop start; a stop outside one (a manual stop, or a host without
+        // a lifetime) counts from here.
+        var hostStopStartedAt = Interlocked.Read(ref _hostStopStartedAt);
+        var stopStarted = hostStopStartedAt != 0 ? hostStopStartedAt : TimeProvider.System.GetTimestamp();
+
+        // Draining first: an item still queued in the pool hands its row back instead of starting a job, so the waits
+        // below cover only jobs that were already running.
+        _taskScheduler.BeginDrain();
+        Interlocked.Exchange(ref _started, 0);
+
+        var budget = _schedulerOptions.ShutdownTimeout;
+        var halfBudget = budget / 2;
+        var releaseWindow = halfBudget < _ReleaseWindow ? halfBudget : _ReleaseWindow;
+
+        // In-flight jobs get the budget, less the release window, to finish and write their own outcome, so a routine
+        // deploy is not node death.
+        var finishWindow = budget - releaseWindow - TimeProvider.System.GetElapsedTime(stopStarted);
+        await _WaitForRunningTasksAsync(finishWindow, cancellationToken).ConfigureAwait(false);
+
+        // Immediate and fallback dispatch do not flow through this service's ExecuteAsync, so they cannot use its
+        // stopping token. Cancel the task scheduler's execution lifetime they run on, then let base.StopAsync cancel
+        // the scheduler-loop token used by polled work.
         await _taskScheduler.CancelExecutionsAsync().ConfigureAwait(false);
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
+
+        // Every cancelled job now settles its row by its node-death policy, without charging a retry. Returning
+        // before those writes land would let the host dispose the store under them, so spend the rest of the budget
+        // waiting for them; a job that ignores cancellation past it falls to reclaim like a crash.
+        var remaining = budget - TimeProvider.System.GetElapsedTime(stopStarted);
+        await _WaitForRunningTasksAsync(remaining, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task _WaitForRunningTasksAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        if (timeout <= TimeSpan.Zero || cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        try
+        {
+            await _taskScheduler
+                .WaitForRunningTasksAsync()
+                .WaitAsync(timeout, TimeProvider.System, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            // This phase of the stop budget ran out.
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The host's own shutdown deadline arrived first.
+        }
     }
 
     public override void Dispose()
     {
+        _hostStoppingRegistration.Dispose();
         _restartThrottle.Dispose();
         Interlocked.Exchange(ref _schedulerLoopCancellationTokenSource, value: null)?.Dispose();
         base.Dispose();

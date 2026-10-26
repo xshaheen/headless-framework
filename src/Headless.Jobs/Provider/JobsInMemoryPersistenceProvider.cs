@@ -118,20 +118,27 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     private static bool _HoldsClusterSlot(JobStatus status, DateTime? lockedUntil, DateTimeOffset now) =>
         status is JobStatus.Queued or JobStatus.InProgress && lockedUntil > now.UtcDateTime;
 
-    // The #5 completion/claim fence (mirror of EF WhereOwnedBy): a row is touchable only when this node owns it and it
-    // is still non-terminal. Extracted (#467) so the predicate that guards every completion/claim path lives in one
-    // place — it was inlined 4× and a single typo would silently let one path clobber a swept/reclaimed row.
-    private bool _IsOwnedNonTerminal(string? ownerId, JobStatus status)
+    // The completion/claim fence: a row is touchable only while it is still stamped with the owner that claimed it and
+    // is still non-terminal. Every completion/claim path shares it, because a slip in one copy would silently let that
+    // path clobber a swept or reclaimed row.
+    private static bool _IsOwnedNonTerminal(string? ownerId, JobStatus status, string? claimOwner)
     {
-        return string.Equals(ownerId, _ownerId, StringComparison.Ordinal)
+        return claimOwner is { Length: > 0 }
+            && string.Equals(ownerId, claimOwner, StringComparison.Ordinal)
             && status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
     }
 
-    // Renewal slides a RUNNING lease only (mirror of the EF RenewTimeJobLeaseAsync InProgress fence): extending an
-    // Idle/Queued row would read as "lease held" and suppress cancel-on-loss. Extracted (#467) — inlined 2×.
-    private bool _IsOwnedRunning(string? ownerId, JobStatus status)
+    // Renewal slides a RUNNING lease only: extending an Idle/Queued row would read as "lease held" and suppress
+    // cancel-on-loss.
+    private static bool _IsOwnedRunning(string? ownerId, JobStatus status, string owner)
     {
-        return string.Equals(ownerId, _ownerId, StringComparison.Ordinal) && status is JobStatus.InProgress;
+        return string.Equals(ownerId, owner, StringComparison.Ordinal) && status is JobStatus.InProgress;
+    }
+
+    // The in-memory store has no membership, so its live identity is the configured node id.
+    private bool _IsLiveOwner(string? claimOwner)
+    {
+        return string.Equals(claimOwner, _ownerId, StringComparison.Ordinal);
     }
 
     // Claim gate: a timed descendant (ParentId != null AND ExecutionTime != null) with a parent-terminal-gated
@@ -370,8 +377,14 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         }
     }
 
-    public Task ReleaseAcquiredTimeJobsAsync(Guid[] timeJobIds, CancellationToken cancellationToken = default)
+    public Task ReleaseAcquiredTimeJobsAsync(
+        Guid[] timeJobIds,
+        string claimOwner,
+        CancellationToken cancellationToken = default
+    )
     {
+        Argument.IsNotNullOrEmpty(claimOwner);
+
         var now = _timeProvider.GetUtcNow();
         var idsToRelease = timeJobIds.Length == 0 ? [.. _timeJobs.Keys] : timeJobIds;
 
@@ -382,7 +395,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 // Release only this owner's claimed-but-not-started rows (the EF WhereReleasableBy mirror). The
                 // acquire predicate would also sweep foreign and unowned rows on the empty-id form, and Idle
                 // owned rows are running chains' descendants — stripping them would break continuations.
-                if (_IsReleasable(job.Status, job.OwnerId))
+                if (_IsReleasable(job.Status, job.OwnerId, claimOwner))
                 {
                     var updatedTicker = _CloneTicker(job);
                     updatedTicker.OwnerId = null;
@@ -401,9 +414,96 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         return Task.CompletedTask;
     }
 
-    private bool _IsReleasable(JobStatus status, string? ownerId)
+    // Graceful-stop releases: the dead-node transitions without the RetryCount + 1, fenced on an InProgress row still
+    // stamped with the claim owner. A lost compare-and-swap re-reads the row, so a concurrent writer that left it still
+    // owned and running does not turn the release into a miss.
+    public Task<int> ReleaseInProgressTimeJobAsync(
+        Guid jobId,
+        string claimOwner,
+        CancellationToken cancellationToken = default
+    )
     {
-        return status == JobStatus.Queued && string.Equals(ownerId, _ownerId, StringComparison.Ordinal);
+        Argument.IsNotNullOrEmpty(claimOwner);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult(
+            _SettleInterruptedTimeJob(jobId, claimOwner, reason: null, executionTime: null, NodeDeathPolicy.Retry)
+        );
+    }
+
+    public Task<int> SettleInterruptedTimeJobAsync(
+        Guid jobId,
+        string claimOwner,
+        string reason,
+        DateTime? retryExecutionTime,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(claimOwner);
+        Argument.IsNotNullOrEmpty(reason);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult(
+            _SettleInterruptedTimeJob(jobId, claimOwner, reason, retryExecutionTime, policyOverride: null)
+        );
+    }
+
+    // A policy override settles the row as that policy; without one, the row's own node-death policy decides.
+    private int _SettleInterruptedTimeJob(
+        Guid jobId,
+        string claimOwner,
+        string? reason,
+        DateTime? executionTime,
+        NodeDeathPolicy? policyOverride
+    )
+    {
+        while (
+            _timeJobs.TryGetValue(jobId, out var current)
+            && current.Status == JobStatus.InProgress
+            && string.Equals(current.OwnerId, claimOwner, StringComparison.Ordinal)
+        )
+        {
+            var now = _timeProvider.GetUtcNow();
+            var updated = _CloneTicker(current);
+            updated.LockedUntil = null;
+            updated.UpdatedAt = now;
+
+            switch (policyOverride ?? current.OnNodeDeath)
+            {
+                case NodeDeathPolicy.MarkFailed:
+                    updated.Status = JobStatus.Failed;
+                    updated.ExceptionMessage = reason;
+                    updated.ExecutedAt = now;
+                    break;
+                case NodeDeathPolicy.Skip:
+                    updated.Status = JobStatus.Skipped;
+                    updated.SkippedReason = reason;
+                    updated.ExecutedAt = now;
+                    break;
+                default:
+                    updated.Status = JobStatus.Idle;
+                    updated.OwnerId = null;
+                    if (executionTime is { } dueAt)
+                    {
+                        updated.ExecutionTime = dueAt;
+                    }
+
+                    break;
+            }
+
+            if (_TryUpdateTimeJob(jobId, updated, current))
+            {
+                _SyncReconcileCandidate(updated);
+                return 1;
+            }
+        }
+
+        return 0;
+    }
+
+    private static bool _IsReleasable(JobStatus status, string? ownerId, string claimOwner)
+    {
+        return status == JobStatus.Queued && string.Equals(ownerId, claimOwner, StringComparison.Ordinal);
     }
 
     public Task<EarliestTimeJobs> GetEarliestTimeJobsAsync(CancellationToken cancellationToken = default)
@@ -466,9 +566,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         // cancellation request) is not a lost lease, and only the ownership fence below may answer 0.
         while (_timeJobs.TryGetValue(functionContext.JobId, out var job))
         {
-            // #5 completion fence (mirror EF WhereOwnedBy): only the still-owning node may complete a
-            // non-terminal row, so a swept/reclaimed row is not clobbered by a late completion.
-            var ownedNonTerminal = _IsOwnedNonTerminal(job.OwnerId, job.Status);
+            // Completion fence: only the claim owner may complete a non-terminal row, so a swept/reclaimed row is
+            // not clobbered by a late completion.
+            var ownedNonTerminal = _IsOwnedNonTerminal(job.OwnerId, job.Status, functionContext.ClaimOwner);
 
             if (!ownedNonTerminal)
             {
@@ -560,7 +660,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!_timeJobs.TryGetValue(jobId, out var job) || !_IsOwnedRunning(job.OwnerId, job.Status))
+        if (!_timeJobs.TryGetValue(jobId, out var job) || !_IsOwnedRunning(job.OwnerId, job.Status, _ownerId))
         {
             return Task.FromResult<bool?>(null);
         }
@@ -798,13 +898,19 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     {
         var updatedIds = new List<Guid>(timeJobIds.Length);
 
+        // Starting execution needs the node to still be the claim owner.
+        if (functionContext.Status == JobStatus.InProgress && !_IsLiveOwner(functionContext.ClaimOwner))
+        {
+            return Task.FromResult(Array.Empty<Guid>());
+        }
+
         foreach (var id in timeJobIds)
         {
             if (_timeJobs.TryGetValue(id, out var job))
             {
                 // #316 claim→start ownership recheck: reject another owner and require Queued for the
                 // InProgress transition so a duplicate same-owner scheduler wrapper cannot revalidate a running row.
-                var ownedNonTerminal = _IsOwnedNonTerminal(job.OwnerId, job.Status);
+                var ownedNonTerminal = _IsOwnedNonTerminal(job.OwnerId, job.Status, functionContext.ClaimOwner);
                 var canTransitionToInProgress =
                     functionContext.Status != JobStatus.InProgress || job.Status == JobStatus.Queued;
 
@@ -881,11 +987,22 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         return Task.FromResult(acquired.ToArray());
     }
 
-    public Task<int> RenewTimeJobLeaseAsync(Guid jobId, CancellationToken cancellationToken = default)
+    public Task<int> RenewTimeJobLeaseAsync(
+        Guid jobId,
+        string claimOwner,
+        CancellationToken cancellationToken = default
+    )
     {
         // #316 sliding lease (mirror EF RenewTimeJobLeaseAsync): slide LockedUntil forward, fenced on the #5
         // completion-fence shape (still owned + non-terminal). A lost/reclaimed/terminalized row returns 0 ->
         // cancel-on-loss.
+        Argument.IsNotNullOrEmpty(claimOwner);
+
+        if (!_IsLiveOwner(claimOwner))
+        {
+            return Task.FromResult(0);
+        }
+
         var now = _timeProvider.GetUtcNow();
 
         // Retry a lost compare-and-swap: a concurrent write to the same running row (a renewal, a progress write, a
@@ -894,7 +1011,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         {
             // Renewal slides a RUNNING lease only: extending an Idle/Queued row would return 1 ("lease held") and
             // suppress cancel-on-loss. Mirror the EF RenewTimeJobLeaseAsync InProgress fence.
-            var ownedRunning = _IsOwnedRunning(job.OwnerId, job.Status);
+            var ownedRunning = _IsOwnedRunning(job.OwnerId, job.Status, claimOwner);
 
             if (!ownedRunning)
             {
@@ -1306,17 +1423,56 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         {
             _RejectKeyedTreeUpdates(jobs);
 
+            // Check the whole call before writing any row, so a refused row leaves every other row as it was.
+            var rootOwners = new Dictionary<Guid, string?>(jobs.Length);
+            foreach (var job in jobs)
+            {
+                if (!_timeJobs.TryGetValue(job.Id, out var stored) || !TimeJobEditGuard.IsEditable(stored))
+                {
+                    throw TimeJobEditGuard.Refused();
+                }
+
+                rootOwners[job.Id] = stored.OwnerId;
+                _EnsureCarriedDescendantsEditable(job, stored.OwnerId);
+            }
+
+            var now = _timeProvider.GetUtcNow();
             var count = 0;
             foreach (var job in jobs)
             {
-                count += _UpdateTickerWithChildren(job);
+                count += _UpdateTickerWithChildren(job, rootOwners[job.Id], now);
             }
 
             return Task.FromResult(count);
         }
     }
 
-    private int _UpdateTickerWithChildren(TTimeJob job, Guid? parentId = null)
+    private void _EnsureCarriedDescendantsEditable(TTimeJob root, string? rootOwnerBeforeEdit)
+    {
+        var pending = new Stack<TTimeJob>(root.Children);
+        while (pending.TryPop(out var descendant))
+        {
+            if (
+                _timeJobs.TryGetValue(descendant.Id, out var stored)
+                && !TimeJobEditGuard.IsCarriedDescendantEditable(stored, rootOwnerBeforeEdit)
+            )
+            {
+                throw TimeJobEditGuard.Refused();
+            }
+
+            foreach (var child in descendant.Children)
+            {
+                pending.Push(child);
+            }
+        }
+    }
+
+    private int _UpdateTickerWithChildren(
+        TTimeJob job,
+        string? rootOwnerBeforeEdit,
+        DateTimeOffset now,
+        Guid? parentId = null
+    )
     {
         JobContract.ValidateName(job.Function);
         JobContract.ValidateVersion(job.ContractVersion);
@@ -1328,57 +1484,91 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             job.ParentId = parentId.Value;
         }
 
-        // Update the job itself
-        if (_timeJobs.TryGetValue(job.Id, out var existing))
+        if (!_timeJobs.TryGetValue(job.Id, out var existing))
         {
-            // Ownership, business lineage, and the scheduling trace context are captured at scheduling; ordinary edits
-            // cannot replace them.
-            job.TenantId = existing.TenantId;
-            job.CorrelationId = existing.CorrelationId;
-            job.CausationId = existing.CausationId;
-            job.TraceParent = existing.TraceParent;
+            // An edited row that vanished since the check was deleted concurrently; a missing descendant is a new child.
+            if (parentId is null)
+            {
+                throw TimeJobEditGuard.Refused();
+            }
+
+            return _AddTickerWithChildren(job, parentId);
+        }
+
+        // Claims and lifecycle writes swap rows without this lock, so re-check the rule against each row the write
+        // would replace; a row that moved on since the check is refused rather than overwritten.
+        while (true)
+        {
+            var editable = parentId is null
+                ? TimeJobEditGuard.IsEditable(existing)
+                : TimeJobEditGuard.IsCarriedDescendantEditable(existing, rootOwnerBeforeEdit);
+
+            if (!editable)
+            {
+                throw TimeJobEditGuard.Refused();
+            }
+
+            _KeepStoredStateAndRelease(job, existing, now);
 
             if (_TryUpdateTimeJob(job.Id, job, existing))
             {
-                _SyncReconcileCandidate(job);
+                break;
+            }
 
-                // Maintain children index for parent changes
-                if (existing.ParentId != job.ParentId)
-                {
-                    if (existing.ParentId.HasValue)
-                    {
-                        _RemoveChildIndex(existing.ParentId.Value, job.Id);
-                    }
-
-                    if (job.ParentId.HasValue)
-                    {
-                        _AddChildIndex(job.ParentId.Value, job.Id);
-                    }
-                }
-
-                count++;
-
-                // Recursively update all children
-                if (job.Children is { Count: > 0 })
-                {
-                    foreach (var child in job.Children)
-                    {
-                        // Cast to TTimeJob since Children is ICollection<TTimeJob>
-                        if (child is { } childTicker)
-                        {
-                            count += _UpdateTickerWithChildren(childTicker, job.Id);
-                        }
-                    }
-                }
+            if (!_timeJobs.TryGetValue(job.Id, out existing))
+            {
+                throw TimeJobEditGuard.Refused();
             }
         }
-        else
+
+        _SyncReconcileCandidate(job);
+
+        if (existing.ParentId != job.ParentId)
         {
-            // If it doesn't exist, add it (this can happen for new children)
-            count += _AddTickerWithChildren(job, parentId);
+            if (existing.ParentId.HasValue)
+            {
+                _RemoveChildIndex(existing.ParentId.Value, job.Id);
+            }
+
+            if (job.ParentId.HasValue)
+            {
+                _AddChildIndex(job.ParentId.Value, job.Id);
+            }
+        }
+
+        count++;
+
+        foreach (var child in job.Children)
+        {
+            count += _UpdateTickerWithChildren(child, rootOwnerBeforeEdit, now, job.Id);
         }
 
         return count;
+    }
+
+    // An edit writes only what the caller schedules. Ownership, business lineage, and the scheduling trace context are
+    // captured at scheduling, and the run state belongs to the scheduler and the executing node, so they come from the
+    // stored row; then the edit releases any claim, which the rule above only allows on a not-yet-started row.
+    private static void _KeepStoredStateAndRelease(TTimeJob job, TTimeJob stored, DateTimeOffset now)
+    {
+        job.TenantId = stored.TenantId;
+        job.CorrelationId = stored.CorrelationId;
+        job.CausationId = stored.CausationId;
+        job.TraceParent = stored.TraceParent;
+        job.RetryCount = stored.RetryCount;
+        job.CreatedAt = stored.CreatedAt;
+        job.ExecutedAt = stored.ExecutedAt;
+        job.ElapsedTime = stored.ElapsedTime;
+        job.ExceptionMessage = stored.ExceptionMessage;
+        job.SkippedReason = stored.SkippedReason;
+        job.ProgressPercent = stored.ProgressPercent;
+        job.ProgressMessage = stored.ProgressMessage;
+        job.ProgressUpdatedAt = stored.ProgressUpdatedAt;
+        job.CancelRequested = stored.CancelRequested;
+        job.Status = JobStatus.Idle;
+        job.OwnerId = null;
+        job.LockedUntil = null;
+        job.UpdatedAt = now;
     }
 
     public Task<int> RemoveTimeJobsAsync(Guid[] jobIds, CancellationToken cancellationToken = default)
@@ -2989,7 +3179,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         while (_cronOccurrences.TryGetValue(functionContext.JobId, out var occurrence))
         {
             // #5 completion fence (mirror EF WhereOwnedBy): only the still-owning node may complete a non-terminal occurrence.
-            if (!_IsOwnedNonTerminal(occurrence.OwnerId, occurrence.Status))
+            if (!_IsOwnedNonTerminal(occurrence.OwnerId, occurrence.Status, functionContext.ClaimOwner))
             {
                 return Task.FromResult(0);
             }
@@ -3007,9 +3197,20 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         return Task.FromResult(0);
     }
 
-    public Task<int> RenewCronJobOccurrenceLeaseAsync(Guid occurrenceId, CancellationToken cancellationToken = default)
+    public Task<int> RenewCronJobOccurrenceLeaseAsync(
+        Guid occurrenceId,
+        string claimOwner,
+        CancellationToken cancellationToken = default
+    )
     {
         // #316 sliding lease (mirror EF RenewCronJobOccurrenceLeaseAsync). Lost/reclaimed/terminalized -> 0.
+        Argument.IsNotNullOrEmpty(claimOwner);
+
+        if (!_IsLiveOwner(claimOwner))
+        {
+            return Task.FromResult(0);
+        }
+
         var now = _timeProvider.GetUtcNow();
 
         // Retry a lost compare-and-swap: a concurrent write to the same running row (a renewal, a progress write, a
@@ -3017,7 +3218,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         while (_cronOccurrences.TryGetValue(occurrenceId, out var occurrence))
         {
             // Renewal slides a RUNNING lease only (see RenewTimeJobLeaseAsync InProgress fence).
-            var ownedRunning = _IsOwnedRunning(occurrence.OwnerId, occurrence.Status);
+            var ownedRunning = _IsOwnedRunning(occurrence.OwnerId, occurrence.Status, claimOwner);
 
             if (!ownedRunning)
             {
@@ -3039,17 +3240,19 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     public Task<bool> UpdateTimeJobProgressAsync(
         Guid jobId,
+        string claimOwner,
         JobProgress progress,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNullOrEmpty(claimOwner);
         cancellationToken.ThrowIfCancellationRequested();
         var now = _timeProvider.GetUtcNow();
 
         // Same fence and compare-and-swap retry as RenewTimeJobLeaseAsync.
         while (_timeJobs.TryGetValue(jobId, out var job))
         {
-            if (!_IsOwnedRunning(job.OwnerId, job.Status))
+            if (!_IsOwnedRunning(job.OwnerId, job.Status, claimOwner))
             {
                 return Task.FromResult(false);
             }
@@ -3071,17 +3274,19 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     public Task<bool> UpdateCronJobOccurrenceProgressAsync(
         Guid occurrenceId,
+        string claimOwner,
         JobProgress progress,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNullOrEmpty(claimOwner);
         cancellationToken.ThrowIfCancellationRequested();
         var now = _timeProvider.GetUtcNow();
 
         // Same fence and compare-and-swap retry as RenewCronJobOccurrenceLeaseAsync.
         while (_cronOccurrences.TryGetValue(occurrenceId, out var occurrence))
         {
-            if (!_IsOwnedRunning(occurrence.OwnerId, occurrence.Status))
+            if (!_IsOwnedRunning(occurrence.OwnerId, occurrence.Status, claimOwner))
             {
                 return Task.FromResult(false);
             }
@@ -3178,9 +3383,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     public Task ReleaseAcquiredCronJobOccurrencesAsync(
         Guid[] occurrenceIds,
+        string claimOwner,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNullOrEmpty(claimOwner);
+
         var now = _timeProvider.GetUtcNow();
         var idsToRelease = occurrenceIds.Length == 0 ? [.. _cronOccurrences.Keys] : occurrenceIds;
 
@@ -3189,7 +3397,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             if (_cronOccurrences.TryGetValue(id, out var occurrence))
             {
                 // Owner-scoped release, mirroring ReleaseAcquiredTimeJobsAsync (never the acquire predicate).
-                if (_IsReleasable(occurrence.Status, occurrence.OwnerId))
+                if (_IsReleasable(occurrence.Status, occurrence.OwnerId, claimOwner))
                 {
                     var updatedOccurrence = _CloneCronOccurrence(occurrence);
                     updatedOccurrence.OwnerId = null;
@@ -3203,6 +3411,81 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         }
 
         return Task.CompletedTask;
+    }
+
+    public Task<int> ReleaseInProgressCronJobOccurrenceAsync(
+        Guid occurrenceId,
+        string claimOwner,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(claimOwner);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult(
+            _SettleInterruptedOccurrence(occurrenceId, claimOwner, reason: null, NodeDeathPolicy.Retry)
+        );
+    }
+
+    public Task<int> SettleInterruptedCronJobOccurrenceAsync(
+        Guid occurrenceId,
+        string claimOwner,
+        string reason,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(claimOwner);
+        Argument.IsNotNullOrEmpty(reason);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult(_SettleInterruptedOccurrence(occurrenceId, claimOwner, reason, policyOverride: null));
+    }
+
+    private int _SettleInterruptedOccurrence(
+        Guid occurrenceId,
+        string claimOwner,
+        string? reason,
+        NodeDeathPolicy? policyOverride
+    )
+    {
+        while (
+            _cronOccurrences.TryGetValue(occurrenceId, out var current)
+            && current.Status == JobStatus.InProgress
+            && string.Equals(current.OwnerId, claimOwner, StringComparison.Ordinal)
+        )
+        {
+            var now = _timeProvider.GetUtcNow();
+            var updated = _CloneCronOccurrence(current);
+            updated.LockedUntil = null;
+            updated.UpdatedAt = now;
+
+            switch (policyOverride ?? current.OnNodeDeath)
+            {
+                case NodeDeathPolicy.MarkFailed:
+                    updated.Status = JobStatus.Failed;
+                    updated.ExceptionMessage = reason;
+                    updated.ExecutedAt = now;
+                    break;
+                case NodeDeathPolicy.Skip:
+                    updated.Status = JobStatus.Skipped;
+                    updated.SkippedReason = reason;
+                    // As in the dead-node sweep: the skipped row still accounts for its instant.
+                    updated.Disposition = CronOccurrenceDisposition.Accounted;
+                    updated.ExecutedAt = now;
+                    break;
+                default:
+                    updated.Status = JobStatus.Idle;
+                    updated.OwnerId = null;
+                    break;
+            }
+
+            if (_cronOccurrences.TryUpdate(occurrenceId, updated, current))
+            {
+                return 1;
+            }
+        }
+
+        return 0;
     }
 
     public Task<byte[]> GetCronJobOccurrenceRequestAsync(Guid jobId, CancellationToken cancellationToken = default)
@@ -3220,6 +3503,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     {
         var updatedIds = new List<Guid>(timeJobIds.Length);
 
+        // Starting execution needs the node to still be the claim owner.
+        if (functionContext.Status == JobStatus.InProgress && !_IsLiveOwner(functionContext.ClaimOwner))
+        {
+            return Task.FromResult(Array.Empty<Guid>());
+        }
+
         foreach (var id in timeJobIds)
         {
             if (_cronOccurrences.TryGetValue(id, out var occurrence))
@@ -3227,7 +3516,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 lock (_GetCronDefinitionLock(occurrence.CronJobId))
                 {
                     // #316 — cron mirror of the strict claim→start ownership recheck.
-                    var ownedNonTerminal = _IsOwnedNonTerminal(occurrence.OwnerId, occurrence.Status);
+                    var ownedNonTerminal = _IsOwnedNonTerminal(
+                        occurrence.OwnerId,
+                        occurrence.Status,
+                        functionContext.ClaimOwner
+                    );
                     var canTransitionToInProgress =
                         functionContext.Status != JobStatus.InProgress || occurrence.Status == JobStatus.Queued;
                     var definitionAllowsStart =
@@ -3732,9 +4025,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     private bool _CanAcquire(TTimeJob job)
     {
-        // Mirror EF WhereCanAcquire: (Status is Idle OR Queued) AND (mine OR never leased OR (lease expired AND
-        // OnNodeDeath == Retry)). `now` comes from the injected TimeProvider (application clock, not a DB clock)
-        // for InMemory↔SQL parity. The lease-expiry arm is gated on Retry (#315).
+        // Mirror EF WhereCanAcquire: (Status is Idle OR Queued) AND (mine OR never leased OR lease expired), whatever
+        // the row's OnNodeDeath, since such a row never started. `now` comes from the injected TimeProvider
+        // (application clock, not a DB clock) for InMemory↔SQL parity.
         var now = _timeProvider.GetUtcNow();
 
         return (job.Status == JobStatus.Idle || job.Status == JobStatus.Queued)
@@ -3742,14 +4035,13 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             && (
                 string.Equals(job.OwnerId, _ownerId, StringComparison.Ordinal)
                 || job.LockedUntil == null
-                || (job.LockedUntil <= now.UtcDateTime && job.OnNodeDeath == NodeDeathPolicy.Retry)
+                || job.LockedUntil <= now.UtcDateTime
             );
     }
 
     private bool _CanAcquireCronOccurrence(CronJobOccurrenceEntity<TCronJob> occurrence)
     {
-        // Mirror EF WhereCanAcquire: (Status is Idle OR Queued) AND (mine OR never leased OR (lease expired AND
-        // OnNodeDeath == Retry)). The lease-expiry arm is gated on Retry (#315).
+        // Mirror EF WhereCanAcquire: (Status is Idle OR Queued) AND (mine OR never leased OR lease expired).
         var now = _timeProvider.GetUtcNow();
 
         return _cronJobs.TryGetValue(occurrence.CronJobId, out var definition)
@@ -3759,7 +4051,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             && (
                 string.Equals(occurrence.OwnerId, _ownerId, StringComparison.Ordinal)
                 || occurrence.LockedUntil == null
-                || (occurrence.LockedUntil <= now.UtcDateTime && occurrence.OnNodeDeath == NodeDeathPolicy.Retry)
+                || occurrence.LockedUntil <= now.UtcDateTime
             );
     }
 

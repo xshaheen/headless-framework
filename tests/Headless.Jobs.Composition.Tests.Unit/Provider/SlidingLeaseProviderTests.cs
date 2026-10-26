@@ -67,7 +67,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         time.Advance(TimeSpan.FromMinutes(2)); // job runs past part of its lease
-        var affected = await provider.RenewTimeJobLeaseAsync(job.Id, AbortToken);
+        var affected = await provider.RenewTimeJobLeaseAsync(job.Id, _NodeA, AbortToken);
 
         affected.Should().Be(1);
         var renewed = await provider.GetTimeJobByIdAsync(job.Id, AbortToken);
@@ -81,7 +81,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var job = _TimeJob(JobStatus.InProgress, _NodeB, _Now.UtcDateTime.AddMinutes(1)); // owned by another node
         await provider.AddTimeJobsAsync([job], AbortToken);
 
-        var affected = await provider.RenewTimeJobLeaseAsync(job.Id, AbortToken);
+        var affected = await provider.RenewTimeJobLeaseAsync(job.Id, _NodeA, AbortToken);
 
         affected.Should().Be(0); // lease lost -> cancel-on-loss
     }
@@ -93,7 +93,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var job = _TimeJob(JobStatus.Succeeded, _NodeA, _Now.UtcDateTime.AddMinutes(1));
         await provider.AddTimeJobsAsync([job], AbortToken);
 
-        var affected = await provider.RenewTimeJobLeaseAsync(job.Id, AbortToken);
+        var affected = await provider.RenewTimeJobLeaseAsync(job.Id, _NodeA, AbortToken);
 
         affected.Should().Be(0);
     }
@@ -107,7 +107,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var job = _TimeJob(JobStatus.Queued, _NodeA, _Now.UtcDateTime.AddMinutes(1));
         await provider.AddTimeJobsAsync([job], AbortToken);
 
-        (await provider.RenewTimeJobLeaseAsync(job.Id, AbortToken)).Should().Be(0);
+        (await provider.RenewTimeJobLeaseAsync(job.Id, _NodeA, AbortToken)).Should().Be(0);
     }
 
     [Fact]
@@ -120,7 +120,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         await provider.AddTimeJobsAsync([job], AbortToken);
 
         (await provider.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(1);
-        (await provider.RenewTimeJobLeaseAsync(job.Id, AbortToken)).Should().Be(0);
+        (await provider.RenewTimeJobLeaseAsync(job.Id, _NodeA, AbortToken)).Should().Be(0);
     }
 
     [Fact]
@@ -213,7 +213,10 @@ public sealed class SlidingLeaseProviderTests : TestBase
         storedGrandChild!.OwnerId.Should().Be(_NodeA);
         storedGrandChild.LockedUntil.Should().Be(_Now.UtcDateTime.Add(_Lease));
 
-        var start = new JobExecutionState { FunctionName = "fn" }.SetProperty(x => x.Status, JobStatus.InProgress);
+        var start = new JobExecutionState { FunctionName = "fn", ClaimOwner = _NodeA }.SetProperty(
+            x => x.Status,
+            JobStatus.InProgress
+        );
         (await provider.UpdateTimeJobsWithUnifiedContextAsync([root.Id], start, AbortToken)).Should().Equal(root.Id);
         (await provider.GetTimeJobByIdAsync(root.Id, AbortToken))!.Status.Should().Be(JobStatus.InProgress);
     }
@@ -346,7 +349,10 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var job = _TimeJob(JobStatus.Queued, _NodeB, _Now.UtcDateTime.AddMinutes(1)); // re-claimed by NodeB before we start it
         await provider.AddTimeJobsAsync([job], AbortToken);
 
-        var unified = new JobExecutionState { FunctionName = "fn" }.SetProperty(x => x.Status, JobStatus.InProgress);
+        var unified = new JobExecutionState { FunctionName = "fn", ClaimOwner = _NodeA }.SetProperty(
+            x => x.Status,
+            JobStatus.InProgress
+        );
         var stampedIds = await provider.UpdateTimeJobsWithUnifiedContextAsync([job.Id], unified, AbortToken);
 
         stampedIds.Should().BeEmpty();
@@ -362,7 +368,10 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var job = _TimeJob(JobStatus.Queued, _NodeA, _Now.UtcDateTime.AddMinutes(1));
         await provider.AddTimeJobsAsync([job], AbortToken);
 
-        var unified = new JobExecutionState { FunctionName = "fn" }.SetProperty(x => x.Status, JobStatus.InProgress);
+        var unified = new JobExecutionState { FunctionName = "fn", ClaimOwner = _NodeA }.SetProperty(
+            x => x.Status,
+            JobStatus.InProgress
+        );
         var stampedIds = await provider.UpdateTimeJobsWithUnifiedContextAsync([job.Id], unified, AbortToken);
 
         stampedIds.Should().Equal(job.Id);
@@ -375,11 +384,98 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var (provider, _) = _Create();
         var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(1));
         await provider.AddTimeJobsAsync([job], AbortToken);
-        var unified = new JobExecutionState { FunctionName = "fn" }.SetProperty(x => x.Status, JobStatus.InProgress);
+        var unified = new JobExecutionState { FunctionName = "fn", ClaimOwner = _NodeA }.SetProperty(
+            x => x.Status,
+            JobStatus.InProgress
+        );
 
         var stampedIds = await provider.UpdateTimeJobsWithUnifiedContextAsync([job.Id], unified, AbortToken);
 
         stampedIds.Should().BeEmpty();
+    }
+
+    // ── Settling writes fence on the claim owner ─────────────────────────────────────────────────────────────
+    // The in-memory store has no membership; its live identity is the configured node id. A row stamped with an
+    // owner other than that id stands in for a run whose node identity is gone (left, fenced, or restarted).
+
+    [Fact]
+    public async Task completion_with_the_claim_owner_persists_when_it_is_no_longer_the_live_identity()
+    {
+        var (provider, _) = _Create(); // live identity is NodeA
+        const string claimOwner = "node-a@1";
+        var job = _TimeJob(JobStatus.InProgress, claimOwner, _Now.UtcDateTime.AddMinutes(1));
+        await provider.AddTimeJobsAsync([job], AbortToken);
+
+        var completion = new JobExecutionState
+        {
+            FunctionName = "fn",
+            JobId = job.Id,
+            ClaimOwner = claimOwner,
+        }.SetProperty(x => x.Status, JobStatus.Succeeded);
+
+        (await provider.UpdateTimeJobAsync(completion, AbortToken)).Should().Be(1);
+        (await provider.GetTimeJobByIdAsync(job.Id, AbortToken))!.Status.Should().Be(JobStatus.Succeeded);
+    }
+
+    [Fact]
+    public async Task completion_with_the_claim_owner_matches_no_row_once_a_peer_reclaimed_it()
+    {
+        var (provider, _) = _Create();
+        var released = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
+        var reclaimed = _TimeJob(JobStatus.InProgress, _NodeB, _Now.UtcDateTime.AddMinutes(1));
+        await provider.AddTimeJobsAsync([released, reclaimed], AbortToken);
+
+        foreach (var id in new[] { released.Id, reclaimed.Id })
+        {
+            var completion = new JobExecutionState
+            {
+                FunctionName = "fn",
+                JobId = id,
+                ClaimOwner = _NodeA,
+            }.SetProperty(x => x.Status, JobStatus.Succeeded);
+
+            (await provider.UpdateTimeJobAsync(completion, AbortToken)).Should().Be(0);
+        }
+
+        var releasedRow = (await provider.GetTimeJobByIdAsync(released.Id, AbortToken))!;
+        releasedRow.Status.Should().Be(JobStatus.Idle);
+        releasedRow.OwnerId.Should().BeNull();
+        var reclaimedRow = (await provider.GetTimeJobByIdAsync(reclaimed.Id, AbortToken))!;
+        reclaimedRow.Status.Should().Be(JobStatus.InProgress);
+        reclaimedRow.OwnerId.Should().Be(_NodeB);
+    }
+
+    [Fact]
+    public async Task renewal_is_lost_when_the_claim_owner_is_no_longer_the_live_identity()
+    {
+        var (provider, _) = _Create(); // live identity is NodeA
+        const string claimOwner = "node-a@1";
+        var lease = _Now.UtcDateTime.AddMinutes(1);
+        var job = _TimeJob(JobStatus.InProgress, claimOwner, lease);
+        await provider.AddTimeJobsAsync([job], AbortToken);
+
+        (await provider.RenewTimeJobLeaseAsync(job.Id, claimOwner, AbortToken)).Should().Be(0);
+
+        var row = (await provider.GetTimeJobByIdAsync(job.Id, AbortToken))!;
+        row.LockedUntil.Should().Be(lease);
+        row.OwnerId.Should().Be(claimOwner);
+    }
+
+    [Fact]
+    public async Task admission_matches_no_row_when_the_claim_owner_is_no_longer_the_live_identity()
+    {
+        var (provider, _) = _Create(); // live identity is NodeA
+        const string claimOwner = "node-a@1";
+        var job = _TimeJob(JobStatus.Queued, claimOwner, _Now.UtcDateTime.AddMinutes(1));
+        await provider.AddTimeJobsAsync([job], AbortToken);
+
+        var start = new JobExecutionState { FunctionName = "fn", ClaimOwner = claimOwner }.SetProperty(
+            x => x.Status,
+            JobStatus.InProgress
+        );
+
+        (await provider.UpdateTimeJobsWithUnifiedContextAsync([job.Id], start, AbortToken)).Should().BeEmpty();
+        (await provider.GetTimeJobByIdAsync(job.Id, AbortToken))!.Status.Should().Be(JobStatus.Queued);
     }
 
     // ── cron occurrence mirrors (renew + reclaim) ────────────────────────────────────────────────────────────
@@ -429,7 +525,10 @@ public sealed class SlidingLeaseProviderTests : TestBase
         afterExpiry.Should().ContainSingle().Which.Id.Should().Be(id);
         afterExpiry[0].Status.Should().Be(JobStatus.Queued);
 
-        var start = new JobExecutionState { FunctionName = "fn" }.SetProperty(x => x.Status, JobStatus.InProgress);
+        var start = new JobExecutionState { FunctionName = "fn", ClaimOwner = _NodeA }.SetProperty(
+            x => x.Status,
+            JobStatus.InProgress
+        );
         (await provider.UpdateCronJobOccurrencesWithUnifiedContextAsync([id], start, AbortToken)).Should().Equal(id);
         (await provider.GetAllCronJobOccurrencesAsync(x => x.Id == id, AbortToken))
             .Should()
@@ -444,7 +543,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var (provider, _) = _Create();
         var id = await _SeedCronOccurrence(provider, JobStatus.InProgress, _NodeB, _Now.UtcDateTime.AddMinutes(1));
 
-        (await provider.RenewCronJobOccurrenceLeaseAsync(id, AbortToken)).Should().Be(0);
+        (await provider.RenewCronJobOccurrenceLeaseAsync(id, _NodeA, AbortToken)).Should().Be(0);
     }
 
     [Fact]
@@ -513,7 +612,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var (provider, _) = _Create();
         var id = await _SeedCronOccurrence(provider, JobStatus.Queued, _NodeA, _Now.UtcDateTime.AddMinutes(1));
 
-        (await provider.RenewCronJobOccurrenceLeaseAsync(id, AbortToken)).Should().Be(0);
+        (await provider.RenewCronJobOccurrenceLeaseAsync(id, _NodeA, AbortToken)).Should().Be(0);
     }
 
     [Fact]
@@ -553,5 +652,51 @@ public sealed class SlidingLeaseProviderTests : TestBase
         yielded.Should().ContainSingle().Which.OnNodeDeath.Should().Be(NodeDeathPolicy.Skip);
         var stored = await provider.GetAllCronJobOccurrencesAsync(x => x.Id == occId, AbortToken);
         stored.Should().ContainSingle().Which.OnNodeDeath.Should().Be(NodeDeathPolicy.Skip);
+    }
+
+    // ── A lapsed claim that never started is reclaimable under every policy ─────────────────────────────────
+
+    [Theory]
+    [InlineData(NodeDeathPolicy.Retry)]
+    [InlineData(NodeDeathPolicy.MarkFailed)]
+    [InlineData(NodeDeathPolicy.Skip)]
+    public async Task acquire_reclaims_a_lapsed_queued_row_of_another_owner_under_every_policy(NodeDeathPolicy policy)
+    {
+        var (provider, _) = _Create();
+        var job = _TimeJob(JobStatus.Queued, _NodeB, _Now.UtcDateTime.AddMinutes(-1), policy);
+        await provider.AddTimeJobsAsync([job], AbortToken);
+
+        var claimed = await provider.AcquireImmediateTimeJobsAsync([job.Id], AbortToken);
+
+        claimed.Should().ContainSingle().Which.OwnerId.Should().Be(_NodeA);
+    }
+
+    [Theory]
+    [InlineData(NodeDeathPolicy.Retry)]
+    [InlineData(NodeDeathPolicy.MarkFailed)]
+    [InlineData(NodeDeathPolicy.Skip)]
+    public async Task fallback_reclaims_a_lapsed_queued_row_of_another_owner_under_every_policy(NodeDeathPolicy policy)
+    {
+        var (provider, _) = _Create();
+        var job = _TimeJob(JobStatus.Queued, _NodeB, _Now.UtcDateTime.AddMinutes(-1), policy);
+        await provider.AddTimeJobsAsync([job], AbortToken);
+
+        var claimed = await provider.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken);
+
+        claimed.Should().ContainSingle().Which.OwnerId.Should().Be(_NodeA);
+    }
+
+    [Theory]
+    [InlineData(NodeDeathPolicy.MarkFailed)]
+    [InlineData(NodeDeathPolicy.Skip)]
+    public async Task acquire_leaves_a_live_queued_row_of_another_owner(NodeDeathPolicy policy)
+    {
+        var (provider, _) = _Create();
+        var job = _TimeJob(JobStatus.Queued, _NodeB, _Now.UtcDateTime.AddMinutes(1), policy);
+        await provider.AddTimeJobsAsync([job], AbortToken);
+
+        var claimed = await provider.AcquireImmediateTimeJobsAsync([job.Id], AbortToken);
+
+        claimed.Should().BeEmpty();
     }
 }

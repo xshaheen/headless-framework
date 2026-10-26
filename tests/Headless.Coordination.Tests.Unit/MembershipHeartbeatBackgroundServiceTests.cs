@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Headless.Coordination;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
@@ -390,6 +392,99 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         membership.Identity.Should().BeNull();
     }
 
+    [Fact]
+    public async Task should_keep_beating_and_not_leave_until_drain_participants_complete()
+    {
+        // given
+        var store = new FakeMembershipStore();
+        var participant = new ControlledDrainParticipant();
+        var (sut, timeProvider, membership) = _CreateSut(store, participants: [participant]);
+        using var serviceLifetime = sut;
+        await sut.StartingAsync(AbortToken);
+        await membership.RegisterAsync(AbortToken);
+        await _WaitUntilAsync(() => store.Heartbeats.Count > 0);
+
+        // when
+        var stop = sut.StopAsync(AbortToken);
+        await participant.Called.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        var beatsAtStop = store.Heartbeats.Count;
+        await _AdvanceUntilAsync(timeProvider, () => store.Heartbeats.Count >= beatsAtStop + 3);
+
+        // then: three more beats while draining, still a member, not left
+        stop.IsCompleted.Should().BeFalse();
+        store.Leaves.Should().BeEmpty();
+        membership.Identity.Should().NotBeNull();
+
+        participant.Complete();
+        await stop.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        store.Leaves.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task should_leave_and_log_when_the_stop_token_cuts_the_drain_wait_short()
+    {
+        // given: a participant that never drains and ignores the token
+        var store = new FakeMembershipStore();
+        var participant = new ControlledDrainParticipant { IgnoreCancellation = true };
+        var logger = new RecordingLogger();
+        var (sut, _, membership) = _CreateSut(store, participants: [participant], logger: logger);
+        using var serviceLifetime = sut;
+        await membership.RegisterAsync(AbortToken);
+        using var stopToken = new CancellationTokenSource();
+
+        // when
+        var stop = sut.StopAsync(stopToken.Token);
+        await participant.Called.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await stopToken.CancelAsync();
+        await stop.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then: the leave still reached the store although the host token was spent
+        store.Leaves.Should().ContainSingle();
+        logger.EventNames.Should().ContainSingle(name => name == "DrainWaitCutShort");
+    }
+
+    [Fact]
+    public async Task should_leave_when_a_drain_participant_throws()
+    {
+        // given
+        var store = new FakeMembershipStore();
+        var failing = new ControlledDrainParticipant();
+        var healthy = new ControlledDrainParticipant();
+        var logger = new RecordingLogger();
+        var (sut, _, membership) = _CreateSut(store, participants: [failing, healthy], logger: logger);
+        using var serviceLifetime = sut;
+        await membership.RegisterAsync(AbortToken);
+
+        // when
+        var stop = sut.StopAsync(AbortToken);
+        failing.Fail(new InvalidOperationException("drain failed"));
+        await healthy.Called.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        store.Leaves.Should().BeEmpty("the healthy participant still holds the node");
+        healthy.Complete();
+        await stop.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        store.Leaves.Should().ContainSingle();
+        logger.EventNames.Should().ContainSingle(name => name == "DrainParticipantFailed");
+    }
+
+    [Fact]
+    public async Task should_leave_at_once_when_no_drain_participant_is_registered()
+    {
+        // given
+        var store = new FakeMembershipStore();
+        var (sut, _, membership) = _CreateSut(store);
+        using var serviceLifetime = sut;
+        await membership.RegisterAsync(AbortToken);
+
+        // when
+        await sut.StopAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        store.Leaves.Should().ContainSingle();
+        membership.Identity.Should().BeNull();
+    }
+
     private static async Task _WaitUntilAsync(Func<bool> condition)
     {
         var started = TimeProvider.System.GetTimestamp();
@@ -413,7 +508,9 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         FakeMembershipStore store,
         CoordinationOptions? options = null,
         FakeTimeProvider? timeProvider = null,
-        TimeProvider? realTimeProvider = null
+        TimeProvider? realTimeProvider = null,
+        IReadOnlyList<INodeDrainParticipant>? participants = null,
+        ILogger<MembershipHeartbeatBackgroundService>? logger = null
     )
     {
         var coordinationOptions = options ?? new CoordinationOptions();
@@ -435,7 +532,8 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
             coordinationOptions,
             timeProvider,
             realTimeProvider ?? timeProvider,
-            NullLogger<MembershipHeartbeatBackgroundService>.Instance
+            participants ?? [],
+            logger ?? NullLogger<MembershipHeartbeatBackgroundService>.Instance
         );
 
         return (sut, timeProvider, membership);
@@ -451,6 +549,67 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
                 .AsTask()
                 .WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             timeProvider.Advance(delay);
+        }
+    }
+
+    /// <summary>Steps the app clock in small increments, yielding so the heartbeat loop runs between them.</summary>
+    private static async Task _AdvanceUntilAsync(FakeTimeProvider timeProvider, Func<bool> condition)
+    {
+        var started = TimeProvider.System.GetTimestamp();
+
+        while (!condition())
+        {
+            if (TimeProvider.System.GetElapsedTime(started) > TimeSpan.FromSeconds(5))
+            {
+                throw new TimeoutException("The condition was not met within 5 seconds.");
+            }
+
+            timeProvider.Advance(TimeSpan.FromMilliseconds(250));
+            await Task.Delay(5, AbortToken);
+        }
+    }
+
+    private sealed class ControlledDrainParticipant : INodeDrainParticipant
+    {
+        private readonly TaskCompletionSource _called = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _drained = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool IgnoreCancellation { get; init; }
+
+        public Task Called => _called.Task;
+
+        public void Complete() => _drained.TrySetResult();
+
+        public void Fail(Exception exception) => _drained.TrySetException(exception);
+
+        public Task WaitUntilDrainedAsync(CancellationToken cancellationToken)
+        {
+            _called.TrySetResult();
+
+            return IgnoreCancellation ? _drained.Task : _drained.Task.WaitAsync(cancellationToken);
+        }
+    }
+
+    private sealed class RecordingLogger : ILogger<MembershipHeartbeatBackgroundService>
+    {
+        private readonly ConcurrentQueue<string> _eventNames = new();
+
+        public IReadOnlyCollection<string> EventNames => [.. _eventNames];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            _eventNames.Enqueue(eventId.Name ?? string.Empty);
         }
     }
 

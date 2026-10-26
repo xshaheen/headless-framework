@@ -53,6 +53,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     private volatile int _longRunningSlotsDisposed;
     private volatile bool _disposed;
     private volatile bool _isFrozen;
+    private volatile bool _isDraining;
     private volatile int _nextQueueIndex;
 
     // Cancelled on shutdown and disposal, never disposed: a test host (WebApplicationFactory) runs the application's
@@ -123,7 +124,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     /// dedicated-thread permit is awaited on a detached lane so a saturated long-running pool never blocks the
     /// caller's dispatch loop. The detached backlog is capped at two parked admissions per slot; beyond the cap
     /// the admission is rejected outright. A rejected or dropped (cancellation/shutdown) admission never runs;
-    /// the claimed job is recovered by the fallback reclaim sweep when its pickup lease lapses.
+    /// the claimed job is recovered by the fallback reclaim sweep when its pickup lease lapses. While a graceful stop
+    /// drains, an admission whose wait is cancelled still runs its work, which hands the claimed row back.
     /// </summary>
     public Task QueueAsync(
         Func<CancellationToken, Task> work,
@@ -179,8 +181,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
             // Admission is decoupled from the caller: a saturated long-running pool must not head-of-line-block a
             // sequential dispatch batch that still has ordinary-priority work to queue. A dropped admission
-            // (caller cancellation or shutdown while parked) never runs; the claimed job is recovered by the
-            // fallback reclaim sweep once its pickup lease lapses.
+            // (caller cancellation or shutdown while parked, outside a drain) never runs; the claimed job is
+            // recovered by the fallback reclaim sweep once its pickup lease lapses.
             _ = _AdmitAndStartLongRunningAsync(work, capacityCancellationToken, executionCancellationToken);
 
             return;
@@ -211,7 +213,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         _SignalWork();
     }
 
-    private static Func<CancellationToken, Task> _WithGate(Func<CancellationToken, Task> work, SemaphoreSlim? gate)
+    private Func<CancellationToken, Task> _WithGate(Func<CancellationToken, Task> work, SemaphoreSlim? gate)
     {
         if (gate is null)
         {
@@ -220,7 +222,23 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
         return async ct =>
         {
-            await gate.WaitAsync(ct).ConfigureAwait(false);
+            // While draining, the work only hands its row back and starts no job, so it needs no permit. A wait the stop
+            // cancels must still run the work: dropping it would leave the claimed row running for a charged reclaim.
+            if (_isDraining)
+            {
+                await work(ct).ConfigureAwait(false);
+                return;
+            }
+
+            try
+            {
+                await gate.WaitAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (_isDraining)
+            {
+                await work(ct).ConfigureAwait(false);
+                return;
+            }
 
             try
             {
@@ -496,7 +514,9 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         var localQueue = _workerQueues[workerId];
         var consecutiveStealFailures = 0;
 
-        while (!_disposed && !_shutdownCts.Token.IsCancellationRequested)
+        // A draining pool keeps dequeuing after its execution lifetime is cancelled: the items still queued only hand
+        // their rows back, and leaving them queued would strand those rows claimed until their leases lapse.
+        while (!_disposed && (!_shutdownCts.Token.IsCancellationRequested || _isDraining))
         {
             var foundWork = false;
 
@@ -526,6 +546,11 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             }
             else
             {
+                if (_shutdownCts.Token.IsCancellationRequested)
+                {
+                    return false;
+                }
+
                 // No work found - check if we should exit
                 if (_timeProvider.GetUtcNow().UtcDateTime - lastWorkTime > _idleWorkerTimeout)
                 {
@@ -662,8 +687,13 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
         try
         {
-            // Check cancellation before executing
-            if (!workItem.UserToken.IsCancellationRequested && !_shutdownCts.Token.IsCancellationRequested)
+            // While draining, an item still runs after its token is cancelled: every Jobs work item checks the drain
+            // before it starts a job and hands its row back instead. Skipping it would leave the row claimed until
+            // its lease lapses.
+            if (
+                _isDraining
+                || (!workItem.UserToken.IsCancellationRequested && !_shutdownCts.Token.IsCancellationRequested)
+            )
             {
                 var task = workItem.Work(workItem.UserToken);
 
@@ -706,6 +736,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     )
     {
         var admitted = false;
+        var drained = false;
 
 #pragma warning disable ERP022 // A detached admission has no caller to observe faults; dropping it lets the reclaim sweep recover the job.
         try
@@ -716,6 +747,14 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             );
             await _longRunningSlots.WaitAsync(admissionCts.Token).ConfigureAwait(false);
             admitted = true;
+            // Counted active before the backlog slot is freed, so a drain never sees a gap between the two.
+            Interlocked.Increment(ref _activeTasks);
+        }
+        catch when (_isDraining)
+        {
+            // The stop cancelled the wait, but the work still has a claimed row to hand back.
+            drained = true;
+            Interlocked.Increment(ref _activeTasks);
         }
         catch
         {
@@ -731,13 +770,16 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         }
 #pragma warning restore ERP022
 
+        if (drained)
+        {
+            await _HandBackDrainedLongRunningWorkAsync(work, executionCancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         if (!admitted)
         {
             return;
         }
-
-        // Bypass the shared pool only after reserving a bounded dedicated-thread slot.
-        Interlocked.Increment(ref _activeTasks);
 
         try
         {
@@ -765,6 +807,33 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 #pragma warning restore ERP022
     }
 
+    // Runs work whose slot wait the stop cancelled. It holds no slot and needs none: a draining work item starts no job
+    // and only hands its claimed row back, which is brief enough to run on the admission's own continuation.
+    private async Task _HandBackDrainedLongRunningWorkAsync(
+        Func<CancellationToken, Task> work,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await work(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected - task was cancelled
+        }
+        catch (Exception exception)
+        {
+            _logger.WorkItemFaulted(exception);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _outstandingLongRunningOperations);
+            Interlocked.Decrement(ref _activeTasks);
+            _TryDisposeLongRunningSlots();
+        }
+    }
+
     private async Task _ExecuteLongRunningWorkAsync(
         Func<CancellationToken, Task> work,
         CancellationToken cancellationToken
@@ -772,7 +841,10 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     {
         try
         {
-            if (!cancellationToken.IsCancellationRequested && !_shutdownCts.Token.IsCancellationRequested)
+            if (
+                _isDraining
+                || (!cancellationToken.IsCancellationRequested && !_shutdownCts.Token.IsCancellationRequested)
+            )
             {
                 await work(cancellationToken).ConfigureAwait(false);
             }
@@ -809,13 +881,30 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     /// </summary>
     public void Resume()
     {
+        _isDraining = false;
         _isFrozen = false;
+    }
+
+    /// <summary>
+    /// Starts a graceful drain: the scheduler accepts no new work, and work already queued must not start a job.
+    /// Each work item reads <see cref="IsDraining"/> before it starts one and hands its row back uncharged instead,
+    /// so the drain waits only for jobs that were already running.
+    /// </summary>
+    public void BeginDrain()
+    {
+        _isDraining = true;
+        _isFrozen = true;
     }
 
     /// <summary>
     /// Gets whether the scheduler is currently frozen.
     /// </summary>
     public bool IsFrozen => _isFrozen;
+
+    /// <summary>
+    /// Gets whether a graceful stop is draining the scheduler; queued work must not start a job while it is.
+    /// </summary>
+    public bool IsDraining => _isDraining;
 
     /// <summary>
     /// Gets the current number of active logical workers.
@@ -899,7 +988,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     {
         var deadline = timeout.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.Add(timeout.Value) : DateTime.MaxValue;
 
-        while (_totalQueuedTasks > 0 || _activeTasks > 0)
+        // A long-running admission still waiting for a slot holds a claimed row it must hand back while draining.
+        while (_totalQueuedTasks > 0 || _activeTasks > 0 || _pendingLongRunningAdmissions > 0)
         {
             if (_timeProvider.GetUtcNow().UtcDateTime > deadline)
             {

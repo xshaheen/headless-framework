@@ -253,6 +253,77 @@ public sealed class RunHeadlessAsyncTests : TestBase
         run.StandardError.Should().NotContain("Host stopped:");
     }
 
+    [Fact]
+    public async Task should_exit_0_when_a_stop_requested_during_startup_makes_a_background_service_fault()
+    {
+        // given: a service that throws as soon as its stopping token is cancelled, and a stop requested while the host
+        // is still starting, once that service is listening
+        using var service = new FaultingOnCancellationBackgroundService();
+        var stopper = new StopWhenReadyHostedService(service.Listening);
+
+        // when
+        var run = await HostConsoleRun.RunAsync(
+            builder =>
+            {
+                builder.Services.AddHostedService(_ => service);
+                builder.Services.AddHostedService(sp => stopper.Bind(sp));
+            },
+            [],
+            AbortToken
+        );
+
+        // then
+        service
+            .ExecuteTask!.IsFaulted.Should()
+            .BeTrue("the service must have thrown for the exit code to mean anything");
+        run.ExitCode.Should().Be(0, "a fault raised by the stop itself must not turn a clean stop into a failure");
+        run.StandardError.Should().NotContain("Host stopped:");
+    }
+
+    // Throws from inside the stopping-token callback chain: a stop requested while the host starts cancels that token
+    // before RunHeadlessAsync's stopping callback, so the fault is already visible when the faults are counted.
+    private sealed class FaultingOnCancellationBackgroundService : BackgroundService
+    {
+        private readonly TaskCompletionSource _listening = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Listening => _listening.Task;
+
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        {
+            // Synchronous continuations: the throw below runs inside the cancellation itself.
+            var cancelled = new TaskCompletionSource();
+
+            await using (stoppingToken.Register(() => cancelled.TrySetResult()))
+            {
+                _listening.TrySetResult();
+                await cancelled.Task;
+            }
+
+            throw new ObjectDisposedException("The client was disposed.");
+        }
+    }
+
+    // Requests the stop from its StartAsync, so the host is still starting, after the faulting service is listening.
+    private sealed class StopWhenReadyHostedService(Task ready) : IHostedService
+    {
+        private IHostApplicationLifetime? _lifetime;
+
+        public StopWhenReadyHostedService Bind(IServiceProvider services)
+        {
+            _lifetime = services.GetRequiredService<IHostApplicationLifetime>();
+
+            return this;
+        }
+
+        public async Task StartAsync(CancellationToken cancellationToken)
+        {
+            await ready.WaitAsync(cancellationToken);
+            _lifetime!.StopApplication();
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
     private sealed class FaultingOnStopBackgroundService : BackgroundService
     {
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)

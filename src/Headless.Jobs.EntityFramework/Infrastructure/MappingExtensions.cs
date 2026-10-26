@@ -184,6 +184,9 @@ internal static class MappingExtensions
             RecoveredFromUtc = e.RecoveredFromUtc,
             ExecutionTime = e.ExecutionTime,
             OnNodeDeath = e.OnNodeDeath,
+            // The native claims return this projection, and the run fences its settling writes on the owner that
+            // claimed the occurrence, so the claim owner must survive it.
+            OwnerId = e.OwnerId,
             CronJob = new TCronJob
             {
                 Id = e.CronJob.Id,

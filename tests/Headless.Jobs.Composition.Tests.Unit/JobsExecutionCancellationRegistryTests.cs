@@ -83,6 +83,7 @@ public sealed class JobsExecutionCancellationRegistryTests : TestBase
             FunctionName = "cross-host-cancellation",
             Type = JobType.TimeJob,
             Status = JobStatus.InProgress,
+            ClaimOwner = owner,
             CachedDelegate = async (_, _, cancellationToken) =>
             {
                 started.TrySetResult();
