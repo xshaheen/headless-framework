@@ -15,9 +15,8 @@ public static class SetupMvc
     ///   <item>Headless JSON serialization options for <c>Microsoft.AspNetCore.Mvc.JsonOptions</c>
     ///         (camel-case, enum strings, etc.) with indented output in Development and Test environments.</item>
     ///   <item>MVC behavior options: enables 406 Not Acceptable for unsupported MIME types, clears the
-    ///         default model-validator providers, shapes the automatic <c>[ApiController]</c> 400 for a value
-    ///         that cannot be bound, and validates action arguments with their registered FluentValidation
-    ///         validators.</item>
+    ///         default model-validator providers, and shapes the automatic <c>[ApiController]</c> 400 for a value
+    ///         that cannot be bound.</item>
     /// </list>
     /// </summary>
     /// <param name="services">The service collection to configure.</param>
@@ -42,6 +41,25 @@ public static class SetupMvc
         builder.Services.ConfigureOptions<ConfigureMvcApiOptions>();
 
         return builder;
+    }
+
+    /// <summary>
+    /// Adds the opt-in MVC profile that validates every action argument whose type has a registered FluentValidation
+    /// <c>IValidator&lt;T&gt;</c> before the action runs, answering one 422 with the failures of all of them, as
+    /// <c>ValidateArguments()</c> does for a Minimal API endpoint.
+    /// </summary>
+    /// <remarks>
+    /// Leave it off when the actions send their arguments through a mediator that validates them, such as one with
+    /// <c>AddMediatorValidationRequestBehavior()</c>: both would run the same validators on every request. Registration is
+    /// idempotent.
+    /// </remarks>
+    /// <param name="services">The service collection to configure.</param>
+    /// <returns><paramref name="services"/> for chaining.</returns>
+    public static IServiceCollection AddHeadlessMvcArgumentValidation(this IServiceCollection services)
+    {
+        services.ConfigureOptions<ConfigureArgumentValidationMvcOptions>();
+
+        return services;
     }
 
     /// <summary>

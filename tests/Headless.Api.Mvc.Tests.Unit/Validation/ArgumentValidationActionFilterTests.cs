@@ -21,8 +21,9 @@ using Microsoft.Extensions.Options;
 namespace Tests.Validation;
 
 /// <summary>
-/// Pins that an MVC action argument with a registered FluentValidation validator is validated before the action runs,
-/// answering one 422 with every failure, as a Minimal API endpoint under ValidateArguments() does.
+/// Pins that, with AddHeadlessMvcArgumentValidation(), an MVC action argument with a registered FluentValidation
+/// validator is validated before the action runs, answering one 422 with every failure, as a Minimal API endpoint under
+/// ValidateArguments() does.
 /// </summary>
 public sealed class ArgumentValidationActionFilterTests : TestBase
 {
@@ -88,22 +89,52 @@ public sealed class ArgumentValidationActionFilterTests : TestBase
     }
 
     [Fact]
+    public async Task should_run_the_action_with_an_invalid_argument_when_validation_is_not_added()
+    {
+        // An app that validates in its mediator leaves the profile off, so its validators run once.
+        await using var app = await _StartAsync(validateArguments: false);
+
+        using var response = await app.GetTestClient()
+            .PostAsJsonAsync("/orders", new { name = "", quantity = 0 }, AbortToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync(AbortToken)).Should().Be(" x0");
+        _Filters(app).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_add_one_filter_when_validation_is_added_twice()
+    {
+        await using var app = await _StartAsync(configure: services => services.AddHeadlessMvcArgumentValidation());
+
+        _Filters(app).Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task should_give_each_host_its_own_filter()
     {
         await using var first = await _StartAsync();
         await using var second = await _StartAsync();
 
-        static object filter(WebApplication app) =>
-            app
-                .Services.GetRequiredService<IOptions<MvcOptions>>()
-                .Value.Filters.Single(x =>
-                    string.Equals(x.GetType().Name, "ArgumentValidationActionFilter", StringComparison.Ordinal)
-                );
-
-        filter(first).Should().NotBeSameAs(filter(second));
+        _Filters(first).Single().Should().NotBeSameAs(_Filters(second).Single());
     }
 
-    private static async Task<WebApplication> _StartAsync()
+    private static List<object> _Filters(WebApplication app)
+    {
+        return
+        [
+            .. app
+                .Services.GetRequiredService<IOptions<MvcOptions>>()
+                .Value.Filters.Where(x =>
+                    string.Equals(x.GetType().Name, "ArgumentValidationActionFilter", StringComparison.Ordinal)
+                ),
+        ];
+    }
+
+    private static async Task<WebApplication> _StartAsync(
+        bool validateArguments = true,
+        Action<IServiceCollection>? configure = null
+    )
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
@@ -121,6 +152,13 @@ public sealed class ArgumentValidationActionFilterTests : TestBase
                 manager.FeatureProviders.Add(new OrdersControllerFeature());
             });
         builder.Services.ConfigureHeadlessMvc();
+
+        if (validateArguments)
+        {
+            builder.Services.AddHeadlessMvcArgumentValidation();
+        }
+
+        configure?.Invoke(builder.Services);
 
         var app = builder.Build();
         app.MapControllers();
