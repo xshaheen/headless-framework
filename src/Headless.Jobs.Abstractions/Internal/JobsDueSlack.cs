@@ -3,10 +3,11 @@
 namespace Headless.Jobs.Internal;
 
 /// <summary>
-/// How far ahead of its <c>ExecutionTime</c> a time job counts as due. The scheduler wakes on timers and node clocks
-/// that drift from the store's by fractions of a second; without this allowance a wake that lands a few milliseconds
-/// early would find nothing to run and sleep again. A job may therefore start up to this much before its scheduled
-/// instant.
+/// How far ahead of its <c>ExecutionTime</c> a time job counts as due when a store claims it. The scheduler claims
+/// once the earliest row of a one-second window is due by the store clock; this allowance lets that one claim take the
+/// rest of the window instead of refusing rows a fraction of a second later. A job may therefore start up to this much
+/// before its scheduled instant. The scheduler's own gate applies no allowance, so a wake that lands a few
+/// milliseconds early polls once more rather than claiming.
 /// </summary>
 internal static class JobsDueSlack
 {
