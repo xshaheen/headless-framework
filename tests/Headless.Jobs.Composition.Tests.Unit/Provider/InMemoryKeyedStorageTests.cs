@@ -125,6 +125,8 @@ public sealed class InMemoryKeyedStorageTests : TestBase
         await using var services = _Services();
         var store = new JobsInMemoryPersistenceProvider<TimeJobEntity, CronJobEntity>(services);
         var job = JobsKeyedSchedulingScenarios.Candidate();
+        // Due on the store's clock, so the claim below takes the row.
+        job.ExecutionTime = services.GetRequiredService<TimeProvider>().GetUtcNow().UtcDateTime;
         if (keyed)
         {
             await store.ScheduleKeyedTimeJobAsync(new JobKey("lease"), job, cancellationToken: AbortToken);

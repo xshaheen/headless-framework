@@ -216,8 +216,13 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
             if (_timeJobs.TryGetValue(timeJob.Id, out var existingTicker))
             {
-                // Check if we can update (similar to optimistic concurrency)
-                if (existingTicker.UpdatedAt == timeJob.UpdatedAt && _CanAcquire(existingTicker))
+                // Check if we can update (similar to optimistic concurrency). The due test reads the stored row, so
+                // a reschedule after the peek that kept its stamp still keeps the row from running early.
+                if (
+                    existingTicker.UpdatedAt == timeJob.UpdatedAt
+                    && _IsDue(existingTicker, now)
+                    && _CanAcquire(existingTicker)
+                )
                 {
                     // Update the job
                     var updatedTicker = _CloneTicker(existingTicker);
@@ -250,6 +255,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 }
             }
         }
+    }
+
+    private static bool _IsDue(TTimeJob timeJob, DateTimeOffset now)
+    {
+        return timeJob.ExecutionTime is null || timeJob.ExecutionTime <= now.UtcDateTime.Add(JobsDueSlack.Duration);
     }
 
     private HashSet<Guid> _ClaimIdleDescendants(Guid rootId, DateTimeOffset now)
@@ -519,7 +529,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var baseQuery = _timeJobs
             .Values.Where(x =>
                 x.ExecutionTime != null
-                && _CanAcquire(x)
+                && _CanPeek(x, now.UtcDateTime)
                 && x.ExecutionTime >= oneSecondAgo
                 && !saturated.Contains(x.Function)
                 && _ParentGateAllowsClaim(x)
@@ -956,7 +966,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             }
 
             // A cluster-limited row is left for the scheduler's claim, the one path that counts it against the limit.
-            if (!_CanAcquire(job) || !_ParentGateAllowsClaim(job) || _clusterConcurrency.IsLimited(job.Function))
+            if (
+                !_IsDue(job, now)
+                || !_CanAcquire(job)
+                || !_ParentGateAllowsClaim(job)
+                || _clusterConcurrency.IsLimited(job.Function)
+            )
             {
                 continue;
             }
@@ -4037,6 +4052,14 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 || job.LockedUntil == null
                 || job.LockedUntil <= now.UtcDateTime
             );
+    }
+
+    private bool _CanPeek(TTimeJob job, DateTime now)
+    {
+        // Mirror EF WhereCanPeekUsingDatabaseClock: the acquire predicate without its owner arm.
+        return (job.Status == JobStatus.Idle || job.Status == JobStatus.Queued)
+            && _runFilter.Allows(job.Function)
+            && (job.LockedUntil == null || job.LockedUntil <= now);
     }
 
     private bool _CanAcquireCronOccurrence(CronJobOccurrenceEntity<TCronJob> occurrence)

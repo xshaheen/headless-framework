@@ -97,7 +97,8 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
             {
                 Id = Guid.NewGuid(),
                 Function = "Guarded",
-                ExecutionTime = DateTime.UtcNow.AddSeconds(5),
+                // Due now, so the claim below takes it: a direct claim refuses a row that is not yet due.
+                ExecutionTime = DateTime.UtcNow.AddMilliseconds(500),
             };
             await persistence.AddTimeJobsAsync([job], ct);
             var due = (await persistence.GetEarliestTimeJobsAsync(ct)).Jobs;
@@ -221,7 +222,8 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
             {
                 Id = Guid.NewGuid(),
                 Function = "root",
-                ExecutionTime = DateTime.UtcNow.AddSeconds(5),
+                // Due now, so the claim below takes it: a direct claim refuses a row that is not yet due.
+                ExecutionTime = DateTime.UtcNow.AddMilliseconds(500),
                 Children = [child],
             };
             await persistence.AddTimeJobsAsync([root], ct);
@@ -311,7 +313,8 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
 
             var copy = (await persistence.GetTimeJobByIdAsync(id, ct))!;
             copy.Description = "edited";
-            copy.ExecutionTime = DateTime.UtcNow.AddSeconds(5);
+            // Due now, so the claim below can take it once the edit is in.
+            copy.ExecutionTime = DateTime.UtcNow;
             _ShouldSucceed(await manager.UpdateAsync(copy, ct));
 
             var (_, updatedAt) = await Fixture.ReadTimeJobClaimTimestampsAsync(id, ct);

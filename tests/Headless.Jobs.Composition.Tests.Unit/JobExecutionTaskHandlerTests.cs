@@ -132,6 +132,8 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
         var job = JobsKeyedSchedulingScenarios.Candidate();
         job.ContractVersion = storedVersion;
         job.Retries = 0;
+        // Due now, so the immediate acquire below takes it; the shared candidate is scheduled years ahead.
+        job.ExecutionTime = time.GetUtcNow().UtcDateTime;
         (await store.AddTimeJobsAsync([job], AbortToken)).Should().Be(1);
         var invocations = 0;
         var exhausted = false;

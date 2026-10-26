@@ -296,6 +296,10 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     context,
                     q =>
                         q.Where(x => x.UpdatedAt == expectedUpdatedAt)
+                            .Where(x =>
+                                x.ExecutionTime == null
+                                || x.ExecutionTime <= DateTime.UtcNow.AddSeconds(JobsDueSlack.Seconds)
+                            )
                             .WhereRunnable(_runFilter)
                             .WhereCanAcquireUsingDatabaseClock(owner),
                     rootId,

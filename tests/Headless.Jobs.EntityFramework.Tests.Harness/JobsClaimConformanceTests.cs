@@ -525,12 +525,16 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             var second = secondHost.Services.GetRequiredService<
                 IJobPersistenceProvider<TimeJobEntity, CronJobEntity>
             >();
-            // Due in the future, not now: the peek drops a row more than one second past due, and inserting 101 trees
-            // can take longer than that on a loaded machine, which left the peek empty. A future time also keeps both
-            // hosts' background schedulers from claiming a root before the workers below race for it.
+            // Inserted in the future, then made due in one statement on the store's clock: the peek drops a row more
+            // than one second past due, and inserting 101 trees can take longer than that on a loaded machine, which
+            // left the peek empty. A claim takes only a due row, so the roots cannot stay in the future.
             var executionTime = DateTime.UtcNow.AddSeconds(30);
             var roots = Enumerable.Range(0, 101).Select(_ => _CreateJobTree(executionTime)).ToArray();
             await first.AddTimeJobsAsync(roots, ct);
+            await _ExecuteSqlAsync(
+                $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"ExecutionTime\" = {fixture.UtcNowOffsetSqlExpression(0)} WHERE \"ExecutionTime\" IS NOT NULL;",
+                ct
+            );
 
             // Each node peeks through its OWN provider, exactly as two real nodes do. Handing both workers one
             // array would not test contention at all: a won claim mutates the caller's entities in place — owner,
@@ -813,14 +817,20 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
 
     /// <summary>
     /// A matching token does not make a row claimable. Each candidate carries its row's exact stored token, so only
-    /// the acquire predicate separates the rows the claimer may take from the ones running, finished, or leased
-    /// elsewhere. Both strategies must hold the same contract.
+    /// the acquire predicate and the due test separate the rows the claimer may take from the ones running, finished,
+    /// leased elsewhere, or not yet due. A row is due once its ExecutionTime is at most one second past the store's
+    /// clock; the node's clock runs five seconds ahead here, so a row it alone thinks is due must still be refused.
+    /// Both strategies must hold the same contract.
     /// </summary>
     public virtual async Task direct_time_job_claim_applies_the_full_acquire_predicate_matrix(bool useNativeClaims)
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("direct-tj-matrix", useNativeClaims: useNativeClaims);
+        using var host = fixture.BuildHost(
+            "direct-tj-matrix",
+            timeProvider: new AheadTimeProvider(TimeSpan.FromSeconds(5)),
+            useNativeClaims: useNativeClaims
+        );
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
@@ -836,9 +846,57 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             var now = DateTime.UtcNow;
             var expired = now.AddMinutes(-1);
             var live = now.AddMinutes(5);
+            // Due times sit on the store's clock. The refused rows keep at least three seconds of margin, so the
+            // seeding below cannot make them due before the claim runs.
+            var storeNow = await _ReadStoreUtcNowAsync(ct);
             var cases = new[]
             {
                 new DirectClaimCase("idle_unleased", JobStatus.Idle, null, NodeDeathPolicy.Retry, null, true),
+                new DirectClaimCase(
+                    "overdue",
+                    JobStatus.Idle,
+                    null,
+                    NodeDeathPolicy.Retry,
+                    null,
+                    true,
+                    storeNow.AddMinutes(-1)
+                ),
+                new DirectClaimCase(
+                    "due_within_slack",
+                    JobStatus.Idle,
+                    null,
+                    NodeDeathPolicy.Retry,
+                    null,
+                    true,
+                    storeNow.AddMilliseconds(500)
+                ),
+                new DirectClaimCase(
+                    "due_by_node_clock_only",
+                    JobStatus.Idle,
+                    null,
+                    NodeDeathPolicy.Retry,
+                    null,
+                    false,
+                    storeNow.AddSeconds(4)
+                ),
+                new DirectClaimCase(
+                    "not_yet_due",
+                    JobStatus.Idle,
+                    null,
+                    NodeDeathPolicy.Retry,
+                    null,
+                    false,
+                    storeNow.AddMinutes(10)
+                ),
+                new DirectClaimCase(
+                    "same_owner_live_due",
+                    JobStatus.Queued,
+                    currentOwner,
+                    NodeDeathPolicy.Skip,
+                    live,
+                    true,
+                    storeNow.AddMinutes(-1)
+                ),
                 new DirectClaimCase("queued_unleased", JobStatus.Queued, "old@1", NodeDeathPolicy.Retry, null, true),
                 new DirectClaimCase("expired_retry", JobStatus.Queued, "old@2", NodeDeathPolicy.Retry, expired, true),
                 new DirectClaimCase(
@@ -883,7 +941,8 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                     testCase.OwnerId,
                     ct,
                     testCase.Policy,
-                    testCase.LockedUntil
+                    testCase.LockedUntil,
+                    testCase.ExecutionTime
                 );
                 var (_, storedToken) = await fixture.ReadTimeJobClaimTimestampsAsync(id, ct);
                 candidates.Add(
@@ -1887,8 +1946,33 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
         string? OwnerId,
         NodeDeathPolicy Policy,
         DateTime? LockedUntil,
-        bool ShouldClaim
+        bool ShouldClaim,
+        DateTime? ExecutionTime = null
     );
+
+    // A node clock deliberately ahead of the store, so a due test that read the node clock would claim early.
+    private sealed class AheadTimeProvider(TimeSpan offset) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow()
+        {
+            return DateTimeOffset.UtcNow.Add(offset);
+        }
+    }
+
+    private async Task<DateTime> _ReadStoreUtcNowAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT {fixture.UtcNowSqlExpression};";
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value switch
+        {
+            DateTimeOffset instant => instant.UtcDateTime,
+            DateTime instant => DateTime.SpecifyKind(instant, DateTimeKind.Utc),
+            _ => throw new InvalidOperationException("The fixture's server UTC expression did not return an instant."),
+        };
+    }
 
     private sealed class FilteredJobsDbContext(DbContextOptions<FilteredJobsDbContext> options)
         : JobsDbContext<TimeJobEntity, CronJobEntity>(options)

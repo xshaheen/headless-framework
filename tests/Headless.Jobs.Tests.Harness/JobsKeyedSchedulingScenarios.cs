@@ -222,7 +222,7 @@ public static class JobsKeyedSchedulingScenarios
             var key = new JobKey("claim-replace-" + index.ToString(CultureInfo.InvariantCulture));
             var scheduled = await store.ScheduleKeyedTimeJobAsync(
                 key,
-                Candidate(),
+                _DueCandidate(),
                 cancellationToken: cancellationToken
             );
             var stored = await store.GetTimeJobByIdAsync(scheduled.RunId!.Value, cancellationToken);
@@ -252,7 +252,7 @@ public static class JobsKeyedSchedulingScenarios
             var cancelKey = new JobKey("claim-cancel-" + index.ToString(CultureInfo.InvariantCulture));
             var cancelScheduled = await store.ScheduleKeyedTimeJobAsync(
                 cancelKey,
-                Candidate(),
+                _DueCandidate(),
                 cancellationToken: cancellationToken
             );
             var cancelStored = await store.GetTimeJobByIdAsync(cancelScheduled.RunId!.Value, cancellationToken);
@@ -358,6 +358,14 @@ public static class JobsKeyedSchedulingScenarios
             ExecutionTime = new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddTicks(7),
             Request = request ?? [1, 2, 3],
         };
+
+    // A claim refuses a row that is not yet due, so a race that must exercise the claim schedules a due row.
+    private static TimeJobEntity _DueCandidate()
+    {
+        var candidate = Candidate();
+        candidate.ExecutionTime = DateTime.UtcNow;
+        return candidate;
+    }
 
     private static TimeJobEntity _PolicyCandidate(int retries)
     {
