@@ -58,10 +58,11 @@ internal sealed class ConfigureMvcApiOptions : IConfigureOptions<MvcOptions>, IC
             options.ModelBinderProviders.Insert(0, new EnumNumberRefusingModelBinderProvider());
         }
 
-        // One shared instance: a type-registered filter is built again for every action invocation.
+        // One instance per host: a type-registered filter is built again for every action invocation, and a static one
+        // would keep every host's action descriptors alive for the process.
         if (!options.Filters.OfType<ArgumentValidationActionFilter>().Any())
         {
-            options.Filters.Add(ArgumentValidationActionFilter.Instance);
+            options.Filters.Add(new ArgumentValidationActionFilter());
         }
 
         // Exception mapping is handled globally by HeadlessApiExceptionHandler (registered in

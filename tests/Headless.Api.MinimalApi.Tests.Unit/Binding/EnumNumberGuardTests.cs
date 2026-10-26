@@ -129,6 +129,25 @@ public sealed class EnumNumberGuardTests : TestBase
     }
 
     [Fact]
+    public async Task should_leave_a_malformed_form_to_asp_net_core_400()
+    {
+        var context = await _InvokeAsync(
+            group => group.MapPost("/form", ([FromForm] MemberStatus status) => status.ToString()).DisableAntiforgery(),
+            request =>
+            {
+                // A multipart body cut off before its closing boundary fails to parse.
+                request.Method = HttpMethods.Post;
+                request.ContentType = "multipart/form-data; boundary=cut";
+                request.Body = new MemoryStream(
+                    "--cut\r\nContent-Disposition: form-data; name=\"status\"\r\n\r\nActive"u8.ToArray()
+                );
+            }
+        );
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [Fact]
     public async Task should_bind_a_simple_enum_form_value_by_name()
     {
         var context = await _InvokeAsync(

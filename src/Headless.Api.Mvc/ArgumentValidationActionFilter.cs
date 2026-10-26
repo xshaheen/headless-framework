@@ -17,21 +17,29 @@ namespace Headless.Api.Options;
 /// lists the failures of all of them, the way <c>ValidateArguments()</c> does for a Minimal API endpoint.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The arguments to validate are chosen once per action, on its first request, from its parameters and the registered
 /// services. An action with none goes straight to the next filter, so it pays one dictionary lookup and allocates
 /// nothing. It runs after the <c>[ApiController]</c> binding check, so a value that could not be bound answers 400
-/// before any validator sees it.
+/// before any validator sees it. On a controller without <c>[ApiController]</c>, a request whose binding failed is not
+/// validated either: its arguments hold defaults the client never sent, so the action decides what to do with the model
+/// state, as ASP.NET Core leaves it.
+/// </para>
+/// <para>
+/// One instance serves one host: the plans are keyed by that host's action descriptors, so they live and die with it.
+/// </para>
 /// </remarks>
 internal sealed class ArgumentValidationActionFilter : IAsyncActionFilter
 {
-    public static readonly ArgumentValidationActionFilter Instance = new();
-
     private readonly ConcurrentDictionary<ActionDescriptor, ValidatedArgument[]> _plans = new();
-
-    private ArgumentValidationActionFilter() { }
 
     public Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
+        if (!context.ModelState.IsValid)
+        {
+            return next();
+        }
+
         var plan = _plans.GetOrAdd(
             context.ActionDescriptor,
             static (descriptor, services) => _Plan(descriptor, services),

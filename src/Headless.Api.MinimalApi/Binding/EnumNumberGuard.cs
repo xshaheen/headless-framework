@@ -112,7 +112,22 @@ internal sealed class EnumNumberGuard
 
     private async Task _InvokeAfterFormAsync(HttpContext context, Task<IFormCollection> reading)
     {
-        var failed = _CheckForm(await reading.ConfigureAwait(false));
+        IFormCollection form;
+
+        try
+        {
+            form = await reading.ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or IOException)
+        {
+            // A malformed or oversized form is ASP.NET Core's to answer: it caches the failed read and turns it into its
+            // own 400 when it binds, where escaping here would surface as a 500.
+            await _next(context).ConfigureAwait(false);
+
+            return;
+        }
+
+        var failed = _CheckForm(form);
 
         await (failed is null ? _next(context) : _WriteInvalidAsync(context, failed)).ConfigureAwait(false);
     }

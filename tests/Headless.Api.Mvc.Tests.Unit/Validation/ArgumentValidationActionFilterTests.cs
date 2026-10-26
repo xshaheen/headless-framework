@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Tests.Validation;
 
@@ -72,6 +73,36 @@ public sealed class ArgumentValidationActionFilterTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [Fact]
+    public async Task should_not_validate_a_request_whose_binding_failed_on_a_plain_controller()
+    {
+        await using var app = await _StartAsync();
+
+        // Without [ApiController] the binding failure reaches the action; validating the defaults it left would answer
+        // a 422 about values the client never sent.
+        using var response = await app.GetTestClient()
+            .PostAsJsonAsync("/plain-orders", new { name = "", quantity = "many" }, AbortToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync(AbortToken)).Should().Be("model state invalid");
+    }
+
+    [Fact]
+    public async Task should_give_each_host_its_own_filter()
+    {
+        await using var first = await _StartAsync();
+        await using var second = await _StartAsync();
+
+        static object filter(WebApplication app) =>
+            app
+                .Services.GetRequiredService<IOptions<MvcOptions>>()
+                .Value.Filters.Single(x =>
+                    string.Equals(x.GetType().Name, "ArgumentValidationActionFilter", StringComparison.Ordinal)
+                );
+
+        filter(first).Should().NotBeSameAs(filter(second));
+    }
+
     private static async Task<WebApplication> _StartAsync()
     {
         var builder = WebApplication.CreateBuilder();
@@ -100,8 +131,11 @@ public sealed class ArgumentValidationActionFilterTests : TestBase
 
     private sealed class OrdersControllerFeature : IApplicationFeatureProvider<ControllerFeature>
     {
-        public void PopulateFeature(IEnumerable<ApplicationPart> parts, ControllerFeature feature) =>
+        public void PopulateFeature(IEnumerable<ApplicationPart> parts, ControllerFeature feature)
+        {
             feature.Controllers.Add(typeof(OrdersController).GetTypeInfo());
+            feature.Controllers.Add(typeof(PlainOrdersController).GetTypeInfo());
+        }
     }
 }
 
@@ -127,3 +161,13 @@ public sealed class OrdersController : ControllerBase
     [HttpGet("echo")]
     public string Echo([FromQuery] string text) => text;
 }
+
+#pragma warning disable AV0014 // The fix would defeat the test: this controller has no [ApiController] on purpose.
+[NonController]
+[Route("plain-orders")]
+public sealed class PlainOrdersController : ControllerBase
+{
+    [HttpPost]
+    public string Create([FromBody] CreateOrder order) => ModelState.IsValid ? order.Name : "model state invalid";
+}
+#pragma warning restore AV0014
