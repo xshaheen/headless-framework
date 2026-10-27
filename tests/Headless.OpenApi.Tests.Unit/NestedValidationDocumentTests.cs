@@ -143,6 +143,25 @@ public sealed class NestedValidationDocumentTests : TestBase
         allOf[0]!.ShouldBeJson("""{"$ref":"#/components/schemas/PersonName"}""");
     }
 
+    [Fact]
+    public async Task should_require_a_nullable_nested_object_and_skip_a_member_json_does_not_publish()
+    {
+        var document = await OpenApiTestHost.GetDocumentAsync(
+            _ConfigureServices,
+            app =>
+                app.MapPost("/optional", ([FromBody] OptionalLeafCustomer customer) => TypedResults.Ok(customer))
+                    .AllowAnonymous(),
+            "v1",
+            AbortToken
+        );
+
+        document.ShouldBeValidOpenApi("a nullable nested leaf");
+        var overlay = document.Schema("OptionalLeafCustomer")["properties"]!["address"]!["allOf"]![1]!;
+        // NotNull on a nullable object leaf requires it and narrows its type to object, which excludes null; the rule on
+        // the [JsonIgnore] member has no published property to land on, so the overlay leaves it out.
+        overlay.ShouldBeJson("""{"required":["name"],"properties":{"name":{"type":"object"}}}""");
+    }
+
     private static Task<JsonNode> _GetDocumentAsync(Action<OpenApiOptions>? configure = null)
     {
         return OpenApiTestHost.GetDocumentAsync(
@@ -174,6 +193,7 @@ public sealed class NestedValidationDocumentTests : TestBase
         builder.Services.AddScoped<IValidator<NestedCustomer>, NestedCustomerValidator>();
         builder.Services.AddScoped<IValidator<NullableCustomer>, NullableCustomerValidator>();
         builder.Services.AddScoped<IValidator<DeepCustomer>, DeepCustomerValidator>();
+        builder.Services.AddScoped<IValidator<OptionalLeafCustomer>, OptionalLeafCustomerValidator>();
         builder.Services.AddHeadlessOpenApi();
     }
 }
@@ -243,5 +263,27 @@ public sealed class DeepCustomerValidator : AbstractValidator<DeepCustomer>
     {
         RuleFor(x => x.Address.Name.First).NotNull().MaximumLength(10);
         RuleFor(x => x.Address.Name.Last).MaximumLength(40);
+    }
+}
+
+public sealed class OptionalNameAddress
+{
+    public PersonName? Name { get; set; }
+
+    [JsonIgnore]
+    public string? Secret { get; set; }
+}
+
+public sealed class OptionalLeafCustomer
+{
+    public OptionalNameAddress Address { get; set; } = new();
+}
+
+public sealed class OptionalLeafCustomerValidator : AbstractValidator<OptionalLeafCustomer>
+{
+    public OptionalLeafCustomerValidator()
+    {
+        RuleFor(x => x.Address.Name).NotNull();
+        RuleFor(x => x.Address.Secret).MaximumLength(5);
     }
 }
