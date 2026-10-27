@@ -102,32 +102,32 @@ public class JobsNotificationHub(
 internal static partial class JobsNotificationHubLog
 {
     [LoggerMessage(EventId = 2000, Level = LogLevel.Debug, Message = "SignalR connection attempt: {ConnectionId}")]
-    public static partial void ConnectionAttempt(this ILogger logger, string connectionId);
+    internal static partial void ConnectionAttempt(this ILogger logger, string connectionId);
 
     [LoggerMessage(
         EventId = 2001,
         Level = LogLevel.Warning,
         Message = "SignalR authentication failed: {ConnectionId} - {Error}"
     )]
-    public static partial void AuthenticationFailed(this ILogger logger, string connectionId, string? error);
+    internal static partial void AuthenticationFailed(this ILogger logger, string connectionId, string? error);
 
     [LoggerMessage(
         EventId = 2002,
         Level = LogLevel.Information,
         Message = "SignalR connection established: {ConnectionId} - User: {Username}"
     )]
-    public static partial void ConnectionEstablished(this ILogger logger, string connectionId, string? username);
+    internal static partial void ConnectionEstablished(this ILogger logger, string connectionId, string? username);
 
     [LoggerMessage(
         EventId = 2003,
         Level = LogLevel.Information,
         Message = "SignalR connection disconnected: {ConnectionId} - User: {Username}"
     )]
-    public static partial void ConnectionDisconnected(this ILogger logger, string connectionId, string username);
+    internal static partial void ConnectionDisconnected(this ILogger logger, string connectionId, string username);
 
     [LoggerMessage(EventId = 2004, Level = LogLevel.Debug, Message = "User {Username} joined group {GroupName}")]
-    public static partial void UserJoinedGroup(this ILogger logger, string? username, string groupName);
+    internal static partial void UserJoinedGroup(this ILogger logger, string? username, string groupName);
 
     [LoggerMessage(EventId = 2005, Level = LogLevel.Debug, Message = "User {Username} left group {GroupName}")]
-    public static partial void UserLeftGroup(this ILogger logger, string? username, string groupName);
+    internal static partial void UserLeftGroup(this ILogger logger, string? username, string groupName);
 }

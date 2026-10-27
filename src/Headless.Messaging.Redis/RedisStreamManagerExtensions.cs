@@ -128,7 +128,7 @@ internal static partial class RedisStreamManagerExtensionsLog
         Level = LogLevel.Error,
         Message = "Redis error while creating consumer group [{ConsumerGroup}] of stream [{Position}]"
     )]
-    public static partial void LogCreateConsumerGroupFailed(
+    internal static partial void LogCreateConsumerGroupFailed(
         this ILogger logger,
         Exception exception,
         string consumerGroup,

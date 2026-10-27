@@ -306,26 +306,26 @@ internal static partial class TusAzureStorePipelineLog
         Level = LogLevel.Trace,
         Message = "Appending data using the PipeReader for file '{FileId}'"
     )]
-    public static partial void PipeReaderAppendStarted(this ILogger logger, string fileId);
+    internal static partial void PipeReaderAppendStarted(this ILogger logger, string fileId);
 
     [LoggerMessage(
         EventId = 3227,
         Level = LogLevel.Debug,
         Message = "Staged {BytesWritten} bytes for file '{FileId}' ({BlockCount} blocks)"
     )]
-    public static partial void BlocksStaged(this ILogger logger, long bytesWritten, string fileId, int blockCount);
+    internal static partial void BlocksStaged(this ILogger logger, long bytesWritten, string fileId, int blockCount);
 
     [LoggerMessage(
         EventId = 3228,
         Level = LogLevel.Debug,
         Message = "Stored chunk metadata for file '{FileId}': {BlockCount} blocks staged for checksum verification"
     )]
-    public static partial void StoredPipelineChunkMetadata(this ILogger logger, string fileId, int blockCount);
+    internal static partial void StoredPipelineChunkMetadata(this ILogger logger, string fileId, int blockCount);
 
     [LoggerMessage(
         EventId = 3229,
         Level = LogLevel.Warning,
         Message = "Cancelled the upload operation for file id '{FileId}'"
     )]
-    public static partial void UploadOperationCanceled(this ILogger logger, string fileId);
+    internal static partial void UploadOperationCanceled(this ILogger logger, string fileId);
 }

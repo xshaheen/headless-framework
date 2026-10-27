@@ -142,7 +142,7 @@ internal static partial class CouchbaseBucketContextLoggerExtensions
         Level = LogLevel.Information,
         Message = "[{TransactionId}] Transaction completed with UnstagingCompleted: {UnstagingCompleted} and logs {Logs}"
     )]
-    public static partial void LogTransactionCompleted(
+    internal static partial void LogTransactionCompleted(
         this ILogger logger,
         string? transactionId,
         bool unstagingCompleted,
@@ -155,5 +155,5 @@ internal static partial class CouchbaseBucketContextLoggerExtensions
         Level = LogLevel.Error,
         Message = "Transaction failed"
     )]
-    public static partial void LogTransactionFailed(this ILogger logger, Exception exception);
+    internal static partial void LogTransactionFailed(this ILogger logger, Exception exception);
 }

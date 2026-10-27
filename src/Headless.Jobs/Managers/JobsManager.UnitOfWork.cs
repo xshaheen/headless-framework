@@ -312,7 +312,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
             "Cron-expressions cache invalidation failed after committing {JobScope}. The definition row is committed; "
                 + "the cache entry is stale until it expires or the next definition write invalidates it."
         )]
-        public static partial void CronCacheInvalidationFailed(ILogger logger, string jobScope, Exception exception);
+        internal static partial void CronCacheInvalidationFailed(ILogger logger, string jobScope, Exception exception);
 
         [LoggerMessage(
             3227,
@@ -320,6 +320,6 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
             "Cron-expressions cache invalidation for {JobScope} did not finish within {Deadline}; the commit was "
                 + "released and the removal completes unobserved."
         )]
-        public static partial void CronCacheInvalidationTimedOut(ILogger logger, string jobScope, TimeSpan deadline);
+        internal static partial void CronCacheInvalidationTimedOut(ILogger logger, string jobScope, TimeSpan deadline);
     }
 }

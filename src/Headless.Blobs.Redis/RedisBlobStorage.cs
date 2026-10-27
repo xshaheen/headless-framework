@@ -907,7 +907,7 @@ internal static partial class RedisBlobStorageLog
         Level = LogLevel.Warning,
         Message = "Stream position was {Position}, resetting to 0 for blob {BlobKey}"
     )]
-    public static partial void LogStreamPositionReset(this ILogger logger, long position, string blobKey);
+    internal static partial void LogStreamPositionReset(this ILogger logger, long position, string blobKey);
 
     [LoggerMessage(
         EventId = 2,
@@ -915,7 +915,7 @@ internal static partial class RedisBlobStorageLog
         Level = LogLevel.Error,
         Message = "Error saving {Path}: {Message}"
     )]
-    public static partial void LogErrorSavingBlob(
+    internal static partial void LogErrorSavingBlob(
         this ILogger logger,
         Exception exception,
         string path,
@@ -923,7 +923,7 @@ internal static partial class RedisBlobStorageLog
     );
 
     [LoggerMessage(EventId = 3, EventName = "DeletingPath", Level = LogLevel.Trace, Message = "Deleting {Path}")]
-    public static partial void LogDeletingPath(this ILogger logger, string path);
+    internal static partial void LogDeletingPath(this ILogger logger, string path);
 
     [LoggerMessage(
         EventId = 4,
@@ -931,7 +931,7 @@ internal static partial class RedisBlobStorageLog
         Level = LogLevel.Information,
         Message = "Deleting {FileCount} files under prefix {Prefix}"
     )]
-    public static partial void LogDeletingFiles(this ILogger logger, int fileCount, string? prefix);
+    internal static partial void LogDeletingFiles(this ILogger logger, int fileCount, string? prefix);
 
     [LoggerMessage(
         EventId = 5,
@@ -939,7 +939,7 @@ internal static partial class RedisBlobStorageLog
         Level = LogLevel.Trace,
         Message = "Finished deleting {FileCount} files under prefix {Prefix}"
     )]
-    public static partial void LogFinishedDeletingFiles(this ILogger logger, int fileCount, string? prefix);
+    internal static partial void LogFinishedDeletingFiles(this ILogger logger, int fileCount, string? prefix);
 
     [LoggerMessage(
         EventId = 6,
@@ -947,7 +947,7 @@ internal static partial class RedisBlobStorageLog
         Level = LogLevel.Information,
         Message = "Moving {Path} to {NewPath}"
     )]
-    public static partial void LogMovingPath(this ILogger logger, string path, string newPath);
+    internal static partial void LogMovingPath(this ILogger logger, string path, string newPath);
 
     [LoggerMessage(
         EventId = 7,
@@ -955,7 +955,7 @@ internal static partial class RedisBlobStorageLog
         Level = LogLevel.Error,
         Message = "Error moving {Path} to {NewPath}: {Message}"
     )]
-    public static partial void LogErrorMovingPath(
+    internal static partial void LogErrorMovingPath(
         this ILogger logger,
         Exception exception,
         string path,
@@ -969,7 +969,7 @@ internal static partial class RedisBlobStorageLog
         Level = LogLevel.Trace,
         Message = "Copying {Path} to {TargetPath}"
     )]
-    public static partial void LogCopyingPath(this ILogger logger, string path, string targetPath);
+    internal static partial void LogCopyingPath(this ILogger logger, string path, string targetPath);
 
     [LoggerMessage(
         EventId = 9,
@@ -977,7 +977,7 @@ internal static partial class RedisBlobStorageLog
         Level = LogLevel.Error,
         Message = "Error copying {Path} to {TargetPath}: {Message}"
     )]
-    public static partial void LogErrorCopyingPath(
+    internal static partial void LogErrorCopyingPath(
         this ILogger logger,
         Exception exception,
         string path,
@@ -991,7 +991,7 @@ internal static partial class RedisBlobStorageLog
         Level = LogLevel.Trace,
         Message = "Checking if {Path} exists"
     )]
-    public static partial void LogCheckingIfPathExists(this ILogger logger, string path);
+    internal static partial void LogCheckingIfPathExists(this ILogger logger, string path);
 
     [LoggerMessage(
         EventId = 11,
@@ -999,7 +999,7 @@ internal static partial class RedisBlobStorageLog
         Level = LogLevel.Trace,
         Message = "Getting file stream for {Path}"
     )]
-    public static partial void LogGettingFileStream(this ILogger logger, string path);
+    internal static partial void LogGettingFileStream(this ILogger logger, string path);
 
     [LoggerMessage(
         EventId = 12,
@@ -1007,7 +1007,7 @@ internal static partial class RedisBlobStorageLog
         Level = LogLevel.Debug,
         Message = "File not found: {Path}"
     )]
-    public static partial void LogFileNotFound(this ILogger logger, string path);
+    internal static partial void LogFileNotFound(this ILogger logger, string path);
 
     [LoggerMessage(
         EventId = 13,
@@ -1015,7 +1015,7 @@ internal static partial class RedisBlobStorageLog
         Level = LogLevel.Trace,
         Message = "Getting file info for {Path}"
     )]
-    public static partial void LogGettingFileInfo(this ILogger logger, string path);
+    internal static partial void LogGettingFileInfo(this ILogger logger, string path);
 
     [LoggerMessage(
         EventId = 14,
@@ -1023,5 +1023,5 @@ internal static partial class RedisBlobStorageLog
         Level = LogLevel.Warning,
         Message = "Retrying Redis operation (attempt {Attempt}) after {Delay:g}"
     )]
-    public static partial void LogRedisRetry(this ILogger logger, int attempt, TimeSpan delay, Exception? exception);
+    internal static partial void LogRedisRetry(this ILogger logger, int attempt, TimeSpan delay, Exception? exception);
 }

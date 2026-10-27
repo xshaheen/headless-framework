@@ -422,5 +422,5 @@ internal static partial class HeadlessAuditPersistenceLog
         Level = LogLevel.Error,
         Message = "Audit change capture failed."
     )]
-    public static partial void LogAuditCaptureFailed(this ILogger logger, Exception exception);
+    internal static partial void LogAuditCaptureFailed(this ILogger logger, Exception exception);
 }

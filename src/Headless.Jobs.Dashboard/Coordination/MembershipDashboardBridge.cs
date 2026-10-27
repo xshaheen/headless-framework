@@ -89,5 +89,5 @@ internal static partial class MembershipDashboardBridgeLog
         Level = LogLevel.Error,
         Message = "Dashboard membership watch loop failed; the live-nodes panel will not receive push updates"
     )]
-    public static partial void MembershipDashboardWatchFailed(this ILogger logger, Exception exception);
+    internal static partial void MembershipDashboardWatchFailed(this ILogger logger, Exception exception);
 }

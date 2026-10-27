@@ -172,5 +172,5 @@ internal static partial class BlobSignedUrlEndpointLog
         Level = LogLevel.Warning,
         Message = "A failed signed upload to {Blob} could not be deleted; a truncated blob may remain"
     )]
-    public static partial void LogFailedUploadCleanup(this ILogger logger, Exception exception, string blob);
+    internal static partial void LogFailedUploadCleanup(this ILogger logger, Exception exception, string blob);
 }

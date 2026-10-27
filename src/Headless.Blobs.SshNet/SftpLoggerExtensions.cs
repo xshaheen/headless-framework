@@ -14,7 +14,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Acquired pooled SFTP client"
     )]
-    public static partial void LogAcquiredPooledClient(this ILogger logger);
+    internal static partial void LogAcquiredPooledClient(this ILogger logger);
 
     [LoggerMessage(
         EventId = 2,
@@ -22,7 +22,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Acquired pooled SFTP client after wait"
     )]
-    public static partial void LogAcquiredPooledClientAfterWait(this ILogger logger);
+    internal static partial void LogAcquiredPooledClientAfterWait(this ILogger logger);
 
     [LoggerMessage(
         EventId = 3,
@@ -30,7 +30,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Pool full, disposing excess SFTP client"
     )]
-    public static partial void LogPoolFullDisposingExcess(this ILogger logger);
+    internal static partial void LogPoolFullDisposingExcess(this ILogger logger);
 
     [LoggerMessage(
         EventId = 4,
@@ -38,7 +38,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Returned SFTP client to pool"
     )]
-    public static partial void LogReturnedClientToPool(this ILogger logger);
+    internal static partial void LogReturnedClientToPool(this ILogger logger);
 
     [LoggerMessage(
         EventId = 5,
@@ -46,7 +46,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Creating new SFTP connection to {Host}:{Port}"
     )]
-    public static partial void LogCreatingConnection(this ILogger logger, string host, int port);
+    internal static partial void LogCreatingConnection(this ILogger logger, string host, int port);
 
     [LoggerMessage(
         EventId = 6,
@@ -54,7 +54,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Connected to {Host}:{Port}, working directory: {WorkingDirectory}"
     )]
-    public static partial void LogConnected(this ILogger logger, string host, int port, string workingDirectory);
+    internal static partial void LogConnected(this ILogger logger, string host, int port, string workingDirectory);
 
     [LoggerMessage(
         EventId = 7,
@@ -62,7 +62,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Client not connected, validation failed"
     )]
-    public static partial void LogClientNotConnected(this ILogger logger);
+    internal static partial void LogClientNotConnected(this ILogger logger);
 
     [LoggerMessage(
         EventId = 8,
@@ -70,7 +70,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Client validation failed, will create new connection"
     )]
-    public static partial void LogClientValidationFailed(this ILogger logger, Exception exception);
+    internal static partial void LogClientValidationFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 9,
@@ -78,7 +78,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Disconnecting SFTP client from {Host}:{Port}"
     )]
-    public static partial void LogDisconnectingClient(this ILogger logger, string host, int port);
+    internal static partial void LogDisconnectingClient(this ILogger logger, string host, int port);
 
     [LoggerMessage(
         EventId = 10,
@@ -86,7 +86,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Error disconnecting SFTP client"
     )]
-    public static partial void LogErrorDisconnectingClient(this ILogger logger, Exception exception);
+    internal static partial void LogErrorDisconnectingClient(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 11,
@@ -94,7 +94,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Disposing SFTP client pool"
     )]
-    public static partial void LogDisposingPool(this ILogger logger);
+    internal static partial void LogDisposingPool(this ILogger logger);
 
     [LoggerMessage(
         EventId = 12,
@@ -102,7 +102,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Trace,
         Message = "SFTP client pool disposed"
     )]
-    public static partial void LogPoolDisposed(this ILogger logger);
+    internal static partial void LogPoolDisposed(this ILogger logger);
 
     // === SshBlobStorage ===
 
@@ -112,10 +112,10 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Creating directory segment {Segment}"
     )]
-    public static partial void LogCreatingContainerSegment(this ILogger logger, string segment);
+    internal static partial void LogCreatingContainerSegment(this ILogger logger, string segment);
 
     [LoggerMessage(EventId = 14, EventName = "SavingBlob", Level = LogLevel.Trace, Message = "Saving {Path}")]
-    public static partial void LogSavingBlob(this ILogger logger, string path);
+    internal static partial void LogSavingBlob(this ILogger logger, string path);
 
     [LoggerMessage(
         EventId = 15,
@@ -123,14 +123,14 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Error saving {Path}: Attempting to create directory"
     )]
-    public static partial void LogErrorSavingBlobCreatingDirectory(
+    internal static partial void LogErrorSavingBlobCreatingDirectory(
         this ILogger logger,
         Exception exception,
         string path
     );
 
     [LoggerMessage(EventId = 16, EventName = "DeletingBlob", Level = LogLevel.Trace, Message = "Deleting {Path}")]
-    public static partial void LogDeletingBlob(this ILogger logger, string path);
+    internal static partial void LogDeletingBlob(this ILogger logger, string path);
 
     [LoggerMessage(
         EventId = 17,
@@ -138,7 +138,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Deleting all blobs under prefix {Prefix}"
     )]
-    public static partial void LogDeletingAllByPrefix(this ILogger logger, string? prefix);
+    internal static partial void LogDeletingAllByPrefix(this ILogger logger, string? prefix);
 
     [LoggerMessage(
         EventId = 18,
@@ -146,7 +146,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Copying {Source} to {Destination}"
     )]
-    public static partial void LogCopyingBlob(this ILogger logger, string source, string destination);
+    internal static partial void LogCopyingBlob(this ILogger logger, string source, string destination);
 
     [LoggerMessage(
         EventId = 19,
@@ -154,7 +154,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Copy source not found: {Source}"
     )]
-    public static partial void LogCopySourceNotFound(this ILogger logger, Exception exception, string source);
+    internal static partial void LogCopySourceNotFound(this ILogger logger, Exception exception, string source);
 
     [LoggerMessage(
         EventId = 20,
@@ -162,7 +162,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Error,
         Message = "Failed to delete source {Source} after copy to {Destination}; rolling back the destination copy"
     )]
-    public static partial void LogMoveRollback(
+    internal static partial void LogMoveRollback(
         this ILogger logger,
         Exception exception,
         string source,
@@ -175,7 +175,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Error,
         Message = "Failed to roll back the destination copy {Destination} after a failed move"
     )]
-    public static partial void LogMoveRollbackFailed(this ILogger logger, Exception exception, string destination);
+    internal static partial void LogMoveRollbackFailed(this ILogger logger, Exception exception, string destination);
 
     [LoggerMessage(
         EventId = 22,
@@ -183,7 +183,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Checking if {Path} exists"
     )]
-    public static partial void LogCheckingBlobExists(this ILogger logger, string path);
+    internal static partial void LogCheckingBlobExists(this ILogger logger, string path);
 
     [LoggerMessage(
         EventId = 23,
@@ -191,7 +191,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Getting file stream for {Path}"
     )]
-    public static partial void LogGettingFileStream(this ILogger logger, string path);
+    internal static partial void LogGettingFileStream(this ILogger logger, string path);
 
     [LoggerMessage(
         EventId = 24,
@@ -199,7 +199,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Unable to get file stream for {Path}: File not found"
     )]
-    public static partial void LogFileStreamNotFound(this ILogger logger, Exception exception, string path);
+    internal static partial void LogFileStreamNotFound(this ILogger logger, Exception exception, string path);
 
     [LoggerMessage(
         EventId = 25,
@@ -207,7 +207,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Getting blob info for {Path}"
     )]
-    public static partial void LogGettingBlobInfo(this ILogger logger, string path);
+    internal static partial void LogGettingBlobInfo(this ILogger logger, string path);
 
     [LoggerMessage(
         EventId = 26,
@@ -215,7 +215,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Unable to get blob info for {Path}: Is a directory"
     )]
-    public static partial void LogBlobInfoIsDirectory(this ILogger logger, string path);
+    internal static partial void LogBlobInfoIsDirectory(this ILogger logger, string path);
 
     [LoggerMessage(
         EventId = 27,
@@ -223,7 +223,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Unable to get blob info for {Path}: File not found"
     )]
-    public static partial void LogBlobInfoNotFound(this ILogger logger, Exception exception, string path);
+    internal static partial void LogBlobInfoNotFound(this ILogger logger, Exception exception, string path);
 
     [LoggerMessage(
         EventId = 28,
@@ -231,7 +231,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Cancellation requested"
     )]
-    public static partial void LogCancellationRequested(this ILogger logger);
+    internal static partial void LogCancellationRequested(this ILogger logger);
 
     [LoggerMessage(
         EventId = 29,
@@ -239,7 +239,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Directory not found: {Directory}"
     )]
-    public static partial void LogDirectoryNotFound(this ILogger logger, string directory);
+    internal static partial void LogDirectoryNotFound(this ILogger logger, string directory);
 
     // === SshBlobContainerManager ===
 
@@ -249,7 +249,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Ensuring container {Container} exists"
     )]
-    public static partial void LogEnsuringContainer(this ILogger logger, string container);
+    internal static partial void LogEnsuringContainer(this ILogger logger, string container);
 
     [LoggerMessage(
         EventId = 31,
@@ -257,7 +257,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Information,
         Message = "Deleting container {Container}"
     )]
-    public static partial void LogDeletingContainer(this ILogger logger, string container);
+    internal static partial void LogDeletingContainer(this ILogger logger, string container);
 
     [LoggerMessage(
         EventId = 32,
@@ -265,7 +265,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Container {Container} not found for deletion"
     )]
-    public static partial void LogDeleteContainerNotFound(this ILogger logger, string container);
+    internal static partial void LogDeleteContainerNotFound(this ILogger logger, string container);
 
     [LoggerMessage(
         EventId = 33,
@@ -273,7 +273,7 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Move source blob {Path} was already gone after its delete faulted; kept the destination copy (a stale sidecar {SidecarPath} may remain)"
     )]
-    public static partial void LogMoveKeptDestinationSourceGone(
+    internal static partial void LogMoveKeptDestinationSourceGone(
         this ILogger logger,
         Exception exception,
         string path,
@@ -286,5 +286,5 @@ internal static partial class SftpLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Could not verify move source {Path} after its delete faulted; skipping the destination rollback (both copies may remain)"
     )]
-    public static partial void LogMoveSourceCheckFailed(this ILogger logger, Exception exception, string path);
+    internal static partial void LogMoveSourceCheckFailed(this ILogger logger, Exception exception, string path);
 }

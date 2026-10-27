@@ -12,7 +12,7 @@ internal static partial class RelationalDataStorageLog
         Level = LogLevel.Warning,
         Message = "Skipping un-deserializable message {StorageId} during retry pickup from {Table}; the batch proceeds and the row stays leased until its lease expires."
     )]
-    public static partial void LogPoisonMessageSkipped(
+    internal static partial void LogPoisonMessageSkipped(
         this ILogger logger,
         Guid storageId,
         string table,
@@ -25,7 +25,7 @@ internal static partial class RelationalDataStorageLog
         Level = LogLevel.Debug,
         Message = "Fetched {Count} delayed/queued message(s) for scheduling from {Table}."
     )]
-    public static partial void LogSchedulerBatchFetched(this ILogger logger, int count, string table);
+    internal static partial void LogSchedulerBatchFetched(this ILogger logger, int count, string table);
 
     [LoggerMessage(
         EventId = 130,
@@ -33,7 +33,7 @@ internal static partial class RelationalDataStorageLog
         Level = LogLevel.Warning,
         Message = "Failed to mark poison message {StorageId} terminal in {Table}; the batch proceeds and the row stays leased until its lease expires."
     )]
-    public static partial void LogPoisonMessageTerminalMarkFailed(
+    internal static partial void LogPoisonMessageTerminalMarkFailed(
         this ILogger logger,
         Guid storageId,
         string table,
@@ -46,5 +46,5 @@ internal static partial class RelationalDataStorageLog
         Level = LogLevel.Warning,
         Message = "Could not reconcile an ambiguous transactional inbox commit; recovery will treat the outcome as indeterminate."
     )]
-    public static partial void LogInboxCommitProbeFailed(this ILogger logger, Exception exception);
+    internal static partial void LogInboxCommitProbeFailed(this ILogger logger, Exception exception);
 }

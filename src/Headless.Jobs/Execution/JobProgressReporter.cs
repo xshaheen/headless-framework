@@ -187,7 +187,7 @@ internal static partial class JobProgressReporterLog
         Message = "Progress write for job {JobId} ({Function}) failed; the job keeps running and the latest progress is "
             + "retried on the next write."
     )]
-    public static partial void LogJobProgressWriteFailed(
+    internal static partial void LogJobProgressWriteFailed(
         this ILogger logger,
         Exception exception,
         Guid jobId,
@@ -199,5 +199,5 @@ internal static partial class JobProgressReporterLog
         Level = LogLevel.Debug,
         Message = "Progress write for job {JobId} ({Function}) matched no owned running row; the value was dropped."
     )]
-    public static partial void LogJobProgressWriteFenced(this ILogger logger, Guid jobId, string function);
+    internal static partial void LogJobProgressWriteFenced(this ILogger logger, Guid jobId, string function);
 }

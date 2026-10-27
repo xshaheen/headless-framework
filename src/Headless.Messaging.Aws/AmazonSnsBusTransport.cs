@@ -279,7 +279,7 @@ internal static partial class AmazonSnsBusTransportLog
         Level = LogLevel.Debug,
         Message = "SNS topic message [{NormalizeForAws}] has been published."
     )]
-    public static partial void LogSnsTopicMessagePublished(this ILogger logger, string normalizeForAws);
+    internal static partial void LogSnsTopicMessagePublished(this ILogger logger, string normalizeForAws);
 
     [LoggerMessage(
         EventId = 2,
@@ -287,5 +287,5 @@ internal static partial class AmazonSnsBusTransportLog
         Level = LogLevel.Warning,
         Message = "Can't be found SNS topics for [{NormalizeForAws}]"
     )]
-    public static partial void LogSnsTopicNotFound(this ILogger logger, string normalizeForAws);
+    internal static partial void LogSnsTopicNotFound(this ILogger logger, string normalizeForAws);
 }

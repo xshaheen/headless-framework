@@ -361,7 +361,7 @@ internal static partial class K8sNodeDiscoveryProviderLog
         Level = LogLevel.Error,
         Message = "Get k8s node raised an exception. Exception:{Message}"
     )]
-    public static partial void LogGetK8sNodeFailed(this ILogger logger, Exception exception, string message);
+    internal static partial void LogGetK8sNodeFailed(this ILogger logger, Exception exception, string message);
 
     [LoggerMessage(
         EventId = 2,
@@ -369,5 +369,5 @@ internal static partial class K8sNodeDiscoveryProviderLog
         Level = LogLevel.Error,
         Message = "Get k8s services raised an exception"
     )]
-    public static partial void LogGetK8sServicesFailed(this ILogger logger, Exception exception);
+    internal static partial void LogGetK8sServicesFailed(this ILogger logger, Exception exception);
 }

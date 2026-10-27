@@ -536,12 +536,12 @@ internal static partial class TusAzureStoreStreamLog
         Level = LogLevel.Trace,
         Message = "Appending data using the Stream for file '{FileId}'"
     )]
-    public static partial void StreamAppendStarted(this ILogger logger, string fileId);
+    internal static partial void StreamAppendStarted(this ILogger logger, string fileId);
 
     [LoggerMessage(
         EventId = 3225,
         Level = LogLevel.Debug,
         Message = "Stored chunk metadata for file '{FileId}': {BlockCount} blocks staged for checksum verification"
     )]
-    public static partial void StoredStreamChunkMetadata(this ILogger logger, string fileId, int blockCount);
+    internal static partial void StoredStreamChunkMetadata(this ILogger logger, string fileId, int blockCount);
 }

@@ -13,7 +13,7 @@ internal static partial class ConnekioLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Received empty response from Connekio API"
     )]
-    public static partial void LogEmptyResponse(this ILogger logger);
+    internal static partial void LogEmptyResponse(this ILogger logger);
 
     [LoggerMessage(
         EventId = 2,
@@ -21,7 +21,11 @@ internal static partial class ConnekioLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Failed to send SMS to {DestinationCount} destination(s), status: {StatusCode}"
     )]
-    public static partial void LogFailedToSendSms(this ILogger logger, int destinationCount, HttpStatusCode statusCode);
+    internal static partial void LogFailedToSendSms(
+        this ILogger logger,
+        int destinationCount,
+        HttpStatusCode statusCode
+    );
 
     [LoggerMessage(
         EventId = 3,
@@ -29,5 +33,5 @@ internal static partial class ConnekioLoggerExtensions
         Level = LogLevel.Error,
         Message = "Failed to send SMS using Connekio API to {DestinationCount} destination(s)"
     )]
-    public static partial void LogSmsSendException(this ILogger logger, Exception exception, int destinationCount);
+    internal static partial void LogSmsSendException(this ILogger logger, Exception exception, int destinationCount);
 }

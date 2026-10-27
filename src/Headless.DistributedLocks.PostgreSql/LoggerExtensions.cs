@@ -12,7 +12,7 @@ internal static partial class LoggerExtensions
         EventName = "ReleaseListenerReconnecting",
         Message = "The LISTEN/NOTIFY release listener disconnected and is reconnecting (attempt {Attempt}); cross-process wake-ups degrade to polling until it recovers."
     )]
-    public static partial void LogReleaseListenerReconnecting(this ILogger logger, Exception exception, int attempt);
+    internal static partial void LogReleaseListenerReconnecting(this ILogger logger, Exception exception, int attempt);
 
     [LoggerMessage(
         EventId = 2,
@@ -20,7 +20,7 @@ internal static partial class LoggerExtensions
         EventName = "ReleaseNotificationFanoutFailed",
         Message = "Fanning out a LISTEN/NOTIFY release notification for resource {Resource} to local waiters failed."
     )]
-    public static partial void LogReleaseNotificationFanoutFailed(
+    internal static partial void LogReleaseNotificationFanoutFailed(
         this ILogger logger,
         Exception exception,
         string resource

@@ -61,5 +61,5 @@ internal static partial class InMemoryQueueTransportLog
         Level = LogLevel.Debug,
         Message = "Event message [{MessageName}] has been published."
     )]
-    public static partial void QueueMessagePublished(this ILogger logger, string messageName);
+    internal static partial void QueueMessagePublished(this ILogger logger, string messageName);
 }

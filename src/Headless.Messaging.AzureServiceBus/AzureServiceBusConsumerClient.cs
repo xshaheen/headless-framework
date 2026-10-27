@@ -1063,22 +1063,22 @@ internal sealed class AzureServiceBusConsumerClient(
 internal static partial class AzureServiceBusConsumerClientLog
 {
     [LoggerMessage(EventId = 3008, Level = LogLevel.Information, Message = "Azure Service Bus add rule: {NewRule}")]
-    public static partial void RuleAdded(this ILogger logger, string newRule);
+    internal static partial void RuleAdded(this ILogger logger, string newRule);
 
     [LoggerMessage(EventId = 3009, Level = LogLevel.Information, Message = "Azure Service Bus remove rule: {OldRule}")]
-    public static partial void RuleRemoved(this ILogger logger, string oldRule);
+    internal static partial void RuleRemoved(this ILogger logger, string oldRule);
 
     [LoggerMessage(
         EventId = 3010,
         Level = LogLevel.Information,
         Message = "Azure Service Bus created topic: {TopicPath}"
     )]
-    public static partial void TopicCreated(this ILogger logger, string topicPath);
+    internal static partial void TopicCreated(this ILogger logger, string topicPath);
 
     [LoggerMessage(
         EventId = 3011,
         Level = LogLevel.Information,
         Message = "Azure Service Bus topic {TopicPath} created subscription: {SubscriptionName}"
     )]
-    public static partial void SubscriptionCreated(this ILogger logger, string topicPath, string subscriptionName);
+    internal static partial void SubscriptionCreated(this ILogger logger, string topicPath, string subscriptionName);
 }

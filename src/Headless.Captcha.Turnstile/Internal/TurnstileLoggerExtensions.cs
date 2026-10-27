@@ -13,7 +13,11 @@ internal static partial class TurnstileLoggerExtensions
         Level = LogLevel.Warning,
         Message = "[Turnstile] verification failed with status code {StatusCode} and response {Response}"
     )]
-    public static partial void LogTurnstileHttpFailure(this ILogger logger, HttpStatusCode statusCode, string response);
+    internal static partial void LogTurnstileHttpFailure(
+        this ILogger logger,
+        HttpStatusCode statusCode,
+        string response
+    );
 
     [LoggerMessage(
         EventId = 2,
@@ -21,5 +25,5 @@ internal static partial class TurnstileLoggerExtensions
         Level = LogLevel.Information,
         Message = "[Turnstile] validation failed with error codes {ErrorCodes}"
     )]
-    public static partial void LogTurnstileValidationFailure(this ILogger logger, string[]? errorCodes);
+    internal static partial void LogTurnstileValidationFailure(this ILogger logger, string[]? errorCodes);
 }

@@ -80,7 +80,7 @@ internal static partial class SettingEncryptionServiceLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Failed to encrypt setting value: {SettingDefinition}"
     )]
-    public static partial void LogFailedToEncryptSettingValue(
+    internal static partial void LogFailedToEncryptSettingValue(
         this ILogger logger,
         Exception exception,
         string settingDefinition
@@ -92,7 +92,7 @@ internal static partial class SettingEncryptionServiceLoggerExtensions
         Level = LogLevel.Error,
         Message = "Failed to decrypt setting value: {SettingDefinition}"
     )]
-    public static partial void LogFailedToDecryptSettingValue(
+    internal static partial void LogFailedToDecryptSettingValue(
         this ILogger logger,
         Exception exception,
         string settingDefinition

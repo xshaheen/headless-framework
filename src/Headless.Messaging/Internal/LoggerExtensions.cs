@@ -13,7 +13,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "The subscriber of received message {MessageId} still fails after {Retries} executions and will stop retrying."
     )]
-    public static partial void ConsumerReceivedMessageAfterThreshold(
+    internal static partial void ConsumerReceivedMessageAfterThreshold(
         this ILogger logger,
         string messageId,
         int retries
@@ -25,7 +25,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "RetryPolicy.OnExhausted action raised an exception: {Message}"
     )]
-    public static partial void ExecutedThresholdCallbackFailed(
+    internal static partial void ExecutedThresholdCallbackFailed(
         this ILogger logger,
         Exception exception,
         string message
@@ -37,7 +37,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "We detected that you have duplicate subscribers ({Subscriber}) in the same subscription ({Subscription}), this will cause diversity behavior."
     )]
-    public static partial void ConsumerDuplicates(this ILogger logger, string subscriber, string? subscription);
+    internal static partial void ConsumerDuplicates(this ILogger logger, string subscriber, string? subscription);
 
     [LoggerMessage(
         EventId = 5,
@@ -45,7 +45,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "The {Retries}th retrying consume of stored message failed. storage id: {StorageId}"
     )]
-    public static partial void ConsumerExecutionRetrying(this ILogger logger, Guid storageId, int retries);
+    internal static partial void ConsumerExecutionRetrying(this ILogger logger, Guid storageId, int retries);
 
     [LoggerMessage(
         EventId = 6,
@@ -53,7 +53,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "The {Retries}th retrying send of stored message failed. storage id: {StorageId} "
     )]
-    public static partial void SenderRetrying(this ILogger logger, Guid storageId, int retries);
+    internal static partial void SenderRetrying(this ILogger logger, Guid storageId, int retries);
 
     [LoggerMessage(
         EventId = 7,
@@ -61,7 +61,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Debug,
         Message = "Received message. id:{MessageId}, name: {Name}"
     )]
-    public static partial void MessageReceived(this ILogger logger, string messageId, string name);
+    internal static partial void MessageReceived(this ILogger logger, string messageId, string name);
 
     [LoggerMessage(
         EventId = 8,
@@ -69,7 +69,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "An exception occurred while publishing a message, reason:{Reason}. message id:{MessageId}"
     )]
-    public static partial void MessagePublishException(
+    internal static partial void MessagePublishException(
         this ILogger logger,
         Exception? exception,
         string? messageId,
@@ -82,7 +82,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Executing subscriber method '{ClassName}.{MethodName}' on consumer '{Consumer}'"
     )]
-    public static partial void ConsumerExecuting(
+    internal static partial void ConsumerExecuting(
         this ILogger logger,
         string className,
         string methodName,
@@ -95,7 +95,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Executed subscriber method '{ClassName}.{MethodName}' on consumer '{Consumer}' with instance '{Instance}' in {Milliseconds}ms"
     )]
-    public static partial void ConsumerExecuted(
+    internal static partial void ConsumerExecuted(
         this ILogger logger,
         string className,
         string methodName,
@@ -110,7 +110,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "An exception occurred while executing the subscription method. MessageName:{MessageName}, StorageId:{StorageId}, Instance: {Instance}"
     )]
-    public static partial void ConsumerExecuteFailed(
+    internal static partial void ConsumerExecuteFailed(
         this ILogger logger,
         Exception? exception,
         string messageName,
@@ -124,7 +124,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Starting the processing server."
     )]
-    public static partial void ServerStarting(this ILogger logger);
+    internal static partial void ServerStarting(this ILogger logger);
 
     [LoggerMessage(
         EventId = 13,
@@ -132,7 +132,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "Starting the processors throw an exception."
     )]
-    public static partial void ProcessorsStartedError(this ILogger logger, Exception exception);
+    internal static partial void ProcessorsStartedError(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 14,
@@ -140,7 +140,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Shutting down the processing server..."
     )]
-    public static partial void ServerShuttingDown(this ILogger logger);
+    internal static partial void ServerShuttingDown(this ILogger logger);
 
     [LoggerMessage(
         EventId = 15,
@@ -148,7 +148,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Expected an OperationCanceledException, but found '{ExMessage}'."
     )]
-    public static partial void ExpectedOperationCanceledException(
+    internal static partial void ExpectedOperationCanceledException(
         this ILogger logger,
         Exception exception,
         string exMessage
@@ -160,7 +160,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "### Messaging background task is already started!"
     )]
-    public static partial void MessagingAlreadyStarted(this ILogger logger);
+    internal static partial void MessagingAlreadyStarted(this ILogger logger);
 
     [LoggerMessage(
         EventId = 17,
@@ -168,7 +168,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Debug,
         Message = "### Messaging background task is starting."
     )]
-    public static partial void MessagingStarting(this ILogger logger);
+    internal static partial void MessagingStarting(this ILogger logger);
 
     [LoggerMessage(
         EventId = 19,
@@ -176,7 +176,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Debug,
         Message = "### Messaging background task is stopping."
     )]
-    public static partial void MessagingStopping(this ILogger logger);
+    internal static partial void MessagingStopping(this ILogger logger);
 
     [LoggerMessage(
         EventId = 20,
@@ -184,7 +184,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "### Messaging system started!"
     )]
-    public static partial void MessagingStarted(this ILogger logger);
+    internal static partial void MessagingStarted(this ILogger logger);
 
     [LoggerMessage(
         EventId = 21,
@@ -192,7 +192,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "The message has been persisted, but the messaging system is currently stopped. It will be attempted to be sent once the system becomes available."
     )]
-    public static partial void MessagePersistButSystemStopped(this ILogger logger);
+    internal static partial void MessagePersistButSystemStopped(this ILogger logger);
 
     [LoggerMessage(
         EventId = 22,
@@ -200,7 +200,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "An exception occurred when invoke subscriber. StorageId:{StorageId}"
     )]
-    public static partial void SubscriberInvocationFailed(this ILogger logger, Exception exception, Guid storageId);
+    internal static partial void SubscriberInvocationFailed(this ILogger logger, Exception exception, Guid storageId);
 
     [LoggerMessage(
         EventId = 23,
@@ -208,7 +208,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Debug,
         Message = "Update storage to delayed success of delayed message in memory queue!"
     )]
-    public static partial void DelayedStorageUpdateSuccess(this ILogger logger);
+    internal static partial void DelayedStorageUpdateSuccess(this ILogger logger);
 
     [LoggerMessage(
         EventId = 24,
@@ -216,7 +216,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Update storage fails of delayed message in memory queue!"
     )]
-    public static partial void DelayedStorageUpdateFailed(this ILogger logger, Exception exception);
+    internal static partial void DelayedStorageUpdateFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 25,
@@ -224,7 +224,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "Delay message sending failed. StorageId: {StorageId} "
     )]
-    public static partial void DelayedMessageSendFailed(this ILogger logger, Guid storageId);
+    internal static partial void DelayedMessageSendFailed(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 26,
@@ -232,7 +232,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "Error sending scheduled message. StorageId: {StorageId}"
     )]
-    public static partial void ScheduledMessageSendError(this ILogger logger, Exception exception, Guid storageId);
+    internal static partial void ScheduledMessageSendError(this ILogger logger, Exception exception, Guid storageId);
 
     [LoggerMessage(
         EventId = 27,
@@ -240,7 +240,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "Delay message publishing failed unexpectedly, which will stop future scheduled messages from publishing. Restart the application to resume delayed message processing. Exception: {Message}"
     )]
-    public static partial void DelayedMessagePublishFailed(this ILogger logger, Exception exception, string message);
+    internal static partial void DelayedMessagePublishFailed(this ILogger logger, Exception exception, string message);
 
     [LoggerMessage(
         EventId = 28,
@@ -248,7 +248,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "An exception occurred when sending a message to the transport. StorageId:{StorageId}"
     )]
-    public static partial void TransportSendError(this ILogger logger, Exception exception, Guid storageId);
+    internal static partial void TransportSendError(this ILogger logger, Exception exception, Guid storageId);
 
     [LoggerMessage(
         EventId = 34,
@@ -256,7 +256,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "The subscriber of stored message {StorageId} still fails after {Retries} executions and will stop retrying."
     )]
-    public static partial void ConsumerStoredMessageAfterThreshold(this ILogger logger, Guid storageId, int retries);
+    internal static partial void ConsumerStoredMessageAfterThreshold(this ILogger logger, Guid storageId, int retries);
 
     [LoggerMessage(
         EventId = 35,
@@ -264,7 +264,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "The publisher of stored message {StorageId} still fails after {Retries} sends and will stop retrying."
     )]
-    public static partial void SenderStoredMessageAfterThreshold(this ILogger logger, Guid storageId, int retries);
+    internal static partial void SenderStoredMessageAfterThreshold(this ILogger logger, Guid storageId, int retries);
 
     [LoggerMessage(
         EventId = 29,
@@ -272,7 +272,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "An exception was occurred when disposing."
     )]
-    public static partial void DisposingWarning(this ILogger logger, Exception exception);
+    internal static partial void DisposingWarning(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 30,
@@ -280,7 +280,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "### Messaging system shutdown!"
     )]
-    public static partial void MessagingShutdown(this ILogger logger);
+    internal static partial void MessagingShutdown(this ILogger logger);
 
     [LoggerMessage(
         EventId = 31,
@@ -288,7 +288,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Debug,
         Message = "Transport connection checking..."
     )]
-    public static partial void TransportChecking(this ILogger logger);
+    internal static partial void TransportChecking(this ILogger logger);
 
     [LoggerMessage(
         EventId = 32,
@@ -296,7 +296,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Transport connection is unhealthy, reconnection..."
     )]
-    public static partial void TransportUnhealthy(this ILogger logger);
+    internal static partial void TransportUnhealthy(this ILogger logger);
 
     [LoggerMessage(
         EventId = 33,
@@ -304,41 +304,45 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Debug,
         Message = "Transport connection healthy!"
     )]
-    public static partial void TransportHealthy(this ILogger logger);
+    internal static partial void TransportHealthy(this ILogger logger);
 
     [LoggerMessage(EventId = 36, Level = LogLevel.Error, Message = "Failed to connect to broker")]
-    public static partial void FailedToConnectToBroker(this ILogger logger, Exception exception);
+    internal static partial void FailedToConnectToBroker(this ILogger logger, Exception exception);
 
     [LoggerMessage(EventId = 37, Level = LogLevel.Error, Message = "An exception occurred in consumer processing loop")]
-    public static partial void ConsumerProcessingLoopFailed(this ILogger logger, Exception exception);
+    internal static partial void ConsumerProcessingLoopFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 38,
         Level = LogLevel.Warning,
         Message = "Circuit breaker opened; pausing the consumer clients of subscription '{Subscription}'."
     )]
-    public static partial void CircuitBreakerOpenedPausingConsumers(this ILogger logger, string subscription);
+    internal static partial void CircuitBreakerOpenedPausingConsumers(this ILogger logger, string subscription);
 
     [LoggerMessage(
         EventId = 39,
         Level = LogLevel.Error,
         Message = "Failed to pause consumer client for subscription '{Subscription}'."
     )]
-    public static partial void PauseConsumerClientFailed(this ILogger logger, Exception exception, string subscription);
+    internal static partial void PauseConsumerClientFailed(
+        this ILogger logger,
+        Exception exception,
+        string subscription
+    );
 
     [LoggerMessage(
         EventId = 40,
         Level = LogLevel.Debug,
         Message = "Resuming the consumer clients of subscription '{Subscription}' (half-open)."
     )]
-    public static partial void ResumingConsumersHalfOpen(this ILogger logger, string subscription);
+    internal static partial void ResumingConsumersHalfOpen(this ILogger logger, string subscription);
 
     [LoggerMessage(
         EventId = 41,
         Level = LogLevel.Error,
         Message = "Failed to resume consumer client for subscription '{Subscription}'."
     )]
-    public static partial void ResumeConsumerClientFailed(
+    internal static partial void ResumeConsumerClientFailed(
         this ILogger logger,
         Exception exception,
         string subscription
@@ -349,7 +353,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Debug,
         Message = "Skipping stale circuit intent for subscription '{Subscription}' (intent epoch {Epoch}, last applied {LastAppliedEpoch})."
     )]
-    public static partial void StaleCircuitIntentSkipped(
+    internal static partial void StaleCircuitIntentSkipped(
         this ILogger logger,
         string subscription,
         long epoch,
@@ -361,14 +365,14 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Debug,
         Message = "Delivery admitted while circuit was open during pause latency for consumer '{Consumer}'."
     )]
-    public static partial void DeliveryAdmittedDuringPauseLatency(this ILogger logger, string consumer);
+    internal static partial void DeliveryAdmittedDuringPauseLatency(this ILogger logger, string consumer);
 
     [LoggerMessage(
         EventId = 4115,
         Level = LogLevel.Warning,
         Message = "Delivery admitted while circuit was open after pause completed for consumer '{Consumer}'; transport is not paused."
     )]
-    public static partial void DeliveryAdmittedWhileOpenAfterPause(this ILogger logger, string consumer);
+    internal static partial void DeliveryAdmittedWhileOpenAfterPause(this ILogger logger, string consumer);
 
     [LoggerMessage(
         EventId = 4116,
@@ -376,7 +380,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Request stored as {StorageId} is a replay (generation {Generation}) of a request whose caller no longer waits; it runs as a plain Queue message and sends no reply."
     )]
-    public static partial void ReplayedRequestRunsWithoutCaller(this ILogger logger, Guid storageId, long generation);
+    internal static partial void ReplayedRequestRunsWithoutCaller(this ILogger logger, Guid storageId, long generation);
 
     [LoggerMessage(
         EventId = 4129,
@@ -384,7 +388,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Renewing the lease on message {StorageId} failed; the lease it last confirmed is still live, so the renewal is retried on the next tick."
     )]
-    public static partial void MessageLeaseRenewalFailed(this ILogger logger, Exception exception, Guid storageId);
+    internal static partial void MessageLeaseRenewalFailed(this ILogger logger, Exception exception, Guid storageId);
 
     [LoggerMessage(
         EventId = 4130,
@@ -392,7 +396,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Renewing the lease on message {StorageId} failed and the lease it last confirmed could lapse before the next tick; the attempt is cancelled."
     )]
-    public static partial void MessageLeaseRenewalFailedPastLease(
+    internal static partial void MessageLeaseRenewalFailedPastLease(
         this ILogger logger,
         Exception exception,
         Guid storageId
@@ -404,7 +408,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "The lease on message {StorageId} was lost while its attempt ran; the attempt is cancelled and writes no state, and the row is recovered like a crashed attempt."
     )]
-    public static partial void MessageLeaseLost(this ILogger logger, Guid storageId);
+    internal static partial void MessageLeaseLost(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 4125,
@@ -412,7 +416,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Message stored as {StorageId} (name '{MessageName}') passed its delivery deadline {Deadline}; it is marked failed without being sent."
     )]
-    public static partial void StoredMessageDeliverByExceeded(
+    internal static partial void StoredMessageDeliverByExceeded(
         this ILogger logger,
         Guid storageId,
         string messageName,
@@ -425,7 +429,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Message {MessageId} (name '{MessageName}', consumer '{Consumer}') arrived after its delivery deadline; it is committed and dropped without running the consumer."
     )]
-    public static partial void MessageDeliverByExceededOnReceive(
+    internal static partial void MessageDeliverByExceededOnReceive(
         this ILogger logger,
         string? messageId,
         string? messageName,
@@ -438,7 +442,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Message stored as {StorageId} passed its delivery deadline before an attempt started; it ends without running the consumer."
     )]
-    public static partial void MessageDeliverByExceededBeforeAttempt(this ILogger logger, Guid storageId);
+    internal static partial void MessageDeliverByExceededBeforeAttempt(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 4128,
@@ -446,7 +450,11 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Direct send of message {MessageId} (name '{MessageName}') passed its delivery deadline before reaching the transport; it is dropped without being sent."
     )]
-    public static partial void DirectSendDeliverByExceeded(this ILogger logger, string? messageId, string? messageName);
+    internal static partial void DirectSendDeliverByExceeded(
+        this ILogger logger,
+        string? messageId,
+        string? messageName
+    );
 
     [LoggerMessage(
         EventId = 4132,
@@ -454,7 +462,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Message {MessageId} (name '{MessageName}', consumer '{Consumer}') passed its delivery deadline while waiting for its consumer's rate limit; it is dropped without running the consumer."
     )]
-    public static partial void MessageDeliverByExceededWhileThrottled(
+    internal static partial void MessageDeliverByExceededWhileThrottled(
         this ILogger logger,
         string? messageId,
         string? messageName,
@@ -462,62 +470,62 @@ internal static partial class LoggerExtensions
     );
 
     [LoggerMessage(EventId = 42, Level = LogLevel.Warning, Message = "RabbitMQ consumer cancelled. --> {Reason}")]
-    public static partial void RabbitMqConsumerCancelled(this ILogger logger, string reason);
+    internal static partial void RabbitMqConsumerCancelled(this ILogger logger, string reason);
 
     [LoggerMessage(EventId = 43, Level = LogLevel.Information, Message = "RabbitMQ consumer registered. --> {Reason}")]
-    public static partial void RabbitMqConsumerRegistered(this ILogger logger, string reason);
+    internal static partial void RabbitMqConsumerRegistered(this ILogger logger, string reason);
 
     [LoggerMessage(EventId = 44, Level = LogLevel.Warning, Message = "RabbitMQ consumer unregistered. --> {Reason}")]
-    public static partial void RabbitMqConsumerUnregistered(this ILogger logger, string reason);
+    internal static partial void RabbitMqConsumerUnregistered(this ILogger logger, string reason);
 
     [LoggerMessage(EventId = 45, Level = LogLevel.Warning, Message = "RabbitMQ consumer shutdown. --> {Reason}")]
-    public static partial void RabbitMqConsumerShutdown(this ILogger logger, string reason);
+    internal static partial void RabbitMqConsumerShutdown(this ILogger logger, string reason);
 
     [LoggerMessage(EventId = 46, Level = LogLevel.Error, Message = "Kafka client consume error. --> {Reason}")]
-    public static partial void KafkaClientConsumeError(this ILogger logger, string reason);
+    internal static partial void KafkaClientConsumeError(this ILogger logger, string reason);
 
     [LoggerMessage(
         EventId = 47,
         Level = LogLevel.Warning,
         Message = "Kafka client consume exception, retying... --> {Reason}"
     )]
-    public static partial void KafkaClientConsumeRetrying(this ILogger logger, string reason);
+    internal static partial void KafkaClientConsumeRetrying(this ILogger logger, string reason);
 
     [LoggerMessage(EventId = 48, Level = LogLevel.Critical, Message = "Kafka server connection error. --> {Reason}")]
-    public static partial void KafkaServerConnectionError(this ILogger logger, string reason);
+    internal static partial void KafkaServerConnectionError(this ILogger logger, string reason);
 
     [LoggerMessage(
         EventId = 49,
         Level = LogLevel.Error,
         Message = "AzureServiceBus subscriber received an error. --> {Reason}"
     )]
-    public static partial void AzureServiceBusSubscriberReceivedError(this ILogger logger, string reason);
+    internal static partial void AzureServiceBusSubscriberReceivedError(this ILogger logger, string reason);
 
     [LoggerMessage(EventId = 50, Level = LogLevel.Error, Message = "NATS subscriber received an error. --> {Reason}")]
-    public static partial void NatsSubscriberReceivedError(this ILogger logger, string reason);
+    internal static partial void NatsSubscriberReceivedError(this ILogger logger, string reason);
 
     [LoggerMessage(EventId = 51, Level = LogLevel.Error, Message = "NATS server connection error. --> {Reason}")]
-    public static partial void NatsServerConnectionError(this ILogger logger, string reason);
+    internal static partial void NatsServerConnectionError(this ILogger logger, string reason);
 
     [LoggerMessage(
         EventId = 52,
         Level = LogLevel.Error,
         Message = "AmazonSQS subscriber delete inflight message failed, invalid id. --> {Reason}"
     )]
-    public static partial void AmazonSqsInvalidIdFormat(this ILogger logger, string reason);
+    internal static partial void AmazonSqsInvalidIdFormat(this ILogger logger, string reason);
 
     [LoggerMessage(
         EventId = 53,
         Level = LogLevel.Error,
         Message = "AmazonSQS subscriber change message's visibility failed, message isn't in flight. --> {Reason}"
     )]
-    public static partial void AmazonSqsMessageNotInflight(this ILogger logger, string reason);
+    internal static partial void AmazonSqsMessageNotInflight(this ILogger logger, string reason);
 
     [LoggerMessage(EventId = 54, Level = LogLevel.Error, Message = "Redis client consume error. --> {Reason}")]
-    public static partial void RedisClientConsumeError(this ILogger logger, string reason);
+    internal static partial void RedisClientConsumeError(this ILogger logger, string reason);
 
     [LoggerMessage(EventId = 55, Level = LogLevel.Warning, Message = "Transport configuration warning. --> {Reason}")]
-    public static partial void TransportConfigurationWarning(this ILogger logger, string reason);
+    internal static partial void TransportConfigurationWarning(this ILogger logger, string reason);
 
     // Warning, not Error: the broker redelivers an unsettled message and the inbox deduplicates the redelivery, so no
     // message is lost, but repeated failures mean duplicate work and a broker connection worth checking.
@@ -527,7 +535,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Transport could not settle a delivery with the broker; the broker will redeliver it. --> {Reason}"
     )]
-    public static partial void TransportSettlementFailed(this ILogger logger, string reason);
+    internal static partial void TransportSettlementFailed(this ILogger logger, string reason);
 
     [LoggerMessage(
         EventId = 132,
@@ -535,7 +543,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "The transport could not reach the broker and keeps retrying. --> {Reason}"
     )]
-    public static partial void TransportBrokerUnreachable(this ILogger logger, string reason);
+    internal static partial void TransportBrokerUnreachable(this ILogger logger, string reason);
 
     [LoggerMessage(
         EventId = 123,
@@ -543,28 +551,28 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "The transport reached the broker again. --> {Reason}"
     )]
-    public static partial void TransportBrokerReachable(this ILogger logger, string reason);
+    internal static partial void TransportBrokerReachable(this ILogger logger, string reason);
 
     [LoggerMessage(
         EventId = 56,
         Level = LogLevel.Error,
         Message = "Message (Name:{GetName},Consumer:{Consumer}) can not be found subscriber. Ensure a consumer with this identity is registered for the message."
     )]
-    public static partial void SubscriberNotFound(this ILogger logger, string? getName, string? consumer);
+    internal static partial void SubscriberNotFound(this ILogger logger, string? getName, string? consumer);
 
     [LoggerMessage(
         EventId = 57,
         Level = LogLevel.Information,
         Message = "Stored message {StorageId} execution was canceled by shutdown. Persisting for later retry."
     )]
-    public static partial void StoredMessageExecutionCanceled(this ILogger logger, Guid storageId);
+    internal static partial void StoredMessageExecutionCanceled(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 58,
         Level = LogLevel.Warning,
         Message = "Stored message {StorageId} failed with non-retryable exception: {ExceptionType}. Skipping retries."
     )]
-    public static partial void StoredMessageNonRetryableFailure(
+    internal static partial void StoredMessageNonRetryableFailure(
         this ILogger logger,
         Guid storageId,
         string exceptionType
@@ -576,7 +584,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Inbound tenant header was rejected because its length ({Length}) exceeds MessageOptions.TenantIdMaxLength. The consume context will observe a null tenant; investigate the producer if this repeats."
     )]
-    public static partial void TenantIdHeaderRejected(this ILogger logger, int length);
+    internal static partial void TenantIdHeaderRejected(this ILogger logger, int length);
 
     /// <remarks>
     /// This is the only HEADLESS_TENANCY_* event that surfaces the raw tenant identifier. Operators
@@ -589,7 +597,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Debug,
         Message = "Restoring ICurrentTenant from envelope: switching to tenant '{TenantId}' for the consume scope."
     )]
-    public static partial void TenantContextSwitched(this ILogger logger, string tenantId);
+    internal static partial void TenantContextSwitched(this ILogger logger, string tenantId);
 
     [LoggerMessage(
         EventId = 65,
@@ -597,7 +605,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Ambient ICurrentTenant.Id was rejected by tenant propagation middleware because its length ({Length}) exceeds MessageOptions.TenantIdMaxLength or it is whitespace. The publish proceeds without a stamped tenant; investigate the ambient tenant source if this repeats."
     )]
-    public static partial void AmbientTenantPropagationDropped(this ILogger logger, int length);
+    internal static partial void AmbientTenantPropagationDropped(this ILogger logger, int length);
 
     [LoggerMessage(
         EventId = 66,
@@ -605,7 +613,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Skipping OnExhausted: message {StorageId} already terminal"
     )]
-    public static partial void SkippingOnExhaustedAlreadyTerminal(this ILogger logger, Guid storageId);
+    internal static partial void SkippingOnExhaustedAlreadyTerminal(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 67,
@@ -613,7 +621,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "RetryPolicy.OnExhausted callback for message {StorageId} did not complete within {TimeoutSeconds}s. The callback is orphaned; the dispatch loop has resumed."
     )]
-    public static partial void OnExhaustedTimedOut(this ILogger logger, Guid storageId, double timeoutSeconds);
+    internal static partial void OnExhaustedTimedOut(this ILogger logger, Guid storageId, double timeoutSeconds);
 
     [LoggerMessage(
         EventId = 72,
@@ -621,7 +629,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Publish middleware {MiddlewareType} threw after the inner publish completed; suppressing to avoid duplicate publish."
     )]
-    public static partial void PublishPostSuccessMiddlewareFailed(
+    internal static partial void PublishPostSuccessMiddlewareFailed(
         this ILogger logger,
         Exception exception,
         string middlewareType
@@ -633,7 +641,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Consume middleware {MiddlewareType} threw after the inner consumer completed; suppressing to avoid duplicate consume."
     )]
-    public static partial void ConsumePostSuccessMiddlewareFailed(
+    internal static partial void ConsumePostSuccessMiddlewareFailed(
         this ILogger logger,
         Exception exception,
         string middlewareType
@@ -645,7 +653,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "The Polly retry predicate or delay generator threw {ExceptionType} for message {StorageId}. Treating the retry budget as exhausted."
     )]
-    public static partial void RetryStrategyThrew(
+    internal static partial void RetryStrategyThrew(
         this ILogger logger,
         Exception ex,
         Guid storageId,
@@ -658,7 +666,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Publish succeeded after a terminal-Failed write for message {StorageId}; storage state will not be updated. Consumers will observe at-least-once delivery."
     )]
-    public static partial void PublishSucceededButStorageTerminal(this ILogger logger, Guid storageId);
+    internal static partial void PublishSucceededButStorageTerminal(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 4121,
@@ -666,7 +674,11 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Publish succeeded for message {StorageId} but its Succeeded state was not written: the dispatch lease was lost to another claimer or lapsed, or the cause could not be read. The row may be published again; consumers will observe at-least-once delivery. A DispatchTimeout shorter than the publish can cause this."
     )]
-    public static partial void PublishSucceededButLeaseLost(this ILogger logger, Exception? exception, Guid storageId);
+    internal static partial void PublishSucceededButLeaseLost(
+        this ILogger logger,
+        Exception? exception,
+        Guid storageId
+    );
 
     [LoggerMessage(
         EventId = 4122,
@@ -674,7 +686,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Publish succeeded for message {StorageId} but its Succeeded state was not written: the stored row no longer exists."
     )]
-    public static partial void PublishSucceededButStorageRowMissing(this ILogger logger, Guid storageId);
+    internal static partial void PublishSucceededButStorageRowMissing(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 70,
@@ -682,7 +694,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Skipping poisoned-message OnExhausted: message {MessageId} already terminal"
     )]
-    public static partial void SkippingPoisonedOnExhaustedAlreadyTerminal(this ILogger logger, string messageId);
+    internal static partial void SkippingPoisonedOnExhaustedAlreadyTerminal(this ILogger logger, string messageId);
 
     [LoggerMessage(
         EventId = 71,
@@ -690,7 +702,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Skipping Succeeded state write: message {StorageId} already terminal"
     )]
-    public static partial void SkippingSuccessfulAlreadyTerminal(this ILogger logger, Guid storageId);
+    internal static partial void SkippingSuccessfulAlreadyTerminal(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 95,
@@ -698,7 +710,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Debug,
         Message = "RetryPolicy.OnExhausted callback for message {StorageId} was cancelled by host shutdown."
     )]
-    public static partial void OnExhaustedCallbackCancelledAtShutdown(this ILogger logger, Guid storageId);
+    internal static partial void OnExhaustedCallbackCancelledAtShutdown(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 96,
@@ -706,7 +718,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "RetryPolicy.OnExhausted callback for message {StorageId} timed out and is orphaned. Scope-bound services (FailedInfo.ServiceProvider) may become invalid once the dispatch scope disposes; cooperative callbacks should honor the supplied CancellationToken."
     )]
-    public static partial void OnExhaustedCallbackOrphaned(this ILogger logger, Guid storageId);
+    internal static partial void OnExhaustedCallbackOrphaned(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 74,
@@ -714,7 +726,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "Retry-pickup storage call failed for {ConsecutiveFailures} consecutive cycles. Adaptive polling is backing off; investigate storage health."
     )]
-    public static partial void RetryStoragePickupFailureEscalated(
+    internal static partial void RetryStoragePickupFailureEscalated(
         this ILogger logger,
         Exception exception,
         int consecutiveFailures
@@ -726,7 +738,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Critical,
         Message = "Dispatcher '{LoopName}' loop faulted and terminated. The message pipeline cannot be restarted in place; the host has been signalled to stop so a supervisor (Kubernetes, systemd, IIS) can recycle the process."
     )]
-    public static partial void DispatcherLoopFaultedAndTerminated(
+    internal static partial void DispatcherLoopFaultedAndTerminated(
         this ILogger logger,
         Exception exception,
         string loopName
@@ -738,7 +750,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "Dispatcher '{LoopName}' fault path failed to request IHostApplicationLifetime.StopApplication. The original loop fault is preserved; this nested failure is suppressed."
     )]
-    public static partial void DispatcherLoopStopApplicationFailed(
+    internal static partial void DispatcherLoopStopApplicationFailed(
         this ILogger logger,
         Exception exception,
         string loopName
@@ -750,7 +762,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "UseStorageLock is enabled but no real IDistributedLock is registered for messaging (keyed). Coarse-grained mutual exclusion is disabled. Register a real provider via MessagingBuilder.UseDistributedLock(...) (e.g., Headless.DistributedLocks.Redis) or set UseStorageLock = false to silence this warning."
     )]
-    public static partial void UseStorageLockWithNoOpProvider(this ILogger logger);
+    internal static partial void UseStorageLockWithNoOpProvider(this ILogger logger);
 
     [LoggerMessage(
         EventId = 78,
@@ -758,7 +770,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "UseStorageLock is enabled but no real IDistributedLock is registered under messaging's keyed slot — a real provider is registered un-keyed but messaging requires a keyed registration. Wire it through MessagingBuilder.UseDistributedLock(...) so messaging picks it up under its isolated key."
     )]
-    public static partial void UseStorageLockWithNoOpProviderButRealUnkeyed(this ILogger logger);
+    internal static partial void UseStorageLockWithNoOpProviderButRealUnkeyed(this ILogger logger);
 
     [LoggerMessage(
         EventId = 88,
@@ -766,7 +778,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Messaging Coordination membership is not registered. Dead-incarnation retry recovery falls back to the per-row LockedUntil floor; register a Coordination provider to accelerate orphaned retry rows."
     )]
-    public static partial void MessagingRecoveryUsingLockedUntilFloorOnly(this ILogger logger);
+    internal static partial void MessagingRecoveryUsingLockedUntilFloorOnly(this ILogger logger);
 
     [LoggerMessage(
         EventId = 94,
@@ -774,7 +786,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Coordination DeadThreshold ({DeadThreshold}) is below the retry DispatchTimeout ({DispatchTimeout}). A still-alive node that crosses the dead threshold mid-dispatch will be reclaimed and its message re-dispatched (a redundant at-least-once delivery). Set DeadThreshold >= DispatchTimeout to avoid it."
     )]
-    public static partial void MessagingDeadThresholdBelowDispatchTimeout(
+    internal static partial void MessagingDeadThresholdBelowDispatchTimeout(
         this ILogger logger,
         TimeSpan deadThreshold,
         TimeSpan dispatchTimeout
@@ -786,7 +798,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Messaging retry DispatchTimeout ({DispatchTimeout}) exceeds InitialDispatchGrace ({InitialDispatchGrace}) by more than two minutes while ShutdownTimeout is {ShutdownTimeout}. During a crash or when a handler outlives graceful shutdown, retry pickup can remain delayed until LockedUntil expires. Measure the longest valid handler duration before explicitly aligning these values; shortening DispatchTimeout blindly can increase overlapping at-least-once delivery."
     )]
-    public static partial void MessagingDispatchTimeoutMateriallyExceedsInitialGrace(
+    internal static partial void MessagingDispatchTimeoutMateriallyExceedsInitialGrace(
         this ILogger logger,
         TimeSpan dispatchTimeout,
         TimeSpan initialDispatchGrace,
@@ -799,7 +811,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "{RetryKind} retry recovered {ReclaimedRows} orphaned rows from dead owners."
     )]
-    public static partial void MessagingDeadOwnerRowsReclaimed(
+    internal static partial void MessagingDeadOwnerRowsReclaimed(
         this ILogger logger,
         string retryKind,
         int reclaimedRows
@@ -811,7 +823,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "{RetryKind} retry lock lease {LeaseId} for resource {Resource} was observed lost. No new retry pickup starts under this lease; in-flight dispatch remains guarded by per-row LockedUntil."
     )]
-    public static partial void RetryLockLeaseLost(
+    internal static partial void RetryLockLeaseLost(
         this ILogger logger,
         string retryKind,
         string resource,
@@ -824,7 +836,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Acquiring the published-retry lock from the lock store failed. Backing off polling and waiting for the next cycle."
     )]
-    public static partial void PublishedRetryLockAcquireFailed(this ILogger logger, Exception ex);
+    internal static partial void PublishedRetryLockAcquireFailed(this ILogger logger, Exception ex);
 
     [LoggerMessage(
         EventId = 82,
@@ -832,7 +844,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "Acquiring the published-retry lock from the lock store has failed for {ConsecutiveFailures} consecutive cycles. Investigate lock-store health (Redis, SQL, etc.)."
     )]
-    public static partial void PublishedRetryLockAcquireFailureEscalated(
+    internal static partial void PublishedRetryLockAcquireFailureEscalated(
         this ILogger logger,
         Exception ex,
         int consecutiveFailures
@@ -844,7 +856,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Acquiring the received-retry lock from the lock store failed. Backing off polling and waiting for the next cycle."
     )]
-    public static partial void ReceivedRetryLockAcquireFailed(this ILogger logger, Exception ex);
+    internal static partial void ReceivedRetryLockAcquireFailed(this ILogger logger, Exception ex);
 
     [LoggerMessage(
         EventId = 84,
@@ -852,7 +864,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "Acquiring the received-retry lock from the lock store has failed for {ConsecutiveFailures} consecutive cycles. Investigate lock-store health (Redis, SQL, etc.)."
     )]
-    public static partial void ReceivedRetryLockAcquireFailureEscalated(
+    internal static partial void ReceivedRetryLockAcquireFailureEscalated(
         this ILogger logger,
         Exception ex,
         int consecutiveFailures
@@ -864,7 +876,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "Stored published message {StorageId} cannot be dispatched because its lane '{Lane}' has no supported transport. Marked terminal Failed."
     )]
-    public static partial void StoredMessageMissingLaneTransport(
+    internal static partial void StoredMessageMissingLaneTransport(
         this ILogger logger,
         Exception exception,
         Guid storageId,
@@ -877,7 +889,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Message '{MessageName}' arrived with intent header '{WireIntent}' but consumer is registered for intent '{ConsumerIntent}'. Verify that the producer and consumer use matching intent types."
     )]
-    public static partial void ConsumeIntentMismatch(
+    internal static partial void ConsumeIntentMismatch(
         this ILogger logger,
         string messageName,
         string wireIntent,
@@ -890,7 +902,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Message '{MessageName}' arrived with unsupported lane header '{WireLane}' and was rejected before routing."
     )]
-    public static partial void UnsupportedMessageLaneHeader(this ILogger logger, string messageName, string wireLane);
+    internal static partial void UnsupportedMessageLaneHeader(this ILogger logger, string messageName, string wireLane);
 
     [LoggerMessage(
         EventId = 87,
@@ -898,7 +910,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "Messaging processor '{ProcessorType}' failed to stop cleanly. Continuing to drain remaining processors."
     )]
-    public static partial void ProcessorStopFailed(this ILogger logger, Exception exception, string processorType);
+    internal static partial void ProcessorStopFailed(this ILogger logger, Exception exception, string processorType);
 
     [LoggerMessage(
         EventId = 98,
@@ -906,7 +918,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "The transactional inbox attempt for message {MessageId} committed durably but draining its unit of work faulted; the attempt is reported as succeeded and the relay recovers any enlisted rows."
     )]
-    public static partial void InboxPostCommitDrainFaulted(this ILogger logger, Exception exception, Guid messageId);
+    internal static partial void InboxPostCommitDrainFaulted(this ILogger logger, Exception exception, Guid messageId);
 
     [LoggerMessage(
         EventId = 99,
@@ -914,7 +926,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Receive middleware {MiddlewareType} skipped message {MessageId} (name '{MessageName}', consumer '{Consumer}', lane '{Lane}'). Reason: {Reason}"
     )]
-    public static partial void ReceiveMessageSkipped(
+    internal static partial void ReceiveMessageSkipped(
         this ILogger logger,
         string middlewareType,
         string messageId,
@@ -930,7 +942,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Receive middleware {MiddlewareType} rejected message {MessageId} (name '{MessageName}', consumer '{Consumer}', lane '{Lane}'). Reason: {Reason}"
     )]
-    public static partial void ReceiveMessageRejected(
+    internal static partial void ReceiveMessageRejected(
         this ILogger logger,
         Exception? exception,
         string middlewareType,
@@ -947,7 +959,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Debug,
         Message = "Receive of message {MessageId} (name '{MessageName}', consumer '{Consumer}') was cancelled before settlement; the transport will redeliver."
     )]
-    public static partial void ReceiveOutcomeCancelled(
+    internal static partial void ReceiveOutcomeCancelled(
         this ILogger logger,
         string messageId,
         string messageName,
@@ -960,7 +972,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Receive middleware {MiddlewareType} threw after the inner receive completed; suppressing to avoid discarding the accepted delivery."
     )]
-    public static partial void ReceivePostSuccessMiddlewareFailed(
+    internal static partial void ReceivePostSuccessMiddlewareFailed(
         this ILogger logger,
         Exception exception,
         string middlewareType
@@ -972,7 +984,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "Every-instance consumer '{Consumer}' failed on message {MessageId} (name '{MessageName}'); the message is dropped because every-instance delivery has no retry."
     )]
-    public static partial void EveryInstanceConsumerFailed(
+    internal static partial void EveryInstanceConsumerFailed(
         this ILogger logger,
         Exception exception,
         string consumer,
@@ -986,7 +998,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Every-instance subscription '{Subscription}' dropped message {MessageId} (name '{MessageName}') before its consumer ran: {Reason}"
     )]
-    public static partial void EveryInstanceMessageDropped(
+    internal static partial void EveryInstanceMessageDropped(
         this ILogger logger,
         Exception? exception,
         string subscription,
@@ -1001,7 +1013,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "The subscription-established hook of consumer '{Consumer}' failed (generation {Generation}); the subscription keeps receiving."
     )]
-    public static partial void SubscriptionEstablishedHookFailed(
+    internal static partial void SubscriptionEstablishedHookFailed(
         this ILogger logger,
         Exception exception,
         string consumer,
@@ -1014,7 +1026,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "Initializing additional outbox {OutboxName} failed. The host starts without it and retries in the background; its relay is paused until then."
     )]
-    public static partial void OutboxStorageInitFailed(this ILogger logger, Exception exception, string outboxName);
+    internal static partial void OutboxStorageInitFailed(this ILogger logger, Exception exception, string outboxName);
 
     [LoggerMessage(
         EventId = 107,
@@ -1022,7 +1034,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Initializing additional outbox {OutboxName} failed again. Retrying in {RetryDelay}."
     )]
-    public static partial void OutboxStorageInitRetryFailed(
+    internal static partial void OutboxStorageInitRetryFailed(
         this ILogger logger,
         Exception exception,
         string outboxName,
@@ -1035,7 +1047,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Additional outbox {OutboxName} is initialized; its relay resumes."
     )]
-    public static partial void OutboxStorageInitialized(this ILogger logger, string outboxName);
+    internal static partial void OutboxStorageInitialized(this ILogger logger, string outboxName);
 
     [LoggerMessage(
         EventId = 109,
@@ -1043,7 +1055,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "The subscription-established hook of consumer '{Consumer}' did not finish within {Timeout} (generation {Generation}); its token is canceled and the subscription keeps receiving without waiting for it."
     )]
-    public static partial void SubscriptionEstablishedHookTimedOut(
+    internal static partial void SubscriptionEstablishedHookTimedOut(
         this ILogger logger,
         string consumer,
         TimeSpan timeout,
@@ -1056,7 +1068,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "Every-instance subscription '{Subscription}' faulted outside its consumer on message {MessageId} (name '{MessageName}'); the message is committed without retry."
     )]
-    public static partial void EveryInstanceDeliveryFaulted(
+    internal static partial void EveryInstanceDeliveryFaulted(
         this ILogger logger,
         Exception exception,
         string subscription,
@@ -1070,7 +1082,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "A FailWhen rule of the consumer's failure policy threw while classifying {ExceptionType} for message {StorageId}. The failure is treated as matched and the message fails without further retries."
     )]
-    public static partial void FailurePolicyRuleThrew(
+    internal static partial void FailurePolicyRuleThrew(
         this ILogger logger,
         Exception ex,
         Guid storageId,
@@ -1083,7 +1095,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "The reply to request {RequestId} was not sent: its reply address '{ReplyAddress}' is outside the reserved reply namespace."
     )]
-    public static partial void ReplyAddressRefused(this ILogger logger, string? requestId, string? replyAddress);
+    internal static partial void ReplyAddressRefused(this ILogger logger, string? requestId, string? replyAddress);
 
     [LoggerMessage(
         EventId = 113,
@@ -1091,7 +1103,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "The reply to request {RequestId} could not be sent and is not retried."
     )]
-    public static partial void ReplySendFailed(this ILogger logger, Exception exception, string? requestId);
+    internal static partial void ReplySendFailed(this ILogger logger, Exception exception, string? requestId);
 
     [LoggerMessage(
         EventId = 114,
@@ -1099,7 +1111,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Debug,
         Message = "Dropped the reply to request {RequestId}: {DropReason}."
     )]
-    public static partial void ReplyDropped(this ILogger logger, string? requestId, string dropReason);
+    internal static partial void ReplyDropped(this ILogger logger, string? requestId, string dropReason);
 
     [LoggerMessage(
         EventId = 115,
@@ -1107,7 +1119,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Dropped the reply to request {RequestId}: it carries a different tenant than the request was sent under. The call keeps waiting and times out unless a matching reply arrives."
     )]
-    public static partial void ReplyTenantMismatch(this ILogger logger, string? requestId);
+    internal static partial void ReplyTenantMismatch(this ILogger logger, string? requestId);
 
     [LoggerMessage(
         EventId = 116,
@@ -1115,7 +1127,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "The reply listener failed to close cleanly during shutdown."
     )]
-    public static partial void ReplyListenerCloseFailed(this ILogger logger, Exception exception);
+    internal static partial void ReplyListenerCloseFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 117,
@@ -1123,7 +1135,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "The reply to request {RequestId} could not be built, so it is not sent."
     )]
-    public static partial void ReplyBuildFailed(this ILogger logger, Exception exception, string? requestId);
+    internal static partial void ReplyBuildFailed(this ILogger logger, Exception exception, string? requestId);
 
     [LoggerMessage(
         EventId = 118,
@@ -1131,7 +1143,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Debug,
         Message = "Responder '{Consumer}' handled message {MessageId}, which is not a request; its result is discarded."
     )]
-    public static partial void ResponderResultDiscarded(this ILogger logger, string? consumer, string? messageId);
+    internal static partial void ResponderResultDiscarded(this ILogger logger, string? consumer, string? messageId);
 
     [LoggerMessage(
         EventId = 119,
@@ -1139,7 +1151,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Request {MessageId} (name '{MessageName}', consumer '{Consumer}') arrived after its deadline; it is committed and dropped without a reply."
     )]
-    public static partial void RequestExpiredOnReceive(
+    internal static partial void RequestExpiredOnReceive(
         this ILogger logger,
         string? messageId,
         string? messageName,
@@ -1152,7 +1164,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Request {MessageId} (name '{MessageName}') reached consumer '{Consumer}', which does not respond to requests; it is committed and dropped with a no_responder fault."
     )]
-    public static partial void RequestHasNoResponder(
+    internal static partial void RequestHasNoResponder(
         this ILogger logger,
         string? messageId,
         string? messageName,
@@ -1165,7 +1177,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Request stored as {StorageId} passed its deadline before an attempt started; it ends without running the consumer or replying."
     )]
-    public static partial void RequestExpiredBeforeAttempt(this ILogger logger, Guid storageId);
+    internal static partial void RequestExpiredBeforeAttempt(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 122,
@@ -1173,7 +1185,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Consumer succeeded for message {StorageId} but its Succeeded state could not be written; the handler is not run again here and the row is left for the retry pickup once its lease is released or expires."
     )]
-    public static partial void ConsumerSucceededButStateWriteFailed(
+    internal static partial void ConsumerSucceededButStateWriteFailed(
         this ILogger logger,
         Exception exception,
         Guid storageId
@@ -1185,7 +1197,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Message {MessageId} (name '{MessageName}', consumer '{Consumer}', lane '{Lane}') failed before admission, but the inbox already admitted it; the redelivery is committed as a duplicate instead of being stored as poison."
     )]
-    public static partial void AdmittedRedeliveryCommitted(
+    internal static partial void AdmittedRedeliveryCommitted(
         this ILogger logger,
         string messageId,
         string messageName,
@@ -1199,7 +1211,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "Could not check whether the inbox already admitted message {MessageId} (consumer '{Consumer}'), which failed before admission; it is stored as poison."
     )]
-    public static partial void AdmittedInboxLookupFailed(
+    internal static partial void AdmittedInboxLookupFailed(
         this ILogger logger,
         Exception exception,
         string messageId,

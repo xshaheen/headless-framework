@@ -1287,7 +1287,7 @@ internal static partial class AwsBlobStorageLog
         Level = LogLevel.Information,
         Message = "Deleting {FileCount} files under prefix {Prefix}"
     )]
-    public static partial void LogDeletingFiles(this ILogger logger, int fileCount, string? prefix);
+    internal static partial void LogDeletingFiles(this ILogger logger, int fileCount, string? prefix);
 
     [LoggerMessage(
         EventId = 2,
@@ -1295,7 +1295,7 @@ internal static partial class AwsBlobStorageLog
         Level = LogLevel.Trace,
         Message = "Deleted {FileCount} files under prefix {Prefix}"
     )]
-    public static partial void LogDeletedFiles(this ILogger logger, int fileCount, string? prefix);
+    internal static partial void LogDeletedFiles(this ILogger logger, int fileCount, string? prefix);
 
     [LoggerMessage(
         EventId = 3,
@@ -1303,7 +1303,7 @@ internal static partial class AwsBlobStorageLog
         Level = LogLevel.Trace,
         Message = "Finished deleting {FileCount} files under prefix {Prefix}"
     )]
-    public static partial void LogFinishedDeletingFiles(this ILogger logger, int fileCount, string? prefix);
+    internal static partial void LogFinishedDeletingFiles(this ILogger logger, int fileCount, string? prefix);
 
     [LoggerMessage(
         EventId = 4,
@@ -1311,7 +1311,7 @@ internal static partial class AwsBlobStorageLog
         Level = LogLevel.Warning,
         Message = "Move source {Bucket}/{Key} was already gone after its delete faulted; kept the destination copy"
     )]
-    public static partial void LogMoveKeptDestinationSourceGone(
+    internal static partial void LogMoveKeptDestinationSourceGone(
         this ILogger logger,
         Exception exception,
         string bucket,
@@ -1324,7 +1324,7 @@ internal static partial class AwsBlobStorageLog
         Level = LogLevel.Error,
         Message = "Move rollback failed for {Blob}: could not delete the copied blob; a duplicate may remain"
     )]
-    public static partial void LogMoveRollbackFailed(this ILogger logger, Exception exception, string blob);
+    internal static partial void LogMoveRollbackFailed(this ILogger logger, Exception exception, string blob);
 
     [LoggerMessage(
         EventId = 6,
@@ -1332,7 +1332,7 @@ internal static partial class AwsBlobStorageLog
         Level = LogLevel.Warning,
         Message = "Could not verify move source {Bucket}/{Key} after its delete faulted; skipping the destination rollback (both copies may remain)"
     )]
-    public static partial void LogMoveSourceCheckFailed(
+    internal static partial void LogMoveSourceCheckFailed(
         this ILogger logger,
         Exception exception,
         string bucket,
@@ -1345,7 +1345,7 @@ internal static partial class AwsBlobStorageLog
         Level = LogLevel.Warning,
         Message = "Failed to abort the multipart upload of {Bucket}/{Key}; incomplete parts may remain billed until the bucket's abort rules collect them"
     )]
-    public static partial void LogMultipartAbortFailed(
+    internal static partial void LogMultipartAbortFailed(
         this ILogger logger,
         Exception exception,
         string bucket,

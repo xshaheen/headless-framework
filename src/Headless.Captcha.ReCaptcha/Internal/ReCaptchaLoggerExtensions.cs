@@ -13,7 +13,7 @@ internal static partial class ReCaptchaLoggerExtensions
         Level = LogLevel.Information,
         Message = "[reCAPTCHA] V2 validation failed {Response}"
     )]
-    public static partial void LogReCaptchaFailure(
+    internal static partial void LogReCaptchaFailure(
         this ILogger logger,
         [LogProperties] ReCaptchaSiteVerifyV2Response? response
     );
@@ -24,7 +24,7 @@ internal static partial class ReCaptchaLoggerExtensions
         Level = LogLevel.Information,
         Message = "[reCAPTCHA] V3 validation failed {Response}"
     )]
-    public static partial void LogReCaptchaFailure(
+    internal static partial void LogReCaptchaFailure(
         this ILogger logger,
         [LogProperties] ReCaptchaSiteVerifyV3Response? response
     );
@@ -35,5 +35,9 @@ internal static partial class ReCaptchaLoggerExtensions
         Level = LogLevel.Warning,
         Message = "[reCAPTCHA] siteverify HTTP request failed with status code {StatusCode} and response {Response}"
     )]
-    public static partial void LogReCaptchaHttpFailure(this ILogger logger, HttpStatusCode statusCode, string response);
+    internal static partial void LogReCaptchaHttpFailure(
+        this ILogger logger,
+        HttpStatusCode statusCode,
+        string response
+    );
 }

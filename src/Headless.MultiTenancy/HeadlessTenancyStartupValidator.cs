@@ -117,7 +117,11 @@ internal static partial class HeadlessTenancyStartupValidatorLogger
         Level = LogLevel.Error,
         Message = "Headless tenancy validator {ValidatorType} threw during Validate; raising synthetic VALIDATOR_THREW diagnostic."
     )]
-    public static partial void LogTenancyValidatorThrew(this ILogger logger, Exception exception, string validatorType);
+    internal static partial void LogTenancyValidatorThrew(
+        this ILogger logger,
+        Exception exception,
+        string validatorType
+    );
 
     [LoggerMessage(
         EventId = 1,
@@ -125,7 +129,7 @@ internal static partial class HeadlessTenancyStartupValidatorLogger
         Level = LogLevel.Information,
         Message = "Headless tenancy diagnostic ({Code}) on seam {Seam}: {DiagnosticMessage}"
     )]
-    public static partial void LogTenancyDiagnosticInformation(
+    internal static partial void LogTenancyDiagnosticInformation(
         this ILogger logger,
         string code,
         string seam,
@@ -138,7 +142,7 @@ internal static partial class HeadlessTenancyStartupValidatorLogger
         Level = LogLevel.Warning,
         Message = "Headless tenancy diagnostic ({Code}) on seam {Seam}: {DiagnosticMessage}"
     )]
-    public static partial void LogTenancyDiagnosticWarning(
+    internal static partial void LogTenancyDiagnosticWarning(
         this ILogger logger,
         string code,
         string seam,
@@ -151,7 +155,7 @@ internal static partial class HeadlessTenancyStartupValidatorLogger
         Level = LogLevel.Error,
         Message = "Headless tenancy diagnostic ({Code}) on seam {Seam}: {DiagnosticMessage}"
     )]
-    public static partial void LogTenancyDiagnosticError(
+    internal static partial void LogTenancyDiagnosticError(
         this ILogger logger,
         string code,
         string seam,

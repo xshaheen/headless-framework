@@ -186,7 +186,7 @@ internal static partial class ReplyListenerSupervisorLog
         Level = LogLevel.Debug,
         Message = "{Transport} reply listener is receiving on reply address '{ReplyAddress}'."
     )]
-    public static partial void ReplyListenerReady(this ILogger logger, string transport, string replyAddress);
+    internal static partial void ReplyListenerReady(this ILogger logger, string transport, string replyAddress);
 
     [LoggerMessage(
         EventId = 4118,
@@ -194,7 +194,7 @@ internal static partial class ReplyListenerSupervisorLog
         Level = LogLevel.Warning,
         Message = "{Transport} reply channel '{ReplyAddress}' ended ({Reason}); the listener opens it again in {RetryDelay}, and a reply published meanwhile is lost."
     )]
-    public static partial void ReplyListenerLost(
+    internal static partial void ReplyListenerLost(
         this ILogger logger,
         string transport,
         string? replyAddress,
@@ -208,7 +208,7 @@ internal static partial class ReplyListenerSupervisorLog
         Level = LogLevel.Error,
         Message = "{Transport} reply listener failed to open or serve its reply channel; retrying in {RetryDelay}."
     )]
-    public static partial void ReplyListenerFailed(
+    internal static partial void ReplyListenerFailed(
         this ILogger logger,
         Exception exception,
         string transport,

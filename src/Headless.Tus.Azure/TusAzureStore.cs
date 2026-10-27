@@ -333,10 +333,10 @@ internal static partial class TusAzureStoreLog
         Level = LogLevel.Information,
         Message = "Initialized Azure Blob container: {ContainerName}"
     )]
-    public static partial void BlobContainerInitialized(this ILogger logger, string containerName);
+    internal static partial void BlobContainerInitialized(this ILogger logger, string containerName);
 
     [LoggerMessage(EventId = 3216, Level = LogLevel.Error, Message = "Failed to initialize container: {ContainerName}")]
-    public static partial void BlobContainerInitializationFailed(
+    internal static partial void BlobContainerInitializationFailed(
         this ILogger logger,
         Exception ex,
         string containerName
@@ -347,5 +347,5 @@ internal static partial class TusAzureStoreLog
         Level = LogLevel.Warning,
         Message = "Rejected a write to file {FileId}: the blob changed since this request read it, so another request wrote it concurrently"
     )]
-    public static partial void StaleWriteRejected(this ILogger logger, string fileId);
+    internal static partial void StaleWriteRejected(this ILogger logger, string fileId);
 }

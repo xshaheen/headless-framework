@@ -12,7 +12,7 @@ internal static partial class DashboardLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Calling remote endpoint via gateway proxy"
     )]
-    public static partial void LogCallingRemoteEndpoint(this ILogger logger);
+    internal static partial void LogCallingRemoteEndpoint(this ILogger logger);
 
     [LoggerMessage(
         EventId = 2,
@@ -20,5 +20,5 @@ internal static partial class DashboardLoggerExtensions
         Level = LogLevel.Error,
         Message = "Error invoking downstream node"
     )]
-    public static partial void LogErrorInvokingDownstreamNode(this ILogger logger, Exception exception);
+    internal static partial void LogErrorInvokingDownstreamNode(this ILogger logger, Exception exception);
 }

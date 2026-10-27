@@ -444,7 +444,7 @@ internal static partial class TenantCatalogServiceLogger
         Level = LogLevel.Warning,
         Message = "Tenant catalog cache read of {CacheItemType} faulted; degrading to a cache miss and falling through to the store."
     )]
-    public static partial void LogTenantCatalogCacheReadFaultedDegradingToMiss(
+    internal static partial void LogTenantCatalogCacheReadFaultedDegradingToMiss(
         this ILogger logger,
         Exception exception,
         string cacheItemType
@@ -456,7 +456,7 @@ internal static partial class TenantCatalogServiceLogger
         Level = LogLevel.Warning,
         Message = "Tenant catalog cache write of {CacheItemType} faulted; the resolved outcome is unaffected."
     )]
-    public static partial void LogTenantCatalogCacheWriteFaulted(
+    internal static partial void LogTenantCatalogCacheWriteFaulted(
         this ILogger logger,
         Exception exception,
         string cacheItemType

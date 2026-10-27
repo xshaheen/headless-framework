@@ -13,7 +13,7 @@ internal static partial class CequensLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Failed to get authentication token from Cequens API"
     )]
-    public static partial void LogFailedToGetToken(this ILogger logger);
+    internal static partial void LogFailedToGetToken(this ILogger logger);
 
     [LoggerMessage(
         EventId = 2,
@@ -21,7 +21,7 @@ internal static partial class CequensLoggerExtensions
         Level = LogLevel.Information,
         Message = "SMS sent successfully to {DestinationCount} destination(s), status: {StatusCode}"
     )]
-    public static partial void LogSmsSentSuccessfully(
+    internal static partial void LogSmsSentSuccessfully(
         this ILogger logger,
         int destinationCount,
         HttpStatusCode statusCode
@@ -33,7 +33,11 @@ internal static partial class CequensLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Failed to send SMS to {DestinationCount} destination(s), status: {StatusCode}"
     )]
-    public static partial void LogFailedToSendSms(this ILogger logger, int destinationCount, HttpStatusCode statusCode);
+    internal static partial void LogFailedToSendSms(
+        this ILogger logger,
+        int destinationCount,
+        HttpStatusCode statusCode
+    );
 
     [LoggerMessage(
         EventId = 4,
@@ -41,7 +45,7 @@ internal static partial class CequensLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Failed to get authentication token, status: {StatusCode}"
     )]
-    public static partial void LogFailedToGetTokenWithStatusCode(this ILogger logger, HttpStatusCode statusCode);
+    internal static partial void LogFailedToGetTokenWithStatusCode(this ILogger logger, HttpStatusCode statusCode);
 
     [LoggerMessage(
         EventId = 5,
@@ -49,7 +53,7 @@ internal static partial class CequensLoggerExtensions
         Level = LogLevel.Error,
         Message = "Failed to send SMS using Cequens API to {DestinationCount} destination(s)"
     )]
-    public static partial void LogSmsSendException(this ILogger logger, Exception exception, int destinationCount);
+    internal static partial void LogSmsSendException(this ILogger logger, Exception exception, int destinationCount);
 
     [LoggerMessage(
         EventId = 6,
@@ -57,5 +61,5 @@ internal static partial class CequensLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Failed to get authentication token from Cequens API"
     )]
-    public static partial void LogFailedToGetTokenException(this ILogger logger, Exception exception);
+    internal static partial void LogFailedToGetTokenException(this ILogger logger, Exception exception);
 }

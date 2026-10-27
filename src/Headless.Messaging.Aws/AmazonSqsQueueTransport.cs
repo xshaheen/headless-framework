@@ -177,5 +177,5 @@ internal static partial class AmazonSqsQueueTransportLog
         Level = LogLevel.Debug,
         Message = "SQS message [{QueueName}] has been enqueued."
     )]
-    public static partial void LogSqsMessageEnqueued(this ILogger logger, string queueName);
+    internal static partial void LogSqsMessageEnqueued(this ILogger logger, string queueName);
 }

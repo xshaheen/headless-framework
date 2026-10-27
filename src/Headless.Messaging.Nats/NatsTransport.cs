@@ -252,7 +252,7 @@ internal static partial class NatsTransportLog
         Level = LogLevel.Debug,
         Message = "NATS stream message [{Name}] published, seq={Seq}."
     )]
-    public static partial void LogNatsStreamMessagePublished(this ILogger logger, string name, ulong seq);
+    internal static partial void LogNatsStreamMessagePublished(this ILogger logger, string name, ulong seq);
 
     [LoggerMessage(
         EventId = 2,
@@ -260,7 +260,7 @@ internal static partial class NatsTransportLog
         Level = LogLevel.Warning,
         Message = "NATS SubjectShard '{Shard}' is invalid and will be ignored: {Reason}. Falling back to base subject."
     )]
-    public static partial void LogInvalidSubjectShard(this ILogger logger, string shard, string reason);
+    internal static partial void LogInvalidSubjectShard(this ILogger logger, string shard, string reason);
 
     [LoggerMessage(
         EventId = 17,
@@ -271,5 +271,5 @@ internal static partial class NatsTransportLog
             + "starts at new messages. Start Bus consumers before publishers, or send messages that must wait for a "
             + "consumer on the Queue lane."
     )]
-    public static partial void LogNatsInterestStreamWithoutConsumer(this ILogger logger, string stream);
+    internal static partial void LogNatsInterestStreamWithoutConsumer(this ILogger logger, string stream);
 }

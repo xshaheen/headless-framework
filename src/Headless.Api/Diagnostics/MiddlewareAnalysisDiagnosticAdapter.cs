@@ -102,7 +102,7 @@ public sealed partial class MiddlewareAnalysisDiagnosticAdapter(ILogger logger)
             Message = "Middleware(Starting): '{Name}' Request Path: '{Path}' TimeStamp: {Timestamp}",
             SkipEnabledCheck = false
         )]
-        public static partial void MiddlewareStarting(ILogger logger, long timestamp, string name, PathString path);
+        internal static partial void MiddlewareStarting(ILogger logger, long timestamp, string name, PathString path);
 
         [LoggerMessage(
             EventId = 101,
@@ -111,7 +111,7 @@ public sealed partial class MiddlewareAnalysisDiagnosticAdapter(ILogger logger)
             Message = "Middleware(Finished): '{Name}' Duration: {Duration} Status: '{StatusCode}' TimeStamp: {Timestamp}",
             SkipEnabledCheck = false
         )]
-        public static partial void MiddlewareFinished(
+        internal static partial void MiddlewareFinished(
             ILogger logger,
             long timestamp,
             string name,
@@ -126,7 +126,7 @@ public sealed partial class MiddlewareAnalysisDiagnosticAdapter(ILogger logger)
             Message = "Middleware(Exception): '{Name}' Duration: {Duration} '{Message}' TimeStamp: {Timestamp}",
             SkipEnabledCheck = false
         )]
-        public static partial void MiddlewareException(
+        internal static partial void MiddlewareException(
             ILogger logger,
             Exception exception,
             long timestamp,

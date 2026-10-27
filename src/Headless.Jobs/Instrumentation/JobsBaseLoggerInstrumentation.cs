@@ -123,14 +123,14 @@ internal static partial class JobsBaseLoggerInstrumentationLog
         Level = LogLevel.Information,
         Message = "Jobs Job started: {JobType} - {Function} ({JobId})"
     )]
-    public static partial void JobStarted(this ILogger logger, string jobType, string function, Guid jobId);
+    internal static partial void JobStarted(this ILogger logger, string jobType, string function, Guid jobId);
 
     [LoggerMessage(
         EventId = 1002,
         Level = LogLevel.Information,
         Message = "Jobs Job completed: {Function} ({JobId}) in {ExecutionTime}ms - Success: {Success}"
     )]
-    public static partial void JobCompleted(
+    internal static partial void JobCompleted(
         this ILogger logger,
         string function,
         Guid jobId,
@@ -143,14 +143,14 @@ internal static partial class JobsBaseLoggerInstrumentationLog
         Level = LogLevel.Warning,
         Message = "Jobs Job cancelled: {Function} ({JobId}) - {Reason}"
     )]
-    public static partial void JobCancelled(this ILogger logger, string function, Guid jobId, string reason);
+    internal static partial void JobCancelled(this ILogger logger, string function, Guid jobId, string reason);
 
     [LoggerMessage(
         EventId = 1004,
         Level = LogLevel.Information,
         Message = "Jobs Job skipped: {Function} ({JobId}) - {Reason}"
     )]
-    public static partial void JobSkipped(this ILogger logger, string function, Guid jobId, string reason);
+    internal static partial void JobSkipped(this ILogger logger, string function, Guid jobId, string reason);
 
     // MissedCount and CountIsLowerBound are emitted as a PAIR on purpose: "1000 missed" and "at least 1000 missed"
     // call for different operator responses, and nothing downstream can recover the distinction once it is lost.
@@ -161,7 +161,7 @@ internal static partial class JobsBaseLoggerInstrumentationLog
             + "missed occurrence(s) (lower bound: {CountIsLowerBound}) spanning {EarliestMissedUtc:O} to "
             + "{LatestMissedUtc:O}; {SkippedOccurrenceCount} pending occurrence(s) retired."
     )]
-    public static partial void CronRecoveryApplied(
+    internal static partial void CronRecoveryApplied(
         this ILogger logger,
         Guid cronJobId,
         string function,
@@ -179,7 +179,7 @@ internal static partial class JobsBaseLoggerInstrumentationLog
         Message = "Cron {Function} ({CronJobId}) occurrence {OccurrenceId} at {ExecutionTimeUtc:O} skipped by overlap "
             + "policy: an earlier occurrence was still unfinished (recovery run: {IsRecoveryRun})."
     )]
-    public static partial void CronOccurrenceSkippedForOverlap(
+    internal static partial void CronOccurrenceSkippedForOverlap(
         this ILogger logger,
         Guid cronJobId,
         string function,
@@ -196,7 +196,7 @@ internal static partial class JobsBaseLoggerInstrumentationLog
             + "{PreviousNextDueUtc:O} were rebased without replay at anchor {RebaseAnchorUtc:O} to "
             + "{RebasedNextDueUtc:O}."
     )]
-    public static partial void CronFingerprintRebased(
+    internal static partial void CronFingerprintRebased(
         this ILogger logger,
         Guid cronJobId,
         string function,
@@ -213,21 +213,21 @@ internal static partial class JobsBaseLoggerInstrumentationLog
         Level = LogLevel.Information,
         Message = "Jobs start seeding data: {JobType} ({EnvironmentName})"
     )]
-    public static partial void SeedingDataStarted(this ILogger logger, string jobType, string environmentName);
+    internal static partial void SeedingDataStarted(this ILogger logger, string jobType, string environmentName);
 
     [LoggerMessage(
         EventId = 1006,
         Level = LogLevel.Information,
         Message = "Jobs completed seeding data: {JobType} ({EnvironmentName})"
     )]
-    public static partial void SeedingDataCompleted(this ILogger logger, string jobType, string environmentName);
+    internal static partial void SeedingDataCompleted(this ILogger logger, string jobType, string environmentName);
 
     [LoggerMessage(
         EventId = 1007,
         Level = LogLevel.Error,
         Message = "Jobs Job failed: {Function} ({JobId}) - Retry {RetryCount} - {Error}"
     )]
-    public static partial void JobFailed(
+    internal static partial void JobFailed(
         this ILogger logger,
         Exception exception,
         string function,
@@ -241,7 +241,7 @@ internal static partial class JobsBaseLoggerInstrumentationLog
         Level = LogLevel.Error,
         Message = "Failed to deserialize request to {RequestType} - {JobId} - {JobType}"
     )]
-    public static partial void RequestDeserializationFailed(
+    internal static partial void RequestDeserializationFailed(
         this ILogger logger,
         Exception exception,
         string requestType,

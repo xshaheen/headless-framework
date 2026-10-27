@@ -68,5 +68,5 @@ internal sealed class RedisTransport(
 internal static partial class RedisTransportLog
 {
     [LoggerMessage(EventId = 3003, Level = LogLevel.Debug, Message = "Redis message [{Message}] has been published.")]
-    public static partial void MessagePublished(this ILogger logger, string message);
+    internal static partial void MessagePublished(this ILogger logger, string message);
 }

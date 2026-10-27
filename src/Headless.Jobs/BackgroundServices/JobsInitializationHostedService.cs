@@ -145,7 +145,7 @@ internal static partial class JobsInitializationLog
         Message = "Cron fingerprint activation gate completed: scanned={Scanned}, rebased={Rebased}, "
             + "deferred={Deferred}, lostFence={LostFence}."
     )]
-    public static partial void CronFingerprintActivationCompleted(
+    internal static partial void CronFingerprintActivationCompleted(
         this ILogger logger,
         int scanned,
         int rebased,
@@ -162,7 +162,7 @@ internal static partial class JobsInitializationLog
             + "node speculatively re-claim a still-owned Idle/Queued job. Set LeaseDuration >= FallbackIntervalChecker "
             + "to avoid redundant pickups."
     )]
-    public static partial void LeaseDurationShorterThanFallback(
+    internal static partial void LeaseDurationShorterThanFallback(
         this ILogger logger,
         TimeSpan leaseDuration,
         TimeSpan fallbackInterval
@@ -176,7 +176,7 @@ internal static partial class JobsInitializationLog
             + JobsKeys.CronSeedMigrationResource
             + "' lock was still held after {Wait}, so the seed did not run."
     )]
-    public static partial void CronSeedMigrationLockTimedOut(this ILogger logger, TimeSpan wait);
+    internal static partial void CronSeedMigrationLockTimedOut(this ILogger logger, TimeSpan wait);
 
     [LoggerMessage(
         EventId = 3,
@@ -187,5 +187,5 @@ internal static partial class JobsInitializationLog
             + JobsKeys.CronSeedMigrationResource
             + "' lock failed, so the seed fails. Fix the lock store, then run the seed again."
     )]
-    public static partial void CronSeedMigrationLockAcquireFailed(this ILogger logger, Exception exception);
+    internal static partial void CronSeedMigrationLockAcquireFailed(this ILogger logger, Exception exception);
 }

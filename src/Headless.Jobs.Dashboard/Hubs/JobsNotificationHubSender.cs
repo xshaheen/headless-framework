@@ -244,7 +244,7 @@ internal static partial class JobsNotificationHubSenderLogs
         Level = LogLevel.Warning,
         Message = "Jobs dashboard SignalR notification {MethodName} failed."
     )]
-    public static partial void SignalRNotificationSendFailed(
+    internal static partial void SignalRNotificationSendFailed(
         this ILogger logger,
         Exception exception,
         string methodName

@@ -180,12 +180,12 @@ internal static partial class RabbitMqTransportLog
         Level = LogLevel.Information,
         Message = "Headless message '{Name}' published, internal id '{Id}'"
     )]
-    public static partial void MessagePublished(this ILogger logger, string name, string? id);
+    internal static partial void MessagePublished(this ILogger logger, string name, string? id);
 
     [LoggerMessage(
         EventId = 3007,
         Level = LogLevel.Warning,
         Message = "Channel state inconsistency detected: channel is reported as open, but its underlying connection is closed. Forcing channel closure."
     )]
-    public static partial void ChannelStateInconsistencyDetected(this ILogger logger);
+    internal static partial void ChannelStateInconsistencyDetected(this ILogger logger);
 }

@@ -162,7 +162,7 @@ internal static partial class MailkitEmailSenderLoggerExtensions
         Level = LogLevel.Warning,
         Message = "SMTP command failed: {StatusCode}"
     )]
-    public static partial void LogSmtpCommandFailed(
+    internal static partial void LogSmtpCommandFailed(
         this ILogger logger,
         Exception exception,
         MailKit.Net.Smtp.SmtpStatusCode statusCode
@@ -174,7 +174,7 @@ internal static partial class MailkitEmailSenderLoggerExtensions
         Level = LogLevel.Error,
         Message = "SMTP protocol error"
     )]
-    public static partial void LogSmtpProtocolError(this ILogger logger, Exception exception);
+    internal static partial void LogSmtpProtocolError(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 3,
@@ -182,7 +182,7 @@ internal static partial class MailkitEmailSenderLoggerExtensions
         Level = LogLevel.Critical,
         Message = "SMTP authentication failed"
     )]
-    public static partial void LogSmtpAuthenticationFailed(this ILogger logger, Exception exception);
+    internal static partial void LogSmtpAuthenticationFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 4,
@@ -190,5 +190,5 @@ internal static partial class MailkitEmailSenderLoggerExtensions
         Level = LogLevel.Error,
         Message = "Failed to send email via SMTP. ExceptionType={ExceptionType}"
     )]
-    public static partial void LogSmtpSendFailed(this ILogger logger, string exceptionType);
+    internal static partial void LogSmtpSendFailed(this ILogger logger, string exceptionType);
 }

@@ -274,7 +274,7 @@ internal static partial class FluentValidationSchemaTransformerLog
         Level = LogLevel.Error,
         Message = "Applying IncludeRules for type '{Type}' fails"
     )]
-    public static partial void LogIncludeRulesFailed(this ILogger logger, Exception exception, string type);
+    internal static partial void LogIncludeRulesFailed(this ILogger logger, Exception exception, string type);
 
     [LoggerMessage(
         EventId = 2,
@@ -282,7 +282,7 @@ internal static partial class FluentValidationSchemaTransformerLog
         Level = LogLevel.Debug,
         Message = "Rule '{RuleName}' applied for property '{TypeName}.{Key}'"
     )]
-    public static partial void LogRuleApplied(this ILogger logger, string ruleName, string typeName, string key);
+    internal static partial void LogRuleApplied(this ILogger logger, string ruleName, string typeName, string key);
 
     [LoggerMessage(
         EventId = 3,
@@ -290,7 +290,7 @@ internal static partial class FluentValidationSchemaTransformerLog
         Level = LogLevel.Error,
         Message = "Error on apply rule '{RuleName}' for property '{TypeName}.{Key}'"
     )]
-    public static partial void LogRuleApplyError(
+    internal static partial void LogRuleApplyError(
         this ILogger logger,
         Exception exception,
         string ruleName,
@@ -304,7 +304,7 @@ internal static partial class FluentValidationSchemaTransformerLog
         Level = LogLevel.Debug,
         Message = "Applying FluentValidation rules to the OpenAPI schema of type '{Type}'"
     )]
-    public static partial void LogApplyingRules(this ILogger logger, string type);
+    internal static partial void LogApplyingRules(this ILogger logger, string type);
 
     [LoggerMessage(
         EventId = 5,
@@ -312,5 +312,5 @@ internal static partial class FluentValidationSchemaTransformerLog
         Level = LogLevel.Warning,
         Message = "GetValidator for type '{TypeName}' fails"
     )]
-    public static partial void LogGetValidatorFailed(this ILogger logger, Exception exception, string typeName);
+    internal static partial void LogGetValidatorFailed(this ILogger logger, Exception exception, string typeName);
 }

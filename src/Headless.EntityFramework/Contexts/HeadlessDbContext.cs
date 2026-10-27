@@ -255,5 +255,5 @@ internal static partial class HeadlessDbContextLog
         Level = LogLevel.Warning,
         Message = "Owned service-scope disposal failed; the primary disposal exception (if any) takes precedence and is rethrown to the caller."
     )]
-    public static partial void LogOwnedScopeDisposeFailed(this ILogger logger, Exception exception);
+    internal static partial void LogOwnedScopeDisposeFailed(this ILogger logger, Exception exception);
 }

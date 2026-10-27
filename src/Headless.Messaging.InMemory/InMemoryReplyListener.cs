@@ -106,5 +106,5 @@ internal static partial class InMemoryReplyListenerLog
         Level = LogLevel.Error,
         Message = "The reply handler of in-memory reply listener '{ReplyAddress}' threw; the listener keeps receiving."
     )]
-    public static partial void ReplyHandlerFailed(this ILogger logger, Exception exception, string replyAddress);
+    internal static partial void ReplyHandlerFailed(this ILogger logger, Exception exception, string replyAddress);
 }

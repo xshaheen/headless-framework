@@ -156,5 +156,9 @@ internal static partial class CouchbaseClustersProviderLoggerExtensions
         Level = LogLevel.Error,
         Message = "Failed to connect to the cluster {ClusterKey}"
     )]
-    public static partial void LogFailedToConnectToCluster(this ILogger logger, Exception exception, string clusterKey);
+    internal static partial void LogFailedToConnectToCluster(
+        this ILogger logger,
+        Exception exception,
+        string clusterKey
+    );
 }

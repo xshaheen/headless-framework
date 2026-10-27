@@ -498,16 +498,16 @@ internal static partial class TusAzureStoreChecksumLog
         Level = LogLevel.Error,
         Message = "File info not found for {FileId} during checksum verification"
     )]
-    public static partial void ChecksumVerificationFileInfoNotFound(this ILogger logger, string fileId);
+    internal static partial void ChecksumVerificationFileInfoNotFound(this ILogger logger, string fileId);
 
     [LoggerMessage(
         EventId = 3231,
         Level = LogLevel.Debug,
         Message = "Checksum verification passed for file {FileId} using algorithm {Algorithm}"
     )]
-    public static partial void ChecksumVerificationPassed(this ILogger logger, string fileId, string algorithm);
+    internal static partial void ChecksumVerificationPassed(this ILogger logger, string fileId, string algorithm);
 
-    public static void ChecksumVerificationFailed(
+    internal static void ChecksumVerificationFailed(
         this ILogger logger,
         string fileId,
         string algorithm,
@@ -547,7 +547,7 @@ internal static partial class TusAzureStoreChecksumLog
         Level = LogLevel.Error,
         Message = "Failed to verify checksum for file {FileId} using algorithm {Algorithm}"
     )]
-    public static partial void ChecksumVerificationFailedUnexpectedly(
+    internal static partial void ChecksumVerificationFailedUnexpectedly(
         this ILogger logger,
         Exception exception,
         string fileId,
@@ -559,24 +559,24 @@ internal static partial class TusAzureStoreChecksumLog
         Level = LogLevel.Error,
         Message = "Pre-calculated checksum missing for file {FileId} - this indicates a bug or corrupted metadata during upload"
     )]
-    public static partial void PreCalculatedChecksumMissing(this ILogger logger, string fileId);
+    internal static partial void PreCalculatedChecksumMissing(this ILogger logger, string fileId);
 
     [LoggerMessage(EventId = 3235, Level = LogLevel.Debug, Message = "Using pre-calculated checksum for file {FileId}")]
-    public static partial void UsingPreCalculatedChecksum(this ILogger logger, string fileId);
+    internal static partial void UsingPreCalculatedChecksum(this ILogger logger, string fileId);
 
     [LoggerMessage(
         EventId = 3236,
         Level = LogLevel.Error,
         Message = "Invalid stored checksum format for file {FileId} - metadata is corrupted"
     )]
-    public static partial void InvalidStoredChecksumFormat(this ILogger logger, Exception exception, string fileId);
+    internal static partial void InvalidStoredChecksumFormat(this ILogger logger, Exception exception, string fileId);
 
     [LoggerMessage(
         EventId = 3245,
         Level = LogLevel.Warning,
         Message = "Checksum algorithm mismatch for file {FileId}: client requested {Requested}, data was staged with {Stored}"
     )]
-    public static partial void ChecksumAlgorithmMismatch(
+    internal static partial void ChecksumAlgorithmMismatch(
         this ILogger logger,
         string fileId,
         string requested,
@@ -588,35 +588,35 @@ internal static partial class TusAzureStoreChecksumLog
         Level = LogLevel.Debug,
         Message = "Committed last chunk for file {FileId}: {TotalBlocks} blocks (atomic with metadata update)"
     )]
-    public static partial void LastChunkCommitted(this ILogger logger, string fileId, int totalBlocks);
+    internal static partial void LastChunkCommitted(this ILogger logger, string fileId, int totalBlocks);
 
     [LoggerMessage(
         EventId = 3246,
         Level = LogLevel.Warning,
         Message = "Discarding last chunk of file {FileId}: checksum-trailer was faulty or the client disconnected before sending it"
     )]
-    public static partial void TrailerFallbackChunkDiscarded(this ILogger logger, string fileId);
+    internal static partial void TrailerFallbackChunkDiscarded(this ILogger logger, string fileId);
 
     [LoggerMessage(
         EventId = 3247,
         Level = LogLevel.Warning,
         Message = "Rolled back file {FileId} to offset {ChunkStartOffset} after checksum failure"
     )]
-    public static partial void LastChunkRolledBack(this ILogger logger, string fileId, long chunkStartOffset);
+    internal static partial void LastChunkRolledBack(this ILogger logger, string fileId, long chunkStartOffset);
 
     [LoggerMessage(
         EventId = 3248,
         Level = LogLevel.Error,
         Message = "No verifiable chunk for file {FileId}: no pre-computed digest and no recorded chunk offset"
     )]
-    public static partial void NoVerifiableChunk(this ILogger logger, string fileId);
+    internal static partial void NoVerifiableChunk(this ILogger logger, string fileId);
 
     [LoggerMessage(
         EventId = 3249,
         Level = LogLevel.Error,
         Message = "Last-chunk state for file {FileId} is corrupted: recorded chunk offset {ChunkStartOffset} does not align with committed content ({CommittedLength})"
     )]
-    public static partial void LastChunkStateCorrupted(
+    internal static partial void LastChunkStateCorrupted(
         this ILogger logger,
         string fileId,
         long chunkStartOffset,
@@ -624,5 +624,5 @@ internal static partial class TusAzureStoreChecksumLog
     );
 
     [LoggerMessage(EventId = 3238, Level = LogLevel.Error, Message = "Failed to commit last chunk for file {FileId}")]
-    public static partial void CommitLastChunkFailed(this ILogger logger, Exception exception, string fileId);
+    internal static partial void CommitLastChunkFailed(this ILogger logger, Exception exception, string fileId);
 }

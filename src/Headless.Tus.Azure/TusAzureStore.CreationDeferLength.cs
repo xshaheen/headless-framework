@@ -60,8 +60,8 @@ internal static partial class TusAzureStoreCreationDeferLengthLog
         Level = LogLevel.Debug,
         Message = "Set upload length for file {FileId} to {UploadLength}"
     )]
-    public static partial void UploadLengthSet(this ILogger logger, string fileId, long uploadLength);
+    internal static partial void UploadLengthSet(this ILogger logger, string fileId, long uploadLength);
 
     [LoggerMessage(EventId = 3203, Level = LogLevel.Error, Message = "Failed to set upload length for file {FileId}")]
-    public static partial void UploadLengthSetFailed(this ILogger logger, Exception e, string fileId);
+    internal static partial void UploadLengthSetFailed(this ILogger logger, Exception e, string fileId);
 }

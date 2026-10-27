@@ -98,12 +98,12 @@ internal static partial class TusAzureStoreCreationLog
         Level = LogLevel.Information,
         Message = "Created file {FileId} with upload length {UploadLength}"
     )]
-    public static partial void FileCreated(this ILogger logger, string fileId, long uploadLength);
+    internal static partial void FileCreated(this ILogger logger, string fileId, long uploadLength);
 
     [LoggerMessage(
         EventId = 3201,
         Level = LogLevel.Error,
         Message = "Failed to create file with upload length {UploadLength}"
     )]
-    public static partial void FileCreateFailed(this ILogger logger, Exception e, long uploadLength);
+    internal static partial void FileCreateFailed(this ILogger logger, Exception e, long uploadLength);
 }

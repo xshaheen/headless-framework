@@ -85,5 +85,5 @@ internal static partial class NatsStreamWarmupLog
         Level = LogLevel.Warning,
         Message = "Creating the declared NATS streams at startup failed; the first publish or consumer start tries again."
     )]
-    public static partial void LogNatsStreamWarmupFailed(this ILogger logger, Exception exception);
+    internal static partial void LogNatsStreamWarmupFailed(this ILogger logger, Exception exception);
 }

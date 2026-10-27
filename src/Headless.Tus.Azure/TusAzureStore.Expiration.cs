@@ -277,31 +277,31 @@ internal static partial class TusAzureStoreExpirationLog
         Level = LogLevel.Warning,
         Message = "Cannot set expiration for non-existent file {FileId}"
     )]
-    public static partial void CannotSetExpirationForMissingFile(this ILogger logger, string fileId);
+    internal static partial void CannotSetExpirationForMissingFile(this ILogger logger, string fileId);
 
     [LoggerMessage(
         EventId = 3207,
         Level = LogLevel.Debug,
         Message = "Set expiration for file {FileId} to {ExpirationDate}"
     )]
-    public static partial void ExpirationSet(this ILogger logger, string fileId, DateTimeOffset expirationDate);
+    internal static partial void ExpirationSet(this ILogger logger, string fileId, DateTimeOffset expirationDate);
 
     [LoggerMessage(EventId = 3208, Level = LogLevel.Error, Message = "Failed to set expiration for file {FileId}")]
-    public static partial void ExpirationSetFailed(this ILogger logger, Exception e, string fileId);
+    internal static partial void ExpirationSetFailed(this ILogger logger, Exception e, string fileId);
 
     [LoggerMessage(EventId = 3209, Level = LogLevel.Error, Message = "Failed to get expired files")]
-    public static partial void GetExpiredFilesFailed(this ILogger logger, Exception e);
+    internal static partial void GetExpiredFilesFailed(this ILogger logger, Exception e);
 
     [LoggerMessage(EventId = 3210, Level = LogLevel.Error, Message = "Failed to remove expired file {FileId}")]
-    public static partial void RemoveExpiredFileFailed(this ILogger logger, Exception e, string fileId);
+    internal static partial void RemoveExpiredFileFailed(this ILogger logger, Exception e, string fileId);
 
     [LoggerMessage(EventId = 3211, Level = LogLevel.Information, Message = "Removed {RemovedCount} expired files")]
-    public static partial void ExpiredFilesRemoved(this ILogger logger, int removedCount);
+    internal static partial void ExpiredFilesRemoved(this ILogger logger, int removedCount);
 
     [LoggerMessage(
         EventId = 3252,
         Level = LogLevel.Information,
         Message = "Skipped removing expired file {FileId}: it changed after it was found expired"
     )]
-    public static partial void ExpiredFileChangedBeforeRemoval(this ILogger logger, string fileId);
+    internal static partial void ExpiredFileChangedBeforeRemoval(this ILogger logger, string fileId);
 }

@@ -621,7 +621,7 @@ internal static partial class CouchbaseManagerLog
         Level = LogLevel.Information,
         Message = "Cluster {ClusterKey} > Bucket {BucketName} > Build deferred indexes SUCCESS took {Elapsed}"
     )]
-    public static partial void BuildDeferredIndexesSucceeded(
+    internal static partial void BuildDeferredIndexesSucceeded(
         this ILogger logger,
         string clusterKey,
         string bucketName,
@@ -633,7 +633,7 @@ internal static partial class CouchbaseManagerLog
         Level = LogLevel.Information,
         Message = "Cluster {ClusterKey} > Bucket {BucketName} > Try to create scope {ScopeName}"
     )]
-    public static partial void TryCreateScope(
+    internal static partial void TryCreateScope(
         this ILogger logger,
         string clusterKey,
         string bucketName,
@@ -645,14 +645,19 @@ internal static partial class CouchbaseManagerLog
         Level = LogLevel.Information,
         Message = "Cluster {ClusterKey} > Bucket {BucketName} > Scope {ScopeName} exist"
     )]
-    public static partial void ScopeExists(this ILogger logger, string clusterKey, string bucketName, string scopeName);
+    internal static partial void ScopeExists(
+        this ILogger logger,
+        string clusterKey,
+        string bucketName,
+        string scopeName
+    );
 
     [LoggerMessage(
         EventId = 5103,
         Level = LogLevel.Information,
         Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create scope {ScopeName} success"
     )]
-    public static partial void CreateScopeSucceeded(
+    internal static partial void CreateScopeSucceeded(
         this ILogger logger,
         string clusterKey,
         string bucketName,
@@ -664,7 +669,7 @@ internal static partial class CouchbaseManagerLog
         Level = LogLevel.Information,
         Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create scope {ScopeName} success (exist)"
     )]
-    public static partial void CreateScopeSucceededAlreadyExists(
+    internal static partial void CreateScopeSucceededAlreadyExists(
         this ILogger logger,
         string clusterKey,
         string bucketName,
@@ -676,7 +681,7 @@ internal static partial class CouchbaseManagerLog
         Level = LogLevel.Error,
         Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create scope {ScopeName} failed"
     )]
-    public static partial void CreateScopeFailed(
+    internal static partial void CreateScopeFailed(
         this ILogger logger,
         Exception exception,
         string clusterKey,
@@ -689,7 +694,7 @@ internal static partial class CouchbaseManagerLog
         Level = LogLevel.Information,
         Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create ALL COLLECTIONS in scope {ScopeName} SUCCESS took {Elapsed}"
     )]
-    public static partial void CreateAllCollectionsSucceeded(
+    internal static partial void CreateAllCollectionsSucceeded(
         this ILogger logger,
         string clusterKey,
         string bucketName,
@@ -702,7 +707,7 @@ internal static partial class CouchbaseManagerLog
         Level = LogLevel.Information,
         Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create collection {ScopeName}.{CollectionName} SUCCESS took {Elapsed}"
     )]
-    public static partial void CreateCollectionSucceeded(
+    internal static partial void CreateCollectionSucceeded(
         this ILogger logger,
         string clusterKey,
         string bucketName,
@@ -716,7 +721,7 @@ internal static partial class CouchbaseManagerLog
         Level = LogLevel.Error,
         Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create collection {ScopeName}.{CollectionName} FAILED took {Elapsed}"
     )]
-    public static partial void CreateCollectionFailed(
+    internal static partial void CreateCollectionFailed(
         this ILogger logger,
         Exception exception,
         string clusterKey,
@@ -731,7 +736,7 @@ internal static partial class CouchbaseManagerLog
         Level = LogLevel.Information,
         Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create secondary index on collection {ScopeName}.{CollectionName} IndexName={IndexName} SUCCESS took {Elapsed}"
     )]
-    public static partial void CreateSecondaryIndexSucceeded(
+    internal static partial void CreateSecondaryIndexSucceeded(
         this ILogger logger,
         string clusterKey,
         string bucketName,
@@ -746,7 +751,7 @@ internal static partial class CouchbaseManagerLog
         Level = LogLevel.Error,
         Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create secondary index on collection {ScopeName}.{CollectionName} IndexName={IndexName} FAILED took {Elapsed}"
     )]
-    public static partial void CreateSecondaryIndexFailed(
+    internal static partial void CreateSecondaryIndexFailed(
         this ILogger logger,
         Exception exception,
         string clusterKey,
@@ -762,7 +767,7 @@ internal static partial class CouchbaseManagerLog
         Level = LogLevel.Information,
         Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create primary index on collection {ScopeName}.{CollectionName} SUCCESS took {Elapsed}"
     )]
-    public static partial void CreatePrimaryIndexSucceeded(
+    internal static partial void CreatePrimaryIndexSucceeded(
         this ILogger logger,
         string clusterKey,
         string bucketName,
@@ -776,7 +781,7 @@ internal static partial class CouchbaseManagerLog
         Level = LogLevel.Error,
         Message = "Cluster {ClusterKey} > Bucket {BucketName} > Failed to create primary index on collection {ScopeName}.{CollectionName} FAILED took {Elapsed}"
     )]
-    public static partial void CreatePrimaryIndexFailed(
+    internal static partial void CreatePrimaryIndexFailed(
         this ILogger logger,
         Exception exception,
         string clusterKey,

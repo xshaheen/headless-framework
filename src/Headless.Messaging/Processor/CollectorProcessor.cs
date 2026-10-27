@@ -164,21 +164,21 @@ internal static partial class CollectorProcessorLog
         Level = LogLevel.Debug,
         Message = "Collecting expired data for category {Category}."
     )]
-    public static partial void CollectingExpiredData(this ILogger logger, string category);
+    internal static partial void CollectingExpiredData(this ILogger logger, string category);
 
     [LoggerMessage(
         EventId = 3105,
         Level = LogLevel.Debug,
         Message = "Successfully deleted {DeletedCount} expired items for category {Category}."
     )]
-    public static partial void ExpiredItemsDeleted(this ILogger logger, int deletedCount, string category);
+    internal static partial void ExpiredItemsDeleted(this ILogger logger, int deletedCount, string category);
 
     [LoggerMessage(
         EventId = 3106,
         Level = LogLevel.Error,
         Message = "An error occurred while deleting expired data for category {Category}: {ExMessage}"
     )]
-    public static partial void ExpiredDataDeleteFailed(
+    internal static partial void ExpiredDataDeleteFailed(
         this ILogger logger,
         Exception ex,
         string category,

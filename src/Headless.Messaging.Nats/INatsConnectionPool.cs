@@ -145,5 +145,5 @@ internal static partial class NatsConnectionPoolLog
         Level = LogLevel.Debug,
         Message = "NATS connection pool created with {PoolSize} connections to {Servers}."
     )]
-    public static partial void LogNatsConnectionPoolCreated(this ILogger logger, int poolSize, string servers);
+    internal static partial void LogNatsConnectionPoolCreated(this ILogger logger, int poolSize, string servers);
 }

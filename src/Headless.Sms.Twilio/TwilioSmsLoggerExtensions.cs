@@ -12,7 +12,7 @@ internal static partial class TwilioSmsLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Failed to send SMS using Twilio API to {DestinationCount} destination(s), errorCode: {ErrorCode}"
     )]
-    public static partial void LogFailedToSendSms(this ILogger logger, int destinationCount, int? errorCode);
+    internal static partial void LogFailedToSendSms(this ILogger logger, int destinationCount, int? errorCode);
 
     [LoggerMessage(
         EventId = 2,
@@ -20,5 +20,5 @@ internal static partial class TwilioSmsLoggerExtensions
         Level = LogLevel.Error,
         Message = "Failed to send SMS using Twilio API to {DestinationCount} destination(s)"
     )]
-    public static partial void LogSmsSendException(this ILogger logger, Exception exception, int destinationCount);
+    internal static partial void LogSmsSendException(this ILogger logger, Exception exception, int destinationCount);
 }

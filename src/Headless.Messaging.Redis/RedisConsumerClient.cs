@@ -611,7 +611,7 @@ internal static partial class RedisConsumerClientLog
         Level = LogLevel.Error,
         Message = "Redis entry {EntryId} on stream {StreamKey} at position {Position} of group {GroupId} is not valid for Messaging, see inner exception for more details."
     )]
-    public static partial void InvalidRedisEntry(
+    internal static partial void InvalidRedisEntry(
         this ILogger logger,
         Exception exception,
         RedisValue entryId,
@@ -625,35 +625,39 @@ internal static partial class RedisConsumerClientLog
         Level = LogLevel.Error,
         Message = "Unhandled exception occurred in {Action} action, Exception has been caught"
     )]
-    public static partial void RedisConsumeErrorCallbackFailed(this ILogger logger, Exception exception, string action);
+    internal static partial void RedisConsumeErrorCallbackFailed(
+        this ILogger logger,
+        Exception exception,
+        string action
+    );
 
     [LoggerMessage(
         EventId = 3006,
         Level = LogLevel.Debug,
         Message = "Redis stream entry [{EntryId}] [position : {PositionName}] was delivered"
     )]
-    public static partial void RedisEntryDelivered(this ILogger logger, RedisValue entryId, string positionName);
+    internal static partial void RedisEntryDelivered(this ILogger logger, RedisValue entryId, string positionName);
 
     [LoggerMessage(
         EventId = 3007,
         Level = LogLevel.Error,
         Message = "Unhandled exception in Redis background message handler for group {GroupId}"
     )]
-    public static partial void RedisBackgroundHandlerFailed(this ILogger logger, Exception exception, string groupId);
+    internal static partial void RedisBackgroundHandlerFailed(this ILogger logger, Exception exception, string groupId);
 
     [LoggerMessage(
         EventId = 3008,
         Level = LogLevel.Warning,
         Message = "Redis consumer of group {GroupId} shut down before its in-flight handlers finished; their unsettled entries stay pending for another consumer to claim"
     )]
-    public static partial void RedisShutdownDrainIncomplete(this ILogger logger, Exception exception, string groupId);
+    internal static partial void RedisShutdownDrainIncomplete(this ILogger logger, Exception exception, string groupId);
 
     [LoggerMessage(
         EventId = 3009,
         Level = LogLevel.Warning,
         Message = "The custom headers builder failed for Redis entry {EntryId} on stream {StreamKey} of group {GroupId}; the entry is left unacknowledged, so the group hands it out again"
     )]
-    public static partial void RedisCustomHeadersBuilderFailed(
+    internal static partial void RedisCustomHeadersBuilderFailed(
         this ILogger logger,
         Exception exception,
         RedisValue entryId,

@@ -68,5 +68,5 @@ internal static partial class JobsCoordinationStartupGateLog
         Level = LogLevel.Information,
         Message = "Jobs node registered with coordination membership as {Identity}"
     )]
-    public static partial void NodeRegistered(this ILogger logger, NodeIdentity identity);
+    internal static partial void NodeRegistered(this ILogger logger, NodeIdentity identity);
 }

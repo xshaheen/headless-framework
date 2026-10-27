@@ -278,7 +278,12 @@ internal sealed partial class JobsPostCommitSignalService(
             "Post-commit signal for {JobScope} was dropped ({Reason}; {Pending} pending). The job row is committed; "
                 + "the scheduler's polling sweep picks it up on its next pass."
         )]
-        public static partial void PostCommitSignalDropped(ILogger logger, string jobScope, string reason, int pending);
+        internal static partial void PostCommitSignalDropped(
+            ILogger logger,
+            string jobScope,
+            string reason,
+            int pending
+        );
 
         [LoggerMessage(
             3261,
@@ -286,7 +291,7 @@ internal sealed partial class JobsPostCommitSignalService(
             "Post-commit side effects failed for {JobScope}. The job row is committed; the scheduler's polling sweep "
                 + "is the recovery path."
         )]
-        public static partial void PostCommitSignalFailed(ILogger logger, string jobScope, Exception exception);
+        internal static partial void PostCommitSignalFailed(ILogger logger, string jobScope, Exception exception);
 
         [LoggerMessage(
             3262,
@@ -294,14 +299,14 @@ internal sealed partial class JobsPostCommitSignalService(
             "Post-commit side effects for {JobScope} did not finish within {Deadline} and were abandoned. The job row "
                 + "is committed; the scheduler's polling sweep is the recovery path."
         )]
-        public static partial void PostCommitSignalTimedOut(ILogger logger, string jobScope, TimeSpan deadline);
+        internal static partial void PostCommitSignalTimedOut(ILogger logger, string jobScope, TimeSpan deadline);
 
         [LoggerMessage(
             3263,
             LogLevel.Debug,
             "Post-commit side effects for {JobScope} were abandoned because the host shutdown budget was exhausted."
         )]
-        public static partial void PostCommitSignalAbandonedOnShutdown(ILogger logger, string jobScope);
+        internal static partial void PostCommitSignalAbandonedOnShutdown(ILogger logger, string jobScope);
 
         [LoggerMessage(
             3264,
@@ -309,6 +314,6 @@ internal sealed partial class JobsPostCommitSignalService(
             "The Jobs post-commit worker stays closed because activation failed; coordinated enqueues are recovered "
                 + "by the scheduler's polling sweep once the host is healthy."
         )]
-        public static partial void StoppedOnActivationFailure(ILogger logger, Exception exception);
+        internal static partial void StoppedOnActivationFailure(ILogger logger, Exception exception);
     }
 }

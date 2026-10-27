@@ -41,5 +41,5 @@ internal static partial class TusAzureFileWrapperLog
         Level = LogLevel.Error,
         Message = "Failed to get content for file {FileId}"
     )]
-    public static partial void LogFailedToGetContent(this ILogger logger, Exception exception, string fileId);
+    internal static partial void LogFailedToGetContent(this ILogger logger, Exception exception, string fileId);
 }

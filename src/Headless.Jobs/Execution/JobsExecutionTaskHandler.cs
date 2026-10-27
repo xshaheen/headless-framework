@@ -1684,7 +1684,7 @@ internal static partial class JobsExecutionTaskHandlerLog
         Message = "Lease renewal for job {JobId} ({Function}) failed; treating the lease as lost and cancelling the "
             + "running job. The row is left InProgress for the stalled-reclaim sweep to recover per OnNodeDeath."
     )]
-    public static partial void LogJobLeaseRenewalFailed(
+    internal static partial void LogJobLeaseRenewalFailed(
         this ILogger logger,
         Exception exception,
         Guid jobId,
@@ -1697,7 +1697,7 @@ internal static partial class JobsExecutionTaskHandlerLog
         Message = "Job {JobId} ({Function}) was cancelled on lease loss; row left InProgress for the stalled-reclaim "
             + "sweep to recover per OnNodeDeath (no terminal status written)."
     )]
-    public static partial void LogJobLeaseLostCancellation(this ILogger logger, Guid jobId, string function);
+    internal static partial void LogJobLeaseLostCancellation(this ILogger logger, Guid jobId, string function);
 
     [LoggerMessage(
         EventId = 3102,
@@ -1705,7 +1705,7 @@ internal static partial class JobsExecutionTaskHandlerLog
         Message = "Child job {JobId} ({Function}) threw synchronously before execution started; it stays InProgress "
             + "until the stalled-reclaim sweep recovers it per OnNodeDeath. The parent scheduler loop continues."
     )]
-    public static partial void LogJobChildExecutionThrewSynchronously(
+    internal static partial void LogJobChildExecutionThrewSynchronously(
         this ILogger logger,
         Exception exception,
         Guid jobId,
@@ -1719,7 +1719,7 @@ internal static partial class JobsExecutionTaskHandlerLog
             + "was reclaimed/terminalized by a sweep (likely a stall outlasting the lease). The durable record may "
             + "show a terminal failure that did not actually occur; reconcile before re-triggering (#462)."
     )]
-    public static partial void LogJobCompletionFencedAfterSuccess(this ILogger logger, Guid jobId, string function);
+    internal static partial void LogJobCompletionFencedAfterSuccess(this ILogger logger, Guid jobId, string function);
 
     [LoggerMessage(
         EventId = 3105,
@@ -1727,14 +1727,14 @@ internal static partial class JobsExecutionTaskHandlerLog
         Message = "Job {JobId} ({Function}) lost ownership before execution started; user code was not invoked and "
             + "the row is left InProgress for the stalled-reclaim sweep to recover per OnNodeDeath."
     )]
-    public static partial void LogJobLeaseLostBeforeExecution(this ILogger logger, Guid jobId, string function);
+    internal static partial void LogJobLeaseLostBeforeExecution(this ILogger logger, Guid jobId, string function);
 
     [LoggerMessage(
         EventId = 3107,
         Level = LogLevel.Warning,
         Message = "Job exception handler failed for job {JobId} ({Function}); the stored job state is unaffected."
     )]
-    public static partial void LogJobExceptionObserverFailed(
+    internal static partial void LogJobExceptionObserverFailed(
         this ILogger logger,
         Exception exception,
         Guid jobId,
@@ -1747,7 +1747,7 @@ internal static partial class JobsExecutionTaskHandlerLog
         Message = "A FailWhen rule of the failure policy for job {JobId} ({Function}) threw; the failure is treated "
             + "as matched, so the job fails without its remaining retries. Fix the rule."
     )]
-    public static partial void LogJobFailRuleThrew(
+    internal static partial void LogJobFailRuleThrew(
         this ILogger logger,
         Exception exception,
         Guid jobId,
@@ -1759,7 +1759,7 @@ internal static partial class JobsExecutionTaskHandlerLog
         Level = LogLevel.Warning,
         Message = "Jobs exhausted callback failed or timed out for job {JobId} ({Function})."
     )]
-    public static partial void LogJobExhaustedCallbackFailed(
+    internal static partial void LogJobExhaustedCallbackFailed(
         this ILogger logger,
         Exception exception,
         Guid jobId,
@@ -1772,7 +1772,7 @@ internal static partial class JobsExecutionTaskHandlerLog
         Message = "Job exception observer for job {JobId} ({Function}) exceeded its {TimeoutSeconds}s bound and was "
             + "cancelled; the stored job state is unaffected."
     )]
-    public static partial void LogJobExceptionObserverTimedOut(
+    internal static partial void LogJobExceptionObserverTimedOut(
         this ILogger logger,
         Guid jobId,
         string function,
@@ -1785,7 +1785,7 @@ internal static partial class JobsExecutionTaskHandlerLog
         Message = "Initial durable-cancellation observation failed for job {JobId} ({Function}); user code was not "
             + "started and the row remains InProgress for recovery."
     )]
-    public static partial void LogJobCancellationInitialObservationFailed(
+    internal static partial void LogJobCancellationInitialObservationFailed(
         this ILogger logger,
         Exception exception,
         Guid jobId,
@@ -1798,7 +1798,7 @@ internal static partial class JobsExecutionTaskHandlerLog
         Message = "Durable-cancellation observation failed for job {JobId} ({Function}); the bounded observer will "
             + "retry on its next interval."
     )]
-    public static partial void LogJobCancellationObservationFailed(
+    internal static partial void LogJobCancellationObservationFailed(
         this ILogger logger,
         Exception exception,
         Guid jobId,
@@ -1811,7 +1811,7 @@ internal static partial class JobsExecutionTaskHandlerLog
         Message = "Post-completion timed-descendant reconcile failed for job {JobId} ({Function}); its timed children "
             + "will be reconciled by the poll-time safety net / set-based sweep instead. Deferred children already ran."
     )]
-    public static partial void LogTimedChildReconcileFailed(
+    internal static partial void LogTimedChildReconcileFailed(
         this ILogger logger,
         Exception exception,
         Guid jobId,
@@ -1826,7 +1826,7 @@ internal static partial class JobsExecutionTaskHandlerLog
             + "released for another node to claim. Ensure every scheduler node adds the generated module of the "
             + "assembly that declares the function (AddModule), or expect claim churn until one does."
     )]
-    public static partial void LogJobFunctionNotRegisteredOnNode(this ILogger logger, Guid jobId, string function);
+    internal static partial void LogJobFunctionNotRegisteredOnNode(this ILogger logger, Guid jobId, string function);
 
     [LoggerMessage(
         EventId = 3115,
@@ -1834,7 +1834,7 @@ internal static partial class JobsExecutionTaskHandlerLog
         Level = LogLevel.Error,
         Message = "Job {JobId} cannot execute on this node; releasing it for a compatible node. {ContractVersionError}"
     )]
-    public static partial void LogJobContractVersionNotRegisteredOnNode(
+    internal static partial void LogJobContractVersionNotRegisteredOnNode(
         this ILogger logger,
         Guid jobId,
         string contractVersionError
@@ -1846,7 +1846,7 @@ internal static partial class JobsExecutionTaskHandlerLog
         Message = "Job {JobId} ({Function}) was queued when the host began a graceful stop; it was handed back "
             + "unstarted for another node to run, with its retry budget unchanged."
     )]
-    public static partial void LogJobReleasedForDrain(this ILogger logger, Guid jobId, string function);
+    internal static partial void LogJobReleasedForDrain(this ILogger logger, Guid jobId, string function);
 
     [LoggerMessage(
         EventId = 3126,
@@ -1854,7 +1854,7 @@ internal static partial class JobsExecutionTaskHandlerLog
         Message = "Job {JobId} ({Function}) was claimed for an immediate run while the scheduler accepted no work; it "
             + "was handed back unstarted for the next poll to run, with its retry budget unchanged."
     )]
-    public static partial void LogJobReleasedUndispatched(this ILogger logger, Guid jobId, string function);
+    internal static partial void LogJobReleasedUndispatched(this ILogger logger, Guid jobId, string function);
 
     [LoggerMessage(
         EventId = 3119,
@@ -1862,7 +1862,7 @@ internal static partial class JobsExecutionTaskHandlerLog
         Message = "Job {JobId} ({Function}) was not started because this node's coordination membership is not "
             + "established; it was handed back for another node to run, with its retry budget unchanged."
     )]
-    public static partial void LogJobReleasedMembershipUnknown(this ILogger logger, Guid jobId, string function);
+    internal static partial void LogJobReleasedMembershipUnknown(this ILogger logger, Guid jobId, string function);
 
     [LoggerMessage(
         EventId = 3120,
@@ -1871,7 +1871,7 @@ internal static partial class JobsExecutionTaskHandlerLog
             + "established, and handing it back failed; the row stays InProgress until its lease lapses and the "
             + "stalled-reclaim sweep recovers it per OnNodeDeath."
     )]
-    public static partial void LogJobStartReleaseFailedMembershipUnknown(
+    internal static partial void LogJobStartReleaseFailedMembershipUnknown(
         this ILogger logger,
         Exception exception,
         Guid jobId,
@@ -1884,7 +1884,7 @@ internal static partial class JobsExecutionTaskHandlerLog
         Message = "Persisting the retry count of job {JobId} ({Function}) failed; the run stops as lease loss and the "
             + "row is left InProgress for the stalled-reclaim sweep to recover per OnNodeDeath."
     )]
-    public static partial void LogJobRetryCountWriteFailed(
+    internal static partial void LogJobRetryCountWriteFailed(
         this ILogger logger,
         Exception exception,
         Guid jobId,
@@ -1897,7 +1897,7 @@ internal static partial class JobsExecutionTaskHandlerLog
         Message = "Job {JobId} ({Function}) was interrupted by a graceful host stop and settled by its node-death "
             + "policy, with its retry budget unchanged."
     )]
-    public static partial void LogJobSettledOnShutdown(this ILogger logger, Guid jobId, string function);
+    internal static partial void LogJobSettledOnShutdown(this ILogger logger, Guid jobId, string function);
 
     [LoggerMessage(
         EventId = 3124,
@@ -1905,7 +1905,7 @@ internal static partial class JobsExecutionTaskHandlerLog
         Message = "Job {JobId} ({Function}) could not be handed back during a graceful host stop because another "
             + "node had already reclaimed it; that node now owns the outcome."
     )]
-    public static partial void LogJobShutdownReleaseFenced(this ILogger logger, Guid jobId, string function);
+    internal static partial void LogJobShutdownReleaseFenced(this ILogger logger, Guid jobId, string function);
 
     [LoggerMessage(
         EventId = 3127,
@@ -1914,7 +1914,7 @@ internal static partial class JobsExecutionTaskHandlerLog
             + "write failed; the row stays InProgress until its lease lapses and the stalled-reclaim sweep recovers it "
             + "per OnNodeDeath."
     )]
-    public static partial void LogJobShutdownWriteFailed(
+    internal static partial void LogJobShutdownWriteFailed(
         this ILogger logger,
         Exception exception,
         Guid jobId,

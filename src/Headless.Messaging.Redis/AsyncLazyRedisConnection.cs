@@ -142,5 +142,5 @@ internal static partial class AsyncLazyRedisConnectionLog
         Level = LogLevel.Warning,
         Message = "Can't establish redis connection,trying to establish connection [attempt {Attempt}]."
     )]
-    public static partial void LogRedisConnectionAttemptFailed(this ILogger logger, int attempt);
+    internal static partial void LogRedisConnectionAttemptFailed(this ILogger logger, int attempt);
 }

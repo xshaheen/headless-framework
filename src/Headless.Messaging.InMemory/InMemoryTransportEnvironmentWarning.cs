@@ -42,5 +42,5 @@ internal static partial class InMemoryTransportEnvironmentWarningLog
             + "state across a restart and never reaches a broker, so every message in flight is lost when the process "
             + "stops. Configure a broker transport unless this single-process deployment accepts that loss."
     )]
-    public static partial void InMemoryTransportOutsideDevelopment(this ILogger logger, string environmentName);
+    internal static partial void InMemoryTransportOutsideDevelopment(this ILogger logger, string environmentName);
 }

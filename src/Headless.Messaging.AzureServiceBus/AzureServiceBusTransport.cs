@@ -93,5 +93,5 @@ internal static partial class AzureServiceBusTransportLog
         Level = LogLevel.Debug,
         Message = "Azure Service Bus message [{GetName}] has been published."
     )]
-    public static partial void MessagePublished(this ILogger logger, string getName);
+    internal static partial void MessagePublished(this ILogger logger, string getName);
 }
