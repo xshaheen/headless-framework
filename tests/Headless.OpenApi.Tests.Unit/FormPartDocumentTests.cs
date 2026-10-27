@@ -170,6 +170,47 @@ public sealed class FormPartDocumentTests : TestBase
         document.Schema("UpdateAvatar").Required().Should().Equal("avatar");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_skip_instance_factories_without_losing_other_mvc_form_rules(bool includeFactory)
+    {
+        var document = await OpenApiTestHost.GetDocumentAsync(
+            builder =>
+            {
+                _ConfigureMvcServices(builder);
+                builder.Services.AddScoped<IValidator<ProfileUpdate>>(_ =>
+                {
+                    var validator = new InlineValidator<ProfileUpdate>();
+                    if (includeFactory)
+                    {
+                        validator.Include(x => new InstanceProfileRules(x.Age));
+                    }
+                    else
+                    {
+                        validator.RuleFor(x => x.Phone).SetValidator(x => new InstancePhoneRules(x.Age));
+                    }
+
+                    validator.Include(new ProfileUpdateValidator());
+                    return validator;
+                });
+            },
+            app => app.MapControllers(),
+            "v1",
+            AbortToken
+        );
+
+        document.ShouldBeValidOpenApi("MVC form rules with an instance-dependent validator factory");
+        var schema = _MultipartSchema(document, "/mvc/forms/profile");
+        schema.Required().Should().Contain(["Name.First", "Phone.Code"]);
+        var properties = schema["properties"]!;
+        properties["Name.First"]!.ShouldBeJson("""{"type":"string","minLength":1,"maxLength":20}""");
+        properties["Phone.Code"]!.ShouldBeJson("""{"type":"string","minLength":1,"pattern":"^\\+[0-9]+$"}""");
+        ((int)properties["Bio"]!["maxLength"]!).Should().Be(100);
+        ((int)properties["Age"]!["minimum"]!).Should().Be(1);
+        ((int)properties["Age"]!["maximum"]!).Should().Be(120);
+    }
+
     private static Task<JsonNode> _GetMvcDocumentAsync()
     {
         return OpenApiTestHost.GetDocumentAsync(_ConfigureMvcServices, app => app.MapControllers(), "v1", AbortToken);
@@ -269,6 +310,22 @@ public sealed class ProfileNameValidator : AbstractValidator<ProfileName>
     public ProfileNameValidator()
     {
         RuleFor(x => x.Last).MaximumLength(50);
+    }
+}
+
+public sealed class InstancePhoneRules : AbstractValidator<ProfilePhone>
+{
+    public InstancePhoneRules(int maxLength)
+    {
+        RuleFor(x => x.Code).MaximumLength(maxLength);
+    }
+}
+
+public sealed class InstanceProfileRules : AbstractValidator<ProfileUpdate>
+{
+    public InstanceProfileRules(int maxLength)
+    {
+        RuleFor(x => x.Bio).MaximumLength(maxLength);
     }
 }
 

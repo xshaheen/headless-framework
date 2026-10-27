@@ -65,10 +65,15 @@ internal static class ValidationExtensions
     /// </summary>
     /// <remarks>
     /// <c>IValidatorDescriptor</c> exposes neither, so they are read from the rule list. Each is resolved without an
-    /// instance, the way <c>new ValidationContext&lt;T&gt;(null)</c> would, so a validator chosen from the instance is
-    /// skipped.
+    /// instance, the way <c>new ValidationContext&lt;T&gt;(null)</c> would, so a validator chosen from the instance
+    /// throws; it is logged and skipped, or rethrown when <paramref name="throwOnError"/> is set.
     /// </remarks>
-    public static IEnumerable<IValidator> GetChildValidators(this IValidator validator, string? propertyName)
+    public static IEnumerable<IValidator> GetChildValidators(
+        this IValidator validator,
+        string? propertyName,
+        ILogger logger,
+        bool throwOnError
+    )
     {
         var adapters = (validator as IEnumerable<IValidationRule>)
             .EmptyIfNull()
@@ -103,7 +108,25 @@ internal static class ValidationExtensions
 
             var validationContext = Activator.CreateInstance(getValidator.GetParameters()[0].ParameterType, [null]);
 
-            if (getValidator.Invoke(adapter, [validationContext, null]) is IValidator child)
+            IValidator? child;
+            try
+            {
+                child = getValidator.Invoke(adapter, [validationContext, null]) as IValidator;
+            }
+            catch (TargetInvocationException exception)
+            {
+                // Document generation has no model instance, so an instance-dependent child cannot supply rules.
+                logger.LogGetChildValidatorFailed(exception, validator.GetType().Name);
+
+                if (throwOnError)
+                {
+                    throw;
+                }
+
+                continue;
+            }
+
+            if (child is not null)
             {
                 yield return child;
             }
@@ -111,7 +134,11 @@ internal static class ValidationExtensions
     }
 
     /// <summary>Returns a validator and its unconditional Include chain, visiting each instance once.</summary>
-    public static List<IValidator> GetValidatorsIncludingIncludes(this IValidator validator)
+    public static List<IValidator> GetValidatorsIncludingIncludes(
+        this IValidator validator,
+        ILogger logger,
+        bool throwOnError
+    )
     {
         var validators = new List<IValidator> { validator };
         var seen = new HashSet<IValidator>(ReferenceEqualityComparer.Instance) { validator };
@@ -119,7 +146,7 @@ internal static class ValidationExtensions
         // Breadth-first, and each validator once, so an include cycle ends.
         for (var i = 0; i < validators.Count; i++)
         {
-            foreach (var included in validators[i].GetChildValidators(propertyName: null))
+            foreach (var included in validators[i].GetChildValidators(propertyName: null, logger, throwOnError))
             {
                 if (seen.Add(included))
                 {

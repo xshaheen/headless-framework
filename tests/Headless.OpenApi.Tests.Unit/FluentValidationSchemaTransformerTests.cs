@@ -148,18 +148,19 @@ public sealed class FluentValidationSchemaTransformerTests : TestBase
     }
 
     [Fact]
-    public async Task should_log_an_include_that_fails_and_keep_the_rules_already_applied()
+    public async Task should_log_and_skip_an_instance_include_factory_and_keep_the_rules_already_applied()
     {
         using var logs = new CapturingLoggerProvider();
 
         var document = await _GetDocumentAsync(logs);
 
+        document.ShouldBeValidOpenApi("JSON validation with an instance-dependent Include factory");
         ((int?)document.Schema("IncludeFailureRequest")["properties"]!["name"]!["maxLength"]).Should().Be(5);
         logs.Entries.Should()
             .Contain(entry =>
-                entry.Level == LogLevel.Error
-                && entry.EventId.Id == 1
-                && entry.Message.Contains("'IncludeFailureRequest'", StringComparison.Ordinal)
+                entry.Level == LogLevel.Warning
+                && entry.EventId.Id == 6
+                && entry.Message.Contains("'IncludeFailureRequestValidator'", StringComparison.Ordinal)
             );
     }
 

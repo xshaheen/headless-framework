@@ -6,7 +6,9 @@ using FluentValidation.Validators;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.OpenApi;
 
@@ -72,6 +74,8 @@ internal sealed class FormPart
             return null;
         }
 
+        var throwOnError =
+            services.GetService<IOptions<HeadlessOpenApiOptions>>()?.Value.ThrowOnSchemaProcessingError == true;
         var nullability = new NullabilityInfoContext();
         var rootType = parameter.ParameterDescriptor?.ParameterType;
         var path = rootType is null ? null : _ResolvePath(rootType, parameter, leaf, services);
@@ -81,7 +85,7 @@ internal sealed class FormPart
             // A renamed part or an unknown root: only the declaring type's own validator can be matched to it.
             var validators = services.GetFluentValidator(containerType, logger) is { } container
                 ? container
-                    .GetValidatorsIncludingIncludes()
+                    .GetValidatorsIncludingIncludes(logger, throwOnError)
                     .SelectMany(v => v.GetValidatorsByPropertyNameIgnoreCase(propertyName))
                     .ToList()
                 : [];
@@ -97,7 +101,9 @@ internal sealed class FormPart
         // The validators that apply at each depth of the path: the root model's first.
         var levels = new List<IReadOnlyList<IValidator>>(path.Count)
         {
-            services.GetFluentValidator(rootType!, logger) is { } root ? root.GetValidatorsIncludingIncludes() : [],
+            services.GetFluentValidator(rootType!, logger) is { } root
+                ? root.GetValidatorsIncludingIncludes(logger, throwOnError)
+                : [],
         };
 
         for (var i = 0; i < path.Count - 1; i++)
@@ -106,14 +112,14 @@ internal sealed class FormPart
 
             if (services.GetFluentValidator(path[i].PropertyType, logger) is { } registered)
             {
-                next.AddRange(registered.GetValidatorsIncludingIncludes());
+                next.AddRange(registered.GetValidatorsIncludingIncludes(logger, throwOnError));
             }
 
             foreach (var validator in levels[i])
             {
-                foreach (var child in validator.GetChildValidators(path[i].Name))
+                foreach (var child in validator.GetChildValidators(path[i].Name, logger, throwOnError))
                 {
-                    next.AddRange(child.GetValidatorsIncludingIncludes());
+                    next.AddRange(child.GetValidatorsIncludingIncludes(logger, throwOnError));
                 }
             }
 

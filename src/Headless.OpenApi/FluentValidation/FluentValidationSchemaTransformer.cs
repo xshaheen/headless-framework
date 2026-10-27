@@ -131,7 +131,10 @@ internal sealed class FluentValidationSchemaTransformer : IOpenApiSchemaTransfor
 
             try
             {
-                _ApplyIncludedValidators(schema, typeInfo, validator);
+                foreach (var included in validator.GetValidatorsIncludingIncludes(_logger, _throwOnError).Skip(1))
+                {
+                    _ApplyToObject(schema, typeInfo, included);
+                }
             }
             catch (Exception e)
             {
@@ -227,15 +230,6 @@ internal sealed class FluentValidationSchemaTransformer : IOpenApiSchemaTransfor
             }
         }
 
-        private void _ApplyIncludedValidators(OpenApiSchema schema, JsonTypeInfo typeInfo, IValidator validator)
-        {
-            foreach (var includeValidator in validator.GetChildValidators(propertyName: null))
-            {
-                _ApplyToObject(schema, typeInfo, includeValidator);
-                _ApplyIncludedValidators(schema, typeInfo, includeValidator);
-            }
-        }
-
         private static string _GetMemberName(JsonTypeInfo typeInfo, string propertyKey)
         {
             foreach (var property in typeInfo.Properties)
@@ -298,4 +292,12 @@ internal static partial class FluentValidationSchemaTransformerLog
         Message = "GetValidator for type '{TypeName}' fails"
     )]
     internal static partial void LogGetValidatorFailed(this ILogger logger, Exception exception, string typeName);
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "GetChildValidatorFailed",
+        Level = LogLevel.Warning,
+        Message = "GetChildValidator for validator '{TypeName}' fails; skipping the child validator"
+    )]
+    internal static partial void LogGetChildValidatorFailed(this ILogger logger, Exception exception, string typeName);
 }

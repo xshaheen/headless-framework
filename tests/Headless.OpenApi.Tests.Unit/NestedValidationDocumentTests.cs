@@ -162,6 +162,133 @@ public sealed class NestedValidationDocumentTests : TestBase
         overlay.ShouldBeJson("""{"required":["name"],"properties":{"name":{"type":"object"}}}""");
     }
 
+    [Fact]
+    public async Task should_fail_generation_on_a_nested_rule_that_throws_when_configured_to_throw()
+    {
+        var act = () =>
+            OpenApiTestHost.GetDocumentAsync(
+                builder =>
+                {
+                    builder.Services.AddScoped<IValidator<NestedCustomer>>(_ =>
+                    {
+                        // Only the dotted rule exists, so only the use-site overlay pass applies it.
+                        var validator = new InlineValidator<NestedCustomer>();
+                        validator.RuleFor(x => x.Name.First).MaximumLength(20);
+                        return validator;
+                    });
+                    builder.Services.AddHeadlessOpenApi();
+                    builder.Services.ConfigureHeadlessOpenApi(options =>
+                    {
+                        options.ThrowOnSchemaProcessingError = true;
+                        options.FluentValidationRules.Insert(
+                            0,
+                            new FluentValidationRule
+                            {
+                                RuleName = "AlwaysFails",
+                                Matches = validator => validator is FluentValidation.Validators.ILengthValidator,
+                                Apply = _ => throw new InvalidOperationException("The nested rule failed."),
+                            }
+                        );
+                    });
+                },
+                app =>
+                    app.MapPost("/customers", ([FromBody] NestedCustomer customer) => TypedResults.Ok(customer))
+                        .AllowAnonymous(),
+                "v1",
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("The nested rule failed.");
+    }
+
+    [Fact]
+    public async Task should_skip_an_instance_include_factory_and_keep_json_member_rules()
+    {
+        var document = await OpenApiTestHost.GetDocumentAsync(
+            builder =>
+            {
+                builder.Services.AddScoped<IValidator<NestedCustomer>>(_ =>
+                {
+                    var validator = new InlineValidator<NestedCustomer>();
+                    validator.RuleFor(x => x.Name).NotNull();
+                    validator.RuleFor(x => x.Name.First).NotEmpty().MaximumLength(20);
+                    validator.Include(x => new InstanceCustomerRules(x.Name.First!.Length));
+                    validator.Include(new CustomerFamilyRules());
+                    return validator;
+                });
+                builder.Services.AddHeadlessOpenApi();
+            },
+            app =>
+                app.MapPost("/customers", ([FromBody] NestedCustomer customer) => TypedResults.Ok(customer))
+                    .AllowAnonymous(),
+            "v1",
+            AbortToken
+        );
+
+        document.ShouldBeValidOpenApi("JSON rules with an instance-dependent Include factory");
+        var schema = document.Schema("NestedCustomer");
+        schema.Required().Should().Contain("name");
+        var overlay = schema["properties"]!["name"]!["allOf"]![1]!;
+        overlay.Required().Should().Contain("first");
+        overlay["properties"]!["first"]!.ShouldBeJson("""{"type":"string","minLength":1,"maxLength":20}""");
+        ((int)overlay["properties"]!["family"]!["maxLength"]!).Should().Be(30);
+    }
+
+    [Fact]
+    public async Task should_apply_each_validator_once_root_first_when_json_includes_form_a_cycle()
+    {
+        var applied = new List<string>();
+        var document = await OpenApiTestHost.GetDocumentAsync(
+            builder =>
+            {
+                builder.Services.AddScoped<IValidator<PersonName>>(_ =>
+                {
+                    var first = new InlineValidator<PersonName>();
+                    var second = new InlineValidator<PersonName>();
+                    first.RuleFor(x => x.First).NotEmpty().MaximumLength(20);
+                    second.RuleFor(x => x.Last).MaximumLength(30);
+                    first.Include(second);
+                    second.Include(first);
+                    return first;
+                });
+                builder.Services.AddHeadlessOpenApi();
+                builder.Services.ConfigureHeadlessOpenApi(options =>
+                {
+                    options.ThrowOnSchemaProcessingError = true;
+                    options.FluentValidationRules.Add(
+                        new FluentValidationRule
+                        {
+                            RuleName = "TrackIncludedRules",
+                            Matches = validator => validator is FluentValidation.Validators.ILengthValidator,
+                            Apply = context =>
+                            {
+                                // Fail on a repeated visit so a regression cannot overflow the test host's stack.
+                                if (applied.Contains(context.PropertyKey, StringComparer.Ordinal))
+                                {
+                                    throw new InvalidOperationException(
+                                        "An included validator was applied more than once."
+                                    );
+                                }
+
+                                applied.Add(context.PropertyKey);
+                            },
+                        }
+                    );
+                });
+            },
+            app => app.MapPost("/names", ([FromBody] PersonName name) => TypedResults.NoContent()).AllowAnonymous(),
+            "v1",
+            AbortToken
+        );
+
+        document.ShouldBeValidOpenApi("JSON rules with a cyclic Include chain");
+        var schema = document.Schema("PersonName");
+        schema.Required().Should().Contain("first");
+        schema["properties"]!["first"]!.ShouldBeJson("""{"type":"string","minLength":1,"maxLength":20}""");
+        ((int)schema["properties"]!["family"]!["maxLength"]!).Should().Be(30);
+        applied.Should().Equal("first", "family");
+    }
+
     private static Task<JsonNode> _GetDocumentAsync(Action<OpenApiOptions>? configure = null)
     {
         return OpenApiTestHost.GetDocumentAsync(
@@ -246,6 +373,14 @@ public sealed class CustomerFamilyRules : AbstractValidator<NestedCustomer>
     public CustomerFamilyRules()
     {
         RuleFor(x => x.Name.Last).MaximumLength(30);
+    }
+}
+
+public sealed class InstanceCustomerRules : AbstractValidator<NestedCustomer>
+{
+    public InstanceCustomerRules(int maxLength)
+    {
+        RuleFor(x => x.Name.First).MaximumLength(maxLength);
     }
 }
 

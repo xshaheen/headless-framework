@@ -23,6 +23,9 @@ internal sealed class FluentValidationNestedRules(
         (ILogger?)services.GetService<ILoggerFactory>()?.CreateLogger<FluentValidationSchemaTransformer>()
         ?? NullLogger.Instance;
 
+    private readonly bool _throwOnError =
+        services.GetService<IOptions<HeadlessOpenApiOptions>>()?.Value.ThrowOnSchemaProcessingError == true;
+
     public void Apply(OpenApiSchema schema, JsonTypeInfo typeInfo)
     {
         if (services.GetFluentValidator(typeInfo.Type, _logger) is not { } validator)
@@ -32,13 +35,13 @@ internal sealed class FluentValidationNestedRules(
 
         try
         {
-            _Apply(schema, typeInfo, validator.GetValidatorsIncludingIncludes());
+            _Apply(schema, typeInfo, validator.GetValidatorsIncludingIncludes(_logger, _throwOnError));
         }
         catch (Exception exception)
         {
             _logger.LogIncludeRulesFailed(exception, typeInfo.Type.Name);
 
-            if (services.GetService<IOptions<HeadlessOpenApiOptions>>()?.Value.ThrowOnSchemaProcessingError == true)
+            if (_throwOnError)
             {
                 throw;
             }
