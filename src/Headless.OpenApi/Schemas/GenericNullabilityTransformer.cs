@@ -516,16 +516,58 @@ internal sealed class GenericNullabilityTransformer : IOpenApiOperationTransform
                     return null;
                 }
 
-                current = current.Type.IsGenericType
-                    ? _SubstituteType(baseType, current.Type.GetGenericTypeDefinition().BaseType!, current)
-                    : TypeUse.Oblivious(baseType);
+                var definition = current.Type.IsGenericType ? current.Type.GetGenericTypeDefinition() : current.Type;
+                var position = 0;
+                // The derived type owns the annotations on its base list; the closed base Type erases them.
+                current = _SubstituteType(
+                    baseType,
+                    definition.BaseType!,
+                    current,
+                    _GetNullableFlags(definition),
+                    ref position
+                );
             }
 
             return current;
         }
 
-        private static TypeUse _SubstituteType(Type closed, Type open, TypeUse declaringUse)
+        private static TypeUse _SubstituteType(
+            Type closed,
+            Type open,
+            TypeUse declaringUse,
+            IReadOnlyList<byte> flags,
+            ref int position
+        )
         {
+            // Nullable<T> contributes no flag of its own; its underlying type still carries any nested annotations.
+            if (Nullable.GetUnderlyingType(open) is { } underlying)
+            {
+                return TypeUse.Create(
+                    closed,
+                    isNullable: false,
+                    [
+                        _SubstituteType(
+                            Nullable.GetUnderlyingType(closed)!,
+                            underlying,
+                            declaringUse,
+                            flags,
+                            ref position
+                        ),
+                    ]
+                );
+            }
+
+            byte flag = 0;
+            // Non-generic value types contribute no flag. Generic value types contribute a placeholder before arguments.
+            if (!open.IsValueType || open.IsGenericType)
+            {
+                flag =
+                    flags.Count == 1 ? flags[0]
+                    : position < flags.Count ? flags[position]
+                    : (byte)0;
+                ++position;
+            }
+
             if (open.IsGenericParameter)
             {
                 return open.GenericParameterPosition < declaringUse.Arguments.Count
@@ -533,19 +575,22 @@ internal sealed class GenericNullabilityTransformer : IOpenApiOperationTransform
                     : TypeUse.Oblivious(closed);
             }
 
-            if (!closed.IsGenericType || !open.IsGenericType)
+            Type[] closedArguments =
+                closed.IsArray ? [closed.GetElementType()!]
+                : closed.IsGenericType ? closed.GetGenericArguments()
+                : [];
+            Type[] openArguments =
+                open.IsArray ? [open.GetElementType()!]
+                : open.IsGenericType ? open.GetGenericArguments()
+                : [];
+            var arguments = new TypeUse[closedArguments.Length];
+
+            for (var i = 0; i < arguments.Length; ++i)
             {
-                return TypeUse.Oblivious(closed);
+                arguments[i] = _SubstituteType(closedArguments[i], openArguments[i], declaringUse, flags, ref position);
             }
 
-            var closedArguments = closed.GetGenericArguments();
-            var openArguments = open.GetGenericArguments();
-
-            return TypeUse.Create(
-                closed,
-                isNullable: false,
-                [.. closedArguments.Select((argument, i) => _SubstituteType(argument, openArguments[i], declaringUse))]
-            );
+            return TypeUse.Create(closed, flag == _Annotated, arguments);
         }
 
         private NullabilityInfo _CreateNullability(MemberInfo member)
@@ -560,9 +605,7 @@ internal sealed class GenericNullabilityTransformer : IOpenApiOperationTransform
             return member is PropertyInfo property ? property.PropertyType : ((FieldInfo)member).FieldType;
         }
 
-        // The compiler's nullable flag for the member's type: 1 for T, 2 for T?, 0 when oblivious. A member without its
-        // own NullableAttribute takes the nearest NullableContextAttribute.
-        private static byte _GetDeclaredFlag(MemberInfo member)
+        private static IReadOnlyList<byte> _GetNullableFlags(MemberInfo member)
         {
             foreach (var attribute in member.CustomAttributes)
             {
@@ -574,9 +617,27 @@ internal sealed class GenericNullabilityTransformer : IOpenApiOperationTransform
                     )
                 )
                 {
-                    // A type parameter is one node of the type, which the compiler always writes as a single byte.
-                    return attribute.ConstructorArguments[0].Value is byte flag ? flag : (byte)0;
+                    return attribute.ConstructorArguments[0].Value is byte flag
+                        ? [flag]
+                        :
+                        [
+                            .. (
+                                (IEnumerable<CustomAttributeTypedArgument>)attribute.ConstructorArguments[0].Value!
+                            ).Select(argument => (byte)argument.Value!),
+                        ];
                 }
+            }
+
+            return [];
+        }
+
+        // The compiler's nullable flag for the member's type: 1 for T, 2 for T?, 0 when oblivious. A member without its
+        // own NullableAttribute takes the nearest NullableContextAttribute.
+        private static byte _GetDeclaredFlag(MemberInfo member)
+        {
+            if (_GetNullableFlags(member) is { Count: > 0 } flags)
+            {
+                return flags[0];
             }
 
             for (MemberInfo? scope = member; scope is not null; scope = scope.DeclaringType)

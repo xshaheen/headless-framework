@@ -147,6 +147,31 @@ public sealed class GenericNullabilityDocumentTests : TestBase
             .Be("#/components/schemas/EnvelopeUser");
     }
 
+    [Theory]
+    [InlineData("OptionalUserEnvelope")]
+    [InlineData("OptionalUserPageOfEnvelopeOrder")]
+    [InlineData("MostlyNullableUserEnvelope")]
+    public async Task should_preserve_a_concrete_nullable_argument_in_a_generic_base_type(string schemaId)
+    {
+        var document = await _GetMvcDocumentAsync();
+
+        document.ShouldBeValidOpenApi("the inherited envelopes");
+        var envelope = document.Schema(schemaId);
+        _ShouldBeNullableReference(envelope["properties"]!["data"]!, "#/components/schemas/EnvelopeUser");
+        envelope.Required().Should().NotContain("data");
+    }
+
+    [Fact]
+    public async Task should_require_a_concrete_non_nullable_argument_in_a_generic_base_type()
+    {
+        var document = await _GetMvcDocumentAsync();
+
+        var envelope = document.Schema("UserEnvelope");
+        ((string?)envelope["properties"]!["data"]!["$ref"]).Should().Be("#/components/schemas/EnvelopeUser");
+        envelope["properties"]!["data"]!["oneOf"].Should().BeNull();
+        envelope.Required().Should().Equal("data");
+    }
+
     [Fact]
     public async Task should_reuse_the_plain_component_when_a_nullable_argument_changes_no_member()
     {
@@ -260,6 +285,31 @@ public sealed class NamedPage<T> : Page<T>
     public required string Name { get; init; }
 }
 
+public class BaseEnvelope<T>
+{
+    public T Data { get; init; } = default!;
+}
+
+public sealed class OptionalUserEnvelope : BaseEnvelope<EnvelopeUser?>;
+
+public sealed class UserEnvelope : BaseEnvelope<EnvelopeUser>;
+
+// Mostly nullable members give the type a nullable NullableContext, the case where the compiler is most likely to
+// fold the base list into the context instead of writing it on the type.
+public sealed class MostlyNullableUserEnvelope : BaseEnvelope<EnvelopeUser?>
+{
+    public string? First { get; init; }
+
+    public string? Second { get; init; }
+
+    public string? Third { get; init; }
+}
+
+public sealed class OptionalUserPage<T> : BaseEnvelope<EnvelopeUser?>
+{
+    public required T Item { get; init; }
+}
+
 public sealed class Batch<T>
 {
     public required IReadOnlyList<T> Items { get; init; }
@@ -344,4 +394,17 @@ public sealed class EnvelopesController : ControllerBase
 
     [HttpGet("pages/maybe-user")]
     public ActionResult<NamedPage<EnvelopeUser?>> ReadMaybePage() => throw new NotSupportedException();
+
+    [HttpGet("envelopes/inherited/maybe-user")]
+    public ActionResult<OptionalUserEnvelope> ReadInheritedMaybeUser() => throw new NotSupportedException();
+
+    [HttpGet("envelopes/inherited/mostly-nullable")]
+    public ActionResult<MostlyNullableUserEnvelope> ReadMostlyNullableUser() => throw new NotSupportedException();
+
+    [HttpGet("envelopes/inherited/user")]
+    public ActionResult<UserEnvelope> ReadInheritedUser() => throw new NotSupportedException();
+
+    [HttpGet("pages/concrete-maybe-user")]
+    public ActionResult<OptionalUserPage<EnvelopeOrder>> ReadConcreteMaybeUserPage() =>
+        throw new NotSupportedException();
 }
