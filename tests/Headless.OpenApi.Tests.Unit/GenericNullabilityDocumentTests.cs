@@ -162,6 +162,16 @@ public sealed class GenericNullabilityDocumentTests : TestBase
     }
 
     [Fact]
+    public async Task should_keep_a_nullable_value_argument_in_a_generic_base_type_nullable()
+    {
+        var document = await _GetMvcDocumentAsync();
+
+        var envelope = document.Schema("OptionalCountEnvelope");
+        envelope["properties"]!["data"]!.Types().Should().BeEquivalentTo(["null", "integer"]);
+        envelope.Required().Should().NotContain("data");
+    }
+
+    [Fact]
     public async Task should_require_a_concrete_non_nullable_argument_in_a_generic_base_type()
     {
         var document = await _GetMvcDocumentAsync();
@@ -294,6 +304,8 @@ public sealed class OptionalUserEnvelope : BaseEnvelope<EnvelopeUser?>;
 
 public sealed class UserEnvelope : BaseEnvelope<EnvelopeUser>;
 
+public sealed class OptionalCountEnvelope : BaseEnvelope<int?>;
+
 // Mostly nullable members give the type a nullable NullableContext, the case where the compiler is most likely to
 // fold the base list into the context instead of writing it on the type.
 public sealed class MostlyNullableUserEnvelope : BaseEnvelope<EnvelopeUser?>
@@ -400,6 +412,9 @@ public sealed class EnvelopesController : ControllerBase
 
     [HttpGet("envelopes/inherited/mostly-nullable")]
     public ActionResult<MostlyNullableUserEnvelope> ReadMostlyNullableUser() => throw new NotSupportedException();
+
+    [HttpGet("envelopes/inherited/maybe-count")]
+    public ActionResult<OptionalCountEnvelope> ReadInheritedMaybeCount() => throw new NotSupportedException();
 
     [HttpGet("envelopes/inherited/user")]
     public ActionResult<UserEnvelope> ReadInheritedUser() => throw new NotSupportedException();
