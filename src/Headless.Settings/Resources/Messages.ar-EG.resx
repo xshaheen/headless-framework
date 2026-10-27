@@ -24,7 +24,7 @@
     <value>مفيش مستخدم متاح يتستخدم مع موفر الإعدادات.</value>
   </data>
   <data name="setting:tenant_not_available" xml:space="preserve">
-    <value>مفيش مستأجر متاح يتستخدم مع موفر الإعدادات.</value>
+    <value>مفيش جهة متاحة تتستخدم مع موفر الإعدادات.</value>
   </data>
   <data name="setting:decryption_failed" xml:space="preserve">
     <value>تعذّر فك تشفير قيمة الإعداد {0}.</value>

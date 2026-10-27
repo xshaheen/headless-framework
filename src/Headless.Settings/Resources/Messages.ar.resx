@@ -24,7 +24,7 @@
     <value>لا يوجد مستخدم متاح للاستخدام مع موفر الإعدادات.</value>
   </data>
   <data name="setting:tenant_not_available" xml:space="preserve">
-    <value>لا يوجد مستأجر متاح للاستخدام مع موفر الإعدادات.</value>
+    <value>لا توجد جهة متاحة للاستخدام مع موفر الإعدادات.</value>
   </data>
   <data name="setting:decryption_failed" xml:space="preserve">
     <value>تعذّر فك تشفير قيمة الإعداد {0}.</value>
