@@ -1,6 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using FluentValidation;
+using FluentValidation.Internal;
 using FluentValidation.Validators;
 using Headless.Text;
 using Microsoft.Extensions.Logging;
@@ -11,6 +14,8 @@ namespace Headless.OpenApi;
 /// <summary>Reads FluentValidation rules and writes their bounds onto OpenAPI schemas.</summary>
 internal static class ValidationExtensions
 {
+    private static readonly ConditionalWeakTable<Type, MethodInfo?> _GetValidatorMethods = [];
+
     /// <summary>
     /// Resolves the <c>IValidator&lt;T&gt;</c> of <paramref name="type"/>, or <see langword="null"/> when none is
     /// registered, the type cannot close the generic, or resolving it throws, which is logged.
@@ -52,6 +57,57 @@ internal static class ValidationExtensions
                     .Where(component => component is { HasCondition: false, HasAsyncCondition: false })
                     .Select(component => (component.Validator, rule.IsCollectionRule()))
             );
+    }
+
+    /// <summary>
+    /// Returns the validators an unconditional rule hands a value to through <c>Include()</c> (when
+    /// <paramref name="propertyName"/> is <see langword="null"/>) or through <c>SetValidator()</c> on the named property.
+    /// </summary>
+    /// <remarks>
+    /// <c>IValidatorDescriptor</c> exposes neither, so they are read from the rule list. Each is resolved without an
+    /// instance, the way <c>new ValidationContext&lt;T&gt;(null)</c> would, so a validator chosen from the instance is
+    /// skipped.
+    /// </remarks>
+    public static IEnumerable<IValidator> GetChildValidators(this IValidator validator, string? propertyName)
+    {
+        var adapters = (validator as IEnumerable<IValidationRule>)
+            .EmptyIfNull()
+            .Where(rule =>
+                rule.HasNoCondition()
+                && (
+                    propertyName is null
+                        ? rule is IIncludeRule
+                        : rule is not IIncludeRule
+                            && IgnoreCaseStringComparer.Instance.Equals(rule.PropertyName, propertyName)
+                )
+            )
+            .SelectMany(rule => rule.Components)
+            .Where(component => component is { HasCondition: false, HasAsyncCondition: false })
+            .Select(component => component.Validator)
+            .Where(adapter =>
+                adapter.GetType().IsGenericType
+                && adapter.GetType().GetGenericTypeDefinition() == typeof(ChildValidatorAdaptor<,>)
+            );
+
+        foreach (var adapter in adapters)
+        {
+            var getValidator = _GetValidatorMethods.GetValue(
+                adapter.GetType(),
+                static type => type.GetMethod(nameof(ChildValidatorAdaptor<,>.GetValidator))
+            );
+
+            if (getValidator is null)
+            {
+                continue;
+            }
+
+            var validationContext = Activator.CreateInstance(getValidator.GetParameters()[0].ParameterType, [null]);
+
+            if (getValidator.Invoke(adapter, [validationContext, null]) is IValidator child)
+            {
+                yield return child;
+            }
+        }
     }
 
     /// <summary>

@@ -89,29 +89,28 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
     }
 
     [Fact]
-    public async Task should_share_one_schema_between_nullable_and_non_nullable_generic_arguments()
+    public async Task should_publish_a_type_argument_member_with_the_nullability_of_the_argument_at_the_use_site()
     {
         var document = await _GetDocumentAsync();
 
-        // DataEnvelope<string> and DataEnvelope<string?> are one runtime type, so they share one component, and the
-        // native generator describes an unconstrained T as nullable for both.
-        string?[] references =
-        [
+        // DataEnvelope<string> and DataEnvelope<string?> are one runtime type; the handler's return type tells them apart.
+        string? Reference(string path) =>
             (string?)
-                document.Operation("/envelopes/nullable", "get")["responses"]!["200"]!["content"]!["application/json"]![
-                    "schema"
-                ]!["$ref"],
-            (string?)
-                document.Operation("/envelopes/plain", "get")["responses"]!["200"]!["content"]!["application/json"]![
-                    "schema"
-                ]!["$ref"],
-        ];
-        references.Should().AllBe("#/components/schemas/DataEnvelopeOfstring");
+                document.Operation(path, "get")["responses"]!["200"]!["content"]!["application/json"]!["schema"]![
+                    "$ref"
+                ];
 
-        var envelope = document.Schema("DataEnvelopeOfstring");
-        envelope["properties"]!["data"]!.Types().Should().BeEquivalentTo(["null", "string"]);
-        // The constructor parameter keeps the member required even though it may be null.
-        envelope.Required().Should().Equal("data");
+        Reference("/envelopes/plain").Should().Be("#/components/schemas/DataEnvelopeOfstring");
+        Reference("/envelopes/nullable").Should().Be("#/components/schemas/DataEnvelopeOfNullablestring");
+
+        document.Schema("DataEnvelopeOfstring")["properties"]!["data"]!.Types().Should().Equal("string");
+        document.Schema("DataEnvelopeOfNullablestring")["properties"]!["data"]!
+            .Types()
+            .Should()
+            .BeEquivalentTo(["null", "string"]);
+        // The constructor parameter keeps the member required even where it may be null.
+        document.Schema("DataEnvelopeOfstring").Required().Should().Equal("data");
+        document.Schema("DataEnvelopeOfNullablestring").Required().Should().Equal("data");
     }
 
     [Fact]

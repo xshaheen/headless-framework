@@ -203,9 +203,25 @@ public static class SetupHeadlessOpenApi
         }
 
         var createSchemaReferenceId = options.CreateSchemaReferenceId;
-        // A primitive serializes as its underlying value, so a component per primitive would only add an alias.
         options.CreateSchemaReferenceId = typeInfo =>
-            PrimitiveSchemaTransformer.IsPrimitive(typeInfo.Type) ? null : createSchemaReferenceId(typeInfo);
+        {
+            // A primitive serializes as its underlying value, so a component per primitive would only add an alias.
+            if (PrimitiveSchemaTransformer.IsPrimitive(typeInfo.Type))
+            {
+                return null;
+            }
+
+            var id = createSchemaReferenceId(typeInfo);
+
+            // The default naming drops Nullable<T>, so G<int> and G<int?> would share one id, and the generator would
+            // publish the second with the first one's schema. A custom naming is left as it is.
+            return
+                id is not null
+                && TypeUse.HasNullableValueArgument(typeInfo.Type)
+                && string.Equals(id, OpenApiOptions.CreateDefaultSchemaReferenceId(typeInfo), StringComparison.Ordinal)
+                ? TypeUse.Oblivious(typeInfo.Type).SchemaId
+                : id;
+        };
 
         // Schema transformers each walk the whole schema tree in turn, so a later one sees the earlier ones' output.
         options.AddSchemaTransformer(new PrimitiveSchemaTransformer());
@@ -214,6 +230,9 @@ public static class SetupHeadlessOpenApi
         options.AddSchemaTransformer(new FluentValidationSchemaTransformer());
         options.AddSchemaTransformer(new RequiredSchemaTransformer());
 
+        var genericNullability = new GenericNullabilityTransformer();
+        // First, so every later operation transformer sees the components each use resolves to.
+        options.AddOperationTransformer(genericNullability);
         // The response transformers must precede ProblemDetails, which types every error response that exists then.
         options.AddOperationTransformer(new OperationIdTransformer());
         options.AddOperationTransformer(_XmlComments);
@@ -229,6 +248,7 @@ public static class SetupHeadlessOpenApi
         options.AddOperationTransformer(new RequestReadingResponseTransformer());
         // Before the file rules, which write a part's encoding only into the multipart body.
         options.AddOperationTransformer(new FormFileRequestBodyTransformer());
+        options.AddOperationTransformer(new FormPartValidationTransformer());
         options.AddOperationTransformer(new FormFileValidationTransformer());
         options.AddOperationTransformer(new SecurityRequirementTransformer());
         // After every feature-specific adder, so a feature's own 404, 409, or 422 description wins over the generic one.
@@ -245,6 +265,8 @@ public static class SetupHeadlessOpenApi
         options.AddDocumentTransformer(new SecuritySchemesTransformer());
         options.AddDocumentTransformer(new TenantServersTransformer());
         options.AddDocumentTransformer(new OperationIdDeduplicationTransformer());
+        // Before the null ordering, which then also orders the nullable members of the variants it added.
+        options.AddDocumentTransformer(genericNullability);
         options.AddDocumentTransformer(new NullAlternativeLastTransformer());
         options.AddDocumentTransformer(new ProblemDetailsComponentsTransformer());
 

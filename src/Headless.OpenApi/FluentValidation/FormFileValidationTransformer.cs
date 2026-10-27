@@ -23,9 +23,9 @@ namespace Headless.OpenApi;
 /// <remarks>
 /// <para>
 /// It reads the rules through <see cref="IFileContentTypeValidator"/> and <see cref="IFileSizeValidator"/>, from
-/// the validator of the form model a Minimal API binds with <c>[FromForm]</c>, or of the type that declares a property
-/// MVC binds from the form. Several rules on one part narrow each other: the types are intersected, and the tightest
-/// bounds win. Conditional rules are skipped, as they are for schemas.
+/// the validator of the form model a Minimal API binds with <c>[FromForm]</c>, or, for a property MVC binds from the
+/// form, the validators <see cref="FormPart"/> finds for it. Several rules on one part narrow each other: the types
+/// are intersected, and the tightest bounds win. Conditional rules are skipped, as they are for schemas.
 /// </para>
 /// <para>
 /// This is an operation transformer rather than a <see cref="FluentValidationRule"/>, because the encoding belongs to the
@@ -101,15 +101,12 @@ internal sealed class FormFileValidationTransformer : IOpenApiOperationTransform
                 continue;
             }
 
-            // MVC describes each form property of a model as its own parameter, named after the property.
-            if (
-                parameter.ModelMetadata is
-                { MetadataKind: ModelMetadataKind.Property, ContainerType: { } containerType, PropertyName: { } name }
-            )
+            // MVC describes each form property of a model as its own parameter, named after its path.
+            if (parameter.ModelMetadata is { MetadataKind: ModelMetadataKind.Property })
             {
-                if (services.GetFluentValidator(containerType, _GetLogger(services)) is { } container)
+                if (FormPart.Resolve(parameter, services, _GetLogger(services)) is { } part)
                 {
-                    _Collect(rules, parameter.Name, container.GetValidatorsByPropertyNameIgnoreCase(name));
+                    _Collect(rules, parameter.Name, part.Validators);
                 }
 
                 continue;

@@ -172,7 +172,11 @@ internal static class SampleApi
             )
             .AllowAnonymous();
 
-        app.MapGet("/envelopes/nullable", () => TypedResults.Ok(new DataEnvelope<string?>(null)));
+        // The return type is declared because the compiler emits no nullable annotations for an inferred one.
+        app.MapGet(
+            "/envelopes/nullable",
+            Ok<DataEnvelope<string?>> () => TypedResults.Ok(new DataEnvelope<string?>(null))
+        );
         app.MapGet("/envelopes/plain", () => TypedResults.Ok(new DataEnvelope<string>("x")));
     }
 }
