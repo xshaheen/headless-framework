@@ -419,82 +419,13 @@ public sealed class CronScheduleCacheDstTests : TestBase
         return new CronScheduleCache(zone);
     }
 
-    // Each synthetic zone copies its real zone's rules year by year. A rule's start time is standard local time and its
-    // end time daylight local time, as TimeZoneInfo defines them.
-    private static CronScheduleCache _Cairo()
-    {
-        return _Synthetic(
-            "Headless.Test.Cairo",
-            TimeSpan.FromHours(2),
-            TimeSpan.FromHours(1),
-            (2026, new DateTime(1, 4, 24, 0, 0, 0), new DateTime(1, 10, 30, 0, 0, 0)),
-            (2027, new DateTime(1, 4, 30, 0, 0, 0), new DateTime(1, 10, 29, 0, 0, 0))
-        );
-    }
+    private static CronScheduleCache _Cairo() => new(CronTestZones.Cairo());
 
-    private static CronScheduleCache _NewYork()
-    {
-        return _Synthetic(
-            "Headless.Test.NewYork",
-            TimeSpan.FromHours(-5),
-            TimeSpan.FromHours(1),
-            (2026, new DateTime(1, 3, 8, 2, 0, 0), new DateTime(1, 11, 1, 2, 0, 0)),
-            (2027, new DateTime(1, 3, 14, 2, 0, 0), new DateTime(1, 11, 7, 2, 0, 0))
-        );
-    }
+    private static CronScheduleCache _NewYork() => new(CronTestZones.NewYork());
 
-    private static CronScheduleCache _LordHowe()
-    {
-        return _Synthetic(
-            "Headless.Test.LordHowe",
-            new TimeSpan(10, 30, 0),
-            TimeSpan.FromMinutes(30),
-            (2026, new DateTime(1, 10, 4, 2, 0, 0), new DateTime(1, 4, 5, 2, 0, 0))
-        );
-    }
+    private static CronScheduleCache _LordHowe() => new(CronTestZones.LordHowe());
 
-    private static CronScheduleCache _Santiago()
-    {
-        return _Synthetic(
-            "Headless.Test.Santiago",
-            TimeSpan.FromHours(-4),
-            TimeSpan.FromHours(1),
-            (2026, new DateTime(1, 9, 6, 0, 0, 0), new DateTime(1, 4, 5, 0, 0, 0))
-        );
-    }
-
-    private static CronScheduleCache _Synthetic(
-        string id,
-        TimeSpan baseOffset,
-        TimeSpan daylightDelta,
-        params (int Year, DateTime Start, DateTime End)[] years
-    )
-    {
-        var rules = years
-            .Select(year =>
-                TimeZoneInfo.AdjustmentRule.CreateAdjustmentRule(
-                    new DateTime(year.Year, 1, 1),
-                    new DateTime(year.Year, 12, 31),
-                    daylightDelta,
-                    _FixedDate(year.Start),
-                    _FixedDate(year.End)
-                )
-            )
-            .ToArray();
-
-        var zone = TimeZoneInfo.CreateCustomTimeZone(id, baseOffset, id, id + " Standard", id + " Daylight", rules);
-
-        return new CronScheduleCache(zone);
-    }
-
-    private static TimeZoneInfo.TransitionTime _FixedDate(DateTime monthDayTime)
-    {
-        return TimeZoneInfo.TransitionTime.CreateFixedDateRule(
-            new DateTime(1, 1, 1, monthDayTime.Hour, monthDayTime.Minute, 0),
-            monthDayTime.Month,
-            monthDayTime.Day
-        );
-    }
+    private static CronScheduleCache _Santiago() => new(CronTestZones.Santiago());
 
     #endregion
 }
