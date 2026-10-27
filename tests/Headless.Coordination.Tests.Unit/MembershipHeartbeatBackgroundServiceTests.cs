@@ -452,6 +452,33 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
     }
 
     [Fact]
+    public async Task should_leave_in_stopped_when_the_earlier_stop_phase_already_spent_the_host_token()
+    {
+        // given: a sequential stop whose earlier StopAsync calls used up the shutdown timeout
+        var store = new FakeMembershipStore();
+        var participant = new ControlledDrainParticipant();
+        var logger = new RecordingLogger();
+        var (sut, _, membership) = _CreateSut(store, participants: [participant], logger: logger);
+        using var serviceLifetime = sut;
+        await sut.StartingAsync(AbortToken);
+        await sut.StartAsync(AbortToken);
+        await membership.RegisterAsync(AbortToken);
+        await _WaitUntilAsync(() => store.Heartbeats.Count > 0);
+        using var stopToken = new CancellationTokenSource();
+        await sut.StoppingAsync(stopToken.Token);
+        await sut.StopAsync(stopToken.Token).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await stopToken.CancelAsync();
+
+        // when
+        await sut.StoppedAsync(stopToken.Token).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then: the drain wait is cut short, and the leave still reaches the store on its own budget
+        store.Leaves.Should().ContainSingle();
+        membership.Identity.Should().BeNull();
+        logger.EventNames.Should().ContainSingle(name => name == "DrainWaitCutShort");
+    }
+
+    [Fact]
     public async Task should_leave_and_log_when_the_stop_token_cuts_the_drain_wait_short()
     {
         // given: a participant that never drains and ignores the token

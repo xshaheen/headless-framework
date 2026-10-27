@@ -99,6 +99,9 @@ public sealed class DocumentCommentTests : TestBase
         var alternatives = document.Schema("MemberView")["properties"]!["address"]!["oneOf"]!.AsArray();
         ((string?)alternatives[0]!["$ref"]).Should().Be("#/components/schemas/MemberAddress");
         ((string?)alternatives[1]!["type"]).Should().Be("null");
+
+        // The property comment moved onto the oneOf, so the reference inside it carries none.
+        alternatives[0]!.ShouldBeJson("""{"$ref":"#/components/schemas/MemberAddress"}""");
     }
 }
 

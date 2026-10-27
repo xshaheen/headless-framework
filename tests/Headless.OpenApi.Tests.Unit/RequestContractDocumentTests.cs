@@ -259,6 +259,36 @@ public sealed class RequestContractDocumentTests : TestBase
     }
 
     [Fact]
+    public async Task should_publish_an_mvc_form_as_multipart_when_a_nested_object_or_a_custom_collection_holds_the_file()
+    {
+        var document = await OpenApiTestHost.GetDocumentAsync(
+            builder =>
+            {
+                builder
+                    .Services.AddControllers()
+                    .ConfigureApplicationPartManager(manager =>
+                        manager.FeatureProviders.Add(new SingleControllerFeatureProvider(typeof(ProfilesController)))
+                    );
+                builder.Services.AddHeadlessOpenApi();
+            },
+            app => app.MapControllers(),
+            "v1",
+            AbortToken
+        );
+
+        // MVC flattens a nested form object into its leaf properties, and a collection type is matched by the
+        // IFormFile items it enumerates, so both bind a file part.
+        foreach (var path in new[] { "/mvc/profiles/nested", "/mvc/profiles/collection" })
+        {
+            document.Operation(path, "post")["requestBody"]!["content"]!
+                .AsObject()
+                .Select(media => media.Key)
+                .Should()
+                .Equal(["multipart/form-data"], $"{path} binds a file");
+        }
+    }
+
+    [Fact]
     public async Task should_leave_out_endpoints_the_current_environment_hides()
     {
         // The test host runs in the Production environment.
@@ -333,6 +363,39 @@ public sealed class AvatarsController : ControllerBase
 {
     [HttpPost]
     public string Post([FromForm] AvatarForm form) => form.Caption ?? "";
+}
+
+public sealed class ProfileForm
+{
+    public string? Name { get; set; }
+
+    public ProfilePhotos? Photos { get; set; }
+}
+
+public sealed class ProfilePhotos
+{
+    public IFormFile? Avatar { get; set; }
+}
+
+public sealed class ProfileAttachmentCollection : List<IFormFile>;
+
+public sealed class ProfileAttachmentsForm
+{
+    public string? Name { get; set; }
+
+    public ProfileAttachmentCollection? Attachments { get; set; }
+}
+
+[NonController]
+[ApiController]
+[Route("mvc/profiles")]
+public sealed class ProfilesController : ControllerBase
+{
+    [HttpPost("nested")]
+    public string PostNested([FromForm] ProfileForm form) => form.Name ?? "";
+
+    [HttpPost("collection")]
+    public string PostCollection([FromForm] ProfileAttachmentsForm form) => form.Name ?? "";
 }
 
 /// <summary>Adds one controller that the default provider skips, so it stays out of the other test documents.</summary>
