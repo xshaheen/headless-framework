@@ -110,6 +110,27 @@ internal static class ValidationExtensions
         }
     }
 
+    /// <summary>Returns a validator and its unconditional Include chain, visiting each instance once.</summary>
+    public static List<IValidator> GetValidatorsIncludingIncludes(this IValidator validator)
+    {
+        var validators = new List<IValidator> { validator };
+        var seen = new HashSet<IValidator>(ReferenceEqualityComparer.Instance) { validator };
+
+        // Breadth-first, and each validator once, so an include cycle ends.
+        for (var i = 0; i < validators.Count; i++)
+        {
+            foreach (var included in validators[i].GetChildValidators(propertyName: null))
+            {
+                if (seen.Add(included))
+                {
+                    validators.Add(included);
+                }
+            }
+        }
+
+        return validators;
+    }
+
     /// <summary>
     /// Whether the rule was declared with <c>RuleForEach</c>. FluentValidation reports such a rule under the
     /// collection property's own name, so the caller must redirect its constraints to the item schema.

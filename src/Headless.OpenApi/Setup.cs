@@ -301,5 +301,8 @@ public static class SetupHeadlessOpenApi
         services.TryAddEnumerable(
             ServiceDescriptor.Transient<IApiDescriptionProvider, EndpointMetadataDescriptionProvider>()
         );
+        services.TryAddEnumerable(
+            ServiceDescriptor.Transient<IApiDescriptionProvider, BinderNameDescriptionProvider>()
+        );
     }
 }

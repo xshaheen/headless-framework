@@ -143,6 +143,7 @@ internal sealed class GenericNullabilityTransformer : IOpenApiOperationTransform
 
         private readonly OpenApiDocument _document;
         private readonly JsonSerializerOptions _jsonOptions;
+        private readonly FluentValidationNestedRules _nestedRules;
         private readonly NullabilityInfoContext _nullability = new();
 
         // The component of each generic type as the generator published it, before this walker rewrote it.
@@ -166,6 +167,7 @@ internal sealed class GenericNullabilityTransformer : IOpenApiOperationTransform
                 services.GetService<IOptions<JsonOptions>>()?.Value.SerializerOptions ?? JsonSerializerOptions.Web;
             _jsonOptions = new JsonSerializerOptions(source);
             _jsonOptions.TypeInfoResolver ??= new DefaultJsonTypeInfoResolver();
+            _nestedRules = new FluentValidationNestedRules(document, _jsonOptions, services);
         }
 
         /// <summary>Resolves the schema of one use, and returns the node to put in its place.</summary>
@@ -383,6 +385,9 @@ internal sealed class GenericNullabilityTransformer : IOpenApiOperationTransform
             if (typeInfo.Kind == JsonTypeInfoKind.Object && schema.Properties is { Count: > 0 } properties)
             {
                 _VisitProperties(schema, properties, typeInfo, use);
+                // References are extracted now, and generic members have their use-site nullability. Applying dotted
+                // rules here gives each parent its own overlay without changing the referenced child's component.
+                _nestedRules.Apply(schema, typeInfo);
             }
         }
 

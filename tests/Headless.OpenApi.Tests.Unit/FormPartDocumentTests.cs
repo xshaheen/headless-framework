@@ -5,8 +5,10 @@ using FluentValidation;
 using Headless.OpenApi;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -65,6 +67,85 @@ public sealed class FormPartDocumentTests : TestBase
         ((int)renamed["properties"]!["note"]!["maxLength"]!).Should().Be(10);
     }
 
+    [Theory]
+    [InlineData("prefixed-avatar", "upload.Avatar")]
+    [InlineData("type-prefixed-avatar", "typed.Avatar")]
+    public async Task should_publish_an_explicit_mvc_binder_prefix_on_required_form_parts(string route, string name)
+    {
+        var document = await _GetMvcDocumentAsync();
+
+        document.ShouldBeValidOpenApi("the explicitly named MVC forms");
+        var schema = _MultipartSchema(document, "/mvc/forms/" + route);
+        schema.Required().Should().Equal(name);
+        schema["properties"]![name]!.ShouldBeJson("""{"$ref":"#/components/schemas/IFormFile"}""");
+    }
+
+    [Fact]
+    public async Task should_keep_nested_rules_and_optional_ancestors_under_an_explicit_form_prefix()
+    {
+        var document = await _GetMvcDocumentAsync();
+
+        var schema = _MultipartSchema(document, "/mvc/forms/prefixed-profile");
+        schema.Required().Should().Contain("profile.Name.First").And.NotContain("profile.Backup.Number");
+        schema["properties"]!["profile.Name.First"]!.ShouldBeJson("""{"type":"string","minLength":1,"maxLength":20}""");
+        ((int)schema["properties"]!["profile.Backup.Number"]!["minLength"]!).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_publish_an_explicit_mvc_binder_prefix_on_query_properties()
+    {
+        var document = await _GetMvcDocumentAsync();
+
+        var operation = document.Operation("/mvc/forms/query", "get");
+        operation.Parameter("filter.First")["in"]!.GetValue<string>().Should().Be("query");
+        ((int)operation.Parameter("filter.Last")["schema"]!["maxLength"]!).Should().Be(50);
+    }
+
+    [Theory]
+    [InlineData("prefixed-avatar")]
+    [InlineData("type-prefixed-avatar")]
+    public async Task should_bind_a_file_posted_under_the_published_prefixed_part_name(string route)
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        _ConfigureMvcServices(builder);
+        await using var app = builder.Build();
+        app.MapControllers();
+        app.MapOpenApi();
+        await app.StartAsync(AbortToken);
+
+        try
+        {
+            using var client = app.GetTestClient();
+            var document = JsonNode.Parse(await client.GetStringAsync("/openapi/v1.json", AbortToken))!;
+            var path = "/mvc/forms/" + route;
+            var fieldName = _MultipartSchema(document, path).Required().Single();
+            using var multipart = new MultipartFormDataContent();
+            using var file = new ByteArrayContent([1, 2, 3]);
+            multipart.Add(file, fieldName, "avatar.png");
+            using var response = await client.PostAsync(path, multipart, AbortToken);
+
+            response.IsSuccessStatusCode.Should().BeTrue(await response.Content.ReadAsStringAsync(AbortToken));
+            (await response.Content.ReadAsStringAsync(AbortToken)).Should().Be("avatar.png");
+        }
+        finally
+        {
+            await app.StopAsync(AbortToken);
+        }
+    }
+
+    [Fact]
+    public async Task should_keep_file_descriptions_and_encoding_keyed_by_the_prefixed_part_name()
+    {
+        var document = await _GetMvcDocumentAsync();
+
+        var media = document.Operation("/mvc/forms/prefixed-files", "post")["requestBody"]!["content"]![
+            "multipart/form-data"
+        ]!;
+        ((string?)media["encoding"]!["upload.Image"]!["contentType"]).Should().Be("image/png, image/jpeg");
+        ((string?)media["schema"]!["properties"]!["upload.Image"]!["description"]).Should().Contain("1048576");
+    }
+
     [Fact]
     public async Task should_require_a_minimal_api_form_file_part_that_a_validator_requires()
     {
@@ -91,24 +172,22 @@ public sealed class FormPartDocumentTests : TestBase
 
     private static Task<JsonNode> _GetMvcDocumentAsync()
     {
-        return OpenApiTestHost.GetDocumentAsync(
-            builder =>
-            {
-                builder.Services.AddScoped<IValidator<UpdateAvatar>, UpdateAvatarValidator>();
-                builder.Services.AddScoped<IValidator<ProfileUpdate>, ProfileUpdateValidator>();
-                builder.Services.AddScoped<IValidator<ProfileName>, ProfileNameValidator>();
-                builder.Services.AddScoped<IValidator<RenamedUpload>, RenamedUploadValidator>();
-                builder
-                    .Services.AddControllers()
-                    .ConfigureApplicationPartManager(manager =>
-                        manager.FeatureProviders.Add(new SingleControllerFeatureProvider(typeof(FormsController)))
-                    );
-                builder.Services.AddHeadlessOpenApi();
-            },
-            app => app.MapControllers(),
-            "v1",
-            AbortToken
-        );
+        return OpenApiTestHost.GetDocumentAsync(_ConfigureMvcServices, app => app.MapControllers(), "v1", AbortToken);
+    }
+
+    private static void _ConfigureMvcServices(WebApplicationBuilder builder)
+    {
+        builder.Services.AddScoped<IValidator<UpdateAvatar>, UpdateAvatarValidator>();
+        builder.Services.AddScoped<IValidator<ProfileUpdate>, ProfileUpdateValidator>();
+        builder.Services.AddScoped<IValidator<ProfileName>, ProfileNameValidator>();
+        builder.Services.AddScoped<IValidator<RenamedUpload>, RenamedUploadValidator>();
+        builder.Services.AddScoped<IValidator<AvatarForm>, AvatarFormValidator>();
+        builder
+            .Services.AddControllers()
+            .ConfigureApplicationPartManager(manager =>
+                manager.FeatureProviders.Add(new SingleControllerFeatureProvider(typeof(FormsController)))
+            );
+        builder.Services.AddHeadlessOpenApi();
     }
 
     private static JsonNode _MultipartSchema(JsonNode document, string path)
@@ -224,4 +303,22 @@ public sealed class FormsController : ControllerBase
 
     [HttpPost("profile")]
     public string PostProfile([FromForm] ProfileUpdate form) => form.Bio ?? "";
+
+    [HttpPost("prefixed-avatar")]
+    public string PostPrefixedAvatar([FromForm(Name = "upload")] UpdateAvatar form) => form.Avatar.FileName;
+
+    [HttpPost("prefixed-profile")]
+    public string PostPrefixedProfile([FromForm(Name = "profile")] ProfileUpdate form) => form.Bio ?? "";
+
+    [HttpPost("type-prefixed-avatar")]
+    public string PostTypePrefixedAvatar([FromForm] TypeNamedUpload form) => form.Avatar.FileName;
+
+    [HttpPost("prefixed-files")]
+    public string PostPrefixedFiles([FromForm(Name = "upload")] AvatarForm form) => form.Caption ?? "";
+
+    [HttpGet("query")]
+    public string GetQuery([FromQuery(Name = "filter")] ProfileName query) => query.First ?? "";
 }
+
+[ModelBinder(Name = "typed")]
+public sealed record TypeNamedUpload(IFormFile Avatar);

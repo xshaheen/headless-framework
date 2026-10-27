@@ -74,13 +74,16 @@ internal sealed class FormPart
 
         var nullability = new NullabilityInfoContext();
         var rootType = parameter.ParameterDescriptor?.ParameterType;
-        var path = rootType is null ? null : _ResolvePath(rootType, parameter.Name, leaf);
+        var path = rootType is null ? null : _ResolvePath(rootType, parameter, leaf, services);
 
         if (path is null)
         {
             // A renamed part or an unknown root: only the declaring type's own validator can be matched to it.
             var validators = services.GetFluentValidator(containerType, logger) is { } container
-                ? _Expand(container).SelectMany(v => v.GetValidatorsByPropertyNameIgnoreCase(propertyName)).ToList()
+                ? container
+                    .GetValidatorsIncludingIncludes()
+                    .SelectMany(v => v.GetValidatorsByPropertyNameIgnoreCase(propertyName))
+                    .ToList()
                 : [];
 
             return new FormPart(
@@ -94,7 +97,7 @@ internal sealed class FormPart
         // The validators that apply at each depth of the path: the root model's first.
         var levels = new List<IReadOnlyList<IValidator>>(path.Count)
         {
-            services.GetFluentValidator(rootType!, logger) is { } root ? _Expand(root) : [],
+            services.GetFluentValidator(rootType!, logger) is { } root ? root.GetValidatorsIncludingIncludes() : [],
         };
 
         for (var i = 0; i < path.Count - 1; i++)
@@ -103,14 +106,14 @@ internal sealed class FormPart
 
             if (services.GetFluentValidator(path[i].PropertyType, logger) is { } registered)
             {
-                next.AddRange(_Expand(registered));
+                next.AddRange(registered.GetValidatorsIncludingIncludes());
             }
 
             foreach (var validator in levels[i])
             {
                 foreach (var child in validator.GetChildValidators(path[i].Name))
                 {
-                    next.AddRange(_Expand(child));
+                    next.AddRange(child.GetValidatorsIncludingIncludes());
                 }
             }
 
@@ -161,10 +164,25 @@ internal sealed class FormPart
         return rules;
     }
 
-    // Maps the part name onto the root model's properties. API Explorer names a part by its property path from the
-    // model, without the model's own binding name; a renamed property matches no path.
-    private static List<PropertyInfo>? _ResolvePath(Type rootType, string name, PropertyInfo leaf)
+    // The binder prefix is part of the wire name, not a property of the model whose validator names this path.
+    private static List<PropertyInfo>? _ResolvePath(
+        Type rootType,
+        ApiParameterDescription parameter,
+        PropertyInfo leaf,
+        IServiceProvider services
+    )
     {
+        var name = parameter.Name;
+        var metadataProvider = services.GetService(typeof(IModelMetadataProvider)) as IModelMetadataProvider;
+        var prefix = parameter.ParameterDescriptor is { } root
+            ? BinderNameDescriptionProvider.GetBinderModelName(root, metadataProvider)
+            : null;
+
+        if (!string.IsNullOrEmpty(prefix) && name.StartsWith(prefix + ".", StringComparison.Ordinal))
+        {
+            name = name[(prefix.Length + 1)..];
+        }
+
         var path = new List<PropertyInfo>();
         var type = rootType;
 
@@ -200,25 +218,5 @@ internal sealed class FormPart
         return property.PropertyType.IsValueType
             ? Nullable.GetUnderlyingType(property.PropertyType) is null
             : nullability.Create(property).WriteState != NullabilityState.Nullable;
-    }
-
-    private static List<IValidator> _Expand(IValidator validator)
-    {
-        var validators = new List<IValidator> { validator };
-        var seen = new HashSet<IValidator>(ReferenceEqualityComparer.Instance) { validator };
-
-        // Breadth-first, and each validator once, so an include cycle ends.
-        for (var i = 0; i < validators.Count; i++)
-        {
-            foreach (var included in validators[i].GetChildValidators(propertyName: null))
-            {
-                if (seen.Add(included))
-                {
-                    validators.Add(included);
-                }
-            }
-        }
-
-        return validators;
     }
 }
