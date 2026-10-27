@@ -69,6 +69,29 @@ public sealed class DocumentCommentTests : TestBase
     }
 
     [Fact]
+    public async Task should_describe_an_enum_and_an_object_that_only_a_property_reaches_from_their_type_comments()
+    {
+        var document = await _GetDocumentAsync();
+
+        ((string?)document.Schema("MemberRole")["description"]).Should().Be("The part a member plays in a charity.");
+        ((string?)document.Schema("MemberAddress")["description"]).Should().Be("A postal address.");
+    }
+
+    [Fact]
+    public async Task should_describe_a_property_that_refers_to_a_shared_schema_on_its_reference()
+    {
+        var document = await _GetDocumentAsync();
+
+        // Each reference carries its own property's comment; the shared component keeps the type's.
+        var properties = document.Schema("MemberView")["properties"]!;
+        properties["role"]!.ShouldBeJson(
+            """{"$ref":"#/components/schemas/MemberRole","description":"What the member may do in the charity."}"""
+        );
+        properties["invitedAs"]!.ShouldBeJson("""{"$ref":"#/components/schemas/MemberRole"}""");
+        ((string?)properties["address"]!["description"]).Should().Be("Where the member works; null when not recorded.");
+    }
+
+    [Fact]
     public async Task should_list_the_null_alternative_of_a_nullable_object_last()
     {
         var document = await _GetDocumentAsync();
@@ -88,10 +111,24 @@ public sealed class MemberView
     /// <summary>Whether this member owns <see cref="CharityId" />.</summary>
     public bool IsOwner { get; init; }
 
+    /// <summary>Where the member works; null when not recorded.</summary>
     public MemberAddress? Address { get; init; }
+
+    /// <summary>What the member may do in the charity.</summary>
+    public MemberRole Role { get; init; }
+
+    public MemberRole InvitedAs { get; init; }
 }
 
+/// <summary>A postal address.</summary>
 public sealed record MemberAddress(string City);
+
+/// <summary>The part a member plays in a charity.</summary>
+public enum MemberRole
+{
+    Staff,
+    Owner,
+}
 
 /// <summary>Invites a member.</summary>
 /// <param name="Email">The address the invitation goes to.</param>
