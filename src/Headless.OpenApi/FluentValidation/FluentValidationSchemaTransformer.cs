@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization.Metadata;
 using FluentValidation;
-using FluentValidation.Internal;
 using FluentValidation.Validators;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
@@ -36,8 +34,6 @@ namespace Headless.OpenApi;
 /// </remarks>
 internal sealed class FluentValidationSchemaTransformer : IOpenApiSchemaTransformer
 {
-    private static readonly ConditionalWeakTable<Type, MethodInfo?> _GetValidatorMethods = [];
-
     private ILogger? _logger;
 
     public Task TransformAsync(
@@ -114,7 +110,7 @@ internal sealed class FluentValidationSchemaTransformer : IOpenApiSchemaTransfor
             ?? NullLogger.Instance;
     }
 
-    private sealed class RuleApplier
+    internal sealed class RuleApplier
     {
         private readonly ILogger _logger;
         private readonly FluentValidationRule[] _rules;
@@ -135,7 +131,10 @@ internal sealed class FluentValidationSchemaTransformer : IOpenApiSchemaTransfor
 
             try
             {
-                _ApplyIncludedValidators(schema, typeInfo, validator);
+                foreach (var included in validator.GetValidatorsIncludingIncludes(_logger, _throwOnError).Skip(1))
+                {
+                    _ApplyToObject(schema, typeInfo, included);
+                }
             }
             catch (Exception e)
             {
@@ -162,6 +161,23 @@ internal sealed class FluentValidationSchemaTransformer : IOpenApiSchemaTransfor
             )
             {
                 _Apply(new RuleContext(schema, propertyName, propertyValidator, isCollectionRule), declaringType.Name);
+            }
+        }
+
+        /// <summary>
+        /// Applies <paramref name="validators"/> to the property <paramref name="propertyKey"/> of
+        /// <paramref name="schema"/>, which lists it the way an object schema lists a member.
+        /// </summary>
+        public void ApplyToProperty(
+            OpenApiSchema schema,
+            string propertyKey,
+            IEnumerable<(IPropertyValidator Validator, bool IsCollectionRule)> validators,
+            string typeName
+        )
+        {
+            foreach (var (propertyValidator, isCollectionRule) in validators)
+            {
+                _Apply(new RuleContext(schema, propertyKey, propertyValidator, isCollectionRule), typeName);
             }
         }
 
@@ -211,43 +227,6 @@ internal sealed class FluentValidationSchemaTransformer : IOpenApiSchemaTransfor
                         throw;
                     }
                 }
-            }
-        }
-
-        private void _ApplyIncludedValidators(OpenApiSchema schema, JsonTypeInfo typeInfo, IValidator validator)
-        {
-            // IValidatorDescriptor does not expose include rules, so read them from the rule list.
-            var childAdapters = (validator as IEnumerable<IValidationRule>)
-                .EmptyIfNull()
-                .Where(rule => rule.HasNoCondition() && rule is IIncludeRule)
-                .SelectMany(rule => rule.Components.Select(component => component.Validator))
-                .Where(adapter =>
-                    adapter.GetType().IsGenericType
-                    && adapter.GetType().GetGenericTypeDefinition() == typeof(ChildValidatorAdaptor<,>)
-                );
-
-            foreach (var adapter in childAdapters)
-            {
-                var getValidator = _GetValidatorMethods.GetValue(
-                    adapter.GetType(),
-                    static type => type.GetMethod(nameof(ChildValidatorAdaptor<,>.GetValidator))
-                );
-
-                if (getValidator is null)
-                {
-                    continue;
-                }
-
-                // Equivalent to new ValidationContext<T>(null): the included validator is resolved without an instance.
-                var validationContext = Activator.CreateInstance(getValidator.GetParameters()[0].ParameterType, [null]);
-
-                if (getValidator.Invoke(adapter, [validationContext, null]) is not IValidator includeValidator)
-                {
-                    continue;
-                }
-
-                _ApplyToObject(schema, typeInfo, includeValidator);
-                _ApplyIncludedValidators(schema, typeInfo, includeValidator);
             }
         }
 
@@ -313,4 +292,12 @@ internal static partial class FluentValidationSchemaTransformerLog
         Message = "GetValidator for type '{TypeName}' fails"
     )]
     internal static partial void LogGetValidatorFailed(this ILogger logger, Exception exception, string typeName);
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "GetChildValidatorFailed",
+        Level = LogLevel.Warning,
+        Message = "GetChildValidator for validator '{TypeName}' fails; skipping the child validator"
+    )]
+    internal static partial void LogGetChildValidatorFailed(this ILogger logger, Exception exception, string typeName);
 }
