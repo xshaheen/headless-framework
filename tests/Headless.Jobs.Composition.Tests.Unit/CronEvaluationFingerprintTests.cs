@@ -112,6 +112,37 @@ public sealed class CronEvaluationFingerprintTests : TestBase
         fingerprint.Should().MatchRegex("^[0-9a-f]{64}$", "a hex SHA-256 digest, not a runtime hash code");
     }
 
+    /// <summary>
+    /// A change to how the framework maps occurrences through a gap or an overlap moves instants exactly as a tzdata
+    /// update does, with the expression and the zone untouched, so it must surface the same way.
+    /// </summary>
+    [Fact]
+    public void should_change_when_the_framework_dst_rule_changes()
+    {
+        var zone = _Zone(daylightStartMonth: 3);
+
+        var current = CronEvaluationFingerprint.Compute(zone, dstRuleVersion: 1);
+        var next = CronEvaluationFingerprint.Compute(zone, dstRuleVersion: 2);
+
+        next.Should().NotBe(current);
+        next.Should().MatchRegex("^[0-9a-f]{64}$");
+    }
+
+    [Fact]
+    public void should_not_change_for_the_same_zone_under_the_same_dst_rule()
+    {
+        var zone = _Zone(daylightStartMonth: 3);
+
+        CronEvaluationFingerprint
+            .Compute(zone, dstRuleVersion: 1)
+            .Should()
+            .Be(CronEvaluationFingerprint.Compute(zone, dstRuleVersion: 1));
+        CronEvaluationFingerprint
+            .Compute(zone)
+            .Should()
+            .Be(CronEvaluationFingerprint.Compute(zone, CronEvaluationFingerprint.DstRuleVersion));
+    }
+
     private static TimeZoneInfo _Zone(int daylightStartMonth, int deltaHours = 1, int baseOffsetDeltaHours = 0)
     {
         var start = TimeZoneInfo.TransitionTime.CreateFloatingDateRule(

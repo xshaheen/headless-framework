@@ -9,13 +9,14 @@ using NCrontab;
 namespace Headless.Jobs;
 
 /// <summary>
-/// Fingerprints the rules a schedule position was derived under: the cron library's semantics and the effective
-/// timezone's actual DST rules. Only equality is meaningful — a mismatch says "an identical expression and timezone
+/// Fingerprints the rules a schedule position was derived under: the cron library's semantics, the framework's rule for
+/// mapping occurrences through a DST gap or overlap, and the effective timezone's actual DST rules. Only equality is meaningful — a mismatch says "an identical expression and timezone
 /// would now resolve to a different instant", which is a signal, not a value to interpret.
 /// </summary>
 /// <remarks>
 /// This exists because an expression and a timezone id can stay byte-identical while the instant they resolve to
-/// moves: a tzdata update shifts a zone's transition rules, or a cron library changes how it interprets a field.
+/// moves: a tzdata update shifts a zone's transition rules, a cron library changes how it interprets a field, or the
+/// framework changes which instants a gap or an overlap produces.
 /// Nothing in the persisted definition would record that, so a position derived under the old rules keeps a meaning
 /// nobody can see has changed.
 /// <para>
@@ -37,14 +38,27 @@ internal static class CronEvaluationFingerprint
     private static readonly string _CronLibraryVersion =
         typeof(CrontabSchedule).Assembly.GetName().Version?.ToString() ?? "unknown";
 
+    /// <summary>
+    /// The version of the framework's gap and overlap mapping in <c>CronScheduleCache</c>. Bump it whenever that rule
+    /// changes which instants an unchanged definition fires at, so every definition is rebased once onto the new rule.
+    /// </summary>
+    internal const int DstRuleVersion = 1;
+
     /// <summary>Computes the fingerprint for the rules <paramref name="timeZone"/> currently defines.</summary>
     /// <param name="timeZone">The effective zone, already resolved from the definition's optional identifier.</param>
     /// <returns>A stable, opaque, 64-character lowercase hex digest.</returns>
     public static string Compute(TimeZoneInfo timeZone)
     {
+        return Compute(timeZone, DstRuleVersion);
+    }
+
+    /// <summary>Computes the fingerprint as if the framework's DST mapping were at <paramref name="dstRuleVersion"/>.</summary>
+    internal static string Compute(TimeZoneInfo timeZone, int dstRuleVersion)
+    {
         var builder = new StringBuilder(256);
 
         builder.Append("ncrontab=").Append(_CronLibraryVersion).Append('\n');
+        builder.Append("dstRule=").Append(dstRuleVersion.ToString(CultureInfo.InvariantCulture)).Append('\n');
         builder.Append("zone=").Append(timeZone.Id).Append('\n');
         builder
             .Append("baseOffset=")
