@@ -11,9 +11,10 @@ namespace Headless.Coordination;
 /// beating and leaves. A node that left, or that stopped beating long enough to self-fence, is dead to its peers:
 /// they reclaim the rows it still owns while its in-flight work is settling them. Waiting here keeps the node a live
 /// owner until that work has written its outcome. Register each implementation as a singleton
-/// <see cref="INodeDrainParticipant"/>; the heartbeat resolves all of them. Under the default sequential host stop,
-/// services registered after coordination stop first, so their participant has usually completed by the time the
-/// heartbeat asks; the wait matters when <c>HostOptions.ServicesStopConcurrently</c> is set.
+/// <see cref="INodeDrainParticipant"/>; the heartbeat resolves all of them. The heartbeat waits in
+/// <c>IHostedLifecycleService.StoppedAsync</c>, after every hosted service's <c>StopAsync</c> has returned, so a
+/// participant may complete inside its own service's stop, whatever the registration order or
+/// <c>HostOptions.ServicesStopConcurrently</c>.
 /// </remarks>
 [PublicAPI]
 public interface INodeDrainParticipant

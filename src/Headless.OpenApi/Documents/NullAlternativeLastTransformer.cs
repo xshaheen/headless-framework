@@ -7,12 +7,14 @@ namespace Headless.OpenApi;
 
 /// <summary>
 /// Lists the <see langword="null"/> alternative of a <c>oneOf</c> or <c>anyOf</c> last, so a nullable reference reads
-/// <c>oneOf: [{ $ref }, { type: null }]</c>.
+/// <c>oneOf: [{ $ref }, { type: null }]</c>, and lifts the property comment from that reference onto the
+/// <c>oneOf</c> itself.
 /// </summary>
 /// <remarks>
 /// The native generator writes the null alternative first, and client generators keep the order they read, so every
 /// nullable object member came out as <c>null | Address</c>. The order means nothing to a validator; it only changes
-/// what a person reads in the document and in generated code.
+/// what a person reads in the document and in generated code. The generator also leaves a nullable property's comment
+/// on the reference inside the <c>oneOf</c>, where client generators do not look for a property's description.
 /// </remarks>
 internal sealed class NullAlternativeLastTransformer : IOpenApiDocumentTransformer
 {
@@ -66,6 +68,8 @@ internal sealed class NullAlternativeLastTransformer : IOpenApiDocumentTransform
 
         _MoveNullLast(schema.OneOf);
         _MoveNullLast(schema.AnyOf);
+        _LiftReferenceDescription(schema, schema.OneOf);
+        _LiftReferenceDescription(schema, schema.AnyOf);
 
         foreach (var child in (schema.OneOf ?? []).Concat(schema.AnyOf ?? []).Concat(schema.AllOf ?? []))
         {
@@ -79,6 +83,22 @@ internal sealed class NullAlternativeLastTransformer : IOpenApiDocumentTransform
 
         _Visit(schema.Items, visited);
         _Visit(schema.AdditionalProperties, visited);
+    }
+
+    private static void _LiftReferenceDescription(OpenApiSchema schema, IList<IOpenApiSchema>? alternatives)
+    {
+        if (
+            !string.IsNullOrEmpty(schema.Description)
+            || alternatives is not { Count: 2 }
+            || alternatives[1] is not OpenApiSchema { Type: JsonSchemaType.Null }
+            || alternatives[0] is not OpenApiSchemaReference { Description: { Length: > 0 } description } reference
+        )
+        {
+            return;
+        }
+
+        schema.Description = description;
+        reference.Description = null;
     }
 
     private static void _MoveNullLast(IList<IOpenApiSchema>? alternatives)

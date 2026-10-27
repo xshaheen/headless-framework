@@ -19,24 +19,43 @@ namespace Headless.OpenApi;
 /// </remarks>
 internal sealed class XmlCommentTransformer : IOpenApiSchemaTransformer, IOpenApiOperationTransformer
 {
+    // The generator's metadata keys: a schema with a schema id moves into components and its property gets a $ref,
+    // which takes its description from the ref-description entry.
+    private const string _SchemaIdKey = "x-schema-id";
+    private const string _RefDescriptionKey = "x-ref-description";
+
     public Task TransformAsync(
         OpenApiSchema schema,
         OpenApiSchemaTransformerContext context,
         CancellationToken cancellationToken
     )
     {
-        if (!string.IsNullOrEmpty(schema.Description))
-        {
-            return Task.CompletedTask;
-        }
+        var propertySummary = context.JsonPropertyInfo?.AttributeProvider is MemberInfo member
+            ? XmlDocumentation.Summary(member)
+            : null;
 
-        if (context.JsonPropertyInfo?.AttributeProvider is MemberInfo member)
+        if (_IsComponent(schema))
         {
-            schema.Description = XmlDocumentation.Summary(member);
+            // Every property that refers to the component shares its schema, and the generator keeps whichever
+            // instance it met first, so each instance carries the type's summary and the property's own comment goes
+            // on its reference.
+            if (!string.IsNullOrEmpty(propertySummary))
+            {
+                schema.Metadata!.TryAdd(_RefDescriptionKey, propertySummary);
+            }
+
+            _DescribeType(schema, context.JsonTypeInfo.Type);
         }
-        else if (!_IsWireValueWrapper(context.JsonTypeInfo.Type))
+        else if (!string.IsNullOrEmpty(propertySummary))
         {
-            schema.Description = XmlDocumentation.Summary(context.JsonTypeInfo.Type);
+            if (string.IsNullOrEmpty(schema.Description))
+            {
+                schema.Description = propertySummary;
+            }
+        }
+        else if (context.JsonPropertyInfo is null)
+        {
+            _DescribeType(schema, context.JsonTypeInfo.Type);
         }
 
         return Task.CompletedTask;
@@ -80,6 +99,19 @@ internal sealed class XmlCommentTransformer : IOpenApiSchemaTransformer, IOpenAp
         }
 
         return Task.CompletedTask;
+    }
+
+    private static bool _IsComponent(OpenApiSchema schema)
+    {
+        return schema.Metadata?.TryGetValue(_SchemaIdKey, out var id) == true && id is string { Length: > 0 };
+    }
+
+    private static void _DescribeType(OpenApiSchema schema, Type type)
+    {
+        if (string.IsNullOrEmpty(schema.Description) && !_IsWireValueWrapper(type))
+        {
+            schema.Description = XmlDocumentation.Summary(type);
+        }
     }
 
     // A primitive is sent as its underlying value, so its type comment describes a .NET wrapper a client never sees.

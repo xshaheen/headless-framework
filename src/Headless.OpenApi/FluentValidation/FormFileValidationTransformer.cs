@@ -37,7 +37,6 @@ namespace Headless.OpenApi;
 internal sealed class FormFileValidationTransformer : IOpenApiOperationTransformer
 {
     private const string _MultipartFormData = "multipart/form-data";
-    private const string _FormUrlEncoded = "application/x-www-form-urlencoded";
 
     private ILogger? _logger;
 
@@ -47,7 +46,12 @@ internal sealed class FormFileValidationTransformer : IOpenApiOperationTransform
         CancellationToken cancellationToken
     )
     {
-        if (operation.RequestBody?.Content is not { Count: > 0 } content)
+        // FormFileRequestBodyTransformer runs first and publishes every body with a file part as multipart only.
+        if (
+            operation.RequestBody?.Content is not { } content
+            || !content.TryGetValue(_MultipartFormData, out var mediaType)
+            || _Resolve(context.Document, mediaType.Schema) is not { Properties: { Count: > 0 } properties }
+        )
         {
             return Task.CompletedTask;
         }
@@ -59,41 +63,26 @@ internal sealed class FormFileValidationTransformer : IOpenApiOperationTransform
             return Task.CompletedTask;
         }
 
-        foreach (var (mediaTypeName, mediaType) in content)
+        foreach (var key in properties.Keys.ToArray())
         {
-            var isMultipart = string.Equals(mediaTypeName, _MultipartFormData, StringComparison.OrdinalIgnoreCase);
-
-            if (
-                (!isMultipart && !string.Equals(mediaTypeName, _FormUrlEncoded, StringComparison.OrdinalIgnoreCase))
-                || _Resolve(context.Document, mediaType.Schema) is not { Properties: { Count: > 0 } properties }
-            )
+            if (!rules.TryGetValue(key, out var rule))
             {
                 continue;
             }
 
-            foreach (var key in properties.Keys.ToArray())
+            _Describe(properties, key, rule.Describe());
+
+            if (rule.ContentTypes is { Count: > 0 } contentTypes)
             {
-                if (!rules.TryGetValue(key, out var rule))
+                var encodings = mediaType.Encoding ??= new Dictionary<string, OpenApiEncoding>(StringComparer.Ordinal);
+
+                if (!encodings.TryGetValue(key, out var encoding))
                 {
-                    continue;
+                    encodings[key] = encoding = new OpenApiEncoding();
                 }
 
-                _Describe(properties, key, rule.Describe());
-
-                if (isMultipart && rule.ContentTypes is { Count: > 0 } contentTypes)
-                {
-                    var encodings = mediaType.Encoding ??= new Dictionary<string, OpenApiEncoding>(
-                        StringComparer.Ordinal
-                    );
-
-                    if (!encodings.TryGetValue(key, out var encoding))
-                    {
-                        encodings[key] = encoding = new OpenApiEncoding();
-                    }
-
-                    // OpenAPI reads a comma-separated list of media types here.
-                    encoding.ContentType = string.Join(", ", contentTypes);
-                }
+                // OpenAPI reads a comma-separated list of media types here.
+                encoding.ContentType = string.Join(", ", contentTypes);
             }
         }
 

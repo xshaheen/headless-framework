@@ -10,8 +10,8 @@ namespace Headless.Jobs.Coordination;
 /// outcomes, so no peer reclaims a row this node is still settling.
 /// </summary>
 /// <remarks>
-/// Under the default sequential host stop the scheduler, registered after coordination, stops first and this
-/// completes at once. It holds the node when <c>HostOptions.ServicesStopConcurrently</c> stops both together.
+/// It completes when the scheduler's own stop has drained. The heartbeat asks only after every hosted service has
+/// stopped, so the wait never blocks the scheduler's stop, whichever of the two is registered first.
 /// </remarks>
 internal sealed class JobsDrainParticipant(JobsSchedulerBackgroundService scheduler) : INodeDrainParticipant
 {

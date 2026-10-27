@@ -12,4 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.Api\Headless.Api.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="buildTransitive\*.props" Pack="true" PackagePath="buildTransitive\" />
+  </ItemGroup>
 </Project>
