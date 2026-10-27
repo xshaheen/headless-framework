@@ -229,6 +229,12 @@ public sealed class CronScheduleCacheDstTests : TestBase
                 _Utc(2026, 4, 4, 15, 0),
                 _Utc(2026, 4, 4, 15, 15)
             );
+
+        // The repeated window [01:30, 02:00) holds one occurrence 10 minutes in; the window before it holds one 20
+        // minutes in. Equal counts at different offsets break the cadence, so 01:40 does not fire a second time.
+        _Walk(lordHowe, "0 20,40 1 * * *", _Utc(2026, 4, 4, 13, 0), _Utc(2026, 4, 5, 13, 0))
+            .Should()
+            .Equal(_Utc(2026, 4, 4, 14, 20), _Utc(2026, 4, 4, 14, 40));
     }
 
     [Fact]

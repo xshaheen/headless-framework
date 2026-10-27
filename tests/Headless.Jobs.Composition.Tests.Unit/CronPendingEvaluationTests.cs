@@ -184,10 +184,10 @@ public sealed class CronPendingEvaluationTests : TestBase
     private static readonly DateTime _CairoFallBack = new(2026, 10, 29, 21, 0, 0, DateTimeKind.Utc);
 
     /// <summary>Every 15 minutes is a cadence that continues through the repeated hour, so both passes fire.</summary>
-    private static readonly DateTime[] _CairoQuarterHours = Enumerable
-        .Range(0, 17)
-        .Select(i => _CairoFallBack.AddHours(-2).AddMinutes(15 * i))
-        .ToArray();
+    private static readonly DateTime[] _CairoQuarterHours =
+    [
+        .. Enumerable.Range(0, 17).Select(i => _CairoFallBack.AddHours(-2).AddMinutes(15 * i)),
+    ];
 
     [Theory]
     [InlineData("2026-10-29T19:45:00Z")]
