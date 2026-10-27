@@ -97,8 +97,8 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
     {
         var radius = CronZoneTransition.SearchRadius;
 
-        return CronZoneTransition.OffsetAt(timeZone, CronZoneTransition.Add(utc, -radius)) == offset
-            && CronZoneTransition.OffsetAt(timeZone, CronZoneTransition.Add(utc, radius)) == offset;
+        return CronZoneTransition.OffsetAt(timeZone, utc.SafeAdd(-radius)) == offset
+            && CronZoneTransition.OffsetAt(timeZone, utc.SafeAdd(radius)) == offset;
     }
 
     /// <summary>
@@ -120,42 +120,12 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
     {
         var lower = cursor;
         var stretch = cursor;
+        var offset = CronZoneTransition.OffsetAt(timeZone, cursor);
+        var previous = CronZoneTransition.FindPrevious(timeZone, cursor);
 
         while (true)
         {
-            var offset = CronZoneTransition.OffsetAt(timeZone, stretch);
-            var previous = CronZoneTransition.FindPrevious(timeZone, stretch);
-            var from = lower;
-            DateTime? candidate = null;
-
-            if (previous is { IsGap: true } gap)
-            {
-                // A local time the gap removed keeps the offset before the gap, which moves it forward by the gap.
-                if (
-                    _NextAtOffset(schedule, lower, gap.OffsetBefore) is { } shifted
-                    && CronZoneTransition.Add(shifted, gap.OffsetBefore) < gap.LocalAfter
-                )
-                {
-                    candidate = shifted;
-                }
-            }
-            else if (previous is { } overlap && !_ContinuesCadence(schedule, expression, timeZone, overlap))
-            {
-                // The second passes are the instants [T, T + D); a schedule whose cadence breaks there skips them.
-                var secondPassEnd = overlap.InstantUtc + (overlap.OffsetBefore - overlap.OffsetAfter);
-
-                if (from < secondPassEnd)
-                {
-                    from = secondPassEnd.AddTicks(-1);
-                }
-            }
-
-            if (_NextAtOffset(schedule, from, offset) is { } mapped && (candidate is null || mapped < candidate))
-            {
-                candidate = mapped;
-            }
-
-            if (candidate is not { } next)
+            if (_NextInStretch(schedule, expression, timeZone, lower, offset, previous) is not { } next)
             {
                 return null;
             }
@@ -165,9 +135,55 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
                 return next;
             }
 
+            // The transition that ends this stretch is the one that opens the next, so it is not searched for again.
+            previous = transition;
+            offset = transition.OffsetAfter;
             stretch = transition.InstantUtc;
             lower = transition.InstantUtc.AddTicks(-1);
         }
+    }
+
+    /// <summary>
+    /// The earliest member strictly after <paramref name="lower"/> in a stretch at <paramref name="offset"/> that
+    /// <paramref name="previous"/> opens, before checking whether a later transition ends the stretch first.
+    /// </summary>
+    private DateTime? _NextInStretch(
+        CrontabSchedule schedule,
+        string expression,
+        TimeZoneInfo timeZone,
+        DateTime lower,
+        TimeSpan offset,
+        CronZoneTransition? previous
+    )
+    {
+        var from = lower;
+        DateTime? shifted = null;
+
+        if (previous is { IsGap: true } gap)
+        {
+            // A local time the gap removed keeps the offset before the gap, which moves it forward by the gap.
+            if (
+                _NextAtOffset(schedule, lower, gap.OffsetBefore) is { } removed
+                && removed.SafeAdd(gap.OffsetBefore) < gap.LocalAfter
+            )
+            {
+                shifted = removed;
+            }
+        }
+        else if (previous is { } overlap && !_ContinuesCadence(schedule, expression, timeZone, overlap))
+        {
+            // The second passes are the instants [T, T + D); a schedule whose cadence breaks there skips them.
+            var secondPassEnd = overlap.InstantUtc + (overlap.OffsetBefore - overlap.OffsetAfter);
+
+            if (from < secondPassEnd)
+            {
+                from = secondPassEnd.AddTicks(-1);
+            }
+        }
+
+        var mapped = _NextAtOffset(schedule, from, offset);
+
+        return shifted is null || (mapped is { } m && m < shifted) ? mapped : shifted;
     }
 
     /// <summary>
@@ -176,7 +192,7 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
     /// </summary>
     private static DateTime? _NextAtOffset(CrontabSchedule schedule, DateTime lowerUtc, TimeSpan offset)
     {
-        var local = DateTime.SpecifyKind(CronZoneTransition.Add(lowerUtc, offset), DateTimeKind.Unspecified);
+        var local = DateTime.SpecifyKind(lowerUtc.SafeAdd(offset), DateTimeKind.Unspecified);
         var next = schedule.GetNextOccurrence(local);
 
         if (_HasNoFutureOccurrence(next))
@@ -184,7 +200,7 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
             return null;
         }
 
-        return DateTime.SpecifyKind(CronZoneTransition.Add(next, -offset), DateTimeKind.Utc);
+        return DateTime.SpecifyKind(next.SafeAdd(-offset), DateTimeKind.Utc);
     }
 
     // The verdict depends only on the expression and the transition, and a seconds-field expression enumerates
@@ -403,7 +419,6 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
         return true;
     }
 
-    /// <summary>How many overlap cadence verdicts this cache holds, one per expression, zone, and transition.</summary>
     internal int CadenceVerdictCount => _cadenceVerdicts.Count;
 
     public bool Invalidate(string expression)

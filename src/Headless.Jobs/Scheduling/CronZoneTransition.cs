@@ -26,8 +26,7 @@ internal readonly record struct CronZoneTransition(DateTime InstantUtc, TimeSpan
 
     public bool IsGap => OffsetAfter > OffsetBefore;
 
-    /// <summary>The local wall-clock time the clock shows right after the transition.</summary>
-    public DateTime LocalAfter => Add(InstantUtc, OffsetAfter);
+    public DateTime LocalAfter => InstantUtc.SafeAdd(OffsetAfter);
 
     public static TimeSpan OffsetAt(TimeZoneInfo zone, DateTime utc)
     {
@@ -37,7 +36,7 @@ internal readonly record struct CronZoneTransition(DateTime InstantUtc, TimeSpan
     /// <summary>The latest transition in (<paramref name="utc"/> − <see cref="SearchRadius"/>, <paramref name="utc"/>].</summary>
     public static CronZoneTransition? FindPrevious(TimeZoneInfo zone, DateTime utc)
     {
-        var from = Add(utc, -SearchRadius);
+        var from = utc.SafeAdd(-SearchRadius);
 
         return OffsetAt(zone, from) == OffsetAt(zone, utc) ? null : _Locate(zone, from, utc);
     }
@@ -54,7 +53,7 @@ internal readonly record struct CronZoneTransition(DateTime InstantUtc, TimeSpan
 
         while (from < untilUtc)
         {
-            var to = Add(from, SearchRadius);
+            var to = from.SafeAdd(SearchRadius);
 
             if (to > untilUtc)
             {
@@ -72,16 +71,6 @@ internal readonly record struct CronZoneTransition(DateTime InstantUtc, TimeSpan
         return null;
     }
 
-    /// <summary>Adds <paramref name="span"/>, clamping at <see cref="DateTime.MinValue"/> and <see cref="DateTime.MaxValue"/>.</summary>
-    public static DateTime Add(DateTime instant, TimeSpan span)
-    {
-        // Both operands are within ±DateTime.MaxValue.Ticks, so the sum cannot overflow a long.
-        var ticks = Math.Clamp(instant.Ticks + span.Ticks, DateTime.MinValue.Ticks, DateTime.MaxValue.Ticks);
-
-        return new DateTime(ticks, instant.Kind);
-    }
-
-    // Binary search, to the second, for the single offset change between two instants whose offsets differ.
     private static CronZoneTransition _Locate(TimeZoneInfo zone, DateTime fromUtc, DateTime toUtc)
     {
         // Transitions fall on whole seconds, so flooring both ends keeps their offsets: the low end stays before the
