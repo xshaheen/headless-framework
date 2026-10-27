@@ -56,10 +56,10 @@
     <value>هذا الطلب مكرر.</value>
   </data>
   <data name="g:tenant_required" xml:space="preserve">
-    <value>تتطلب هذه العملية تحديد المستأجر، ولم يتم تحديده.</value>
+    <value>تتطلب هذه العملية تحديد الجهة، ولم تُحدَّد أي جهة.</value>
   </data>
   <data name="g:cross_tenant_write" xml:space="preserve">
-    <value>عملية الكتابة لا تطابق المستأجر الحالي.</value>
+    <value>عملية الكتابة لا تطابق الجهة الحالية.</value>
   </data>
   <data name="g:invalid_parameter_value" xml:space="preserve">
     <value>تعذّرت قراءة قيمة '{0}': صيغتها غير صحيحة أو ليست من القيم المقبولة.</value>
