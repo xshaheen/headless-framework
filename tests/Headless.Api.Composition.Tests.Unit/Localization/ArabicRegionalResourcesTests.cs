@@ -24,6 +24,13 @@ public sealed partial class ArabicRegionalResourcesTests : TestBase
 
     private static readonly string[] _RegionalCultures = ["ar-EG"];
 
+    // Literal translations a reader misreads, mapped to the framework's term. مستأجر is a renter of property; a tenant
+    // here is the organization an account belongs to.
+    private static readonly Dictionary<string, string> _RejectedTerms = new(StringComparer.Ordinal)
+    {
+        ["مستأجر"] = "الجهة",
+    };
+
     public static TheoryData<string> ArabicResourceFiles => [.. _ArabicResourceFiles()];
 
     public static TheoryData<string, string> RegionalResourceFiles =>
@@ -70,6 +77,27 @@ public sealed partial class ArabicRegionalResourcesTests : TestBase
             _Placeholders(regionalValue)
                 .Should()
                 .BeEquivalentTo(_Placeholders(arabicValue), $"{key} must fill the same placeholders as formal Arabic");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(RegionalResourceFiles))]
+    public void should_use_the_framework_terms_in_every_arabic_register(string arabicFile, string culture)
+    {
+        // given
+        var arabicPath = Path.Combine(_RepositoryRoot(), arabicFile);
+        var regionalPath = arabicPath[..^".ar.resx".Length] + $".{culture}.resx";
+
+        // when
+        var values = _ReadValues(arabicPath).Concat(_ReadValues(regionalPath));
+
+        // then
+        foreach (var (key, value) in values)
+        {
+            foreach (var (rejected, preferred) in _RejectedTerms)
+            {
+                value.Should().NotContain(rejected, $"{key} must say {preferred}, not {rejected}");
+            }
         }
     }
 

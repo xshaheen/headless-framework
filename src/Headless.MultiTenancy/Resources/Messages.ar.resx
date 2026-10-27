@@ -17,18 +17,18 @@
     </value>
   </resheader>
   <data name="g:tenant_resolution_failed" xml:space="preserve">
-    <value>تعذّر تحديد المستأجر المطلوب.</value>
+    <value>تعذّر تحديد الجهة المطلوبة.</value>
   </data>
   <data name="g:tenant_unknown" xml:space="preserve">
-    <value>لا يوجد مستأجر يطابق المعرّف المطلوب.</value>
+    <value>لا توجد جهة تطابق المعرّف المطلوب.</value>
   </data>
   <data name="g:tenant_disabled" xml:space="preserve">
-    <value>هذا المستأجر معطّل.</value>
+    <value>هذه الجهة معطّلة.</value>
   </data>
   <data name="g:tenant_identifier_mismatch" xml:space="preserve">
-    <value>معرّف المستأجر المحدد لا يطابق مستأجر الحساب الحالي.</value>
+    <value>معرّف الجهة المحدد لا يطابق جهة الحساب الحالي.</value>
   </data>
   <data name="g:tenant_identifier_invalid" xml:space="preserve">
-    <value>معرّف المستأجر غير صالح.</value>
+    <value>معرّف الجهة غير صالح.</value>
   </data>
 </root>
