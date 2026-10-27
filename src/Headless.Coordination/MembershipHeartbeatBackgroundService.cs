@@ -14,6 +14,13 @@ namespace Headless.Coordination;
 /// for whichever caller registers first (the Jobs startup gate, or this service's own register-if-null in
 /// <c>ExecuteAsync</c>). The self-fence is anchored at that registration, so a slow <c>StartingAsync</c> in a later
 /// service cannot outlast <see cref="CoordinationOptions.DeadThreshold"/> while nothing beats.
+/// <para>
+/// On stop the node leaves in <see cref="StoppedAsync"/>, which the host calls only after every hosted service's
+/// <c>StopAsync</c> has returned, so the drain wait never depends on registration order or on
+/// <c>HostOptions.ServicesStopConcurrently</c>. A participant usually completes inside its own service's stop, and a
+/// sequential stop that waited in this service's <c>StopAsync</c> would block a service registered before it from
+/// ever starting its drain.
+/// </para>
 /// </remarks>
 /// <param name="timeProvider">
 /// The registered clock: paces beats and bounds each beat by the fence budget left.
@@ -41,6 +48,7 @@ internal sealed class MembershipHeartbeatBackgroundService(
     private Dictionary<NodeIdentity, NodeLivenessState> _previous = [];
     private Task? _loop;
     private int _loopStarted;
+    private int _lifecycleStop;
     private int _disposed;
 
     public Task StartingAsync(CancellationToken cancellationToken)
@@ -57,12 +65,15 @@ internal sealed class MembershipHeartbeatBackgroundService(
 
     public Task StoppingAsync(CancellationToken cancellationToken)
     {
+        // The host calls StoppedAsync after every StopAsync, so the leave can wait for it.
+        Volatile.Write(ref _lifecycleStop, 1);
+
         return Task.CompletedTask;
     }
 
     public Task StoppedAsync(CancellationToken cancellationToken)
     {
-        return Task.CompletedTask;
+        return Volatile.Read(ref _lifecycleStop) == 0 ? Task.CompletedTask : _DrainAndLeaveAsync(cancellationToken);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -91,6 +102,21 @@ internal sealed class MembershipHeartbeatBackgroundService(
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        if (Volatile.Read(ref _lifecycleStop) != 0)
+        {
+            // Stops ExecuteAsync only. The beat loop runs on its own token and keeps the node a member while the
+            // other services stop; StoppedAsync drains and leaves.
+            await base.StopAsync(cancellationToken).ConfigureAwait(false);
+
+            return;
+        }
+
+        // A host or test that calls StopAsync without the lifecycle hooks gets the whole stop here.
+        await _DrainAndLeaveAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task _DrainAndLeaveAsync(CancellationToken cancellationToken)
     {
         // Keep beating while the participants drain: a node that leaves, or stops beating until it self-fences, is
         // dead to its peers, which then reclaim the rows its in-flight work is still settling.

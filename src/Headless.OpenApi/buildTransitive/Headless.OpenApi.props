@@ -1,0 +1,10 @@
+<Project>
+  <PropertyGroup>
+    <!--
+      Headless.OpenApi reads each assembly's XML documentation from the .xml file beside it. The SDK copies that file
+      for a project reference but not for a package, so without this the comments on every Headless type a consumer
+      returns or accepts never reach its documents. Set it to false to keep package docs out of the output.
+    -->
+    <CopyDocumentationFilesFromPackages Condition="'$(CopyDocumentationFilesFromPackages)' == ''">true</CopyDocumentationFilesFromPackages>
+  </PropertyGroup>
+</Project>

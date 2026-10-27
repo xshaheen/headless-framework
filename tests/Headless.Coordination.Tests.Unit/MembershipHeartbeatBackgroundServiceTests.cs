@@ -421,6 +421,37 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
     }
 
     [Fact]
+    public async Task should_keep_beating_through_stop_and_leave_in_stopped_when_the_host_calls_the_lifecycle_hooks()
+    {
+        // given
+        var store = new FakeMembershipStore();
+        var participant = new ControlledDrainParticipant();
+        var (sut, timeProvider, membership) = _CreateSut(store, participants: [participant]);
+        using var serviceLifetime = sut;
+        await sut.StartingAsync(AbortToken);
+        await sut.StartAsync(AbortToken);
+        await membership.RegisterAsync(AbortToken);
+        await _WaitUntilAsync(() => store.Heartbeats.Count > 0);
+
+        // when: the host's stop phase returns without waiting for any participant
+        await sut.StoppingAsync(AbortToken);
+        await sut.StopAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        var beatsAfterStop = store.Heartbeats.Count;
+        await _AdvanceUntilAsync(timeProvider, () => store.Heartbeats.Count >= beatsAfterStop + 2);
+
+        // then: still a member, and StoppedAsync is what waits for the drain
+        store.Leaves.Should().BeEmpty();
+        var stopped = sut.StoppedAsync(AbortToken);
+        await participant.Called.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        stopped.IsCompleted.Should().BeFalse();
+
+        participant.Complete();
+        await stopped.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        store.Leaves.Should().ContainSingle();
+        membership.Identity.Should().BeNull();
+    }
+
+    [Fact]
     public async Task should_leave_and_log_when_the_stop_token_cuts_the_drain_wait_short()
     {
         // given: a participant that never drains and ignores the token

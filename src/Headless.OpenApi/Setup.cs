@@ -227,6 +227,8 @@ public static class SetupHeadlessOpenApi
         options.AddOperationTransformer(new HttpContractTransformer());
         // After the feature contracts, so a feature's own description of a 400 or 413 wins over the generic one.
         options.AddOperationTransformer(new RequestReadingResponseTransformer());
+        // Before the file rules, which write a part's encoding only into the multipart body.
+        options.AddOperationTransformer(new FormFileRequestBodyTransformer());
         options.AddOperationTransformer(new FormFileValidationTransformer());
         options.AddOperationTransformer(new SecurityRequirementTransformer());
         // After every feature-specific adder, so a feature's own 404, 409, or 422 description wins over the generic one.

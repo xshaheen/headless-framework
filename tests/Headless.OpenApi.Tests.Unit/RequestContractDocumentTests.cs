@@ -203,7 +203,9 @@ public sealed class RequestContractDocumentTests : TestBase
         );
 
         document.ShouldBeValidOpenApi("the file rules");
-        var multipart = document.Operation("/avatars", "post")["requestBody"]!["content"]!["multipart/form-data"]!;
+        var content = document.Operation("/avatars", "post")["requestBody"]!["content"]!.AsObject();
+        content.Select(media => media.Key).Should().Equal("multipart/form-data");
+        var multipart = content["multipart/form-data"]!;
         multipart["encoding"]!.ShouldBeJson(
             """{"image":{"contentType":"image/png, image/jpeg"},"thumbnail":{"contentType":"image/png"}}"""
         );
@@ -241,10 +243,15 @@ public sealed class RequestContractDocumentTests : TestBase
             AbortToken
         );
 
+        // A url-encoded body cannot carry the file, so multipart is the only media type, with the parts' encodings.
+        var content = document.Operation("/mvc/avatars", "post")["requestBody"]!["content"]!.AsObject();
+        content.Select(media => media.Key).Should().Equal("multipart/form-data");
+        content["multipart/form-data"]!["encoding"]!.ShouldBeJson(
+            """{"Image":{"contentType":"image/png, image/jpeg"},"Thumbnail":{"contentType":"image/png"}}"""
+        );
+
         // MVC binds each form property as its own parameter, so the rules come from the declaring type's validator.
-        var schema = document.Operation("/mvc/avatars", "post")["requestBody"]!["content"]!.AsObject().Single().Value![
-            "schema"
-        ]!;
+        var schema = content["multipart/form-data"]!["schema"]!;
         ((string?)schema["properties"]!["Image"]!["description"])
             .Should()
             .Be("Accepted content types: image/png, image/jpeg. Size: 1 to 1048576 bytes.");
