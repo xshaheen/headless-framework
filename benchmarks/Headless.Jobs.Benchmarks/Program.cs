@@ -20,5 +20,6 @@ BenchmarkSwitcher
         typeof(JobsRequestSerializationBenchmarks),
         typeof(JobsExecutionFanoutBenchmarks),
         typeof(JobsTaskSchedulerBenchmarks),
+        typeof(CronNextOccurrenceBenchmarks),
     ])
     .Run(args, BenchmarkRunConfig.Create(args));
