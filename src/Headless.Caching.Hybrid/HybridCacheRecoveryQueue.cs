@@ -601,7 +601,11 @@ internal static partial class HybridCacheRecoveryQueueLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Auto-recovery queued a pending {Kind} for key {Key}; the hybrid cache is in degraded mode until the dependency recovers"
     )]
-    public static partial void LogAutoRecoveryItemQueued(this ILogger logger, string key, HybridCacheRecoveryKind kind);
+    internal static partial void LogAutoRecoveryItemQueued(
+        this ILogger logger,
+        string key,
+        HybridCacheRecoveryKind kind
+    );
 
     [LoggerMessage(
         EventId = 2,
@@ -609,7 +613,7 @@ internal static partial class HybridCacheRecoveryQueueLoggerExtensions
         Level = LogLevel.Information,
         Message = "Auto-recovery replayed the pending {Kind} for key {Key}"
     )]
-    public static partial void LogAutoRecoveryItemReplayed(
+    internal static partial void LogAutoRecoveryItemReplayed(
         this ILogger logger,
         string key,
         HybridCacheRecoveryKind kind
@@ -621,7 +625,7 @@ internal static partial class HybridCacheRecoveryQueueLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Auto-recovery dropped the pending {Kind} for key {Key}: the local entry changed, the queued operation is obsolete"
     )]
-    public static partial void LogAutoRecoveryItemObsolete(
+    internal static partial void LogAutoRecoveryItemObsolete(
         this ILogger logger,
         string key,
         HybridCacheRecoveryKind kind
@@ -633,7 +637,7 @@ internal static partial class HybridCacheRecoveryQueueLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Auto-recovery dropped the pending {Kind} for key {Key} after {RetryCount} failed replay attempts"
     )]
-    public static partial void LogAutoRecoveryItemDroppedAfterRetries(
+    internal static partial void LogAutoRecoveryItemDroppedAfterRetries(
         this ILogger logger,
         Exception exception,
         string key,
@@ -647,7 +651,7 @@ internal static partial class HybridCacheRecoveryQueueLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Auto-recovery dropped the pending {Kind} for key {Key}: the item expired before the dependency recovered"
     )]
-    public static partial void LogAutoRecoveryItemExpired(
+    internal static partial void LogAutoRecoveryItemExpired(
         this ILogger logger,
         string key,
         HybridCacheRecoveryKind kind
@@ -659,7 +663,7 @@ internal static partial class HybridCacheRecoveryQueueLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Auto-recovery evicted the earliest-expiring pending {Kind} for key {Key} to admit a newer item (queue full)"
     )]
-    public static partial void LogAutoRecoveryItemEvicted(
+    internal static partial void LogAutoRecoveryItemEvicted(
         this ILogger logger,
         string key,
         HybridCacheRecoveryKind kind
@@ -671,7 +675,7 @@ internal static partial class HybridCacheRecoveryQueueLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Auto-recovery rejected a pending {Kind} for key {Key}: the queue is full and the item expires before every queued item"
     )]
-    public static partial void LogAutoRecoveryItemRejected(
+    internal static partial void LogAutoRecoveryItemRejected(
         this ILogger logger,
         string key,
         HybridCacheRecoveryKind kind
@@ -683,7 +687,7 @@ internal static partial class HybridCacheRecoveryQueueLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Auto-recovery replay of the pending {Kind} for key {Key} failed (attempt {RetryCount}); barrier armed before the next pass"
     )]
-    public static partial void LogAutoRecoveryReplayFailed(
+    internal static partial void LogAutoRecoveryReplayFailed(
         this ILogger logger,
         Exception exception,
         string key,
@@ -697,7 +701,7 @@ internal static partial class HybridCacheRecoveryQueueLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Auto-recovery dropped the pending {Kind} for key {Key}: a newer L2 operation for the key succeeded"
     )]
-    public static partial void LogAutoRecoveryItemSuperseded(
+    internal static partial void LogAutoRecoveryItemSuperseded(
         this ILogger logger,
         string key,
         HybridCacheRecoveryKind kind
@@ -709,7 +713,7 @@ internal static partial class HybridCacheRecoveryQueueLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Auto-recovery dropped the pending {Kind} for key {Key}: a newer invalidation from another instance won the race"
     )]
-    public static partial void LogAutoRecoveryItemConflicted(
+    internal static partial void LogAutoRecoveryItemConflicted(
         this ILogger logger,
         string key,
         HybridCacheRecoveryKind kind
@@ -721,7 +725,7 @@ internal static partial class HybridCacheRecoveryQueueLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Auto-recovery dropped an incoming pending PublishInvalidation for key {Key}: the queued {Kind} subsumes it (a successful value-op replay publishes the key invalidation itself)"
     )]
-    public static partial void LogAutoRecoveryPublishSubsumed(
+    internal static partial void LogAutoRecoveryPublishSubsumed(
         this ILogger logger,
         string key,
         HybridCacheRecoveryKind kind
@@ -733,5 +737,5 @@ internal static partial class HybridCacheRecoveryQueueLoggerExtensions
         Level = LogLevel.Error,
         Message = "Auto-recovery background processing faulted unexpectedly; the recovery loop will resume on the next timer tick"
     )]
-    public static partial void LogAutoRecoveryProcessUnexpectedFault(this ILogger logger, Exception exception);
+    internal static partial void LogAutoRecoveryProcessUnexpectedFault(this ILogger logger, Exception exception);
 }

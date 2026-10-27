@@ -292,7 +292,7 @@ internal static partial class JobsFallbackBackgroundServiceLog
         Level = LogLevel.Warning,
         Message = "Jobs fallback tick failed; the service will retry after {FallbackPeriod}."
     )]
-    public static partial void LogJobsFallbackTickFailed(
+    internal static partial void LogJobsFallbackTickFailed(
         this ILogger logger,
         Exception exception,
         TimeSpan fallbackPeriod
@@ -304,7 +304,7 @@ internal static partial class JobsFallbackBackgroundServiceLog
         Message = "Jobs fallback service stopped because local coordination membership was lost; "
             + "reclaim sweeps and timed-out re-dispatch no longer run on this node."
     )]
-    public static partial void LogJobsFallbackStoppedOnMembershipLoss(this ILogger logger);
+    internal static partial void LogJobsFallbackStoppedOnMembershipLoss(this ILogger logger);
 
     [LoggerMessage(
         EventId = 3202,
@@ -312,7 +312,7 @@ internal static partial class JobsFallbackBackgroundServiceLog
         Message = "Reclaiming rows stamped by owner '{Owner}', which is neither Alive nor Suspected in the coordination "
             + "liveness snapshot (dead, superseded, or pruned identity)."
     )]
-    public static partial void LogJobsOrphanedOwnerReclaimed(this ILogger logger, string owner);
+    internal static partial void LogJobsOrphanedOwnerReclaimed(this ILogger logger, string owner);
 
     [LoggerMessage(
         EventId = 3203,
@@ -320,5 +320,5 @@ internal static partial class JobsFallbackBackgroundServiceLog
         Message = "Jobs fallback service stopped because startup activation failed; reclaim sweeps and timed-out "
             + "re-dispatch will not run on this node. Host startup fails with the underlying error."
     )]
-    public static partial void LogJobsFallbackStoppedOnActivationFailure(this ILogger logger, Exception exception);
+    internal static partial void LogJobsFallbackStoppedOnActivationFailure(this ILogger logger, Exception exception);
 }

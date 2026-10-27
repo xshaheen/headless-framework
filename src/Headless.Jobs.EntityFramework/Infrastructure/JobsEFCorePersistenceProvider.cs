@@ -1708,7 +1708,7 @@ internal static partial class JobsEfCorePersistenceProviderLog
         Message = "Time-job tree delete hit a conflict; retrying attempt {AttemptNumber}/{MaxAttempts} after {Delay} "
             + "for {RootIdCount} root ids."
     )]
-    public static partial void LogTreeDeleteConflictRetry(
+    internal static partial void LogTreeDeleteConflictRetry(
         this ILogger logger,
         int attemptNumber,
         int maxAttempts,

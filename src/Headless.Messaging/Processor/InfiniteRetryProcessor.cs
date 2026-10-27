@@ -69,7 +69,7 @@ internal static partial class InfiniteRetryProcessorLog
         Level = LogLevel.Warning,
         Message = "Processor '{ProcessorName}' failed. Retrying in {BackoffSeconds}s..."
     )]
-    public static partial void LogProcessorFailedRetrying(
+    internal static partial void LogProcessorFailedRetrying(
         this ILogger logger,
         Exception exception,
         string? processorName,

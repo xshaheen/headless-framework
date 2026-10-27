@@ -171,5 +171,5 @@ internal static partial class RedisStreamWakeLog
         Level = LogLevel.Warning,
         Message = "Redis error when subscribing to stream wake-ups; consumers poll at the core's interval until it succeeds"
     )]
-    public static partial void LogWakeSubscriptionFailed(this ILogger logger, Exception exception);
+    internal static partial void LogWakeSubscriptionFailed(this ILogger logger, Exception exception);
 }

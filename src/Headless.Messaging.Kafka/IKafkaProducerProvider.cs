@@ -201,7 +201,7 @@ internal static partial class KafkaProducerProviderLog
         Level = LogLevel.Debug,
         Message = "Kafka servers for messaging: {Servers}"
     )]
-    public static partial void LogKafkaServersConfigured(this ILogger logger, string servers);
+    internal static partial void LogKafkaServersConfigured(this ILogger logger, string servers);
 
     [LoggerMessage(
         EventId = 2,
@@ -209,7 +209,7 @@ internal static partial class KafkaProducerProviderLog
         Level = LogLevel.Warning,
         Message = "Kafka producer disposed with {Pending} record(s) still undelivered after the flush timeout"
     )]
-    public static partial void LogKafkaProducerFlushIncomplete(this ILogger logger, int pending);
+    internal static partial void LogKafkaProducerFlushIncomplete(this ILogger logger, int pending);
 
     [LoggerMessage(
         EventId = 3,
@@ -217,7 +217,7 @@ internal static partial class KafkaProducerProviderLog
         Level = LogLevel.Warning,
         Message = "Kafka producer flush failed during disposal"
     )]
-    public static partial void LogKafkaProducerFlushFailed(this ILogger logger, Exception exception);
+    internal static partial void LogKafkaProducerFlushFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 4,
@@ -225,5 +225,5 @@ internal static partial class KafkaProducerProviderLog
         Level = LogLevel.Warning,
         Message = "Kafka producer raised a fatal error; it was discarded and the next publish builds a new one"
     )]
-    public static partial void LogKafkaProducerDiscarded(this ILogger logger);
+    internal static partial void LogKafkaProducerDiscarded(this ILogger logger);
 }

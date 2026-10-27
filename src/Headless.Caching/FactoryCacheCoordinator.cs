@@ -1059,7 +1059,7 @@ internal static partial class FactoryCacheCoordinatorLog
         Level = LogLevel.Warning,
         Message = "Cache fail-safe activated for key {Key}; serving stale value after factory exception {ExceptionType}."
     )]
-    public static partial void LogFailSafeActivated(this ILogger logger, string key, string exceptionType);
+    internal static partial void LogFailSafeActivated(this ILogger logger, string key, string exceptionType);
 
     [LoggerMessage(
         EventId = 2,
@@ -1068,7 +1068,7 @@ internal static partial class FactoryCacheCoordinatorLog
         Message = "Cache fail-safe restamp failed for key {Key}; stale value will still be returned, but the "
             + "throttle window was not persisted so the factory may be retried sooner than expected."
     )]
-    public static partial void LogFailSafeRestampFailed(this ILogger logger, Exception exception, string key);
+    internal static partial void LogFailSafeRestampFailed(this ILogger logger, Exception exception, string key);
 
     [LoggerMessage(
         EventId = 3,
@@ -1076,7 +1076,7 @@ internal static partial class FactoryCacheCoordinatorLog
         Level = LogLevel.Debug,
         Message = "Cache store read failed for key {Key}; treating it as a cache miss."
     )]
-    public static partial void LogCacheStoreReadFailed(this ILogger logger, Exception exception, string key);
+    internal static partial void LogCacheStoreReadFailed(this ILogger logger, Exception exception, string key);
 
     [LoggerMessage(
         EventId = 4,
@@ -1084,7 +1084,7 @@ internal static partial class FactoryCacheCoordinatorLog
         Level = LogLevel.Warning,
         Message = "Cache factory timeout fired for key {Key}; kind={TimeoutKind}, limit={Timeout}."
     )]
-    public static partial void LogCacheFactoryTimedOut(
+    internal static partial void LogCacheFactoryTimedOut(
         this ILogger logger,
         string key,
         string timeoutKind,
@@ -1097,7 +1097,7 @@ internal static partial class FactoryCacheCoordinatorLog
         Level = LogLevel.Debug,
         Message = "Cache background completion succeeded for key {Key}."
     )]
-    public static partial void LogCacheBackgroundCompletionSucceeded(this ILogger logger, string key);
+    internal static partial void LogCacheBackgroundCompletionSucceeded(this ILogger logger, string key);
 
     [LoggerMessage(
         EventId = 6,
@@ -1105,7 +1105,7 @@ internal static partial class FactoryCacheCoordinatorLog
         Level = LogLevel.Warning,
         Message = "Cache background completion failed for key {Key}; exception={ExceptionType}."
     )]
-    public static partial void LogCacheBackgroundCompletionFailed(
+    internal static partial void LogCacheBackgroundCompletionFailed(
         this ILogger logger,
         Exception exception,
         string key,
@@ -1118,7 +1118,7 @@ internal static partial class FactoryCacheCoordinatorLog
         Level = LogLevel.Warning,
         Message = "Cache factory soft timeout {Timeout} is configured for key {Key}, but fail-safe is disabled; the soft timeout is inert."
     )]
-    public static partial void LogCacheSoftTimeoutInert(this ILogger logger, string key, TimeSpan timeout);
+    internal static partial void LogCacheSoftTimeoutInert(this ILogger logger, string key, TimeSpan timeout);
 
     [LoggerMessage(
         EventId = 14,
@@ -1127,7 +1127,7 @@ internal static partial class FactoryCacheCoordinatorLog
         Message = "Cache soft-timeout inert-warning suppression cap reached ({Cap} keys); {SuppressedCount} further "
             + "inert keys have been suppressed. This notice re-emits periodically while the misconfiguration persists."
     )]
-    public static partial void LogCacheSoftTimeoutInertCapReached(this ILogger logger, int cap, long suppressedCount);
+    internal static partial void LogCacheSoftTimeoutInertCapReached(this ILogger logger, int cap, long suppressedCount);
 
     [LoggerMessage(
         EventId = 8,
@@ -1138,7 +1138,7 @@ internal static partial class FactoryCacheCoordinatorLog
     // Named "Coordinator…" (not the bare "LogSlidingExpirationRearmFailed") to avoid extension-method ambiguity
     // with provider log classes (e.g. RedisCacheLog) now that the provider assemblies see Core internals via
     // InternalsVisibleTo.
-    public static partial void LogCoordinatorSlidingExpirationRearmFailed(
+    internal static partial void LogCoordinatorSlidingExpirationRearmFailed(
         this ILogger logger,
         Exception exception,
         string key
@@ -1150,7 +1150,7 @@ internal static partial class FactoryCacheCoordinatorLog
         Level = LogLevel.Debug,
         Message = "Cache eager refresh succeeded for key {Key}."
     )]
-    public static partial void LogEagerRefreshSucceeded(this ILogger logger, string key);
+    internal static partial void LogEagerRefreshSucceeded(this ILogger logger, string key);
 
     [LoggerMessage(
         EventId = 10,
@@ -1158,7 +1158,7 @@ internal static partial class FactoryCacheCoordinatorLog
         Level = LogLevel.Warning,
         Message = "Cache eager refresh failed for key {Key}; exception={ExceptionType}. The entry stays fresh until natural expiry."
     )]
-    public static partial void LogEagerRefreshFailed(
+    internal static partial void LogEagerRefreshFailed(
         this ILogger logger,
         Exception exception,
         string key,
@@ -1171,7 +1171,7 @@ internal static partial class FactoryCacheCoordinatorLog
         Level = LogLevel.Debug,
         Message = "Cache eager refresh skipped for key {Key}: the gate write failed; the entry stays fresh and re-triggerable."
     )]
-    public static partial void LogEagerRefreshSkipped(this ILogger logger, Exception exception, string key);
+    internal static partial void LogEagerRefreshSkipped(this ILogger logger, Exception exception, string key);
 
     [LoggerMessage(
         EventId = 12,
@@ -1180,7 +1180,7 @@ internal static partial class FactoryCacheCoordinatorLog
         Message = "Cache distributed factory-lock release failed for key {Key}; the lease TTL is the backstop and "
             + "other nodes may be delayed until it expires."
     )]
-    public static partial void LogCacheFactoryLockReleaseFailed(this ILogger logger, Exception exception, string key);
+    internal static partial void LogCacheFactoryLockReleaseFailed(this ILogger logger, Exception exception, string key);
 
     [LoggerMessage(
         EventId = 13,
@@ -1189,7 +1189,7 @@ internal static partial class FactoryCacheCoordinatorLog
         Message = "Cache distributed factory-lock acquire failed for key {Key}; serving stale value after lock "
             + "provider exception {ExceptionType}."
     )]
-    public static partial void LogCacheFactoryLockAcquireFailed(
+    internal static partial void LogCacheFactoryLockAcquireFailed(
         this ILogger logger,
         Exception exception,
         string key,
@@ -1203,7 +1203,7 @@ internal static partial class FactoryCacheCoordinatorLog
         Message = "Cache factory result for key {Key} was not persisted: a concurrent write changed the entry under "
             + "the lock; the value was returned to the caller and the next read will recompute."
     )]
-    public static partial void LogCacheFactoryWriteLostToConcurrentWrite(this ILogger logger, string key);
+    internal static partial void LogCacheFactoryWriteLostToConcurrentWrite(this ILogger logger, string key);
 
     [LoggerMessage(
         EventId = 16,
@@ -1212,7 +1212,7 @@ internal static partial class FactoryCacheCoordinatorLog
         Message = "Cache factory for key {Key} completed after a hard timeout but its result was discarded; the "
             + "factory ignored cancellation and the wasted work was thrown away."
     )]
-    public static partial void LogCacheFactoryDiscardedSuccess(this ILogger logger, string key);
+    internal static partial void LogCacheFactoryDiscardedSuccess(this ILogger logger, string key);
 
     [LoggerMessage(
         EventId = 17,
@@ -1222,5 +1222,5 @@ internal static partial class FactoryCacheCoordinatorLog
             + "was concurrently removed or the re-read failed), so the eager write is dropped rather than resurrecting "
             + "the key; natural expiry and the next read take over."
     )]
-    public static partial void LogEagerRefreshAbandonedGateEntryLost(this ILogger logger, string key);
+    internal static partial void LogEagerRefreshAbandonedGateEntryLost(this ILogger logger, string key);
 }

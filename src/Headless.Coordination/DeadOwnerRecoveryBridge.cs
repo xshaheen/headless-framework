@@ -194,7 +194,7 @@ internal static partial class DeadOwnerRecoveryBridgeLog
         Level = LogLevel.Error,
         Message = "Membership watch loop failed; dead-owner recovery falls back to the periodic reconcile"
     )]
-    public static partial void MembershipWatchFailed(this ILogger logger, Exception exception);
+    internal static partial void MembershipWatchFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 2,
@@ -202,7 +202,7 @@ internal static partial class DeadOwnerRecoveryBridgeLog
         Level = LogLevel.Error,
         Message = "Dead-owner liveness reconcile failed"
     )]
-    public static partial void DeadNodeReconcileFailed(this ILogger logger, Exception exception);
+    internal static partial void DeadNodeReconcileFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 3,
@@ -210,5 +210,5 @@ internal static partial class DeadOwnerRecoveryBridgeLog
         Level = LogLevel.Error,
         Message = "Failed to reclaim resources for dead owners {Owners}; will retry on the next reconcile"
     )]
-    public static partial void DeadNodeReclaimFailed(this ILogger logger, Exception exception, string owners);
+    internal static partial void DeadNodeReclaimFailed(this ILogger logger, Exception exception, string owners);
 }

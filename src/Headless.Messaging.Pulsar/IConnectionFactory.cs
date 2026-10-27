@@ -254,7 +254,7 @@ internal static partial class ConnectionFactoryLog
         Level = LogLevel.Debug,
         Message = "Messaging Pulsar configuration: ServiceUrl={ServiceUrl}, EnableClientLog={EnableClientLog}, HasTlsOptions={HasTlsOptions}"
     )]
-    public static partial void LogPulsarConfiguration(
+    internal static partial void LogPulsarConfiguration(
         this ILogger logger,
         string serviceUrl,
         bool enableClientLog,

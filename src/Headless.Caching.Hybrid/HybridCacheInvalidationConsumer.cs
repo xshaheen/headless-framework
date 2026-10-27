@@ -118,7 +118,7 @@ internal static partial class HybridCacheInvalidationConsumerLoggerExtensions
         Level = LogLevel.Error,
         Message = "Failed to process cache invalidation message (instanceId={InstanceId}, keyCount={KeyCount}, hasPrefix={HasPrefix}, flushAll={FlushAll})"
     )]
-    public static partial void LogFailedToProcessCacheInvalidation(
+    internal static partial void LogFailedToProcessCacheInvalidation(
         this ILogger logger,
         Exception exception,
         string? instanceId,

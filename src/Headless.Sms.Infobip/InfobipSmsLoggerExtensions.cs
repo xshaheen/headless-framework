@@ -12,7 +12,7 @@ internal static partial class InfobipSmsLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Infobip SMS sent successfully to {DestinationCount} recipients"
     )]
-    public static partial void LogSmsSentSuccessfully(this ILogger logger, int destinationCount);
+    internal static partial void LogSmsSentSuccessfully(this ILogger logger, int destinationCount);
 
     [LoggerMessage(
         EventId = 2,
@@ -20,7 +20,7 @@ internal static partial class InfobipSmsLoggerExtensions
         Level = LogLevel.Error,
         Message = "Infobip SMS failed to {DestinationCount} recipients, ErrorCode={ErrorCode}"
     )]
-    public static partial void LogSmsSendFailed(
+    internal static partial void LogSmsSendFailed(
         this ILogger logger,
         Exception exception,
         int destinationCount,
@@ -33,5 +33,5 @@ internal static partial class InfobipSmsLoggerExtensions
         Level = LogLevel.Error,
         Message = "Failed to send SMS using Infobip API to {DestinationCount} recipients"
     )]
-    public static partial void LogSmsSendException(this ILogger logger, Exception exception, int destinationCount);
+    internal static partial void LogSmsSendException(this ILogger logger, Exception exception, int destinationCount);
 }

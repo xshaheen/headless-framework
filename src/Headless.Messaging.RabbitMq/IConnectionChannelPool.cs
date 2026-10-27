@@ -540,7 +540,7 @@ internal static partial class ConnectionChannelPoolLog
         Level = LogLevel.Debug,
         Message = "RabbitMQ configuration:'HostName:{OptionsHostName}, Port:{OptionsPort}, UserName:{OptionsUserName}, VirtualHost:{OptionsVirtualHost}, ExchangeName:{OptionsExchangeName}'"
     )]
-    public static partial void Configuration(
+    internal static partial void Configuration(
         this ILogger logger,
         string optionsHostName,
         int optionsPort,
@@ -550,5 +550,5 @@ internal static partial class ConnectionChannelPoolLog
     );
 
     [LoggerMessage(EventId = 3006, Level = LogLevel.Error, Message = "RabbitMQ channel model create failed!")]
-    public static partial void ChannelModelCreateFailed(this ILogger logger, Exception exception);
+    internal static partial void ChannelModelCreateFailed(this ILogger logger, Exception exception);
 }

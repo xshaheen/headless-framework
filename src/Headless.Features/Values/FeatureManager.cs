@@ -507,7 +507,7 @@ internal static partial class FeatureManagerLog
         Level = LogLevel.Warning,
         Message = "Failed to announce a feature change for provider {ProviderName} (key={ProviderKey}, names={NameCount}); the write succeeded and peers keep their copies until they re-read"
     )]
-    public static partial void LogFailedToPublishFeatureChanged(
+    internal static partial void LogFailedToPublishFeatureChanged(
         this ILogger logger,
         Exception exception,
         string providerName,

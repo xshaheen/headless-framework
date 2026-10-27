@@ -1176,7 +1176,7 @@ internal static partial class JobsTaskSchedulerLog
         Level = LogLevel.Error,
         Message = "Jobs worker slot {WorkerId} faulted outside user work; restart is rate-limited."
     )]
-    public static partial void WorkerLoopFaulted(this ILogger logger, Exception exception, int workerId);
+    internal static partial void WorkerLoopFaulted(this ILogger logger, Exception exception, int workerId);
 
     [LoggerMessage(
         EventId = 3304,
@@ -1185,7 +1185,7 @@ internal static partial class JobsTaskSchedulerLog
         Message = "A jobs work item faulted past the execution handler's own error handling; the worker continues. "
             + "If this was a terminal-status write the job may re-run after its lease lapses."
     )]
-    public static partial void WorkItemFaulted(this ILogger logger, Exception exception);
+    internal static partial void WorkItemFaulted(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 3301,
@@ -1193,7 +1193,11 @@ internal static partial class JobsTaskSchedulerLog
         Level = LogLevel.Critical,
         Message = "Jobs worker slot {WorkerId} degraded after {ConsecutiveFaults} consecutive faults; auto-restart stopped until new work arrives."
     )]
-    public static partial void WorkerSlotPermanentlyDegraded(this ILogger logger, int workerId, int consecutiveFaults);
+    internal static partial void WorkerSlotPermanentlyDegraded(
+        this ILogger logger,
+        int workerId,
+        int consecutiveFaults
+    );
 
     [LoggerMessage(
         EventId = 3302,
@@ -1201,7 +1205,7 @@ internal static partial class JobsTaskSchedulerLog
         Level = LogLevel.Debug,
         Message = "Long-running admission rejected at backlog cap ({PendingAdmissions}/{MaxPendingAdmissions} parked); the reclaim sweep re-dispatches the still-claimed job when its pickup lease lapses."
     )]
-    public static partial void LongRunningAdmissionRejected(
+    internal static partial void LongRunningAdmissionRejected(
         this ILogger logger,
         int pendingAdmissions,
         int maxPendingAdmissions
@@ -1213,7 +1217,7 @@ internal static partial class JobsTaskSchedulerLog
         Level = LogLevel.Debug,
         Message = "Parked long-running admission dropped by cancellation or shutdown ({PendingAdmissions}/{MaxPendingAdmissions} parked); the reclaim sweep recovers the claimed job when its pickup lease lapses."
     )]
-    public static partial void LongRunningAdmissionDropped(
+    internal static partial void LongRunningAdmissionDropped(
         this ILogger logger,
         int pendingAdmissions,
         int maxPendingAdmissions

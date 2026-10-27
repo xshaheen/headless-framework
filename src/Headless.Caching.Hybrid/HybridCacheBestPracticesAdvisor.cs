@@ -116,7 +116,7 @@ internal static partial class HybridCacheBestPracticesAdvisorLogger
             + "maximum of {Threshold}. A large delay means failed L2 writes and invalidation publishes will "
             + "not be replayed for a long time; consider setting AutoRecoveryDelay to a value <= 5 minutes."
     )]
-    public static partial void LogAutoRecoveryDelayTooLarge(
+    internal static partial void LogAutoRecoveryDelayTooLarge(
         this ILogger logger,
         TimeSpan autoRecoveryDelay,
         TimeSpan threshold
@@ -132,7 +132,7 @@ internal static partial class HybridCacheBestPracticesAdvisorLogger
             + "reserve exists beyond normal expiry and fail-safe can never serve a stale value. "
             + "Set FailSafeMaxDuration to a value greater than Duration to create a usable reserve."
     )]
-    public static partial void LogFailSafeMaxDurationNotBeyondDuration(
+    internal static partial void LogFailSafeMaxDurationNotBeyondDuration(
         this ILogger logger,
         TimeSpan failSafeMaxDuration,
         TimeSpan duration
@@ -147,7 +147,7 @@ internal static partial class HybridCacheBestPracticesAdvisorLogger
             + "stale reserve is available; without fail-safe it is silently ignored. Either enable fail-safe "
             + "(set IsFailSafeEnabled=true and a FailSafeMaxDuration > Duration) or remove FactorySoftTimeout."
     )]
-    public static partial void LogFactorySoftTimeoutInertWithoutFailSafe(
+    internal static partial void LogFactorySoftTimeoutInertWithoutFailSafe(
         this ILogger logger,
         TimeSpan factorySoftTimeout
     );
@@ -161,7 +161,7 @@ internal static partial class HybridCacheBestPracticesAdvisorLogger
             + "threshold) is so small that eager refresh rarely fires before natural expiry. "
             + "Consider setting EagerRefreshThreshold to a value below 0.90 to get a meaningful refresh window."
     )]
-    public static partial void LogEagerRefreshThresholdTooHigh(
+    internal static partial void LogEagerRefreshThresholdTooHigh(
         this ILogger logger,
         float eagerRefreshThreshold,
         float limit
@@ -178,5 +178,5 @@ internal static partial class HybridCacheBestPracticesAdvisorLogger
             + "Set DistributedCacheCircuitBreakerDuration to a non-zero value to pair the breaker's bypass window "
             + "with auto-recovery."
     )]
-    public static partial void LogAutoRecoveryWithoutCircuitBreaker(this ILogger logger);
+    internal static partial void LogAutoRecoveryWithoutCircuitBreaker(this ILogger logger);
 }

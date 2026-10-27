@@ -796,7 +796,7 @@ internal static partial class AzureBlobStorageLog
         Level = LogLevel.Warning,
         Message = "Move failed for {Blob}, rolled back the destination copy"
     )]
-    public static partial void LogMoveFailedRolledBack(this ILogger logger, string blob);
+    internal static partial void LogMoveFailedRolledBack(this ILogger logger, string blob);
 
     [LoggerMessage(
         EventId = 2,
@@ -804,7 +804,7 @@ internal static partial class AzureBlobStorageLog
         Level = LogLevel.Error,
         Message = "Move rollback failed for {Blob}: could not delete the copied blob; a duplicate may remain"
     )]
-    public static partial void LogMoveRollbackFailed(this ILogger logger, Exception exception, string blob);
+    internal static partial void LogMoveRollbackFailed(this ILogger logger, Exception exception, string blob);
 
     [LoggerMessage(
         EventId = 3,
@@ -812,7 +812,7 @@ internal static partial class AzureBlobStorageLog
         Level = LogLevel.Trace,
         Message = "Finished deleting {FileCount} files in {Container} under prefix {Prefix}"
     )]
-    public static partial void LogFinishedDeletingFiles(
+    internal static partial void LogFinishedDeletingFiles(
         this ILogger logger,
         int fileCount,
         string container,
@@ -825,7 +825,7 @@ internal static partial class AzureBlobStorageLog
         Level = LogLevel.Error,
         Message = "DeleteAllAsync failed after deleting {DeletedCount} files in {Container} under prefix {Prefix}"
     )]
-    public static partial void LogDeleteAllPartialFailure(
+    internal static partial void LogDeleteAllPartialFailure(
         this ILogger logger,
         Exception exception,
         int deletedCount,
@@ -839,7 +839,11 @@ internal static partial class AzureBlobStorageLog
         Level = LogLevel.Warning,
         Message = "Move source {Blob} was already gone after its delete faulted; kept the destination copy"
     )]
-    public static partial void LogMoveKeptDestinationSourceGone(this ILogger logger, Exception exception, string blob);
+    internal static partial void LogMoveKeptDestinationSourceGone(
+        this ILogger logger,
+        Exception exception,
+        string blob
+    );
 
     [LoggerMessage(
         EventId = 6,
@@ -847,5 +851,5 @@ internal static partial class AzureBlobStorageLog
         Level = LogLevel.Warning,
         Message = "Could not verify move source {Blob} after its delete faulted; skipping the destination rollback (both copies may remain)"
     )]
-    public static partial void LogMoveSourceCheckFailed(this ILogger logger, Exception exception, string blob);
+    internal static partial void LogMoveSourceCheckFailed(this ILogger logger, Exception exception, string blob);
 }

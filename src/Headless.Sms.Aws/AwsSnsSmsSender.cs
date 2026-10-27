@@ -110,7 +110,7 @@ internal static partial class AwsSnsSmsSenderLog
         Level = LogLevel.Error,
         Message = "Failed to send SMS to {DestinationCount} recipients, StatusCode={StatusCode}"
     )]
-    public static partial void LogSmsSendFailed(this ILogger logger, int destinationCount, HttpStatusCode statusCode);
+    internal static partial void LogSmsSendFailed(this ILogger logger, int destinationCount, HttpStatusCode statusCode);
 
     [LoggerMessage(
         EventId = 2,
@@ -118,5 +118,5 @@ internal static partial class AwsSnsSmsSenderLog
         Level = LogLevel.Error,
         Message = "Failed to send SMS using AWS to {DestinationCount} recipients"
     )]
-    public static partial void LogSmsSendException(this ILogger logger, Exception exception, int destinationCount);
+    internal static partial void LogSmsSendException(this ILogger logger, Exception exception, int destinationCount);
 }

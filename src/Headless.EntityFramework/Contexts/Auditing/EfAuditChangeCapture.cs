@@ -718,7 +718,7 @@ internal static partial class EfAuditChangeCaptureLog
         Level = LogLevel.Error,
         Message = "Audit capture failed for entity {EntityType}. Audit entry skipped; entity save continues."
     )]
-    public static partial void LogAuditCaptureFailed(this ILogger logger, Exception exception, string? entityType);
+    internal static partial void LogAuditCaptureFailed(this ILogger logger, Exception exception, string? entityType);
 
     [LoggerMessage(
         EventId = 2,
@@ -726,7 +726,7 @@ internal static partial class EfAuditChangeCaptureLog
         Level = LogLevel.Warning,
         Message = "Audit logging is disabled. Set AuditLogOptions.IsEnabled = true to enable audit capture."
     )]
-    public static partial void LogAuditDisabled(this ILogger logger);
+    internal static partial void LogAuditDisabled(this ILogger logger);
 
     [LoggerMessage(
         EventId = 3,
@@ -734,7 +734,7 @@ internal static partial class EfAuditChangeCaptureLog
         Level = LogLevel.Warning,
         Message = "Sensitive value transformer threw for {EntityType}.{PropertyName}. Falling back to Redact."
     )]
-    public static partial void LogSensitiveTransformerFailed(
+    internal static partial void LogSensitiveTransformerFailed(
         this ILogger logger,
         Exception exception,
         string entityType,

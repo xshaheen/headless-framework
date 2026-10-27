@@ -13,7 +13,7 @@ internal static partial class RedisLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Preparing Lua scripts"
     )]
-    public static partial void LogPreparingLuaScript(this ILogger logger);
+    internal static partial void LogPreparingLuaScript(this ILogger logger);
 
     [LoggerMessage(
         EventId = 2,
@@ -21,7 +21,7 @@ internal static partial class RedisLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Loading Lua scripts to endpoint {Endpoint}"
     )]
-    public static partial void LogLoadingLuaScripts(this ILogger logger, EndPoint endpoint);
+    internal static partial void LogLoadingLuaScripts(this ILogger logger, EndPoint endpoint);
 
     [LoggerMessage(
         EventId = 3,
@@ -29,7 +29,7 @@ internal static partial class RedisLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Lua scripts loaded successfully in {Elapsed}"
     )]
-    public static partial void LogScriptsLoadedSuccessfully(this ILogger logger, TimeSpan elapsed);
+    internal static partial void LogScriptsLoadedSuccessfully(this ILogger logger, TimeSpan elapsed);
 
     [LoggerMessage(
         EventId = 4,
@@ -37,7 +37,7 @@ internal static partial class RedisLoggerExtensions
         Level = LogLevel.Information,
         Message = "Redis connection restored, scripts will be reloaded"
     )]
-    public static partial void LogConnectionRestored(this ILogger logger);
+    internal static partial void LogConnectionRestored(this ILogger logger);
 
     [LoggerMessage(
         EventId = 5,
@@ -45,5 +45,5 @@ internal static partial class RedisLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Redis returned NOSCRIPT; evaluating Lua script without the script cache and resetting loaded scripts"
     )]
-    public static partial void LogNoScriptRetry(this ILogger logger);
+    internal static partial void LogNoScriptRetry(this ILogger logger);
 }

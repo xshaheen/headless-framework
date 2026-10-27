@@ -3363,7 +3363,7 @@ internal static partial class BasePersistenceProviderLog
         Message = "Cron-expressions cache invalidation failed for key '{Key}'; stale cron expressions may be served "
             + "until the cache entry's TTL elapses. Cache is fail-open and the database remains authoritative."
     )]
-    public static partial void LogCronExpressionsCacheInvalidationFailed(
+    internal static partial void LogCronExpressionsCacheInvalidationFailed(
         this ILogger logger,
         Exception exception,
         string key
@@ -3376,5 +3376,5 @@ internal static partial class BasePersistenceProviderLog
             + "is a concurrent first-boot losing the deterministic-id primary-key race (benign — the winner's rows "
             + "stand); any other cause leaves this node's schedule unseeded until the next boot reconciles it."
     )]
-    public static partial void LogCronSeedConflictDiscarded(this ILogger logger, Exception exception);
+    internal static partial void LogCronSeedConflictDiscarded(this ILogger logger, Exception exception);
 }

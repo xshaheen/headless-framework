@@ -126,7 +126,7 @@ internal static partial class AzureCommunicationEmailSenderLoggerExtensions
         Level = LogLevel.Error,
         Message = "Azure Communication Services rejected the email send. Status={Status}, ErrorCode={ErrorCode}, CorrelationId={CorrelationId}"
     )]
-    public static partial void LogEmailSendRequestFailed(
+    internal static partial void LogEmailSendRequestFailed(
         this ILogger logger,
         int status,
         string? errorCode,
@@ -139,7 +139,7 @@ internal static partial class AzureCommunicationEmailSenderLoggerExtensions
         Level = LogLevel.Error,
         Message = "Azure Communication Services completed the email send with a non-success status. Status={Status}, OperationId={OperationId}"
     )]
-    public static partial void LogEmailCompletedWithFailureStatus(
+    internal static partial void LogEmailCompletedWithFailureStatus(
         this ILogger logger,
         string status,
         string operationId
@@ -151,5 +151,5 @@ internal static partial class AzureCommunicationEmailSenderLoggerExtensions
         Level = LogLevel.Error,
         Message = "Failed to send email via Azure Communication Services. ExceptionType={ExceptionType}"
     )]
-    public static partial void LogEmailSendFailed(this ILogger logger, string exceptionType);
+    internal static partial void LogEmailSendFailed(this ILogger logger, string exceptionType);
 }

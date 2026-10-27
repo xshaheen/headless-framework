@@ -272,7 +272,7 @@ internal static partial class AzureServiceBusClientPoolLog
         Level = LogLevel.Debug,
         Message = "Azure Service Bus client created for namespace {Namespace}."
     )]
-    public static partial void ClientCreated(this ILogger logger, string @namespace);
+    internal static partial void ClientCreated(this ILogger logger, string @namespace);
 
     [LoggerMessage(
         EventId = 3022,
@@ -280,5 +280,5 @@ internal static partial class AzureServiceBusClientPoolLog
         Level = LogLevel.Debug,
         Message = "Azure Service Bus sender created for entity {EntityPath}."
     )]
-    public static partial void SenderCreated(this ILogger logger, string entityPath);
+    internal static partial void SenderCreated(this ILogger logger, string entityPath);
 }

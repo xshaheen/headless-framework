@@ -307,7 +307,7 @@ internal static partial class PaymobCashOutLoggerExtensions
         Level = LogLevel.Critical,
         Message = "Unexpected response to Accept CashOut {Response}"
     )]
-    public static partial void LogUnexpectedAcceptCashOutResponse(this ILogger logger, CashOutTransaction? response);
+    internal static partial void LogUnexpectedAcceptCashOutResponse(this ILogger logger, CashOutTransaction? response);
 
     // Logs the provider HTTP status (non-PII) instead of the raw response body, which may carry recipient
     // PII / provider internal detail. The exception still carries the full message and stack.
@@ -317,7 +317,7 @@ internal static partial class PaymobCashOutLoggerExtensions
         Level = LogLevel.Critical,
         Message = "Failed to start cash out. Provider responded with status {StatusCode}"
     )]
-    public static partial void LogFailedToStartCashOut(
+    internal static partial void LogFailedToStartCashOut(
         this ILogger logger,
         Exception exception,
         HttpStatusCode statusCode
@@ -329,5 +329,5 @@ internal static partial class PaymobCashOutLoggerExtensions
         Level = LogLevel.Critical,
         Message = "Cash out budget exceeded {Response}"
     )]
-    public static partial void LogCashOutBudgetExceeded(this ILogger logger, CashOutTransaction response);
+    internal static partial void LogCashOutBudgetExceeded(this ILogger logger, CashOutTransaction response);
 }

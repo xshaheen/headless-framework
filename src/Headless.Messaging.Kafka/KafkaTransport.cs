@@ -119,5 +119,5 @@ internal static partial class KafkaTransportLog
         Level = LogLevel.Debug,
         Message = "kafka topic message [{GetName}] has been published."
     )]
-    public static partial void LogKafkaTopicMessagePublished(this ILogger logger, string getName);
+    internal static partial void LogKafkaTopicMessagePublished(this ILogger logger, string getName);
 }

@@ -273,7 +273,7 @@ internal static partial class NatsReplyListenerLog
         Level = LogLevel.Information,
         Message = "NATS reply subject '{ReplyAddress}' is live again after a reconnect; replies published while the connection was down were lost."
     )]
-    public static partial void ReplyListenerResubscribed(this ILogger logger, string replyAddress);
+    internal static partial void ReplyListenerResubscribed(this ILogger logger, string replyAddress);
 
     [LoggerMessage(
         EventId = 8,
@@ -281,7 +281,7 @@ internal static partial class NatsReplyListenerLog
         Level = LogLevel.Warning,
         Message = "Confirming NATS reply subject '{ReplyAddress}' after a reconnect failed; the address is handed out without that confirmation."
     )]
-    public static partial void ReplyListenerResubscribeCheckFailed(
+    internal static partial void ReplyListenerResubscribeCheckFailed(
         this ILogger logger,
         Exception exception,
         string replyAddress
@@ -293,7 +293,7 @@ internal static partial class NatsReplyListenerLog
         Level = LogLevel.Warning,
         Message = "NATS reply subject '{ReplyAddress}' dropped a reply because {Pending} replies were already waiting; the call it answered times out."
     )]
-    public static partial void ReplyDropped(this ILogger logger, string replyAddress, int pending);
+    internal static partial void ReplyDropped(this ILogger logger, string replyAddress, int pending);
 
     [LoggerMessage(
         EventId = 10,
@@ -301,7 +301,7 @@ internal static partial class NatsReplyListenerLog
         Level = LogLevel.Warning,
         Message = "A reply on NATS reply subject '{ReplyAddress}' could not be read and was dropped."
     )]
-    public static partial void ReplyUnreadable(this ILogger logger, Exception exception, string replyAddress);
+    internal static partial void ReplyUnreadable(this ILogger logger, Exception exception, string replyAddress);
 
     [LoggerMessage(
         EventId = 11,
@@ -309,7 +309,7 @@ internal static partial class NatsReplyListenerLog
         Level = LogLevel.Error,
         Message = "The reply handler of NATS reply subject '{ReplyAddress}' threw; the listener keeps receiving."
     )]
-    public static partial void ReplyHandlerFailed(this ILogger logger, Exception exception, string replyAddress);
+    internal static partial void ReplyHandlerFailed(this ILogger logger, Exception exception, string replyAddress);
 
     [LoggerMessage(
         EventId = 12,
@@ -317,7 +317,7 @@ internal static partial class NatsReplyListenerLog
         Level = LogLevel.Debug,
         Message = "Unsubscribing NATS reply subject '{ReplyAddress}' failed."
     )]
-    public static partial void ReplyListenerUnsubscribeFailed(
+    internal static partial void ReplyListenerUnsubscribeFailed(
         this ILogger logger,
         Exception exception,
         string replyAddress
@@ -329,7 +329,11 @@ internal static partial class NatsReplyListenerLog
         Level = LogLevel.Warning,
         Message = "NATS reply subject '{ReplyAddress}' is captured by JetStream stream(s) {Streams}; every reply to this host is stored there. Narrow the stream's subjects so they exclude 'headless.reply.>'."
     )]
-    public static partial void ReplySubjectCapturedByStreams(this ILogger logger, string replyAddress, string streams);
+    internal static partial void ReplySubjectCapturedByStreams(
+        this ILogger logger,
+        string replyAddress,
+        string streams
+    );
 
     [LoggerMessage(
         EventId = 14,
@@ -337,7 +341,7 @@ internal static partial class NatsReplyListenerLog
         Level = LogLevel.Debug,
         Message = "Could not check whether a JetStream stream captures NATS reply subject '{ReplyAddress}' ({ExceptionType}); the check is best effort and the listener is unaffected."
     )]
-    public static partial void ReplySubjectStreamCheckSkipped(
+    internal static partial void ReplySubjectStreamCheckSkipped(
         this ILogger logger,
         string replyAddress,
         string exceptionType
@@ -349,5 +353,5 @@ internal static partial class NatsReplyListenerLog
         Level = LogLevel.Debug,
         Message = "No JetStream stream captures NATS reply subject '{ReplyAddress}'."
     )]
-    public static partial void ReplySubjectNotCapturedByStreams(this ILogger logger, string replyAddress);
+    internal static partial void ReplySubjectNotCapturedByStreams(this ILogger logger, string replyAddress);
 }

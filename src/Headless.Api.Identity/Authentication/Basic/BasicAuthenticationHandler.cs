@@ -141,5 +141,5 @@ internal static partial class BasicAuthenticationHandlerLoggerExtensions
         Level = LogLevel.Error,
         Message = "Failed to decode credentials."
     )]
-    public static partial void LogFailedToDecodeCredentials(this ILogger logger, Exception exception);
+    internal static partial void LogFailedToDecodeCredentials(this ILogger logger, Exception exception);
 }

@@ -659,5 +659,5 @@ internal static partial class RelationalMembershipStoreLog
         Level = LogLevel.Warning,
         Message = "Coordination membership retention prune failed; the liveness read still returns and the next read retries the prune."
     )]
-    public static partial void LogMembershipPruneFailed(this ILogger logger, Exception exception);
+    internal static partial void LogMembershipPruneFailed(this ILogger logger, Exception exception);
 }

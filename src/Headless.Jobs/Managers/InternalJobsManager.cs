@@ -1897,7 +1897,7 @@ internal static partial class InternalJobsManagerLog
         Level = LogLevel.Warning,
         Message = "Durable cancellation for time job {JobId} was committed, but the dashboard notification failed."
     )]
-    public static partial void LogDurableCancellationNotificationFailed(
+    internal static partial void LogDurableCancellationNotificationFailed(
         this ILogger logger,
         Exception exception,
         Guid jobId
@@ -1908,7 +1908,7 @@ internal static partial class InternalJobsManagerLog
         Level = LogLevel.Warning,
         Message = "Cron definition {CronJobId} {Operation} was committed, but the dashboard notification failed."
     )]
-    public static partial void LogCronControlNotificationFailed(
+    internal static partial void LogCronControlNotificationFailed(
         this ILogger logger,
         Exception exception,
         Guid cronJobId,
@@ -1921,7 +1921,7 @@ internal static partial class InternalJobsManagerLog
         Message = "Poll-time timed-descendant safety net failed; any stranded timed children will be reconciled by the "
             + "fallback sweep's set-based reconcile instead. Scheduling continues."
     )]
-    public static partial void LogTimedChildSafetyNetFailed(this ILogger logger, Exception exception);
+    internal static partial void LogTimedChildSafetyNetFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 3215,
@@ -1930,7 +1930,7 @@ internal static partial class InternalJobsManagerLog
             + "reconcile failed; its timed children will be reconciled by the poll-time safety net / set-based sweep "
             + "instead."
     )]
-    public static partial void LogTimedChildReconcileAfterCancellationFailed(
+    internal static partial void LogTimedChildReconcileAfterCancellationFailed(
         this ILogger logger,
         Exception exception,
         Guid jobId
@@ -1942,7 +1942,7 @@ internal static partial class InternalJobsManagerLog
         Message = "Job {JobId} was claimed, but its dashboard notification failed. The claim is unaffected and the "
             + "job still runs; only the dashboard view is stale."
     )]
-    public static partial void LogClaimNotificationFailed(this ILogger logger, Exception exception, Guid jobId);
+    internal static partial void LogClaimNotificationFailed(this ILogger logger, Exception exception, Guid jobId);
 
     [LoggerMessage(
         EventId = 3217,
@@ -1950,7 +1950,7 @@ internal static partial class InternalJobsManagerLog
         Message = "Releasing {ClaimedCount} job(s) claimed before the claim enumeration aborted failed; they stay "
             + "leased until the lease lapses and the fallback sweep reclaims them."
     )]
-    public static partial void LogAbandonedClaimReleaseFailed(
+    internal static partial void LogAbandonedClaimReleaseFailed(
         this ILogger logger,
         Exception exception,
         int claimedCount
@@ -1964,7 +1964,7 @@ internal static partial class InternalJobsManagerLog
             + "selection; nothing durable is written, so peers with a current timezone database keep scheduling it "
             + "normally. Update this host's timezone data, or correct the definition if no host can resolve it."
     )]
-    public static partial void LogUnresolvableCronTimeZone(
+    internal static partial void LogUnresolvableCronTimeZone(
         this ILogger logger,
         Guid cronJobId,
         string functionName,
@@ -1977,7 +1977,7 @@ internal static partial class InternalJobsManagerLog
         Message = "Cron definition {CronJobId} ({FunctionName}) is invalid on every host, so it was durably deferred "
             + "with exponential backoff and will not be dispatched by any node until it is corrected."
     )]
-    public static partial void LogDeferredInvalidCronDefinition(
+    internal static partial void LogDeferredInvalidCronDefinition(
         this ILogger logger,
         Exception exception,
         Guid cronJobId,

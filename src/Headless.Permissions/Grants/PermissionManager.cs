@@ -372,7 +372,7 @@ internal static partial class PermissionManagerLog
         Level = LogLevel.Warning,
         Message = "Failed to announce a permission grant change for provider {ProviderName} (key={ProviderKey}, names={NameCount}); the write succeeded and peers keep their copies until they re-read"
     )]
-    public static partial void LogFailedToPublishPermissionGrantChanged(
+    internal static partial void LogFailedToPublishPermissionGrantChanged(
         this ILogger logger,
         Exception exception,
         string providerName,

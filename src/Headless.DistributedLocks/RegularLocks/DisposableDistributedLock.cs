@@ -134,7 +134,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Trace,
         Message = "Renewing lock {Resource} ({LeaseId})"
     )]
-    public static partial void LogDisposableLockRenewing(this ILogger logger, string resource, string leaseId);
+    internal static partial void LogDisposableLockRenewing(this ILogger logger, string resource, string leaseId);
 
     /// <summary>Logs that a renewal attempt found the lease absent from storage (Debug).</summary>
     [LoggerMessage(
@@ -143,7 +143,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Debug,
         Message = "Unable to renew lock {Resource} ({LeaseId})"
     )]
-    public static partial void LogDisposableLockRenewFailed(this ILogger logger, string resource, string leaseId);
+    internal static partial void LogDisposableLockRenewFailed(this ILogger logger, string resource, string leaseId);
 
     /// <summary>Logs a successful manual renewal (Debug).</summary>
     [LoggerMessage(
@@ -152,7 +152,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Debug,
         Message = "Renewed lock {Resource} ({LeaseId})"
     )]
-    public static partial void LogDisposableLockRenewed(this ILogger logger, string resource, string leaseId);
+    internal static partial void LogDisposableLockRenewed(this ILogger logger, string resource, string leaseId);
 
     /// <summary>Logs the start of the storage release call during dispose (Debug).</summary>
     [LoggerMessage(
@@ -161,7 +161,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Debug,
         Message = "Releasing lock: R={Resource} Id={LeaseId} after {Duration:g}"
     )]
-    public static partial void LogDisposableLockReleasing(
+    internal static partial void LogDisposableLockReleasing(
         this ILogger logger,
         string resource,
         string leaseId,
@@ -175,7 +175,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Trace,
         Message = "Disposing lock: R={Resource} Id={LeaseId}"
     )]
-    public static partial void LogDisposableLockDisposing(this ILogger logger, string resource, string leaseId);
+    internal static partial void LogDisposableLockDisposing(this ILogger logger, string resource, string leaseId);
 
     /// <summary>Logs a failure during the dispose-time release call (Error).</summary>
     [LoggerMessage(
@@ -184,7 +184,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Error,
         Message = "Unable to release lock: R={Resource} Id={LeaseId}"
     )]
-    public static partial void LogDisposableLockReleaseFailed(
+    internal static partial void LogDisposableLockReleaseFailed(
         this ILogger logger,
         Exception exception,
         string resource,
@@ -198,7 +198,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Trace,
         Message = "Disposed lock: R={Resource} Id={LeaseId}"
     )]
-    public static partial void LogDisposableLockDisposed(this ILogger logger, string resource, string leaseId);
+    internal static partial void LogDisposableLockDisposed(this ILogger logger, string resource, string leaseId);
 
     /// <summary>Logs a failure to dispose the attached lease monitor before releasing the lock (Warning).</summary>
     [LoggerMessage(
@@ -207,7 +207,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Warning,
         Message = "Unable to dispose lease monitor before releasing lock: R={Resource} Id={LeaseId}"
     )]
-    public static partial void LogDisposableLockMonitorDisposeFailed(
+    internal static partial void LogDisposableLockMonitorDisposeFailed(
         this ILogger logger,
         Exception exception,
         string resource,

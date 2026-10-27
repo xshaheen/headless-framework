@@ -601,7 +601,7 @@ internal static partial class SettingManagerLog
         Level = LogLevel.Warning,
         Message = "Failed to announce a setting change for provider {ProviderName} (key={ProviderKey}, names={NameCount}); the write succeeded and peers keep their copies until they re-read"
     )]
-    public static partial void LogFailedToPublishSettingChanged(
+    internal static partial void LogFailedToPublishSettingChanged(
         this ILogger logger,
         Exception exception,
         string providerName,

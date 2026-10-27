@@ -270,33 +270,33 @@ internal static partial class MemoryQueueLog
         Level = LogLevel.Information,
         Message = "Removed consumer client from InMemory! --> Group: {GroupId}"
     )]
-    public static partial void ConsumerRemoved(this ILogger logger, string groupId);
+    internal static partial void ConsumerRemoved(this ILogger logger, string groupId);
 
     [LoggerMessage(
         EventId = 3008,
         Level = LogLevel.Warning,
         Message = "No bus subscriber registered for message name '{MessageName}'. Message dropped (no-op)."
     )]
-    public static partial void NoSubscribersBus(this ILogger logger, string messageName);
+    internal static partial void NoSubscribersBus(this ILogger logger, string messageName);
 
     [LoggerMessage(
         EventId = 3009,
         Level = LogLevel.Warning,
         Message = "No queue subscriber registered for message name '{MessageName}'. Message dropped (no-op)."
     )]
-    public static partial void NoSubscribersQueue(this ILogger logger, string messageName);
+    internal static partial void NoSubscribersQueue(this ILogger logger, string messageName);
 
     [LoggerMessage(
         EventId = 3010,
         Level = LogLevel.Warning,
         Message = "No active consumer client for queue message name '{MessageName}'. Message dropped (no-op)."
     )]
-    public static partial void NoActiveConsumerQueue(this ILogger logger, string messageName);
+    internal static partial void NoActiveConsumerQueue(this ILogger logger, string messageName);
 
     [LoggerMessage(
         EventId = 3011,
         Level = LogLevel.Debug,
         Message = "No reply listener at address '{ReplyAddress}'. Reply dropped (no-op)."
     )]
-    public static partial void NoReplyListener(this ILogger logger, string replyAddress);
+    internal static partial void NoReplyListener(this ILogger logger, string replyAddress);
 }

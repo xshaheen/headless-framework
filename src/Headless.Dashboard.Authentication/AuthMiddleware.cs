@@ -130,5 +130,5 @@ internal static partial class AuthMiddlewareLog
         Level = LogLevel.Warning,
         Message = "Authentication failed for {Path}: {Error}"
     )]
-    public static partial void LogAuthenticationFailed(this ILogger logger, string path, string? error);
+    internal static partial void LogAuthenticationFailed(this ILogger logger, string path, string? error);
 }

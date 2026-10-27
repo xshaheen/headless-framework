@@ -86,5 +86,5 @@ internal static partial class PulsarTransportLog
         Level = LogLevel.Debug,
         Message = "pulsar topic message [{GetName}] has been published."
     )]
-    public static partial void MessagePublished(this ILogger logger, string getName);
+    internal static partial void MessagePublished(this ILogger logger, string getName);
 }

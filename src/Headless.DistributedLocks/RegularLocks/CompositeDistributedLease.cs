@@ -381,7 +381,7 @@ internal static partial class CompositeDistributedLeaseLogs
         Level = LogLevel.Error,
         Message = "Unable to release or dispose every child of composite lock: R={Resource} Id={LeaseId}"
     )]
-    public static partial void LogCompositeLeaseCleanupFailed(
+    internal static partial void LogCompositeLeaseCleanupFailed(
         this ILogger logger,
         Exception exception,
         string resource,

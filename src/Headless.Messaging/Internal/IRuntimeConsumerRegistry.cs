@@ -418,7 +418,7 @@ internal static partial class RuntimeConsumerRegistryLog
         Level = LogLevel.Information,
         Message = "Ignoring duplicate runtime subscription for messageName {MessageName}, identity {Identity}, handler {HandlerId}."
     )]
-    public static partial void DuplicateRuntimeSubscriptionIgnored(
+    internal static partial void DuplicateRuntimeSubscriptionIgnored(
         this ILogger logger,
         string messageName,
         string identity,
@@ -430,7 +430,7 @@ internal static partial class RuntimeConsumerRegistryLog
         Level = LogLevel.Warning,
         Message = "Replacing runtime subscription for messageName {MessageName}, identity {Identity}. Previous handler {ExistingHandlerId}, new handler {HandlerId}."
     )]
-    public static partial void DuplicateRuntimeSubscriptionReplaced(
+    internal static partial void DuplicateRuntimeSubscriptionReplaced(
         this ILogger logger,
         string messageName,
         string identity,

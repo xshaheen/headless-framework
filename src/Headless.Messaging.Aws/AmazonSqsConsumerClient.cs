@@ -1255,21 +1255,21 @@ internal static partial class AmazonSqsConsumerClientLog
         Level = LogLevel.Error,
         Message = "Failed to deserialize SQS message. The malformed transport envelope was terminally deleted."
     )]
-    public static partial void SqsMessageDeserializationFailed(this ILogger logger, Exception exception);
+    internal static partial void SqsMessageDeserializationFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 4202,
         Level = LogLevel.Error,
         Message = "Invalid SQS transport envelope: {Reason} The malformed transport envelope was terminally deleted."
     )]
-    public static partial void SqsMalformedEnvelope(this ILogger logger, Exception exception, string reason);
+    internal static partial void SqsMalformedEnvelope(this ILogger logger, Exception exception, string reason);
 
     [LoggerMessage(
         EventId = 4203,
         Level = LogLevel.Error,
         Message = "Error consuming message for subscription {SubscriptionName}"
     )]
-    public static partial void SqsMessageConsumeFailed(
+    internal static partial void SqsMessageConsumeFailed(
         this ILogger logger,
         Exception exception,
         string subscriptionName
@@ -1280,14 +1280,14 @@ internal static partial class AmazonSqsConsumerClientLog
         Level = LogLevel.Warning,
         Message = "Failed to receive SQS messages for subscription {SubscriptionName}; backing off before retry."
     )]
-    public static partial void SqsReceiveFailed(this ILogger logger, Exception exception, string subscriptionName);
+    internal static partial void SqsReceiveFailed(this ILogger logger, Exception exception, string subscriptionName);
 
     [LoggerMessage(
         EventId = 4205,
         Level = LogLevel.Warning,
         Message = "Failed to extend SQS message visibility for subscription {SubscriptionName}; retrying on the next heartbeat."
     )]
-    public static partial void SqsVisibilityHeartbeatFailed(
+    internal static partial void SqsVisibilityHeartbeatFailed(
         this ILogger logger,
         Exception exception,
         string subscriptionName
@@ -1298,7 +1298,7 @@ internal static partial class AmazonSqsConsumerClientLog
         Level = LogLevel.Warning,
         Message = "SQS refused to extend a message's visibility for subscription {SubscriptionName} ({ErrorCode}: {ErrorMessage}); the message may be redelivered while it is still being handled."
     )]
-    public static partial void SqsVisibilityExtensionRefused(
+    internal static partial void SqsVisibilityExtensionRefused(
         this ILogger logger,
         string subscriptionName,
         string errorCode,
@@ -1310,7 +1310,7 @@ internal static partial class AmazonSqsConsumerClientLog
         Level = LogLevel.Warning,
         Message = "Failed to release {MessageCount} unsettled SQS messages for subscription {SubscriptionName} on shutdown; they reappear once their visibility timeout runs out."
     )]
-    public static partial void SqsReleaseFailed(
+    internal static partial void SqsReleaseFailed(
         this ILogger logger,
         Exception exception,
         string subscriptionName,
@@ -1322,7 +1322,7 @@ internal static partial class AmazonSqsConsumerClientLog
         Level = LogLevel.Warning,
         Message = "SQS consumer for subscription {SubscriptionName} stopped with {HandlerCount} handlers still running after the shutdown drain; their messages are redelivered."
     )]
-    public static partial void SqsShutdownDrainIncomplete(
+    internal static partial void SqsShutdownDrainIncomplete(
         this ILogger logger,
         Exception exception,
         string subscriptionName,
@@ -1334,7 +1334,7 @@ internal static partial class AmazonSqsConsumerClientLog
         Level = LogLevel.Warning,
         Message = "The SQS custom headers builder failed for subscription {SubscriptionName}; the message was released for redelivery."
     )]
-    public static partial void SqsCustomHeadersBuilderFailed(
+    internal static partial void SqsCustomHeadersBuilderFailed(
         this ILogger logger,
         Exception exception,
         string subscriptionName

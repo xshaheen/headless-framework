@@ -77,5 +77,5 @@ internal static partial class AzureServiceBusQueueTransportLog
         Level = LogLevel.Information,
         Message = "Azure Service Bus queue message enqueued to {QueueName}."
     )]
-    public static partial void QueueMessageEnqueued(this ILogger logger, string queueName);
+    internal static partial void QueueMessageEnqueued(this ILogger logger, string queueName);
 }

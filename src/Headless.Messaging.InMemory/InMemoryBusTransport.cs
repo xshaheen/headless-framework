@@ -56,5 +56,5 @@ internal sealed class InMemoryBusTransport(MemoryQueue queue, ILogger<InMemoryBu
 internal static partial class InMemoryBusTransportLog
 {
     [LoggerMessage(EventId = 3002, Level = LogLevel.Debug, Message = "Bus message [{MessageName}] has been published.")]
-    public static partial void BusMessagePublished(this ILogger logger, string messageName);
+    internal static partial void BusMessagePublished(this ILogger logger, string messageName);
 }

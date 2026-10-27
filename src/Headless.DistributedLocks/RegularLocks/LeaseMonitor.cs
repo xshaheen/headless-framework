@@ -567,7 +567,7 @@ internal static partial class LeaseMonitorLog
         Level = LogLevel.Debug,
         Message = "Lease monitor state changed: R={Resource} Id={LeaseId} {PreviousState} -> {NextState}"
     )]
-    public static partial void LogLeaseMonitorStateChanged(
+    internal static partial void LogLeaseMonitorStateChanged(
         this ILogger logger,
         string resource,
         string leaseId,
@@ -582,7 +582,7 @@ internal static partial class LeaseMonitorLog
         Level = LogLevel.Debug,
         Message = "Lease monitor validation failed transiently: R={Resource} Id={LeaseId}"
     )]
-    public static partial void LogLeaseMonitorValidationUnknown(
+    internal static partial void LogLeaseMonitorValidationUnknown(
         this ILogger logger,
         Exception exception,
         string resource,
@@ -596,7 +596,7 @@ internal static partial class LeaseMonitorLog
         Level = LogLevel.Error,
         Message = "Lease monitor loop faulted: R={Resource} Id={LeaseId}"
     )]
-    public static partial void LogLeaseMonitorFaulted(
+    internal static partial void LogLeaseMonitorFaulted(
         this ILogger logger,
         Exception exception,
         string resource,

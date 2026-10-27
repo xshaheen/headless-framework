@@ -841,7 +841,7 @@ internal static partial class PermissionGrantStoreLog
         Level = LogLevel.Debug,
         Message = "PermissionStore.GetCacheItemAsync: {CacheKey}"
     )]
-    public static partial void LogGetCacheItem(this ILogger logger, string cacheKey);
+    internal static partial void LogGetCacheItem(this ILogger logger, string cacheKey);
 
     [LoggerMessage(
         EventId = 2,
@@ -849,7 +849,7 @@ internal static partial class PermissionGrantStoreLog
         Level = LogLevel.Debug,
         Message = "Permission found in the cache: {CacheKey}"
     )]
-    public static partial void LogPermissionFoundInCache(this ILogger logger, string cacheKey);
+    internal static partial void LogPermissionFoundInCache(this ILogger logger, string cacheKey);
 
     [LoggerMessage(
         EventId = 3,
@@ -857,7 +857,7 @@ internal static partial class PermissionGrantStoreLog
         Level = LogLevel.Debug,
         Message = "Permission not found in the cache: {CacheKey}"
     )]
-    public static partial void LogPermissionNotFoundInCache(this ILogger logger, string cacheKey);
+    internal static partial void LogPermissionNotFoundInCache(this ILogger logger, string cacheKey);
 
     [LoggerMessage(
         EventId = 4,
@@ -865,7 +865,7 @@ internal static partial class PermissionGrantStoreLog
         Level = LogLevel.Debug,
         Message = "PermissionStore._GetCachedItemsAsync: {@CacheKeys}"
     )]
-    public static partial void LogGetCachedItems(this ILogger logger, IReadOnlyList<string> cacheKeys);
+    internal static partial void LogGetCachedItems(this ILogger logger, IReadOnlyList<string> cacheKeys);
 
     [LoggerMessage(
         EventId = 5,
@@ -873,7 +873,7 @@ internal static partial class PermissionGrantStoreLog
         Level = LogLevel.Debug,
         Message = "Found in the cache: {@CacheKeys}"
     )]
-    public static partial void LogFoundInCache(this ILogger logger, IReadOnlyList<string> cacheKeys);
+    internal static partial void LogFoundInCache(this ILogger logger, IReadOnlyList<string> cacheKeys);
 
     [LoggerMessage(
         EventId = 6,
@@ -881,7 +881,7 @@ internal static partial class PermissionGrantStoreLog
         Level = LogLevel.Debug,
         Message = "Not found in the cache: {@Names}"
     )]
-    public static partial void LogNotFoundInCache(this ILogger logger, string[] names);
+    internal static partial void LogNotFoundInCache(this ILogger logger, string[] names);
 
     [LoggerMessage(
         EventId = 7,
@@ -889,7 +889,7 @@ internal static partial class PermissionGrantStoreLog
         Level = LogLevel.Debug,
         Message = "Getting not cache granted permissions from the repository for this provider name,key: {ProviderName},{ProviderKey}"
     )]
-    public static partial void LogGettingNotCachedGrantedPermissions(
+    internal static partial void LogGettingNotCachedGrantedPermissions(
         this ILogger logger,
         string providerName,
         string providerKey
@@ -901,7 +901,7 @@ internal static partial class PermissionGrantStoreLog
         Level = LogLevel.Debug,
         Message = "Setting the cache items. Count: {PermissionsCount}"
     )]
-    public static partial void LogSettingCacheItems(this ILogger logger, int permissionsCount);
+    internal static partial void LogSettingCacheItems(this ILogger logger, int permissionsCount);
 
     [LoggerMessage(
         EventId = 9,
@@ -909,7 +909,7 @@ internal static partial class PermissionGrantStoreLog
         Level = LogLevel.Debug,
         Message = "Finished setting the cache items. Count: {PermissionsCount}"
     )]
-    public static partial void LogFinishedSettingCacheItems(this ILogger logger, int permissionsCount);
+    internal static partial void LogFinishedSettingCacheItems(this ILogger logger, int permissionsCount);
 
     [LoggerMessage(
         EventId = 10,
@@ -917,7 +917,7 @@ internal static partial class PermissionGrantStoreLog
         Level = LogLevel.Debug,
         Message = "Getting all granted permissions from the repository for this provider name,key: {ProviderName},{ProviderKey}"
     )]
-    public static partial void LogGettingAllGrantedPermissions(
+    internal static partial void LogGettingAllGrantedPermissions(
         this ILogger logger,
         string providerName,
         string providerKey
@@ -929,7 +929,7 @@ internal static partial class PermissionGrantStoreLog
         Level = LogLevel.Debug,
         Message = "Permissions - Set the cache items. Count: {DefinitionsCount}"
     )]
-    public static partial void LogSettingCacheItemsForDefinitions(this ILogger logger, int definitionsCount);
+    internal static partial void LogSettingCacheItemsForDefinitions(this ILogger logger, int definitionsCount);
 
     [LoggerMessage(
         EventId = 12,
@@ -937,5 +937,5 @@ internal static partial class PermissionGrantStoreLog
         Level = LogLevel.Debug,
         Message = "Finished setting the cache items. Count: {DefinitionsCount}"
     )]
-    public static partial void LogFinishedSettingCacheItemsForDefinitions(this ILogger logger, int definitionsCount);
+    internal static partial void LogFinishedSettingCacheItemsForDefinitions(this ILogger logger, int definitionsCount);
 }

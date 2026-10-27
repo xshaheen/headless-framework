@@ -69,11 +69,11 @@ public sealed partial class TusAzureStore : ITusTerminationStore
 internal static partial class TusAzureStoreTerminationLog
 {
     [LoggerMessage(EventId = 3212, Level = LogLevel.Error, Message = "Failed to delete blob: {BlobName}")]
-    public static partial void BlobDeleteFailed(this ILogger logger, Exception e, string blobName);
+    internal static partial void BlobDeleteFailed(this ILogger logger, Exception e, string blobName);
 
     [LoggerMessage(EventId = 3213, Level = LogLevel.Information, Message = "Deleted file {FileId}")]
-    public static partial void FileDeleted(this ILogger logger, string fileId);
+    internal static partial void FileDeleted(this ILogger logger, string fileId);
 
     [LoggerMessage(EventId = 3214, Level = LogLevel.Warning, Message = "File {FileId} was not found for deletion")]
-    public static partial void FileNotFoundForDeletion(this ILogger logger, string fileId);
+    internal static partial void FileNotFoundForDeletion(this ILogger logger, string fileId);
 }

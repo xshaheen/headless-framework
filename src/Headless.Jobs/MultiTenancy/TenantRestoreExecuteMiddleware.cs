@@ -73,5 +73,5 @@ internal static partial class TenantRestoreExecuteMiddlewareLog
         Level = LogLevel.Debug,
         Message = "Restoring ICurrentTenant to tenant '{TenantId}' for the job execution attempt."
     )]
-    public static partial void TenantScopeRestored(this ILogger logger, string tenantId);
+    internal static partial void TenantScopeRestored(this ILogger logger, string tenantId);
 }

@@ -3826,7 +3826,7 @@ internal static partial class RedisCacheLog
         Level = LogLevel.Error,
         Message = "Unable to read database size from {Endpoint}"
     )]
-    public static partial void LogUnableToReadDatabaseSize(
+    internal static partial void LogUnableToReadDatabaseSize(
         this ILogger logger,
         Exception exception,
         System.Net.EndPoint? endpoint
@@ -3838,7 +3838,7 @@ internal static partial class RedisCacheLog
         Level = LogLevel.Error,
         Message = "Unable to delete {HashSlot} keys ({Keys})"
     )]
-    public static partial void LogUnableToDeleteHashSlotKeys(
+    internal static partial void LogUnableToDeleteHashSlotKeys(
         this ILogger logger,
         Exception exception,
         int hashSlot,
@@ -3851,7 +3851,7 @@ internal static partial class RedisCacheLog
         Level = LogLevel.Error,
         Message = "Unable to delete keys ({Keys})"
     )]
-    public static partial void LogUnableToDeleteKeys(this ILogger logger, Exception exception, RedisKey[] keys);
+    internal static partial void LogUnableToDeleteKeys(this ILogger logger, Exception exception, RedisKey[] keys);
 
     [LoggerMessage(
         EventId = 4,
@@ -3859,7 +3859,7 @@ internal static partial class RedisCacheLog
         Level = LogLevel.Error,
         Message = "Unable to deserialize cached value of {ValueLength} bytes to type {Type}"
     )]
-    public static partial void LogDeserializationFailed(
+    internal static partial void LogDeserializationFailed(
         this ILogger logger,
         Exception exception,
         long valueLength,
@@ -3872,7 +3872,7 @@ internal static partial class RedisCacheLog
         Level = LogLevel.Trace,
         Message = "Removed {ExpiredValues} expired values for key: {Key}"
     )]
-    public static partial void LogExpiredValuesRemoved(this ILogger logger, long expiredValues, string key);
+    internal static partial void LogExpiredValuesRemoved(this ILogger logger, long expiredValues, string key);
 
     [LoggerMessage(
         EventId = 6,
@@ -3880,7 +3880,7 @@ internal static partial class RedisCacheLog
         Level = LogLevel.Debug,
         Message = "Unable to re-arm sliding expiration for cache key {Key}; the value will still be returned."
     )]
-    public static partial void LogSlidingExpirationRearmFailed(this ILogger logger, Exception exception, string key);
+    internal static partial void LogSlidingExpirationRearmFailed(this ILogger logger, Exception exception, string key);
 
     [LoggerMessage(
         EventId = 7,
@@ -3888,5 +3888,9 @@ internal static partial class RedisCacheLog
         Level = LogLevel.Warning,
         Message = "Unable to refresh sliding expiration for cache key {Key}."
     )]
-    public static partial void LogSlidingExpirationRefreshFailed(this ILogger logger, Exception exception, string key);
+    internal static partial void LogSlidingExpirationRefreshFailed(
+        this ILogger logger,
+        Exception exception,
+        string key
+    );
 }

@@ -1718,7 +1718,7 @@ internal static partial class JobsManagerTenancyLog
         Level = LogLevel.Warning,
         Message = "{Kind} {JobId} was deleted, but the dashboard removal notification failed."
     )]
-    public static partial void LogRemovalNotificationFailed(
+    internal static partial void LogRemovalNotificationFailed(
         this ILogger logger,
         Exception exception,
         string kind,
@@ -1731,7 +1731,7 @@ internal static partial class JobsManagerTenancyLog
         Level = LogLevel.Debug,
         Message = "Idempotent enqueue for function '{Function}' observed a live reservation and returned the reserved job {JobId}; no row was inserted."
     )]
-    public static partial void IdempotentEnqueueHit(this ILogger logger, string function, Guid jobId);
+    internal static partial void IdempotentEnqueueHit(this ILogger logger, string function, Guid jobId);
 
     [LoggerMessage(
         EventId = 3223,
@@ -1739,7 +1739,7 @@ internal static partial class JobsManagerTenancyLog
         Level = LogLevel.Debug,
         Message = "Chain descendant job for function '{Function}' resolved to system scope (tenantless)."
     )]
-    public static partial void ChainDescendantSystemScope(this ILogger logger, string function);
+    internal static partial void ChainDescendantSystemScope(this ILogger logger, string function);
 
     [LoggerMessage(
         EventId = 3224,
@@ -1747,5 +1747,5 @@ internal static partial class JobsManagerTenancyLog
         Level = LogLevel.Warning,
         Message = "A chain descendant for function '{Function}' carries an explicit tenant that differs from the present ambient tenant. Explicit wins by design; enable RejectCrossTenantEnqueue() on the Jobs tenancy seam to reject the lateral path."
     )]
-    public static partial void ChainDescendantCrossTenant(this ILogger logger, string function);
+    internal static partial void ChainDescendantCrossTenant(this ILogger logger, string function);
 }

@@ -14,7 +14,7 @@ internal static partial class LoggerExtensions
         EventName = "ConnectionScopedLockReleaseFailed",
         Message = "Connection-scoped lock release failed for resource {Resource} and lock id {LeaseId}."
     )]
-    public static partial void LogConnectionScopedLockReleaseFailed(
+    internal static partial void LogConnectionScopedLockReleaseFailed(
         this ILogger logger,
         Exception exception,
         string resource,
@@ -28,7 +28,7 @@ internal static partial class LoggerExtensions
         EventName = "ReleaseWakePublishFailed",
         Message = "Publishing the release wake-up for resource {Resource} (lock id {LeaseId}) failed; waiters fall back to polling."
     )]
-    public static partial void LogReleaseWakePublishFailed(
+    internal static partial void LogReleaseWakePublishFailed(
         this ILogger logger,
         Exception exception,
         string resource,

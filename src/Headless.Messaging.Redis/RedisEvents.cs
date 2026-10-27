@@ -66,7 +66,7 @@ internal static partial class RedisEventsLog
         Level = LogLevel.Error,
         Message = "Connection failed!, {Message}, for endpoint:{Endpoint}, failure type:{FailureType}, connection type:{ConnectionType}"
     )]
-    public static partial void LogRedisConnectionFailed(
+    internal static partial void LogRedisConnectionFailed(
         this ILogger logger,
         Exception? exception,
         string? message,
@@ -81,7 +81,7 @@ internal static partial class RedisEventsLog
         Level = LogLevel.Warning,
         Message = "Connection restored back!, {Message}, for endpoint:{Endpoint}, failure type:{FailureType}, connection type:{ConnectionType}"
     )]
-    public static partial void LogRedisConnectionRestored(
+    internal static partial void LogRedisConnectionRestored(
         this ILogger logger,
         string? message,
         EndPoint? endpoint,
@@ -95,5 +95,5 @@ internal static partial class RedisEventsLog
         Level = LogLevel.Error,
         Message = "Server replied with error, {Message}, for endpoint:{Endpoint}"
     )]
-    public static partial void LogRedisServerReplyError(this ILogger logger, string? message, EndPoint? endpoint);
+    internal static partial void LogRedisServerReplyError(this ILogger logger, string? message, EndPoint? endpoint);
 }

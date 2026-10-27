@@ -1663,7 +1663,7 @@ internal static partial class ConsumerRegisterLog
         Level = LogLevel.Error,
         Message = "An exception occurred when process received message. Message:'{Message}'."
     )]
-    public static partial void LogProcessReceivedMessageFailed(
+    internal static partial void LogProcessReceivedMessageFailed(
         this ILogger logger,
         Exception exception,
         TransportMessage message
@@ -1675,7 +1675,7 @@ internal static partial class ConsumerRegisterLog
         Level = LogLevel.Error,
         Message = "Failed to pause newly added consumer client for subscription '{SubscriptionName}'."
     )]
-    public static partial void LogPauseNewlyAddedClientFailed(
+    internal static partial void LogPauseNewlyAddedClientFailed(
         this ILogger logger,
         Exception exception,
         string subscriptionName
@@ -1687,7 +1687,7 @@ internal static partial class ConsumerRegisterLog
         Level = LogLevel.Warning,
         Message = "Storing received message '{MessageId}' in the inbox failed; retry {Retry} of {Retries} in {Delay}."
     )]
-    public static partial void LogInboxAdmissionRetrying(
+    internal static partial void LogInboxAdmissionRetrying(
         this ILogger logger,
         Exception exception,
         string? messageId,

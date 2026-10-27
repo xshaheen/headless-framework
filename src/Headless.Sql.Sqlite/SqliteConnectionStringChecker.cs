@@ -53,5 +53,5 @@ internal static partial class SqliteConnectionStringCheckerLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Error while checking connection string"
     )]
-    public static partial void LogErrorCheckingConnectionString(this ILogger logger, Exception exception);
+    internal static partial void LogErrorCheckingConnectionString(this ILogger logger, Exception exception);
 }

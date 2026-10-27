@@ -12,7 +12,7 @@ internal static partial class TusAzureLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Created partial file {FileId} with upload length {UploadLength}"
     )]
-    public static partial void LogCreatedPartialFile(this ILogger logger, string fileId, long uploadLength);
+    internal static partial void LogCreatedPartialFile(this ILogger logger, string fileId, long uploadLength);
 
     [LoggerMessage(
         EventId = 3205,
@@ -20,7 +20,7 @@ internal static partial class TusAzureLoggerExtensions
         Level = LogLevel.Error,
         Message = "Failed to create partial file with upload length {UploadLength}"
     )]
-    public static partial void LogFailedToCreatePartialFile(
+    internal static partial void LogFailedToCreatePartialFile(
         this ILogger logger,
         Exception exception,
         long uploadLength
@@ -32,7 +32,7 @@ internal static partial class TusAzureLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Server-side StageBlockFromUri unavailable (HTTP {Status}); falling back to streaming copy"
     )]
-    public static partial void LogStageBlockFromUriNotSupported(this ILogger logger, int status);
+    internal static partial void LogStageBlockFromUriNotSupported(this ILogger logger, int status);
 
     [LoggerMessage(
         EventId = 3242,
@@ -40,7 +40,7 @@ internal static partial class TusAzureLoggerExtensions
         Level = LogLevel.Debug,
         Message = "Created final file {FileId} from {PartCount} partial file(s), total size: {TotalSize}"
     )]
-    public static partial void LogCreatedFinalFile(this ILogger logger, string fileId, int partCount, long totalSize);
+    internal static partial void LogCreatedFinalFile(this ILogger logger, string fileId, int partCount, long totalSize);
 
     [LoggerMessage(
         EventId = 3243,
@@ -48,7 +48,7 @@ internal static partial class TusAzureLoggerExtensions
         Level = LogLevel.Error,
         Message = "Failed to create final file from partial files: {PartialFiles}"
     )]
-    public static partial void LogFailedToCreateFinalFile(
+    internal static partial void LogFailedToCreateFinalFile(
         this ILogger logger,
         Exception exception,
         string partialFiles
@@ -60,7 +60,7 @@ internal static partial class TusAzureLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Failed to delete partial file {PartialFileId} after concatenation; the final upload is unaffected"
     )]
-    public static partial void LogFailedToDeletePartialFileAfterConcat(
+    internal static partial void LogFailedToDeletePartialFileAfterConcat(
         this ILogger logger,
         Exception exception,
         string partialFileId

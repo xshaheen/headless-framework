@@ -3303,7 +3303,7 @@ internal static partial class InMemoryCacheLog
         Level = LogLevel.Warning,
         Message = "Deserialization error for cache key (hash: {KeyHash})"
     )]
-    public static partial void LogDeserializationError(this ILogger logger, Exception exception, int keyHash);
+    internal static partial void LogDeserializationError(this ILogger logger, Exception exception, int keyHash);
 
     [LoggerMessage(
         EventId = 2,
@@ -3311,7 +3311,7 @@ internal static partial class InMemoryCacheLog
         Level = LogLevel.Warning,
         Message = "Cache maintenance task failed"
     )]
-    public static partial void LogMaintenanceTaskFailed(this ILogger logger, Exception exception);
+    internal static partial void LogMaintenanceTaskFailed(this ILogger logger, Exception exception);
 }
 
 file static class ConcurrentDictionaryExtensions

@@ -223,19 +223,23 @@ internal static partial class RabbitMqReplyListenerLog
         Level = LogLevel.Debug,
         Message = "Closing the connection of RabbitMQ reply queue '{ReplyAddress}' failed."
     )]
-    public static partial void ReplyListenerCloseFailed(this ILogger logger, Exception exception, string? replyAddress);
+    internal static partial void ReplyListenerCloseFailed(
+        this ILogger logger,
+        Exception exception,
+        string? replyAddress
+    );
 
     [LoggerMessage(
         EventId = 3013,
         Level = LogLevel.Warning,
         Message = "A reply on RabbitMQ reply queue '{ReplyAddress}' could not be read and was dropped."
     )]
-    public static partial void ReplyUnreadable(this ILogger logger, Exception exception, string replyAddress);
+    internal static partial void ReplyUnreadable(this ILogger logger, Exception exception, string replyAddress);
 
     [LoggerMessage(
         EventId = 3014,
         Level = LogLevel.Error,
         Message = "The reply handler of RabbitMQ reply queue '{ReplyAddress}' threw; the listener keeps receiving."
     )]
-    public static partial void ReplyHandlerFailed(this ILogger logger, Exception exception, string replyAddress);
+    internal static partial void ReplyHandlerFailed(this ILogger logger, Exception exception, string replyAddress);
 }

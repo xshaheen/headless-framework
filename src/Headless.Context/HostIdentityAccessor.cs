@@ -114,5 +114,5 @@ internal static partial class HostIdentityAccessorLogs
         Level = LogLevel.Warning,
         Message = "No stable host name could be discovered; using generated host name {HostName}. Every start is a brand-new host, so cluster membership cannot recognise this process returning. Set HostIdentityOptions.HostName or POD_NAME."
     )]
-    public static partial void GeneratedFallbackHostName(this ILogger logger, string hostName);
+    internal static partial void GeneratedFallbackHostName(this ILogger logger, string hostName);
 }

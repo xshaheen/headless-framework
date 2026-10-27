@@ -698,7 +698,7 @@ internal static partial class RedisStreamManagerLog
         Level = LogLevel.Error,
         Message = "Redis error when trying read consumer group {ConsumerGroup}"
     )]
-    public static partial void LogReadConsumerGroupFailed(
+    internal static partial void LogReadConsumerGroupFailed(
         this ILogger logger,
         Exception exception,
         string consumerGroup
@@ -710,7 +710,7 @@ internal static partial class RedisStreamManagerLog
         Level = LogLevel.Error,
         Message = "Redis error when trying to read streams without a consumer group"
     )]
-    public static partial void LogReadStreamsFailed(this ILogger logger, Exception exception);
+    internal static partial void LogReadStreamsFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 2,
@@ -718,7 +718,7 @@ internal static partial class RedisStreamManagerLog
         Level = LogLevel.Error,
         Message = "Redis error when trying to auto-claim pending messages for consumer group {ConsumerGroup}"
     )]
-    public static partial void LogAutoClaimConsumerGroupFailed(
+    internal static partial void LogAutoClaimConsumerGroupFailed(
         this ILogger logger,
         Exception exception,
         string consumerGroup
@@ -730,7 +730,7 @@ internal static partial class RedisStreamManagerLog
         Level = LogLevel.Information,
         Message = "Deleted {Count} idle Redis consumers with no pending entries from group {ConsumerGroup} of stream {Stream}"
     )]
-    public static partial void LogIdleConsumersDeleted(
+    internal static partial void LogIdleConsumersDeleted(
         this ILogger logger,
         long count,
         string consumerGroup,
@@ -743,7 +743,7 @@ internal static partial class RedisStreamManagerLog
         Level = LogLevel.Warning,
         Message = "Redis error when announcing a new entry on stream {Stream}; its consumers read it at their next poll"
     )]
-    public static partial void LogWakePublishFailed(this ILogger logger, Exception exception, string stream);
+    internal static partial void LogWakePublishFailed(this ILogger logger, Exception exception, string stream);
 
     [LoggerMessage(
         EventId = 5,
@@ -751,7 +751,7 @@ internal static partial class RedisStreamManagerLog
         Level = LogLevel.Warning,
         Message = "Redis error when trying to delete idle consumers of consumer group {ConsumerGroup}"
     )]
-    public static partial void LogDeleteIdleConsumersFailed(
+    internal static partial void LogDeleteIdleConsumersFailed(
         this ILogger logger,
         Exception exception,
         string consumerGroup

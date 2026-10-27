@@ -203,5 +203,5 @@ internal static partial class AuthServiceLog
         Level = LogLevel.Error,
         Message = "Authentication error"
     )]
-    public static partial void LogAuthenticationError(this ILogger logger, Exception exception);
+    internal static partial void LogAuthenticationError(this ILogger logger, Exception exception);
 }

@@ -47,5 +47,5 @@ internal sealed partial class BadRequestDiagnosticAdapter(ILogger logger) : IObs
         SkipEnabledCheck = true,
         Message = "Bad request received"
     )]
-    public static partial void BadRequestEvent(ILogger logger, Exception? exception);
+    internal static partial void BadRequestEvent(ILogger logger, Exception? exception);
 }

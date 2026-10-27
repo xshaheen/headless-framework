@@ -643,7 +643,7 @@ internal static partial class HybridCacheLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Failed to perform a bulk L2 cache operation for {KeyCount} key(s); degrading to partial L1 result (sample: {KeySample})"
     )]
-    public static partial void LogFailedBulkL2CacheOperationWithSample(
+    internal static partial void LogFailedBulkL2CacheOperationWithSample(
         this ILogger logger,
         Exception exception,
         int keyCount,
@@ -656,7 +656,7 @@ internal static partial class HybridCacheLoggerExtensions
         Level = LogLevel.Warning,
         Message = "Bulk L2 cache read for {KeyCount} key(s) did not complete ({Reason}); degrading to partial L1 result (sample: {KeySample})"
     )]
-    public static partial void LogBulkDistributedCacheReadDegradedWithSample(
+    internal static partial void LogBulkDistributedCacheReadDegradedWithSample(
         this ILogger logger,
         int keyCount,
         string reason,

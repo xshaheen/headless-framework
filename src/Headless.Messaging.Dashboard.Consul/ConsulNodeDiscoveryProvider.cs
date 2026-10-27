@@ -206,7 +206,7 @@ internal static partial class ConsulNodeDiscoveryProviderLog
         Level = LogLevel.Error,
         Message = "Consul get node failed: {Message}"
     )]
-    public static partial void LogConsulGetNodeException(this ILogger logger, Exception exception, string message);
+    internal static partial void LogConsulGetNodeException(this ILogger logger, Exception exception, string message);
 
     [LoggerMessage(
         EventId = 4,
@@ -214,7 +214,7 @@ internal static partial class ConsulNodeDiscoveryProviderLog
         Level = LogLevel.Error,
         Message = "Consul get nodes failed: {Message}, inner: {InnerExceptionMessage}"
     )]
-    public static partial void LogConsulGetNodesException(
+    internal static partial void LogConsulGetNodesException(
         this ILogger logger,
         string? message,
         string? innerExceptionMessage
@@ -226,5 +226,5 @@ internal static partial class ConsulNodeDiscoveryProviderLog
         Level = LogLevel.Information,
         Message = "Consul node registered successfully"
     )]
-    public static partial void LogConsulNodeRegisterSuccess(this ILogger logger);
+    internal static partial void LogConsulNodeRegisterSuccess(this ILogger logger);
 }

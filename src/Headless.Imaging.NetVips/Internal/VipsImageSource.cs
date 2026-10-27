@@ -370,7 +370,7 @@ internal static partial class VipsImageSourceLoggerExtensions
         Level = LogLevel.Information,
         Message = "The image format is unknown or outside the allowed set (loader: {Loader})"
     )]
-    public static partial void LogImageFormatRefused(this ILogger logger, string loader);
+    internal static partial void LogImageFormatRefused(this ILogger logger, string loader);
 
     [LoggerMessage(
         EventId = 2,
@@ -378,7 +378,7 @@ internal static partial class VipsImageSourceLoggerExtensions
         Level = LogLevel.Information,
         Message = "The encoded image contains invalid content"
     )]
-    public static partial void LogEncodedImageInvalidContent(this ILogger logger, Exception exception);
+    internal static partial void LogEncodedImageInvalidContent(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 3,
@@ -386,5 +386,5 @@ internal static partial class VipsImageSourceLoggerExtensions
         Level = LogLevel.Information,
         Message = "The image has {Pixels} pixels, more than the configured maximum of {MaxPixels}"
     )]
-    public static partial void LogImageTooLarge(this ILogger logger, long pixels, long maxPixels);
+    internal static partial void LogImageTooLarge(this ILogger logger, long pixels, long maxPixels);
 }

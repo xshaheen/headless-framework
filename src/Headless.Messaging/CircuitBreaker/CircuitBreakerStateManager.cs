@@ -1549,14 +1549,14 @@ internal static partial class CircuitBreakerStateManagerLog
         Level = LogLevel.Warning,
         Message = "IsTransientException predicate threw for consumer {Consumer}; treating as non-transient"
     )]
-    public static partial void IsTransientPredicateFailed(this ILogger logger, Exception exception, string? consumer);
+    internal static partial void IsTransientPredicateFailed(this ILogger logger, Exception exception, string? consumer);
 
     [LoggerMessage(
         EventId = 4101,
         Level = LogLevel.Warning,
         Message = "Circuit breaker {PreviousState} → Open for consumer {Consumer} (failures: {Failures}, escalation: {Escalation}, open for {Duration})"
     )]
-    public static partial void CircuitOpened(
+    internal static partial void CircuitOpened(
         this ILogger logger,
         CircuitBreakerState previousState,
         string? consumer,
@@ -1570,9 +1570,9 @@ internal static partial class CircuitBreakerStateManagerLog
         Level = LogLevel.Warning,
         Message = "Circuit breaker HalfOpen → Closed for consumer {Consumer} (non-transient failure, dependency considered healthy)"
     )]
-    public static partial void CircuitClosedAfterNonTransientHalfOpenFailure(this ILogger logger, string? consumer);
+    internal static partial void CircuitClosedAfterNonTransientHalfOpenFailure(this ILogger logger, string? consumer);
 
-    public static void CircuitClosedAfterProbeSucceeded(this ILogger logger, string consumerKey)
+    internal static void CircuitClosedAfterProbeSucceeded(this ILogger logger, string consumerKey)
     {
         if (!logger.IsEnabled(LogLevel.Information))
         {
@@ -1595,14 +1595,14 @@ internal static partial class CircuitBreakerStateManagerLog
         Level = LogLevel.Information,
         Message = "Circuit breaker HalfOpen → Open (probe aborted by transport restart) for consumer {Consumer}"
     )]
-    public static partial void CircuitReopenedAfterProbeAbort(this ILogger logger, string? consumer);
+    internal static partial void CircuitReopenedAfterProbeAbort(this ILogger logger, string? consumer);
 
     [LoggerMessage(
         EventId = 4105,
         Level = LogLevel.Warning,
         Message = "Circuit breaker {PreviousState} → Closed (manual reset) for consumer {Consumer}"
     )]
-    public static partial void CircuitClosedByManualReset(
+    internal static partial void CircuitClosedByManualReset(
         this ILogger logger,
         CircuitBreakerState previousState,
         string? consumer
@@ -1613,7 +1613,7 @@ internal static partial class CircuitBreakerStateManagerLog
         Level = LogLevel.Warning,
         Message = "Circuit breaker {PreviousState} → Open (forced) for consumer {Consumer} (escalation: {Escalation}, open for {Duration})"
     )]
-    public static partial void CircuitForcedOpen(
+    internal static partial void CircuitForcedOpen(
         this ILogger logger,
         CircuitBreakerState previousState,
         string? consumer,
@@ -1626,30 +1626,30 @@ internal static partial class CircuitBreakerStateManagerLog
         Level = LogLevel.Debug,
         Message = "Ignoring resume task failure during circuit-breaker disposal."
     )]
-    public static partial void IgnoringResumeTaskFailureDuringDisposal(this ILogger logger, Exception exception);
+    internal static partial void IgnoringResumeTaskFailureDuringDisposal(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 4133,
         Level = LogLevel.Debug,
         Message = "Ignoring resume task failure during consumer removal."
     )]
-    public static partial void IgnoringResumeTaskFailureDuringRemoval(this ILogger logger, Exception exception);
+    internal static partial void IgnoringResumeTaskFailureDuringRemoval(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 4108,
         Level = LogLevel.Warning,
         Message = "Unrecognized consumer '{Consumer}' — returning no-op circuit state to prevent unbounded cardinality"
     )]
-    public static partial void UnrecognizedConsumer(this ILogger logger, string? consumer);
+    internal static partial void UnrecognizedConsumer(this ILogger logger, string? consumer);
 
     [LoggerMessage(
         EventId = 4109,
         Level = LogLevel.Warning,
         Message = "Circuit breaker consumer count cap ({Cap}) reached — returning no-op state for new consumers"
     )]
-    public static partial void CircuitBreakerConsumerCountCapReached(this ILogger logger, int cap);
+    internal static partial void CircuitBreakerConsumerCountCapReached(this ILogger logger, int cap);
 
-    public static void CircuitHalfOpen(this ILogger logger, string consumerKey)
+    internal static void CircuitHalfOpen(this ILogger logger, string consumerKey)
     {
         if (!logger.IsEnabled(LogLevel.Information))
         {
@@ -1672,9 +1672,9 @@ internal static partial class CircuitBreakerStateManagerLog
         Level = LogLevel.Error,
         Message = "Resume callback failed for consumer {Consumer} during HalfOpen transition"
     )]
-    public static partial void ResumeCallbackFailed(this ILogger logger, Exception exception, string? consumer);
+    internal static partial void ResumeCallbackFailed(this ILogger logger, Exception exception, string? consumer);
 
-    public static void ReopenPauseCallbackFailed(
+    internal static void ReopenPauseCallbackFailed(
         this ILogger logger,
         Exception exception,
         string consumerKey,

@@ -194,7 +194,7 @@ internal static partial class AwsSesEmailSenderLoggerExtensions
         Level = LogLevel.Error,
         Message = "Failed to send email. HttpStatusCode={HttpStatusCode}, RequestId={RequestId}, MessageId={MessageId}"
     )]
-    public static partial void LogFailedToSendEmail(
+    internal static partial void LogFailedToSendEmail(
         this ILogger logger,
         int httpStatusCode,
         string? requestId,
@@ -207,7 +207,7 @@ internal static partial class AwsSesEmailSenderLoggerExtensions
         Level = LogLevel.Error,
         Message = "Amazon SES rejected the email send. ErrorCode={ErrorCode}, HttpStatusCode={HttpStatusCode}, RequestId={RequestId}"
     )]
-    public static partial void LogSesRejectedEmail(
+    internal static partial void LogSesRejectedEmail(
         this ILogger logger,
         string? errorCode,
         int httpStatusCode,
@@ -220,5 +220,5 @@ internal static partial class AwsSesEmailSenderLoggerExtensions
         Level = LogLevel.Error,
         Message = "Failed to send email via Amazon SES. ExceptionType={ExceptionType}"
     )]
-    public static partial void LogSesSendFailed(this ILogger logger, string exceptionType);
+    internal static partial void LogSesSendFailed(this ILogger logger, string exceptionType);
 }

@@ -905,7 +905,7 @@ internal static partial class HeadlessSaveChangesPipelineLog
         Level = LogLevel.Error,
         Message = "Audit discard failed during exception path; rethrowing the original SaveChanges exception."
     )]
-    public static partial void LogAuditDiscardFailed(this ILogger logger, Exception exception);
+    internal static partial void LogAuditDiscardFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 2,
@@ -913,5 +913,5 @@ internal static partial class HeadlessSaveChangesPipelineLog
         Level = LogLevel.Error,
         Message = "Rolling the save's unit of work back faulted during the exception path; rethrowing the original SaveChanges exception."
     )]
-    public static partial void LogUnitOfWorkRollbackFailed(this ILogger logger, Exception exception);
+    internal static partial void LogUnitOfWorkRollbackFailed(this ILogger logger, Exception exception);
 }

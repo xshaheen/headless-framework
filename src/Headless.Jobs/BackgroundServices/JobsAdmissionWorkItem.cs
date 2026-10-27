@@ -69,7 +69,7 @@ internal static partial class JobsAdmissionClaimLog
         Level = LogLevel.Warning,
         Message = "Admission-time claim write for job {JobId} ({FunctionName}) failed; the row stays Queued until the fallback sweep re-claims it after its lease lapses."
     )]
-    public static partial void LogJobAdmissionClaimFailed(
+    internal static partial void LogJobAdmissionClaimFailed(
         this ILogger logger,
         Exception exception,
         Guid jobId,
@@ -81,12 +81,12 @@ internal static partial class JobsAdmissionClaimLog
         Level = LogLevel.Debug,
         Message = "Admission-time claim for job {JobId} ({FunctionName}) affected no rows (ownership lapsed or another wrapper won); skipping execution."
     )]
-    public static partial void LogJobAdmissionClaimLost(this ILogger logger, Guid jobId, string functionName);
+    internal static partial void LogJobAdmissionClaimLost(this ILogger logger, Guid jobId, string functionName);
 
     [LoggerMessage(
         EventId = 3125,
         Level = LogLevel.Information,
         Message = "Job {JobId} ({FunctionName}) was queued when the host began a graceful stop; its claim was released unstarted."
     )]
-    public static partial void LogJobAdmissionReleasedForDrain(this ILogger logger, Guid jobId, string functionName);
+    internal static partial void LogJobAdmissionReleasedForDrain(this ILogger logger, Guid jobId, string functionName);
 }

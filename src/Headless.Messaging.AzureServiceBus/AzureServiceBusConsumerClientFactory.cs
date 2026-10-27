@@ -166,7 +166,7 @@ internal static partial class AzureServiceBusConsumerClientFactoryLog
         Level = LogLevel.Information,
         Message = "Azure Service Bus topic {TopicPath} deleted every-instance subscription: {SubscriptionName}"
     )]
-    public static partial void EveryInstanceSubscriptionDeleted(
+    internal static partial void EveryInstanceSubscriptionDeleted(
         this ILogger logger,
         string topicPath,
         string subscriptionName
@@ -177,7 +177,7 @@ internal static partial class AzureServiceBusConsumerClientFactoryLog
         Level = LogLevel.Warning,
         Message = "Azure Service Bus could not delete every-instance subscription {SubscriptionName} on topic {TopicPath}; Azure deletes it after {AutoDeleteOnIdle} without a receiver"
     )]
-    public static partial void EveryInstanceSubscriptionNotDeleted(
+    internal static partial void EveryInstanceSubscriptionNotDeleted(
         this ILogger logger,
         Exception exception,
         string topicPath,

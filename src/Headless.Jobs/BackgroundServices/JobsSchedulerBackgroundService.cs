@@ -529,14 +529,14 @@ internal static partial class JobsSchedulerBackgroundServiceLog
         Message = "Jobs scheduler loop stopped because local coordination membership was lost; "
             + "no jobs will be claimed or dispatched by this node until the host restarts."
     )]
-    public static partial void LogJobsSchedulerStoppedOnMembershipLoss(this ILogger logger);
+    internal static partial void LogJobsSchedulerStoppedOnMembershipLoss(this ILogger logger);
 
     [LoggerMessage(
         EventId = 3221,
         Level = LogLevel.Information,
         Message = "Jobs scheduler loop stopped for host shutdown."
     )]
-    public static partial void LogJobsSchedulerStoppedOnShutdown(this ILogger logger);
+    internal static partial void LogJobsSchedulerStoppedOnShutdown(this ILogger logger);
 
     [LoggerMessage(
         EventId = 3222,
@@ -544,5 +544,5 @@ internal static partial class JobsSchedulerBackgroundServiceLog
         Message = "Jobs scheduler loop stopped because startup activation failed; no jobs will be claimed or "
             + "dispatched by this node. Host startup fails with the underlying error."
     )]
-    public static partial void LogJobsSchedulerStoppedOnActivationFailure(this ILogger logger, Exception exception);
+    internal static partial void LogJobsSchedulerStoppedOnActivationFailure(this ILogger logger, Exception exception);
 }

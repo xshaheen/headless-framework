@@ -98,7 +98,7 @@ internal static partial class RuntimeSubscriberLog
         Level = LogLevel.Information,
         Message = "Attached runtime subscription {SubscriptionId} for messageName {MessageName}, identity {Identity}, handler {HandlerId}."
     )]
-    public static partial void RuntimeSubscriptionAttached(
+    internal static partial void RuntimeSubscriptionAttached(
         this ILogger logger,
         string? subscriptionId,
         string messageName,
@@ -111,5 +111,5 @@ internal static partial class RuntimeSubscriberLog
         Level = LogLevel.Information,
         Message = "Detached runtime subscription {SubscriptionId}."
     )]
-    public static partial void RuntimeSubscriptionDetached(this ILogger logger, string subscriptionId);
+    internal static partial void RuntimeSubscriptionDetached(this ILogger logger, string subscriptionId);
 }

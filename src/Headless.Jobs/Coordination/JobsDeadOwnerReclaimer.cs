@@ -87,7 +87,7 @@ internal static partial class JobsDeadOwnerReclaimerLog
             + "(DeadRetentionWindow {DeadRetentionWindow}); clamped to {Effective} so a dead owner whose NodeLeft "
             + "event was missed is still observed before its snapshot entry is pruned."
     )]
-    public static partial void LogJobsReconcileIntervalClamped(
+    internal static partial void LogJobsReconcileIntervalClamped(
         this ILogger logger,
         TimeSpan configured,
         TimeSpan effective,

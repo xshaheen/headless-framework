@@ -243,7 +243,7 @@ internal static partial class RedisReplyListenerLog
         Level = LogLevel.Information,
         Message = "Redis reply channel '{ReplyAddress}' is live again after a reconnect; replies published while the connection was down were lost."
     )]
-    public static partial void ReplyListenerResubscribed(this ILogger logger, string replyAddress);
+    internal static partial void ReplyListenerResubscribed(this ILogger logger, string replyAddress);
 
     [LoggerMessage(
         EventId = 3015,
@@ -251,7 +251,7 @@ internal static partial class RedisReplyListenerLog
         Level = LogLevel.Warning,
         Message = "Confirming Redis reply channel '{ReplyAddress}' after a reconnect failed; the address is handed out without that confirmation."
     )]
-    public static partial void ReplyListenerResubscribeCheckFailed(
+    internal static partial void ReplyListenerResubscribeCheckFailed(
         this ILogger logger,
         Exception exception,
         string replyAddress
@@ -263,7 +263,7 @@ internal static partial class RedisReplyListenerLog
         Level = LogLevel.Warning,
         Message = "A reply on Redis reply channel '{ReplyAddress}' could not be read and was dropped."
     )]
-    public static partial void ReplyUnreadable(this ILogger logger, Exception exception, string replyAddress);
+    internal static partial void ReplyUnreadable(this ILogger logger, Exception exception, string replyAddress);
 
     [LoggerMessage(
         EventId = 3017,
@@ -271,7 +271,7 @@ internal static partial class RedisReplyListenerLog
         Level = LogLevel.Error,
         Message = "The reply handler of Redis reply channel '{ReplyAddress}' threw; the listener keeps receiving."
     )]
-    public static partial void ReplyHandlerFailed(this ILogger logger, Exception exception, string replyAddress);
+    internal static partial void ReplyHandlerFailed(this ILogger logger, Exception exception, string replyAddress);
 
     [LoggerMessage(
         EventId = 3018,
@@ -279,7 +279,7 @@ internal static partial class RedisReplyListenerLog
         Level = LogLevel.Debug,
         Message = "Unsubscribing Redis reply channel '{ReplyAddress}' failed."
     )]
-    public static partial void ReplyListenerUnsubscribeFailed(
+    internal static partial void ReplyListenerUnsubscribeFailed(
         this ILogger logger,
         Exception exception,
         string replyAddress
