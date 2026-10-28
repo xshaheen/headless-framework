@@ -118,4 +118,19 @@ internal static partial class LoggerExtensions
         Message = "Coordination drain participant {Participant} failed during host shutdown; the node stops waiting for it."
     )]
     internal static partial void DrainParticipantFailed(this ILogger logger, Exception exception, string participant);
+
+    [LoggerMessage(
+        EventId = 14,
+        EventName = "DeadNodeReconcileIntervalClamped",
+        Level = LogLevel.Warning,
+        Message = "DeadNodeReconcileInterval {Configured} exceeds half the coordination Dead-visibility window "
+            + "(DeadRetentionWindow {DeadRetentionWindow}); clamped to {Effective} so a dead owner whose NodeLeft "
+            + "event was missed is still observed before its snapshot entry is pruned."
+    )]
+    internal static partial void DeadNodeReconcileIntervalClamped(
+        this ILogger logger,
+        TimeSpan configured,
+        TimeSpan effective,
+        TimeSpan deadRetentionWindow
+    );
 }

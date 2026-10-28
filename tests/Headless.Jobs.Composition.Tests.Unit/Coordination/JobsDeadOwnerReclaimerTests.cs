@@ -69,7 +69,7 @@ public sealed class JobsDeadOwnerReclaimerTests : TestBase
         );
 
         reclaimer.ReconcileInterval.Should().Be(TimeSpan.FromSeconds(15));
-        logger.EventIds.Should().Equal(3250);
+        logger.EventIds.Should().Equal(14);
     }
 
     [Fact]

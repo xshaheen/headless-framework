@@ -26,7 +26,7 @@ internal sealed class JobsDeadOwnerReclaimer(
     /// value. Resolved and, when clamped, logged once per host.
     /// </summary>
     public TimeSpan ReconcileInterval { get; } =
-        ResolveReconcileInterval(
+        DeadOwnerReconcileInterval.Resolve(
             optionsBuilder.DeadNodeReconcileInterval,
             coordinationOptions?.Value,
             logger ?? NullLogger<JobsDeadOwnerReclaimer>.Instance
@@ -48,49 +48,4 @@ internal sealed class JobsDeadOwnerReclaimer(
         // terminal-child reconciliation once for the whole disruption rather than once per dead owner.
         await _internalJobManager.ReleaseDeadNodeResources(owners, CancellationToken.None).ConfigureAwait(false);
     }
-
-    // Relational membership providers prune a dead identity DeadRetentionWindow after DeadThreshold, so Dead is
-    // observable for only that window. The reconcile is documented as the authoritative backstop when a NodeLeft
-    // event is missed — with a reconcile interval wider than half the visibility window, a dead owner has roughly
-    // coin-flip odds of ever being observed Dead. Clamp rather than validate: the two values live in different
-    // options classes (Jobs vs Coordination) and neither owns the other.
-    internal static TimeSpan ResolveReconcileInterval(
-        TimeSpan? configured,
-        CoordinationOptions? coordination,
-        ILogger logger
-    )
-    {
-        var retentionWindow = (coordination ?? new CoordinationOptions()).DeadRetentionWindow;
-        var ceiling = TimeSpan.FromTicks(retentionWindow.Ticks / 2);
-
-        if (configured is not { } explicitInterval)
-        {
-            return ceiling;
-        }
-
-        if (coordination is null || ceiling <= TimeSpan.Zero || explicitInterval <= ceiling)
-        {
-            return explicitInterval;
-        }
-
-        logger.LogJobsReconcileIntervalClamped(explicitInterval, ceiling, retentionWindow);
-        return ceiling;
-    }
-}
-
-internal static partial class JobsDeadOwnerReclaimerLog
-{
-    [LoggerMessage(
-        EventId = 3250,
-        Level = LogLevel.Warning,
-        Message = "DeadNodeReconcileInterval {Configured} exceeds half the coordination Dead-visibility window "
-            + "(DeadRetentionWindow {DeadRetentionWindow}); clamped to {Effective} so a dead owner whose NodeLeft "
-            + "event was missed is still observed before its snapshot entry is pruned."
-    )]
-    internal static partial void LogJobsReconcileIntervalClamped(
-        this ILogger logger,
-        TimeSpan configured,
-        TimeSpan effective,
-        TimeSpan deadRetentionWindow
-    );
 }
