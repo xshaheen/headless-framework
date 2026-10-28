@@ -35,12 +35,18 @@ internal sealed class TusS3TestHost : IDisposable
 
     public HttpClient Client { get; }
 
+    /// <summary>Starts the host; the store is built once the host's services exist.</summary>
+    /// <param name="slidingExpiration">
+    /// Whether tusdotnet refreshes a sliding expiration after each request, which costs a state write of its own until
+    /// the store folds it into the append's commit.
+    /// </param>
     public static async Task<TusS3TestHost> StartAsync(
         S3TestClient s3,
         TusS3StoreOptions options,
         ILoggerFactory loggerFactory,
         TimeProvider? timeProvider,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool slidingExpiration = true
     )
     {
         // The configuration factory runs per request, after the host has started and the store exists.
@@ -61,7 +67,9 @@ internal sealed class TusS3TestHost : IDisposable
                                     new DefaultTusConfiguration
                                     {
                                         Store = store!,
-                                        Expiration = new SlidingExpiration(TimeSpan.FromMinutes(30)),
+                                        Expiration = slidingExpiration
+                                            ? new SlidingExpiration(TimeSpan.FromMinutes(30))
+                                            : null,
                                     }
                                 )
                         )
@@ -107,6 +115,24 @@ internal sealed class TusS3TestHost : IDisposable
     {
         using var request = new HttpRequestMessage(HttpMethod.Head, location);
         request.Headers.Add("Tus-Resumable", "1.0.0");
+
+        return await Client.SendAsync(request, cancellationToken);
+    }
+
+    public async Task<HttpResponseMessage> PatchAsync(
+        string location,
+        byte[] body,
+        long offset,
+        CancellationToken cancellationToken
+    )
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Patch, location);
+        request.Headers.Add("Tus-Resumable", "1.0.0");
+        request.Headers.Add("Upload-Offset", offset.ToString(CultureInfo.InvariantCulture));
+        request.Content = new ByteArrayContent(body);
+        request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+            "application/offset+octet-stream"
+        );
 
         return await Client.SendAsync(request, cancellationToken);
     }

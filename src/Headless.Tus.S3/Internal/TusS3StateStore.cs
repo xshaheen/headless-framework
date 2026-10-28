@@ -71,12 +71,17 @@ internal sealed class TusS3StateStore(
     /// Replaces the upload's state with <paramref name="upload"/>'s, only if storage still holds the ETag the upload
     /// was loaded or last written with.
     /// </summary>
+    /// <returns>the upload as written, carrying the ETag the next write of this request must send</returns>
     /// <exception cref="AmazonS3Exception">
     /// Another request wrote the state after this one read it (412 or 409), or removed it (404). The exception is not
     /// translated: tusdotnet answers it with a 500, which tus clients retry by asking HEAD for the committed offset,
     /// whereas a <c>TusStoreException</c> would become a 400 that clients treat as fatal.
     /// </exception>
-    public async Task UpdateAsync(string fileId, TusS3LoadedUpload upload, CancellationToken cancellationToken)
+    public async Task<TusS3LoadedUpload> UpdateAsync(
+        string fileId,
+        TusS3LoadedUpload upload,
+        CancellationToken cancellationToken
+    )
     {
         var state = upload.State ?? throw new InvalidOperationException("A completed upload has no state to update.");
 
@@ -85,7 +90,10 @@ internal sealed class TusS3StateStore(
             var etag = await _PutAsync(keys.Info(fileId), state.ToJson(), upload.ETag, cancellationToken)
                 .ConfigureAwait(false);
 
-            memo.Set(fileId, TusS3LoadedUpload.Incomplete(state, etag));
+            var written = TusS3LoadedUpload.Incomplete(state, etag);
+            memo.Set(fileId, written);
+
+            return written;
         }
         catch (Exception e)
         {

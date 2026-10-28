@@ -97,4 +97,95 @@ internal static partial class TusS3LoggerExtensions
         string fileId,
         DateTimeOffset createdAt
     );
+
+    [LoggerMessage(
+        EventId = 3279,
+        EventName = "S3AppendCommitted",
+        Level = LogLevel.Debug,
+        Message = "Appended {Bytes} bytes to file {FileId} as {PartCount} parts and {SegmentCount} tail segments"
+    )]
+    internal static partial void LogS3AppendCommitted(
+        this ILogger logger,
+        string fileId,
+        long bytes,
+        int partCount,
+        int segmentCount
+    );
+
+    [LoggerMessage(
+        EventId = 3280,
+        EventName = "S3AppendFailed",
+        Level = LogLevel.Error,
+        Message = "Failed to append data to file {FileId}"
+    )]
+    internal static partial void LogS3AppendFailed(this ILogger logger, Exception e, string fileId);
+
+    [LoggerMessage(
+        EventId = 3281,
+        EventName = "S3ClientDisconnected",
+        Level = LogLevel.Information,
+        Message = "Client disconnected from file {FileId} after {Bytes} bytes; storing the received bytes"
+    )]
+    internal static partial void LogS3ClientDisconnected(this ILogger logger, string fileId, long bytes);
+
+    [LoggerMessage(
+        EventId = 3282,
+        EventName = "S3PartUploadFailed",
+        Level = LogLevel.Warning,
+        Message = "Failed to upload part {PartNumber} of file {FileId}; storing its bytes and every later byte as tail segments"
+    )]
+    internal static partial void LogS3PartUploadFailed(this ILogger logger, Exception e, string fileId, int partNumber);
+
+    [LoggerMessage(
+        EventId = 3283,
+        EventName = "S3SegmentWriteFailed",
+        Level = LogLevel.Warning,
+        Message = "Failed to write the tail segment of file {FileId} at offset {Offset}; committing only the bytes before it"
+    )]
+    internal static partial void LogS3SegmentWriteFailed(this ILogger logger, Exception e, string fileId, long offset);
+
+    [LoggerMessage(
+        EventId = 3284,
+        EventName = "S3SegmentCleanupFailed",
+        Level = LogLevel.Warning,
+        Message = "Failed to delete {SegmentCount} consumed tail segments of file {FileId}; they remain until the upload is removed"
+    )]
+    internal static partial void LogS3SegmentCleanupFailed(
+        this ILogger logger,
+        Exception e,
+        string fileId,
+        int segmentCount
+    );
+
+    [LoggerMessage(
+        EventId = 3285,
+        EventName = "S3MultipartAbortFailed",
+        Level = LogLevel.Warning,
+        Message = "Failed to abort the unrecorded multipart upload of file {FileId}; its parts remain until the expiry sweep or the bucket's abort rules collect them"
+    )]
+    internal static partial void LogS3MultipartAbortFailed(this ILogger logger, Exception e, string fileId);
+
+    [LoggerMessage(
+        EventId = 3286,
+        EventName = "S3MultipartUploadMissing",
+        Level = LogLevel.Warning,
+        Message = "Marked file {FileId} as gone: the provider no longer has its multipart upload"
+    )]
+    internal static partial void LogS3MultipartUploadMissing(this ILogger logger, string fileId);
+
+    [LoggerMessage(
+        EventId = 3287,
+        EventName = "S3PartNumbersExhausted",
+        Level = LogLevel.Warning,
+        Message = "Marked file {FileId} as gone: every part number of its multipart upload is used"
+    )]
+    internal static partial void LogS3PartNumbersExhausted(this ILogger logger, string fileId);
+
+    [LoggerMessage(
+        EventId = 3288,
+        EventName = "S3UploadLengthReached",
+        Level = LogLevel.Debug,
+        Message = "File {FileId} holds all {UploadLength} bytes in its parts and tail"
+    )]
+    internal static partial void LogS3UploadLengthReached(this ILogger logger, string fileId, long uploadLength);
 }

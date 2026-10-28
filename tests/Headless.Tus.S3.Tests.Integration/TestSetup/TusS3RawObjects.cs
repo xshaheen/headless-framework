@@ -57,6 +57,62 @@ internal sealed class TusS3RawObjects(S3TestClient client, TusS3StoreOptions opt
         await client.S3.PutObjectAsync(request, cancellationToken);
     }
 
+    /// <summary>
+    /// The bytes the stored state says are durable: its parts in number order, then its tail segments. The parts are
+    /// read by completing the multipart upload, so call this once, at the end of a scenario.
+    /// </summary>
+    public async Task<byte[]> ReadDurableBytesAsync(string fileId, CancellationToken cancellationToken)
+    {
+        var state = await ReadStateAsync(fileId, cancellationToken);
+        state.Should().NotBeNull();
+        await using var content = new MemoryStream();
+
+        if (state!.Parts.Count > 0)
+        {
+            await client.S3.CompleteMultipartUploadAsync(
+                new CompleteMultipartUploadRequest
+                {
+                    BucketName = options.Bucket,
+                    Key = Keys.FinishedObject(fileId),
+                    UploadId = state.MultipartUploadId,
+                    PartETags = [.. state.Parts.OrderBy(p => p.Number).Select(p => new PartETag(p.Number, p.ETag))],
+                },
+                cancellationToken
+            );
+
+            content.Write((await _TryGetAsync(Keys.FinishedObject(fileId), cancellationToken))!);
+        }
+
+        foreach (var segment in state.Segments)
+        {
+            var bytes = await _TryGetAsync(segment.Key, cancellationToken);
+            bytes.Should().NotBeNull("segment {0} is recorded in the state", segment.Key);
+            content.Write(bytes.AsSpan(0, (int)segment.Length));
+        }
+
+        return content.ToArray();
+    }
+
+    /// <summary>The keys of every tail segment object stored for the upload, recorded in its state or not.</summary>
+    public async Task<IReadOnlyList<string>> ListSegmentKeysAsync(string fileId, CancellationToken cancellationToken)
+    {
+        var response = await client.S3.ListObjectsV2Async(
+            new ListObjectsV2Request { BucketName = options.Bucket, Prefix = Keys.Segments(fileId) },
+            cancellationToken
+        );
+
+        return [.. (response.S3Objects ?? []).Select(o => o.Key)];
+    }
+
+    /// <summary>Reads one tail segment by the length the state recorded for it.</summary>
+    public async Task<byte[]> ReadSegmentAsync(TusS3CommittedSegment segment, CancellationToken cancellationToken)
+    {
+        var bytes = await _TryGetAsync(segment.Key, cancellationToken);
+        bytes.Should().NotBeNull();
+
+        return bytes![..(int)segment.Length];
+    }
+
     /// <summary>The object's size, or <see langword="null" /> when it does not exist.</summary>
     public async Task<long?> GetSizeAsync(string key, CancellationToken cancellationToken)
     {

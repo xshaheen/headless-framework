@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Net;
+using System.Text;
 using System.Threading.Channels;
 
 namespace Tests.TestSetup;
@@ -17,6 +19,7 @@ internal sealed class S3RequestGate : DelegatingHandler
     private readonly SemaphoreSlim _release = new(0);
     private readonly Channel<string> _arrivals = Channel.CreateUnbounded<string>();
     private volatile Armed? _armed;
+    private volatile Func<HttpRequestMessage, bool>? _fail;
     private int _total;
 
 #pragma warning disable CA2000 // False positive: DelegatingHandler disposes its inner handler when it is disposed.
@@ -56,6 +59,15 @@ internal sealed class S3RequestGate : DelegatingHandler
         _armed = null;
     }
 
+    /// <summary>
+    /// Answers every request <paramref name="predicate" /> matches with an S3 error the SDK does not retry, instead of
+    /// sending it, so a test can make one storage call fail; <see langword="null" /> stops the failures.
+    /// </summary>
+    public void FailWhen(Func<HttpRequestMessage, bool>? predicate)
+    {
+        _fail = predicate;
+    }
+
     /// <summary>Completes with the held request's key when one more matching request is waiting for release.</summary>
     public ValueTask<string> WaitForArrivalAsync(CancellationToken cancellationToken)
     {
@@ -76,6 +88,19 @@ internal sealed class S3RequestGate : DelegatingHandler
         var operation = S3Operation.Of(request);
         _counts.AddOrUpdate(operation, 1, static (_, count) => count + 1);
         Interlocked.Increment(ref _total);
+
+        if (_fail?.Invoke(request) == true)
+        {
+            return new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                RequestMessage = request,
+                Content = new StringContent(
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Error><Code>InvalidRequest</Code><Message>Failed by the test gate</Message></Error>",
+                    Encoding.UTF8,
+                    "application/xml"
+                ),
+            };
+        }
 
         var armed = _armed;
         var key = request.RequestUri?.AbsolutePath ?? "";
@@ -125,6 +150,20 @@ internal static class S3Operation
     public const string CreateBucket = nameof(CreateBucket);
     public const string DeleteBucket = nameof(DeleteBucket);
     public const string Other = nameof(Other);
+
+    /// <summary>The part number an <see cref="UploadPart" /> request carries, or <see langword="null" />.</summary>
+    public static int? PartNumber(HttpRequestMessage request)
+    {
+        foreach (var pair in (request.RequestUri?.Query ?? "").TrimStart('?').Split('&'))
+        {
+            if (pair.StartsWith("partNumber=", StringComparison.Ordinal))
+            {
+                return int.Parse(pair["partNumber=".Length..], CultureInfo.InvariantCulture);
+            }
+        }
+
+        return null;
+    }
 
     public static string Of(HttpRequestMessage request)
     {

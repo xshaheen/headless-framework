@@ -42,6 +42,15 @@ internal sealed class TusS3Keys(string normalizedPrefix)
         return WorkingSet(fileId) + _SegmentFolder;
     }
 
+    /// <summary>
+    /// The key of a tail segment holding bytes from <paramref name="offset"/>. The nonce makes every write a new key,
+    /// so a writer whose view is stale can never overwrite a segment another request committed.
+    /// </summary>
+    public string Segment(string fileId, long offset, string nonce)
+    {
+        return Segments(fileId) + offset.ToString("D19", CultureInfo.InvariantCulture) + "-" + nonce;
+    }
+
     /// <summary>The key of the record a completed upload keeps beside its finished object.</summary>
     public string CompletedRecord(string fileId)
     {

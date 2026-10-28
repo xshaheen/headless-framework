@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.IO.Pipelines;
+using System.Buffers;
 using Amazon.S3;
 using Amazon.S3.Model;
 using FluentValidation;
@@ -62,6 +62,7 @@ public sealed partial class TusS3Store
     private readonly TimeProvider _timeProvider;
     private readonly TusS3Keys _keys;
     private readonly TusS3StateStore _stateStore;
+    private readonly TusS3AppendServices _appendServices;
 
     /// <summary>
     /// Initializes a new <c>TusS3Store</c> over an existing bucket. Construction makes no network call.
@@ -100,15 +101,19 @@ public sealed partial class TusS3Store
         _timeProvider = timeProvider ?? TimeProvider.System;
         _keys = new TusS3Keys(options.NormalizedPrefix);
         _stateStore = new TusS3StateStore(s3, options, _keys, new TusS3RequestMemo(httpContextAccessor), _logger);
+        _appendServices = new TusS3AppendServices(
+            s3,
+            options,
+            _keys,
+            _stateStore,
+            // A pool of its own, sized to the largest part, so whole parts are reused across requests instead of
+            // allocated on the large object heap per PATCH; the shared pool caps its arrays far below a part.
+            ArrayPool<byte>.Create(options.MaxPartSize, maxArraysPerBucket: 8),
+            _logger,
+            _timeProvider,
+            _CreateMultipartUploadAsync
+        );
     }
-
-    /// <inheritdoc />
-    public Task<long> AppendDataAsync(string fileId, Stream stream, CancellationToken cancellationToken) =>
-        throw new NotSupportedException(_NotBuiltMessage);
-
-    /// <inheritdoc />
-    public Task<long> AppendDataAsync(string fileId, PipeReader pipeReader, CancellationToken cancellationToken) =>
-        throw new NotSupportedException(_NotBuiltMessage);
 
     /// <inheritdoc />
     public Task DeleteFileAsync(string fileId, CancellationToken cancellationToken) =>
@@ -146,6 +151,86 @@ public sealed partial class TusS3Store
         }
 
         TusS3Keys.EnsureValid(fileId);
+    }
+
+    /// <summary>
+    /// Loads the upload a PATCH appends to and prepares the writer for its bytes.
+    /// </summary>
+    /// <exception cref="TusStoreException">The upload does not exist, is gone, or is already complete.</exception>
+    private async Task<TusS3PartWriter> _BeginAppendAsync(string fileId, CancellationToken cancellationToken)
+    {
+        var upload = await _stateStore.LoadAsync(fileId, cancellationToken).ConfigureAwait(false);
+
+        if (
+            upload is null
+            || upload.State is { Status: TusS3UploadStatus.Gone }
+            || (upload.State is { } active && _MultipartUploadLifetimePassed(active))
+        )
+        {
+            throw new TusStoreException($"File {fileId} does not exist");
+        }
+
+        var state = upload.State ?? throw new TusStoreException($"File {fileId} is already complete");
+
+        if (state.Status == TusS3UploadStatus.Completing)
+        {
+            // Finishing an interrupted completion is not built yet.
+            throw new NotSupportedException(_NotBuiltMessage);
+        }
+
+        var writer = new TusS3PartWriter(_appendServices, fileId, upload);
+
+        try
+        {
+            await writer.StartAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            await writer.DisposeAsync().ConfigureAwait(false);
+
+            throw;
+        }
+
+        return writer;
+    }
+
+    /// <summary>Commits what the writer holds and reports the bytes this request appended.</summary>
+    private async Task<long> _CommitAppendAsync(string fileId, TusS3PartWriter writer)
+    {
+        var (upload, appended) = await writer.CommitAsync().ConfigureAwait(false);
+
+        if (upload.State is { UploadLength: { } length } state && state.Offset == length)
+        {
+            await _OnUploadLengthReachedAsync(fileId, length).ConfigureAwait(false);
+        }
+
+        return appended;
+    }
+
+    /// <summary>
+    /// Runs once an append stores the upload's last byte. The parts and tail stay in the working set, where every
+    /// byte is already durable, until the finished object is assembled from them.
+    /// </summary>
+    private Task _OnUploadLengthReachedAsync(string fileId, long uploadLength)
+    {
+        _logger.LogS3UploadLengthReached(fileId, uploadLength);
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Starts the multipart upload an upload's parts go to, under the key its finished object will have.
+    /// </summary>
+    private async Task<string> _CreateMultipartUploadAsync(string fileId, CancellationToken cancellationToken)
+    {
+        var request = new InitiateMultipartUploadRequest
+        {
+            BucketName = _options.Bucket,
+            Key = _keys.FinishedObject(fileId),
+        };
+        var response = await _s3.InitiateMultipartUploadAsync(request, cancellationToken).ConfigureAwait(false);
+
+        return response.UploadId;
     }
 
     /// <summary>
