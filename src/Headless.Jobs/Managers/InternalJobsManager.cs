@@ -1493,12 +1493,18 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            if (candidate.NextDueUtc == default)
+            {
+                // No position yet (just created or just edited). Rebasing from its unset watermark would replay its
+                // whole history; dispatch's creation rule positions it at the store instant and stamps the current
+                // fingerprint instead.
+                continue;
+            }
+
             Exception? deterministicFailure = null;
             string? current = null;
             DateTime? rebasedNext = null;
             var nodeLocalFailure = false;
-            var anchor =
-                candidate.ReconciledThroughUtc > page.StoreUtcNow ? candidate.ReconciledThroughUtc : page.StoreUtcNow;
 
             if (candidate.OnMissedRun is not MissedRunPolicy.Coalesce and not MissedRunPolicy.Skip)
             {
@@ -1544,7 +1550,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                     {
                         rebasedNext = cronScheduleCache.GetNextOccurrenceOrDefault(
                             candidate.Expression,
-                            anchor,
+                            candidate.ReconciledThroughUtc,
                             candidate.TimeZoneId
                         );
                     }
@@ -1621,7 +1627,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             // Provider/database failures are deliberately outside the deterministic-definition catch above. They are
             // infrastructure failures, not evidence that this row is malformed, so activation must fail closed rather
             // than durably deferring the row and allowing the scheduler to start.
-            if (await _RebaseAsync(candidate, current!, anchor, rebasedNext, cancellationToken).ConfigureAwait(false))
+            if (await _RebaseAsync(candidate, current!, rebasedNext, cancellationToken).ConfigureAwait(false))
             {
                 rebased++;
             }
@@ -1701,19 +1707,20 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
 
     /// <summary>
     /// Re-derives one definition's projection under current rules and refreshes its fingerprint, in a single
-    /// compare-and-advance so a pause, resume, or edit racing the sweep wins instead of being clobbered.
+    /// compare-and-advance so a pause, resume, edit, or dispatch racing the sweep wins instead of being clobbered.
     /// </summary>
+    /// <remarks>
+    /// The watermark is kept, so every instant the current rules place between it and now stays owed: the next
+    /// dispatch finds those instants pending and hands them to the definition's missed-run policy. Moving the
+    /// watermark to the store instant instead would silently discard runs the schedule still owes.
+    /// </remarks>
     private async Task<bool> _RebaseAsync(
         CronDispatchCandidate candidate,
         string currentFingerprint,
-        DateTime anchor,
         DateTime? rebasedNext,
         CancellationToken cancellationToken
     )
     {
-        // Derived from the watermark so no interval is skipped, then anchored at or after the store instant so a tick
-        // the changed rules moved into the past is NOT replayed as a misfire. That anchoring is the difference between
-        // surfacing a rule change and manufacturing a backlog out of one.
         var advanced = await persistenceProvider
             .AdvanceCronScheduleAsync(
                 new CronScheduleAdvance
@@ -1722,9 +1729,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                     ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
                     ObservedNextDueUtc = candidate.NextDueUtc,
                     ExpectedScheduleRevision = candidate.ScheduleRevision,
-                    // Environmental rule drift is a non-replay boundary: the prior interpretation's backlog is
-                    // deliberately discarded and both cursor and projection move to the provider-time anchor.
-                    ReconciledThroughUtc = anchor,
+                    ReconciledThroughUtc = candidate.ReconciledThroughUtc,
                     NextDueUtc = rebasedNext ?? DateTime.MaxValue,
                     EvaluationFingerprint = currentFingerprint,
                     // Never gated on due-ness: a rule change that moves an occurrence earlier is invisible behind the
@@ -1737,8 +1742,8 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
 
         if (advanced is null)
         {
-            // A pause, resume, or edit committed first. Its transition is newer and already carries a correct
-            // position, so losing here is the right outcome — the next sweep re-reads whatever it left.
+            // A pause, resume, edit, or dispatch committed first. Its transition is newer and already carries a
+            // correct position, so losing here is the right outcome — the next sweep re-reads whatever it left.
             return false;
         }
 
@@ -1749,7 +1754,6 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 candidate.EvaluationFingerprint,
                 currentFingerprint,
                 candidate.ReconciledThroughUtc,
-                anchor,
                 candidate.NextDueUtc,
                 advanced.NextDueUtc
             );
