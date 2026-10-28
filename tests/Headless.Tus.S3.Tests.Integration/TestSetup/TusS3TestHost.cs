@@ -42,6 +42,9 @@ internal sealed class TusS3TestHost : IDisposable
     /// the store folds it into the append's commit.
     /// </param>
     /// <param name="onFileComplete">Runs as tusdotnet's completion event, after the store finished the upload.</param>
+    /// <param name="absoluteExpiration">
+    /// Whether tusdotnet sets an absolute expiration at creation instead; it then never refreshes it after a request.
+    /// </param>
     public static async Task<TusS3TestHost> StartAsync(
         S3TestClient s3,
         TusS3StoreOptions options,
@@ -49,7 +52,8 @@ internal sealed class TusS3TestHost : IDisposable
         TimeProvider? timeProvider,
         CancellationToken cancellationToken,
         bool slidingExpiration = true,
-        Func<FileCompleteContext, Task>? onFileComplete = null
+        Func<FileCompleteContext, Task>? onFileComplete = null,
+        bool absoluteExpiration = false
     )
     {
         // The configuration factory runs per request, after the host has started and the store exists.
@@ -70,8 +74,9 @@ internal sealed class TusS3TestHost : IDisposable
                                     new DefaultTusConfiguration
                                     {
                                         Store = store!,
-                                        Expiration = slidingExpiration
-                                            ? new SlidingExpiration(TimeSpan.FromMinutes(30))
+                                        Expiration =
+                                            absoluteExpiration ? new AbsoluteExpiration(TimeSpan.FromMinutes(30))
+                                            : slidingExpiration ? new SlidingExpiration(TimeSpan.FromMinutes(30))
                                             : null,
                                         Events = new Events
                                         {

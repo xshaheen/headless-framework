@@ -56,6 +56,26 @@ internal sealed class TusS3StateStore(
         return upload;
     }
 
+    /// <summary>
+    /// Reads an incomplete upload's state straight from storage, bypassing the request memo, or returns
+    /// <see langword="null"/> when no state object exists.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The stored state is not one this build can read.</exception>
+    public async Task<TusS3LoadedUpload?> ReadIncompleteAsync(string fileId, CancellationToken cancellationToken)
+    {
+        var info = await _TryGetAsync(keys.Info(fileId), cancellationToken).ConfigureAwait(false);
+
+        return info is null
+            ? null
+            : TusS3LoadedUpload.Incomplete(TusS3UploadState.FromJson(info.Value.Content), info.Value.ETag);
+    }
+
+    /// <summary>Drops what this request remembers about an upload, after its objects were removed.</summary>
+    public void Forget(string fileId)
+    {
+        memo.Remove(fileId);
+    }
+
     /// <summary>Writes a new upload's state, failing if any state already exists under its id.</summary>
     /// <exception cref="AmazonS3Exception">An upload with the same id already exists (412).</exception>
     public async Task CreateAsync(string fileId, TusS3UploadState state, CancellationToken cancellationToken)
@@ -259,6 +279,12 @@ internal sealed class TusS3LoadedUpload
 
     /// <summary>The record of a completed upload; <see langword="null"/> when <see cref="State"/> is set.</summary>
     public TusS3CompletedRecord? Completed { get; }
+
+    /// <summary>
+    /// When this request's append committed the state, so an expiry refresh later in the same request can tell how far
+    /// past the commit tusdotnet set it; <see langword="null"/> when no append committed in this request.
+    /// </summary>
+    public DateTimeOffset? AppendCommittedAt { get; set; }
 
     public static TusS3LoadedUpload Incomplete(TusS3UploadState state, string etag)
     {

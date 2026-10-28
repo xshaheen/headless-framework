@@ -51,8 +51,6 @@ public sealed partial class TusS3Store
         ITusReadableStore,
         ITusConcatenationStore
 {
-    private const string _NotBuiltMessage = "The S3 store does not implement this tus operation yet.";
-
     private static readonly GuidFileIdProvider _DefaultFileIdProvider = new();
 
     private readonly IAmazonS3 _s3;
@@ -121,18 +119,6 @@ public sealed partial class TusS3Store
             _CreateMultipartUploadAsync
         );
     }
-
-    /// <inheritdoc />
-    public Task DeleteFileAsync(string fileId, CancellationToken cancellationToken) =>
-        throw new NotSupportedException(_NotBuiltMessage);
-
-    /// <inheritdoc />
-    public Task<IEnumerable<string>> GetExpiredFilesAsync(CancellationToken cancellationToken) =>
-        throw new NotSupportedException(_NotBuiltMessage);
-
-    /// <inheritdoc />
-    public Task<int> RemoveExpiredFilesAsync(CancellationToken cancellationToken) =>
-        throw new NotSupportedException(_NotBuiltMessage);
 
     /// <summary>
     /// Validates an externally supplied file id against the configured <c>ITusFileIdProvider</c>, then against the

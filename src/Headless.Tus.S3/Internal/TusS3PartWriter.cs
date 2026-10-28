@@ -205,6 +205,16 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
         _state.Segments = keepOld ? [.. _oldSegments, .. _newSegments] : [.. _newSegments];
         _state.Offset = durableEnd;
 
+        // Under sliding expiration the commit carries the refresh tusdotnet asks for right after it, so that refresh
+        // finds the expiry already moved and writes nothing. Absolute expiration never stores a window, so it never
+        // moves here.
+        var committedAt = _services.TimeProvider.GetUtcNow();
+
+        if (_state.SlidingExpirationWindow is { } window)
+        {
+            TusS3Store.ApplyExpiration(_state, committedAt + window);
+        }
+
         if (durableEnd == _state.UploadLength)
         {
             // The commit that stores the last byte is also the completion fence: only the request whose write lands
@@ -224,6 +234,7 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
         }
 
         _upload = await _services.StateStore.UpdateAsync(_fileId, _upload, StorageToken).ConfigureAwait(false);
+        _upload.AppendCommittedAt = committedAt;
 
         _services.Logger.LogS3AppendCommitted(
             _fileId,

@@ -65,6 +65,13 @@ internal sealed class TusS3UploadState
     /// <summary>The expiry the upload had before it entered <see cref="TusS3UploadStatus.Completing"/>.</summary>
     public DateTimeOffset? ExpiresAtBeforeCompleting { get; set; }
 
+    /// <summary>
+    /// The sliding expiration window, learned from the expiry tusdotnet sets right after an append. Once known, each
+    /// append's commit moves the expiry itself, so the refresh that follows the append needs no write of its own.
+    /// <see langword="null"/> under absolute expiration, which tusdotnet never refreshes after an append.
+    /// </summary>
+    public TimeSpan? SlidingExpirationWindow { get; set; }
+
     public byte[] ToJson()
     {
         return JsonSerializer.SerializeToUtf8Bytes(this, TusS3JsonContext.Default.TusS3UploadState);

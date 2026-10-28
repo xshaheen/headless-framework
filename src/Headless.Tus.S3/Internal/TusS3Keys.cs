@@ -24,10 +24,13 @@ internal sealed class TusS3Keys(string normalizedPrefix)
         return normalizedPrefix + EnsureValid(fileId);
     }
 
+    /// <summary>The prefix every incomplete upload's working set lives under, one folder per upload.</summary>
+    public string WorkingSetRoot => normalizedPrefix + TusS3BucketProvisioner.WorkingSetFolder;
+
     /// <summary>The prefix every object of an incomplete upload's working set starts with.</summary>
     public string WorkingSet(string fileId)
     {
-        return normalizedPrefix + TusS3BucketProvisioner.WorkingSetFolder + EnsureValid(fileId) + "/";
+        return WorkingSetRoot + EnsureValid(fileId) + "/";
     }
 
     /// <summary>The key of an incomplete upload's state object.</summary>
@@ -72,6 +75,12 @@ internal sealed class TusS3Keys(string normalizedPrefix)
         }
 
         return fileId;
+    }
+
+    /// <summary>Whether <paramref name="fileId"/> is safe to place in a key.</summary>
+    public static bool IsValid([NotNullWhen(true)] string? fileId)
+    {
+        return !string.IsNullOrEmpty(fileId) && !_IsUnsafe(fileId);
     }
 
     private static bool _IsUnsafe(string fileId)

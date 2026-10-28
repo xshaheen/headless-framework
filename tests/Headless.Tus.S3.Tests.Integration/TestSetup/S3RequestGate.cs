@@ -147,6 +147,7 @@ internal static class S3Operation
     public const string CompleteMultipartUpload = nameof(CompleteMultipartUpload);
     public const string AbortMultipartUpload = nameof(AbortMultipartUpload);
     public const string ListParts = nameof(ListParts);
+    public const string ListMultipartUploads = nameof(ListMultipartUploads);
     public const string CreateBucket = nameof(CreateBucket);
     public const string DeleteBucket = nameof(DeleteBucket);
     public const string Other = nameof(Other);
@@ -189,6 +190,7 @@ internal static class S3Operation
             "DELETE" when query.Count == 0 => DeleteObject,
             "GET" when query.Contains("list-type") => ListObjectsV2,
             "GET" when query.Contains("uploadId") => ListParts,
+            "GET" when query.Contains("uploads") => ListMultipartUploads,
             "GET" when query.Count == 0 => GetObject,
             "HEAD" => HeadObject,
             _ => Other,

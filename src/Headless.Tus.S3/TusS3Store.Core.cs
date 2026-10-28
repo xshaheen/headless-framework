@@ -12,6 +12,9 @@ public sealed partial class TusS3Store
     // retried against fresh state instead of failing a PATCH whose bytes already committed.
     private const int _MaxExpirationWriteAttempts = 3;
 
+    // How close a requested expiry may be to the stored one for the refresh to count as already applied.
+    private static readonly TimeSpan _ExpirationFoldTolerance = TimeSpan.FromSeconds(1);
+
     /// <summary>
     /// Returns <see langword="true"/> when the upload exists and can still make progress or be read.
     /// </summary>
@@ -205,7 +208,7 @@ public sealed partial class TusS3Store
                     return;
                 }
 
-                if (!_ApplyExpiration(state, expires))
+                if (!_RefreshExpiration(fileId, upload, state, expires))
                 {
                     return;
                 }
@@ -235,11 +238,53 @@ public sealed partial class TusS3Store
     }
 
     /// <summary>
+    /// Decides whether tusdotnet's expiry refresh needs a write, and learns the sliding window from the first refresh
+    /// that follows an append in the same request.
+    /// </summary>
+    /// <remarks>
+    /// tusdotnet sets the expiry once at creation under both sliding and absolute expiration, and again after every
+    /// append only under sliding expiration. So a refresh after this request's append reveals a sliding window, and the
+    /// creation call never does. Once the window is stored, the append's commit has already moved the expiry to about
+    /// the value tusdotnet asks for, and the refresh is skipped.
+    /// </remarks>
+    /// <returns><see langword="true"/> when the state changed and needs writing</returns>
+    private bool _RefreshExpiration(
+        string fileId,
+        TusS3LoadedUpload upload,
+        TusS3UploadState state,
+        DateTimeOffset expires
+    )
+    {
+        // Only a known window means an append already moved the expiry. tusdotnet computes its value from its own clock
+        // read a moment after the commit, so the two are close but never exactly equal. Without a window the write
+        // goes ahead even when the value is close, because a refresh right after creation would otherwise never get
+        // to teach the window.
+        if (
+            state is { SlidingExpirationWindow: not null, ExpiresAt: { } stored }
+            && (expires - stored).Duration() <= _ExpirationFoldTolerance
+        )
+        {
+            _logger.LogS3ExpirationAlreadyFolded(fileId);
+
+            return false;
+        }
+
+        if (upload.AppendCommittedAt is { } committedAt && expires > committedAt)
+        {
+            var window = expires - committedAt;
+            state.SlidingExpirationWindow = window;
+            _logger.LogS3SlidingExpirationWindowLearned(fileId, window);
+        }
+
+        return ApplyExpiration(state, expires);
+    }
+
+    /// <summary>
     /// Sets the expiry on a state about to be written. Every write that refreshes an upload's expiry goes through here,
     /// so an append can carry the refresh in its own commit instead of a separate write.
     /// </summary>
     /// <returns><see langword="true"/> when the state changed and needs writing</returns>
-    private static bool _ApplyExpiration(TusS3UploadState state, DateTimeOffset expires)
+    internal static bool ApplyExpiration(TusS3UploadState state, DateTimeOffset expires)
     {
         if (state.ExpiresAt == expires)
         {
