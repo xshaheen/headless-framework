@@ -1,9 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net.Http.Headers;
-using Headless.Checks;
-using Headless.Http;
-
 namespace Headless.Tus;
 
 /// <summary>
@@ -49,34 +45,16 @@ public sealed record TusS3ObjectHeaders
 }
 
 /// <summary>
-/// Default <see cref="ITusS3ObjectHeadersProvider"/>: the content type is the upload's <c>filetype</c> metadata when it
-/// is a valid media type, and <c>application/octet-stream</c> otherwise. No other header is set.
+/// Default <see cref="ITusS3ObjectHeadersProvider"/>: the content type follows <see cref="TusContentTypes.FromFileType"/>,
+/// so it is the upload's <c>filetype</c> metadata when that is a well-formed media type a browser would not execute,
+/// and <c>application/octet-stream</c> otherwise. No other header is set.
 /// </summary>
 [PublicAPI]
 public sealed class DefaultTusS3ObjectHeadersProvider : ITusS3ObjectHeadersProvider
 {
-    /// <summary>The metadata key tus clients (tus-js-client, Uppy) send the file's media type under.</summary>
-    public const string FileTypeMetadataKey = "filetype";
-
     /// <inheritdoc />
     public ValueTask<TusS3ObjectHeaders> GetObjectHeadersAsync(Dictionary<string, string> metadata)
     {
-        Argument.IsNotNull(metadata);
-
-        var contentType =
-            metadata.TryGetValue(FileTypeMetadataKey, out var fileType) && _IsMediaType(fileType)
-                ? fileType.Trim()
-                : ContentTypes.Applications.OctetStream;
-
-        return ValueTask.FromResult(new TusS3ObjectHeaders { ContentType = contentType });
-    }
-
-    // The value is client input that becomes a stored response header, so anything that does not parse as a media type
-    // (no subtype, stray characters, line breaks) falls back instead of reaching storage.
-    private static bool _IsMediaType(string? value)
-    {
-        return !string.IsNullOrWhiteSpace(value)
-            && MediaTypeHeaderValue.TryParse(value, out var parsed)
-            && parsed.MediaType?.Contains('/', StringComparison.Ordinal) == true;
+        return ValueTask.FromResult(new TusS3ObjectHeaders { ContentType = TusContentTypes.FromFileType(metadata) });
     }
 }

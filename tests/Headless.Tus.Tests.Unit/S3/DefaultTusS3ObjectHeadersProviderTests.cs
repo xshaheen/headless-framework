@@ -41,6 +41,19 @@ public sealed class DefaultTusS3ObjectHeadersProviderTests : TestBase
         headers.ContentType.Should().Be("application/octet-stream");
     }
 
+    [Theory]
+    [InlineData("text/html")]
+    [InlineData("image/svg+xml")]
+    [InlineData("application/javascript; charset=utf-8")]
+    public async Task should_fall_back_to_octet_stream_when_the_filetype_is_script_capable(string fileType)
+    {
+        // when
+        var headers = await _provider.GetObjectHeadersAsync(new(StringComparer.Ordinal) { ["filetype"] = fileType });
+
+        // then
+        headers.ContentType.Should().Be("application/octet-stream");
+    }
+
     [Fact]
     public async Task should_fall_back_to_octet_stream_without_a_filetype()
     {

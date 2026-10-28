@@ -76,6 +76,25 @@ public abstract class ObjectHeadersTestsBase(IS3TestBackend backend) : TestBase
             .Be("application/octet-stream");
     }
 
+    public virtual async Task should_fall_back_to_octet_stream_for_a_script_capable_filetype()
+    {
+        // given - a browser would run an uploaded text/html object as script in the bucket's origin
+        var store = _CreateStore(headersProvider: null);
+        var metadata = $"filetype {"text/html".ToBase64()}";
+
+        // when
+        var small = await _UploadAsync(store, metadata, 1_000);
+        var large = await _UploadAsync(store, metadata, 6 * _MiB);
+
+        // then
+        foreach (var fileId in new[] { small, large })
+        {
+            (await _raw.GetFinishedObjectHeadersAsync(fileId, AbortToken))
+                .ContentType.Should()
+                .Be("application/octet-stream");
+        }
+    }
+
     public virtual async Task should_apply_the_headers_a_custom_provider_returns()
     {
         // given - a provider that derives a download name from the metadata
@@ -142,6 +161,10 @@ public sealed class MinioObjectHeadersTests(TusS3MinioFixture fixture) : ObjectH
         base.should_fall_back_to_octet_stream_without_a_filetype();
 
     [Fact]
+    public override Task should_fall_back_to_octet_stream_for_a_script_capable_filetype() =>
+        base.should_fall_back_to_octet_stream_for_a_script_capable_filetype();
+
+    [Fact]
     public override Task should_apply_the_headers_a_custom_provider_returns() =>
         base.should_apply_the_headers_a_custom_provider_returns();
 }
@@ -156,6 +179,10 @@ public sealed class LocalStackObjectHeadersTests(TusS3LocalStackFixture fixture)
     [Fact]
     public override Task should_fall_back_to_octet_stream_without_a_filetype() =>
         base.should_fall_back_to_octet_stream_without_a_filetype();
+
+    [Fact]
+    public override Task should_fall_back_to_octet_stream_for_a_script_capable_filetype() =>
+        base.should_fall_back_to_octet_stream_for_a_script_capable_filetype();
 
     [Fact]
     public override Task should_apply_the_headers_a_custom_provider_returns() =>

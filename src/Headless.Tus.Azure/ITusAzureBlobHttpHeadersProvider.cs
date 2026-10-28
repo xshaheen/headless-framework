@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure.Storage.Blobs.Models;
-using Headless.Http;
 
 namespace Headless.Tus;
 
@@ -27,22 +26,17 @@ public interface ITusAzureBlobHttpHeadersProvider
 }
 
 /// <summary>
-/// Default implementation of <c>ITusAzureBlobHttpHeadersProvider</c> that sets
-/// <c>application/octet-stream</c> as the blob content type for every upload.
+/// Default <see cref="ITusAzureBlobHttpHeadersProvider"/>: the blob content type follows
+/// <see cref="TusContentTypes.FromFileType"/>, so it is the upload's <c>filetype</c> metadata when that is a
+/// well-formed media type a browser would not execute, and <c>application/octet-stream</c> otherwise. No other header
+/// is set.
 /// </summary>
 [PublicAPI]
 public sealed class DefaultTusAzureBlobHttpHeadersProvider : ITusAzureBlobHttpHeadersProvider
 {
-    /// <summary>
-    /// Returns <c>BlobHttpHeaders</c> with <c>ContentType</c> set to
-    /// <c>application/octet-stream</c>.
-    /// </summary>
-    /// <param name="metadata">user-supplied TUS metadata (unused by this default implementation)</param>
-    /// <returns>blob HTTP headers with a generic binary content type</returns>
+    /// <inheritdoc />
     public ValueTask<BlobHttpHeaders> GetBlobHttpHeadersAsync(Dictionary<string, string> metadata)
     {
-        var result = new BlobHttpHeaders { ContentType = ContentTypes.Applications.OctetStream };
-
-        return ValueTask.FromResult(result);
+        return ValueTask.FromResult(new BlobHttpHeaders { ContentType = TusContentTypes.FromFileType(metadata) });
     }
 }

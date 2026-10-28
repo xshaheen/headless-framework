@@ -88,7 +88,7 @@ Any tus 1.0.0 client works against this endpoint (`tus-js-client`, Uppy's `@uppy
 - Checksum verification (SHA1, SHA256, SHA512, MD5) is handled automatically for both `Upload-Checksum` forms. Header flow: blocks are staged but not committed until the checksum passes; mismatched blocks are left uncommitted (Azure auto-removes them after 7 days). Trailer flow (`checksum-trailer`): data commits during the append with a recorded rollback offset (`tus_last_chunk_offset`); `VerifyChecksumAsync` hashes the committed range on demand and rolls the chunk back on mismatch or a faulty/missing trailer.
 - The concatenation extension uses server-side block copy (`StageBlockFromUri`) when available, falling back to streaming when it is not — Azurite returns HTTP 501, and a private container returns HTTP 403 for the bare source URI (no SAS).
 - `TusAzureStore` never creates its container; the constructor makes no network call. `AddTusAzureStore` registers the container as a [provisioned resource](utilities.md#resource-provisioning) of kind `AzureBlob`, named after `ContainerName`: the deployment runs `dotnet <app>.dll resources provision` (or `deploy`), which creates it with `ContainerPublicAccessType`, and a starting host only checks that it exists, holding the `warmup` readiness check until it does. A development or test host calls `services.AddDeployStepsOnStartup()` to create it as the host starts. A manually constructed store has no provisioner, so create its container beforehand. `resources purge` deletes the blobs under `BlobPrefix` and keeps the container; `resources delete` deletes them too, then the container only when nothing else is left in it, since a container can hold blobs outside `BlobPrefix`.
-- `ITusAzureBlobHttpHeadersProvider` lets you inject custom `Content-Type` / cache headers per file. Default sets `application/octet-stream`.
+- `ITusAzureBlobHttpHeadersProvider` lets you inject custom `Content-Type` / cache headers per file. The default takes `Content-Type` from the `filetype` metadata and falls back to `application/octet-stream` for a missing, malformed, or script-capable type ([Default content type](#default-content-type)).
 - `AddTusS3Store` takes `IAmazonS3` from DI and does not configure it. For Cloudflare R2, register the client with path style, `AuthenticationRegion = "auto"`, and `WHEN_REQUIRED` request and response checksums (R2 rejects the SDK's default CRC checksums), and set `Provider = TusS3Provider.R2`. See [Headless.Tus.S3](#headlesstuss3) for one client example per server.
 - `TusS3Store` does not support the Checksum extension, and an incomplete upload's content is not readable (`GetContentAsync` throws until the upload completes). On R2, an upload must finish within 7 days of its first part, when R2 aborts the multipart upload; keep the tus expiration below that.
 - A deferred-length upload on `TusS3Store` can grow to `(10,000 − 4 × PartClaimWindow) × PartSize` bytes, 77,952 MiB (about 76 GiB) at the defaults; a known length up to `(10,000 − 4 × PartClaimWindow) × MaxPartSize`, 623,616 MiB (about 609 GiB). Raise `PartSize` for larger deferred uploads.
@@ -147,10 +147,21 @@ Base package for the TUS stack: protocol-level helpers every deployment needs re
 - `TusCorsDefaults` — the tus 1.0.0 CORS surface as constants: `ExposedHeaders`, `AllowedHeaders`, `AllowedMethods` (includes the PATCH/DELETE that default CORS configs miss)
 - `CorsPolicyBuilder.WithTusHeaders()` — applies all three in one call; origins/credentials stay the caller's decision
 - `AddTusExpiredUploadsCleanup(...)` — registers an internal background hosted service calling `ITusExpirationStore.RemoveExpiredFilesAsync` on an interval (tuned via the public `TusExpiredUploadsCleanupOptions`)
+- `TusContentTypes.FromFileType(metadata)` — the content type rule both stores' default header providers share (see [Default content type](#default-content-type)); `TusContentTypes.FileTypeMetadataKey` is the `filetype` key. A custom or third-party headers provider calls it to keep the same rule.
 
 ### Design constraints
 
 Cleanup targets **incomplete** uploads only — conforming Headless stores never report completed uploads as expired, so the job cannot destroy finished data. It binds to the `ITusExpirationStore` capability interface, not a concrete store; store packages forward the registration (`AddTusAzureStore` and `AddTusS3Store` do), and manually constructed stores register with `services.AddSingleton<ITusExpirationStore>(store)`. The default 5-minute interval trades reclaim latency against the store scan each pass performs. In multi-node deployments every node runs its own loop against the same store: deletions are idempotent so this is safe, but the scan load multiplies and the logged removal counts are per-node — wrap the pass in a distributed-lock single-flight guard if that matters.
+
+#### Default content type
+
+The default headers provider of each store (`DefaultTusAzureBlobHttpHeadersProvider`, `DefaultTusS3ObjectHeadersProvider`) sets `Content-Type` through `TusContentTypes.FromFileType`:
+
+- When the upload's `filetype` metadata parses as one well-formed media type, the stored object takes it, normalized (`" image/png "` becomes `image/png`; parameters such as `charset` are kept).
+- When `filetype` is missing, empty, or malformed (no subtype, stray characters, line breaks, several values), the object gets `application/octet-stream`. The key is matched as sent: tus clients send `filetype` in lower case, and `FileType` does not count.
+- When `filetype` names a type a browser renders as an active document or runs as script, the object gets `application/octet-stream`: `text/html`, `application/xhtml+xml`, `image/svg+xml`, `text/xml`, `application/xml`, `text/javascript`, `application/javascript`, `application/ecmascript`, `text/ecmascript`, the legacy script aliases `application/x-javascript`, `text/x-javascript`, `text/jscript` and `text/xsl`, and every type whose subtype ends in `+xml`. The match ignores case and parameters.
+
+The client chooses `filetype`. An object served from the bucket's or CDN's origin with one of the blocked types runs the uploader's script in that origin (stored XSS), so the default does not trust it. An app that must serve one of these types writes its own headers provider, and serves those objects from an isolated origin or with `Content-Disposition: attachment`.
 
 ### Install
 
@@ -202,7 +213,7 @@ Azure Blob Storage TUS store implementation.
   - **Checksum** (`ITusChecksumStore`) — SHA1, SHA256, SHA512, MD5; constant-time comparison; deferred block commit
   - **Termination** (`ITusTerminationStore`) — `DeleteFileAsync`
   - **Readable** (`ITusReadableStore`) — `GetFileAsync` returns `ITusFile`
-- `ITusAzureBlobHttpHeadersProvider` / `DefaultTusAzureBlobHttpHeadersProvider` — per-file HTTP header customization (Content-Type, cache control)
+- `ITusAzureBlobHttpHeadersProvider` / `DefaultTusAzureBlobHttpHeadersProvider` — per-file HTTP header customization (Content-Type, cache control); the default sets only `Content-Type`, by the [shared rule](#default-content-type)
 - Adaptive chunk sizing: automatic selection between `BlobDefaultChunkSize` (4 MB) and `BlobMaxChunkSize` (16 MB default; up to 100 MB) based on declared upload size
 - Pooled buffer stream splitting via `ArrayPool<byte>` to minimize allocations during PATCH ingestion
 
@@ -291,11 +302,11 @@ public sealed class MyHeadersProvider : ITusAzureBlobHttpHeadersProvider
 {
     public ValueTask<BlobHttpHeaders> GetBlobHttpHeadersAsync(Dictionary<string, string> metadata)
     {
-        metadata.TryGetValue("filetype", out var contentType);
-
         return ValueTask.FromResult(new BlobHttpHeaders
         {
-            ContentType = contentType ?? "application/octet-stream"
+            // Keep the shared filetype rule, which refuses script-capable types.
+            ContentType = TusContentTypes.FromFileType(metadata),
+            CacheControl = "private, max-age=3600",
         });
     }
 }
@@ -380,11 +391,11 @@ The tus metadata lives in the state object, not in S3 object metadata, so S3's 2
 - **Known length.** The part size is the larger of `PartSize` and the length divided by the part budget, rounded up to 1 MiB. The largest accepted length is the part budget times `MaxPartSize`: 9,744 × 64 MiB = 623,616 MiB (about 609 GiB) at the defaults. Creation rejects a longer upload with a `TusStoreException` (`400`).
 - **Deferred length.** The upload uses `PartSize`, so it can grow to the part budget times `PartSize`: 9,744 × 8 MiB = 77,952 MiB (about 76 GiB) at the defaults. Declaring a longer length, or appending past the cap, fails with a `TusStoreException`. Raise `PartSize` to raise the cap; it also raises the memory each PATCH holds.
 
-**Tail segments and memory.** Bytes that do not fill a part are written as a new tail segment object, so a client may send chunks of any size, below 5 MiB included. The store reads the segments back into the next part once enough bytes arrive, and deletes them only after the state write that records that part, so no step drops bytes the store already reported in an offset. Past `MaxTailSegments` segments, the store folds them into one. Each PATCH holds at most `MaxConcurrentPartUploads` + 1 part buffers, taken from a pool sized to `MaxPartSize`; the store writes nothing to local disk.
+**Tail segments and memory.** Bytes that do not fill a part are written as a new tail segment object, so a client may send chunks of any size, below 5 MiB included. The store reads the segments back into the next part once enough bytes arrive, and deletes them only after the state write that records that part, so no step drops bytes the store already reported in an offset. Past `MaxTailSegments` segments, the store folds them into one. Each PATCH holds at most `MaxConcurrentPartUploads` + 1 part buffers, each rented at the upload's part size rounded up to a power of two (6 MiB parts take 8 MiB buffers). The buffers come from a pool for sizes up to `MaxPartSize` that keeps up to 8 idle buffers per size for reuse; beyond that, buffers are allocated fresh. The store writes nothing to local disk.
 
 **Disconnects.** When the client disconnects, the store still stores every byte it received: it commits the parts that landed and writes the rest as tail segments, bounded by `PersistTimeout`. Keep `PersistTimeout` below the lease duration of the `IDistributedLock` backend behind `Headless.Tus.DistributedLocks`. Otherwise a lock failover can start a second writer while the first is still persisting; the write fencing then fails one of them.
 
-**Completion.** The final PATCH uploads the last part, marks the upload as completing with one conditional write, completes the multipart upload (or writes the finished object in one request when the upload never filled a part), writes the completed record, and deletes the state object. A zero-length upload writes an empty finished object at creation. If completion is interrupted, HEAD reports the offset from before the final PATCH, the client sends that PATCH again, and the store finishes the completion and tusdotnet raises `OnFileCompleteAsync`. Concatenation builds the final upload inside `CreateFinalFileAsync`, writes its completed record last, and keeps the partial uploads.
+**Completion.** The final PATCH uploads the last part, marks the upload as completing with one conditional write, completes the multipart upload (or writes the finished object in one request when the upload never filled a part), marks the upload as committing with a second conditional write, writes the completed record, and deletes the state object. The committing write is what keeps the expiry sweep from deleting a finished object: the sweep claims an upload with a conditional write on the same state, so only one of the two lands. If the sweep claimed the upload first, the final PATCH fails with a retryable `500` and records nothing; once the upload is committing, the sweep skips it. A zero-length upload writes an empty finished object at creation. If completion is interrupted, HEAD reports the offset from before the final PATCH, the client sends that PATCH again, and the store finishes the completion and tusdotnet raises `OnFileCompleteAsync`. Concatenation builds the final upload inside `CreateFinalFileAsync`, writes its completed record last (if that write fails, it deletes the finished object it built), and keeps the partial uploads.
 
 **Aborted multipart uploads.** By default R2 aborts every incomplete multipart upload 7 days after it was created. With `Provider = R2` and no `MultipartUploadLifetime`, the store applies the same 7 days: once they pass since the upload's first part, the upload reads as missing (`404`) and the cleanup job removes it. A client must therefore finish an R2 upload within 7 days of its first part; set the tus expiration below that. When the provider reports the multipart upload gone (`NoSuchUpload`), the store marks the upload gone and answers with a `TusStoreException`, never a corrupt upload. The store never edits bucket lifecycle rules; if a rule changes R2's window, set `MultipartUploadLifetime` to match. On AWS or an S3-compatible server, an abort-incomplete-multipart-upload lifecycle rule is the operator's choice; when the bucket has one, set `MultipartUploadLifetime` to its window.
 
@@ -399,16 +410,16 @@ The tus metadata lives in the state object, not in S3 object metadata, so S3's 2
 | Creation | 1, plus 1 when expiration is on |
 | PATCH that only adds a tail segment | 3 |
 | PATCH that writes N parts | N + 4 + ⌈N / 64⌉, plus 1 per tail segment read back, plus 1 on the upload's first part-writing PATCH (creates the multipart upload) |
-| Final PATCH, on top of its append | 3 (mark completing, complete, write the record), plus 1 delete |
+| Final PATCH, on top of its append | 4 (mark completing, complete, mark committing, write the record), plus 1 delete |
 | Expiry sweep | 1 listing per 1,000 in-progress uploads and 1 read per in-progress upload; a removal pass adds 1 multipart-upload listing page and the deletes for each removed upload. Completed uploads cost nothing. |
 
 Under sliding expiration, the first PATCH that writes after creation costs one more state write to refresh the expiry; later PATCHes carry the refresh in their commit.
 
-**Expiry sweep.** `RemoveExpiredFilesAsync` lists the in-progress uploads under `{Prefix}.tus/`, one entry per upload, and reads each state object. Before removing an expired or gone upload it writes the state as gone with `If-Match`, and skips the upload when a request changed it since the read. It also aborts a multipart upload older than one hour that sits on the key of an upload it read but that upload's state does not record (a leak from a crash or a stale writer), and never touches a multipart upload on any other key. Known limit: MinIO lists multipart uploads only under an exact object key, so on MinIO the sweep finds no leaked multipart uploads. Termination lists the exact key and still aborts them; a bucket abort rule covers the rest.
+**Expiry sweep.** `RemoveExpiredFilesAsync` lists the in-progress uploads under `{Prefix}.tus/`, one entry per upload, and reads each state object. Before removing an expired or gone upload it writes the state as gone with `If-Match`, and skips the upload when a request changed it since the read. It never removes an upload whose completion has already written the finished object and marked it committing; a client that re-sends the final PATCH finishes it. It also aborts a multipart upload older than one hour that sits on the key of an upload it read but that upload's state does not record (a leak from a crash or a stale writer), and never touches a multipart upload on any other key. Known limit: MinIO lists multipart uploads only under an exact object key, so on MinIO the sweep finds no leaked multipart uploads. Termination lists the exact key and still aborts them; a bucket abort rule covers the rest.
 
 **Readable store.** `GetFileAsync` returns `null` for an unknown or gone upload. For an incomplete upload it returns the metadata, but `GetContentAsync` throws `InvalidOperationException`, because S3 does not serve the parts of an incomplete multipart upload. Inside `OnFileCompleteAsync` the upload is complete and `GetContentAsync` streams the finished object.
 
-**Object headers.** The finished object's headers are fixed when its multipart upload starts or its single write happens, and S3 cannot change them later without copying the object. `DefaultTusS3ObjectHeadersProvider` sets `Content-Type` from the `filetype` metadata when it parses as a media type, otherwise `application/octet-stream`, and sets no other header.
+**Object headers.** The finished object's headers are fixed when its multipart upload starts or its single write happens, and S3 cannot change them later without copying the object. `DefaultTusS3ObjectHeadersProvider` sets `Content-Type` by the [shared rule](#default-content-type) — the `filetype` metadata when it is a well-formed media type that is not script-capable, otherwise `application/octet-stream` — and sets no other header.
 
 ### Install
 
@@ -550,7 +561,7 @@ public sealed class DownloadHeadersProvider : ITusS3ObjectHeadersProvider
 builder.Services.AddSingleton<ITusS3ObjectHeadersProvider, DownloadHeadersProvider>();
 ```
 
-Metadata values are client input. Validate or encode them before they become stored response headers, as the default provider does for `filetype`.
+Metadata values are client input. Validate or encode them before they become stored response headers, as `TusContentTypes.FromFileType` does for `filetype`.
 
 ### Configuration
 
@@ -563,7 +574,7 @@ Metadata values are client input. Validate or encode them before they become sto
 | `Provider` | `TusS3Provider.Aws` | `Aws`, `S3Compatible`, or `R2`; sets the per-request settings and, for `R2`, the default `MultipartUploadLifetime`. |
 | `PartSize` | `8 MiB` | Part size for a deferred-length upload, and the minimum for a known one. At least 5 MiB. Sets the deferred-length cap. |
 | `MaxPartSize` | `64 MiB` | Largest part size the store picks for a long known-length upload. At least `PartSize`, at most 1 GiB, because each part is buffered in one pooled array. Sets the largest accepted length. |
-| `MaxConcurrentPartUploads` | `2` | Parts one PATCH uploads in parallel. At least 1. Bounds memory per PATCH with `MaxPartSize`. |
+| `MaxConcurrentPartUploads` | `2` | Parts one PATCH uploads in parallel. At least 1. One PATCH holds up to this + 1 part buffers, each the part size rounded up to a power of two. |
 | `PartClaimWindow` | `64` | Part numbers one state write reserves. 1–250. Four windows are held back from the 10,000-part budget, so a wider window lowers both length limits. |
 | `MaxTailSegments` | `16` | Tail segments an upload may hold before the store folds them into one. At least 1. |
 | `PersistTimeout` | `30 seconds` | How long the store keeps storing received bytes after a client disconnects. Must be positive; keep it below the distributed lock lease. |
