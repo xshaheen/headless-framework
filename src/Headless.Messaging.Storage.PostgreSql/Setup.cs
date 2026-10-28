@@ -11,7 +11,6 @@ using Headless.Sql.PostgreSql;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -240,20 +239,13 @@ public static class SetupMessagingPostgreSql
         return setup;
     }
 
-    private static AdoNetInboxTransactionRunner _CreateInboxRunner(IServiceProvider serviceProvider)
-    {
-        var options = serviceProvider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value;
-        var unitOfWorkFactory = serviceProvider.GetRequiredService<IUnitOfWorkFactory>();
-
-        return new AdoNetInboxTransactionRunner(
-            options.CreateConnection,
-            (connection, transaction) =>
-                unitOfWorkFactory.Enlist((NpgsqlConnection)connection, (NpgsqlTransaction)transaction),
-            serviceProvider.GetRequiredService<IDeliveryCoordinationResolver>(),
-            serviceProvider.GetRequiredService<RelationalDataStorage>(),
-            serviceProvider.GetRequiredService<ILogger<AdoNetInboxTransactionRunner>>()
+    private static AdoNetInboxTransactionRunner _CreateInboxRunner(IServiceProvider serviceProvider) =>
+        AdoNetInboxTransactionRunner.Create(
+            serviceProvider,
+            serviceProvider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value.CreateConnection,
+            static (unitOfWorkFactory, connection, transaction) =>
+                unitOfWorkFactory.Enlist((NpgsqlConnection)connection, (NpgsqlTransaction)transaction)
         );
-    }
 
     /// <summary>Registers the PostgreSQL storage; the raw and EF-context paths differ only in how the inbox runs.</summary>
     /// <param name="configureOptions">Registers <see cref="PostgreSqlOptions"/>.</param>

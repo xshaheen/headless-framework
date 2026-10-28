@@ -4,6 +4,7 @@ using System.Data;
 using System.Data.Common;
 using Headless.Messaging.Persistence;
 using Headless.UnitOfWork;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Internal;
@@ -24,6 +25,24 @@ internal sealed class AdoNetInboxTransactionRunner(
     ILogger logger
 ) : InboxTransactionRunner(coordinationResolver, storage, logger)
 {
+    /// <summary>Creates the runner from the attempt scope's services and the provider's connection and enlist.</summary>
+    public static AdoNetInboxTransactionRunner Create(
+        IServiceProvider serviceProvider,
+        Func<DbConnection> createConnection,
+        Func<IUnitOfWorkFactory, DbConnection, DbTransaction, IUnitOfWork> enlist
+    )
+    {
+        var unitOfWorkFactory = serviceProvider.GetRequiredService<IUnitOfWorkFactory>();
+
+        return new AdoNetInboxTransactionRunner(
+            createConnection,
+            (connection, transaction) => enlist(unitOfWorkFactory, connection, transaction),
+            serviceProvider.GetRequiredService<IDeliveryCoordinationResolver>(),
+            serviceProvider.GetRequiredService<RelationalDataStorage>(),
+            serviceProvider.GetRequiredService<ILogger<AdoNetInboxTransactionRunner>>()
+        );
+    }
+
     protected override async ValueTask<InboxAttemptTransaction> BeginAttemptAsync(CancellationToken cancellationToken)
     {
         var connection = createConnection();

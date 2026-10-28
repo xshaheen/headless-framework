@@ -12,7 +12,6 @@ using Headless.UnitOfWork;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging;
@@ -237,20 +236,13 @@ public static class SetupMessagingSqlServer
         return setup;
     }
 
-    private static AdoNetInboxTransactionRunner _CreateInboxRunner(IServiceProvider serviceProvider)
-    {
-        var options = serviceProvider.GetRequiredService<IOptions<SqlServerOptions>>().Value;
-        var unitOfWorkFactory = serviceProvider.GetRequiredService<IUnitOfWorkFactory>();
-
-        return new AdoNetInboxTransactionRunner(
-            options.CreateConnection,
-            (connection, transaction) =>
-                unitOfWorkFactory.Enlist((SqlConnection)connection, (SqlTransaction)transaction),
-            serviceProvider.GetRequiredService<IDeliveryCoordinationResolver>(),
-            serviceProvider.GetRequiredService<RelationalDataStorage>(),
-            serviceProvider.GetRequiredService<ILogger<AdoNetInboxTransactionRunner>>()
+    private static AdoNetInboxTransactionRunner _CreateInboxRunner(IServiceProvider serviceProvider) =>
+        AdoNetInboxTransactionRunner.Create(
+            serviceProvider,
+            serviceProvider.GetRequiredService<IOptions<SqlServerOptions>>().Value.CreateConnection,
+            static (unitOfWorkFactory, connection, transaction) =>
+                unitOfWorkFactory.Enlist((SqlConnection)connection, (SqlTransaction)transaction)
         );
-    }
 
     /// <summary>Registers the SQL Server storage; the raw and EF-context paths differ only in how the inbox runs.</summary>
     /// <param name="configureOptions">Registers <see cref="SqlServerOptions"/>.</param>
