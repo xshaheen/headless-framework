@@ -430,8 +430,6 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         return result;
     }
 
-    // Reads the store's statement clock on the write's own context and seeds every root from it. A backend without a
-    // registered statement clock falls back to the host clock (see JobsStoreClock.TryGetStatementUtcNowAsync).
     private async Task<DateTime> _ResolveDueTimesAsync(
         TDbContext dbContext,
         IEnumerable<TTimeJob> roots,
@@ -439,12 +437,18 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         CancellationToken cancellationToken
     )
     {
-        var storeUtcNow =
-            await JobsStoreClock.TryGetStatementUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false)
-            ?? TimeProvider.GetUtcNow().UtcDateTime;
+        var storeUtcNow = await _GetStoreUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false);
 
         TimeJobDueTimeSeeding.Apply(roots, seeder, storeUtcNow);
         return storeUtcNow;
+    }
+
+    // The host clock is acceptable for a backend without a registered statement clock: an embedded store (such as
+    // SQLite) runs in the host process, so the host clock is the store clock.
+    private async Task<DateTime> _GetStoreUtcNowAsync(DbContext dbContext, CancellationToken cancellationToken)
+    {
+        return await JobsStoreClock.TryGetStatementUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false)
+            ?? TimeProvider.GetUtcNow().UtcDateTime;
     }
 
     public async Task<int> UpdateTimeJobsAsync(TTimeJob[] timeJobs, CancellationToken cancellationToken = default)
@@ -1698,11 +1702,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                                 .Where(x => definitionIds.Contains(x.Id))
                                 .ToDictionaryAsync(x => x.Id, ct)
                                 .ConfigureAwait(false);
-                    // Read inside the retried attempt so a retry stamps the instant of the write that lands. A
-                    // backend without a registered statement clock falls back to the host clock.
+                    // Read inside the retried attempt so a retry stamps the instant of the write that lands.
                     DateTime? storeUtcNow = stampRunNow
-                        ? await JobsStoreClock.TryGetStatementUtcNowAsync(context, ct).ConfigureAwait(false)
-                            ?? TimeProvider.GetUtcNow().UtcDateTime
+                        ? await _GetStoreUtcNowAsync(context, ct).ConfigureAwait(false)
                         : null;
                     foreach (var occurrence in candidates)
                     {

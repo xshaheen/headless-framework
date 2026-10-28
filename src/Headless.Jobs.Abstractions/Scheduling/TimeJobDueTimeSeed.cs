@@ -23,8 +23,8 @@ public delegate DateTime? TimeJobDueTimeSeeder(BaseJobEntity root, DateTime stor
 
 /// <summary>What a seeded time-job insert persisted: the store anchor it used and the rows it wrote.</summary>
 /// <remarks>
-/// The manager decides immediate dispatch from <see cref="StoreUtcNow"/> rather than from its own clock, so a run-now
-/// job is acquired immediately however far the enqueuing node's clock is from the database's.
+/// <see cref="StoreUtcNow"/> reports the store anchor the write used, so a caller or test can see which instant the
+/// store resolved due times against.
 /// </remarks>
 [PublicAPI]
 public readonly record struct TimeJobDueTimeSeedResult

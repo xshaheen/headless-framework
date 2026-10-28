@@ -253,17 +253,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
             _EnsureValidRetries(entity);
 
-            // A root still without a due time after the schedule pipeline runs now, or after `delay`: the store
-            // resolves it inside the write. An absolute time (the caller's or a middleware's) is kept as given.
             var dueTimes = new RelativeDueTimes();
-            if (entity.ExecutionTime is { } absolute)
-            {
-                entity.ExecutionTime = _ConvertToUtcIfNeeded(absolute);
-            }
-            else
-            {
-                dueTimes.Add(entity.Id, delay ?? TimeSpan.Zero);
-            }
+            _ResolveRootDueTime(entity, delay ?? TimeSpan.Zero, dueTimes);
 
             _NormalizeDescendantExecutionTimes(entity);
             var seeder = dueTimes.Seeder;
@@ -311,8 +302,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
                 if (coordinated is { } creatorContext)
                 {
-                    // Decided when the worker runs the signal: the commit can land much later than the enqueue (same
-                    // rationale as the plain path below).
                     _SignalOnCommit(creatorContext.UnitOfWork, new TimeJobCommittedSignal(this, createdDue));
                     return entity;
                 }
@@ -334,25 +323,13 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
                 persisted = true;
 
-                // The due decision is made when the worker runs the signal: the commit can land much later than the
-                // enqueue, and deciding at enqueue time could push a job that became due meanwhile into the
-                // scheduler/poll-sweep path. (Direct path below stays in-band, so it decides right away.)
                 _SignalOnCommit(context.UnitOfWork, new TimeJobCommittedSignal(this, _CaptureDue(entity, dueTimes)));
 
                 return entity;
             }
 
             // Direct path (no coordinator / non-relational scope): persist then run side effects in-band.
-            if (seeder is null)
-            {
-                await persistenceProvider
-                    .AddTimeJobsAsync([entity], cancellationToken: cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            else
-            {
-                await persistenceProvider.AddTimeJobsAsync([entity], seeder, cancellationToken).ConfigureAwait(false);
-            }
+            await _InsertTimeJobsAsync([entity], seeder, cancellationToken).ConfigureAwait(false);
 
             persisted = true;
 
@@ -408,8 +385,38 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         await notificationHubSender.AddTimeJobNotifyAsync(written.Id).ConfigureAwait(false);
     }
 
-    // Captures a written root's due-time facts right after its write returned, with the monotonic instant that
-    // anchors the elapsed-time half of the due decision.
+    // A root without a due time runs after `delay` (now when zero), and the store resolves it inside the write. An
+    // absolute time (the caller's or a middleware's) is kept as given.
+    private void _ResolveRootDueTime(TTimeJob root, TimeSpan delay, RelativeDueTimes dueTimes)
+    {
+        if (root.ExecutionTime is { } absolute)
+        {
+            root.ExecutionTime = _ConvertToUtcIfNeeded(absolute);
+        }
+        else
+        {
+            dueTimes.Add(root.Id, delay);
+        }
+    }
+
+    private async Task _InsertTimeJobsAsync(
+        TTimeJob[] jobs,
+        TimeJobDueTimeSeeder? seeder,
+        CancellationToken cancellationToken
+    )
+    {
+        if (seeder is null)
+        {
+            await persistenceProvider
+                .AddTimeJobsAsync(jobs, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            await persistenceProvider.AddTimeJobsAsync(jobs, seeder, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private TimeJobDue _CaptureDue(TTimeJob root, RelativeDueTimes dueTimes)
     {
         return new TimeJobDue(root.Id, root.ExecutionTime, dueTimes.DelayOf(root.Id), timeProvider.GetTimestamp());
@@ -438,7 +445,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         return due.ExecutionTimeUtc is { } executionTime && executionTime <= now.Add(JobsDueSlack.Duration);
     }
 
-    // One written root's due-time facts. RelativeDelay is null for an absolute root.
     private readonly record struct TimeJobDue(
         Guid Id,
         DateTime? ExecutionTimeUtc,
@@ -452,7 +458,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     {
         private readonly Dictionary<Guid, TimeSpan> _delays = [];
 
-        // Null when no root is relative, so an all-absolute write reads no clock.
+        // An all-absolute write passes no seeder, so it reads no clock.
         public TimeJobDueTimeSeeder? Seeder => _delays.Count == 0 ? null : _Seed;
 
         public void Add(Guid rootId, TimeSpan delay) => _delays[rootId] = delay;
@@ -1109,16 +1115,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                     continue;
                 }
 
-                // Same rule as the single add: a root without a due time runs now and the store stamps it, all roots of
-                // the batch from one store read.
-                if (entity.ExecutionTime is { } absolute)
-                {
-                    entity.ExecutionTime = _ConvertToUtcIfNeeded(absolute);
-                }
-                else
-                {
-                    dueTimes.Add(entity.Id, TimeSpan.Zero);
-                }
+                // A batch root without a due time runs now.
+                _ResolveRootDueTime(entity, TimeSpan.Zero, dueTimes);
 
                 _NormalizeDescendantExecutionTimes(entity);
             }
@@ -1142,8 +1140,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 // rollback discards the whole row, tenant and all), so keep them.
                 persisted = true;
 
-                // The worker splits immediate vs. later when it runs, so the signal carries every root's due facts
-                // rather than a split decided at enqueue time.
                 _SignalOnCommit(
                     context.UnitOfWork,
                     new TimeJobsBatchCommittedSignal(this, [.. entities.Select(x => _CaptureDue(x, dueTimes))])
@@ -1152,18 +1148,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 return entities;
             }
 
-            if (seeder is null)
-            {
-                await persistenceProvider
-                    .AddTimeJobsAsync([.. entities], cancellationToken: cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            else
-            {
-                await persistenceProvider
-                    .AddTimeJobsAsync([.. entities], seeder, cancellationToken)
-                    .ConfigureAwait(false);
-            }
+            await _InsertTimeJobsAsync([.. entities], seeder, cancellationToken).ConfigureAwait(false);
 
             persisted = true;
 

@@ -492,7 +492,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 default:
                     updated.Status = JobStatus.Idle;
                     updated.OwnerId = null;
-                    // This store's TimeProvider is its clock, so the remaining wait runs from the settle's instant.
+                    // The remaining wait runs from the settle's instant.
                     if (retryAfter is { } remaining)
                     {
                         updated.ExecutionTime = now.UtcDateTime + remaining;
@@ -1322,8 +1322,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 }
             }
 
-            // This store's clock is the injected TimeProvider; read once under the lock so every root of the call
-            // shares one anchor.
+            // Read once under the lock so every root of the call shares one anchor.
             DateTime? storeUtcNow = null;
             if (seeder is not null)
             {
@@ -3859,7 +3858,6 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     )
     {
         Argument.IsNotNull(occurrence);
-        // This store's clock is the injected TimeProvider.
         occurrence.ExecutionTime = _timeProvider.GetUtcNow().UtcDateTime;
         await InsertCronJobOccurrencesAsync([occurrence], cancellationToken).ConfigureAwait(false);
         return occurrence.ExecutionTime;
