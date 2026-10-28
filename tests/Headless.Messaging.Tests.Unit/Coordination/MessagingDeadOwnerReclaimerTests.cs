@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Messaging.Coordination;
 using Headless.Messaging.Persistence;
@@ -19,17 +20,13 @@ public sealed class MessagingDeadOwnerReclaimerTests : TestBase
         ILogger<MessagingDeadOwnerReclaimer>? logger = null
     )
     {
-        var options = new MessagingOptions();
-
-        if (reconcileInterval is { } interval)
-        {
-            options.DeadNodeReconcileInterval = interval;
-        }
+        var options = new MessagingOptions { DeadNodeReconcileInterval = reconcileInterval };
 
         return new MessagingDeadOwnerReclaimer(
             _storage,
             Options.Create(options),
-            logger ?? NullLogger<MessagingDeadOwnerReclaimer>.Instance
+            logger ?? NullLogger<MessagingDeadOwnerReclaimer>.Instance,
+            coordinationOptions: Options.Create(new CoordinationOptions())
         );
     }
 
@@ -130,10 +127,38 @@ public sealed class MessagingDeadOwnerReclaimerTests : TestBase
     }
 
     [Fact]
-    public void should_expose_configured_reconcile_interval()
+    public void should_reconcile_at_half_the_dead_retention_window_by_default()
     {
         // given
-        var interval = TimeSpan.FromSeconds(42);
+        var captured = new List<(LogLevel Level, int Id)>();
+
+        // when
+        var sut = _CreateSut(logger: _CreateCapturingLogger(captured));
+
+        // then — 30s default retention window, so a dead owner is seen at least twice while it is still Dead
+        sut.ReconcileInterval.Should().Be(TimeSpan.FromSeconds(15));
+        captured.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_clamp_a_configured_reconcile_interval_above_half_the_dead_retention_window()
+    {
+        // given
+        var captured = new List<(LogLevel Level, int Id)>();
+
+        // when
+        var sut = _CreateSut(TimeSpan.FromMinutes(1), _CreateCapturingLogger(captured));
+
+        // then
+        sut.ReconcileInterval.Should().Be(TimeSpan.FromSeconds(15));
+        captured.Should().ContainSingle().Which.Should().Be((LogLevel.Warning, 14));
+    }
+
+    [Fact]
+    public void should_keep_a_configured_reconcile_interval_inside_the_dead_retention_window()
+    {
+        // given
+        var interval = TimeSpan.FromSeconds(10);
 
         // when
         var sut = _CreateSut(interval);
