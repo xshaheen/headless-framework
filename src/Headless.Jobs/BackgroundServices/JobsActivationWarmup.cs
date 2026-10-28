@@ -43,11 +43,13 @@ internal sealed class JobsActivationWarmup(
             return;
         }
 
-        await DrainFingerprintSnapshotAsync(cancellationToken).ConfigureAwait(false);
-        activationBarrier.MarkCompleted();
+        var deferral = await DrainFingerprintSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        activationBarrier.MarkCompleted(drainDeferred: deferral != CronFingerprintSweepDeferralReason.None);
     }
 
-    internal async Task DrainFingerprintSnapshotAsync(CancellationToken cancellationToken)
+    internal async Task<CronFingerprintSweepDeferralReason> DrainFingerprintSnapshotAsync(
+        CancellationToken cancellationToken
+    )
     {
         Guid? cursor = null;
         Guid? highWatermark = null;
@@ -91,5 +93,7 @@ internal sealed class JobsActivationWarmup(
         }
 
         logger.CronFingerprintActivationCompleted(scanned, rebased, deferred, lostFence, deferral);
+
+        return deferral;
     }
 }

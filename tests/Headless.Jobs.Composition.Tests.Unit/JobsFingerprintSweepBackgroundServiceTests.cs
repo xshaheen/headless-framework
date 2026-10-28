@@ -38,6 +38,7 @@ public sealed class JobsFingerprintSweepBackgroundServiceTests : TestBase
         using var service = new JobsFingerprintSweepBackgroundService(
             manager,
             new SchedulerOptionsBuilder { FingerprintSweepInterval = _Interval },
+            TestActivationBarrier.Opened(),
             time,
             NullLogger<JobsFingerprintSweepBackgroundService>.Instance
         );
@@ -49,6 +50,42 @@ public sealed class JobsFingerprintSweepBackgroundServiceTests : TestBase
         (await time.NextDelayAsync(AbortToken))
             .Should()
             .Be(TimeSpan.FromMinutes(5), "a deferred pass retries soon so rebases resume once the fleet agrees");
+        time.Advance(TimeSpan.FromMinutes(5));
+        (await time.NextDelayAsync(AbortToken)).Should().Be(_Interval, "an agreed pass returns to the interval");
+
+        await service.StopAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_retry_within_five_minutes_when_the_startup_drain_deferred()
+    {
+        var time = new DelayRecordingTimeProvider();
+        var manager = Substitute.For<IInternalJobManager>();
+        manager
+            .RebaseStaleFingerprintsAsync(
+                Arg.Any<int>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_Result(CronFingerprintSweepDeferralReason.None));
+        var barrier = new JobsActivationBarrier();
+        using var service = new JobsFingerprintSweepBackgroundService(
+            manager,
+            new SchedulerOptionsBuilder { FingerprintSweepInterval = _Interval },
+            barrier,
+            time,
+            NullLogger<JobsFingerprintSweepBackgroundService>.Instance
+        );
+
+        await service.StartAsync(AbortToken);
+        // The drain ran at startup and deferred: no periodic pass may wait a full interval to retry it.
+        barrier.MarkCompleted(drainDeferred: true);
+
+        (await time.NextDelayAsync(AbortToken))
+            .Should()
+            .Be(TimeSpan.FromMinutes(5), "the first periodic pass is the retry of the deferred drain");
         time.Advance(TimeSpan.FromMinutes(5));
         (await time.NextDelayAsync(AbortToken)).Should().Be(_Interval, "an agreed pass returns to the interval");
 
@@ -84,6 +121,7 @@ public sealed class JobsFingerprintSweepBackgroundServiceTests : TestBase
         using var service = new JobsFingerprintSweepBackgroundService(
             manager,
             new SchedulerOptionsBuilder { FingerprintSweepInterval = _Interval, FingerprintSweepBatchSize = 1 },
+            TestActivationBarrier.Opened(),
             time,
             NullLogger<JobsFingerprintSweepBackgroundService>.Instance
         );

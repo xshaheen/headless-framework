@@ -710,6 +710,34 @@ public sealed class CronFingerprintSweepTests : TestBase
         await provider.Received(2).GetAllCronJobExpressionsAsync(AbortToken);
     }
 
+    [Fact]
+    public async Task should_wake_the_scheduler_for_the_earliest_rebased_projection()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero));
+        var scheduler = Substitute.For<IJobsHostScheduler>();
+        var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(time);
+        services.AddHeadlessGuidGenerator();
+        services.AddSingleton(new SchedulerOptionsBuilder { NodeId = _NodeA });
+        services.AddSingleton(scheduler);
+        var sp = services.BuildServiceProvider();
+        var provider = new JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>(sp);
+        var manager = _CreateManager(provider, time, sp);
+        // The scheduler sleeps toward the stale projections 20 days out; the new rules put one due now and one at
+        // 12:30, and a definition with no further occurrence must not be what the scheduler is woken for.
+        var everyMinute = _Definition(nextDue: _Now.AddDays(20), fingerprint: "stale");
+        var hourly = _Definition(nextDue: _Now.AddDays(20), fingerprint: "stale");
+        hourly.Expression = "0 30 * * * *";
+        var never = _Definition(nextDue: _Now.AddDays(20), fingerprint: "stale");
+        never.Expression = "0 0 0 30 2 *";
+        await provider.InsertCronJobsAsync([hourly, never, everyMinute], AbortToken);
+
+        var result = await manager.RebaseStaleFingerprintsAsync(limit: 50, cancellationToken: AbortToken);
+
+        result.Rebased.Should().Be(3);
+        scheduler.Received(1).RestartIfNeeded(_Now);
+    }
+
     private const string _LocalDigest = "digest-local";
 
     private static NodeLivenessSnapshot _Peer(string digest) =>

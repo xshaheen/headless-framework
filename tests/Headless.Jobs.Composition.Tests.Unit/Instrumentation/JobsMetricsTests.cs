@@ -532,7 +532,7 @@ public sealed class JobsMetricsTests : TestBase
     }
 
     private const string _SweepDeferred = "headless.jobs.cron.fingerprint_sweep.deferred";
-    private const string _ReasonTag = "reason";
+    private const string _ReasonTag = "headless.jobs.deferral_reason";
 
     private static CronFleetAgreement _Agreement(INodeMembership membership)
     {

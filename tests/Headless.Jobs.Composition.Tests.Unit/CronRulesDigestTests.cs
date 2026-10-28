@@ -105,7 +105,28 @@ public sealed class CronRulesDigestTests : TestBase
         metadata.Should().Contain(CronRulesDigest.FingerprintSweepMetadataKey, "false");
     }
 
-    private static Dictionary<string, string> _PublishedMetadata(bool backgroundServices)
+    [Fact]
+    public void should_publish_a_digest_that_covers_the_configured_scheduler_time_zone()
+    {
+        // Definitions with no zone fire under SchedulerTimeZone, so two nodes configured with different zones must not
+        // publish the same digest.
+        var metadata = _PublishedMetadata(backgroundServices: true, schedulerTimeZone: _Berlin);
+
+        metadata
+            .Should()
+            .Contain(
+                CronRulesDigest.DigestMetadataKey,
+                CronRulesDigest.Compute(TimeZoneInfo.GetSystemTimeZones(), _Berlin)
+            );
+        metadata[CronRulesDigest.DigestMetadataKey]
+            .Should()
+            .NotBe(CronRulesDigest.Compute(TimeZoneInfo.GetSystemTimeZones(), TimeZoneInfo.Utc));
+    }
+
+    private static Dictionary<string, string> _PublishedMetadata(
+        bool backgroundServices,
+        TimeZoneInfo? schedulerTimeZone = null
+    )
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -113,8 +134,14 @@ public sealed class CronRulesDigestTests : TestBase
             setup.UsePostgreSql("Host=localhost;Database=jobs;Username=jobs;Password=jobs")
         );
         services.AddHeadlessJobs<TimeJobEntity, CronJobEntity>(jobs =>
-            (backgroundServices ? jobs : jobs.DisableBackgroundServices()).UseEntityFramework()
-        );
+        {
+            if (schedulerTimeZone is not null)
+            {
+                jobs.ConfigureScheduler(scheduler => scheduler.SchedulerTimeZone = schedulerTimeZone);
+            }
+
+            (backgroundServices ? jobs : jobs.DisableBackgroundServices()).UseEntityFramework();
+        });
 
         using var provider = services.BuildServiceProvider();
 

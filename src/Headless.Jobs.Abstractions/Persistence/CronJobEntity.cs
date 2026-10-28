@@ -66,8 +66,9 @@ public class CronJobEntity : BaseJobEntity
     /// current rules place after the watermark is still owed and reaches the missed-run policy.
     /// </summary>
     /// <remarks>
-    /// Every write that moves the projection stamps this with the rules it evaluated under, so the value always names
-    /// the rules behind the current <see cref="NextDueUtc"/>.
+    /// Dispatch, missed-run recovery, and the fingerprint rebase stamp this with the rules they evaluated under, in the
+    /// same write that moves <see cref="NextDueUtc"/>. An edit repositions the definition without stamping it, so the
+    /// next sweep rebases it once more to the same position.
     /// </remarks>
     public virtual string? EvaluationFingerprint { get; set; }
 

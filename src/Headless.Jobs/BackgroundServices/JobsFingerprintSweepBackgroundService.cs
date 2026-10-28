@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Jobs.Internal;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -20,25 +21,49 @@ namespace Headless.Jobs.BackgroundServices;
 internal sealed class JobsFingerprintSweepBackgroundService(
     IInternalJobManager internalJobsManager,
     SchedulerOptionsBuilder schedulerOptions,
+    JobsActivationBarrier activationBarrier,
     TimeProvider timeProvider,
     ILogger<JobsFingerprintSweepBackgroundService> logger
 ) : BackgroundService
 {
+    // A deferred pass is waiting for the fleet to converge, which a restart or a membership read can settle at any
+    // moment; the full interval (an hour by default) would leave every stale definition stale that long after it does.
+    private static readonly TimeSpan _DeferredRetryCeiling = TimeSpan.FromMinutes(5);
+
     private readonly TimeSpan _period = schedulerOptions.FingerprintSweepInterval;
+    private readonly TimeSpan _deferredDelay =
+        schedulerOptions.FingerprintSweepInterval < _DeferredRetryCeiling
+            ? schedulerOptions.FingerprintSweepInterval
+            : _DeferredRetryCeiling;
     private readonly int _batchSize = schedulerOptions.FingerprintSweepBatchSize;
     private Guid? _cursor;
     private Guid? _highWatermark;
     private TimeSpan _nextDelay = schedulerOptions.FingerprintSweepInterval;
     private const int _MaxConsecutiveFullBatches = 100;
 
-    // A deferred pass is waiting for the fleet to converge, which a restart or a membership read can settle at any
-    // moment; the full interval (an hour by default) would leave every stale definition stale that long after it does.
-    private static readonly TimeSpan _DeferredRetryCeiling = TimeSpan.FromMinutes(5);
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Initialization drains one complete store snapshot before the scheduler is allowed to start. Periodic sweeps
-        // therefore wait out the configured interval and only handle later rule/environment drift.
+        // The startup drain sweeps one complete store snapshot before the scheduler is allowed to start, so periodic
+        // sweeps begin after it and only handle later rule or environment drift -- unless the drain deferred, in which
+        // case the first periodic pass is the retry and comes soon.
+        try
+        {
+            if (await activationBarrier.WaitAsync(stoppingToken).ConfigureAwait(false) is not null)
+            {
+                // Activation failed; the host is aborting its start and nothing should sweep.
+                return;
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        if (activationBarrier.DrainDeferred)
+        {
+            _nextDelay = _deferredDelay;
+        }
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -100,7 +125,7 @@ internal sealed class JobsFingerprintSweepBackgroundService(
                     // a verdict that no longer holds.
                     _cursor = null;
                     _highWatermark = null;
-                    _nextDelay = _period < _DeferredRetryCeiling ? _period : _DeferredRetryCeiling;
+                    _nextDelay = _deferredDelay;
                     JobsFingerprintSweepLog.SweepCompleted(
                         logger,
                         scanned,

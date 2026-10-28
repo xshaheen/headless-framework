@@ -1538,6 +1538,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         }
 
         var rebased = 0;
+        DateTime? earliestRebased = null;
         var deferred = 0;
         var lostFence = 0;
         var skippedNodeLocal = 0;
@@ -1680,15 +1681,30 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             // Provider/database failures are deliberately outside the deterministic-definition catch above. They are
             // infrastructure failures, not evidence that this row is malformed, so activation must fail closed rather
             // than durably deferring the row and allowing the scheduler to start.
-            if (await _RebaseAsync(candidate, current!, rebasedNext, cancellationToken).ConfigureAwait(false))
+            if (
+                await _RebaseAsync(candidate, current!, rebasedNext, cancellationToken).ConfigureAwait(false) is
+                { } committedNextDue
+            )
             {
                 rebased++;
+
+                if (
+                    committedNextDue != DateTime.MaxValue
+                    && (earliestRebased is null || committedNextDue < earliestRebased)
+                )
+                {
+                    earliestRebased = committedNextDue;
+                }
             }
             else
             {
                 lostFence++;
             }
         }
+
+        // The scheduler sleeps toward a wake armed from the old projection; a rebase can move a definition earlier
+        // than that, so it would otherwise fire late, past its grace, and reach the missed-run policy as a misfire.
+        _WakeSchedulerFor(earliestRebased);
 
         if ((!page.HasMore || page.Wrapped) && page.SnapshotHighWatermarkId is { } completedSnapshot)
         {
@@ -1767,7 +1783,8 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     /// dispatch finds those instants pending and hands them to the definition's missed-run policy. Moving the
     /// watermark to the store instant instead would silently discard runs the schedule still owes.
     /// </remarks>
-    private async Task<bool> _RebaseAsync(
+    /// <returns>The committed projection, or <see langword="null"/> when a newer transition won the fence.</returns>
+    private async Task<DateTime?> _RebaseAsync(
         CronDispatchCandidate candidate,
         string currentFingerprint,
         DateTime? rebasedNext,
@@ -1797,7 +1814,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         {
             // A pause, resume, edit, or dispatch committed first. Its transition is newer and already carries a
             // correct position, so losing here is the right outcome — the next sweep re-reads whatever it left.
-            return false;
+            return null;
         }
 
         _ResolveInstrumentation()
@@ -1811,7 +1828,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 advanced.NextDueUtc
             );
 
-        return true;
+        return advanced.NextDueUtc;
     }
 
     public async Task MigrateDefinedCronJobs(
@@ -1935,20 +1952,20 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             .ApplyParentTerminalRunConditionsAsync(parentId, cancellationToken)
             .ConfigureAwait(false);
 
-        _WakeSchedulerForReleasedChild(earliest);
+        _WakeSchedulerFor(earliest);
     }
 
-    private void _WakeSchedulerForReleasedChild(DateTime? earliestReleasedTime)
+    private void _WakeSchedulerFor(DateTime? earliestDueUtc)
     {
-        if (earliestReleasedTime is null)
+        if (earliestDueUtc is null)
         {
             return;
         }
 
         // Resolve the host scheduler lazily to break the JobsSchedulerBackgroundService (IJobsHostScheduler) ⇄
-        // IInternalJobManager constructor cycle. RestartIfNeeded runs only AFTER the releasing transaction committed
+        // IInternalJobManager constructor cycle. Callers wake it only AFTER the write that moved the due time committed
         // (a pre-commit nudge would wake the scheduler into pre-commit state and it would sleep again).
-        serviceProvider.GetService<IJobsHostScheduler>()?.RestartIfNeeded(earliestReleasedTime);
+        serviceProvider.GetService<IJobsHostScheduler>()?.RestartIfNeeded(earliestDueUtc);
     }
 }
 

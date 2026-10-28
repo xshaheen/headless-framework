@@ -747,7 +747,7 @@ different tzdata; nodes configured with different `SchedulerTimeZone`) rewrite e
 - **One coordination cluster per Jobs store.** Two Jobs stores whose nodes share one coordination `ClusterName` gate
   each other's rebases. Give each store its own cluster.
 - **Observability.** `headless.jobs.cron.fingerprint_sweep.deferred` on the `Headless.Jobs` meter counts deferred
-  passes, tagged `reason` (`fleet_disagreement` or `membership_unavailable`). A node whose disagreement with one set of
+  passes, tagged `headless.jobs.deferral_reason` (`fleet_disagreement` or `membership_unavailable`). A node whose disagreement with one set of
   peers lasts over an hour logs one warning (event 3233) listing each digest with the node identities that publish it;
   a change in the disagreeing set, such as a peer restarting, starts a new hour. An unreadable snapshot logs event 3234
   and neither starts nor ends that hour. The sweep and startup-drain completion logs report `passDeferredBy`.

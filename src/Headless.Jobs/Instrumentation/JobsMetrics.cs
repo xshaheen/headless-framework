@@ -25,7 +25,7 @@ internal static class JobsMetrics
     /// Why a sweep pass deferred: <c>fleet_disagreement</c> or <c>membership_unavailable</c>. Carries no node identity,
     /// which would make the series unbounded; the holdout warning names the nodes instead.
     /// </summary>
-    internal const string TagSweepDeferralReason = "reason";
+    internal const string TagSweepDeferralReason = "headless.jobs.deferral_reason";
 
     /// <summary>Due cron occurrences recorded as skipped instead of running.</summary>
     internal const string CronOccurrencesSkippedName = "headless.jobs.cron.occurrences.skipped";

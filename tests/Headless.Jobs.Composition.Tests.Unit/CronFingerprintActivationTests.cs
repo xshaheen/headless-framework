@@ -132,6 +132,9 @@ public sealed class CronFingerprintActivationTests : TestBase
         await warmup.WarmUpAsync(AbortToken);
 
         barrier.IsActivated.Should().BeTrue();
+        barrier
+            .DrainDeferred.Should()
+            .BeTrue("the periodic sweep retries a deferred drain soon instead of an hour later");
     }
 
     [Fact]
