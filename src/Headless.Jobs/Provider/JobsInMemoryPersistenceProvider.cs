@@ -1280,6 +1280,21 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     public Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
+        return Task.FromResult(_AddTimeJobs(jobs, seeder: null).AffectedRows);
+    }
+
+    public Task<TimeJobDueTimeSeedResult> AddTimeJobsAsync(
+        TTimeJob[] jobs,
+        TimeJobDueTimeSeeder seeder,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(seeder);
+        return Task.FromResult(_AddTimeJobs(jobs, seeder));
+    }
+
+    private TimeJobDueTimeSeedResult _AddTimeJobs(TTimeJob[] jobs, TimeJobDueTimeSeeder? seeder)
+    {
         lock (_keyedOperations)
         {
             // Cross-root all-or-nothing (IJobPersistenceProvider.AddTimeJobsAsync contract): the WHOLE call — every
@@ -1303,11 +1318,24 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 if (!seen.Add(node.Id) || _timeJobs.ContainsKey(node.Id))
                 {
                     // Duplicate id within the call, or a collision with an existing row — reject the whole call.
-                    return Task.FromResult(0);
+                    return default;
                 }
             }
 
-            return Task.FromResult(_CommitValidatedSubtrees(flattened));
+            // This store's clock is the injected TimeProvider; read once under the lock so every root of the call
+            // shares one anchor.
+            DateTime? storeUtcNow = null;
+            if (seeder is not null)
+            {
+                storeUtcNow = _timeProvider.GetUtcNow().UtcDateTime;
+                TimeJobDueTimeSeeding.Apply(jobs, seeder, storeUtcNow.Value);
+            }
+
+            return new TimeJobDueTimeSeedResult
+            {
+                StoreUtcNow = storeUtcNow,
+                AffectedRows = _CommitValidatedSubtrees(flattened),
+            };
         }
     }
 

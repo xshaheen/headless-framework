@@ -7,6 +7,7 @@ using Headless;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Managers;
+using Headless.Jobs.Provider;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
@@ -182,6 +183,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
                 .Writer.DidNotReceive()
                 .WriteTimeJobsAsync(
                     Arg.Any<TimeJobEntity[]>(),
+                    Arg.Any<TimeJobDueTimeSeeder?>(),
                     Arg.Any<IRelationalUnitOfWorkResource>(),
                     Arg.Any<CancellationToken>()
                 );
@@ -274,6 +276,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .Writer.DidNotReceive()
             .WriteTimeJobsAsync(
                 Arg.Any<TimeJobEntity[]>(),
+                Arg.Any<TimeJobDueTimeSeeder?>(),
                 Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
@@ -294,6 +297,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .Writer.DidNotReceive()
             .WriteTimeJobsAsync(
                 Arg.Any<TimeJobEntity[]>(),
+                Arg.Any<TimeJobDueTimeSeeder?>(),
                 Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
@@ -326,6 +330,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .Writer.DidNotReceive()
             .WriteTimeJobsAsync(
                 Arg.Any<TimeJobEntity[]>(),
+                Arg.Any<TimeJobDueTimeSeeder?>(),
                 Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
@@ -430,6 +435,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .Writer.DidNotReceive()
             .WriteTimeJobsAsync(
                 Arg.Any<TimeJobEntity[]>(),
+                Arg.Any<TimeJobDueTimeSeeder?>(),
                 Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
@@ -526,6 +532,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .Writer.Received(1)
             .WriteTimeJobsAsync(
                 Arg.Is<TimeJobEntity[]>(a => a.Length == 1 && a[0].Id == job.Id),
+                Arg.Any<TimeJobDueTimeSeeder?>(),
                 Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
@@ -627,32 +634,173 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     }
 
     [Fact]
-    public async Task worker_re_reads_the_clock_so_a_job_that_became_due_by_commit_time_is_dispatched()
+    public async Task worker_dispatches_a_delayed_job_whose_delay_elapsed_between_write_and_commit()
     {
-        // Enqueued five seconds before commit with a due time equal to the commit instant: at enqueue it is a
-        // "later" job; by the time the worker runs it is due, so it must be acquired rather than scheduled.
-        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 9, 13, 12, 0, 0, TimeSpan.Zero));
+        // Written five seconds before commit, due five seconds after the store's instant: at the write it is a "later"
+        // job; by the time the worker runs, the elapsed time covers the delay, so it must be acquired rather than
+        // scheduled. The store anchor is years from this node's clock, so a decision that compared the store-stamped
+        // due time with node-now would schedule it instead.
+        var nodeClock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 13, 12, 0, 0, TimeSpan.Zero));
         var sut = _CreateSut(
             CoordinatorMode.LiveRelational,
             withWriter: true,
             dispatcherEnabled: true,
-            timeProvider: timeProvider
+            timeProvider: nodeClock
         );
-        var job = _FutureTimeJob();
-        job.ExecutionTime = timeProvider.GetUtcNow().UtcDateTime.AddSeconds(5);
+        var job = _RunNowTimeJob();
         sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
         var notified = _NotifiedTimeJob(sut);
 
-        await sut.Time.AddAsync(job, AbortToken);
-        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        await sut.Manager.AddTimeJobAfterAsync(job, TimeSpan.FromSeconds(5), sut.Coordinator, AbortToken);
+        nodeClock.Advance(TimeSpan.FromSeconds(5));
         await sut.Coordinator!.CommitAsync();
         await _StartWorkerAsync(sut);
         await notified.Task.WaitAsync(_WaitTimeout, AbortToken);
 
+        job.ExecutionTime.Should().Be(_StoreAnchorUtc.AddSeconds(5));
+        await sut
+            .Persistence.Received(1)
+            .AcquireImmediateTimeJobsAsync(Arg.Is<Guid[]>(ids => ids.Single() == job.Id), Arg.Any<CancellationToken>());
+        // The unacquired due row is handed to the scheduler with an unconditional wake, never a timed one.
+        sut.Scheduler.DidNotReceiveWithAnyArgs().RestartIfNeeded(default);
+    }
+
+    [Fact]
+    public async Task worker_arms_the_restart_from_the_store_due_time_for_a_delayed_job_whose_delay_has_not_elapsed()
+    {
+        var nodeClock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 13, 12, 0, 0, TimeSpan.Zero));
+        var sut = _CreateSut(
+            CoordinatorMode.LiveRelational,
+            withWriter: true,
+            dispatcherEnabled: true,
+            timeProvider: nodeClock
+        );
+        var job = _RunNowTimeJob();
+        var notified = _NotifiedTimeJob(sut);
+
+        await sut.Manager.AddTimeJobAfterAsync(job, TimeSpan.FromMinutes(10), sut.Coordinator, AbortToken);
+        nodeClock.Advance(TimeSpan.FromSeconds(5));
+        await sut.Coordinator!.CommitAsync();
+        await _StartWorkerAsync(sut);
+        await notified.Task.WaitAsync(_WaitTimeout, AbortToken);
+
+        sut.Scheduler.Received(1).RestartIfNeeded(_StoreAnchorUtc.AddMinutes(10));
+        await sut
+            .Persistence.DidNotReceive()
+            .AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
+    }
+
+    // The node clock sits on either side of the store anchor: a run-now job must be stamped from the store and taken
+    // by the immediate path in both cases. With the node behind the store, a decision that compared the store stamp
+    // with node-now would see the job as not yet due and schedule it.
+    [Theory]
+    [InlineData(-1825)]
+    [InlineData(1825)]
+    public async Task run_now_enqueue_is_stamped_from_the_store_and_acquired_immediately_whatever_the_node_skew(
+        int nodeOffsetDays
+    )
+    {
+        var nodeClock = new FakeTimeProvider(new DateTimeOffset(_StoreAnchorUtc).AddDays(nodeOffsetDays));
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false, dispatcherEnabled: true, timeProvider: nodeClock);
+        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
+        var job = _RunNowTimeJob();
+
+        var result = await sut.Time.AddAsync(job, AbortToken);
+
+        result.ExecutionTime.Should().Be(_StoreAnchorUtc);
         await sut
             .Persistence.Received(1)
             .AcquireImmediateTimeJobsAsync(Arg.Is<Guid[]>(ids => ids.Single() == job.Id), Arg.Any<CancellationToken>());
         sut.Scheduler.DidNotReceiveWithAnyArgs().RestartIfNeeded(default);
+    }
+
+    [Fact]
+    public async Task run_now_batch_roots_share_one_store_instant_and_an_absolute_root_is_kept()
+    {
+        var nodeClock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 13, 12, 0, 0, TimeSpan.Zero));
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false, dispatcherEnabled: true, timeProvider: nodeClock);
+        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
+        var absoluteTime = nodeClock.GetUtcNow().UtcDateTime.AddHours(1);
+        var runNow = new List<TimeJobEntity> { _RunNowTimeJob(), _RunNowTimeJob(), _RunNowTimeJob() };
+        var absolute = _RunNowTimeJob();
+        absolute.ExecutionTime = absoluteTime;
+
+        var result = await sut.Time.AddBatchAsync([.. runNow, absolute], AbortToken);
+
+        result.Take(3).Should().AllSatisfy(job => job.ExecutionTime.Should().Be(_StoreAnchorUtc));
+        result[3].ExecutionTime.Should().Be(absoluteTime);
+        var runNowIds = runNow.Select(x => x.Id).ToHashSet();
+        await sut
+            .Persistence.Received(1)
+            .AcquireImmediateTimeJobsAsync(
+                Arg.Is<Guid[]>(ids => ids.Length == 3 && ids.All(runNowIds.Contains)),
+                Arg.Any<CancellationToken>()
+            );
+        sut.Scheduler.Received(1).RestartIfNeeded(absoluteTime);
+    }
+
+    [Fact]
+    public async Task coordinated_run_now_enqueue_is_stamped_from_the_store_and_acquired_after_a_slow_commit()
+    {
+        var nodeClock = new FakeTimeProvider(new DateTimeOffset(_StoreAnchorUtc).AddDays(-1825));
+        var sut = _CreateSut(
+            CoordinatorMode.LiveRelational,
+            withWriter: true,
+            dispatcherEnabled: true,
+            timeProvider: nodeClock
+        );
+        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
+        var notified = _NotifiedTimeJob(sut);
+        var job = _RunNowTimeJob();
+
+        var result = await sut.Time.AddAsync(job, AbortToken);
+        nodeClock.Advance(TimeSpan.FromSeconds(3));
+        await sut.Coordinator!.CommitAsync();
+        await _StartWorkerAsync(sut);
+        await notified.Task.WaitAsync(_WaitTimeout, AbortToken);
+
+        result.ExecutionTime.Should().Be(_StoreAnchorUtc);
+        await sut
+            .Persistence.Received(1)
+            .AcquireImmediateTimeJobsAsync(Arg.Is<Guid[]>(ids => ids.Single() == job.Id), Arg.Any<CancellationToken>());
+        sut.Scheduler.DidNotReceiveWithAnyArgs().RestartIfNeeded(default);
+    }
+
+    [Fact]
+    public async Task the_in_memory_store_not_the_manager_stamps_a_run_now_root()
+    {
+        // The clock moves between the manager's entry and the store's write; the persisted stamp must be the store's
+        // reading, taken inside the write, not a value the manager computed before handing the row over.
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 13, 12, 0, 0, TimeSpan.Zero));
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false, timeProvider: clock);
+        var store = new JobsInMemoryPersistenceProvider<TimeJobEntity, CronJobEntity>(
+            new ServiceCollection()
+                .AddSingleton<TimeProvider>(clock)
+                .AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7))
+                .BuildServiceProvider()
+        );
+        sut.Persistence.AddTimeJobsAsync(
+                Arg.Any<TimeJobEntity[]>(),
+                Arg.Any<TimeJobDueTimeSeeder>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                clock.Advance(TimeSpan.FromMinutes(1));
+                return store.AddTimeJobsAsync(
+                    call.Arg<TimeJobEntity[]>(),
+                    call.Arg<TimeJobDueTimeSeeder>(),
+                    AbortToken
+                );
+            });
+        var entered = clock.GetUtcNow().UtcDateTime;
+
+        var result = await sut.Time.AddAsync(_RunNowTimeJob(), AbortToken);
+
+        var stored = await store.GetTimeJobByIdAsync(result.Id, AbortToken);
+        stored.Should().NotBeNull();
+        stored!.ExecutionTime.Should().Be(entered.AddMinutes(1));
+        result.ExecutionTime.Should().Be(stored.ExecutionTime);
     }
 
     [Fact]
@@ -949,6 +1097,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .Writer.Received(1)
             .WriteTimeJobsAsync(
                 Arg.Is<TimeJobEntity[]>(a => a.Length == 2 && a[0].Id == jobs[0].Id && a[1].Id == jobs[1].Id),
+                Arg.Any<TimeJobDueTimeSeeder?>(),
                 Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
@@ -1255,6 +1404,18 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         };
     }
 
+    // No ExecutionTime: the job runs now and the store stamps it inside the write.
+    private static TimeJobEntity _RunNowTimeJob()
+    {
+        return new()
+        {
+            Id = Guid.NewGuid(),
+            Function = _FunctionName,
+            Description = _FunctionName,
+            Request = [],
+        };
+    }
+
     private static TimeJobEntity _ImmediateTimeJob()
     {
         return new()
@@ -1390,8 +1551,27 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
                 Task.FromResult(_ApplySeed(call.Arg<CronJobEntity[]>(), call.Arg<CronSchedulePositionSeeder>()))
             );
 
+        // A run-now job is stamped the same way: the provider hands the seeder the STORE's anchor, never this node's
+        // clock, so a manager that stamped from its own TimeProvider fails an assertion on the anchor.
+        persistence
+            .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<TimeJobDueTimeSeeder>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+                Task.FromResult(_ApplyDueTimeSeed(call.Arg<TimeJobEntity[]>(), call.Arg<TimeJobDueTimeSeeder?>()))
+            );
+
         if (withWriter)
         {
+            ((ICoordinatedJobWriter<TimeJobEntity, CronJobEntity>)persistence)
+                .WriteTimeJobsAsync(
+                    Arg.Any<TimeJobEntity[]>(),
+                    Arg.Any<TimeJobDueTimeSeeder?>(),
+                    Arg.Any<IRelationalUnitOfWorkResource>(),
+                    Arg.Any<CancellationToken>()
+                )
+                .Returns(call =>
+                    Task.FromResult(_ApplyDueTimeSeed(call.Arg<TimeJobEntity[]>(), call.Arg<TimeJobDueTimeSeeder?>()))
+                );
+
             ((ICoordinatedJobWriter<TimeJobEntity, CronJobEntity>)persistence)
                 .WriteCronJobsAsync(
                     Arg.Any<CronJobEntity[]>(),
@@ -1625,6 +1805,24 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             AffectedRows = jobs.Length,
             EarliestNextDueUtc = earliest,
         };
+    }
+
+    private static TimeJobDueTimeSeedResult _ApplyDueTimeSeed(TimeJobEntity[] jobs, TimeJobDueTimeSeeder? seeder)
+    {
+        if (seeder is null)
+        {
+            return new TimeJobDueTimeSeedResult { AffectedRows = jobs.Length };
+        }
+
+        foreach (var job in jobs)
+        {
+            if (seeder(job, _StoreAnchorUtc) is { } dueUtc)
+            {
+                job.ExecutionTime = dueUtc;
+            }
+        }
+
+        return new TimeJobDueTimeSeedResult { StoreUtcNow = _StoreAnchorUtc, AffectedRows = jobs.Length };
     }
 
     private sealed class Sut

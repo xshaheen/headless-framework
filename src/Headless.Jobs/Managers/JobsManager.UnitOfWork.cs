@@ -208,48 +208,24 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
     // Signal kinds. Each carries what the worker needs to run the existing side-effect methods against rows that are
     // already committed; the worker supplies the clock read at processing time.
 
-    private sealed record TimeJobCommittedSignal(
-        JobsManager<TTimeJob, TCronJob> Manager,
-        TTimeJob Entity,
-        DateTime ExecutionTimeUtc
-    ) : JobsPostCommitSignal(Entity.Id.ToString())
+    // The due decision runs when the worker picks the signal up, not at enqueue: a commit can land long after the
+    // write, and a job that became due meanwhile must be acquired now rather than scheduled. A relative root is judged
+    // by the monotonic time elapsed since its write returned, an absolute one against the worker's clock.
+    private sealed record TimeJobCommittedSignal(JobsManager<TTimeJob, TCronJob> Manager, TimeJobDue Due)
+        : JobsPostCommitSignal(Due.Id.ToString())
     {
         public override Task RunAsync(DateTimeOffset now, CancellationToken cancellationToken)
         {
-            return Manager._RunTimeJobSideEffectsAsync(Entity, now, ExecutionTimeUtc, cancellationToken);
+            return Manager._RunTimeJobSideEffectsAsync(Due, now.UtcDateTime, cancellationToken);
         }
     }
 
-    private readonly record struct CommittedTimeJob(Guid Id, DateTime ExecutionTimeUtc);
-
-    private sealed record TimeJobsBatchCommittedSignal(JobsManager<TTimeJob, TCronJob> Manager, CommittedTimeJob[] Jobs)
+    private sealed record TimeJobsBatchCommittedSignal(JobsManager<TTimeJob, TCronJob> Manager, TimeJobDue[] Jobs)
         : JobsPostCommitSignal($"time batch ({Jobs.Length})")
     {
         public override Task RunAsync(DateTimeOffset now, CancellationToken cancellationToken)
         {
-            // Split immediate vs. later against the worker's clock, not the enqueue-time one: a commit can land long
-            // after the enqueue, and a job that became due meanwhile must be acquired now rather than scheduled.
-            var nowUtc = now.UtcDateTime;
-            var immediateTickers = new List<Guid>();
-            var earliestForNonImmediate = default(DateTime);
-
-            foreach (var job in Jobs)
-            {
-                if (job.ExecutionTimeUtc <= nowUtc.Add(JobsDueSlack.Duration))
-                {
-                    immediateTickers.Add(job.Id);
-                }
-                else if (earliestForNonImmediate == default || job.ExecutionTimeUtc <= earliestForNonImmediate)
-                {
-                    earliestForNonImmediate = job.ExecutionTimeUtc;
-                }
-            }
-
-            return Manager._RunTimeJobsBatchSideEffectsAsync(
-                immediateTickers,
-                earliestForNonImmediate,
-                cancellationToken
-            );
+            return Manager._RunTimeJobsBatchSideEffectsAsync(Jobs, now.UtcDateTime, cancellationToken);
         }
     }
 

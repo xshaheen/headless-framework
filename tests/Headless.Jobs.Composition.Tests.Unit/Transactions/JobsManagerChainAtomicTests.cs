@@ -32,6 +32,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
             .Writer.DidNotReceive()
             .WriteTimeJobsAsync(
                 Arg.Any<TimeJobEntity[]>(),
+                Arg.Any<TimeJobDueTimeSeeder?>(),
                 Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );
@@ -66,6 +67,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
                 .Writer.Received(1)
                 .WriteTimeJobsAsync(
                     Arg.Is<TimeJobEntity[]>(jobs => _IsWholeChain(jobs)),
+                    Arg.Any<TimeJobDueTimeSeeder?>(),
                     Arg.Any<IRelationalUnitOfWorkResource>(),
                     Arg.Any<CancellationToken>()
                 );
@@ -82,6 +84,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
                 .Writer.DidNotReceive()
                 .WriteTimeJobsAsync(
                     Arg.Any<TimeJobEntity[]>(),
+                    Arg.Any<TimeJobDueTimeSeeder?>(),
                     Arg.Any<IRelationalUnitOfWorkResource>(),
                     Arg.Any<CancellationToken>()
                 );

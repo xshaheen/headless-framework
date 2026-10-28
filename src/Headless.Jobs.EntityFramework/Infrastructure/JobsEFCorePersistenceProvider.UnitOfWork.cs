@@ -157,6 +157,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         TTimeJob job,
         string idempotencyKey,
         TimeSpan idempotencyTtl,
+        TimeJobDueTimeSeeder? seeder,
         IRelationalUnitOfWorkResource relationalResource,
         CancellationToken cancellationToken
     )
@@ -166,7 +167,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         // rolls back to the savepoint (reservation + job vanish together) without poisoning the outer transaction.
         return await _WithIdempotencySavepointAsync(
                 context,
-                () => _AddIdempotentAsync(context, job, idempotencyKey, idempotencyTtl, cancellationToken),
+                () => _AddIdempotentAsync(context, job, idempotencyKey, idempotencyTtl, seeder, cancellationToken),
                 cancellationToken
             )
             .ConfigureAwait(false);

@@ -3,6 +3,7 @@
 using System.Linq.Expressions;
 using Headless.Caching;
 using Headless.Checks;
+using Headless.Jobs.Internal;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Query;
@@ -95,8 +96,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
     #region Coordinated_Write_Implementations
 
-    async Task ICoordinatedJobWriter<TTimeJob, TCronJob>.WriteTimeJobsAsync(
+    async Task<TimeJobDueTimeSeedResult> ICoordinatedJobWriter<TTimeJob, TCronJob>.WriteTimeJobsAsync(
         TTimeJob[] jobs,
+        TimeJobDueTimeSeeder? seeder,
         IRelationalUnitOfWorkResource relationalResource,
         CancellationToken cancellationToken
     )
@@ -107,6 +109,13 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         }
 
         await using var dbContext = _CreateCoordinatedContext(relationalResource);
+
+        // The STATEMENT clock, read inside the caller's transaction: that transaction may have opened long before this
+        // write, and a run-now job anchored at its start would be stamped earlier than it was written.
+        var storeUtcNow = seeder is null
+            ? (DateTime?)null
+            : await _ResolveDueTimesAsync(dbContext, jobs, seeder, cancellationToken).ConfigureAwait(false);
+
         await dbContext.Set<TTimeJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
         await _GuardTimeJobParentReferencesAsync(
                 dbContext,
@@ -114,7 +123,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                 cancellationToken
             )
             .ConfigureAwait(false);
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        var affected = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        return new TimeJobDueTimeSeedResult { StoreUtcNow = storeUtcNow, AffectedRows = affected };
     }
 
     async Task<CronSchedulePositionSeedResult> ICoordinatedJobWriter<TTimeJob, TCronJob>.WriteCronJobsAsync(
@@ -330,6 +341,26 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
     public async Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
+        var result = await _AddTimeJobsAsync(jobs, seeder: null, cancellationToken).ConfigureAwait(false);
+        return result.AffectedRows;
+    }
+
+    public Task<TimeJobDueTimeSeedResult> AddTimeJobsAsync(
+        TTimeJob[] jobs,
+        TimeJobDueTimeSeeder seeder,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(seeder);
+        return _AddTimeJobsAsync(jobs, seeder, cancellationToken);
+    }
+
+    private async Task<TimeJobDueTimeSeedResult> _AddTimeJobsAsync(
+        TTimeJob[] jobs,
+        TimeJobDueTimeSeeder? seeder,
+        CancellationToken cancellationToken
+    )
+    {
         foreach (var job in jobs)
         {
             JobIntentFingerprint.RejectOrdinaryMutation(job);
@@ -340,16 +371,41 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .ConfigureAwait(false);
 
         await dbContext.Set<TTimeJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
-        if (dbContext.ChangeTracker.Entries<TTimeJob>().All(entry => entry.Entity.ParentId is null))
+        var hasParentReferences = dbContext
+            .ChangeTracker.Entries<TTimeJob>()
+            .Any(entry => entry.Entity.ParentId is not null);
+
+        if (seeder is null && !hasParentReferences)
         {
-            return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return new TimeJobDueTimeSeedResult
+            {
+                AffectedRows = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false),
+            };
         }
 
-        return await dbContext
+        var result = await dbContext
             .Database.CreateExecutionStrategy()
             .ExecuteAsync(
                 async ct =>
                 {
+                    // The clock is read inside the retried operation so a retry re-anchors the due times at the
+                    // attempt that actually writes them, rather than at a failed earlier one.
+                    var storeUtcNow = seeder is null
+                        ? (DateTime?)null
+                        : await _ResolveDueTimesAsync(dbContext, jobs, seeder, ct).ConfigureAwait(false);
+
+                    if (!hasParentReferences)
+                    {
+                        return new TimeJobDueTimeSeedResult
+                        {
+                            StoreUtcNow = storeUtcNow,
+                            // A failed save must leave the graph Added so the configured strategy can retry it.
+                            AffectedRows = await dbContext
+                                .SaveChangesAsync(acceptAllChangesOnSuccess: false, ct)
+                                .ConfigureAwait(false),
+                        };
+                    }
+
                     await using var transaction = await dbContext
                         .Database.BeginTransactionAsync(ct)
                         .ConfigureAwait(false);
@@ -364,12 +420,31 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         .SaveChangesAsync(acceptAllChangesOnSuccess: false, ct)
                         .ConfigureAwait(false);
                     await transaction.CommitAsync(ct).ConfigureAwait(false);
-                    dbContext.ChangeTracker.AcceptAllChanges();
-                    return affected;
+                    return new TimeJobDueTimeSeedResult { StoreUtcNow = storeUtcNow, AffectedRows = affected };
                 },
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        dbContext.ChangeTracker.AcceptAllChanges();
+        return result;
+    }
+
+    // Reads the store's statement clock on the write's own context and seeds every root from it. A backend without a
+    // registered statement clock falls back to the host clock (see JobsStoreClock.TryGetStatementUtcNowAsync).
+    private async Task<DateTime> _ResolveDueTimesAsync(
+        TDbContext dbContext,
+        IEnumerable<TTimeJob> roots,
+        TimeJobDueTimeSeeder seeder,
+        CancellationToken cancellationToken
+    )
+    {
+        var storeUtcNow =
+            await JobsStoreClock.TryGetStatementUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false)
+            ?? TimeProvider.GetUtcNow().UtcDateTime;
+
+        TimeJobDueTimeSeeding.Apply(roots, seeder, storeUtcNow);
+        return storeUtcNow;
     }
 
     public async Task<int> UpdateTimeJobsAsync(TTimeJob[] timeJobs, CancellationToken cancellationToken = default)

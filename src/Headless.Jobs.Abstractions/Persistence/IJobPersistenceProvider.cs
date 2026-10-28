@@ -101,11 +101,18 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <see cref="JobIdempotencyEnqueueResult.Created"/> = <see langword="false"/>; the payload is not compared.
     /// An expired reservation is atomically replaced by exactly one contender under concurrency. No default
     /// implementation exists because a correct fallback cannot be atomic.
+    /// <para>
+    /// When <paramref name="seeder"/> is supplied and this call creates the job, call it with the same store instant
+    /// that decided the reservation's expiry, set the job's <c>ExecutionTime</c> from it as
+    /// <see cref="AddTimeJobsAsync(TTimeJob[],TimeJobDueTimeSeeder,CancellationToken)"/> describes, and report that
+    /// instant in <see cref="JobIdempotencyEnqueueResult.StoreUtcNow"/>. A dedup hit writes nothing and needs no seed.
+    /// </para>
     /// </remarks>
     Task<JobIdempotencyEnqueueResult> AddIdempotentTimeJobAsync(
         TTimeJob job,
         string idempotencyKey,
         TimeSpan idempotencyTtl,
+        TimeJobDueTimeSeeder? seeder,
         CancellationToken cancellationToken = default
     );
 
@@ -1180,6 +1187,33 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Inserts new time jobs together with their child chains, resolving each root's relative due time against the
+    /// store's own clock in the same write.
+    /// </summary>
+    /// <param name="jobs">The root jobs to insert; nested children are inserted with their parent link set.</param>
+    /// <param name="seeder">Returns a root's due time from the store anchor the provider supplies.</param>
+    /// <param name="cancellationToken">Token that aborts the write.</param>
+    /// <returns>The store anchor used and the rows written, counting children as well as roots.</returns>
+    /// <remarks>
+    /// This is the enqueue path for a job that runs now or after a delay;
+    /// <see cref="AddTimeJobsAsync(TTimeJob[],CancellationToken)"/> remains the raw insert for jobs whose due times are
+    /// already absolute. Read the store's clock once for the whole call, pass that instant to
+    /// <paramref name="seeder"/> for every root, and set the root's <c>ExecutionTime</c> to each non-null result before
+    /// inserting. Descendants are not seeded.
+    /// <para>
+    /// <b>The anchor must be the store's CURRENT STATEMENT clock</b> — PostgreSQL <c>clock_timestamp()</c>, SQL Server
+    /// <c>SYSUTCDATETIME()</c> — read after any retry begins, never a transaction-start clock. A store with no such clock
+    /// may use the host's <see cref="TimeProvider"/>. The same all-or-nothing contract as the raw insert applies.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<TimeJobDueTimeSeedResult> AddTimeJobsAsync(
+        TTimeJob[] jobs,
+        TimeJobDueTimeSeeder seeder,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Overwrites the schedulable fields of existing time jobs and their child chains, refusing any job a node has
