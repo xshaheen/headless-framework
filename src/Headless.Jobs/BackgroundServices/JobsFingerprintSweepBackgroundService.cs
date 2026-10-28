@@ -31,10 +31,12 @@ internal sealed class JobsFingerprintSweepBackgroundService(
     private static readonly TimeSpan _DeferredRetryCeiling = TimeSpan.FromMinutes(5);
 
     private readonly TimeSpan _period = schedulerOptions.FingerprintSweepInterval;
+
     private readonly TimeSpan _deferredDelay =
         schedulerOptions.FingerprintSweepInterval < _DeferredRetryCeiling
             ? schedulerOptions.FingerprintSweepInterval
             : _DeferredRetryCeiling;
+
     private readonly int _batchSize = schedulerOptions.FingerprintSweepBatchSize;
     private Guid? _cursor;
     private Guid? _highWatermark;
