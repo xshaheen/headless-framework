@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Jobs;
 
 namespace Tests;
@@ -59,25 +61,27 @@ public sealed class CronScheduleCacheTests
     }
 
     [Fact]
-    public void get_next_occurrence_or_default_uses_the_later_utc_instant_for_an_ambiguous_fall_occurrence()
+    public void get_next_occurrence_or_default_uses_the_first_pass_for_an_ambiguous_fall_occurrence()
     {
         var cache = new CronScheduleCache(_CreateTestTimeZone());
         var beforeOverlap = new DateTime(2026, 10, 24, 22, 0, 0, DateTimeKind.Utc);
 
         var next = cache.GetNextOccurrenceOrDefault("0 30 2 * * *", beforeOverlap);
 
-        next.Should().Be(new DateTime(2026, 10, 25, 0, 30, 0, DateTimeKind.Utc));
+        // 02:30 (+03:00), the first time the clock shows 02:30.
+        next.Should().Be(new DateTime(2026, 10, 24, 23, 30, 0, DateTimeKind.Utc));
     }
 
     [Fact]
-    public void get_next_occurrence_or_default_does_not_skip_the_later_fall_occurrence_after_restart()
+    public void get_next_occurrence_or_default_does_not_run_the_second_pass_of_a_fixed_time_after_restart()
     {
         var cache = new CronScheduleCache(_CreateTestTimeZone());
         var betweenOverlapInstants = new DateTime(2026, 10, 24, 23, 45, 0, DateTimeKind.Utc);
 
         var next = cache.GetNextOccurrenceOrDefault("0 30 2 * * *", betweenOverlapInstants);
 
-        next.Should().Be(new DateTime(2026, 10, 25, 0, 30, 0, DateTimeKind.Utc));
+        // The first pass already fired at 23:30Z; a fixed time has no second pass, so the next run is the next day's.
+        next.Should().Be(new DateTime(2026, 10, 26, 0, 30, 0, DateTimeKind.Utc));
     }
 
     [Fact]
@@ -92,23 +96,23 @@ public sealed class CronScheduleCacheTests
     }
 
     [Fact]
-    public void should_use_later_utc_instant_when_explicit_iana_time_is_ambiguous()
+    public void should_use_first_pass_when_explicit_iana_time_is_ambiguous()
     {
         var beforeOverlap = new DateTime(2026, 11, 1, 4, 0, 0, DateTimeKind.Utc);
 
         var next = _cache.GetNextOccurrenceOrDefault("0 30 1 * * *", beforeOverlap, "America/New_York");
 
-        next.Should().Be(new DateTime(2026, 11, 1, 6, 30, 0, DateTimeKind.Utc));
+        next.Should().Be(new DateTime(2026, 11, 1, 5, 30, 0, DateTimeKind.Utc));
     }
 
     [Fact]
-    public void should_remain_deterministic_when_origin_is_inside_explicit_iana_overlap()
+    public void should_skip_second_pass_when_origin_is_inside_explicit_iana_overlap()
     {
         var betweenOverlapInstants = new DateTime(2026, 11, 1, 5, 45, 0, DateTimeKind.Utc);
 
         var next = _cache.GetNextOccurrenceOrDefault("0 30 1 * * *", betweenOverlapInstants, "America/New_York");
 
-        next.Should().Be(new DateTime(2026, 11, 1, 6, 30, 0, DateTimeKind.Utc));
+        next.Should().Be(new DateTime(2026, 11, 2, 6, 30, 0, DateTimeKind.Utc));
     }
 
     [Fact]

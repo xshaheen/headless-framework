@@ -671,8 +671,10 @@ on the next materialization without bumping the schedule revision.
 ### Schedule-interpretation drift
 
 An expression and a timezone identifier can stay byte-identical while the instant they resolve to moves — a tzdata
-update shifts a zone's transitions, or the cron library changes how it reads a field. Each definition therefore stores
-an opaque **evaluation fingerprint** of the rules its projection was derived under; only equality is meaningful.
+update shifts a zone's transitions, the cron library changes how it reads a field, or the framework changes its
+[DST mapping rule](#cron-across-dst-transitions). Each definition therefore stores an opaque **evaluation fingerprint**
+of the rules its projection was derived under (the cron library version, the framework's DST rule version, and the
+zone's offsets and adjustment rules); only equality is meaningful.
 
 A background sweep rebases definitions whose fingerprint no longer matches, independently of whether their projection
 is due. That independence is the point: a rule change that moves an occurrence *earlier* hides behind the stale later
@@ -709,6 +711,38 @@ of unresolvable definitions starve every healthy definition ordered behind it.
 Recovery and rebase outcomes are reported through the framework's existing logging instrumentation. A missed count is
 always accompanied by whether it is exact or a lower bound — a long outage on a seconds-resolution schedule stops
 counting at a ceiling, and "at least 1000" calls for a different response than "exactly 1000".
+
+## Cron across DST transitions
+
+A cron expression names local wall-clock times, and a zone that changes its UTC offset removes some local times
+(a spring-forward gap) and repeats others (a fall-back overlap). The expression and the zone's rules define one set of
+UTC fire instants, and every scheduling path (dispatch, misfire evaluation, resume, the fingerprint rebase sweep,
+seeding, and add or update validation) computes the same set. The rule applies to every expression the parser accepts,
+seconds field included, and to shifts of any length, base-offset changes included (such as Samoa skipping
+30 December 2011); it is decided by the expression's occurrences, never by its syntax.
+
+- **Gap.** Every occurrence whose local time does not exist fires shifted forward by the size of the gap. Occurrences
+  that land on the same instant fire once. In `Africa/Cairo` on 24 April 2026, 00:00 (+02:00) becomes 01:00 (+03:00):
+  `0 */15 0 * * *` fires at 01:00, 01:15, 01:30, and 01:45 (+03:00), and `0 */15 * * * *` fires every 15 minutes with
+  no instant fired twice.
+- **Overlap: the first pass always fires.** A repeated local time first fires on its first pass, the first time the
+  clock shows it. In Cairo on 29 October 2026, 24:00 (+03:00) becomes 23:00 (+02:00): `0 30 23 * * *` fires once, at
+  23:30 (+03:00).
+- **Overlap: the second pass fires only when the cadence continues.** The second pass fires when the expression's
+  occurrence offsets inside the repeated window equal its offsets in the window of the same length right before it or
+  right after it. On the same Cairo night `0 */15 * * * *` fires every 15 real minutes through both passes, while
+  `0 */15 23 * * *` fires at 23:00–23:45 (+03:00) only. In `America/New_York` on 1 November 2026, `0 30 1,2 * * *`
+  fires three times (01:30 −04:00, 01:30 −05:00, 02:30 −05:00) because its cadence continues into the hour after the
+  overlap, and `0 0 1/2 * * *` fires at 01:00 (−04:00) and next at 03:00 (−05:00), three real hours later.
+- **A missed first pass is an ordinary misfire.** The second pass is not a fallback for it. If no scheduler dispatched
+  the first pass on time, it is a pending instant and the definition's `OnMissedRun` policy decides: `Coalesce` runs
+  it once, late; `Skip` records it as missed, and the repeated local time does not fire again that night. A definition
+  resumed after its first pass gets the next day's run.
+
+There is no per-definition override of the overlap rule. The rule is an input to the
+[evaluation fingerprint](#schedule-interpretation-drift), so a change to it rebases every definition once. During a
+rolling deploy that changes this rule on a transition night, nodes on the old and new versions can compute different
+instants for one occurrence and run it twice.
 
 ## Cluster-wide concurrency
 
@@ -959,7 +993,7 @@ PostgreSQL and SQL Server use transaction-owned key locks plus filtered tenant/s
 Transactional deadline writes use the exact captured open connection and live transaction after validating the actual configured provider/endpoint/database, including `OnConfiguring`. External connections must be unowned (`contextOwnsConnection: false`); owned external handles are rejected before the connection service is resolved. Keyed operations require savepoints before middleware, and the whole replacement kernel has a savepoint so a failed insert cannot leave only the retirement. Read-committed conflict dispositions leave the caller usable; stronger isolation may produce provider exceptions. Failed savepoint restoration or a poisoned transaction before commit requires outer rollback and a fresh unit of work. An unknown commit outcome may already be durable: reconcile the retained key and business state before recovery; do not assume rollback undid it or automatically replay it. `IsProvisional` is an immutable observation flag, not a notification that later changes. Committed rows remain authoritative if post-commit acceleration fails.
 
 
-Cron control is durable and definition-specific. Pause returns `true` only when it atomically marks the definition and skips pending `Idle` / `Queued` occurrences; it never cancels `InProgress` work. Resume returns `true` only when it wins the schedule-revision fence and creates exactly one next occurrence strictly after the resume time. It never replays the paused interval — resume rebases the schedule watermark to the resume instant, so misfire recovery sees no backlog for the paused span. `TimeZoneId` accepts IANA identifiers only; null falls back to the scheduler-global timezone, while occurrence persistence remains UTC with deterministic gap/overlap handling.
+Cron control is durable and definition-specific. Pause returns `true` only when it atomically marks the definition and skips pending `Idle` / `Queued` occurrences; it never cancels `InProgress` work. Resume returns `true` only when it wins the schedule-revision fence and creates exactly one next occurrence strictly after the resume time. It never replays the paused interval — resume rebases the schedule watermark to the resume instant, so misfire recovery sees no backlog for the paused span. `TimeZoneId` accepts IANA identifiers only; null falls back to the scheduler-global timezone, while occurrence persistence remains UTC and gaps and overlaps follow the [DST transition rule](#cron-across-dst-transitions).
 
 Routine calls accept a positional cancellation token: `EnqueueAsync(request, ct)`, `ScheduleAsync(request, dueAt, ct)`, `ScheduleAfterAsync(request, delay, ct)`, and `ScheduleRecurringAsync(request, cron, ct)`. Options overloads require the options argument; nullable retry and node-death fields inherit configured defaults, while `Retries = 0` explicitly disables retries. Absolute facade schedules use `DateTimeOffset` and persist the same instant in UTC. Relative ordinary schedules use the injected `TimeProvider`, accept zero delay, and reject negative or overflowing delays before persistence. Keyed schedules remain absolute: capture the due instant once and reuse it when retrying the same intent.
 
@@ -1070,7 +1104,7 @@ Ordinary cron dispatch first commits the expected schedule position and its occu
 
 Initialize the relational Jobs database from the current EF model before starting workers or writers. Include cancellation, cron control, schedule watermarks, recovery and fingerprint-defer fields, the fingerprint retry/keyset index, and the required occurrence `Disposition` column. Custom persistence providers must supply equivalent mappings, constraints, and indexes. Custom persistence providers must implement atomic pause/resume/update plus candidate selection, atomic materialization/recovery, bounded stale-fingerprint paging, fenced defer, and compare-and-advance before use; plan the recovery half with `CronRecoveryPlanner` rather than re-deriving it. Candidate selection additionally takes a `CronDispatchCandidateCursor? after` between `limit` and the cancellation token, which must be applied inside the query — before the limit truncates — on the same `(NextDueUtc, CronJobId)` ordering the result is sorted by. Two further SPI members are store-clock contracts, not conveniences: `InsertCronJobsAsync(jobs, CronSchedulePositionSeeder, ct)` must read the store's **current statement** clock inside the inserting transaction, hand it to the seeder, persist the result, and return it (the caller arms its scheduler wake from the returned value, never from a locally recomputed projection); and `GetEarliestTimeJobsAsync` now returns `EarliestTimeJobs`, whose `StoreUtcNow` must be read in the same statement as the peek, matching `CronDispatchCandidates.StoreUtcNow`; the peek must also omit rows this node already holds, while `QueueTimeJobsAsync` keeps accepting them and refuses any row not yet due on the store's clock. Run the shared schedule-position and recovery conformance suites for every custom provider.
 
-Cron expressions use `RecurringJobOptions.TimeZoneId` when present and otherwise fall back to `SchedulerTimeZone`. Both must be IANA zones: an unknown or non-IANA `TimeZoneId` is rejected, and `AddHeadlessJobs` throws `InvalidOperationException` when `SchedulerTimeZone` has no IANA id (a Windows id, a custom zone, or a non-IANA `TimeZoneInfo.Local`); `TimeZoneInfo.Utc` is accepted. Configure the same zone on every node. A tick never runs twice when nodes disagree, because dispatch advances the definition with a compare-and-set and occurrences are unique per instant, but each tick then fires at the time projected in the zone of whichever node advanced it last, misfire classification can be wrong, and the fingerprint sweep keeps rebasing the other nodes' definitions that name no zone. Occurrences remain UTC; a spring-forward occurrence inside an invalid local-time gap is shifted forward by the gap, and an ambiguous fall-back occurrence runs once at the later UTC instant (the standard-time offset).
+Cron expressions use `RecurringJobOptions.TimeZoneId` when present and otherwise fall back to `SchedulerTimeZone`. Both must be IANA zones: an unknown or non-IANA `TimeZoneId` is rejected, and `AddHeadlessJobs` throws `InvalidOperationException` when `SchedulerTimeZone` has no IANA id (a Windows id, a custom zone, or a non-IANA `TimeZoneInfo.Local`); `TimeZoneInfo.Utc` is accepted. Configure the same zone on every node. A tick never runs twice when nodes disagree, because dispatch advances the definition with a compare-and-set and occurrences are unique per instant, but each tick then fires at the time projected in the zone of whichever node advanced it last, misfire classification can be wrong, and the fingerprint sweep keeps rebasing the other nodes' definitions that name no zone. Occurrences remain UTC; a spring-forward gap and a fall-back overlap follow the [DST transition rule](#cron-across-dst-transitions): every occurrence a gap removes fires shifted forward by the gap, the first pass of a repeated local time always fires, and its second pass fires only when the expression's cadence continues across the repeated window.
 
 ### Install
 

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 
@@ -177,5 +178,145 @@ public sealed class CronPendingEvaluationTests : TestBase
         result.PendingCount.Should().Be(3);
         result.EarliestPendingUtc.Should().Be(_Now.AddMinutes(1));
         result.LatestPendingUtc.Should().Be(_Now.AddMinutes(3));
+    }
+
+    // Cairo falls back at 21:00Z on 29 October 2026: 24:00 (+03:00) becomes 23:00 (+02:00), so 23:00–23:59 repeats.
+    private static readonly DateTime _CairoFallBack = new(2026, 10, 29, 21, 0, 0, DateTimeKind.Utc);
+
+    /// <summary>Every 15 minutes is a cadence that continues through the repeated hour, so both passes fire.</summary>
+    private static readonly DateTime[] _CairoQuarterHours =
+    [
+        .. Enumerable.Range(0, 17).Select(i => _CairoFallBack.AddHours(-2).AddMinutes(15 * i)),
+    ];
+
+    [Theory]
+    [InlineData("2026-10-29T19:45:00Z")]
+    [InlineData("2026-10-29T20:00:00Z")]
+    [InlineData("2026-10-29T20:50:00Z")]
+    [InlineData("2026-10-29T21:00:00Z")]
+    [InlineData("2026-10-29T21:50:00Z")]
+    public void should_owe_the_same_instants_across_an_overlap_as_the_next_occurrence_walk(string watermarkText)
+    {
+        var watermark = DateTime.Parse(watermarkText, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
+        var storeNow = _CairoFallBack.AddHours(2);
+
+        var result = new CronScheduleCache(CronTestZones.Cairo()).EvaluatePending(
+            "0 */15 * * * *",
+            timeZoneId: null,
+            watermark,
+            storeNow,
+            _Grace
+        );
+
+        result.PendingInstantsUtc.Should().Equal(_CairoQuarterHours.Where(x => x > watermark));
+        result.NextAfterPendingUtc.Should().Be(storeNow.AddMinutes(15));
+    }
+
+    [Fact]
+    public void should_project_the_same_next_instant_from_a_walk_as_from_a_direct_lookup()
+    {
+        var cache = new CronScheduleCache(CronTestZones.Cairo());
+
+        for (var i = 1; i < _CairoQuarterHours.Length; i++)
+        {
+            var result = cache.EvaluatePending(
+                "0 */15 * * * *",
+                timeZoneId: null,
+                _CairoQuarterHours[i - 1],
+                _CairoQuarterHours[i],
+                _Grace
+            );
+
+            result.LatestPendingUtc.Should().Be(_CairoQuarterHours[i]);
+            result
+                .NextAfterPendingUtc.Should()
+                .Be(cache.GetNextOccurrenceOrDefault("0 */15 * * * *", _CairoQuarterHours[i]));
+        }
+    }
+
+    [Fact]
+    public void should_treat_a_missed_first_pass_as_an_ordinary_misfire()
+    {
+        // 23:30 (+03:00) is 20:30Z. No scheduler ran from 20:00Z; one wakes at 21:10Z, after the overlap began.
+        var watermark = _CairoFallBack.AddHours(-1);
+        var storeNow = _CairoFallBack.AddMinutes(10);
+        var cache = new CronScheduleCache(CronTestZones.Cairo());
+
+        var result = cache.EvaluatePending("0 30 23 * * *", timeZoneId: null, watermark, storeNow, _Grace);
+
+        result.PendingInstantsUtc.Should().Equal(_CairoFallBack.AddMinutes(-30));
+        result.IsRecovery.Should().BeTrue("the first pass is 40 minutes late, past the 60s grace threshold");
+
+        // The second pass at 23:30 (+02:00), 21:30Z, is not a fallback: the next run is 30 October's.
+        var nextDay = new DateTime(2026, 10, 30, 21, 30, 0, DateTimeKind.Utc);
+        result.NextAfterPendingUtc.Should().Be(nextDay);
+
+        var coalesce = CronRecoveryPlanner.CreatePlan(
+            _Recovery(cache, result, watermark, storeNow, MissedRunPolicy.Coalesce),
+            []
+        );
+        coalesce.RunSteps.Should().ContainSingle().Which.ExecutionTimeUtc.Should().Be(_CairoFallBack.AddMinutes(-30));
+        coalesce.WhenRunEstablished.NextDueUtc.Should().Be(nextDay);
+
+        var skip = CronRecoveryPlanner.CreatePlan(
+            _Recovery(cache, result, watermark, storeNow, MissedRunPolicy.Skip),
+            []
+        );
+        skip.RunSteps.Should().BeEmpty();
+        skip.WhenNoRunEstablished.NextDueUtc.Should().Be(nextDay);
+    }
+
+    [Fact]
+    public void should_owe_nothing_until_the_next_day_once_the_first_pass_is_reconciled()
+    {
+        // Reconciled just past the first pass (20:30Z); the repeated 23:30 (+02:00) owes nothing.
+        var watermark = _CairoFallBack.AddMinutes(-29);
+        var cache = new CronScheduleCache(CronTestZones.Cairo());
+
+        cache
+            .EvaluatePending("0 30 23 * * *", timeZoneId: null, watermark, _CairoFallBack.AddMinutes(10), _Grace)
+            .Should()
+            .Be(CronPendingEvaluation.None);
+
+        cache
+            .EvaluatePending(
+                "0 30 23 * * *",
+                timeZoneId: null,
+                watermark,
+                new DateTime(2026, 10, 30, 21, 29, 59, DateTimeKind.Utc),
+                _Grace
+            )
+            .Should()
+            .Be(CronPendingEvaluation.None);
+    }
+
+    // Built the way the dispatch path builds it from an evaluation, so the plan answers for the instants that
+    // evaluation reported.
+    private static CronRecoveryRequest _Recovery(
+        CronScheduleCache cache,
+        CronPendingEvaluation pending,
+        DateTime watermark,
+        DateTime storeNow,
+        MissedRunPolicy policy
+    )
+    {
+        var latest = pending.LatestPendingUtc!.Value;
+
+        return new CronRecoveryRequest
+        {
+            CronJobId = Guid.NewGuid(),
+            ObservedReconciledThroughUtc = watermark,
+            ExpectedScheduleRevision = 1,
+            RecoveredThroughUtc = storeNow,
+            NextDueUtc = cache.GetNextOccurrenceOrDefault("0 30 23 * * *", storeNow)!.Value,
+            BoundedProgressThroughUtc = latest,
+            NextDueAfterBoundedProgressUtc = cache.GetNextOccurrenceOrDefault("0 30 23 * * *", latest)!.Value,
+            EvaluationSaturated = pending.CountSaturated,
+            Policy = policy,
+            EarliestMissedUtc = pending.EarliestPendingUtc!.Value,
+            MissedInstantsUtc = pending.PendingInstantsUtc,
+            CoalescedOccurrenceId = Guid.NewGuid(),
+            OperationTimeUtc = new DateTimeOffset(storeNow, TimeSpan.Zero),
+        };
     }
 }

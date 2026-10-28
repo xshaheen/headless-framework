@@ -72,9 +72,13 @@ public sealed class InternalJobsManagerTests : TestBase
     }
 
     [Theory]
-    [InlineData("2026-03-08T05:00:00Z", "0 30 2 * * *", "2026-03-08T07:30:00Z")]
-    [InlineData("2026-11-01T04:00:00Z", "0 30 1 * * *", "2026-11-01T06:30:00Z")]
+    [InlineData("America/New_York", "2026-03-08T05:00:00Z", "0 30 2 * * *", "2026-03-08T07:30:00Z")]
+    // 01:30 repeats; the first pass (-04:00) is the occurrence.
+    [InlineData("America/New_York", "2026-11-01T04:00:00Z", "0 30 1 * * *", "2026-11-01T05:30:00Z")]
+    // Resumed after 23:30's first pass (20:30Z): a fixed time has no second pass, so the next run is the next day's.
+    [InlineData("Africa/Cairo", "2026-10-29T21:10:00Z", "0 30 23 * * *", "2026-10-30T21:30:00Z")]
     public async Task should_use_definition_iana_timezone_when_resume_crosses_dst_transition(
+        string timeZoneId,
         string resumeTimeText,
         string expression,
         string expectedOccurrenceText
@@ -99,7 +103,7 @@ public sealed class InternalJobsManagerTests : TestBase
             Id = Guid.NewGuid(),
             Function = "fn",
             Expression = expression,
-            TimeZoneId = "America/New_York",
+            TimeZoneId = timeZoneId,
             IsPaused = true,
             ScheduleRevision = 5,
         };

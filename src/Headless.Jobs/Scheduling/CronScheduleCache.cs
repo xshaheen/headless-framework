@@ -13,6 +13,8 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
 
     private readonly ConcurrentDictionary<string, CrontabSchedule> _cache = new(StringComparer.Ordinal);
 
+    private readonly ConcurrentDictionary<CadenceKey, bool> _cadenceVerdicts = new();
+
     private static readonly CrontabSchedule.ParseOptions _Opts = new() { IncludingSeconds = true };
 
     private static string _Normalize(string expr)
@@ -38,6 +40,29 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
         return GetNextOccurrenceOrDefault(expression, dateTime, timeZoneId: null);
     }
 
+    /// <summary>
+    /// The earliest instant strictly after <paramref name="dateTime"/> at which <paramref name="expression"/> fires in
+    /// the zone <paramref name="timeZoneId"/> resolves to, or <see langword="null"/> when it never fires again.
+    /// </summary>
+    /// <remarks>
+    /// The expression and the zone's rules define one set of UTC fire instants, and this returns its next member. The
+    /// result is a pure function of the expression, the zone's rules, and the cursor, which is what lets every
+    /// scheduling path walk a schedule one result at a time and agree on the instants.
+    /// <list type="bullet">
+    /// <item>
+    /// A spring-forward gap: every occurrence whose local time does not exist fires shifted forward by the gap, and
+    /// occurrences that land on the same instant fire once.
+    /// </item>
+    /// <item>
+    /// A fall-back overlap: the first pass of a repeated local time always fires. The second pass fires only when the
+    /// expression's cadence continues across the repeated window, meaning its occurrence offsets inside that window
+    /// equal those in the window of the same length right before it or right after it. <c>0 */15 * * * *</c> fires on
+    /// both passes; <c>0 30 1 * * *</c> fires once.
+    /// </item>
+    /// </list>
+    /// The cursor stays in UTC throughout: one local time can name both passes of an overlap, so converting the cursor
+    /// to local time would lose which pass it is in.
+    /// </remarks>
     public DateTime? GetNextOccurrenceOrDefault(string expression, DateTime dateTime, string? timeZoneId)
     {
         // Get(...) already normalizes its argument, so passing the raw expression normalizes once instead of
@@ -50,30 +75,185 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
         }
 
         var timeZone = CronTimeZoneResolver.Resolve(timeZoneId, TimeZoneInfo);
-        var localTime = TimeZoneInfo.ConvertTimeFromUtc(dateTime, timeZone);
+        var cursor = DateTime.SpecifyKind(dateTime, DateTimeKind.Utc);
+        var offset = CronZoneTransition.OffsetAt(timeZone, cursor);
+        var candidate = _NextAtOffset(parsed, cursor, offset);
 
-        var nextOccurrence = parsed.GetNextOccurrence(localTime);
-        if (_HasNoFutureOccurrence(nextOccurrence))
+        // The hot path: no transition near the cursor or near the candidate, so the zone behaves like a fixed offset
+        // between them. A transition further away cannot matter, because every local time it repeats or removes lies
+        // strictly between the cursor's local time and the candidate's, where the expression has no occurrence.
+        if (
+            _OffsetUnchangedAround(timeZone, cursor, offset)
+            && (candidate is not { } fast || _OffsetUnchangedAround(timeZone, fast, offset))
+        )
+        {
+            return candidate;
+        }
+
+        return _NextAcrossTransitions(parsed, expression, timeZone, cursor);
+    }
+
+    private static bool _OffsetUnchangedAround(TimeZoneInfo timeZone, DateTime utc, TimeSpan offset)
+    {
+        var radius = CronZoneTransition.SearchRadius;
+
+        return CronZoneTransition.OffsetAt(timeZone, utc.SafeAdd(-radius)) == offset
+            && CronZoneTransition.OffsetAt(timeZone, utc.SafeAdd(radius)) == offset;
+    }
+
+    /// <summary>
+    /// Evaluates one stretch of constant offset at a time, in UTC order, starting with the one holding the cursor.
+    /// </summary>
+    /// <remarks>
+    /// Inside a stretch the members come from two ordered streams: the local enumeration mapped by the stretch's own
+    /// offset, and, right after a gap, the local times the gap removed mapped by the offset before it. Each stream is
+    /// monotone in UTC, so the earlier head is the next member even when a shifted occurrence lands after a later local
+    /// one. A head at or past the next transition belongs to the next stretch, which is evaluated with its own offset,
+    /// so a sparse schedule is mapped with the offset in effect on its own date.
+    /// </remarks>
+    private DateTime? _NextAcrossTransitions(
+        CrontabSchedule schedule,
+        string expression,
+        TimeZoneInfo timeZone,
+        DateTime cursor
+    )
+    {
+        var lower = cursor;
+        var stretch = cursor;
+        var offset = CronZoneTransition.OffsetAt(timeZone, cursor);
+        var previous = CronZoneTransition.FindPrevious(timeZone, cursor);
+
+        while (true)
+        {
+            if (_NextInStretch(schedule, expression, timeZone, lower, offset, previous) is not { } next)
+            {
+                return null;
+            }
+
+            if (CronZoneTransition.FindNext(timeZone, stretch, next) is not { } transition)
+            {
+                return next;
+            }
+
+            // The transition that ends this stretch is the one that opens the next, so it is not searched for again.
+            previous = transition;
+            offset = transition.OffsetAfter;
+            stretch = transition.InstantUtc;
+            lower = transition.InstantUtc.AddTicks(-1);
+        }
+    }
+
+    /// <summary>
+    /// The earliest member strictly after <paramref name="lower"/> in a stretch at <paramref name="offset"/> that
+    /// <paramref name="previous"/> opens, before checking whether a later transition ends the stretch first.
+    /// </summary>
+    private DateTime? _NextInStretch(
+        CrontabSchedule schedule,
+        string expression,
+        TimeZoneInfo timeZone,
+        DateTime lower,
+        TimeSpan offset,
+        CronZoneTransition? previous
+    )
+    {
+        var from = lower;
+        DateTime? shifted = null;
+
+        if (previous is { IsGap: true } gap)
+        {
+            // A local time the gap removed keeps the offset before the gap, which moves it forward by the gap.
+            if (
+                _NextAtOffset(schedule, lower, gap.OffsetBefore) is { } removed
+                && removed.SafeAdd(gap.OffsetBefore) < gap.LocalAfter
+            )
+            {
+                shifted = removed;
+            }
+        }
+        else if (previous is { } overlap && !_ContinuesCadence(schedule, expression, timeZone, overlap))
+        {
+            // The second passes are the instants [T, T + D); a schedule whose cadence breaks there skips them.
+            var secondPassEnd = overlap.InstantUtc + (overlap.OffsetBefore - overlap.OffsetAfter);
+
+            if (from < secondPassEnd)
+            {
+                from = secondPassEnd.AddTicks(-1);
+            }
+        }
+
+        var mapped = _NextAtOffset(schedule, from, offset);
+
+        return shifted is null || (mapped is { } m && m < shifted) ? mapped : shifted;
+    }
+
+    /// <summary>
+    /// The first occurrence strictly after <paramref name="lowerUtc"/> with every local time mapped by the single
+    /// <paramref name="offset"/>, or <see langword="null"/> when the expression has none.
+    /// </summary>
+    private static DateTime? _NextAtOffset(CrontabSchedule schedule, DateTime lowerUtc, TimeSpan offset)
+    {
+        var local = DateTime.SpecifyKind(lowerUtc.SafeAdd(offset), DateTimeKind.Unspecified);
+        var next = schedule.GetNextOccurrence(local);
+
+        if (_HasNoFutureOccurrence(next))
         {
             return null;
         }
 
-        var nextUtc = _ConvertScheduledLocalTimeToUtc(nextOccurrence, timeZone);
+        return DateTime.SpecifyKind(next.SafeAdd(-offset), DateTimeKind.Utc);
+    }
 
-        if (timeZone.IsAmbiguousTime(localTime))
-        {
-            var offsets = timeZone.GetAmbiguousTimeOffsets(localTime);
-            var overlap = offsets.Max() - offsets.Min();
-            var overlapOccurrence = parsed.GetNextOccurrence(localTime.Subtract(overlap));
-            var overlapUtc = _ConvertScheduledLocalTimeToUtc(overlapOccurrence, timeZone);
-
-            if (overlapUtc > dateTime && overlapUtc < nextUtc)
+    // The verdict depends only on the expression and the transition, and a seconds-field expression enumerates
+    // thousands of local occurrences to reach it, so it is computed once per transition rather than per call.
+    private bool _ContinuesCadence(
+        CrontabSchedule schedule,
+        string expression,
+        TimeZoneInfo timeZone,
+        CronZoneTransition overlap
+    )
+    {
+        return _cadenceVerdicts.GetOrAdd(
+            new CadenceKey(expression, timeZone.Id, overlap),
+            static (key, schedule) =>
             {
-                return overlapUtc;
+                // Measured on local wall-clock occurrences only: the neighbouring windows are never mapped to UTC, so
+                // one that crosses another transition needs no special case.
+                var repeatedStart = key.Transition.LocalAfter;
+                var length = key.Transition.OffsetBefore - key.Transition.OffsetAfter;
+
+                return _SameOffsets(schedule, repeatedStart, repeatedStart - length, length)
+                    || _SameOffsets(schedule, repeatedStart, repeatedStart + length, length);
+            },
+            schedule
+        );
+    }
+
+    // Whether the occurrences in [first, first + length) sit at the same offsets from their window's start as those in
+    // [second, second + length), compared at the cron expression's one-second resolution.
+    private static bool _SameOffsets(CrontabSchedule schedule, DateTime first, DateTime second, TimeSpan length)
+    {
+        using var firstOccurrences = schedule.GetNextOccurrences(first.AddTicks(-1), first + length).GetEnumerator();
+        using var secondOccurrences = schedule.GetNextOccurrences(second.AddTicks(-1), second + length).GetEnumerator();
+
+        while (true)
+        {
+            var hasFirst = firstOccurrences.MoveNext();
+
+            if (hasFirst != secondOccurrences.MoveNext())
+            {
+                return false;
+            }
+
+            if (!hasFirst)
+            {
+                return true;
+            }
+
+            if (firstOccurrences.Current - first != secondOccurrences.Current - second)
+            {
+                return false;
             }
         }
-
-        return nextUtc;
     }
 
     // NCrontab reports "no future occurrence" (e.g. `0 0 0 30 2 *`, Feb 30) by returning DateTime.MaxValue-era
@@ -84,31 +264,6 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
     private static bool _HasNoFutureOccurrence(DateTime nextOccurrence)
     {
         return nextOccurrence.Year >= 9999;
-    }
-
-    private static DateTime _ConvertScheduledLocalTimeToUtc(DateTime localTime, TimeZoneInfo timeZone)
-    {
-        localTime = DateTime.SpecifyKind(localTime, DateTimeKind.Unspecified);
-
-        if (timeZone.IsInvalidTime(localTime))
-        {
-            // Preserve the requested wall-clock minute by shifting it through the spring-forward gap. For example,
-            // 02:30 in a one-hour gap becomes 03:30 rather than collapsing every skipped occurrence to 03:00.
-            var offsetBefore = timeZone.GetUtcOffset(localTime.AddDays(-1));
-            var offsetAfter = timeZone.GetUtcOffset(localTime.AddDays(1));
-            var gap = offsetAfter - offsetBefore;
-            localTime = localTime.Add(gap > TimeSpan.Zero ? gap : TimeSpan.FromHours(1));
-        }
-
-        if (timeZone.IsAmbiguousTime(localTime))
-        {
-            // Choose the later UTC instant (normally the standard-time offset) so one wall-clock occurrence runs
-            // once, after the overlap, instead of being dispatched twice.
-            var offset = timeZone.GetAmbiguousTimeOffsets(localTime).Min();
-            return new DateTimeOffset(localTime, offset).UtcDateTime;
-        }
-
-        return TimeZoneInfo.ConvertTimeToUtc(localTime, timeZone);
     }
 
     /// <summary>
@@ -264,6 +419,8 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
         return true;
     }
 
+    internal int CadenceVerdictCount => _cadenceVerdicts.Count;
+
     public bool Invalidate(string expression)
     {
         // Remove both the raw key (post-change cache layout) and the normalized key (pre-change entries), so
@@ -271,6 +428,8 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
         var removed = _cache.TryRemove(expression, out _);
         return _cache.TryRemove(_Normalize(expression), out _) || removed;
     }
+
+    private readonly record struct CadenceKey(string Expression, string TimeZoneId, CronZoneTransition Transition);
 
     [GeneratedRegex(@"\s+", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex ReplaceRegex { get; }
