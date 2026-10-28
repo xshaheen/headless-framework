@@ -348,7 +348,8 @@ public static class SetupJobs
             _AddCoordinatedDurablePath(
                 services,
                 optionInstance.RegisterStartupInitializer,
-                optionInstance.RegisterBackgroundServices
+                optionInstance.RegisterBackgroundServices,
+                schedulerOptionsBuilder.SchedulerTimeZone
             );
         }
 
@@ -464,7 +465,8 @@ public static class SetupJobs
     private static void _AddCoordinatedDurablePath(
         IServiceCollection services,
         bool registerStartupGate,
-        bool claimsWork
+        bool claimsWork,
+        TimeZoneInfo schedulerTimeZone
     )
     {
         // Fail-fast: the durable path requires a real coordination provider. INodeMembership resolves by
@@ -504,6 +506,15 @@ public static class SetupJobs
                     + "DisableBackgroundServices() on this host."
             );
         }
+
+        // Peers decide whether the fleet runs the same cron rules from these two keys, so they must be in the metadata
+        // registration copies into the write-once descriptor. Background services own the fingerprint sweep, so they
+        // are what makes this node count toward agreement.
+        services.Configure<CoordinationOptions>(options =>
+        {
+            options.Metadata[CronRulesDigest.DigestMetadataKey] = CronRulesDigest.ForProcess(schedulerTimeZone);
+            options.Metadata[CronRulesDigest.FingerprintSweepMetadataKey] = claimsWork ? "true" : "false";
+        });
 
         // Override the default owner identity with the node@incarnation adapter over INodeMembership.
         services.AddSingleton<IJobsOwnerIdentity, JobsOwnerIdentityAdapter>();
