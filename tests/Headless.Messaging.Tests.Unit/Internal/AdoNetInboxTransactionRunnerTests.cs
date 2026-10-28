@@ -20,6 +20,7 @@ public sealed class AdoNetInboxTransactionRunnerTests : TestBase
     private readonly ITransactionalInboxStorage _storage = Substitute.For<ITransactionalInboxStorage>();
     private readonly IDeliveryCoordinationResolver _resolver = Substitute.For<IDeliveryCoordinationResolver>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
+
     private readonly MediumMessage _message = new()
     {
         StorageId = Guid.NewGuid(),
