@@ -134,13 +134,6 @@ public sealed partial class TusS3Store
     public Task<int> RemoveExpiredFilesAsync(CancellationToken cancellationToken) =>
         throw new NotSupportedException(_NotBuiltMessage);
 
-    /// <inheritdoc />
-    public Task<string> CreateFinalFileAsync(
-        string[] partialFiles,
-        string? metadata,
-        CancellationToken cancellationToken
-    ) => throw new NotSupportedException(_NotBuiltMessage);
-
     /// <summary>
     /// Validates an externally supplied file id against the configured <c>ITusFileIdProvider</c>, then against the
     /// key rules, so an id the provider would never issue is refused before it reaches storage.
