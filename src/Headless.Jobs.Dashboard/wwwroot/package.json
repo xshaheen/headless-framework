@@ -18,16 +18,16 @@
   "dependencies": {
     "@microsoft/signalr": "^10.0.11",
     "axios": "^1.20.0",
-    "cronstrue": "^3.32.0",
+    "cronstrue": "^3.36.0",
     "echarts": "^6.1.0",
     "maska": "^3.2.2",
-    "pinia": "^4.0.3",
+    "pinia": "^4.1.0",
     "timeago.js": "^4.0.2",
     "vite-plugin-dynamic-base": "^1.4.1",
-    "vue": "^3.5.43",
+    "vue": "^3.5.44",
     "vue-echarts": "^8.3.2",
     "vue-router": "^5.4.0",
-    "vuetify": "^4.2.4",
+    "vuetify": "^4.3.0",
     "yup": "^1.6.1"
   },
   "devDependencies": {
@@ -39,7 +39,7 @@
     "@vue/eslint-config-prettier": "^10.1.0",
     "@vue/eslint-config-typescript": "^14.9.0",
     "@vue/tsconfig": "^0.9.1",
-    "eslint": "^10.12.0",
+    "eslint": "^10.13.0",
     "eslint-plugin-vue": "^10.11.1",
     "happy-dom": "^21.0.4",
     "npm-run-all2": "^9.0.3",
@@ -48,7 +48,7 @@
     "vite": "^8.3.4",
     "vite-plugin-dts": "^5.1.2",
     "vite-plugin-vue-devtools": "^8.2.1",
-    "vitest": "^5.0.4",
+    "vitest": "^5.0.5",
     "vue-tsc": "^3.3.13"
   },
   "overrides": {
