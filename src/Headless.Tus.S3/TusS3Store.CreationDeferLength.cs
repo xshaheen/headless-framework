@@ -17,12 +17,14 @@ public sealed partial class TusS3Store
     /// <param name="cancellationToken">token to cancel the operation</param>
     /// <remarks>
     /// A length equal to the bytes already stored completes the upload: the same conditional write that records the
-    /// length marks it as completing, and the request's append finishes it.
+    /// length marks it as completing, and this call then assembles the finished object. When that fails, the upload
+    /// keeps reporting a deferred length, so the client declares the same length again and that call finishes it.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="uploadLength"/> is negative.</exception>
     /// <exception cref="TusStoreException">
     /// The upload does not exist, is gone or finished, already has a different length, or the length is below the
-    /// stored offset or above the largest length its part size allows.
+    /// stored offset or above the largest length its part size allows; or the length completed the upload and the
+    /// provider no longer holds its parts.
     /// </exception>
     /// <exception cref="AmazonS3Exception">
     /// Another request wrote the upload's state after this one read it; the write is rejected rather than overwriting
@@ -50,6 +52,8 @@ public sealed partial class TusS3Store
                 // completing state already holds that length, so the request goes on to finish the completion.
                 if (state.CompletingFromDeclaredLength && state.UploadLength == uploadLength)
                 {
+                    await _FinishCompletionAsync(fileId, upload).ConfigureAwait(false);
+
                     return;
                 }
 
@@ -100,9 +104,14 @@ public sealed partial class TusS3Store
                 state.ExpiresAtBeforeCompleting = state.ExpiresAt;
             }
 
-            await _stateStore.UpdateAsync(fileId, upload, cancellationToken).ConfigureAwait(false);
+            var written = await _stateStore.UpdateAsync(fileId, upload, cancellationToken).ConfigureAwait(false);
 
             _logger.LogS3UploadLengthSet(fileId, uploadLength);
+
+            if (state.Status == TusS3UploadStatus.Completing)
+            {
+                await _FinishCompletionAsync(fileId, written).ConfigureAwait(false);
+            }
         }
         catch (Exception e)
         {

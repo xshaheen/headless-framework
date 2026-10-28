@@ -60,7 +60,7 @@ internal sealed class TusS3StateStore(
     /// <exception cref="AmazonS3Exception">An upload with the same id already exists (412).</exception>
     public async Task CreateAsync(string fileId, TusS3UploadState state, CancellationToken cancellationToken)
     {
-        var etag = await _PutAsync(keys.Info(fileId), state.ToJson(), ifMatch: null, cancellationToken)
+        var etag = await _PutAsync(keys.Info(fileId), state.ToJson(), PutCondition.Create, cancellationToken)
             .ConfigureAwait(false);
 
         // Creation-with-upload runs its append in the same request, which then needs no read.
@@ -87,7 +87,12 @@ internal sealed class TusS3StateStore(
 
         try
         {
-            var etag = await _PutAsync(keys.Info(fileId), state.ToJson(), upload.ETag, cancellationToken)
+            var etag = await _PutAsync(
+                    keys.Info(fileId),
+                    state.ToJson(),
+                    PutCondition.Match(upload.ETag!),
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             var written = TusS3LoadedUpload.Incomplete(state, etag);
@@ -116,7 +121,34 @@ internal sealed class TusS3StateStore(
         CancellationToken cancellationToken
     )
     {
-        await _PutAsync(keys.CompletedRecord(fileId), record.ToJson(), ifMatch: null, cancellationToken)
+        await _PutAsync(keys.CompletedRecord(fileId), record.ToJson(), PutCondition.Create, cancellationToken)
+            .ConfigureAwait(false);
+
+        memo.Set(fileId, TusS3LoadedUpload.Finished(record));
+    }
+
+    /// <summary>
+    /// Records a finished upload: writes its completed record, then deletes its state object. Deleting the state is the
+    /// commit point, because readers fall back to the record only once the state is gone.
+    /// </summary>
+    /// <remarks>
+    /// The record is written unconditionally. Every request that finishes the same upload derives it from the same
+    /// completing state, so a second writer stores identical content, and a crash between the two writes is repaired
+    /// by the next attempt simply writing the record again.
+    /// </remarks>
+    public async Task CommitCompletionAsync(
+        string fileId,
+        TusS3CompletedRecord record,
+        CancellationToken cancellationToken
+    )
+    {
+        await _PutAsync(keys.CompletedRecord(fileId), record.ToJson(), PutCondition.None, cancellationToken)
+            .ConfigureAwait(false);
+
+        await s3.DeleteObjectAsync(
+                new DeleteObjectRequest { BucketName = options.Bucket, Key = keys.Info(fileId) },
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         memo.Set(fileId, TusS3LoadedUpload.Finished(record));
@@ -143,11 +175,10 @@ internal sealed class TusS3StateStore(
         };
     }
 
-    // A null ifMatch makes the write a create (If-None-Match: *); otherwise it replaces only that ETag.
     private async Task<string> _PutAsync(
         string key,
         byte[] content,
-        string? ifMatch,
+        PutCondition condition,
         CancellationToken cancellationToken
     )
     {
@@ -162,13 +193,13 @@ internal sealed class TusS3StateStore(
             ContentType = _JsonContentType,
         };
 
-        if (ifMatch is null)
+        if (condition.IsCreate)
         {
             request.IfNoneMatch = "*";
         }
-        else
+        else if (condition.ETag is not null)
         {
-            request.IfMatch = ifMatch;
+            request.IfMatch = condition.ETag;
         }
 
         TusS3RequestPresets.Apply(request, options.Provider);
@@ -176,6 +207,16 @@ internal sealed class TusS3StateStore(
         var response = await s3.PutObjectAsync(request, cancellationToken).ConfigureAwait(false);
 
         return response.ETag;
+    }
+
+    // A create (If-None-Match: *), a replace of one ETag (If-Match), or an unconditional write.
+    private readonly record struct PutCondition(bool IsCreate, string? ETag)
+    {
+        public static PutCondition None => default;
+
+        public static PutCondition Create => new(IsCreate: true, ETag: null);
+
+        public static PutCondition Match(string etag) => new(IsCreate: false, etag);
     }
 
     private async Task<(byte[] Content, string ETag)?> _TryGetAsync(string key, CancellationToken cancellationToken)

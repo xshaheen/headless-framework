@@ -43,7 +43,16 @@ public sealed partial class TusS3Store
 
         try
         {
-            await using var writer = await _BeginAppendAsync(fileId, cancellationToken).ConfigureAwait(false);
+            var upload = await _LoadForAppendAsync(fileId, cancellationToken).ConfigureAwait(false);
+
+            if (!_AcceptsBytes(upload))
+            {
+                var bodyBytes = await _DrainAsync(pipeReader, cancellationToken).ConfigureAwait(false);
+
+                return await _AppendToFullUploadAsync(fileId, upload, bodyBytes).ConfigureAwait(false);
+            }
+
+            await using var writer = await _BeginAppendAsync(fileId, upload).ConfigureAwait(false);
 
             do
             {
@@ -100,6 +109,36 @@ public sealed partial class TusS3Store
 
             throw;
         }
+    }
+
+    // Reads the rest of a body whose bytes are not stored, so the client's request completes normally. A disconnect or
+    // cancelled read ends the body early; the bytes are discarded either way.
+    private static async Task<long> _DrainAsync(PipeReader pipeReader, CancellationToken cancellationToken)
+    {
+        var total = 0L;
+
+        try
+        {
+            while (true)
+            {
+                var result = await pipeReader.ReadAsync(cancellationToken).ConfigureAwait(false);
+                total += result.Buffer.Length;
+                pipeReader.AdvanceTo(result.Buffer.End);
+
+                if (result.IsCompleted || result.IsCanceled)
+                {
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The client went away; nothing it sent is kept, so there is nothing more to read.
+        }
+
+        await pipeReader.CompleteAsync().ConfigureAwait(false);
+
+        return total;
     }
 
     // Copies one read into the writer's part buffers.

@@ -205,6 +205,16 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
         _state.Segments = keepOld ? [.. _oldSegments, .. _newSegments] : [.. _newSegments];
         _state.Offset = durableEnd;
 
+        if (durableEnd == _state.UploadLength)
+        {
+            // The commit that stores the last byte is also the completion fence: only the request whose write lands
+            // assembles the finished object, and HEAD keeps reporting this PATCH's start offset until that is done, so
+            // a client whose final PATCH fails re-sends it.
+            _state.Status = TusS3UploadStatus.Completing;
+            _state.PreFinalOffset = _startOffset;
+            _state.ExpiresAtBeforeCompleting = _state.ExpiresAt;
+        }
+
         if (_window is not null)
         {
             // The commit's If-Match proves no other writer reserved numbers since this request did, so the unused
@@ -288,12 +298,12 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
             return;
         }
 
-        await _DispatchPartAsync().ConfigureAwait(false);
+        await _DispatchPartAsync(_partSize).ConfigureAwait(false);
     }
 
     // The full buffer stays the writer's filling buffer until it is handed to an upload, so a failure before then still
     // returns it to the pool on dispose.
-    private async Task _DispatchPartAsync()
+    private async Task _DispatchPartAsync(int length)
     {
         int partNumber;
 
@@ -308,10 +318,16 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
             await _LoadPrefixAsync(_filling!).ConfigureAwait(false);
         }
 
-        var held = _TakeFilling(_partSize);
+        var held = _TakeFilling(length);
         _highestAttemptedPart = partNumber;
         _uploading.Enqueue(
-            new PendingPart(partNumber, held.Buffer, held.Offset, _UploadPartAsync(partNumber, held.Buffer))
+            new PendingPart(
+                partNumber,
+                held.Buffer,
+                held.Offset,
+                length,
+                _UploadPartAsync(partNumber, held.Buffer, length)
+            )
         );
     }
 
@@ -330,7 +346,9 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
 
         if (_state.MultipartUploadId is null)
         {
-            createdUploadId = await _services.CreateMultipartUploadAsync(_fileId, StorageToken).ConfigureAwait(false);
+            createdUploadId = await _services
+                .CreateMultipartUploadAsync(_fileId, _state.Metadata, StorageToken)
+                .ConfigureAwait(false);
             _state.MultipartUploadId = createdUploadId;
             _state.MultipartUploadCreatedAt = _services.TimeProvider.GetUtcNow();
         }
@@ -364,9 +382,9 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
         _window = window;
     }
 
-    private async Task<string> _UploadPartAsync(int partNumber, byte[] buffer)
+    private async Task<string> _UploadPartAsync(int partNumber, byte[] buffer, int length)
     {
-        await using var body = new MemoryStream(buffer, 0, _partSize, writable: false);
+        await using var body = new MemoryStream(buffer, 0, length, writable: false);
 
         var request = new UploadPartRequest
         {
@@ -393,7 +411,7 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
         try
         {
             var etag = await oldest.Upload.ConfigureAwait(false);
-            _committedParts.Add(new TusS3CommittedPart(oldest.Number, etag, _partSize));
+            _committedParts.Add(new TusS3CommittedPart(oldest.Number, etag, oldest.Length));
             _Return(oldest.Buffer);
 
             return;
@@ -410,7 +428,7 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
         {
             _services.Logger.LogS3PartUploadFailed(e, _fileId, oldest.Number);
             _partFailed = true;
-            _fallback.Add(new HeldBuffer(oldest.Buffer, oldest.Start, _partSize));
+            _fallback.Add(new HeldBuffer(oldest.Buffer, oldest.Start, oldest.Length));
         }
 
         while (_uploading.TryDequeue(out var later))
@@ -426,7 +444,7 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
             }
 #pragma warning restore ERP022
 
-            _fallback.Add(new HeldBuffer(later.Buffer, later.Start, _partSize));
+            _fallback.Add(new HeldBuffer(later.Buffer, later.Start, later.Length));
         }
     }
 
@@ -449,6 +467,21 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
 
         var count = _fillCount;
 
+        if (_IsFinalShortPart(count))
+        {
+            // The upload's last bytes go straight into its last part, which may be shorter than the others, so the
+            // completion that follows only has to complete the multipart upload instead of reading a tail back first.
+            if (_prefixPending)
+            {
+                await _LoadPrefixAsync(_filling).ConfigureAwait(false);
+            }
+
+            await _DispatchPartAsync(count).ConfigureAwait(false);
+            await _DrainUploadsAsync().ConfigureAwait(false);
+
+            return;
+        }
+
         if (_prefixPending)
         {
             if (count == _tailLength)
@@ -470,6 +503,19 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
         {
             _fallback.Add(_TakeFilling(count));
         }
+    }
+
+    // The bytes in hand end the upload and its parts already go to a multipart upload, so they can be its last part.
+    // After a part failed, the bytes go to segments instead, because only a contiguous run of parts can be committed.
+    private bool _IsFinalShortPart(int count)
+    {
+        var newBytes = _prefixPending ? count - _tailLength : count;
+
+        return newBytes > 0
+            && !_partFailed
+            && _halt is null
+            && _state.MultipartUploadId is not null
+            && _state.UploadLength == _fillingStart + count;
     }
 
     // Writes the held buffers as tail segments, in order, stopping at the first one storage refuses so the committed
@@ -539,22 +585,43 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
 
     // Reads part of a committed segment by the range its recorded length allows, so a segment object that somehow
     // holds more bytes cannot shift the upload's content.
-    private async Task _ReadSegmentAsync(TusS3CommittedSegment segment, long from, Memory<byte> destination)
+    private Task _ReadSegmentAsync(TusS3CommittedSegment segment, long from, Memory<byte> destination)
     {
+        return ReadSegmentAsync(_services, segment, from, destination, StorageToken);
+    }
+
+    /// <summary>
+    /// Reads <paramref name="destination"/>'s length of a committed segment, starting <paramref name="from"/> bytes
+    /// into it.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The segment object holds fewer bytes than its upload recorded.</exception>
+    public static async Task ReadSegmentAsync(
+        TusS3AppendServices services,
+        TusS3CommittedSegment segment,
+        long from,
+        Memory<byte> destination,
+        CancellationToken cancellationToken
+    )
+    {
+        if (destination.IsEmpty)
+        {
+            return;
+        }
+
         var request = new GetObjectRequest
         {
-            BucketName = _services.Options.Bucket,
+            BucketName = services.Options.Bucket,
             Key = segment.Key,
             ByteRange = new ByteRange(from, from + destination.Length - 1),
         };
 
-        using var response = await _services.S3.GetObjectAsync(request, StorageToken).ConfigureAwait(false);
+        using var response = await services.S3.GetObjectAsync(request, cancellationToken).ConfigureAwait(false);
         await using var content = response.ResponseStream;
         var read = 0;
 
         while (read < destination.Length)
         {
-            var n = await content.ReadAsync(destination[read..], StorageToken).ConfigureAwait(false);
+            var n = await content.ReadAsync(destination[read..], cancellationToken).ConfigureAwait(false);
 
             if (n == 0)
             {
@@ -638,7 +705,7 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
         _services.PartPool.Return(buffer, clearArray: true);
     }
 
-    private sealed record PendingPart(int Number, byte[] Buffer, long Start, Task<string> Upload);
+    private sealed record PendingPart(int Number, byte[] Buffer, long Start, int Length, Task<string> Upload);
 
     private sealed record HeldBuffer(byte[] Buffer, long Offset, int Length, int BufferOffset = 0);
 }

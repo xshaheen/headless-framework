@@ -10,6 +10,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using tusdotnet;
 using tusdotnet.Models;
+using tusdotnet.Models.Configuration;
 using tusdotnet.Models.Expiration;
 
 namespace Tests.TestSetup;
@@ -40,13 +41,15 @@ internal sealed class TusS3TestHost : IDisposable
     /// Whether tusdotnet refreshes a sliding expiration after each request, which costs a state write of its own until
     /// the store folds it into the append's commit.
     /// </param>
+    /// <param name="onFileComplete">Runs as tusdotnet's completion event, after the store finished the upload.</param>
     public static async Task<TusS3TestHost> StartAsync(
         S3TestClient s3,
         TusS3StoreOptions options,
         ILoggerFactory loggerFactory,
         TimeProvider? timeProvider,
         CancellationToken cancellationToken,
-        bool slidingExpiration = true
+        bool slidingExpiration = true,
+        Func<FileCompleteContext, Task>? onFileComplete = null
     )
     {
         // The configuration factory runs per request, after the host has started and the store exists.
@@ -70,6 +73,11 @@ internal sealed class TusS3TestHost : IDisposable
                                         Expiration = slidingExpiration
                                             ? new SlidingExpiration(TimeSpan.FromMinutes(30))
                                             : null,
+                                        Events = new Events
+                                        {
+                                            OnFileCompleteAsync = context =>
+                                                onFileComplete?.Invoke(context) ?? Task.CompletedTask,
+                                        },
                                     }
                                 )
                         )
@@ -88,6 +96,19 @@ internal sealed class TusS3TestHost : IDisposable
         );
 
         return new TusS3TestHost(host, store);
+    }
+
+    /// <summary>Creates an upload whose length the client declares later.</summary>
+    public async Task<string> CreateDeferredUploadAsync(CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, Endpoint);
+        request.Headers.Add("Tus-Resumable", "1.0.0");
+        request.Headers.Add("Upload-Defer-Length", "1");
+
+        using var response = await Client.SendAsync(request, cancellationToken);
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.Created);
+
+        return response.Headers.Location!.ToString();
     }
 
     public async Task<string> CreateUploadAsync(
@@ -123,12 +144,19 @@ internal sealed class TusS3TestHost : IDisposable
         string location,
         byte[] body,
         long offset,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        long? uploadLength = null
     )
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, location);
         request.Headers.Add("Tus-Resumable", "1.0.0");
         request.Headers.Add("Upload-Offset", offset.ToString(CultureInfo.InvariantCulture));
+
+        if (uploadLength is not null)
+        {
+            request.Headers.Add("Upload-Length", uploadLength.Value.ToString(CultureInfo.InvariantCulture));
+        }
+
         request.Content = new ByteArrayContent(body);
         request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
             "application/offset+octet-stream"

@@ -36,7 +36,9 @@ public static class SetupTusS3Store
         /// <returns>the same service collection for chaining</returns>
         /// <remarks>
         /// Requires an <see cref="IAmazonS3"/> registration configured for the provider (for R2: path style,
-        /// authentication region <c>auto</c>, and <c>WHEN_REQUIRED</c> checksums). The bucket is registered as a
+        /// authentication region <c>auto</c>, and <c>WHEN_REQUIRED</c> checksums). An
+        /// <c>ITusS3ObjectHeadersProvider</c> or <c>ITusFileIdProvider</c> registered before this call is honored;
+        /// otherwise the defaults apply. The bucket is registered as a
         /// provisioned resource of kind <c>S3Bucket</c>: a deploy step creates it with <c>resources provision</c>,
         /// and a starting host holds readiness until it exists.
         /// </remarks>
@@ -75,12 +77,14 @@ public static class SetupTusS3Store
         var storeAlreadyRegistered = services.Any(static d => d.ServiceType == typeof(TusS3Store));
 
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<ITusS3ObjectHeadersProvider, DefaultTusS3ObjectHeadersProvider>();
         // Lets the store read an upload's state once per tus request instead of once per store call.
         services.AddHttpContextAccessor();
 
         services.TryAddSingleton(provider => new TusS3Store(
             provider.GetRequiredService<IAmazonS3>(),
             provider.GetRequiredService<IOptions<TusS3StoreOptions>>().Value,
+            provider.GetRequiredService<ITusS3ObjectHeadersProvider>(),
             provider.GetService<ITusFileIdProvider>(),
             provider.GetService<ILoggerFactory>(),
             provider.GetService<TimeProvider>(),

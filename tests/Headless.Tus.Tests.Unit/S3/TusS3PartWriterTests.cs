@@ -256,6 +256,61 @@ public sealed class TusS3PartWriterTests : TestBase
     }
 
     [Fact]
+    public async Task should_upload_the_last_bytes_as_a_shorter_last_part_and_commit_the_upload_as_completing()
+    {
+        // given - 6 bytes stored, 14 to go
+        await _SeedAsync(new TusS3UploadState { PartSize = _PartSize, UploadLength = 20 });
+        var first = Faker.Random.Bytes(6);
+        await _AppendAsync(first);
+        var last = Faker.Random.Bytes(14);
+
+        // when
+        var appended = await _AppendAsync(last);
+
+        // then - a full part and a 4-byte last part, with no tail left for completion to read back
+        appended.Should().Be(14);
+        var state = _ReadState();
+        state.Parts.Select(p => (p.Number, p.Size)).Should().Equal((1, _PartSize), (2, 4));
+        state.Segments.Should().BeEmpty();
+        state.Offset.Should().Be(20);
+        _s3.Requests.Should()
+            .Equal(
+                "CreateMultipartUpload",
+                "PutObject",
+                "GetObject",
+                "UploadPart",
+                "UploadPart",
+                "PutObject",
+                "DeleteObjects"
+            );
+
+        // and the commit is the completion fence, reporting the offset this request started from
+        state.Status.Should().Be(TusS3UploadStatus.Completing);
+        state.PreFinalOffset.Should().Be(6);
+        _DurableBytes(state).Should().Equal([.. first, .. last]);
+        _pool.Outstanding.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_keep_the_last_bytes_of_an_upload_below_one_part_as_a_segment()
+    {
+        // given
+        await _SeedAsync(new TusS3UploadState { PartSize = _PartSize, UploadLength = 10 });
+        var body = Faker.Random.Bytes(10);
+
+        // when
+        await _AppendAsync(body);
+
+        // then - no multipart upload exists, so completion writes the object from the segment
+        var state = _ReadState();
+        state.MultipartUploadId.Should().BeNull();
+        state.Segments.Should().ContainSingle().Which.Length.Should().Be(10);
+        state.Status.Should().Be(TusS3UploadStatus.Completing);
+        state.PreFinalOffset.Should().Be(0);
+        _DurableBytes(state).Should().Equal(body);
+    }
+
+    [Fact]
     public async Task should_reject_a_body_past_the_upload_length_without_committing()
     {
         // given
@@ -374,7 +429,7 @@ public sealed class TusS3PartWriterTests : TestBase
             _pool,
             Logger,
             TimeProvider.System,
-            async (fileId, cancellationToken) =>
+            async (fileId, _, cancellationToken) =>
                 (
                     await _s3.Client.InitiateMultipartUploadAsync(
                         new InitiateMultipartUploadRequest

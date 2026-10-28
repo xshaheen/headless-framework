@@ -76,13 +76,11 @@ public abstract class TusS3AppendTestsBase(IS3TestBackend backend) : TestBase
             .Should()
             .Be(content.Length - secondStop);
 
-        // then
-        state = await raw.ReadStateAsync(fileId, AbortToken);
-        state!.Parts.Select(p => p.Number).Should().Equal(1, 2, 3, 4, 5, 6);
-        state.Parts.Should().AllSatisfy(p => p.Size.Should().Be(options.PartSize));
-        state.NextPartNumber.Should().Be(7);
-        state.Offset.Should().Be(content.Length);
-        (await raw.ReadDurableBytesAsync(fileId, AbortToken)).Should().Equal(content);
+        // then - six whole parts and the 2 MiB rest as the seventh, assembled into the original bytes
+        (await raw.GetFinishedObjectPartSizesAsync(fileId, AbortToken))
+            .Should()
+            .Equal(Enumerable.Repeat((long)options.PartSize, 6).Append(2 * _MiB));
+        (await raw.ReadFinishedObjectAsync(fileId, AbortToken)).Should().Equal(content);
     }
 
     public virtual async Task should_upload_one_part_and_write_no_segment_for_a_chunk_of_exactly_one_part()
@@ -109,7 +107,8 @@ public abstract class TusS3AppendTestsBase(IS3TestBackend backend) : TestBase
         // given - at most four tail segments
         var (store, _, raw) = await _CreateStoreAsync(options => options.MaxTailSegments = 4);
         var chunks = Enumerable.Range(0, 6).Select(_ => Faker.Random.Bytes(64 * 1024)).ToList();
-        var fileId = await store.CreateFileAsync(chunks.Sum(c => c.Length), metadata: null, AbortToken);
+        // One byte more than the chunks, so the last chunk does not complete the upload and its tail stays readable.
+        var fileId = await store.CreateFileAsync(chunks.Sum(c => c.Length) + 1, metadata: null, AbortToken);
 
         for (var i = 0; i < 4; i++)
         {
@@ -211,7 +210,7 @@ public abstract class TusS3AppendTestsBase(IS3TestBackend backend) : TestBase
         // and the client resumes from there to a byte-identical upload
         await _AppendAsync(store, fileId, content[_MiB..], pipe: false);
         (await store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(content.Length);
-        (await raw.ReadDurableBytesAsync(fileId, AbortToken)).Should().Equal(content);
+        (await raw.ReadFinishedObjectAsync(fileId, AbortToken)).Should().Equal(content);
     }
 
     // The client sends 1 MiB chunks into 8 MiB parts and disconnects 0.5 MiB into its seventh chunk.
@@ -247,10 +246,10 @@ public abstract class TusS3AppendTestsBase(IS3TestBackend backend) : TestBase
             (await _AppendAsync(store, fileId, content[offset..end], pipe)).Should().Be(end - offset);
         }
 
-        var state = await raw.ReadStateAsync(fileId, AbortToken);
-        state!.Offset.Should().Be(content.Length);
-        state.Parts.Should().HaveCount(2).And.AllSatisfy(p => p.Size.Should().Be(options.PartSize));
-        (await raw.ReadDurableBytesAsync(fileId, AbortToken)).Should().Equal(content);
+        (await raw.GetFinishedObjectPartSizesAsync(fileId, AbortToken))
+            .Should()
+            .Equal(options.PartSize, options.PartSize, 4 * _MiB);
+        (await raw.ReadFinishedObjectAsync(fileId, AbortToken)).Should().Equal(content);
     }
 
     private TusS3StoreOptions _Options(Action<TusS3StoreOptions>? configure = null)

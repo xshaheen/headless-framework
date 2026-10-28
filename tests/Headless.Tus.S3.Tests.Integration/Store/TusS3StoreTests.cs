@@ -203,38 +203,58 @@ public abstract class TusS3StoreTestsBase(IS3TestBackend backend) : TestBase
         (await _store.GetUploadLengthAsync(fileId, AbortToken)).Should().Be(cap);
     }
 
-    public virtual async Task should_mark_the_upload_completing_when_the_declared_length_equals_the_offset()
+    public virtual async Task should_finish_on_a_redeclared_length_when_completing_from_a_declared_length_failed()
     {
-        // given
+        // given - a deferred upload holding 1,000 bytes, whose finished object cannot be written yet
+        var content = Faker.Random.Bytes(1_000);
         var fileId = await _store.CreateFileAsync(-1, metadata: null, AbortToken);
+        await using (var body = new MemoryStream(content))
+        {
+            await _store.AppendDataAsync(fileId, body, AbortToken);
+        }
+
         var expires = DateTimeOffset.UtcNow.AddMinutes(30);
         await _store.SetExpirationAsync(fileId, expires, AbortToken);
-        await _raw.RewriteStateAsync(fileId, state => state.Offset = 1_000, AbortToken);
-        _client.Gate.Reset();
+        var finishedObjectPath = "/" + _raw.Keys.FinishedObject(fileId);
+        _client.Gate.FailWhen(request =>
+            string.Equals(S3Operation.Of(request), S3Operation.PutObject, StringComparison.Ordinal)
+            && request.RequestUri!.AbsolutePath.EndsWith(finishedObjectPath, StringComparison.Ordinal)
+        );
 
-        // when
-        await _store.SetUploadLengthAsync(fileId, 1_000, AbortToken);
+        // when - the client declares a length equal to the offset
+        var declare = () => _store.SetUploadLengthAsync(fileId, content.Length, AbortToken);
 
-        // then - one read and one conditional write record both the length and the Completing status
-        _client.Gate.Count(S3Operation.PutObject).Should().Be(1);
+        // then - the declaration fails with a retryable error after one write recorded the length and the Completing
+        // status together
+        await declare.Should().ThrowAsync<AmazonS3Exception>();
         var state = await _raw.ReadStateAsync(fileId, AbortToken);
         state!.Status.Should().Be(TusS3UploadStatus.Completing);
-        state.UploadLength.Should().Be(1_000);
-        state.PreFinalOffset.Should().Be(1_000);
+        state.UploadLength.Should().Be(content.Length);
+        state.PreFinalOffset.Should().Be(content.Length);
         state.CompletingFromDeclaredLength.Should().BeTrue();
         state.ExpiresAtBeforeCompleting.Should().BeCloseTo(expires, TimeSpan.FromMilliseconds(1));
 
-        // and the client still sees a deferred length at the same offset, with no expiry, until completion finishes
+        // and the client still sees a deferred length at the same offset, with no expiry, so it declares again
         (await _store.GetUploadLengthAsync(fileId, AbortToken))
             .Should()
             .BeNull();
-        (await _store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(1_000);
+        (await _store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(content.Length);
         (await _store.GetExpirationAsync(fileId, AbortToken)).Should().BeNull();
+        var different = () => _store.SetUploadLengthAsync(fileId, 2_000, AbortToken);
+        await different.Should().ThrowAsync<TusStoreException>();
 
-        // and a re-sent declaration of the same length is accepted, a different one is not
-        await _store.SetUploadLengthAsync(fileId, 1_000, AbortToken);
-        var act = () => _store.SetUploadLengthAsync(fileId, 2_000, AbortToken);
-        await act.Should().ThrowAsync<TusStoreException>();
+        // when - it declares the same length again once storage accepts the write
+        _client.Gate.FailWhen(null);
+        await _store.SetUploadLengthAsync(fileId, content.Length, AbortToken);
+
+        // then - the upload is complete, with its bytes as one object and no working set left
+        (await _store.GetUploadLengthAsync(fileId, AbortToken))
+            .Should()
+            .Be(content.Length);
+        (await _store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(content.Length);
+        (await _raw.ReadFinishedObjectAsync(fileId, AbortToken)).Should().Equal(content);
+        (await _raw.ReadStateAsync(fileId, AbortToken)).Should().BeNull();
+        (await _raw.ListSegmentKeysAsync(fileId, AbortToken)).Should().BeEmpty();
     }
 
     public virtual async Task should_report_an_upload_gone_once_its_multipart_upload_outlives_the_abort_window()
@@ -333,7 +353,12 @@ public abstract class TusS3StoreTestsBase(IS3TestBackend backend) : TestBase
         S3TestClient? client = null
     )
     {
-        return new TusS3Store((client ?? _client).S3, options, fileIdProvider, LoggerFactory);
+        return new TusS3Store(
+            (client ?? _client).S3,
+            options,
+            fileIdProvider: fileIdProvider,
+            loggerFactory: LoggerFactory
+        );
     }
 
     private sealed class FixedFileIdProvider(string fileId) : ITusFileIdProvider
@@ -388,8 +413,8 @@ public sealed class MinioTusS3StoreTests(TusS3MinioFixture fixture) : TusS3Store
         base.should_reject_a_declared_length_above_the_deferred_cap();
 
     [Fact]
-    public override Task should_mark_the_upload_completing_when_the_declared_length_equals_the_offset() =>
-        base.should_mark_the_upload_completing_when_the_declared_length_equals_the_offset();
+    public override Task should_finish_on_a_redeclared_length_when_completing_from_a_declared_length_failed() =>
+        base.should_finish_on_a_redeclared_length_when_completing_from_a_declared_length_failed();
 
     [Fact]
     public override Task should_report_an_upload_gone_once_its_multipart_upload_outlives_the_abort_window() =>
@@ -452,8 +477,8 @@ public sealed class LocalStackTusS3StoreTests(TusS3LocalStackFixture fixture) : 
         base.should_reject_a_declared_length_above_the_deferred_cap();
 
     [Fact]
-    public override Task should_mark_the_upload_completing_when_the_declared_length_equals_the_offset() =>
-        base.should_mark_the_upload_completing_when_the_declared_length_equals_the_offset();
+    public override Task should_finish_on_a_redeclared_length_when_completing_from_a_declared_length_failed() =>
+        base.should_finish_on_a_redeclared_length_when_completing_from_a_declared_length_failed();
 
     [Fact]
     public override Task should_report_an_upload_gone_once_its_multipart_upload_outlives_the_abort_window() =>

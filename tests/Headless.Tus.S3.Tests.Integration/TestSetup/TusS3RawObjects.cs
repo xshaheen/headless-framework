@@ -113,6 +113,59 @@ internal sealed class TusS3RawObjects(S3TestClient client, TusS3StoreOptions opt
         return bytes![..(int)segment.Length];
     }
 
+    /// <summary>The finished object's bytes, or <see langword="null" /> when it does not exist.</summary>
+    public Task<byte[]?> ReadFinishedObjectAsync(string fileId, CancellationToken cancellationToken)
+    {
+        return _TryGetAsync(Keys.FinishedObject(fileId), cancellationToken);
+    }
+
+    /// <summary>The headers S3 stored with the finished object.</summary>
+    public async Task<HeadersCollection> GetFinishedObjectHeadersAsync(
+        string fileId,
+        CancellationToken cancellationToken
+    )
+    {
+        var metadata = await client.S3.GetObjectMetadataAsync(
+            options.Bucket,
+            Keys.FinishedObject(fileId),
+            cancellationToken
+        );
+
+        return metadata.Headers;
+    }
+
+    /// <summary>
+    /// The size of each part the finished object was assembled from, in part order; one entry when it was written in
+    /// one request.
+    /// </summary>
+    public async Task<IReadOnlyList<long>> GetFinishedObjectPartSizesAsync(
+        string fileId,
+        CancellationToken cancellationToken
+    )
+    {
+        var sizes = new List<long>();
+        int? partsCount = null;
+
+        for (var partNumber = 1; partsCount is null || partNumber <= partsCount; partNumber++)
+        {
+            var metadata = await client.S3.GetObjectMetadataAsync(
+                new GetObjectMetadataRequest
+                {
+                    BucketName = options.Bucket,
+                    Key = Keys.FinishedObject(fileId),
+                    PartNumber = partNumber,
+                },
+                cancellationToken
+            );
+
+            // A single-request object reports no part count; its "part 1" is the whole object.
+            partsCount ??= metadata.PartsCount ?? 1;
+            sizes.Add(metadata.ContentLength);
+        }
+
+        return sizes;
+    }
+
     /// <summary>The object's size, or <see langword="null" /> when it does not exist.</summary>
     public async Task<long?> GetSizeAsync(string key, CancellationToken cancellationToken)
     {

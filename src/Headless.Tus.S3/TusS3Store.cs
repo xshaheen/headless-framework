@@ -58,6 +58,7 @@ public sealed partial class TusS3Store
     private readonly IAmazonS3 _s3;
     private readonly TusS3StoreOptions _options;
     private readonly ITusFileIdProvider _fileIdProvider;
+    private readonly ITusS3ObjectHeadersProvider _objectHeadersProvider;
     private readonly ILogger<TusS3Store> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly TusS3Keys _keys;
@@ -69,6 +70,10 @@ public sealed partial class TusS3Store
     /// </summary>
     /// <param name="s3">the application's S3 client, configured for its provider</param>
     /// <param name="options">store configuration, validated here</param>
+    /// <param name="objectHeadersProvider">
+    /// optional provider of the headers each finished object carries; defaults to
+    /// <see cref="DefaultTusS3ObjectHeadersProvider"/>, which takes the content type from the <c>filetype</c> metadata
+    /// </param>
     /// <param name="fileIdProvider">
     /// optional strategy for generating TUS file identifiers; defaults to a GUID-based provider
     /// </param>
@@ -82,6 +87,7 @@ public sealed partial class TusS3Store
     public TusS3Store(
         IAmazonS3 s3,
         TusS3StoreOptions options,
+        ITusS3ObjectHeadersProvider? objectHeadersProvider = null,
         ITusFileIdProvider? fileIdProvider = null,
         ILoggerFactory? loggerFactory = null,
         TimeProvider? timeProvider = null,
@@ -97,6 +103,7 @@ public sealed partial class TusS3Store
         _s3 = s3;
         _options = options;
         _fileIdProvider = fileIdProvider ?? _DefaultFileIdProvider;
+        _objectHeadersProvider = objectHeadersProvider ?? new DefaultTusS3ObjectHeadersProvider();
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<TusS3Store>();
         _timeProvider = timeProvider ?? TimeProvider.System;
         _keys = new TusS3Keys(options.NormalizedPrefix);
@@ -128,10 +135,6 @@ public sealed partial class TusS3Store
         throw new NotSupportedException(_NotBuiltMessage);
 
     /// <inheritdoc />
-    public Task<ITusFile?> GetFileAsync(string fileId, CancellationToken cancellationToken) =>
-        throw new NotSupportedException(_NotBuiltMessage);
-
-    /// <inheritdoc />
     public Task<string> CreateFinalFileAsync(
         string[] partialFiles,
         string? metadata,
@@ -153,31 +156,33 @@ public sealed partial class TusS3Store
         TusS3Keys.EnsureValid(fileId);
     }
 
-    /// <summary>
-    /// Loads the upload a PATCH appends to and prepares the writer for its bytes.
-    /// </summary>
-    /// <exception cref="TusStoreException">The upload does not exist, is gone, or is already complete.</exception>
-    private async Task<TusS3PartWriter> _BeginAppendAsync(string fileId, CancellationToken cancellationToken)
+    /// <summary>Loads the upload a PATCH appends to.</summary>
+    /// <exception cref="TusStoreException">The upload does not exist or is gone.</exception>
+    private async Task<TusS3LoadedUpload> _LoadForAppendAsync(string fileId, CancellationToken cancellationToken)
     {
         var upload = await _stateStore.LoadAsync(fileId, cancellationToken).ConfigureAwait(false);
 
         if (
             upload is null
             || upload.State is { Status: TusS3UploadStatus.Gone }
-            || (upload.State is { } active && _MultipartUploadLifetimePassed(active))
+            || (upload.State is { } state && _MultipartUploadLifetimePassed(state))
         )
         {
             throw new TusStoreException($"File {fileId} does not exist");
         }
 
-        var state = upload.State ?? throw new TusStoreException($"File {fileId} is already complete");
+        return upload;
+    }
 
-        if (state.Status == TusS3UploadStatus.Completing)
-        {
-            // Finishing an interrupted completion is not built yet.
-            throw new NotSupportedException(_NotBuiltMessage);
-        }
+    /// <summary>Whether an append stores bytes, or only finishes or confirms a completion.</summary>
+    private static bool _AcceptsBytes(TusS3LoadedUpload upload)
+    {
+        return upload.State is { Status: TusS3UploadStatus.Active };
+    }
 
+    /// <summary>Prepares the writer for the bytes of a PATCH to an active upload.</summary>
+    private async Task<TusS3PartWriter> _BeginAppendAsync(string fileId, TusS3LoadedUpload upload)
+    {
         var writer = new TusS3PartWriter(_appendServices, fileId, upload);
 
         try
@@ -194,63 +199,66 @@ public sealed partial class TusS3Store
         return writer;
     }
 
-    /// <summary>Commits what the writer holds and reports the bytes this request appended.</summary>
+    /// <summary>Commits what the writer holds, completes the upload when that was its last byte, and reports the bytes this request appended.</summary>
     private async Task<long> _CommitAppendAsync(string fileId, TusS3PartWriter writer)
     {
         var (upload, appended) = await writer.CommitAsync().ConfigureAwait(false);
 
-        if (upload.State is { UploadLength: { } length } state && state.Offset == length)
+        if (upload.State is { Status: TusS3UploadStatus.Completing })
         {
-            await _OnUploadLengthReachedAsync(fileId, length).ConfigureAwait(false);
+            await _FinishCompletionAsync(fileId, upload).ConfigureAwait(false);
         }
 
         return appended;
     }
 
     /// <summary>
-    /// Runs once an append stores the upload's last byte. The parts and tail stay in the working set, where every
-    /// byte is already durable, until the finished object is assembled from them.
+    /// Answers an append to an upload whose bytes are all stored: it finishes an interrupted completion, or confirms
+    /// one this request's length declaration already finished.
     /// </summary>
-    private Task _OnUploadLengthReachedAsync(string fileId, long uploadLength)
+    /// <param name="fileId">the TUS file identifier</param>
+    /// <param name="upload">the upload as loaded for the append</param>
+    /// <param name="bodyBytes">the bytes of the request body, read and discarded</param>
+    /// <returns>
+    /// the bytes from the offset the client was told to resume at to the end, so tusdotnet answers with the full
+    /// offset and raises its completion event
+    /// </returns>
+    /// <exception cref="TusStoreException">The upload is complete and the request still carries bytes.</exception>
+    private async Task<long> _AppendToFullUploadAsync(string fileId, TusS3LoadedUpload upload, long bodyBytes)
     {
-        _logger.LogS3UploadLengthReached(fileId, uploadLength);
+        if (upload.State is not { } state)
+        {
+            // Only a PATCH whose declared length completed the upload gets here with a completed upload, and its body
+            // must be empty: any byte would lie past the declared length.
+            return bodyBytes == 0 ? 0 : throw new TusStoreException($"File {fileId} is already complete");
+        }
 
-        return Task.CompletedTask;
+        // The client re-sent the PATCH whose completion failed. Its bytes are already stored, so the body is discarded
+        // and only the completion runs again.
+        await _FinishCompletionAsync(fileId, upload).ConfigureAwait(false);
+
+        return state.UploadLength!.Value - (state.PreFinalOffset ?? state.Offset);
     }
 
     /// <summary>
     /// Starts the multipart upload an upload's parts go to, under the key its finished object will have.
     /// </summary>
-    private async Task<string> _CreateMultipartUploadAsync(string fileId, CancellationToken cancellationToken)
+    private async Task<string> _CreateMultipartUploadAsync(
+        string fileId,
+        string? metadata,
+        CancellationToken cancellationToken
+    )
     {
         var request = new InitiateMultipartUploadRequest
         {
             BucketName = _options.Bucket,
             Key = _keys.FinishedObject(fileId),
         };
+
+        // The headers belong to the multipart upload; the object completing it takes them as they are now.
+        _ApplyHeaders(await _GetObjectHeadersAsync(metadata).ConfigureAwait(false), request.Headers);
         var response = await _s3.InitiateMultipartUploadAsync(request, cancellationToken).ConfigureAwait(false);
 
         return response.UploadId;
-    }
-
-    /// <summary>
-    /// Writes the finished object of an upload that completed with no bytes. Every finished object the store writes
-    /// outside a multipart upload goes through here, so the headers the object carries are decided in one place.
-    /// </summary>
-    /// <exception cref="AmazonS3Exception">A finished object already exists under the id (412).</exception>
-    private async Task _PutEmptyFinishedObjectAsync(string fileId, CancellationToken cancellationToken)
-    {
-        var request = new PutObjectRequest
-        {
-            BucketName = _options.Bucket,
-            Key = _keys.FinishedObject(fileId),
-            InputStream = Stream.Null,
-            AutoCloseStream = false,
-            IfNoneMatch = "*",
-        };
-
-        TusS3RequestPresets.Apply(request, _options.Provider);
-
-        await _s3.PutObjectAsync(request, cancellationToken).ConfigureAwait(false);
     }
 }

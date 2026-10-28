@@ -182,4 +182,34 @@ public sealed class SetupTusS3StoreTests : TestBase
         // then
         act.Should().Throw<OptionsValidationException>();
     }
+
+    [Fact]
+    public void should_register_the_default_object_headers_provider()
+    {
+        // given
+        var services = _Services();
+        _Register(services, "action");
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider
+            .GetRequiredService<ITusS3ObjectHeadersProvider>()
+            .Should()
+            .BeOfType<DefaultTusS3ObjectHeadersProvider>();
+    }
+
+    [Fact]
+    public void should_keep_an_object_headers_provider_registered_before_the_store()
+    {
+        // given
+        var custom = Substitute.For<ITusS3ObjectHeadersProvider>();
+        var services = _Services();
+        services.AddSingleton(custom);
+        _Register(services, "action");
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<ITusS3ObjectHeadersProvider>().Should().BeSameAs(custom);
+        provider.GetRequiredService<TusS3Store>().Should().NotBeNull();
+    }
 }

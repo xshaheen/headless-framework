@@ -5,8 +5,8 @@ using Tests.TestSetup;
 
 namespace Tests.Conformance;
 
-// The shared tus conformance scenarios the S3 store supports so far, on each backend. Scenarios that complete,
-// terminate, sweep, concatenate, or read content join as the store gains those operations.
+// The shared tus conformance scenarios the S3 store supports so far, on each backend. Scenarios that terminate, sweep,
+// or concatenate join as the store gains those operations.
 
 [Collection<TusS3MinioFixture>]
 public sealed class MinioTusS3StoreConformanceTests(TusS3MinioFixture fixture)
@@ -14,6 +14,17 @@ public sealed class MinioTusS3StoreConformanceTests(TusS3MinioFixture fixture)
 {
     [Fact]
     public override Task should_get_upload_metadata() => base.should_get_upload_metadata();
+
+    [Fact]
+    public override Task should_get_file() => base.should_get_file();
+
+    [Fact]
+    public override Task should_round_trip_metadata_with_non_ascii_values_and_mixed_case_keys() =>
+        base.should_round_trip_metadata_with_non_ascii_values_and_mixed_case_keys();
+
+    [Fact]
+    public override Task should_upload_data_before_upload_length_is_known() =>
+        base.should_upload_data_before_upload_length_is_known();
 
     [Fact]
     public override Task should_check_file_existence() => base.should_check_file_existence();
@@ -54,6 +65,17 @@ public sealed class LocalStackTusS3StoreConformanceTests(TusS3LocalStackFixture 
 {
     [Fact]
     public override Task should_get_upload_metadata() => base.should_get_upload_metadata();
+
+    [Fact]
+    public override Task should_get_file() => base.should_get_file();
+
+    [Fact]
+    public override Task should_round_trip_metadata_with_non_ascii_values_and_mixed_case_keys() =>
+        base.should_round_trip_metadata_with_non_ascii_values_and_mixed_case_keys();
+
+    [Fact]
+    public override Task should_upload_data_before_upload_length_is_known() =>
+        base.should_upload_data_before_upload_length_is_known();
 
     [Fact]
     public override Task should_check_file_existence() => base.should_check_file_existence();
@@ -125,6 +147,10 @@ public sealed class MinioTusS3ProtocolConformanceTests(TusS3MinioFixture fixture
         base.head_echoes_metadata_verbatim_and_reports_length_and_offset();
 
     [Fact]
+    public override Task defer_length_upload_reports_defer_header_until_length_is_declared() =>
+        base.defer_length_upload_reports_defer_header_until_length_is_declared();
+
+    [Fact]
     public override Task patch_advances_offset_and_reports_expiration() =>
         base.patch_advances_offset_and_reports_expiration();
 
@@ -142,10 +168,48 @@ public sealed class LocalStackTusS3ProtocolConformanceTests(TusS3LocalStackFixtu
         base.head_echoes_metadata_verbatim_and_reports_length_and_offset();
 
     [Fact]
+    public override Task defer_length_upload_reports_defer_header_until_length_is_declared() =>
+        base.defer_length_upload_reports_defer_header_until_length_is_declared();
+
+    [Fact]
     public override Task patch_advances_offset_and_reports_expiration() =>
         base.patch_advances_offset_and_reports_expiration();
 
     [Fact]
     public override Task patch_with_wrong_offset_conflicts_without_modifying_the_upload() =>
         base.patch_with_wrong_offset_conflicts_without_modifying_the_upload();
+}
+
+[Collection<TusS3MinioFixture>]
+public sealed class MinioTusS3UploadFlowConformanceTests(TusS3MinioFixture fixture)
+    : TusUploadFlowConformanceTestsBase<TusS3Store>(fixture)
+{
+    [Fact]
+    public override Task should_complete_small_file_upload() => base.should_complete_small_file_upload();
+
+    [Fact]
+    public override Task should_resume_interrupted_upload() => base.should_resume_interrupted_upload();
+
+    [Fact]
+    public override Task should_handle_concurrent_uploads() => base.should_handle_concurrent_uploads();
+
+    [Fact]
+    public override Task should_handle_large_file_chunking() => base.should_handle_large_file_chunking();
+}
+
+[Collection<TusS3LocalStackFixture>]
+public sealed class LocalStackTusS3UploadFlowConformanceTests(TusS3LocalStackFixture fixture)
+    : TusUploadFlowConformanceTestsBase<TusS3Store>(fixture)
+{
+    [Fact]
+    public override Task should_complete_small_file_upload() => base.should_complete_small_file_upload();
+
+    [Fact]
+    public override Task should_resume_interrupted_upload() => base.should_resume_interrupted_upload();
+
+    [Fact]
+    public override Task should_handle_concurrent_uploads() => base.should_handle_concurrent_uploads();
+
+    [Fact]
+    public override Task should_handle_large_file_chunking() => base.should_handle_large_file_chunking();
 }

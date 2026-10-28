@@ -69,7 +69,7 @@ public sealed partial class TusS3Store
             {
                 // The finished object goes first: a record without its object would read as a completed upload whose
                 // content is missing.
-                await _PutEmptyFinishedObjectAsync(fileId, cancellationToken).ConfigureAwait(false);
+                await _PutFinishedObjectAsync(fileId, metadata, [], 0, cancellationToken).ConfigureAwait(false);
 
                 var record = new TusS3CompletedRecord
                 {

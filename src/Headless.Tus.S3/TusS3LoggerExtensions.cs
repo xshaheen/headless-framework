@@ -183,9 +183,33 @@ internal static partial class TusS3LoggerExtensions
 
     [LoggerMessage(
         EventId = 3288,
-        EventName = "S3UploadLengthReached",
-        Level = LogLevel.Debug,
-        Message = "File {FileId} holds all {UploadLength} bytes in its parts and tail"
+        EventName = "S3UploadCompleted",
+        Level = LogLevel.Information,
+        Message = "Completed file {FileId} as one object of {UploadLength} bytes"
     )]
-    internal static partial void LogS3UploadLengthReached(this ILogger logger, string fileId, long uploadLength);
+    internal static partial void LogS3UploadCompleted(this ILogger logger, string fileId, long uploadLength);
+
+    [LoggerMessage(
+        EventId = 3289,
+        EventName = "S3CompletionPartsRejected",
+        Level = LogLevel.Warning,
+        Message = "Marked file {FileId} as gone: the provider refused to assemble its parts ({ErrorCode})"
+    )]
+    internal static partial void LogS3CompletionPartsRejected(this ILogger logger, string fileId, string errorCode);
+
+    [LoggerMessage(
+        EventId = 3290,
+        EventName = "S3FinishedObjectAlreadyWritten",
+        Level = LogLevel.Debug,
+        Message = "Found the finished object of file {FileId} already written by an earlier completion attempt"
+    )]
+    internal static partial void LogS3FinishedObjectAlreadyWritten(this ILogger logger, string fileId);
+
+    [LoggerMessage(
+        EventId = 3291,
+        EventName = "S3FailedToGetContent",
+        Level = LogLevel.Error,
+        Message = "Failed to get the content of file {FileId}"
+    )]
+    internal static partial void LogS3FailedToGetContent(this ILogger logger, Exception e, string fileId);
 }

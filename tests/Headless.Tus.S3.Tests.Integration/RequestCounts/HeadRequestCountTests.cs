@@ -71,6 +71,27 @@ public abstract class HeadRequestCountTestsBase(IS3TestBackend backend) : TestBa
         _client.Gate.Count(S3Operation.GetObject).Should().Be(2);
     }
 
+    public virtual async Task should_answer_head_on_an_upload_completed_by_a_patch_with_two_requests()
+    {
+        // given - an upload whose PATCH stored its last byte and assembled the finished object
+        var location = await _host.CreateUploadAsync(1_000, metadata: null, AbortToken);
+        using (var patch = await _host.PatchAsync(location, new byte[1_000], 0, AbortToken))
+        {
+            patch.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        _client.Gate.Reset();
+
+        // when
+        using var head = await _host.HeadAsync(location, AbortToken);
+
+        // then - the missing state object, then the completed record
+        head.StatusCode.Should().Be(HttpStatusCode.OK);
+        head.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("1000");
+        _client.Gate.TotalRequests.Should().Be(2, "counts: {0}", _Describe());
+        _client.Gate.Count(S3Operation.GetObject).Should().Be(2);
+    }
+
     public virtual async Task should_create_an_upload_with_expiration_in_two_requests()
     {
         // given
@@ -123,6 +144,10 @@ public sealed class MinioHeadRequestCountTests(TusS3MinioFixture fixture) : Head
         base.should_answer_head_on_a_completed_upload_with_two_requests();
 
     [Fact]
+    public override Task should_answer_head_on_an_upload_completed_by_a_patch_with_two_requests() =>
+        base.should_answer_head_on_an_upload_completed_by_a_patch_with_two_requests();
+
+    [Fact]
     public override Task should_create_an_upload_with_expiration_in_two_requests() =>
         base.should_create_an_upload_with_expiration_in_two_requests();
 
@@ -141,6 +166,10 @@ public sealed class LocalStackHeadRequestCountTests(TusS3LocalStackFixture fixtu
     [Fact]
     public override Task should_answer_head_on_a_completed_upload_with_two_requests() =>
         base.should_answer_head_on_a_completed_upload_with_two_requests();
+
+    [Fact]
+    public override Task should_answer_head_on_an_upload_completed_by_a_patch_with_two_requests() =>
+        base.should_answer_head_on_an_upload_completed_by_a_patch_with_two_requests();
 
     [Fact]
     public override Task should_create_an_upload_with_expiration_in_two_requests() =>
