@@ -19,6 +19,24 @@ public abstract class SqlServerSchedulePositionTestsBase<TFixture>(TFixture fixt
     }
 
     [Fact]
+    public override Task advance_with_a_stale_projection_changes_nothing()
+    {
+        return base.advance_with_a_stale_projection_changes_nothing();
+    }
+
+    [Fact]
+    public override Task dispatch_that_read_before_a_rebase_loses_the_fence_after_it()
+    {
+        return base.dispatch_that_read_before_a_rebase_loses_the_fence_after_it();
+    }
+
+    [Fact]
+    public override Task materialization_stamps_the_fingerprint_of_the_rules_it_evaluated()
+    {
+        return base.materialization_stamps_the_fingerprint_of_the_rules_it_evaluated();
+    }
+
+    [Fact]
     public override Task advance_with_a_stale_watermark_changes_nothing()
     {
         return base.advance_with_a_stale_watermark_changes_nothing();

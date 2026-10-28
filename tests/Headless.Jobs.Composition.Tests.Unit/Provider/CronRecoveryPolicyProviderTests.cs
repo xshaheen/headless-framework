@@ -234,6 +234,66 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
             .Be(_Watermark, "a node holding a superseded definition must not resolve a backlog derived from it");
     }
 
+    [Fact]
+    public async Task should_report_null_and_write_nothing_when_a_rebase_moved_the_projection()
+    {
+        var provider = _Create();
+        var definition = _Definition();
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+        var request = _Request(definition);
+        var rebasedProjection = _EarliestMissed.AddMinutes(30);
+
+        // A rebase keeps the watermark and moves only the projection, so the watermark and revision this recovery
+        // read still match; only the projection tells it the backlog was evaluated under replaced rules.
+        var rebased = await provider.AdvanceCronScheduleAsync(
+            new CronScheduleAdvance
+            {
+                CronJobId = definition.Id,
+                ObservedReconciledThroughUtc = definition.ReconciledThroughUtc,
+                ObservedNextDueUtc = definition.NextDueUtc,
+                ExpectedScheduleRevision = definition.ScheduleRevision,
+                ReconciledThroughUtc = definition.ReconciledThroughUtc,
+                NextDueUtc = rebasedProjection,
+                EvaluationFingerprint = "fingerprint-rebased",
+            },
+            AbortToken
+        );
+        rebased.Should().NotBeNull();
+
+        var result = await provider.ApplyCronRecoveryAsync(request, AbortToken);
+
+        result.Should().BeNull();
+        var stored = await provider.GetCronJobByIdAsync(definition.Id, AbortToken);
+        stored!.ReconciledThroughUtc.Should().Be(_Watermark);
+        stored.NextDueUtc.Should().Be(rebasedProjection);
+        stored.EvaluationFingerprint.Should().Be("fingerprint-rebased");
+        (await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == definition.Id, AbortToken))
+            .Should()
+            .BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_stamp_the_evaluation_fingerprint_when_recovery_commits()
+    {
+        var provider = _Create();
+        var definition = _Definition();
+        definition.EvaluationFingerprint = "fingerprint-other-node";
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+
+        var result = await provider.ApplyCronRecoveryAsync(
+            _Request(definition) with
+            {
+                EvaluationFingerprint = "fingerprint-local",
+            },
+            AbortToken
+        );
+
+        result.Should().NotBeNull();
+        (await provider.GetCronJobByIdAsync(definition.Id, AbortToken))!
+            .EvaluationFingerprint.Should()
+            .Be("fingerprint-local");
+    }
+
     private static CronRecoveryRequest _Request(
         FakeCronJob definition,
         MissedRunPolicy policy = MissedRunPolicy.Coalesce,
@@ -243,9 +303,11 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
         {
             CronJobId = definition.Id,
             ObservedReconciledThroughUtc = _Watermark,
+            ObservedNextDueUtc = definition.NextDueUtc,
             ExpectedScheduleRevision = definition.ScheduleRevision,
             RecoveredThroughUtc = _RecoveredThrough,
             NextDueUtc = _RecoveredThrough.AddMinutes(30),
+            EvaluationFingerprint = "fingerprint-current",
             BoundedProgressThroughUtc = _RecoveredThrough,
             NextDueAfterBoundedProgressUtc = _RecoveredThrough.AddMinutes(30),
             EvaluationSaturated = false,
@@ -381,6 +443,7 @@ public sealed class CronRecoveryPolicyProviderTests : TestBase
             _Request(definition, missedInstants: [nPlusOne]) with
             {
                 ObservedReconciledThroughUtc = _SecondMissed,
+                ObservedNextDueUtc = first.NextDueUtc,
                 EarliestMissedUtc = nPlusOne,
             },
             AbortToken

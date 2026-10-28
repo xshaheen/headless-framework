@@ -76,8 +76,7 @@ internal abstract class JobsBaseLoggerInstrumentation(ILogger logger, IJobsOwner
         string functionName,
         string? previousFingerprint,
         string currentFingerprint,
-        DateTime previousReconciledThroughUtc,
-        DateTime rebaseAnchorUtc,
+        DateTime reconciledThroughUtc,
         DateTime previousNextDueUtc,
         DateTime rebasedNextDueUtc
     )
@@ -87,8 +86,7 @@ internal abstract class JobsBaseLoggerInstrumentation(ILogger logger, IJobsOwner
             functionName,
             previousFingerprint,
             currentFingerprint,
-            previousReconciledThroughUtc,
-            rebaseAnchorUtc,
+            reconciledThroughUtc,
             previousNextDueUtc,
             rebasedNextDueUtc
         );
@@ -192,9 +190,9 @@ internal static partial class JobsBaseLoggerInstrumentationLog
         EventId = 3241,
         Level = LogLevel.Warning,
         Message = "Cron {Function} ({CronJobId}) changed evaluation fingerprint from {PreviousFingerprint} to "
-            + "{CurrentFingerprint}; prior cursor {PreviousReconciledThroughUtc:O} and projection "
-            + "{PreviousNextDueUtc:O} were rebased without replay at anchor {RebaseAnchorUtc:O} to "
-            + "{RebasedNextDueUtc:O}."
+            + "{CurrentFingerprint}; projection {PreviousNextDueUtc:O} was re-derived from the kept watermark "
+            + "{ReconciledThroughUtc:O} to {RebasedNextDueUtc:O}, and any instant the new rules place before now is "
+            + "handled by the missed-run policy."
     )]
     internal static partial void CronFingerprintRebased(
         this ILogger logger,
@@ -202,8 +200,7 @@ internal static partial class JobsBaseLoggerInstrumentationLog
         string function,
         string? previousFingerprint,
         string currentFingerprint,
-        DateTime previousReconciledThroughUtc,
-        DateTime rebaseAnchorUtc,
+        DateTime reconciledThroughUtc,
         DateTime previousNextDueUtc,
         DateTime rebasedNextDueUtc
     );

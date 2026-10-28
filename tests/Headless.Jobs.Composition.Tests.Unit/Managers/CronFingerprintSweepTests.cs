@@ -1,8 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless;
+using Headless.Coordination;
 using Headless.Hosting;
 using Headless.Jobs;
+using Headless.Jobs.Coordination;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Managers;
 using Headless.Jobs.Provider;
 using Headless.Testing.Tests;
@@ -15,7 +18,8 @@ namespace Tests.Managers;
 
 /// <summary>
 /// The fingerprint sweep: detecting that a definition was positioned under schedule-interpretation rules that have
-/// since changed, and rebasing it without manufacturing a backlog out of the change.
+/// since changed, and re-projecting it from its kept watermark so every instant the new rules owe reaches the
+/// missed-run policy.
 /// </summary>
 /// <remarks>
 /// Staleness is simulated by persisting a fingerprint the running evaluator does not produce, which is exactly what a
@@ -50,8 +54,8 @@ public sealed class CronFingerprintSweepTests : TestBase
         after
             .ReconciledThroughUtc.Should()
             .Be(
-                _Now,
-                "environmental rule drift is a deliberate non-replay boundary, so prior backlog is discarded at the store-time anchor"
+                definition.ReconciledThroughUtc,
+                "a rebase keeps the watermark, so runs owed behind it still reach the missed-run policy"
             );
     }
 
@@ -76,21 +80,110 @@ public sealed class CronFingerprintSweepTests : TestBase
     }
 
     [Fact]
-    public async Task should_never_rebase_to_an_instant_in_the_past()
+    public async Task should_project_from_the_kept_watermark_even_when_the_next_occurrence_is_in_the_past()
     {
         var (manager, provider) = _Create();
-        // Watermark far behind: derived purely from it, the next occurrence would land in the past and read as a
-        // misfire. Anchoring at or after the store instant is what stops a rule change becoming a fake backlog.
+        // Watermark far behind: the first occurrence after it is long past, and that is the point — it is owed, and
+        // the next dispatch hands it to the missed-run policy instead of the rebase silently discarding it.
+        var watermark = _Now.AddDays(-30);
         var definition = _Definition(nextDue: _Now.AddDays(20), fingerprint: "stale");
-        definition.ReconciledThroughUtc = _Now.AddDays(-30);
+        definition.ReconciledThroughUtc = watermark;
         await provider.InsertCronJobsAsync([definition], AbortToken);
 
         await manager.RebaseStaleFingerprintsAsync(limit: 50, cancellationToken: AbortToken);
 
         var after = (await provider.GetCronJobByIdAsync(definition.Id, AbortToken))!;
+        after.ReconciledThroughUtc.Should().Be(watermark);
         after
             .NextDueUtc.Should()
-            .BeOnOrAfter(_Now, "a tick the changed rules moved into the past must not be replayed as missed");
+            .Be(watermark.AddMinutes(1), "the projection is the first occurrence after the watermark");
+    }
+
+    [Fact]
+    public async Task should_leave_runs_the_new_rules_owe_behind_the_watermark_to_the_missed_run_policy()
+    {
+        var (manager, provider) = _Create();
+        // Hourly at :30. The watermark is 11:00 and the sweep runs at 12:00, so the new rules owe the 11:30 run.
+        var watermark = _Now.AddHours(-1);
+        var definition = _Definition(nextDue: _Now.AddDays(20), fingerprint: "stale");
+        definition.Expression = "0 30 * * * *";
+        definition.ReconciledThroughUtc = watermark;
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+
+        var result = await manager.RebaseStaleFingerprintsAsync(limit: 50, cancellationToken: AbortToken);
+
+        result.Rebased.Should().Be(1);
+        var after = (await provider.GetCronJobByIdAsync(definition.Id, AbortToken))!;
+        after.ReconciledThroughUtc.Should().Be(watermark);
+        after.NextDueUtc.Should().Be(_Now.AddMinutes(-30));
+
+        var pending = new CronScheduleCache(TimeZoneInfo.Utc).EvaluatePending(
+            after.Expression,
+            after.TimeZoneId,
+            after.ReconciledThroughUtc,
+            _Now,
+            after.MissedRunGraceSeconds
+        );
+        pending.IsRecovery.Should().BeTrue("the owed run is past its grace, so dispatch routes it through the policy");
+        pending.EarliestPendingUtc.Should().Be(_Now.AddMinutes(-30));
+    }
+
+    [Fact]
+    public async Task should_keep_a_watermark_that_is_ahead_of_the_store_and_project_after_it()
+    {
+        var (manager, provider) = _Create();
+        var watermark = _Now.AddHours(1);
+        var definition = _Definition(nextDue: _Now.AddDays(20), fingerprint: "stale");
+        definition.ReconciledThroughUtc = watermark;
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+
+        await manager.RebaseStaleFingerprintsAsync(limit: 50, cancellationToken: AbortToken);
+
+        var after = (await provider.GetCronJobByIdAsync(definition.Id, AbortToken))!;
+        after.ReconciledThroughUtc.Should().Be(watermark);
+        after.NextDueUtc.Should().Be(watermark.AddMinutes(1));
+    }
+
+    [Fact]
+    public async Task should_park_the_projection_when_the_rules_place_no_further_occurrence()
+    {
+        var (manager, provider) = _Create();
+        var definition = _Definition(nextDue: _Now.AddDays(20), fingerprint: "stale");
+        definition.Expression = "0 0 0 30 2 *";
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+
+        var result = await manager.RebaseStaleFingerprintsAsync(limit: 50, cancellationToken: AbortToken);
+
+        result.Rebased.Should().Be(1);
+        (await provider.GetCronJobByIdAsync(definition.Id, AbortToken))!.NextDueUtc.Should().Be(DateTime.MaxValue);
+    }
+
+    [Fact]
+    public async Task should_leave_a_positionless_definition_to_dispatch_which_positions_it_at_the_store_instant()
+    {
+        var (manager, provider) = _Create();
+        var definition = _Definition(nextDue: default, fingerprint: "another-nodes-rules");
+        definition.ReconciledThroughUtc = default;
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+
+        var result = await manager.RebaseStaleFingerprintsAsync(limit: 50, cancellationToken: AbortToken);
+
+        result.Rebased.Should().Be(0, "rebasing from an unset watermark would replay the definition's whole history");
+        var swept = (await provider.GetCronJobByIdAsync(definition.Id, AbortToken))!;
+        swept.ReconciledThroughUtc.Should().Be(default);
+        swept.NextDueUtc.Should().Be(default);
+
+        await manager.GetNextJobs(AbortToken);
+
+        var positioned = (await provider.GetCronJobByIdAsync(definition.Id, AbortToken))!;
+        positioned.ReconciledThroughUtc.Should().Be(_Now, "the creation rule positions it at the store instant");
+        positioned.NextDueUtc.Should().Be(_Now.AddMinutes(1));
+        positioned
+            .EvaluationFingerprint.Should()
+            .Be(new CronScheduleCache(TimeZoneInfo.Utc).ComputeEvaluationFingerprint(timeZoneId: null));
+        (await provider.GetAllCronJobOccurrencesAsync(null, AbortToken))
+            .Should()
+            .BeEmpty("nothing before the store instant is treated as missed");
     }
 
     [Fact]
@@ -506,6 +599,214 @@ public sealed class CronFingerprintSweepTests : TestBase
         await provider.Received(2).GetAllCronJobExpressionsAsync(AbortToken);
     }
 
+    [Fact]
+    public async Task should_rebase_nothing_while_a_sweeping_peer_runs_other_rules_and_rebase_once_after_it_converges()
+    {
+        var membership = new SwitchableMembership(_Peer("digest-other"));
+        var (manager, provider) = _CreateGated(membership);
+        var definition = _Definition(nextDue: _Now.AddDays(20), fingerprint: "stale");
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+
+        var held = await manager.RebaseStaleFingerprintsAsync(limit: 50, cancellationToken: AbortToken);
+
+        held.DeferralReason.Should().Be(CronFingerprintSweepDeferralReason.FleetDisagreement);
+        held.Rebased.Should().Be(0);
+        held.HasMore.Should().BeFalse("a deferred pass ends the drain instead of holding it open");
+        (await provider.GetCronJobByIdAsync(definition.Id, AbortToken))!.EvaluationFingerprint.Should().Be("stale");
+
+        // The peer restarts on this node's rules.
+        membership.Snapshot = [_Peer(_LocalDigest)];
+        var agreed = await manager.RebaseStaleFingerprintsAsync(limit: 50, cancellationToken: AbortToken);
+        var again = await manager.RebaseStaleFingerprintsAsync(limit: 50, cancellationToken: AbortToken);
+
+        agreed.DeferralReason.Should().Be(CronFingerprintSweepDeferralReason.None);
+        agreed.Rebased.Should().Be(1);
+        again.Rebased.Should().Be(0, "the definition now carries the fleet's fingerprint");
+    }
+
+    [Fact]
+    public async Task should_rebase_nothing_when_the_membership_snapshot_cannot_be_read()
+    {
+        var membership = new SwitchableMembership { Failure = new InvalidOperationException("store down") };
+        var (manager, provider) = _CreateGated(membership);
+        var definition = _Definition(nextDue: _Now.AddDays(20), fingerprint: "stale");
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+
+        var result = await manager.RebaseStaleFingerprintsAsync(limit: 50, cancellationToken: AbortToken);
+
+        result.DeferralReason.Should().Be(CronFingerprintSweepDeferralReason.MembershipUnavailable);
+        result.Rebased.Should().Be(0);
+        result.HasMore.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_rebase_on_the_in_memory_store_even_when_messaging_registered_a_membership()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero));
+        var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(time);
+        services.AddHeadlessGuidGenerator();
+        services.AddSingleton(new SchedulerOptionsBuilder { NodeId = _NodeA });
+        services.AddSingleton(Substitute.For<IJobsHostScheduler>());
+        services.AddSingleton<INodeMembership>(new NullNodeMembership());
+        var sp = services.BuildServiceProvider();
+        var provider = new JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>(sp);
+        var manager = _CreateManager(provider, time, sp);
+        var definition = _Definition(nextDue: _Now.AddDays(20), fingerprint: "stale");
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+
+        var result = await manager.RebaseStaleFingerprintsAsync(limit: 50, cancellationToken: AbortToken);
+
+        result
+            .DeferralReason.Should()
+            .Be(CronFingerprintSweepDeferralReason.None, "one process has no fleet to agree with");
+        result.Rebased.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_drop_the_cached_known_fingerprints_when_a_pass_defers_mid_snapshot()
+    {
+        var first = _Definition(_Now.AddDays(1), "stale");
+        first.Id = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var second = _Definition(_Now.AddDays(1), "stale");
+        second.Id = Guid.Parse("00000000-0000-0000-0000-000000000002");
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        provider.GetAllCronJobExpressionsAsync(AbortToken).Returns([first, second]);
+        provider
+            .GetStaleFingerprintDefinitionsAsync(Arg.Any<CronFingerprintSweepRequest>(), AbortToken)
+            .Returns(
+                new CronFingerprintSweepPage
+                {
+                    Candidates = [_Candidate(first)],
+                    StoreUtcNow = _Now,
+                    SnapshotHighWatermarkId = second.Id,
+                    HasMore = true,
+                }
+            );
+        var membership = new SwitchableMembership();
+        var manager = _CreateManager(
+            provider,
+            new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero)),
+            _GatedServices(membership)
+        );
+
+        var firstPage = await manager.RebaseStaleFingerprintsAsync(limit: 1, cancellationToken: AbortToken);
+        membership.Snapshot = [_Peer("digest-other")];
+        var deferred = await manager.RebaseStaleFingerprintsAsync(
+            limit: 1,
+            afterId: firstPage.NextCursorId,
+            throughId: firstPage.SnapshotHighWatermarkId,
+            cancellationToken: AbortToken
+        );
+        membership.Snapshot = [];
+        await manager.RebaseStaleFingerprintsAsync(
+            limit: 1,
+            afterId: firstPage.NextCursorId,
+            throughId: firstPage.SnapshotHighWatermarkId,
+            cancellationToken: AbortToken
+        );
+
+        deferred.DeferralReason.Should().Be(CronFingerprintSweepDeferralReason.FleetDisagreement);
+        await provider.Received(2).GetAllCronJobExpressionsAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_wake_the_scheduler_for_the_earliest_rebased_projection()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero));
+        var scheduler = Substitute.For<IJobsHostScheduler>();
+        var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(time);
+        services.AddHeadlessGuidGenerator();
+        services.AddSingleton(new SchedulerOptionsBuilder { NodeId = _NodeA });
+        services.AddSingleton(scheduler);
+        var sp = services.BuildServiceProvider();
+        var provider = new JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>(sp);
+        var manager = _CreateManager(provider, time, sp);
+        // The scheduler sleeps toward the stale projections 20 days out; the new rules put one due now and one at
+        // 12:30, and a definition with no further occurrence must not be what the scheduler is woken for.
+        var everyMinute = _Definition(nextDue: _Now.AddDays(20), fingerprint: "stale");
+        var hourly = _Definition(nextDue: _Now.AddDays(20), fingerprint: "stale");
+        hourly.Expression = "0 30 * * * *";
+        var never = _Definition(nextDue: _Now.AddDays(20), fingerprint: "stale");
+        never.Expression = "0 0 0 30 2 *";
+        await provider.InsertCronJobsAsync([hourly, never, everyMinute], AbortToken);
+
+        var result = await manager.RebaseStaleFingerprintsAsync(limit: 50, cancellationToken: AbortToken);
+
+        result.Rebased.Should().Be(3);
+        scheduler.Received(1).RestartIfNeeded(_Now);
+    }
+
+    private const string _LocalDigest = "digest-local";
+
+    private static NodeLivenessSnapshot _Peer(string digest) =>
+        new(
+            new NodeIdentity(new NodeId("peer"), new NodeIncarnation(1)),
+            NodeLivenessState.Alive,
+            Role: null,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [CronRulesDigest.DigestMetadataKey] = digest,
+                [CronRulesDigest.FingerprintSweepMetadataKey] = "true",
+            }
+        );
+
+    /// <summary>A membership whose snapshot a test can change between passes, as peers restart.</summary>
+    private sealed class SwitchableMembership
+    {
+        public SwitchableMembership(params NodeLivenessSnapshot[] snapshot)
+        {
+            Snapshot = snapshot;
+            Membership = Substitute.For<INodeMembership>();
+            Membership
+                .GetLivenessSnapshotAsync(Arg.Any<CancellationToken>())
+                .Returns(_ =>
+                    Failure is null
+                        ? new ValueTask<IReadOnlyList<NodeLivenessSnapshot>>(Snapshot)
+                        : ValueTask.FromException<IReadOnlyList<NodeLivenessSnapshot>>(Failure)
+                );
+        }
+
+        public IReadOnlyList<NodeLivenessSnapshot> Snapshot { get; set; }
+
+        public Exception? Failure { get; init; }
+
+        public INodeMembership Membership { get; }
+    }
+
+    private static (
+        InternalJobsManager<FakeTimeJob, FakeCronJob> Manager,
+        JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> Provider
+    ) _CreateGated(SwitchableMembership membership)
+    {
+        var sp = _GatedServices(membership);
+        var provider = new JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob>(sp);
+
+        return (_CreateManager(provider, sp.GetRequiredService<FakeTimeProvider>(), sp), provider);
+    }
+
+    // The registrations the durable path adds: the gate, this node's published digest, and its owner identity.
+    private static ServiceProvider _GatedServices(SwitchableMembership membership)
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(_Now, TimeSpan.Zero));
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(time);
+        services.AddSingleton<TimeProvider>(time);
+        services.AddHeadlessGuidGenerator();
+        services.AddSingleton(new SchedulerOptionsBuilder { NodeId = _NodeA });
+        services.AddSingleton(Substitute.For<IJobsHostScheduler>());
+        services.AddSingleton(membership.Membership);
+        services.AddSingleton(Substitute.For<IJobsOwnerIdentity>());
+        services.Configure<CoordinationOptions>(options =>
+            options.Metadata[CronRulesDigest.DigestMetadataKey] = _LocalDigest
+        );
+        services.AddSingleton<CronFleetAgreement>();
+
+        return services.BuildServiceProvider();
+    }
+
     private static CronDispatchCandidate _Candidate(FakeCronJob definition) =>
         new()
         {
@@ -582,7 +883,16 @@ public sealed class CronFingerprintSweepTests : TestBase
         services.AddHeadlessGuidGenerator();
         services.AddSingleton(new SchedulerOptionsBuilder { NodeId = _NodeA });
         services.AddSingleton(Substitute.For<IJobsHostScheduler>());
-        var sp = services.BuildServiceProvider();
+
+        return _CreateManager(provider, time, services.BuildServiceProvider());
+    }
+
+    private static InternalJobsManager<FakeTimeJob, FakeCronJob> _CreateManager(
+        IJobPersistenceProvider<FakeTimeJob, FakeCronJob> provider,
+        FakeTimeProvider time,
+        IServiceProvider sp
+    )
+    {
         return new InternalJobsManager<FakeTimeJob, FakeCronJob>(
             provider,
             time,

@@ -65,6 +65,84 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
             .BeCloseTo(_RecoveryInstant(seeded), TimeSpan.FromMicroseconds(1), "the backlog is never reconsidered");
     }
 
+    public virtual async Task recovery_that_read_before_a_rebase_changes_nothing_after_it()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("recovery-after-rebase");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(
+            cronId,
+            "recovery-after-rebase",
+            "0 0 * * * *",
+            NodeDeathPolicy.Retry,
+            ct,
+            reconciledThroughOffsetSeconds: -14400,
+            nextDueOffsetSeconds: -10800
+        );
+        var seeded = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        var rebasedProjection = seeded.NextDueUtc.AddMinutes(30);
+
+        var rebased = await persistence.AdvanceCronScheduleAsync(
+            new CronScheduleAdvance
+            {
+                CronJobId = cronId,
+                ObservedReconciledThroughUtc = seeded.ReconciledThroughUtc,
+                ObservedNextDueUtc = seeded.NextDueUtc,
+                ExpectedScheduleRevision = 0L,
+                ReconciledThroughUtc = seeded.ReconciledThroughUtc,
+                NextDueUtc = rebasedProjection,
+                EvaluationFingerprint = "fingerprint-rebased",
+            },
+            ct
+        );
+        rebased.Should().NotBeNull();
+
+        var result = await persistence.ApplyCronRecoveryAsync(_Request(cronId, seeded, MissedRunPolicy.Coalesce), ct);
+
+        result.Should().BeNull("the backlog was evaluated under rules the rebase already replaced");
+        (await persistence.GetAllCronJobOccurrencesAsync(x => x.CronJobId == cronId, ct)).Should().BeEmpty();
+        var position = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        position.ReconciledThroughUtc.Should().BeCloseTo(seeded.ReconciledThroughUtc, TimeSpan.FromMicroseconds(1));
+        position.NextDueUtc.Should().BeCloseTo(rebasedProjection, TimeSpan.FromMicroseconds(1));
+        (await persistence.GetCronJobByIdAsync(cronId, ct))!.EvaluationFingerprint.Should().Be("fingerprint-rebased");
+    }
+
+    public virtual async Task committed_recovery_stamps_the_evaluation_fingerprint()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("recovery-fingerprint");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(
+            cronId,
+            "recovery-fingerprint",
+            "0 0 * * * *",
+            NodeDeathPolicy.Retry,
+            ct,
+            reconciledThroughOffsetSeconds: -14400,
+            nextDueOffsetSeconds: -10800
+        );
+        var seeded = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+
+        var result = await persistence.ApplyCronRecoveryAsync(
+            _Request(cronId, seeded, MissedRunPolicy.Skip) with
+            {
+                EvaluationFingerprint = "fingerprint-local",
+            },
+            ct
+        );
+
+        result.Should().NotBeNull();
+        (await persistence.GetCronJobByIdAsync(cronId, ct))!.EvaluationFingerprint.Should().Be("fingerprint-local");
+    }
+
     /// <summary>Skip produces no run and still carries the watermark to the recovery instant.</summary>
     public virtual async Task skip_materializes_nothing_and_still_advances_the_watermark()
     {
@@ -277,6 +355,7 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
             _Request(cronId, seeded, MissedRunPolicy.Coalesce, [nPlusOne]) with
             {
                 ObservedReconciledThroughUtc = second,
+                ObservedNextDueUtc = first.NextDueUtc,
                 EarliestMissedUtc = nPlusOne,
             },
             ct
@@ -648,9 +727,11 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
         {
             CronJobId = cronJobId,
             ObservedReconciledThroughUtc = seeded.ReconciledThroughUtc,
+            ObservedNextDueUtc = seeded.NextDueUtc,
             ExpectedScheduleRevision = 0L,
             RecoveredThroughUtc = _RecoveryInstant(seeded),
             NextDueUtc = _RecoveryInstant(seeded).AddHours(1),
+            EvaluationFingerprint = "fingerprint-current",
             BoundedProgressThroughUtc = _RecoveryInstant(seeded),
             NextDueAfterBoundedProgressUtc = _RecoveryInstant(seeded).AddHours(1),
             EvaluationSaturated = false,

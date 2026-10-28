@@ -51,6 +51,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
             {
                 CronJobId = cronId,
                 ObservedReconciledThroughUtc = seeded.ReconciledThroughUtc,
+                ObservedNextDueUtc = seeded.NextDueUtc,
                 ExpectedScheduleRevision = 0L,
                 ReconciledThroughUtc = seeded.NextDueUtc,
                 NextDueUtc = newProjection,
@@ -92,6 +93,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
             {
                 CronJobId = cronId,
                 ObservedReconciledThroughUtc = seeded.ReconciledThroughUtc.AddSeconds(-30),
+                ObservedNextDueUtc = seeded.NextDueUtc,
                 ExpectedScheduleRevision = 0L,
                 ReconciledThroughUtc = seeded.NextDueUtc,
                 NextDueUtc = seeded.NextDueUtc.AddMinutes(1),
@@ -101,6 +103,120 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
 
         result.Should().BeNull("losing the watermark fence is reported by a null result, never by an exception");
         await _AssertPositionUnchangedAsync(cronId, seeded, ct);
+    }
+
+    public virtual async Task advance_with_a_stale_projection_changes_nothing()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("advance-stale-projection");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(cronId, "advance-stale-projection", "* * * * *", NodeDeathPolicy.Retry, ct);
+        var seeded = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+
+        // Watermark and revision match; only the projection is one the row no longer holds, which is what a reader
+        // sees after a rebase that kept the watermark.
+        var result = await persistence.AdvanceCronScheduleAsync(
+            new CronScheduleAdvance
+            {
+                CronJobId = cronId,
+                ObservedReconciledThroughUtc = seeded.ReconciledThroughUtc,
+                ObservedNextDueUtc = seeded.NextDueUtc.AddMinutes(-30),
+                ExpectedScheduleRevision = 0L,
+                ReconciledThroughUtc = seeded.NextDueUtc,
+                NextDueUtc = seeded.NextDueUtc.AddMinutes(1),
+            },
+            ct
+        );
+
+        result.Should().BeNull("an advance derived from a replaced projection must not commit");
+        await _AssertPositionUnchangedAsync(cronId, seeded, ct);
+    }
+
+    public virtual async Task dispatch_that_read_before_a_rebase_loses_the_fence_after_it()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("dispatch-after-rebase");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(
+            cronId,
+            "dispatch-after-rebase",
+            "* * * * *",
+            NodeDeathPolicy.Retry,
+            ct,
+            reconciledThroughOffsetSeconds: -600,
+            nextDueOffsetSeconds: -300
+        );
+        var dispatchRead = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        var rebasedProjection = dispatchRead.NextDueUtc.AddSeconds(-30);
+
+        var rebased = await persistence.AdvanceCronScheduleAsync(
+            new CronScheduleAdvance
+            {
+                CronJobId = cronId,
+                ObservedReconciledThroughUtc = dispatchRead.ReconciledThroughUtc,
+                ObservedNextDueUtc = dispatchRead.NextDueUtc,
+                ExpectedScheduleRevision = 0L,
+                ReconciledThroughUtc = dispatchRead.ReconciledThroughUtc,
+                NextDueUtc = rebasedProjection,
+                EvaluationFingerprint = "fingerprint-rebased",
+            },
+            ct
+        );
+        rebased.Should().NotBeNull();
+
+        var dispatch = await persistence.MaterializeCronScheduleOccurrenceAsync(
+            _Materialization(cronId, dispatchRead),
+            ct
+        );
+
+        dispatch.Outcome.Should().Be(CronScheduleMaterializationOutcome.LostFence);
+        (await fixture.CountCronOccurrencesAsync(ct)).Should().Be(0);
+        var position = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        position
+            .ReconciledThroughUtc.Should()
+            .BeCloseTo(dispatchRead.ReconciledThroughUtc, TimeSpan.FromMicroseconds(1));
+        position.NextDueUtc.Should().BeCloseTo(rebasedProjection, TimeSpan.FromMicroseconds(1));
+    }
+
+    public virtual async Task materialization_stamps_the_fingerprint_of_the_rules_it_evaluated()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("materialize-fingerprint");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(
+            cronId,
+            "materialize-fingerprint",
+            "* * * * *",
+            NodeDeathPolicy.Retry,
+            ct,
+            reconciledThroughOffsetSeconds: -600,
+            nextDueOffsetSeconds: -300
+        );
+        var seeded = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        var materialization = _Materialization(cronId, seeded);
+
+        var result = await persistence.MaterializeCronScheduleOccurrenceAsync(
+            materialization with
+            {
+                Advance = materialization.Advance with { EvaluationFingerprint = "fingerprint-local" },
+            },
+            ct
+        );
+
+        result.Outcome.Should().Be(CronScheduleMaterializationOutcome.OccurrenceCreated);
+        (await persistence.GetCronJobByIdAsync(cronId, ct))!.EvaluationFingerprint.Should().Be("fingerprint-local");
     }
 
     public virtual async Task advance_with_a_stale_schedule_revision_changes_nothing()
@@ -127,6 +243,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
             {
                 CronJobId = cronId,
                 ObservedReconciledThroughUtc = seeded.ReconciledThroughUtc,
+                ObservedNextDueUtc = seeded.NextDueUtc,
                 ExpectedScheduleRevision = 6L,
                 ReconciledThroughUtc = seeded.NextDueUtc,
                 NextDueUtc = seeded.NextDueUtc.AddMinutes(1),
@@ -165,6 +282,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
             {
                 CronJobId = cronId,
                 ObservedReconciledThroughUtc = seeded.ReconciledThroughUtc,
+                ObservedNextDueUtc = seeded.NextDueUtc,
                 ExpectedScheduleRevision = 0L,
                 ReconciledThroughUtc = seeded.NextDueUtc,
                 NextDueUtc = seeded.NextDueUtc.AddMinutes(1),
@@ -195,6 +313,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
         {
             CronJobId = cronId,
             ObservedReconciledThroughUtc = seeded.ReconciledThroughUtc,
+            ObservedNextDueUtc = seeded.NextDueUtc,
             ExpectedScheduleRevision = 0L,
             ReconciledThroughUtc = seeded.NextDueUtc,
             NextDueUtc = seeded.NextDueUtc.AddMinutes(1),
@@ -236,6 +355,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
             {
                 CronJobId = advancedId,
                 ObservedReconciledThroughUtc = advancedBefore.ReconciledThroughUtc,
+                ObservedNextDueUtc = advancedBefore.NextDueUtc,
                 ExpectedScheduleRevision = 0L,
                 ReconciledThroughUtc = advancedBefore.NextDueUtc,
                 NextDueUtc = advancedBefore.NextDueUtc.AddMinutes(1),
@@ -279,6 +399,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
             {
                 CronJobId = notYetDueId,
                 ObservedReconciledThroughUtc = notYetDue.ReconciledThroughUtc,
+                ObservedNextDueUtc = notYetDue.NextDueUtc,
                 ExpectedScheduleRevision = 0L,
                 ReconciledThroughUtc = notYetDue.NextDueUtc,
                 NextDueUtc = notYetDue.NextDueUtc.AddMinutes(1),
@@ -313,6 +434,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
             {
                 CronJobId = overdueId,
                 ObservedReconciledThroughUtc = overdue.ReconciledThroughUtc,
+                ObservedNextDueUtc = overdue.NextDueUtc,
                 ExpectedScheduleRevision = 0L,
                 ReconciledThroughUtc = overdue.NextDueUtc,
                 NextDueUtc = overdue.NextDueUtc.AddMinutes(1),
@@ -1179,6 +1301,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
             {
                 CronJobId = cronJobId,
                 ObservedReconciledThroughUtc = position.ReconciledThroughUtc,
+                ObservedNextDueUtc = position.NextDueUtc,
                 ExpectedScheduleRevision = 0,
                 ReconciledThroughUtc = position.NextDueUtc,
                 NextDueUtc = position.NextDueUtc.AddMinutes(1),

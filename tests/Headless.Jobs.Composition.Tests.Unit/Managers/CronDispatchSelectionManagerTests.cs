@@ -31,6 +31,26 @@ public sealed class CronDispatchSelectionManagerTests : TestBase
     private const string _NodeA = "node-a";
     private static readonly DateTime _Now = new(2026, 07, 26, 12, 00, 00, DateTimeKind.Utc);
 
+    [Fact]
+    public async Task should_stamp_this_nodes_fingerprint_when_dispatch_advances_a_row_another_node_positioned()
+    {
+        var (manager, provider) = _Create();
+        var due = _Definition(nextDue: _Now);
+        due.EvaluationFingerprint = "another-nodes-rules";
+        await provider.InsertCronJobsAsync([due], AbortToken);
+
+        await manager.GetNextJobs(AbortToken);
+
+        var after = (await provider.GetCronJobByIdAsync(due.Id, AbortToken))!;
+        after.ReconciledThroughUtc.Should().Be(_Now, "the due instant was dispatched");
+        after
+            .EvaluationFingerprint.Should()
+            .Be(
+                CronEvaluationFingerprint.Compute(TimeZoneInfo.Utc),
+                "the new projection was derived under this node's rules, so the row must name them"
+            );
+    }
+
     /// <summary>
     /// The invariant both dispatch defects violated: an advance commits durable state, so selection must never move a
     /// watermark for a definition it then declines to dispatch. There is no recovery path for an instant whose

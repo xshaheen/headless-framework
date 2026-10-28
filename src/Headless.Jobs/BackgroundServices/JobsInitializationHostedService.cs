@@ -143,14 +143,15 @@ internal static partial class JobsInitializationLog
         EventName = "CronFingerprintActivationCompleted",
         Level = LogLevel.Information,
         Message = "Cron fingerprint activation gate completed: scanned={Scanned}, rebased={Rebased}, "
-            + "deferred={Deferred}, lostFence={LostFence}."
+            + "deferred={Deferred}, lostFence={LostFence}, passDeferredBy={Deferral}."
     )]
     internal static partial void CronFingerprintActivationCompleted(
         this ILogger logger,
         int scanned,
         int rebased,
         int deferred,
-        int lostFence
+        int lostFence,
+        CronFingerprintSweepDeferralReason deferral
     );
 
     [LoggerMessage(

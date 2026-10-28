@@ -58,6 +58,7 @@ public sealed class SqlServerOccurrenceIdOrderingTests(SqlServerJobsCoordination
                     {
                         CronJobId = cronId,
                         ObservedReconciledThroughUtc = position.ReconciledThroughUtc,
+                        ObservedNextDueUtc = position.NextDueUtc,
                         ExpectedScheduleRevision = 0,
                         ReconciledThroughUtc = position.NextDueUtc,
                         NextDueUtc = position.NextDueUtc.AddMinutes(1),

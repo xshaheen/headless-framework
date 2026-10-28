@@ -72,18 +72,52 @@ public sealed class InternalJobsManagerTests : TestBase
     }
 
     [Theory]
-    [InlineData("America/New_York", "2026-03-08T05:00:00Z", "0 30 2 * * *", "2026-03-08T07:30:00Z")]
+    // Each row names the host-tzdata transition it depends on, asserted first so stale tzdata fails as such.
+    [InlineData(
+        "America/New_York",
+        "2026-03-08T07:00:00Z",
+        -5,
+        -4,
+        "2026-03-08T05:00:00Z",
+        "0 30 2 * * *",
+        "2026-03-08T07:30:00Z"
+    )]
     // 01:30 repeats; the first pass (-04:00) is the occurrence.
-    [InlineData("America/New_York", "2026-11-01T04:00:00Z", "0 30 1 * * *", "2026-11-01T05:30:00Z")]
+    [InlineData(
+        "America/New_York",
+        "2026-11-01T06:00:00Z",
+        -4,
+        -5,
+        "2026-11-01T04:00:00Z",
+        "0 30 1 * * *",
+        "2026-11-01T05:30:00Z"
+    )]
     // Resumed after 23:30's first pass (20:30Z): a fixed time has no second pass, so the next run is the next day's.
-    [InlineData("Africa/Cairo", "2026-10-29T21:10:00Z", "0 30 23 * * *", "2026-10-30T21:30:00Z")]
+    [InlineData(
+        "Africa/Cairo",
+        "2026-10-29T21:00:00Z",
+        3,
+        2,
+        "2026-10-29T21:10:00Z",
+        "0 30 23 * * *",
+        "2026-10-30T21:30:00Z"
+    )]
     public async Task should_use_definition_iana_timezone_when_resume_crosses_dst_transition(
         string timeZoneId,
+        string transitionText,
+        int offsetBeforeHours,
+        int offsetAfterHours,
         string resumeTimeText,
         string expression,
         string expectedOccurrenceText
     )
     {
+        var transition = DateTimeOffset.Parse(transitionText, CultureInfo.InvariantCulture).UtcDateTime;
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+        var because = $"the host's tzdata must place {timeZoneId}'s transition at {transitionText}";
+        zone.GetUtcOffset(transition.AddSeconds(-1)).Should().Be(TimeSpan.FromHours(offsetBeforeHours), because);
+        zone.GetUtcOffset(transition).Should().Be(TimeSpan.FromHours(offsetAfterHours), because);
+
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
         var resumeTime = DateTimeOffset.Parse(resumeTimeText, CultureInfo.InvariantCulture);
         var expectedOccurrence = DateTimeOffset.Parse(expectedOccurrenceText, CultureInfo.InvariantCulture).UtcDateTime;

@@ -126,6 +126,16 @@ public sealed class CronScheduleCacheTests
         next.Should().Be(new DateTime(2026, 1, 1, 17, 0, 0, DateTimeKind.Utc));
     }
 
+    [Fact]
+    public void should_reject_a_local_kind_cursor_instead_of_reading_it_as_utc()
+    {
+        var localCursor = new DateTime(2026, 10, 29, 20, 0, 0, DateTimeKind.Local);
+
+        var act = () => _cache.GetNextOccurrenceOrDefault("0 */15 * * * *", localCursor);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("dateTime");
+    }
+
     [Theory]
     [InlineData("Eastern Standard Time")]
     [InlineData("Headless/Unknown")]

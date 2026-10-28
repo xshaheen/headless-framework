@@ -80,10 +80,11 @@ internal interface IJobsInstrumentation
     /// <param name="functionName">Its registered function name.</param>
     /// <param name="previousFingerprint">The superseded fingerprint, or <see langword="null"/> for uninitialized definitions.</param>
     /// <param name="currentFingerprint">The fingerprint derived from the running evaluator.</param>
-    /// <param name="previousReconciledThroughUtc">The durable watermark observed before rebasing.</param>
-    /// <param name="rebaseAnchorUtc">The provider-time anchor used for the non-replay rebase.</param>
+    /// <param name="reconciledThroughUtc">
+    /// The durable watermark, which the rebase keeps: every instant the current rules place after it is still owed.
+    /// </param>
     /// <param name="previousNextDueUtc">The projection derived under the superseded rules.</param>
-    /// <param name="rebasedNextDueUtc">The projection under current rules.</param>
+    /// <param name="rebasedNextDueUtc">The first occurrence after the watermark under current rules.</param>
     /// <remarks>
     /// Surfacing this is the entire point of the fingerprint: the expression and timezone are unchanged, so without
     /// this signal a schedule silently starts firing at a different instant with nothing in the definition to show it.
@@ -93,8 +94,7 @@ internal interface IJobsInstrumentation
         string functionName,
         string? previousFingerprint,
         string currentFingerprint,
-        DateTime previousReconciledThroughUtc,
-        DateTime rebaseAnchorUtc,
+        DateTime reconciledThroughUtc,
         DateTime previousNextDueUtc,
         DateTime rebasedNextDueUtc
     );

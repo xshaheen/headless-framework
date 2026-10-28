@@ -61,8 +61,15 @@ public class CronJobEntity : BaseJobEntity
     /// <summary>
     /// Opaque fingerprint of the rules used to derive <see cref="NextDueUtc"/> — cron-library semantics, timezone
     /// rule version, and DST interpretation. Only equality is meaningful. A mismatch means an identical expression
-    /// and timezone now resolve to a different instant, which is surfaced and rebased rather than replayed.
+    /// and timezone now resolve to a different instant: the definition is rebased, keeping
+    /// <see cref="ReconciledThroughUtc"/> and re-projecting <see cref="NextDueUtc"/> from it, so every instant the
+    /// current rules place after the watermark is still owed and reaches the missed-run policy.
     /// </summary>
+    /// <remarks>
+    /// Dispatch, missed-run recovery, and the fingerprint rebase stamp this with the rules they evaluated under, in the
+    /// same write that moves <see cref="NextDueUtc"/>. An edit repositions the definition without stamping it, so the
+    /// next sweep rebases it once more to the same position.
+    /// </remarks>
     public virtual string? EvaluationFingerprint { get; set; }
 
     /// <summary>Consecutive deterministic fingerprint-evaluation failures.</summary>

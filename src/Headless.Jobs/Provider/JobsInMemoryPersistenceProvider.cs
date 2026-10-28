@@ -2079,6 +2079,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 || current.IsPaused
                 || current.ScheduleRevision != request.ExpectedScheduleRevision
                 || current.ReconciledThroughUtc != request.ObservedReconciledThroughUtc
+                || current.NextDueUtc != request.ObservedNextDueUtc
             )
             {
                 return Task.FromResult<CronRecoveryResult<TCronJob>?>(null);
@@ -2213,6 +2214,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             var updated = _CloneCronJob(current);
             updated.ReconciledThroughUtc = resolution.ReconciledThroughUtc;
             updated.NextDueUtc = resolution.NextDueUtc;
+            _ApplyEvaluationFingerprint(updated, request.EvaluationFingerprint);
             _SetCronJob(updated);
 
             return Task.FromResult<CronRecoveryResult<TCronJob>?>(
@@ -2321,6 +2323,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 || current.IsPaused
                 || current.ScheduleRevision != advance.ExpectedScheduleRevision
                 || current.ReconciledThroughUtc != advance.ObservedReconciledThroughUtc
+                || current.NextDueUtc != advance.ObservedNextDueUtc
             )
             {
                 return Task.FromResult<CronScheduleAdvanceResult?>(null);
@@ -2340,12 +2343,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             var updated = _CloneCronJob(current);
             updated.ReconciledThroughUtc = advance.ReconciledThroughUtc;
             updated.NextDueUtc = advance.NextDueUtc;
-            updated.EvaluationFingerprint = advance.EvaluationFingerprint ?? updated.EvaluationFingerprint;
-            if (advance.EvaluationFingerprint is not null)
-            {
-                updated.FingerprintFailureCount = 0;
-                updated.FingerprintRetryAfterUtc = null;
-            }
+            _ApplyEvaluationFingerprint(updated, advance.EvaluationFingerprint);
 
             _SetCronJob(updated);
 
@@ -2375,6 +2373,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             "The occurrence instant must equal the schedule position's reconciled-through instant.",
             nameof(materialization)
         );
+        Argument.IsTrue(
+            materialization.ExecutionTimeUtc == advance.ObservedNextDueUtc,
+            "The occurrence instant must equal the observed projection it materializes.",
+            nameof(materialization)
+        );
 
         lock (_GetCronDefinitionLock(advance.CronJobId))
         {
@@ -2385,7 +2388,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 || current.IsPaused
                 || current.ScheduleRevision != advance.ExpectedScheduleRevision
                 || current.ReconciledThroughUtc != advance.ObservedReconciledThroughUtc
-                || current.NextDueUtc != materialization.ExecutionTimeUtc
+                || current.NextDueUtc != advance.ObservedNextDueUtc
             )
             {
                 return Task.FromResult(
@@ -2506,6 +2509,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             var updated = _CloneCronJob(current);
             updated.ReconciledThroughUtc = advance.ReconciledThroughUtc;
             updated.NextDueUtc = advance.NextDueUtc;
+            _ApplyEvaluationFingerprint(updated, advance.EvaluationFingerprint);
             _SetCronJob(updated);
 
             return Task.FromResult(
@@ -4182,6 +4186,20 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     private bool _DefersReplacementToMaterialization(Guid cronJobId, CronOverlapPolicy onOverlap) =>
         CronOverlapRule.ForbidsOverlap(onOverlap)
         && _cronOccurrences.Values.Any(x => x.CronJobId == cronJobId && CronOverlapRule.IsUnfinished(x.Status));
+
+    // Null leaves the persisted fingerprint alone; a value is the rules the new position was derived under, and
+    // clears any defer state those rules made obsolete.
+    private static void _ApplyEvaluationFingerprint(TCronJob updated, string? fingerprint)
+    {
+        if (fingerprint is null)
+        {
+            return;
+        }
+
+        updated.EvaluationFingerprint = fingerprint;
+        updated.FingerprintFailureCount = 0;
+        updated.FingerprintRetryAfterUtc = null;
+    }
 
     private static TCronJob _CloneCronJob(TCronJob job)
     {

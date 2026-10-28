@@ -114,8 +114,7 @@ public sealed class CronOverlapDispatchTests : TestBase
             string functionName,
             string? previousFingerprint,
             string currentFingerprint,
-            DateTime previousReconciledThroughUtc,
-            DateTime rebaseAnchorUtc,
+            DateTime reconciledThroughUtc,
             DateTime previousNextDueUtc,
             DateTime rebasedNextDueUtc
         ) { }

@@ -8,9 +8,12 @@ namespace Headless.Jobs;
 /// (<see cref="CronJobEntity.NextDueUtc"/>).
 /// </summary>
 /// <remarks>
-/// The fence is the observed watermark, the observed schedule revision, and a non-paused definition, so concurrent
-/// nodes advancing from the same observed position produce exactly one winner and a node holding a stale definition
-/// snapshot cannot advance at all. A caller that loses the fence is told by a <see langword="null"/> result, not by
+/// The fence is the observed watermark, the observed projection, the observed schedule revision, and a non-paused
+/// definition, so concurrent nodes advancing from the same observed position produce exactly one winner and a node
+/// holding a stale definition snapshot cannot advance at all. The projection is fenced separately from the watermark
+/// because a fingerprint rebase keeps the watermark and moves only the projection: without it, a dispatch that read
+/// the row before a rebase could commit after it, firing an instant the old rules placed or skipping one the new
+/// rules placed. A caller that loses the fence is told by a <see langword="null"/> result, not by
 /// an exception — losing a dispatch race is the expected outcome on every node but one.
 /// </remarks>
 [PublicAPI]
@@ -21,6 +24,12 @@ public sealed record CronScheduleAdvance
 
     /// <summary>The exact durable watermark the caller observed. The advance is rejected if it no longer matches.</summary>
     public required DateTime ObservedReconciledThroughUtc { get; init; }
+
+    /// <summary>
+    /// The exact durable projection (<see cref="CronJobEntity.NextDueUtc"/>) the caller observed. The advance is
+    /// rejected if it no longer matches.
+    /// </summary>
+    public required DateTime ObservedNextDueUtc { get; init; }
 
     /// <summary>The exact durable schedule revision the caller observed.</summary>
     public required long ExpectedScheduleRevision { get; init; }

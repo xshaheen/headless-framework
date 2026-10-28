@@ -29,6 +29,31 @@ public sealed class CronEvaluationFingerprintTests : TestBase
     }
 
     [Fact]
+    public void should_keep_returning_each_zones_own_fingerprint_across_interleaved_calls()
+    {
+        var cache = _Cache();
+        var berlin = TimeZoneInfo.FindSystemTimeZoneById("Europe/Berlin");
+        var newYork = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+
+        // Interleaved and repeated, so a memo that answered one zone with another's entry, or stopped matching a
+        // fresh computation after the first call, would show here.
+        for (var pass = 0; pass < 2; pass++)
+        {
+            cache.ComputeEvaluationFingerprint("Europe/Berlin").Should().Be(CronEvaluationFingerprint.Compute(berlin));
+            cache
+                .ComputeEvaluationFingerprint("America/New_York")
+                .Should()
+                .Be(CronEvaluationFingerprint.Compute(newYork));
+            cache
+                .ComputeEvaluationFingerprint(timeZoneId: null)
+                .Should()
+                .Be(CronEvaluationFingerprint.Compute(TimeZoneInfo.Utc));
+            cache.TryComputeEvaluationFingerprint("Europe/Berlin", out var tried).Should().BeTrue();
+            tried.Should().Be(CronEvaluationFingerprint.Compute(berlin));
+        }
+    }
+
+    [Fact]
     public void should_produce_a_different_fingerprint_for_a_different_zone()
     {
         var berlin = _Cache().ComputeEvaluationFingerprint("Europe/Berlin");

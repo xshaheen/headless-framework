@@ -185,14 +185,16 @@ public static class HeadlessJobsQueryExtensions
     }
 
     /// <summary>
-    /// The compare-and-advance fence for a cron definition's schedule position: the row still holds the watermark and
-    /// the schedule revision the caller observed, and is not paused. Advancement requires all three, so concurrent
-    /// nodes advancing from the same observed watermark produce exactly one winner (the loser matches zero rows) and a
-    /// node holding a stale definition snapshot cannot apply superseded settings.
+    /// The compare-and-advance fence for a cron definition's schedule position: the row still holds the watermark, the
+    /// projection, and the schedule revision the caller observed, and is not paused. Advancement requires all four, so
+    /// concurrent nodes advancing from the same observed position produce exactly one winner (the loser matches zero
+    /// rows) and a node holding a stale definition snapshot cannot apply superseded settings.
     /// </summary>
     /// <remarks>
     /// The watermark equality is what serializes the racers — it is a value CAS, not a lock, so the losing node needs
-    /// no rollback and raises nothing. Deliberately clock-free: due-ness is a separate, opt-in concern
+    /// no rollback and raises nothing. The projection equality catches the one transition that keeps the watermark: a
+    /// fingerprint rebase moves only the projection, and a writer that read the row before it must not commit a
+    /// position derived from the replaced rules. Deliberately clock-free: due-ness is a separate, opt-in concern
     /// (<see cref="WhereProjectionIsDueUsingDatabaseClock{TCronJob}"/>) because the fingerprint sweep must be able to
     /// rebase a definition whether or not its stale projection is due.
     /// </remarks>
@@ -200,6 +202,7 @@ public static class HeadlessJobsQueryExtensions
         this IQueryable<TCronJob> q,
         Guid cronJobId,
         DateTime observedReconciledThroughUtc,
+        DateTime observedNextDueUtc,
         long expectedScheduleRevision
     )
         where TCronJob : CronJobEntity
@@ -209,6 +212,7 @@ public static class HeadlessJobsQueryExtensions
             && !e.IsPaused
             && e.ScheduleRevision == expectedScheduleRevision
             && e.ReconciledThroughUtc == observedReconciledThroughUtc
+            && e.NextDueUtc == observedNextDueUtc
         );
     }
 

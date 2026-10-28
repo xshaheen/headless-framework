@@ -18,6 +18,15 @@ internal static class JobsMetrics
     /// <summary>Why a signal was dropped: <c>full</c> (channel at capacity) or <c>stopping</c> (host shutting down).</summary>
     internal const string TagDropReason = "headless.jobs.drop_reason";
 
+    /// <summary>Cron fingerprint sweep passes that rebased nothing because fleet agreement could not be shown.</summary>
+    internal const string FingerprintSweepDeferredName = "headless.jobs.cron.fingerprint_sweep.deferred";
+
+    /// <summary>
+    /// Why a sweep pass deferred: <c>fleet_disagreement</c> or <c>membership_unavailable</c>. Carries no node identity,
+    /// which would make the series unbounded; the holdout warning names the nodes instead.
+    /// </summary>
+    internal const string TagSweepDeferralReason = "headless.jobs.deferral_reason";
+
     /// <summary>Due cron occurrences recorded as skipped instead of running.</summary>
     internal const string CronOccurrencesSkippedName = "headless.jobs.cron.occurrences.skipped";
 
@@ -160,6 +169,30 @@ internal static class JobsMetrics
         unit: "{signal}",
         description: "Coordinated post-commit signals dropped before the worker ran them; the poll sweep recovers the row."
     );
+
+    private static readonly Counter<long> _FingerprintSweepDeferred = JobsDiagnostics.Meter.CreateCounter<long>(
+        FingerprintSweepDeferredName,
+        unit: "{pass}",
+        description: "Cron fingerprint sweep passes that rebased nothing because fleet agreement could not be shown, "
+            + "by reason."
+    );
+
+    internal static void FingerprintSweepDeferred(CronFingerprintSweepDeferralReason reason)
+    {
+        if (!_FingerprintSweepDeferred.Enabled)
+        {
+            return;
+        }
+
+        var tag = reason switch
+        {
+            CronFingerprintSweepDeferralReason.FleetDisagreement => "fleet_disagreement",
+            CronFingerprintSweepDeferralReason.MembershipUnavailable => "membership_unavailable",
+            _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Only a deferred pass is counted."),
+        };
+
+        _FingerprintSweepDeferred.Add(1, new TagList { { TagSweepDeferralReason, tag } });
+    }
 
     internal static void PostCommitSignalDropped(string reason)
     {

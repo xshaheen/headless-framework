@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using Headless.Checks;
+using Headless.Jobs.Coordination;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Internal;
 using Microsoft.Extensions.DependencyInjection;
@@ -62,6 +63,30 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     private IJobsOwnerIdentity _ResolveOwnerIdentity()
     {
         return _ownerIdentity ??= serviceProvider.GetRequiredService<IJobsOwnerIdentity>();
+    }
+
+    // Registered only with the durable store. Its absence is how the in-memory store, a single process with no fleet to
+    // agree with, rebases on its own rule change; Messaging may register an INodeMembership on that host, so the
+    // presence of membership cannot decide it.
+    private readonly Lazy<CronFleetAgreement?> _fleetAgreement = new(serviceProvider.GetService<CronFleetAgreement>);
+
+    private async Task<CronFingerprintSweepDeferralReason> _CheckFleetAgreementAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        if (_fleetAgreement.Value is not { } fleetAgreement)
+        {
+            return CronFingerprintSweepDeferralReason.None;
+        }
+
+        var agreement = await fleetAgreement.CheckAsync(cancellationToken).ConfigureAwait(false);
+
+        return agreement.Outcome switch
+        {
+            CronFleetAgreementOutcome.Agreed => CronFingerprintSweepDeferralReason.None,
+            CronFleetAgreementOutcome.Disagreed => CronFingerprintSweepDeferralReason.FleetDisagreement,
+            _ => CronFingerprintSweepDeferralReason.MembershipUnavailable,
+        };
     }
 
     private readonly TimeSpan _strandedSweepInterval = schedulerOptions.FallbackIntervalChecker;
@@ -682,6 +707,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 {
                     CronJobId = candidate.CronJobId,
                     ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
+                    ObservedNextDueUtc = candidate.NextDueUtc,
                     ExpectedScheduleRevision = candidate.ScheduleRevision,
                     ReconciledThroughUtc = storeUtcNow,
                     NextDueUtc = firstOccurrence ?? DateTime.MaxValue,
@@ -731,9 +757,11 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 {
                     CronJobId = candidate.CronJobId,
                     ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
+                    ObservedNextDueUtc = candidate.NextDueUtc,
                     ExpectedScheduleRevision = candidate.ScheduleRevision,
                     RecoveredThroughUtc = storeUtcNow,
                     NextDueUtc = nextAfterRecovery ?? DateTime.MaxValue,
+                    EvaluationFingerprint = cronScheduleCache.ComputeEvaluationFingerprint(candidate.TimeZoneId),
                     BoundedProgressThroughUtc = boundedProgressThroughUtc,
                     NextDueAfterBoundedProgressUtc = nextAfterBoundedProgress ?? DateTime.MaxValue,
                     EvaluationSaturated = pending.CountSaturated,
@@ -887,12 +915,16 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                     {
                         CronJobId = candidate.CronJobId,
                         ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
+                        ObservedNextDueUtc = candidate.NextDueUtc,
                         ExpectedScheduleRevision = candidate.ScheduleRevision,
                         ReconciledThroughUtc = candidate.NextDueUtc,
                         // A schedule with no further occurrence (an exhausted or unparseable expression) parks its
                         // projection beyond any wake. Leaving the old projection in place would keep the definition
                         // permanently due and spin the scheduler at its minimum sleep forever.
                         NextDueUtc = nextAfterDue ?? DateTime.MaxValue,
+                        // The new projection was derived under this node's rules, so the row names them. Another
+                        // node's fingerprint left in place would claim a projection its rules never produced.
+                        EvaluationFingerprint = cronScheduleCache.ComputeEvaluationFingerprint(candidate.TimeZoneId),
                         RequireProjectionDue = true,
                     },
                     ExecutionTimeUtc = candidate.NextDueUtc,
@@ -1455,6 +1487,31 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     )
     {
         Argument.IsPositive(limit);
+
+        // Checked on every call, not once per pass, so an "agreed" verdict cannot outlive a peer that changed rules
+        // between pages.
+        var deferral = await _CheckFleetAgreementAsync(cancellationToken).ConfigureAwait(false);
+
+        if (deferral != CronFingerprintSweepDeferralReason.None)
+        {
+            // The next pass starts a fresh snapshot, so this one's cached known set would never be read again.
+            if (throughId is { } abandonedSnapshot)
+            {
+                _fingerprintsBySnapshot.TryRemove(abandonedSnapshot, out _);
+            }
+
+            return new CronFingerprintSweepResult
+            {
+                Scanned = 0,
+                Rebased = 0,
+                Deferred = 0,
+                LostFence = 0,
+                HasMore = false,
+                NextCursorId = afterId,
+                DeferralReason = deferral,
+            };
+        }
+
         var knownFingerprints =
             throughId is { } requestedSnapshot
             && _fingerprintsBySnapshot.TryGetValue(requestedSnapshot, out var cachedFingerprints)
@@ -1481,6 +1538,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         }
 
         var rebased = 0;
+        DateTime? earliestRebased = null;
         var deferred = 0;
         var lostFence = 0;
         var skippedNodeLocal = 0;
@@ -1489,12 +1547,18 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            if (candidate.NextDueUtc == default)
+            {
+                // No position yet (just created or just edited). Rebasing from its unset watermark would replay its
+                // whole history; dispatch's creation rule positions it at the store instant and stamps the current
+                // fingerprint instead.
+                continue;
+            }
+
             Exception? deterministicFailure = null;
             string? current = null;
             DateTime? rebasedNext = null;
             var nodeLocalFailure = false;
-            var anchor =
-                candidate.ReconciledThroughUtc > page.StoreUtcNow ? candidate.ReconciledThroughUtc : page.StoreUtcNow;
 
             if (candidate.OnMissedRun is not MissedRunPolicy.Coalesce and not MissedRunPolicy.Skip)
             {
@@ -1540,7 +1604,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                     {
                         rebasedNext = cronScheduleCache.GetNextOccurrenceOrDefault(
                             candidate.Expression,
-                            anchor,
+                            candidate.ReconciledThroughUtc,
                             candidate.TimeZoneId
                         );
                     }
@@ -1617,15 +1681,30 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             // Provider/database failures are deliberately outside the deterministic-definition catch above. They are
             // infrastructure failures, not evidence that this row is malformed, so activation must fail closed rather
             // than durably deferring the row and allowing the scheduler to start.
-            if (await _RebaseAsync(candidate, current!, anchor, rebasedNext, cancellationToken).ConfigureAwait(false))
+            if (
+                await _RebaseAsync(candidate, current!, rebasedNext, cancellationToken).ConfigureAwait(false) is
+                { } committedNextDue
+            )
             {
                 rebased++;
+
+                if (
+                    committedNextDue != DateTime.MaxValue
+                    && (earliestRebased is null || committedNextDue < earliestRebased)
+                )
+                {
+                    earliestRebased = committedNextDue;
+                }
             }
             else
             {
                 lostFence++;
             }
         }
+
+        // The scheduler sleeps toward a wake armed from the old projection; a rebase can move a definition earlier
+        // than that, so it would otherwise fire late, past its grace, and reach the missed-run policy as a misfire.
+        _WakeSchedulerFor(earliestRebased);
 
         if ((!page.HasMore || page.Wrapped) && page.SnapshotHighWatermarkId is { } completedSnapshot)
         {
@@ -1697,29 +1776,30 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
 
     /// <summary>
     /// Re-derives one definition's projection under current rules and refreshes its fingerprint, in a single
-    /// compare-and-advance so a pause, resume, or edit racing the sweep wins instead of being clobbered.
+    /// compare-and-advance so a pause, resume, edit, or dispatch racing the sweep wins instead of being clobbered.
     /// </summary>
-    private async Task<bool> _RebaseAsync(
+    /// <remarks>
+    /// The watermark is kept, so every instant the current rules place between it and now stays owed: the next
+    /// dispatch finds those instants pending and hands them to the definition's missed-run policy. Moving the
+    /// watermark to the store instant instead would silently discard runs the schedule still owes.
+    /// </remarks>
+    /// <returns>The committed projection, or <see langword="null"/> when a newer transition won the fence.</returns>
+    private async Task<DateTime?> _RebaseAsync(
         CronDispatchCandidate candidate,
         string currentFingerprint,
-        DateTime anchor,
         DateTime? rebasedNext,
         CancellationToken cancellationToken
     )
     {
-        // Derived from the watermark so no interval is skipped, then anchored at or after the store instant so a tick
-        // the changed rules moved into the past is NOT replayed as a misfire. That anchoring is the difference between
-        // surfacing a rule change and manufacturing a backlog out of one.
         var advanced = await persistenceProvider
             .AdvanceCronScheduleAsync(
                 new CronScheduleAdvance
                 {
                     CronJobId = candidate.CronJobId,
                     ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
+                    ObservedNextDueUtc = candidate.NextDueUtc,
                     ExpectedScheduleRevision = candidate.ScheduleRevision,
-                    // Environmental rule drift is a non-replay boundary: the prior interpretation's backlog is
-                    // deliberately discarded and both cursor and projection move to the provider-time anchor.
-                    ReconciledThroughUtc = anchor,
+                    ReconciledThroughUtc = candidate.ReconciledThroughUtc,
                     NextDueUtc = rebasedNext ?? DateTime.MaxValue,
                     EvaluationFingerprint = currentFingerprint,
                     // Never gated on due-ness: a rule change that moves an occurrence earlier is invisible behind the
@@ -1732,9 +1812,9 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
 
         if (advanced is null)
         {
-            // A pause, resume, or edit committed first. Its transition is newer and already carries a correct
-            // position, so losing here is the right outcome — the next sweep re-reads whatever it left.
-            return false;
+            // A pause, resume, edit, or dispatch committed first. Its transition is newer and already carries a
+            // correct position, so losing here is the right outcome — the next sweep re-reads whatever it left.
+            return null;
         }
 
         _ResolveInstrumentation()
@@ -1744,12 +1824,11 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 candidate.EvaluationFingerprint,
                 currentFingerprint,
                 candidate.ReconciledThroughUtc,
-                anchor,
                 candidate.NextDueUtc,
                 advanced.NextDueUtc
             );
 
-        return true;
+        return advanced.NextDueUtc;
     }
 
     public async Task MigrateDefinedCronJobs(
@@ -1873,20 +1952,20 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
             .ApplyParentTerminalRunConditionsAsync(parentId, cancellationToken)
             .ConfigureAwait(false);
 
-        _WakeSchedulerForReleasedChild(earliest);
+        _WakeSchedulerFor(earliest);
     }
 
-    private void _WakeSchedulerForReleasedChild(DateTime? earliestReleasedTime)
+    private void _WakeSchedulerFor(DateTime? earliestDueUtc)
     {
-        if (earliestReleasedTime is null)
+        if (earliestDueUtc is null)
         {
             return;
         }
 
         // Resolve the host scheduler lazily to break the JobsSchedulerBackgroundService (IJobsHostScheduler) ⇄
-        // IInternalJobManager constructor cycle. RestartIfNeeded runs only AFTER the releasing transaction committed
+        // IInternalJobManager constructor cycle. Callers wake it only AFTER the write that moved the due time committed
         // (a pre-commit nudge would wake the scheduler into pre-commit state and it would sleep again).
-        serviceProvider.GetService<IJobsHostScheduler>()?.RestartIfNeeded(earliestReleasedTime);
+        serviceProvider.GetService<IJobsHostScheduler>()?.RestartIfNeeded(earliestDueUtc);
     }
 }
 

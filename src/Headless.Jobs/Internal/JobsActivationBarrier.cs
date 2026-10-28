@@ -52,9 +52,23 @@ internal sealed class JobsActivationBarrier
         return _activated.Task.WaitAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// <see langword="true"/> when the drain that opened the barrier deferred its rebases because fleet agreement could
+    /// not be shown. The periodic sweep reads it to retry soon instead of a full interval after start.
+    /// </summary>
+    public bool DrainDeferred { get; private set; }
+
     /// <summary>Opens the barrier. Subsequent signals are ignored.</summary>
-    public void MarkCompleted()
+    /// <param name="drainDeferred">Whether the fingerprint drain deferred its rebases.</param>
+    public void MarkCompleted(bool drainDeferred = false)
     {
+        if (_activated.Task.IsCompleted)
+        {
+            return;
+        }
+
+        // Written before the barrier opens, so a waiter released by it reads the final value.
+        DrainDeferred = drainDeferred;
         _activated.TrySetResult(null);
     }
 

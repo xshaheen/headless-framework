@@ -159,9 +159,12 @@ public static class CronRecoveryScenarioRunner
         {
             CronJobId = world.CronJobId,
             ObservedReconciledThroughUtc = world.ObservedReconciledThroughUtc,
+            // Every world seeds its projection at instant 0 of the grid.
+            ObservedNextDueUtc = world.FirstInstantUtc,
             ExpectedScheduleRevision = world.ScheduleRevision,
             RecoveredThroughUtc = _Instant(world, scenario.RecoveredThroughIndex),
             NextDueUtc = _Instant(world, scenario.RecoveredThroughIndex + 1),
+            EvaluationFingerprint = "fingerprint-current",
             BoundedProgressThroughUtc = _Instant(world, scenario.BoundedProgressIndex),
             NextDueAfterBoundedProgressUtc = _Instant(world, scenario.BoundedProgressIndex + 1),
             EvaluationSaturated = scenario.EvaluationSaturated,
