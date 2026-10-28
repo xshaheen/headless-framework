@@ -3,6 +3,7 @@
 using Azure.Storage.Blobs;
 using Headless.Testing.Tests;
 using Headless.Tus;
+using Headless.Tus.Internal;
 using Tests.TestSetup;
 
 namespace Tests.Flows;
@@ -11,6 +12,7 @@ namespace Tests.Flows;
 public sealed class ExpirationCleanupTests : TestBase
 {
     private readonly TusAzureStore _store;
+    private readonly TusAzureContainerProvisioner _provisioner;
     private readonly BlobContainerClient _containerClient;
     private const string _ContainerName = "tuscontainer";
     private const string _BlobPrefix = "tusfiles/";
@@ -25,6 +27,14 @@ public sealed class ExpirationCleanupTests : TestBase
         var storeOptions = new TusAzureStoreOptions { ContainerName = _ContainerName, BlobPrefix = _BlobPrefix };
         _containerClient = blobServiceClient.GetBlobContainerClient(_ContainerName);
         _store = new TusAzureStore(blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
+        _provisioner = new TusAzureContainerProvisioner(blobServiceClient, storeOptions);
+    }
+
+    // The store does not create its container; the deploy-time provisioner does.
+    public override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync();
+        await _provisioner.ProvisionAsync(AbortToken);
     }
 
     /* Test #105: Full expiration cleanup flow */

@@ -9,10 +9,8 @@ namespace Headless.Tus;
 /// Configuration for the TUS Azure Blob Storage store.
 /// </summary>
 /// <remarks>
-/// Options are validated at startup via FluentValidation. The container is created synchronously
-/// in the <c>TusAzureStore</c> constructor when <see cref="CreateContainerIfNotExists"/> is
-/// <see langword="true"/>, so any connectivity or authorization failure surfaces immediately
-/// rather than on the first upload request.
+/// Options are validated at startup via FluentValidation. The store does not create its container:
+/// <c>resources provision -k AzureBlob</c> does, as a deploy step.
 /// </remarks>
 public sealed class TusAzureStoreOptions
 {
@@ -25,12 +23,6 @@ public sealed class TusAzureStoreOptions
     /// <remarks>A trailing slash is appended automatically when building blob names, so
     /// <c>"uploads"</c> and <c>"uploads/"</c> are equivalent.</remarks>
     public string BlobPrefix { get; set; } = "uploads/";
-
-    /// <summary>
-    /// When <see langword="true"/>, the container is created synchronously during store construction
-    /// if it does not already exist.
-    /// </summary>
-    public bool CreateContainerIfNotExists { get; set; } = true;
 
     /// <summary>
     /// When <see langword="true"/>, incoming PATCH data is split into chunks no larger than
@@ -83,9 +75,8 @@ public sealed class TusAzureStoreOptions
     /// </remarks>
     public int MaxNoSplitBufferSize { get; set; } = 256 * 1024 * 1024; // 256MB
 
-    /// <summary>Public access level applied when creating the container.</summary>
-    /// <remarks>Only used when <see cref="CreateContainerIfNotExists"/> is <see langword="true"/>
-    /// and the container does not yet exist. Defaults to <c>None</c> (private).</remarks>
+    /// <summary>Public access level applied when <c>resources provision</c> creates the container.</summary>
+    /// <remarks>Ignored for a container that already exists. Defaults to <c>None</c> (private).</remarks>
     public PublicAccessType ContainerPublicAccessType { get; set; } = PublicAccessType.None;
 
     /// <summary>

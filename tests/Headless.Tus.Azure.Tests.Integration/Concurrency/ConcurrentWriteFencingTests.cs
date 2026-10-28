@@ -8,6 +8,7 @@ using Azure.Core;
 using Azure.Storage.Blobs;
 using Headless.Testing.Tests;
 using Headless.Tus;
+using Headless.Tus.Internal;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -40,6 +41,7 @@ public sealed class ConcurrentWriteFencingTests : TestBase
     private readonly BlobWriteGate _metadataGate = new(RequestMethod.Put, "metadata");
     private readonly BlobWriteGate _deleteGate = new(RequestMethod.Delete, comp: null);
     private readonly TusAzureStore _store;
+    private readonly TusAzureContainerProvisioner _provisioner;
 
     public ConcurrentWriteFencingTests(TusAzureFixture fixture)
     {
@@ -57,6 +59,14 @@ public sealed class ConcurrentWriteFencingTests : TestBase
         };
 
         _store = new TusAzureStore(blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
+        _provisioner = new TusAzureContainerProvisioner(blobServiceClient, storeOptions);
+    }
+
+    // The store does not create its container; the deploy-time provisioner does.
+    public override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync();
+        await _provisioner.ProvisionAsync(AbortToken);
     }
 
     protected override ValueTask DisposeAsyncCore()

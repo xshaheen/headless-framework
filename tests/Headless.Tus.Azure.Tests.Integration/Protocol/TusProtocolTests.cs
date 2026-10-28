@@ -8,6 +8,7 @@ using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using Headless.Testing.Tests;
 using Headless.Tus;
+using Headless.Tus.Internal;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
@@ -338,6 +339,7 @@ public sealed class TusProtocolTests(TusAzureFixture fixture) : TestBase
             storeOptions.MaxNoSplitBufferSize = maxNoSplitBufferSize.Value;
         }
 
+        await new TusAzureContainerProvisioner(blobServiceClient, storeOptions).ProvisionAsync(AbortToken);
         var store = new TusAzureStore(blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
 
         var configuration = new DefaultTusConfiguration

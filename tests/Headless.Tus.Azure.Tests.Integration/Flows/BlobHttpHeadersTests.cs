@@ -6,6 +6,7 @@ using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Headless.Testing.Tests;
 using Headless.Tus;
+using Headless.Tus.Internal;
 using Tests.TestSetup;
 
 namespace Tests.Flows;
@@ -27,6 +28,7 @@ public sealed class BlobHttpHeadersTests : TestBase
     private const string _CacheControl = "public, max-age=60";
 
     private readonly TusAzureStore _store;
+    private readonly TusAzureContainerProvisioner _provisioner;
     private readonly BlobContainerClient _containerClient;
 
     public BlobHttpHeadersTests(TusAzureFixture fixture)
@@ -52,6 +54,14 @@ public sealed class BlobHttpHeadersTests : TestBase
             blobHttpHeadersProvider: new CustomHeadersProvider(),
             loggerFactory: LoggerFactory
         );
+        _provisioner = new TusAzureContainerProvisioner(blobServiceClient, storeOptions);
+    }
+
+    // The store does not create its container; the deploy-time provisioner does.
+    public override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync();
+        await _provisioner.ProvisionAsync(AbortToken);
     }
 
     [Fact]

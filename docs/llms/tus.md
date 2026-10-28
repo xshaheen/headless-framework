@@ -84,7 +84,7 @@ Any tus 1.0.0 client works against this endpoint (`tus-js-client`, Uppy's `@uppy
 - The client's `Upload-Metadata` header value is stored verbatim in a single `tus_metadata` blob-metadata entry and echoed byte-for-byte in HEAD responses (TUS round-trip contract). Keys keep their original casing and characters; values may decode to any UTF-8 content. Upload-Metadata that is not printable ASCII or exceeds ~7 KB (Azure's 8 KB blob-metadata cap) is rejected with a `TusStoreException`. A concatenation *final* also persists `tus_partial_uploads` (comma-joined constituent ids) alongside the verbatim metadata, so `CreateFinalFileAsync` re-checks the composed total against the 8 KB cap and throws a `TusStoreException` rather than an opaque Azure 400 when many partials plus near-cap metadata would overflow it.
 - Checksum verification (SHA1, SHA256, SHA512, MD5) is handled automatically for both `Upload-Checksum` forms. Header flow: blocks are staged but not committed until the checksum passes; mismatched blocks are left uncommitted (Azure auto-removes them after 7 days). Trailer flow (`checksum-trailer`): data commits during the append with a recorded rollback offset (`tus_last_chunk_offset`); `VerifyChecksumAsync` hashes the committed range on demand and rolls the chunk back on mismatch or a faulty/missing trailer.
 - The concatenation extension uses server-side block copy (`StageBlockFromUri`) when available, falling back to streaming when it is not — Azurite returns HTTP 501, and a private container returns HTTP 403 for the bare source URI (no SAS).
-- `CreateContainerIfNotExists = true` calls `CreateIfNotExists` synchronously in the `TusAzureStore` constructor — ensure the `BlobServiceClient` has container-create permissions before constructing the store.
+- `TusAzureStore` never creates its container; the constructor makes no network call. `AddTusAzureStore` registers the container as a [provisioned resource](utilities.md#resource-provisioning) of kind `AzureBlob`, named after `ContainerName`: the deployment runs `dotnet <app>.dll resources provision` (or `deploy`), which creates it with `ContainerPublicAccessType`, and a starting host only checks that it exists, holding the `warmup` readiness check until it does. A development or test host calls `services.AddDeployStepsOnStartup()` to create it as the host starts. A manually constructed store has no provisioner, so create its container beforehand. `resources purge` deletes the blobs under `BlobPrefix` and keeps the container; `resources delete` deletes them too, then the container only when nothing else is left in it, since a container can hold blobs outside `BlobPrefix`.
 - `ITusAzureBlobHttpHeadersProvider` lets you inject custom `Content-Type` / cache headers per file. Default sets `application/octet-stream`.
 
 ## Core Concepts
@@ -200,7 +200,7 @@ Azure Blob Storage TUS store implementation.
 
 **Server-side concatenation.** Final-file creation uses `StageBlockFromUri` to copy block ranges across blobs without moving data through the application server. When server-side copy is unavailable — Azurite returns HTTP 501, and a private container returns HTTP 403 because the source blob is not readable via its bare URI (no SAS) — the store falls back to download-then-re-upload streaming automatically.
 
-**Constructor-time container init.** When `CreateContainerIfNotExists = true`, `_containerClient.CreateIfNotExists(ContainerPublicAccessType)` is called synchronously in the constructor. If the `BlobServiceClient` lacks container-create permission, construction fails.
+**Container provisioning.** Creating the container is a deploy step, not store construction: the `AzureBlob` provisioner that `AddTusAzureStore` registers creates it on `resources provision`, so the running host needs no container-create permission. At start the host verifies the container with one existence check (`ResourceStartupCheck.GateReadiness`); override it per kind with `ResourceProvisioningOptions.StartupChecks`.
 
 ### Install
 
@@ -220,13 +220,14 @@ var builder = WebApplication.CreateBuilder(args);
 
 var blobServiceClient = new BlobServiceClient(builder.Configuration["Azure:Storage:ConnectionString"]);
 
+// A manually constructed store does not create its container: create "uploads" in the deployment,
+// or register the store with AddTusAzureStore and run `resources provision`.
 var tusStore = new TusAzureStore(
     blobServiceClient,
     new TusAzureStoreOptions
     {
         ContainerName = "uploads",
         BlobPrefix = "tus/",
-        CreateContainerIfNotExists = true,
     }
 );
 
@@ -298,8 +299,7 @@ var store = new TusAzureStore(
 |---|---|---|
 | `ContainerName` | `"tus-uploads"` | Azure Blob container name. |
 | `BlobPrefix` | `"uploads/"` | Prefix applied to all blob names in the container. |
-| `CreateContainerIfNotExists` | `true` | Calls `CreateIfNotExists` in the constructor. |
-| `ContainerPublicAccessType` | `PublicAccessType.None` | Access type used when creating the container. |
+| `ContainerPublicAccessType` | `PublicAccessType.None` | Access type `resources provision` applies when it creates the container; ignored for an existing one. |
 | `EnableChunkSplitting` | `true` | Splits large PATCH bodies into multiple Azure blocks. |
 | `BlobDefaultChunkSize` | `4 MB` | Default block size for medium uploads. Must be 1 byte–100 MB and not exceed `BlobMaxChunkSize`. |
 | `BlobMaxChunkSize` | `16 MB` | Block size used for uploads ≥ 100 MB; also the per-request memory buffering unit for large uploads. Max 100 MB — a store-imposed memory cap; Azure's own per-block limit is 4,000 MiB. |
@@ -309,8 +309,8 @@ Chunk size selection logic: uploads < 10 MB use `min(BlobDefaultChunkSize, fileS
 
 ### Runtime behavior
 
-- Synchronously calls `BlobContainerClient.CreateIfNotExists` during `TusAzureStore` construction when `CreateContainerIfNotExists = true`.
-- DI registration is optional: `TusAzureStore` can be constructed manually or registered via `AddTusAzureStore` (requires a `BlobServiceClient` in DI; container creation still runs synchronously at first resolution when enabled). For cross-node PATCH locking, register `Headless.Tus.DistributedLocks`.
+- Construction makes no network call; the container must already exist (see Container provisioning).
+- DI registration is optional: `TusAzureStore` can be constructed manually or registered via `AddTusAzureStore` (requires a `BlobServiceClient` in DI, and registers the container provisioner). For cross-node PATCH locking, register `Headless.Tus.DistributedLocks`.
 
 ---
 
