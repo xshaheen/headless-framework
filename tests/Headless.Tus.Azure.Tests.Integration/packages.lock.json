@@ -877,6 +877,18 @@
           "Headless.Tus": "[1.0.0, )"
         }
       },
+      "headless.tus.tests.harness": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.6.0, )",
+          "AwesomeAssertions.Json": "[9.0.0, )",
+          "Bogus": "[35.6.5, )",
+          "Headless.Testing": "[1.0.0, )",
+          "Headless.Tus": "[1.0.0, )",
+          "Microsoft.AspNetCore.Mvc.Testing": "[10.0.13, )",
+          "NSubstitute": "[6.2.0, )"
+        }
+      },
       "Azure.Storage.Blobs": {
         "type": "CentralTransitive",
         "requested": "[12.30.1, )",

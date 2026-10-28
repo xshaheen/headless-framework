@@ -59,6 +59,7 @@
     </Folder>
     <Folder Name="/Blobs.Tus/Tests/">
         <Project Path="tests\Headless.Tus.Azure.Tests.Integration\Headless.Tus.Azure.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Tus.Tests.Harness\Headless.Tus.Tests.Harness.csproj" />
         <Project Path="tests\Headless.Tus.Tests.Unit\Headless.Tus.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Blobs/">
