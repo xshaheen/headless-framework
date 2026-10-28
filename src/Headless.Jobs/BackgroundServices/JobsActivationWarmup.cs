@@ -55,6 +55,7 @@ internal sealed class JobsActivationWarmup(
         var rebased = 0;
         var deferred = 0;
         var lostFence = 0;
+        CronFingerprintSweepDeferralReason? deferral = null;
 
         while (true)
         {
@@ -72,7 +73,10 @@ internal sealed class JobsActivationWarmup(
             lostFence += result.LostFence;
             cursor = result.NextCursorId;
             highWatermark ??= result.SnapshotHighWatermarkId;
+            deferral = result.DeferralReason;
 
+            // A deferred pass reports no more rows, so it completes the drain: rebases wait for the periodic sweep
+            // once the fleet agrees, and holding activation would keep this node unready for a fleet-wide condition.
             if (!result.HasMore)
             {
                 break;
@@ -86,6 +90,6 @@ internal sealed class JobsActivationWarmup(
             }
         }
 
-        logger.CronFingerprintActivationCompleted(scanned, rebased, deferred, lostFence);
+        logger.CronFingerprintActivationCompleted(scanned, rebased, deferred, lostFence, deferral);
     }
 }

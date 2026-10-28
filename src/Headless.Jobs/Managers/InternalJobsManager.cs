@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using Headless.Checks;
+using Headless.Jobs.Coordination;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Internal;
 using Microsoft.Extensions.DependencyInjection;
@@ -62,6 +63,37 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     private IJobsOwnerIdentity _ResolveOwnerIdentity()
     {
         return _ownerIdentity ??= serviceProvider.GetRequiredService<IJobsOwnerIdentity>();
+    }
+
+    // Registered only with the durable store. Its absence is how the in-memory store, a single process with no fleet to
+    // agree with, rebases on its own rule change; Messaging may register an INodeMembership on that host, so the
+    // presence of membership cannot decide it.
+    private CronFleetAgreement? _fleetAgreement;
+    private bool _fleetAgreementResolved;
+
+    private async Task<CronFingerprintSweepDeferralReason?> _CheckFleetAgreementAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        if (!_fleetAgreementResolved)
+        {
+            _fleetAgreement = serviceProvider.GetService<CronFleetAgreement>();
+            _fleetAgreementResolved = true;
+        }
+
+        if (_fleetAgreement is null)
+        {
+            return null;
+        }
+
+        var agreement = await _fleetAgreement.CheckAsync(cancellationToken).ConfigureAwait(false);
+
+        return agreement.Outcome switch
+        {
+            CronFleetAgreementOutcome.Agreed => null,
+            CronFleetAgreementOutcome.Disagreed => CronFingerprintSweepDeferralReason.FleetDisagreement,
+            _ => CronFingerprintSweepDeferralReason.MembershipUnavailable,
+        };
     }
 
     private readonly TimeSpan _strandedSweepInterval = schedulerOptions.FallbackIntervalChecker;
@@ -1462,6 +1494,29 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     )
     {
         Argument.IsPositive(limit);
+
+        // Checked on every call, not once per pass, so an "agreed" verdict cannot outlive a peer that changed rules
+        // between pages.
+        if (await _CheckFleetAgreementAsync(cancellationToken).ConfigureAwait(false) is { } deferral)
+        {
+            // The next pass starts a fresh snapshot, so this one's cached known set would never be read again.
+            if (throughId is { } abandonedSnapshot)
+            {
+                _fingerprintsBySnapshot.TryRemove(abandonedSnapshot, out _);
+            }
+
+            return new CronFingerprintSweepResult
+            {
+                Scanned = 0,
+                Rebased = 0,
+                Deferred = 0,
+                LostFence = 0,
+                HasMore = false,
+                NextCursorId = afterId,
+                DeferralReason = deferral,
+            };
+        }
+
         var knownFingerprints =
             throughId is { } requestedSnapshot
             && _fingerprintsBySnapshot.TryGetValue(requestedSnapshot, out var cachedFingerprints)

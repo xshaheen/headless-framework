@@ -105,6 +105,35 @@ public sealed class CronFingerprintActivationTests : TestBase
         barrier.IsActivated.Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData(CronFingerprintSweepDeferralReason.FleetDisagreement)]
+    [InlineData(CronFingerprintSweepDeferralReason.MembershipUnavailable)]
+    public async Task should_complete_activation_when_the_drain_defers(CronFingerprintSweepDeferralReason reason)
+    {
+        // A fleet that disagrees, or a membership store that cannot answer, is a fleet-wide condition; holding this
+        // node unready for it would take every restarting node out of service until the fleet converged.
+        var manager = Substitute.For<IInternalJobManager>();
+        manager
+            .RebaseStaleFingerprintsAsync(100, null, null, false, AbortToken)
+            .Returns(
+                new CronFingerprintSweepResult
+                {
+                    Scanned = 0,
+                    Rebased = 0,
+                    Deferred = 0,
+                    LostFence = 0,
+                    HasMore = false,
+                    DeferralReason = reason,
+                }
+            );
+        var barrier = new JobsActivationBarrier();
+        var warmup = _Create(manager, barrier, new SchedulerOptionsBuilder());
+
+        await warmup.WarmUpAsync(AbortToken);
+
+        barrier.IsActivated.Should().BeTrue();
+    }
+
     [Fact]
     public async Task should_not_drain_again_once_activation_completed()
     {

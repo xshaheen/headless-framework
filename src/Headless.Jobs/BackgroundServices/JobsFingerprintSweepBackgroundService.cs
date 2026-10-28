@@ -28,7 +28,12 @@ internal sealed class JobsFingerprintSweepBackgroundService(
     private readonly int _batchSize = schedulerOptions.FingerprintSweepBatchSize;
     private Guid? _cursor;
     private Guid? _highWatermark;
+    private TimeSpan _nextDelay = schedulerOptions.FingerprintSweepInterval;
     private const int _MaxConsecutiveFullBatches = 100;
+
+    // A deferred pass is waiting for the fleet to converge, which a restart or a membership read can settle at any
+    // moment; the full interval (an hour by default) would leave every stale definition stale that long after it does.
+    private static readonly TimeSpan _DeferredRetryCeiling = TimeSpan.FromMinutes(5);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -38,7 +43,7 @@ internal sealed class JobsFingerprintSweepBackgroundService(
         {
             try
             {
-                await timeProvider.Delay(_period, stoppingToken).ConfigureAwait(false);
+                await timeProvider.Delay(_nextDelay, stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -79,10 +84,36 @@ internal sealed class JobsFingerprintSweepBackgroundService(
                         );
                     }
 
+                    if (result.DeferralReason is not null)
+                    {
+                        break;
+                    }
+
                     _cursor = result.NextCursorId;
                     _highWatermark ??= result.SnapshotHighWatermarkId;
                     wrapped |= result.Wrapped;
                 } while (result.HasMore && !wrapped && batches < _MaxConsecutiveFullBatches);
+
+                if (result.DeferralReason is not null)
+                {
+                    // Rebases resume from a fresh snapshot once the fleet agrees: the retained one was read under
+                    // a verdict that no longer holds.
+                    _cursor = null;
+                    _highWatermark = null;
+                    _nextDelay = _period < _DeferredRetryCeiling ? _period : _DeferredRetryCeiling;
+                    JobsFingerprintSweepLog.SweepCompleted(
+                        logger,
+                        scanned,
+                        rebased,
+                        deferred,
+                        lostFence,
+                        result.DeferralReason
+                    );
+
+                    continue;
+                }
+
+                _nextDelay = _period;
 
                 if (result.HasMore)
                 {
@@ -95,7 +126,7 @@ internal sealed class JobsFingerprintSweepBackgroundService(
                     _highWatermark = null;
                 }
 
-                JobsFingerprintSweepLog.SweepCompleted(logger, scanned, rebased, deferred, lostFence);
+                JobsFingerprintSweepLog.SweepCompleted(logger, scanned, rebased, deferred, lostFence, deferral: null);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -115,9 +146,16 @@ internal static partial class JobsFingerprintSweepLog
         EventId = 3230,
         Level = LogLevel.Information,
         Message = "Cron fingerprint sweep completed: scanned={Scanned}, rebased={Rebased}, deferred={Deferred}, "
-            + "lostFence={LostFence}."
+            + "lostFence={LostFence}, passDeferredBy={Deferral}."
     )]
-    internal static partial void SweepCompleted(ILogger logger, int scanned, int rebased, int deferred, int lostFence);
+    internal static partial void SweepCompleted(
+        ILogger logger,
+        int scanned,
+        int rebased,
+        int deferred,
+        int lostFence,
+        CronFingerprintSweepDeferralReason? deferral
+    );
 
     [LoggerMessage(
         EventId = 3231,
