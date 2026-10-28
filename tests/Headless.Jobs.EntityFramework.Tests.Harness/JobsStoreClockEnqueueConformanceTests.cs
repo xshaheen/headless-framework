@@ -182,6 +182,44 @@ public abstract class JobsStoreClockEnqueueConformanceTests<TFixture>(TFixture f
         }
     }
 
+    /// <summary>
+    /// An idempotent run-now enqueue inside a unit of work goes through the coordinated idempotent writer, inside a
+    /// transaction that opened seconds earlier. The stamp must be the write statement's instant, not the transaction's
+    /// start or the skewed node clock, and a repeat with the same key in a later unit of work writes nothing.
+    /// </summary>
+    public virtual Task coordinated_idempotent_run_now_enqueue_is_stamped_at_the_write_and_a_repeat_writes_nothing()
+    {
+        return _CoordinatedIdempotentIsStampedAtTheWriteAsync(
+            "run-now-idempotent-coordinated",
+            TimeSpan.Zero,
+            async (unitOfWork, key, ct) =>
+            {
+                var job = _RunNowJob();
+                var returned = await unitOfWork
+                    .TimeJobs<TimeJobEntity>()
+                    .AddIdempotentAsync(job, key, TimeSpan.FromHours(1), ct);
+                return (returned.Id, returned.ExecutionTime);
+            }
+        );
+    }
+
+    /// <summary>
+    /// The delayed form of the coordinated idempotent enqueue: due at the write statement's instant plus the delay.
+    /// </summary>
+    public virtual Task coordinated_idempotent_delayed_schedule_is_due_at_the_write_plus_the_delay_and_a_repeat_writes_nothing()
+    {
+        return _CoordinatedIdempotentIsStampedAtTheWriteAsync(
+            "delayed-idempotent-coordinated",
+            _Delay,
+            async (unitOfWork, key, ct) =>
+            {
+                var options = new JobOptions { IdempotencyKey = key, IdempotencyTtl = TimeSpan.FromHours(1) };
+                var id = await unitOfWork.Jobs.ScheduleAfterAsync<CoordinatedJob>(_Delay, options, ct);
+                return (id, null);
+            }
+        );
+    }
+
     /// <summary>A write whose due times are all absolute has nothing for the store to resolve, so it reads no clock.</summary>
     public virtual async Task absolute_only_enqueue_reads_no_store_clock()
     {
@@ -431,6 +469,75 @@ public abstract class JobsStoreClockEnqueueConformanceTests<TFixture>(TFixture f
         JobsCoordinationFixtureExtensions.AddParameter(command, "@id", id);
 
         return _AsUtc(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private async Task _CoordinatedIdempotentIsStampedAtTheWriteAsync(
+        string nodeId,
+        TimeSpan delay,
+        Func<IUnitOfWork, string, CancellationToken, Task<(Guid Id, DateTime? ExecutionTime)>> enqueue
+    )
+    {
+        const string key = "coordinated-store-clock-key";
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost(
+            nodeId,
+            timeProvider: new SkewedTimeProvider(_Skew),
+            configureServices: fixture.ConfigureUnitOfWork
+        );
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            (Guid Id, DateTime? ExecutionTime) created = default;
+            DateTime transactionStart = default;
+            DateTime beforeWrite = default;
+            DateTime afterWrite = default;
+
+            await fixture.RunCoordinatedTransactionAsync(
+                host.Services,
+                async (_, unitOfWork, connection, transaction, innerCt) =>
+                {
+                    transactionStart = await _ReadEnlistedClockAsync(connection, transaction, innerCt);
+                    await Task.Delay(TimeSpan.FromSeconds(3), innerCt);
+                    beforeWrite = await _StoreUtcNowAsync(innerCt);
+                    created = await enqueue(unitOfWork, key, innerCt);
+                    afterWrite = await _StoreUtcNowAsync(innerCt);
+                },
+                ct
+            );
+
+            Guid repeatId = default;
+            await fixture.RunCoordinatedTransactionAsync(
+                host.Services,
+                async (_, unitOfWork, _, _, innerCt) => repeatId = (await enqueue(unitOfWork, key, innerCt)).Id,
+                ct
+            );
+
+            var stamp = await _ReadExecutionTimeAsync(created.Id, ct);
+            stamp
+                .Should()
+                .BeOnOrAfter(beforeWrite + delay - _Tolerance)
+                .And.BeOnOrBefore(afterWrite + delay + _Tolerance);
+            (stamp - delay)
+                .Should()
+                .BeAfter(
+                    transactionStart.AddSeconds(2),
+                    "the stamp is the statement's clock, not the transaction's start"
+                );
+            if (delay == TimeSpan.Zero)
+            {
+                created.ExecutionTime.Should().BeCloseTo(stamp, TimeSpan.FromMilliseconds(1));
+            }
+
+            repeatId.Should().Be(created.Id);
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(1);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
     }
 
     private async Task _DelayedIsDueAtTheStoreInstantPlusTheDelayAsync(string nodeId, TimeSpan skew)

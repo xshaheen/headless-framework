@@ -43,6 +43,18 @@ public abstract class PostgreSqlStoreClockEnqueueTestsBase<TFixture>(TFixture fi
     }
 
     [Fact]
+    public override Task coordinated_idempotent_run_now_enqueue_is_stamped_at_the_write_and_a_repeat_writes_nothing()
+    {
+        return base.coordinated_idempotent_run_now_enqueue_is_stamped_at_the_write_and_a_repeat_writes_nothing();
+    }
+
+    [Fact]
+    public override Task coordinated_idempotent_delayed_schedule_is_due_at_the_write_plus_the_delay_and_a_repeat_writes_nothing()
+    {
+        return base.coordinated_idempotent_delayed_schedule_is_due_at_the_write_plus_the_delay_and_a_repeat_writes_nothing();
+    }
+
+    [Fact]
     public override Task absolute_only_enqueue_reads_no_store_clock()
     {
         return base.absolute_only_enqueue_reads_no_store_clock();
