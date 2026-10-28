@@ -11,9 +11,13 @@ namespace Tests.TestSetup;
 /// Builds conformance stores over one shared, provisioned bucket and keeps their clients alive until the fixture is
 /// disposed, because a store does not own the client it is given.
 /// </summary>
-internal sealed class TusS3StoreFactory : IDisposable
+/// <param name="bucket">
+/// The bucket the stores share. An emulator gets the fixed <see cref="Bucket" />; a real account passes a name unique
+/// to the run, so concurrent runs never share state and the run can drop its bucket afterwards.
+/// </param>
+internal sealed class TusS3StoreFactory(string bucket = TusS3StoreFactory.Bucket) : IDisposable
 {
-    /// <summary>The bucket every conformance scenario on one backend shares.</summary>
+    /// <summary>The bucket every conformance scenario on one emulator backend shares.</summary>
     public const string Bucket = "tus-conformance";
 
     /// <summary>The key prefix under <see cref="Bucket" /> the shared stores write to.</summary>
@@ -31,7 +35,7 @@ internal sealed class TusS3StoreFactory : IDisposable
 
         var options = new TusS3StoreOptions
         {
-            Bucket = Bucket,
+            Bucket = bucket,
             Prefix = Prefix,
             Provider = client.Provider,
         };
