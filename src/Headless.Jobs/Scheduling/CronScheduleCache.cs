@@ -74,6 +74,14 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
             return null;
         }
 
+        // The cursor is a UTC instant. A Local value would be relabelled as UTC below and silently shift every
+        // occurrence by the host's offset, so it is rejected; Unspecified is accepted as UTC, as callers persist it.
+        Argument.IsTrue(
+            dateTime.Kind != DateTimeKind.Local,
+            "The cursor must be a UTC instant, not a local time.",
+            nameof(dateTime)
+        );
+
         var timeZone = CronTimeZoneResolver.Resolve(timeZoneId, TimeZoneInfo);
         var cursor = DateTime.SpecifyKind(dateTime, DateTimeKind.Utc);
         var offset = CronZoneTransition.OffsetAt(timeZone, cursor);
