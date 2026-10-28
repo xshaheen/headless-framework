@@ -16,9 +16,17 @@ public sealed class SqlServerPeekTests(SqlServerJobsCoordinationFixture fixture)
     }
 
     [Fact]
-    public override Task peek_returns_a_row_a_lagging_node_stamped_with_its_own_now()
+    public override Task peek_returns_an_absolute_time_a_lagging_node_set_to_its_own_now()
     {
-        return base.peek_returns_a_row_a_lagging_node_stamped_with_its_own_now();
+        return base.peek_returns_an_absolute_time_a_lagging_node_set_to_its_own_now();
+    }
+
+    [Theory]
+    [InlineData(120)]
+    [InlineData(-120)]
+    public override Task peek_returns_a_run_now_row_a_skewed_node_enqueued(int nodeSkewSeconds)
+    {
+        return base.peek_returns_a_run_now_row_a_skewed_node_enqueued(nodeSkewSeconds);
     }
 
     [Fact]

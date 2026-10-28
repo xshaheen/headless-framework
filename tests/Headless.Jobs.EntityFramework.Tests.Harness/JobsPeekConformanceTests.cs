@@ -51,24 +51,57 @@ public abstract class JobsPeekConformanceTests<TFixture>(TFixture fixture) : Tes
     }
 
     /// <summary>
-    /// A node whose clock lags the store stamps a run-now job with its own now, which the store already sees as more
-    /// than a second overdue. Immediate dispatch leaves a cluster-limited job for the scheduler it wakes, so the peek
-    /// must still return that row; bounding it on the store clock alone left it to the fallback sweep.
+    /// An absolute due time is stored as given, so a node whose clock lags the store and schedules a job for its own now
+    /// writes a row the store already sees as more than a second overdue. Immediate dispatch leaves a cluster-limited
+    /// job for the scheduler it wakes, so the peek must still return that row; bounding it on the store clock alone
+    /// left it to the fallback sweep.
     /// </summary>
-    public virtual async Task peek_returns_a_row_a_lagging_node_stamped_with_its_own_now()
+    public virtual async Task peek_returns_an_absolute_time_a_lagging_node_set_to_its_own_now()
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("peek-lag", timeProvider: new SkewedTimeProvider(TimeSpan.FromSeconds(-5)));
+        var nodeClock = new SkewedTimeProvider(TimeSpan.FromSeconds(-5));
+        using var host = fixture.BuildHost("peek-lag", timeProvider: nodeClock);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
         try
         {
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-            var id = Guid.NewGuid();
-            await fixture.SeedTimeJobAsync(id, "peek-lag", (int)JobStatus.Idle, null, ct);
-            await _SetExecutionTimeOnStoreClockAsync([id], offsetSeconds: -5, ct);
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+            var id = await scheduler.ScheduleAsync<CoordinatedJob>(nodeClock.GetUtcNow(), ct);
+
+            var peek = await persistence.GetEarliestTimeJobsAsync(ct);
+
+            peek.Jobs.Select(x => x.Id).Should().Equal(id);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// A run-now job is stamped by the store, so the peek finds it through the store-clock bound whichever way the
+    /// enqueuing node's clock is off. A node two minutes ahead bounds its own window past that stamp, so only the
+    /// store-clock bound can return the row there.
+    /// </summary>
+    public virtual async Task peek_returns_a_run_now_row_a_skewed_node_enqueued(int nodeSkewSeconds)
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost(
+            "peek-run-now",
+            timeProvider: new SkewedTimeProvider(TimeSpan.FromSeconds(nodeSkewSeconds))
+        );
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+            var id = await scheduler.EnqueueAsync<CoordinatedJob>(ct);
 
             var peek = await persistence.GetEarliestTimeJobsAsync(ct);
 

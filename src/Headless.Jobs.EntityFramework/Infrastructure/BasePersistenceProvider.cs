@@ -376,9 +376,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // Rows older than one second belong to the fallback sweep, whose bound is ExecutionTime <= db now - 1s. The
         // window starts at the earlier of that bound on the database clock (DateTime.UtcNow is provider-translated) and
         // the same bound on this node's clock. The database bound keeps a node that leads the store from sleeping
-        // through due rows until the sweep. The node bound keeps a run-now row this node just stamped with its own,
-        // lagging clock in the window, so the scheduler that immediate dispatch woke for it can claim it. Where the two
-        // windows overlap the sweep, the claim's compare-and-swap still lets only one of them take the row.
+        // through due rows until the sweep. The node bound covers the stamps that still come from a node clock: an
+        // absolute time a lagging node set near its own now, and any relative stamp on a provider without a statement
+        // clock, which falls back to the host clock. Without it, such a row whose immediate acquire failed would wait
+        // for the sweep instead of the scheduler that immediate dispatch woke for it. Where the two windows overlap
+        // the sweep, the claim's compare-and-swap still lets only one of them take the row.
         var nodeWindowStart = TimeProvider.GetUtcNow().UtcDateTime.AddSeconds(-1);
         var baseQuery = peekable
             .Where(x => x.ExecutionTime != null)
