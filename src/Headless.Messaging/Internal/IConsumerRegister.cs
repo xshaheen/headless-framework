@@ -206,6 +206,11 @@ internal sealed partial class ConsumerRegister(
         }
     }
 
+    /// <summary>
+    /// Restarts consumers when the register is unhealthy, or every subscription when <paramref name="force"/> is set.
+    /// Without it, only the subscriptions that hold a degraded client are rebuilt, so the healthy ones keep consuming;
+    /// a failure no single subscription owns still rebuilds every subscription.
+    /// </summary>
     public async ValueTask ReStartAsync(bool force = false, CancellationToken cancellationToken = default)
     {
         if ((LifecycleState)Volatile.Read(ref _state) is LifecycleState.Disposing or LifecycleState.Disposed)
@@ -218,7 +223,17 @@ internal sealed partial class ConsumerRegister(
             await _restartGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                await _RestartCoreAsync().ConfigureAwait(false);
+                // Rebuilding single subscriptions needs a running generation to keep. Before one runs, or once a
+                // failed rebuild discarded it, only a full restart starts the consumers again.
+                if (force || _needsFullRestart || (LifecycleState)Volatile.Read(ref _state) != LifecycleState.Running)
+                {
+                    await _RestartCoreAsync().ConfigureAwait(false);
+                }
+                else
+                {
+                    await _ApplyTopologyChangeAsync(rebuildDegraded: true).ConfigureAwait(false);
+                }
+
                 await _DrainPendingTopologyRefreshesAsync().ConfigureAwait(false);
             }
             finally
@@ -289,9 +304,11 @@ internal sealed partial class ConsumerRegister(
 
     /// <summary>
     /// Rebuilds the subscription groups whose shape differs from the running ones, under the restart gate. A group's
-    /// shape is its concurrency and its consumers, so it changes when a runtime subscription joins or leaves it.
+    /// shape is its concurrency and its consumers, so it changes when a runtime subscription joins or leaves it. With
+    /// <paramref name="rebuildDegraded"/>, a group holding a degraded client is rebuilt too; its group is resolved
+    /// against the current subscriptions like any other, so a group removed or reshaped since is not recreated as it was.
     /// </summary>
-    private async ValueTask _ApplyTopologyChangeAsync()
+    private async ValueTask _ApplyTopologyChangeAsync(bool rebuildDegraded = false)
     {
         if ((LifecycleState)Volatile.Read(ref _state) != LifecycleState.Running)
         {
@@ -312,15 +329,14 @@ internal sealed partial class ConsumerRegister(
 
         var stale = _subscriptionHandles
             .Where(handle =>
-                !desired.TryGetValue(handle.Key, out var wanted)
+                (rebuildDegraded && handle.Value.IsDegraded)
+                || !desired.TryGetValue(handle.Key, out var wanted)
                 || !string.Equals(wanted.Shape, handle.Value.Shape, StringComparison.Ordinal)
             )
             .ToArray();
+        var staleNames = stale.Select(static handle => handle.Key).ToHashSet(StringComparer.Ordinal);
         var added = desired
-            .Where(wanted =>
-                !_subscriptionHandles.TryGetValue(wanted.Key, out var handle)
-                || !string.Equals(wanted.Value.Shape, handle.Shape, StringComparison.Ordinal)
-            )
+            .Where(wanted => !_subscriptionHandles.ContainsKey(wanted.Key) || staleNames.Contains(wanted.Key))
             .Select(static wanted => wanted.Value.Group)
             .ToArray();
 
@@ -346,6 +362,12 @@ internal sealed partial class ConsumerRegister(
         foreach (var handle in stale)
         {
             _subscriptionHandles.TryRemove(handle);
+        }
+
+        // Final shutdown can win while the stale clients drain; replacements started now would outlive it.
+        if ((LifecycleState)Volatile.Read(ref _state) != LifecycleState.Running)
+        {
+            return;
         }
 
         _RegisterKnownCircuits(desired.Values.Select(static x => x.Group));

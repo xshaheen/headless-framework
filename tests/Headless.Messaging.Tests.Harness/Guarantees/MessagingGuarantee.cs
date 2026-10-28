@@ -495,13 +495,7 @@ public static class MessagingGuarantees
             GuaranteeArea.Connectivity,
             realSystem: false,
             "A consumer client whose channel shut down is restarted at the next transport check, whatever another client of its subscription reports."
-        ) with
-        {
-            Status = GuaranteeStatus.Unsupported,
-            Rationale =
-                "The consumer register keeps one process-wide health flag, so one client's ConsumerRegistered hides another client's shutdown and the transport check never restarts it.",
-            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1245",
-        },
+        ),
         // Request/reply
         _Bound("MSG-RR-01", GuaranteeArea.RequestReply, realSystem: true, "A caller receives only its own replies."),
         _Bound(
