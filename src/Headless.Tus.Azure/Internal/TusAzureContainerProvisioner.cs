@@ -17,6 +17,10 @@ internal sealed class TusAzureContainerProvisioner(BlobServiceClient blobService
         options.ContainerName
     );
 
+    // The store treats "uploads" and "uploads/" as the same prefix, so listing by the raw value would also match
+    // sibling folders such as "uploads-archive/" that are not tus uploads.
+    private readonly string _blobPrefix = options.BlobPrefix.EnsureEndsWith('/');
+
     public string Kind => "AzureBlob";
 
     public string Name => options.ContainerName;
@@ -73,7 +77,7 @@ internal sealed class TusAzureContainerProvisioner(BlobServiceClient blobService
     {
         var exists = await _containerClient.ExistsAsync(cancellationToken).ConfigureAwait(false);
 
-        return [new("container", exists.Value ? "exists" : "missing"), new("prefix", options.BlobPrefix)];
+        return [new("container", exists.Value ? "exists" : "missing"), new("prefix", _blobPrefix)];
     }
 
     private async Task _DeleteUploadsAsync(CancellationToken cancellationToken)
@@ -87,7 +91,7 @@ internal sealed class TusAzureContainerProvisioner(BlobServiceClient blobService
             var blob in _containerClient.GetBlobsAsync(
                 traits: BlobTraits.None,
                 states: BlobStates.None,
-                prefix: options.BlobPrefix,
+                prefix: _blobPrefix,
                 cancellationToken: cancellationToken
             )
         )

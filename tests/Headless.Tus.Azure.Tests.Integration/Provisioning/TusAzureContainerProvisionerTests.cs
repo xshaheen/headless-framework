@@ -117,6 +117,27 @@ public sealed class TusAzureContainerProvisionerTests(TusAzureFixture fixture) :
     }
 
     [Fact]
+    public async Task should_purge_only_uploads_when_prefix_has_no_trailing_slash()
+    {
+        // given
+        _options.BlobPrefix = "uploads";
+        var provisioner = _CreateProvisioner();
+        await provisioner.ProvisionAsync(AbortToken);
+        await _UploadAsync("uploads/upload-1");
+        await _UploadAsync("uploads-other/kept");
+
+        // when
+        await provisioner.PurgeAsync(AbortToken);
+        var status = await provisioner.GetStatusAsync(AbortToken);
+
+        // then
+        (await _BlobNamesAsync())
+            .Should()
+            .Equal("uploads-other/kept");
+        status.Should().Contain(new KeyValuePair<string, string>("prefix", "uploads/"));
+    }
+
+    [Fact]
     public async Task should_delete_container_when_it_holds_only_uploads()
     {
         // given
