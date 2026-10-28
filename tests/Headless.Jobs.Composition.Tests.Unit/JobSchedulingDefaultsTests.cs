@@ -2,6 +2,7 @@
 
 using Headless.Jobs;
 using Headless.Jobs.Internal;
+using Headless.Jobs.Managers;
 using Headless.Reliability;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,11 +31,14 @@ public sealed class JobSchedulingDefaultsTests : TestBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task relative_and_absolute_schedules_preserve_the_instant_using_the_injected_clock(bool fluent)
+    public async Task relative_schedules_carry_the_delay_to_the_store_and_absolute_schedules_keep_the_instant(
+        bool fluent
+    )
     {
-        var now = new DateTimeOffset(2026, 9, 5, 12, 0, 0, TimeSpan.Zero);
-        var clock = new FakeTimeProvider(now);
-        var (scheduler, time, _) = _CreateScheduler(clock);
+        // A relative schedule reaches the manager with no due time and its delay alongside: the store, not this node,
+        // turns the delay into an instant.
+        var (scheduler, time, _) = _CreateScheduler();
+        var delayed = (IDelayedTimeJobManager<TimeJobEntity>)time;
         await (
             fluent
                 ? scheduler.ScheduleAfterAsync(
@@ -45,9 +49,13 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 )
                 : scheduler.ScheduleAfterAsync(new Request(), TimeSpan.FromHours(2), AbortToken)
         );
-        await time.Received(1)
-            .AddAsync(Arg.Is<TimeJobEntity>(job => job.ExecutionTime == now.AddHours(2).UtcDateTime), AbortToken);
-        clock.Advance(TimeSpan.FromMinutes(30));
+        await delayed
+            .Received(1)
+            .AddAfterAsync(
+                Arg.Is<TimeJobEntity>(job => job.Function == _Typed.FunctionName && job.ExecutionTime == null),
+                TimeSpan.FromHours(2),
+                AbortToken
+            );
         await (
             fluent
                 ? scheduler.ScheduleAfterAsync<RequestlessJob>(
@@ -57,8 +65,13 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 )
                 : scheduler.ScheduleAfterAsync<RequestlessJob>(TimeSpan.Zero, AbortToken)
         );
-        await time.Received(1)
-            .AddAsync(Arg.Is<TimeJobEntity>(job => job.ExecutionTime == now.AddMinutes(30).UtcDateTime), AbortToken);
+        await delayed
+            .Received(1)
+            .AddAfterAsync(
+                Arg.Is<TimeJobEntity>(job => job.Function == _Requestless.FunctionName && job.ExecutionTime == null),
+                TimeSpan.Zero,
+                AbortToken
+            );
         var offset = new DateTimeOffset(2026, 9, 5, 18, 0, 0, TimeSpan.FromHours(3));
         await (
             fluent
@@ -72,25 +85,107 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 ),
                 AbortToken
             );
+        await time.Received(1).AddAsync(Arg.Any<TimeJobEntity>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task idempotent_relative_schedule_carries_the_delay_with_the_idempotency_window()
+    {
+        var (scheduler, time, _) = _CreateScheduler();
+        var delayed = (IDelayedTimeJobManager<TimeJobEntity>)time;
+
+        await scheduler.ScheduleAfterAsync<RequestlessJob>(
+            TimeSpan.FromMinutes(10),
+            options => options.WithIdempotencyKey("delayed-key").WithIdempotencyTtl(TimeSpan.FromHours(1)),
+            AbortToken
+        );
+
+        await delayed
+            .Received(1)
+            .AddIdempotentAfterAsync(
+                Arg.Is<TimeJobEntity>(job => job.ExecutionTime == null),
+                "delayed-key",
+                TimeSpan.FromHours(1),
+                TimeSpan.FromMinutes(10),
+                AbortToken
+            );
+        await time.DidNotReceive()
+            .AddIdempotentAsync(
+                Arg.Any<TimeJobEntity>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task invalid_relative_delays_fail_before_persistence(bool fluent)
+    public void a_negative_delay_throws_synchronously_before_the_manager_is_called(bool fluent)
     {
-        var (scheduler, time, _) = _CreateScheduler(new FakeTimeProvider(DateTimeOffset.MaxValue.AddSeconds(-1)));
-        var negative = () =>
-            fluent
+        var (scheduler, time, _) = _CreateScheduler();
+        var delayed = (IDelayedTimeJobManager<TimeJobEntity>)time;
+        Action negative = () =>
+            _ = fluent
                 ? scheduler.ScheduleAfterAsync(new Request(), TimeSpan.FromTicks(-1), _ => { }, AbortToken)
                 : scheduler.ScheduleAfterAsync(new Request(), TimeSpan.FromTicks(-1), AbortToken);
-        var overflow = () =>
-            fluent
-                ? scheduler.ScheduleAfterAsync<RequestlessJob>(TimeSpan.FromSeconds(2), _ => { }, AbortToken)
-                : scheduler.ScheduleAfterAsync<RequestlessJob>(TimeSpan.FromSeconds(2), AbortToken);
-        await negative.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        Action negativeRequestless = () =>
+            _ = fluent
+                ? scheduler.ScheduleAfterAsync<RequestlessJob>(TimeSpan.FromTicks(-1), _ => { }, AbortToken)
+                : scheduler.ScheduleAfterAsync<RequestlessJob>(TimeSpan.FromTicks(-1), AbortToken);
+
+        negative.Should().Throw<ArgumentOutOfRangeException>();
+        negativeRequestless.Should().Throw<ArgumentOutOfRangeException>();
+        time.ReceivedCalls().Should().BeEmpty();
+        delayed.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task a_delayed_job_on_the_in_memory_store_is_due_at_the_store_clock_plus_the_delay()
+    {
+        var storeNow = new DateTimeOffset(2026, 9, 5, 12, 0, 0, TimeSpan.Zero);
+        await using var provider = _CreateHost(_ => { }, clock: new FakeTimeProvider(storeNow));
+        var scheduler = provider.GetRequiredService<IJobScheduler>();
+        var store = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        var id = await scheduler.ScheduleAfterAsync<RequestlessJob>(TimeSpan.FromMinutes(10), AbortToken);
+
+        (await store.GetTimeJobByIdAsync(id, AbortToken))!
+            .ExecutionTime.Should()
+            .Be(storeNow.AddMinutes(10).UtcDateTime);
+    }
+
+    [Fact]
+    public async Task a_schedule_middleware_that_sets_an_absolute_time_wins_over_the_delay()
+    {
+        await using var provider = _CreateHost(
+            options => options.AddModule<AbsoluteTimeMiddlewareModule>(),
+            clock: new FakeTimeProvider(new DateTimeOffset(2026, 9, 5, 12, 0, 0, TimeSpan.Zero))
+        );
+        var scheduler = provider.GetRequiredService<IJobScheduler>();
+        var store = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        var id = await scheduler.ScheduleAfterAsync(new Request(), TimeSpan.FromMinutes(10), AbortToken);
+
+        (await store.GetTimeJobByIdAsync(id, AbortToken))!
+            .ExecutionTime.Should()
+            .Be(AbsoluteTimeMiddlewareModule.ExecutionTime);
+    }
+
+    [Fact]
+    public async Task a_delay_that_overflows_the_store_instant_throws_and_writes_no_row()
+    {
+        await using var provider = _CreateHost(
+            _ => { },
+            clock: new FakeTimeProvider(DateTimeOffset.MaxValue.AddSeconds(-1))
+        );
+        var scheduler = provider.GetRequiredService<IJobScheduler>();
+        var store = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        var overflow = () => scheduler.ScheduleAfterAsync<RequestlessJob>(TimeSpan.FromSeconds(2), AbortToken);
+
         await overflow.Should().ThrowAsync<ArgumentOutOfRangeException>();
-        await time.DidNotReceive().AddAsync(Arg.Any<TimeJobEntity>(), Arg.Any<CancellationToken>());
+        (await store.GetTimeJobsAsync(predicate: null, AbortToken)).Should().BeEmpty();
     }
 
     [Theory]
@@ -107,7 +202,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 policy.Immediate(1).Delayed(1, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5))
             )
         );
-        var (scheduler, time, _) = _CreateScheduler(new FakeTimeProvider(), policies);
+        var (scheduler, time, _) = _CreateScheduler(policies);
         var call = new JobOptions { RetryIntervals = [7], Description = "invocation" };
         TimeJobEntity? ordinary = null;
         time.AddAsync(Arg.Any<TimeJobEntity>(), AbortToken).Returns(info => ordinary = info.Arg<TimeJobEntity>());
@@ -153,7 +248,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             [],
             _Registry(defaultPolicy: policy => policy.Immediate(3))
         );
-        var (scheduler, time, _) = _CreateScheduler(new FakeTimeProvider(), policies);
+        var (scheduler, time, _) = _CreateScheduler(policies);
         TimeJobEntity? stored = null;
         time.AddAsync(Arg.Any<TimeJobEntity>(), AbortToken).Returns(info => stored = info.Arg<TimeJobEntity>());
 
@@ -173,7 +268,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
     [Fact]
     public async Task invalid_fluent_retry_and_node_death_settings_fail_before_persistence()
     {
-        var (scheduler, time, _) = _CreateScheduler(new FakeTimeProvider());
+        var (scheduler, time, _) = _CreateScheduler();
         var invalidRetries = () =>
             scheduler.EnqueueAsync(new Request(), options => options.WithRetries(-1), AbortToken);
         var invalidIntervals = () =>
@@ -193,7 +288,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
     [Fact]
     public async Task keyed_cancellation_forwards_a_known_scope_and_rejects_an_unknown_function()
     {
-        var (scheduler, time, _) = _CreateScheduler(new FakeTimeProvider());
+        var (scheduler, time, _) = _CreateScheduler();
         var scope = new JobKeyScope(_Typed.FunctionName, "tenant");
         var key = new JobKey("invoice");
         await scheduler.CancelKeyedAsync(scope, key, 7, AbortToken);
@@ -220,7 +315,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 }
             )
         );
-        var (scheduler, _, cron) = _CreateScheduler(new FakeTimeProvider(), policies);
+        var (scheduler, _, cron) = _CreateScheduler(policies);
         await scheduler.ScheduleRecurringAsync(new Request(), "0 * * * * *", AbortToken);
         await cron.Received(1)
             .AddAsync(
@@ -550,7 +645,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
     )
     {
         var instant = new DateTimeOffset(2030, 3, 4, 5, 6, 7, TimeSpan.FromMinutes(offsetMinutes));
-        var (scheduler, time, _) = _CreateScheduler(new FakeTimeProvider());
+        var (scheduler, time, _) = _CreateScheduler();
         TimeJobEntity? captured = null;
         time.AddAsync(Arg.Any<TimeJobEntity>(), AbortToken).Returns(call => captured = call.Arg<TimeJobEntity>());
         await (
@@ -607,11 +702,17 @@ public sealed class JobSchedulingDefaultsTests : TestBase
 
     private static ServiceProvider _CreateHost(
         Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>> configure,
-        string requestlessCronExpression = ""
+        string requestlessCronExpression = "",
+        TimeProvider? clock = null
     )
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        if (clock is not null)
+        {
+            services.AddSingleton(clock);
+        }
+
         services.AddHeadlessJobs(options =>
         {
             options.DisableBackgroundServices();
@@ -667,6 +768,26 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             _Register(catalog, requestlessCronExpression: "");
     }
 
+    // Pins every typed job to one absolute instant, the way a business-hours middleware would move a delayed job.
+    private sealed class AbsoluteTimeMiddlewareModule : IJobsModule
+    {
+        public static readonly DateTime ExecutionTime = new(2031, 3, 4, 5, 6, 7, DateTimeKind.Utc);
+
+        private AbsoluteTimeMiddlewareModule() { }
+
+        static void IJobsModule.Register(JobsCatalogBuilder catalog) =>
+            catalog.AddScheduleMiddleware(
+                "Tests:AbsoluteTime",
+                _Typed.FunctionName,
+                JobMiddlewarePriority.Default,
+                static (context, next, cancellationToken) =>
+                {
+                    ((TimeJobEntity)context.Job).ExecutionTime = ExecutionTime;
+                    return next(cancellationToken);
+                }
+            );
+    }
+
     private sealed class CronDefaultsModule : IJobsModule
     {
         private CronDefaultsModule() { }
@@ -679,11 +800,24 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         IJobScheduler Scheduler,
         ITimeJobManager<TimeJobEntity> Time,
         ICronJobManager<CronJobEntity> Cron
-    ) _CreateScheduler(TimeProvider clock, JobSchedulingPolicies? policies = null)
+    ) _CreateScheduler(JobSchedulingPolicies? policies = null)
     {
-        var time = Substitute.For<ITimeJobManager<TimeJobEntity>>();
+        var time = Substitute.For<ITimeJobManager<TimeJobEntity>, IDelayedTimeJobManager<TimeJobEntity>>();
         var cron = Substitute.For<ICronJobManager<CronJobEntity>>();
         time.AddAsync(Arg.Any<TimeJobEntity>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.Arg<TimeJobEntity>());
+        var delayed = (IDelayedTimeJobManager<TimeJobEntity>)time;
+        delayed
+            .AddAfterAsync(Arg.Any<TimeJobEntity>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.Arg<TimeJobEntity>());
+        delayed
+            .AddIdempotentAfterAsync(
+                Arg.Any<TimeJobEntity>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(call => call.Arg<TimeJobEntity>());
         cron.AddAsync(Arg.Any<CronJobEntity>(), Arg.Any<CancellationToken>())
             .Returns(call => call.Arg<CronJobEntity>());
@@ -698,7 +832,6 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             Substitute.For<IInternalJobManager>(),
             Substitute.For<IJobsHostScheduler>(),
             descriptorByJobType: type => type == typeof(RequestlessJob) ? _Requestless : null,
-            timeProvider: clock,
             policies: policies
         );
         return (scheduler, time, cron);

@@ -12,9 +12,9 @@ using Microsoft.Extensions.Hosting;
 namespace Tests;
 
 /// <summary>
-/// Provider-neutral conformance for run-now enqueue under clock skew: a job enqueued with no due time is stamped by the
-/// STORE inside its write, from the store's current-statement clock, and takes the immediate-dispatch path whichever
-/// way the enqueuing node's clock is off. Each host here runs a deliberately skewed <see cref="TimeProvider"/>, so a
+/// Provider-neutral conformance for run-now and delayed enqueue under clock skew: a job enqueued with no due time, or
+/// with a delay, is stamped by the STORE inside its write, from the store's current-statement clock plus the delay, and
+/// a run-now job takes the immediate-dispatch path whichever way the enqueuing node's clock is off. Each host here runs a deliberately skewed <see cref="TimeProvider"/>, so a
 /// stamp taken from the node's clock lands two minutes away from the database's and fails the tolerance below.
 /// </summary>
 /// <remarks>
@@ -26,6 +26,11 @@ public abstract class JobsStoreClockEnqueueConformanceTests<TFixture>(TFixture f
 {
     private static readonly TimeSpan _Skew = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan _Tolerance = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan _Delay = TimeSpan.FromMinutes(10);
+
+    // Lands past DateTime.MaxValue from any instant this century, so only the store-side addition can reject it.
+    private static readonly TimeSpan _OverflowingDelay =
+        DateTime.MaxValue - new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
     // Well inside the 30-second fallback sweep, so a job found Succeeded by then went through the immediate path.
     private static readonly TimeSpan _ImmediateDispatchBound = TimeSpan.FromSeconds(10);
@@ -199,6 +204,166 @@ public abstract class JobsStoreClockEnqueueConformanceTests<TFixture>(TFixture f
                 sql.Contains("clock_timestamp", StringComparison.OrdinalIgnoreCase)
                 || sql.Contains("SYSUTCDATETIME", StringComparison.OrdinalIgnoreCase)
             );
+    }
+
+    public virtual Task delayed_schedule_from_a_host_ahead_of_the_store_is_due_at_the_store_instant_plus_the_delay()
+    {
+        return _DelayedIsDueAtTheStoreInstantPlusTheDelayAsync("delayed-ahead", _Skew);
+    }
+
+    public virtual Task delayed_schedule_from_a_host_behind_the_store_is_due_at_the_store_instant_plus_the_delay()
+    {
+        return _DelayedIsDueAtTheStoreInstantPlusTheDelayAsync("delayed-behind", -_Skew);
+    }
+
+    public virtual async Task idempotent_delayed_schedule_is_due_at_the_store_instant_plus_the_delay()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("delayed-idempotent", timeProvider: new SkewedTimeProvider(_Skew));
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+            var options = new JobOptions { IdempotencyKey = "delayed-key", IdempotencyTtl = TimeSpan.FromHours(1) };
+
+            var before = await _StoreUtcNowAsync(ct);
+            var id = await scheduler.ScheduleAfterAsync<CoordinatedJob>(_Delay, options, ct);
+            var after = await _StoreUtcNowAsync(ct);
+            var repeat = await scheduler.ScheduleAfterAsync<CoordinatedJob>(_Delay, options, ct);
+
+            var stamp = await _ReadExecutionTimeAsync(id, ct);
+            stamp.Should().BeOnOrAfter(before + _Delay - _Tolerance).And.BeOnOrBefore(after + _Delay + _Tolerance);
+            repeat.Should().Be(id);
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(1);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>A zero delay is a run-now enqueue: stamped by the store and taken by the immediate path.</summary>
+    public virtual async Task zero_delay_schedule_from_a_host_behind_the_store_runs_immediately()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost(
+            "delayed-zero",
+            timeProvider: new SkewedTimeProvider(-_Skew),
+            runBackgroundServices: true
+        );
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+
+            var before = await _StoreUtcNowAsync(ct);
+            var id = await scheduler.ScheduleAfterAsync<CoordinatedJob>(TimeSpan.Zero, ct);
+            var after = await _StoreUtcNowAsync(ct);
+            var enqueuedAt = DateTime.UtcNow;
+
+            var stamp = await _ReadExecutionTimeAsync(id, ct);
+            stamp.Should().BeOnOrAfter(before - _Tolerance).And.BeOnOrBefore(after + _Tolerance);
+
+            await _WaitForSucceededAsync(id, ct);
+            (DateTime.UtcNow - enqueuedAt).Should().BeLessThan(_ImmediateDispatchBound);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task delay_that_overflows_the_store_instant_throws_and_writes_no_row()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("delayed-overflow");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+
+            var overflow = () => scheduler.ScheduleAfterAsync<CoordinatedJob>(_OverflowingDelay, ct);
+
+            await overflow.Should().ThrowAsync<ArgumentOutOfRangeException>();
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(0);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// An overflowing delay inside a unit of work fails before its insert, so the caller's transaction stays usable and
+    /// commits the rest of its work.
+    /// </summary>
+    public virtual async Task coordinated_overflowing_delay_throws_and_leaves_the_caller_transaction_usable()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost(
+            "delayed-overflow-coordinated",
+            configureServices: fixture.ConfigureUnitOfWork
+        );
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var survivor = Guid.Empty;
+
+            await fixture.RunCoordinatedTransactionAsync(
+                host.Services,
+                async (_, unitOfWork, _, _, innerCt) =>
+                {
+                    var overflow = () => unitOfWork.Jobs.ScheduleAfterAsync<CoordinatedJob>(_OverflowingDelay, innerCt);
+                    await overflow.Should().ThrowAsync<ArgumentOutOfRangeException>();
+                    survivor = await unitOfWork.Jobs.ScheduleAfterAsync<CoordinatedJob>(_Delay, innerCt);
+                },
+                ct
+            );
+
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(1);
+            (await _ReadExecutionTimeAsync(survivor, ct)).Should().BeAfter(DateTime.UtcNow);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    private async Task _DelayedIsDueAtTheStoreInstantPlusTheDelayAsync(string nodeId, TimeSpan skew)
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost(nodeId, timeProvider: new SkewedTimeProvider(skew));
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+
+            var before = await _StoreUtcNowAsync(ct);
+            var id = await scheduler.ScheduleAfterAsync<CoordinatedJob>(_Delay, ct);
+            var after = await _StoreUtcNowAsync(ct);
+
+            var stamp = await _ReadExecutionTimeAsync(id, ct);
+            stamp.Should().BeOnOrAfter(before + _Delay - _Tolerance).And.BeOnOrBefore(after + _Delay + _Tolerance);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
     }
 
     private async Task _RunNowIsStampedByTheStoreAndRunsImmediatelyAsync(string nodeId, TimeSpan skew)

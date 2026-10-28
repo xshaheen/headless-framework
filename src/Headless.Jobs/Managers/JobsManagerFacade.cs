@@ -12,11 +12,33 @@ namespace Headless.Jobs.Managers;
 internal sealed class JobsManagerFacade<TTimeJob, TCronJob>(
     JobsManager<TTimeJob, TCronJob> core,
     IUnitOfWork? unitOfWork = null
-) : ICronJobManager<TCronJob>, ITimeJobManager<TTimeJob>
+) : ICronJobManager<TCronJob>, ITimeJobManager<TTimeJob>, IDelayedTimeJobManager<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
     private readonly JobsManager<TTimeJob, TCronJob> _core = Argument.IsNotNull(core);
+
+    Task<TTimeJob> IDelayedTimeJobManager<TTimeJob>.AddAfterAsync(
+        TTimeJob entity,
+        TimeSpan delay,
+        CancellationToken cancellationToken
+    ) => _core.AddTimeJobAfterAsync(entity, delay, unitOfWork, cancellationToken);
+
+    Task<TTimeJob> IDelayedTimeJobManager<TTimeJob>.AddIdempotentAfterAsync(
+        TTimeJob entity,
+        string idempotencyKey,
+        TimeSpan idempotencyTtl,
+        TimeSpan delay,
+        CancellationToken cancellationToken
+    ) =>
+        _core.AddIdempotentTimeJobAfterAsync(
+            entity,
+            idempotencyKey,
+            idempotencyTtl,
+            delay,
+            unitOfWork,
+            cancellationToken
+        );
 
     Task<TCronJob> ICronJobManager<TCronJob>.AddAsync(TCronJob entity, CancellationToken cancellationToken) =>
         _core.AddCronJobAsync(entity, unitOfWork, cancellationToken);

@@ -389,7 +389,6 @@ public sealed class JobRequeueTests : TestBase
             internalManager,
             hostScheduler,
             JobsRequestSerializationOptions.Default,
-            new FakeTimeProvider(),
             JobSchedulingPolicies.Empty
         );
 

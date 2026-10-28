@@ -2,7 +2,7 @@
 
 namespace Tests;
 
-/// <summary>Runs the run-now store-clock enqueue conformance suite against PostgreSQL.</summary>
+/// <summary>Runs the run-now and delayed store-clock enqueue conformance suite against PostgreSQL.</summary>
 [Collection<PostgreSqlJobsCoordinationFixture>]
 public sealed class PostgreSqlStoreClockEnqueueTests(PostgreSqlJobsCoordinationFixture fixture)
     : PostgreSqlStoreClockEnqueueTestsBase<PostgreSqlJobsCoordinationFixture>(fixture);
@@ -46,5 +46,41 @@ public abstract class PostgreSqlStoreClockEnqueueTestsBase<TFixture>(TFixture fi
     public override Task absolute_only_enqueue_reads_no_store_clock()
     {
         return base.absolute_only_enqueue_reads_no_store_clock();
+    }
+
+    [Fact]
+    public override Task delayed_schedule_from_a_host_ahead_of_the_store_is_due_at_the_store_instant_plus_the_delay()
+    {
+        return base.delayed_schedule_from_a_host_ahead_of_the_store_is_due_at_the_store_instant_plus_the_delay();
+    }
+
+    [Fact]
+    public override Task delayed_schedule_from_a_host_behind_the_store_is_due_at_the_store_instant_plus_the_delay()
+    {
+        return base.delayed_schedule_from_a_host_behind_the_store_is_due_at_the_store_instant_plus_the_delay();
+    }
+
+    [Fact]
+    public override Task idempotent_delayed_schedule_is_due_at_the_store_instant_plus_the_delay()
+    {
+        return base.idempotent_delayed_schedule_is_due_at_the_store_instant_plus_the_delay();
+    }
+
+    [Fact]
+    public override Task zero_delay_schedule_from_a_host_behind_the_store_runs_immediately()
+    {
+        return base.zero_delay_schedule_from_a_host_behind_the_store_runs_immediately();
+    }
+
+    [Fact]
+    public override Task delay_that_overflows_the_store_instant_throws_and_writes_no_row()
+    {
+        return base.delay_that_overflows_the_store_instant_throws_and_writes_no_row();
+    }
+
+    [Fact]
+    public override Task coordinated_overflowing_delay_throws_and_leaves_the_caller_transaction_usable()
+    {
+        return base.coordinated_overflowing_delay_throws_and_leaves_the_caller_transaction_usable();
     }
 }

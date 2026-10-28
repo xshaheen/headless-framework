@@ -109,7 +109,6 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
             Substitute.For<IInternalJobManager>(),
             sut.Scheduler,
             new JobsRequestSerializationOptions(),
-            new Microsoft.Extensions.Time.Testing.FakeTimeProvider(),
             JobSchedulingPolicies.Empty
         );
         return (facade, builder.Build());

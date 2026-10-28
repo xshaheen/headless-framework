@@ -6,7 +6,6 @@ using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -156,7 +155,6 @@ public sealed class JobSchedulerTests : TestBase
             Substitute.For<IInternalJobManager>(),
             Substitute.For<IJobsHostScheduler>(),
             JobsRequestSerializationOptions.Default,
-            new FakeTimeProvider(),
             JobSchedulingPolicies.Empty
         );
 
@@ -211,7 +209,6 @@ public sealed class JobSchedulerTests : TestBase
             Substitute.For<IInternalJobManager>(),
             Substitute.For<IJobsHostScheduler>(),
             JobsRequestSerializationOptions.Default,
-            new FakeTimeProvider(),
             JobSchedulingPolicies.Empty
         );
 
@@ -450,7 +447,6 @@ public sealed class JobSchedulerTests : TestBase
             internalManager,
             hostScheduler,
             JobsRequestSerializationOptions.Default,
-            new FakeTimeProvider(),
             JobSchedulingPolicies.Empty
         );
 
@@ -476,7 +472,6 @@ public sealed class JobSchedulerTests : TestBase
             internalManager,
             hostScheduler,
             JobsRequestSerializationOptions.Default,
-            new FakeTimeProvider(),
             JobSchedulingPolicies.Empty
         );
 
@@ -502,7 +497,6 @@ public sealed class JobSchedulerTests : TestBase
             internalManager,
             hostScheduler,
             JobsRequestSerializationOptions.Default,
-            new FakeTimeProvider(),
             JobSchedulingPolicies.Empty
         );
 

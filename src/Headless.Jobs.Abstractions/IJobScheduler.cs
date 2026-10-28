@@ -235,10 +235,10 @@ public interface IJobScheduler
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
+    /// <summary>Schedules an ordinary one-shot job due the delay after the store's clock at write time; delay must be non-negative.</summary>
     Task<Guid> ScheduleAfterAsync<TArgs>(TArgs request, TimeSpan delay, CancellationToken cancellationToken = default);
 
-    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
+    /// <summary>Schedules an ordinary one-shot job due the delay after the store's clock at write time; delay must be non-negative.</summary>
     Task<Guid> ScheduleAfterAsync<TArgs>(
         TArgs request,
         TimeSpan delay,
@@ -362,7 +362,7 @@ public interface IJobScheduler
     )
         where TJob : IJob;
 
-    /// <summary>Schedules a one-shot run of a job that takes no arguments relative to the configured application clock; delay must be non-negative.</summary>
+    /// <summary>Schedules a one-shot run of a job that takes no arguments due the delay after the store's clock at write time; delay must be non-negative.</summary>
     /// <typeparam name="TJob">The <c>[Job]</c> class to run.</typeparam>
     Task<Guid> ScheduleAfterAsync<TJob>(TimeSpan delay, CancellationToken cancellationToken = default)
         where TJob : IJob;

@@ -97,7 +97,29 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     )
     {
         JobIntentFingerprint.RejectOrdinaryMutation(entity);
-        return _AddIdempotentTimeJobAsync(entity, idempotencyKey, idempotencyTtl, unitOfWork, cancellationToken);
+        return _AddIdempotentTimeJobAsync(
+            entity,
+            idempotencyKey,
+            idempotencyTtl,
+            delay: null,
+            unitOfWork,
+            cancellationToken
+        );
+    }
+
+    // The idempotent form of AddTimeJobAfterAsync: a creation is due `delay` after the store's clock at write time.
+    // Called only by JobsManagerFacade.
+    internal Task<TTimeJob> AddIdempotentTimeJobAfterAsync(
+        TTimeJob entity,
+        string idempotencyKey,
+        TimeSpan idempotencyTtl,
+        TimeSpan delay,
+        IUnitOfWork? unitOfWork,
+        CancellationToken cancellationToken
+    )
+    {
+        JobIntentFingerprint.RejectOrdinaryMutation(entity);
+        return _AddIdempotentTimeJobAsync(entity, idempotencyKey, idempotencyTtl, delay, unitOfWork, cancellationToken);
     }
 
     internal Task<JobResult<TCronJob>> UpdateCronJobAsync(TCronJob cronJob, CancellationToken cancellationToken)
@@ -179,6 +201,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         TTimeJob entity,
         string idempotencyKey,
         TimeSpan idempotencyTtl,
+        TimeSpan? delay,
         IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
     )
@@ -187,13 +210,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         // option resolution) because the manager is a public surface that receives both values directly.
         JobContract.ValidateName(idempotencyKey);
         JobContract.ValidateIdempotencyTtl(idempotencyTtl);
-        return _AddTimeJobCoreAsync(
-            entity,
-            unitOfWork,
-            (idempotencyKey, idempotencyTtl),
-            delay: null,
-            cancellationToken
-        );
+        return _AddTimeJobCoreAsync(entity, unitOfWork, (idempotencyKey, idempotencyTtl), delay, cancellationToken);
     }
 
     private async Task<TTimeJob> _AddTimeJobCoreAsync(
