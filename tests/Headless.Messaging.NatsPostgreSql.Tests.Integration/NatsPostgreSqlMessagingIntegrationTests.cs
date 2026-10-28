@@ -37,7 +37,6 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
 
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
-        setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
         setup.UsePostgreSql(fixture.PostgreSqlConnectionString);
     }
 

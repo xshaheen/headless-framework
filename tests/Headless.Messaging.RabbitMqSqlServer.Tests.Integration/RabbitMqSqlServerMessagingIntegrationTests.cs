@@ -36,7 +36,6 @@ public sealed class RabbitMqSqlServerMessagingIntegrationTests(RabbitMqSqlServer
 
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
-        setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
         setup.UseSqlServer(fixture.StorageConnectionString);
     }
 
