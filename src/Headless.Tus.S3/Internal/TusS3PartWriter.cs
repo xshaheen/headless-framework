@@ -660,22 +660,26 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
             return;
         }
 
-        try
+        // S3 refuses a DeleteObjects request over its key limit outright, so a long tail goes in several requests.
+        foreach (var batch in segments.Chunk(TusS3Requests.MaxKeysPerDelete))
         {
-            var request = new DeleteObjectsRequest
+            try
             {
-                BucketName = services.Options.Bucket,
-                Objects = [.. segments.Select(segment => new KeyVersion { Key = segment.Key })],
-                Quiet = true,
-            };
+                var request = new DeleteObjectsRequest
+                {
+                    BucketName = services.Options.Bucket,
+                    Objects = [.. batch.Select(segment => new KeyVersion { Key = segment.Key })],
+                    Quiet = true,
+                };
 
-            await services.S3.DeleteObjectsAsync(request, cancellationToken).ConfigureAwait(false);
-        }
+                await services.S3.DeleteObjectsAsync(request, cancellationToken).ConfigureAwait(false);
+            }
 #pragma warning disable CA1031 // Runs after the commit that dropped the segments; a leftover segment only costs storage until the upload is removed.
-        catch (Exception e)
+            catch (Exception e)
 #pragma warning restore CA1031
-        {
-            services.Logger.LogS3SegmentCleanupFailed(e, fileId, segments.Count);
+            {
+                services.Logger.LogS3SegmentCleanupFailed(e, fileId, batch.Length);
+            }
         }
     }
 

@@ -206,6 +206,42 @@ public abstract class ConcatenationTestsBase(IS3TestBackend backend) : TestBase
         await _AssertNoFinalUploadLeftAsync(recordsBefore);
     }
 
+    public virtual async Task should_delete_the_finished_object_when_its_record_write_fails(bool multipart)
+    {
+        // given - partials whose final is built by a multipart upload or by one write, and the final's completed
+        // record write failing; the partials' own records are already written
+        var (ids, _) = multipart
+            ? await _UploadPartialsAsync(3 * _MiB, 6 * _MiB)
+            : await _UploadPartialsAsync(300, 700);
+        var recordsBefore = await _ListCompletedRecordsAsync();
+        var recordFolder = "/" + _options.NormalizedPrefix + TusS3Keys.CompletedFolder;
+        string? finalId = null;
+        _client.Gate.FailWhen(request =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            var folder = path.IndexOf(recordFolder, StringComparison.Ordinal);
+
+            if (folder < 0 || !string.Equals(S3Operation.Of(request), S3Operation.PutObject, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            finalId = path[(folder + recordFolder.Length)..];
+
+            return true;
+        });
+
+        // when
+        var act = () => Store.CreateFinalFileAsync(ids, metadata: null, AbortToken);
+
+        // then - the build fails, and neither its finished object nor a record is left behind
+        await act.Should().ThrowAsync<AmazonS3Exception>();
+        _client.Gate.FailWhen(null);
+        finalId.Should().NotBeNull("the build reached its record write");
+        (await _raw.ReadFinishedObjectAsync(finalId!, AbortToken)).Should().BeNull();
+        (await _ListCompletedRecordsAsync()).Should().Equal(recordsBefore);
+    }
+
     private async Task _AssertNoFinalUploadLeftAsync(IReadOnlyList<string> recordsBefore)
     {
         _client.Gate.Count(S3Operation.CreateMultipartUpload).Should().Be(1);
@@ -289,6 +325,12 @@ public sealed class MinioConcatenationTests(TusS3MinioFixture fixture) : Concate
     [Fact]
     public override Task should_abort_the_multipart_upload_when_a_part_fails_mid_build() =>
         base.should_abort_the_multipart_upload_when_a_part_fails_mid_build();
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public override Task should_delete_the_finished_object_when_its_record_write_fails(bool multipart) =>
+        base.should_delete_the_finished_object_when_its_record_write_fails(multipart);
 }
 
 [Collection<TusS3LocalStackFixture>]
@@ -325,4 +367,10 @@ public sealed class LocalStackConcatenationTests(TusS3LocalStackFixture fixture)
     [Fact]
     public override Task should_abort_the_multipart_upload_when_a_part_fails_mid_build() =>
         base.should_abort_the_multipart_upload_when_a_part_fails_mid_build();
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public override Task should_delete_the_finished_object_when_its_record_write_fails(bool multipart) =>
+        base.should_delete_the_finished_object_when_its_record_write_fails(multipart);
 }

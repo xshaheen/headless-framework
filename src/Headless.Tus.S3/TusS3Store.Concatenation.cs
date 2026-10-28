@@ -31,7 +31,8 @@ public sealed partial class TusS3Store
     /// </para>
     /// <para>
     /// The completed record is written last, so a build that fails or is interrupted leaves no upload a client can
-    /// see; a failed build aborts its multipart upload. The partial uploads are kept.
+    /// see; a failed build aborts its multipart upload, and a build whose record write fails deletes the finished
+    /// object it wrote. The partial uploads are kept.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="partialFiles"/> is <see langword="null"/>.</exception>
@@ -48,6 +49,9 @@ public sealed partial class TusS3Store
     )
     {
         Argument.IsNotNullOrEmpty(partialFiles);
+
+        // Set once the finished object exists, so a failure after it knows there is an object no record points at.
+        string? writtenFileId = null;
 
         try
         {
@@ -69,6 +73,8 @@ public sealed partial class TusS3Store
                 await _BuildFinalMultipartUploadAsync(fileId, partialFiles, metadata, plan, cancellationToken)
                     .ConfigureAwait(false);
             }
+
+            writtenFileId = fileId;
 
             var record = new TusS3CompletedRecord
             {
@@ -95,7 +101,36 @@ public sealed partial class TusS3Store
         {
             _logger.LogS3FinalFileCreateFailed(e, string.Join(", ", partialFiles));
 
+            // A 412 on the record means another upload already owns the id, and the object may be that upload's.
+            if (
+                writtenFileId is not null
+                && e is not AmazonS3Exception { StatusCode: HttpStatusCode.PreconditionFailed }
+            )
+            {
+                await _DeleteUnrecordedFinalObjectAsync(writtenFileId).ConfigureAwait(false);
+            }
+
             throw;
+        }
+    }
+
+    // No client can reach a final upload without its record, so its object would only cost storage forever: nothing
+    // lists finished objects, and the sweep keeps every object outside the working sets.
+    private async Task _DeleteUnrecordedFinalObjectAsync(string fileId)
+    {
+        try
+        {
+            await _s3.DeleteObjectAsync(
+                    new DeleteObjectRequest { BucketName = _options.Bucket, Key = _keys.FinishedObject(fileId) },
+                    CancellationToken.None
+                )
+                .ConfigureAwait(false);
+        }
+#pragma warning disable CA1031 // The build already failed with its own exception, which the caller rethrows; a failed delete only leaves an unreachable object.
+        catch (Exception e)
+#pragma warning restore CA1031
+        {
+            _logger.LogS3FinalObjectDeleteFailed(e, fileId);
         }
     }
 
@@ -424,4 +459,12 @@ internal static partial class TusS3StoreConcatenationLog
         string fileId,
         string uploadId
     );
+
+    [LoggerMessage(
+        EventId = 3258,
+        EventName = "S3FinalObjectDeleteFailed",
+        Level = LogLevel.Warning,
+        Message = "Failed to delete the finished object of final file {FileId} after its completed record was not written; the object stays in the bucket with no upload pointing at it"
+    )]
+    internal static partial void LogS3FinalObjectDeleteFailed(this ILogger logger, Exception e, string fileId);
 }

@@ -51,8 +51,9 @@ public sealed class TusS3StoreOptions
     /// size. Defaults to 8 MiB and must be at least 5 MiB.
     /// </summary>
     /// <remarks>
-    /// A part is buffered in memory before it is uploaded, so this value times
-    /// <see cref="MaxConcurrentPartUploads"/> bounds the memory one PATCH request holds.
+    /// A part is buffered in memory before it is uploaded. One PATCH request holds up to
+    /// <see cref="MaxConcurrentPartUploads"/> + 1 part buffers, each rented at the upload's part size rounded up to a
+    /// power of two (a 6 MiB part takes an 8 MiB buffer).
     /// </remarks>
     public int PartSize { get; set; } = 8 * 1024 * 1024;
 
@@ -61,9 +62,19 @@ public sealed class TusS3StoreOptions
     /// be at least <see cref="PartSize"/> and at most 1 GiB. An upload that would need larger parts is rejected at
     /// creation.
     /// </summary>
+    /// <remarks>
+    /// The store's part buffer pool serves sizes up to this value rounded up to a power of two. It keeps up to 8 idle
+    /// buffers of each size for reuse; a request that needs more of one size than the pool holds gets freshly allocated
+    /// buffers, and the pool drops any returned beyond those 8.
+    /// </remarks>
     public int MaxPartSize { get; set; } = 64 * 1024 * 1024;
 
     /// <summary>The number of parts one PATCH request uploads in parallel. Defaults to 2; must be at least 1.</summary>
+    /// <remarks>
+    /// One PATCH request holds up to this value + 1 part buffers: one per part in flight and one being filled from the
+    /// request body. Each is the upload's part size rounded up to a power of two, at most <see cref="MaxPartSize"/>
+    /// rounded the same way.
+    /// </remarks>
     public int MaxConcurrentPartUploads { get; set; } = 2;
 
     /// <summary>

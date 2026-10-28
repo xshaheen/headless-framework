@@ -51,8 +51,9 @@ internal sealed class TusS3UploadState
     public TusS3UploadStatus Status { get; set; } = TusS3UploadStatus.Active;
 
     /// <summary>
-    /// While <see cref="TusS3UploadStatus.Completing"/>, the offset reported to the client: the offset before the final
-    /// PATCH, so a client whose final PATCH was interrupted re-sends it and the completion finishes.
+    /// While <see cref="TusS3UploadStatus.Completing"/> or <see cref="TusS3UploadStatus.Committing"/>, the offset
+    /// reported to the client: the offset before the final PATCH, so a client whose final PATCH was interrupted re-sends
+    /// it and the completion finishes.
     /// </summary>
     public long? PreFinalOffset { get; set; }
 
@@ -82,7 +83,7 @@ internal sealed class TusS3UploadState
     public static TusS3UploadState FromJson(ReadOnlySpan<byte> json)
     {
         var state =
-            JsonSerializer.Deserialize(json, TusS3JsonContext.Default.TusS3UploadState)
+            TusS3JsonContext.Read(json, TusS3JsonContext.Default.TusS3UploadState)
             ?? throw new InvalidDataException("The tus upload state object is empty.");
 
         TusS3JsonContext.EnsureReadableSchema(state.SchemaVersion, CurrentSchemaVersion);
@@ -101,6 +102,13 @@ internal enum TusS3UploadStatus
 
     /// <summary>The upload's parts are gone (the provider aborted its multipart upload); it is reported as missing.</summary>
     Gone = 2,
+
+    /// <summary>
+    /// The finished object is written and one request is recording it; only the completed record and the removal of
+    /// the working set remain. Reads as <see cref="Completing"/> to clients, but the expiry sweep never claims it, so
+    /// the sweep cannot delete a finished object whose completion is about to report success.
+    /// </summary>
+    Committing = 3,
 }
 
 internal enum TusS3ConcatKind
@@ -147,7 +155,7 @@ internal sealed class TusS3CompletedRecord
     public static TusS3CompletedRecord FromJson(ReadOnlySpan<byte> json)
     {
         var record =
-            JsonSerializer.Deserialize(json, TusS3JsonContext.Default.TusS3CompletedRecord)
+            TusS3JsonContext.Read(json, TusS3JsonContext.Default.TusS3CompletedRecord)
             ?? throw new InvalidDataException("The tus completed record is empty.");
 
         TusS3JsonContext.EnsureReadableSchema(record.SchemaVersion, CurrentSchemaVersion);

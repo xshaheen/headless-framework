@@ -30,6 +30,7 @@ public sealed class TusS3UploadStateTests : TestBase
             PreFinalOffset = 8_388_608,
             CompletingFromDeclaredLength = true,
             ExpiresAtBeforeCompleting = expires.AddHours(-1),
+            SlidingExpirationWindow = TimeSpan.FromMinutes(30),
         };
 
         // when
@@ -75,6 +76,31 @@ public sealed class TusS3UploadStateTests : TestBase
 
         // then
         act.Should().Throw<InvalidDataException>().WithMessage("*schema version 2*");
+    }
+
+    [Theory]
+    [InlineData("""{"schemaVersion":1,"partSize":""")]
+    [InlineData("""{"schemaVersion":1,"partSize":5242880,"status":"Paused"}""")]
+    [InlineData("""{"schemaVersion":1,"partSize":"many"}""")]
+    public void should_report_a_state_it_cannot_parse_as_invalid_data(string json)
+    {
+        // when
+        var act = () => TusS3UploadState.FromJson(Encoding.UTF8.GetBytes(json));
+
+        // then - the sweep skips invalid data, so a corrupt object must not surface as any other exception
+        act.Should().Throw<InvalidDataException>().WithInnerException<JsonException>();
+    }
+
+    [Theory]
+    [InlineData("""{"schemaVersion":1,"uploadLength":""")]
+    [InlineData("""{"schemaVersion":1,"uploadLength":1,"concat":{"kind":"Middle"}}""")]
+    public void should_report_a_completed_record_it_cannot_parse_as_invalid_data(string json)
+    {
+        // when
+        var act = () => TusS3CompletedRecord.FromJson(Encoding.UTF8.GetBytes(json));
+
+        // then
+        act.Should().Throw<InvalidDataException>().WithInnerException<JsonException>();
     }
 
     [Fact]

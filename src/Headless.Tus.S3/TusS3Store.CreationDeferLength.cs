@@ -46,7 +46,7 @@ public sealed partial class TusS3Store
 
             var state = upload.State ?? throw new TusStoreException($"File {fileId} is already complete");
 
-            if (state.Status == TusS3UploadStatus.Completing)
+            if (state.Status is TusS3UploadStatus.Completing or TusS3UploadStatus.Committing)
             {
                 // The client re-sends the PATCH that declared the length when completion was interrupted; the
                 // completing state already holds that length, so the request goes on to finish the completion.

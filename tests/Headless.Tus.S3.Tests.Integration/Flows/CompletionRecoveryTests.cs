@@ -227,13 +227,16 @@ public abstract class CompletionRecoveryTestsBase(IS3TestBackend backend) : Test
         await _client.Gate.WaitForArrivalAsync(AbortToken);
         await _client.Gate.WaitForArrivalAsync(AbortToken);
 
-        // when - one Completing write lands and that request finishes, then the other proceeds
+        // when - one Completing write lands and that request reaches its Committing write, then both proceed
         _client.Gate.ReleaseOne();
-        var winnerTask = await Task.WhenAny(firstAppend, secondAppend);
-        var loserTask = winnerTask == firstAppend ? secondAppend : firstAppend;
-        (await winnerTask).Should().Be(600);
+        await _client.Gate.WaitForArrivalAsync(AbortToken);
         _client.Gate.Disarm();
         _client.Gate.ReleaseOne();
+        _client.Gate.ReleaseOne();
+        await Task.WhenAll(_Settle(firstAppend), _Settle(secondAppend));
+        var winnerTask = firstAppend.IsCompletedSuccessfully ? firstAppend : secondAppend;
+        var loserTask = winnerTask == firstAppend ? secondAppend : firstAppend;
+        (await winnerTask).Should().Be(600);
 
         // then - the loser's write is stale, which tusdotnet answers with a retryable 500
         var act = async () => await loserTask;

@@ -78,7 +78,10 @@ public sealed partial class TusS3Store
         return upload?.State switch
         {
             null => null,
-            { Status: TusS3UploadStatus.Completing, CompletingFromDeclaredLength: true } => null,
+            {
+                Status: TusS3UploadStatus.Completing or TusS3UploadStatus.Committing,
+                CompletingFromDeclaredLength: true,
+            } => null,
             var state => state.UploadLength,
         };
     }
@@ -107,7 +110,10 @@ public sealed partial class TusS3Store
         return upload?.State switch
         {
             null => 0,
-            { Status: TusS3UploadStatus.Completing, PreFinalOffset: { } preFinalOffset } => preFinalOffset,
+            {
+                Status: TusS3UploadStatus.Completing or TusS3UploadStatus.Committing,
+                PreFinalOffset: { } preFinalOffset,
+            } => preFinalOffset,
             var state => state.Offset,
         };
     }
@@ -170,7 +176,9 @@ public sealed partial class TusS3Store
 
         var upload = await _stateStore.LoadAsync(fileId, cancellationToken).ConfigureAwait(false);
 
-        return upload?.State is { Status: not TusS3UploadStatus.Completing } state ? state.ExpiresAt : null;
+        return upload?.State is { Status: not (TusS3UploadStatus.Completing or TusS3UploadStatus.Committing) } state
+            ? state.ExpiresAt
+            : null;
     }
 
     /// <summary>

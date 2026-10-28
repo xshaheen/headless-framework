@@ -419,6 +419,31 @@ public sealed class TusS3PartWriterTests : TestBase
         window.Should().BeNull();
     }
 
+    [Fact]
+    public async Task should_delete_more_segments_than_one_request_takes_in_several_requests()
+    {
+        // given - one segment more than S3 deletes in one request
+        var segments = Enumerable
+            .Range(0, TusS3Requests.MaxKeysPerDelete + 1)
+            .Select(i => new TusS3CommittedSegment($"uploads/.tus/{_FileId}/seg/{i}", i, 1))
+            .ToList();
+
+        // when
+        await TusS3PartWriter.DeleteSegmentsAsync(_Services(), _FileId, segments, AbortToken);
+
+        // then
+        _s3.Requests.Should().Equal("DeleteObjects", "DeleteObjects");
+        await _s3
+            .Client.Received(1)
+            .DeleteObjectsAsync(
+                Arg.Is<DeleteObjectsRequest>(r => r.Objects.Count == TusS3Requests.MaxKeysPerDelete),
+                Arg.Any<CancellationToken>()
+            );
+        await _s3
+            .Client.Received(1)
+            .DeleteObjectsAsync(Arg.Is<DeleteObjectsRequest>(r => r.Objects.Count == 1), Arg.Any<CancellationToken>());
+    }
+
     private TusS3AppendServices _Services()
     {
         return new TusS3AppendServices(

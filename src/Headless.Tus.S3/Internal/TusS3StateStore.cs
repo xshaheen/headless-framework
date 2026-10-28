@@ -152,9 +152,10 @@ internal sealed class TusS3StateStore(
     /// commit point, because readers fall back to the record only once the state is gone.
     /// </summary>
     /// <remarks>
-    /// The record is written unconditionally. Every request that finishes the same upload derives it from the same
-    /// completing state, so a second writer stores identical content, and a crash between the two writes is repaired
-    /// by the next attempt simply writing the record again.
+    /// The record is written unconditionally. The caller has already moved the state to committing with a conditional
+    /// write, so the expiry sweep no longer removes the upload; every request that finishes the same upload derives the
+    /// record from the same state, so a second writer stores identical content, and a crash between the two writes is
+    /// repaired by the next attempt simply writing the record again.
     /// </remarks>
     public async Task CommitCompletionAsync(
         string fileId,

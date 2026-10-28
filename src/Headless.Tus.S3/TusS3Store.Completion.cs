@@ -13,29 +13,49 @@ public sealed partial class TusS3Store
     /// <summary>
     /// Turns a completing upload into its finished object and completed record. Safe to run again, by the same or
     /// another request, after any step failed: every step derives from the completing state, which no request changes
-    /// except to mark the upload gone.
+    /// except to mark the upload gone or to record that its finished object is written.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// Once the finished object is written, the state moves to <see cref="TusS3UploadStatus.Committing"/> with
+    /// <c>If-Match</c> on the ETag this request holds, before the record is written. The expiry sweep claims an
+    /// abandoned completing upload with <c>If-Match</c> on the same state, so at most one of the two writes lands: a
+    /// sweep that claimed first makes this write fail and nothing is recorded, and a sweep that comes later finds a
+    /// status it never claims. A completion that finds the upload already committing only records it.
+    /// </para>
+    /// <para>
     /// Storage calls take no request token. The bytes are durable before this starts, and a client that disconnects
     /// after sending its last byte should still get a finished upload rather than one it must finish by re-sending.
+    /// </para>
     /// </remarks>
     /// <exception cref="TusStoreException">The provider no longer holds the upload's parts; the upload is now gone.</exception>
     /// <exception cref="InvalidDataException">The state's parts and segments do not add up to the upload length.</exception>
+    /// <exception cref="AmazonS3Exception">
+    /// Another request changed or removed the state since this one read it, so the finished object is not recorded.
+    /// Not translated, for the same reason as a stale append: tusdotnet answers it with a retryable 500.
+    /// </exception>
     private async Task _FinishCompletionAsync(string fileId, TusS3LoadedUpload upload)
     {
         var state = upload.State ?? throw new InvalidOperationException("A completed upload needs no completion.");
         var length = state.UploadLength ?? throw new InvalidDataException("A completing upload has no length.");
-        var parts = state.Parts.OrderBy(part => part.Number).ToList();
 
-        _EnsureContiguous(fileId, parts, state.Segments, length);
+        if (state.Status != TusS3UploadStatus.Committing)
+        {
+            var parts = state.Parts.OrderBy(part => part.Number).ToList();
 
-        if (state.MultipartUploadId is null)
-        {
-            await _WriteFinishedObjectFromSegmentsAsync(fileId, state, length).ConfigureAwait(false);
-        }
-        else
-        {
-            await _CompleteMultipartUploadAsync(fileId, upload, parts, length).ConfigureAwait(false);
+            _EnsureContiguous(fileId, parts, state.Segments, length);
+
+            if (state.MultipartUploadId is null)
+            {
+                await _WriteFinishedObjectFromSegmentsAsync(fileId, state, length).ConfigureAwait(false);
+            }
+            else
+            {
+                await _CompleteMultipartUploadAsync(fileId, upload, parts, length).ConfigureAwait(false);
+            }
+
+            state.Status = TusS3UploadStatus.Committing;
+            await _stateStore.UpdateAsync(fileId, upload, CancellationToken.None).ConfigureAwait(false);
         }
 
         var record = new TusS3CompletedRecord

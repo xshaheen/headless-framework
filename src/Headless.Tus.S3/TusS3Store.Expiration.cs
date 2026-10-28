@@ -22,7 +22,8 @@ public sealed partial class TusS3Store
     /// Completed uploads are never listed and never read: they keep no state object under the working-set folder the
     /// pass lists, so the pass costs one listing per 1,000 in-progress uploads plus one read per upload, however many
     /// completed uploads the bucket holds. A completing upload counts once the expiry it had before completing has
-    /// passed. A cancelled token returns the uploads found so far instead of throwing.
+    /// passed, unless its completion has already written the finished object and is recording it. A cancelled token
+    /// returns the uploads found so far instead of throwing.
     /// </remarks>
     /// <exception cref="AmazonS3Exception">Storage refused the listing or a read.</exception>
     public async Task<IEnumerable<string>> GetExpiredFilesAsync(CancellationToken cancellationToken)
@@ -44,7 +45,10 @@ public sealed partial class TusS3Store
     /// (an append that committed and moved the expiry) fails that write and is kept for the next pass. Once claimed, the
     /// upload's multipart upload is aborted, its finished object and record are deleted if present, and its working set
     /// is deleted with the state object last. A completing upload is destroyed as abandoned, never finished, so no
-    /// finished object exists without its completion event.
+    /// finished object exists without its completion event. A completion moves the state on with its own
+    /// <c>If-Match</c> write before it records the finished object, so the pass's claim and that write cannot both
+    /// succeed: an upload whose completion got there first is skipped, and a completion that lost fails without
+    /// recording anything.
     /// </para>
     /// <para>
     /// The pass also removes working-set folders whose state object is missing (leftovers of a completion or
@@ -148,7 +152,8 @@ public sealed partial class TusS3Store
         }
         catch (InvalidDataException e)
         {
-            // A state this build cannot read (a newer schema) is left to the build that wrote it.
+            // A state this build cannot read (a newer schema, or a corrupt object) is skipped so it cannot stop the
+            // pass; a newer schema is left to the build that wrote it.
             _logger.LogS3UnreadableStateSkipped(e, fileId);
 
             return;
@@ -177,6 +182,9 @@ public sealed partial class TusS3Store
             // The re-sent final PATCH stays the way a completing upload finishes, so the pass waits out the expiry it
             // had before completing.
             TusS3UploadStatus.Completing => state.ExpiresAtBeforeCompleting <= now,
+            // The finished object exists and its completion is recording it; removing it now would delete an object
+            // that completion reports as finished.
+            TusS3UploadStatus.Committing => false,
             // An upload past the provider's abort window has lost its parts and already reads as missing.
             _ => state.ExpiresAt <= now || _MultipartUploadLifetimePassed(state),
         };
