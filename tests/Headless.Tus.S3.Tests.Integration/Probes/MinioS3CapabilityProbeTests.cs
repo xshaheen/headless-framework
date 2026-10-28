@@ -18,8 +18,8 @@ public sealed class MinioS3CapabilityProbeTests(TusS3MinioFixture fixture) : S3C
         base.should_replace_only_the_etag_a_writer_read_with_if_match();
 
     [Fact]
-    public override Task should_report_no_such_key_when_if_match_targets_a_missing_key() =>
-        base.should_report_no_such_key_when_if_match_targets_a_missing_key();
+    public override Task should_reject_an_if_match_write_to_a_missing_key() =>
+        base.should_reject_an_if_match_write_to_a_missing_key();
 
     [Fact]
     public override Task should_complete_a_multipart_upload_from_a_subset_of_its_parts() =>

@@ -26,6 +26,14 @@ public abstract class S3CapabilityProbeTestsBase : TestBase
     /// <summary>Creates the client for the backend under test, or skips the test when the backend is unavailable.</summary>
     protected abstract S3TestClient CreateClient();
 
+    /// <summary>
+    /// How the backend rejects an <c>If-Match</c> write to a key that does not exist. AWS, MinIO and LocalStack answer
+    /// 404 <c>NoSuchKey</c>; Cloudflare R2 answers 412. The store treats both as a stale write, so each backend pins
+    /// its own shape here to catch a change in it.
+    /// </summary>
+    protected virtual (HttpStatusCode StatusCode, string ErrorCode) MissingKeyIfMatchFailure =>
+        (HttpStatusCode.NotFound, "NoSuchKey");
+
     protected IAmazonS3 S3 => _client!.S3;
 
     protected string Bucket => _bucket!;
@@ -66,7 +74,7 @@ public abstract class S3CapabilityProbeTestsBase : TestBase
         (await GetAsync(key)).Should().Equal("second"u8.ToArray());
     }
 
-    public virtual async Task should_report_no_such_key_when_if_match_targets_a_missing_key()
+    public virtual async Task should_reject_an_if_match_write_to_a_missing_key()
     {
         // given
         await StartAsync();
@@ -78,8 +86,8 @@ public abstract class S3CapabilityProbeTestsBase : TestBase
 
         // then
         var exception = (await act.Should().ThrowAsync<AmazonS3Exception>()).Which;
-        exception.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        exception.ErrorCode.Should().Be("NoSuchKey");
+        exception.StatusCode.Should().Be(MissingKeyIfMatchFailure.StatusCode);
+        exception.ErrorCode.Should().Be(MissingKeyIfMatchFailure.ErrorCode);
     }
 
     public virtual async Task should_complete_a_multipart_upload_from_a_subset_of_its_parts()
