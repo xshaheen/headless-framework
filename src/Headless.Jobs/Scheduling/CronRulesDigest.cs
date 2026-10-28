@@ -23,8 +23,8 @@ internal static class CronRulesDigest
     internal const string DigestMetadataKey = "headless.jobs.cron-rules-digest";
 
     /// <summary>
-    /// Membership metadata key carrying <c>true</c> when the node runs the fingerprint sweep and <c>false</c> when it
-    /// does not. A node without the key is not a Jobs node.
+    /// Membership metadata key carrying the string <c>"true"</c> when the node runs the fingerprint sweep and
+    /// <c>"false"</c> when it does not. A node without the key is not a Jobs node.
     /// </summary>
     internal const string FingerprintSweepMetadataKey = "headless.jobs.fingerprint-sweep";
 

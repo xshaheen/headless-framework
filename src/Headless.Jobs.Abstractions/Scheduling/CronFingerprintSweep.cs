@@ -69,20 +69,24 @@ public sealed record CronFingerprintSweepResult
     public Guid? SnapshotHighWatermarkId { get; init; }
 
     /// <summary>
-    /// Why the whole pass rebased nothing without reading a page, or <see langword="null"/> when it ran. A deferred
-    /// pass reports <see cref="HasMore"/> as <see langword="false"/>, so a drain ends normally; the caller starts a
-    /// fresh snapshot on its next pass.
+    /// Why the whole pass rebased nothing without reading a page, or
+    /// <see cref="CronFingerprintSweepDeferralReason.None"/> when it ran. A deferred pass reports
+    /// <see cref="HasMore"/> as <see langword="false"/>, so a drain ends normally; the caller starts a fresh snapshot on
+    /// its next pass.
     /// </summary>
     /// <remarks>
     /// Unrelated to <see cref="Deferred"/>, which counts individual definitions quarantined as invalid.
     /// </remarks>
-    public CronFingerprintSweepDeferralReason? DeferralReason { get; init; }
+    public CronFingerprintSweepDeferralReason DeferralReason { get; init; }
 }
 
 /// <summary>Why a fingerprint sweep pass rebased nothing.</summary>
 [PublicAPI]
 public enum CronFingerprintSweepDeferralReason
 {
+    /// <summary>The pass was not deferred.</summary>
+    None = 0,
+
     /// <summary>A live node that runs the sweep published a different cron rules digest than this node.</summary>
     FleetDisagreement = 1,
 

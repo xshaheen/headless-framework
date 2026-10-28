@@ -619,7 +619,7 @@ public sealed class CronFingerprintSweepTests : TestBase
         var agreed = await manager.RebaseStaleFingerprintsAsync(limit: 50, cancellationToken: AbortToken);
         var again = await manager.RebaseStaleFingerprintsAsync(limit: 50, cancellationToken: AbortToken);
 
-        agreed.DeferralReason.Should().BeNull();
+        agreed.DeferralReason.Should().Be(CronFingerprintSweepDeferralReason.None);
         agreed.Rebased.Should().Be(1);
         again.Rebased.Should().Be(0, "the definition now carries the fleet's fingerprint");
     }
@@ -657,7 +657,9 @@ public sealed class CronFingerprintSweepTests : TestBase
 
         var result = await manager.RebaseStaleFingerprintsAsync(limit: 50, cancellationToken: AbortToken);
 
-        result.DeferralReason.Should().BeNull("one process has no fleet to agree with");
+        result
+            .DeferralReason.Should()
+            .Be(CronFingerprintSweepDeferralReason.None, "one process has no fleet to agree with");
         result.Rebased.Should().Be(1);
     }
 

@@ -71,7 +71,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     private CronFleetAgreement? _fleetAgreement;
     private bool _fleetAgreementResolved;
 
-    private async Task<CronFingerprintSweepDeferralReason?> _CheckFleetAgreementAsync(
+    private async Task<CronFingerprintSweepDeferralReason> _CheckFleetAgreementAsync(
         CancellationToken cancellationToken
     )
     {
@@ -83,14 +83,14 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
 
         if (_fleetAgreement is null)
         {
-            return null;
+            return CronFingerprintSweepDeferralReason.None;
         }
 
         var agreement = await _fleetAgreement.CheckAsync(cancellationToken).ConfigureAwait(false);
 
         return agreement.Outcome switch
         {
-            CronFleetAgreementOutcome.Agreed => null,
+            CronFleetAgreementOutcome.Agreed => CronFingerprintSweepDeferralReason.None,
             CronFleetAgreementOutcome.Disagreed => CronFingerprintSweepDeferralReason.FleetDisagreement,
             _ => CronFingerprintSweepDeferralReason.MembershipUnavailable,
         };
@@ -1497,7 +1497,9 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
 
         // Checked on every call, not once per pass, so an "agreed" verdict cannot outlive a peer that changed rules
         // between pages.
-        if (await _CheckFleetAgreementAsync(cancellationToken).ConfigureAwait(false) is { } deferral)
+        var deferral = await _CheckFleetAgreementAsync(cancellationToken).ConfigureAwait(false);
+
+        if (deferral != CronFingerprintSweepDeferralReason.None)
         {
             // The next pass starts a fresh snapshot, so this one's cached known set would never be read again.
             if (throughId is { } abandonedSnapshot)

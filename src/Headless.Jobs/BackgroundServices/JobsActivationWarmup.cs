@@ -55,7 +55,7 @@ internal sealed class JobsActivationWarmup(
         var rebased = 0;
         var deferred = 0;
         var lostFence = 0;
-        CronFingerprintSweepDeferralReason? deferral = null;
+        CronFingerprintSweepDeferralReason deferral;
 
         while (true)
         {

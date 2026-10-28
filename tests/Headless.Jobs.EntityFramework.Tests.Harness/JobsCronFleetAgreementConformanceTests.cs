@@ -35,7 +35,7 @@ public abstract class JobsCronFleetAgreementConformanceTests<TFixture>(TFixture 
     {
         var (result, fingerprint) = await _SweepWithPeerAsync(peerDigest: null);
 
-        result.DeferralReason.Should().BeNull();
+        result.DeferralReason.Should().Be(CronFingerprintSweepDeferralReason.None);
         result.Rebased.Should().Be(1);
         fingerprint.Should().NotBe("stale");
     }

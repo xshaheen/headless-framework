@@ -151,7 +151,7 @@ internal static partial class JobsInitializationLog
         int rebased,
         int deferred,
         int lostFence,
-        CronFingerprintSweepDeferralReason? deferral
+        CronFingerprintSweepDeferralReason deferral
     );
 
     [LoggerMessage(

@@ -31,7 +31,10 @@ public sealed class JobsFingerprintSweepBackgroundServiceTests : TestBase
                 Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(_Result(CronFingerprintSweepDeferralReason.FleetDisagreement), _Result(deferral: null));
+            .Returns(
+                _Result(CronFingerprintSweepDeferralReason.FleetDisagreement),
+                _Result(CronFingerprintSweepDeferralReason.None)
+            );
         using var service = new JobsFingerprintSweepBackgroundService(
             manager,
             new SchedulerOptionsBuilder { FingerprintSweepInterval = _Interval },
@@ -69,14 +72,14 @@ public sealed class JobsFingerprintSweepBackgroundServiceTests : TestBase
             )
             .Returns(
                 // The pass reaches its per-pass bound with rows left, so the service would normally resume here.
-                _Result(deferral: null) with
+                _Result(CronFingerprintSweepDeferralReason.None) with
                 {
                     HasMore = true,
                     NextCursorId = cursor,
                     SnapshotHighWatermarkId = snapshot,
                 },
                 _Result(CronFingerprintSweepDeferralReason.FleetDisagreement),
-                _Result(deferral: null)
+                _Result(CronFingerprintSweepDeferralReason.None)
             );
         using var service = new JobsFingerprintSweepBackgroundService(
             manager,
@@ -96,13 +99,13 @@ public sealed class JobsFingerprintSweepBackgroundServiceTests : TestBase
         // First pass: page one, then the deferred page that resumed from its cursor. Second pass: a fresh snapshot.
         Received.InOrder(() =>
         {
-            manager.RebaseStaleFingerprintsAsync(1, null, null, true, Arg.Any<CancellationToken>());
-            manager.RebaseStaleFingerprintsAsync(1, cursor, snapshot, true, Arg.Any<CancellationToken>());
-            manager.RebaseStaleFingerprintsAsync(1, null, null, true, Arg.Any<CancellationToken>());
+            _ = manager.RebaseStaleFingerprintsAsync(1, null, null, true, Arg.Any<CancellationToken>());
+            _ = manager.RebaseStaleFingerprintsAsync(1, cursor, snapshot, true, Arg.Any<CancellationToken>());
+            _ = manager.RebaseStaleFingerprintsAsync(1, null, null, true, Arg.Any<CancellationToken>());
         });
     }
 
-    private static CronFingerprintSweepResult _Result(CronFingerprintSweepDeferralReason? deferral) =>
+    private static CronFingerprintSweepResult _Result(CronFingerprintSweepDeferralReason deferral) =>
         new()
         {
             Scanned = 0,

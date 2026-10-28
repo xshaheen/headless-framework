@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using Headless.Coordination;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Instrumentation;
@@ -166,10 +165,7 @@ internal sealed class CronFleetAgreement(
                 .GroupBy(static peer => peer.Digest ?? "<none>", StringComparer.Ordinal)
                 .OrderBy(static group => group.Key, StringComparer.Ordinal)
                 .Select(static group =>
-                    string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"{group.Key}: {string.Join(", ", group.Select(static peer => peer.Identity.ToString()).Order(StringComparer.Ordinal))}"
-                    )
+                    $"{group.Key}: {string.Join(", ", group.Select(static peer => peer.Identity.ToString()).Order(StringComparer.Ordinal))}"
                 )
         );
     }

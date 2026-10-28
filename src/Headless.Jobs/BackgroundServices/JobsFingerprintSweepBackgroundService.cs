@@ -84,7 +84,7 @@ internal sealed class JobsFingerprintSweepBackgroundService(
                         );
                     }
 
-                    if (result.DeferralReason is not null)
+                    if (result.DeferralReason != CronFingerprintSweepDeferralReason.None)
                     {
                         break;
                     }
@@ -94,7 +94,7 @@ internal sealed class JobsFingerprintSweepBackgroundService(
                     wrapped |= result.Wrapped;
                 } while (result.HasMore && !wrapped && batches < _MaxConsecutiveFullBatches);
 
-                if (result.DeferralReason is not null)
+                if (result.DeferralReason != CronFingerprintSweepDeferralReason.None)
                 {
                     // Rebases resume from a fresh snapshot once the fleet agrees: the retained one was read under
                     // a verdict that no longer holds.
@@ -126,7 +126,14 @@ internal sealed class JobsFingerprintSweepBackgroundService(
                     _highWatermark = null;
                 }
 
-                JobsFingerprintSweepLog.SweepCompleted(logger, scanned, rebased, deferred, lostFence, deferral: null);
+                JobsFingerprintSweepLog.SweepCompleted(
+                    logger,
+                    scanned,
+                    rebased,
+                    deferred,
+                    lostFence,
+                    CronFingerprintSweepDeferralReason.None
+                );
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -154,7 +161,7 @@ internal static partial class JobsFingerprintSweepLog
         int rebased,
         int deferred,
         int lostFence,
-        CronFingerprintSweepDeferralReason? deferral
+        CronFingerprintSweepDeferralReason deferral
     );
 
     [LoggerMessage(
