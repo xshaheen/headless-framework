@@ -46,6 +46,18 @@ Provider SPI note: a custom `IMembershipStore` must implement `ReadNodeLivenessA
 
 Providers may retain historical incarnations long enough for Dead visibility, event derivation, and diagnostics. Operational reads are current-generation only: `GetLiveNodesAsync()` and the normal recovery snapshot must not treat retained `node@old-incarnation` rows as ownership candidates.
 
+### Node Metadata
+
+`CoordinationOptions.Metadata` is copied into the node descriptor once, at `RegisterAsync`, and every peer reads it back
+through `NodeLivenessSnapshot.Metadata`. It is write-once per incarnation: a value changed after registration reaches
+peers only when the process restarts and registers a new incarnation. A node with no descriptor row reports empty
+metadata. Name keys with a dotted prefix that owns them (`headless.<feature>.<name>`; application keys use their own
+prefix), and never put secrets in metadata: every node in the cluster can read it.
+
+Jobs publishes `headless.jobs.cron-rules-digest` and `headless.jobs.fingerprint-sweep` from every node on its durable
+store; see [Jobs fleet agreement](jobs.md#fleet-agreement). Because those keys gate cron rebases across every node in a
+cluster, give each Jobs store its own `ClusterName`.
+
 ### Events And Reconcile
 
 Events are best-effort local observations from snapshots: `NodeJoined`, `NodeSuspected`, `NodeRecovered`, and `NodeLeft`. A missed event must not block recovery. Consumers reconcile periodically against live identities and recover stale owner rows themselves.

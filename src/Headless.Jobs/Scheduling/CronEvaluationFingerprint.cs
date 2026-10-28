@@ -30,6 +30,11 @@ namespace Headless.Jobs;
 /// the projection through the edit path; this fingerprint covers only what changes <i>underneath</i> an unchanged
 /// definition.
 /// </para>
+/// <para>
+/// A mismatch triggers a rebase only once every node that runs the sweep computes the same fingerprints, which each
+/// node advertises as one <see cref="CronRulesDigest"/>; otherwise nodes on different rules would rewrite each other's
+/// definitions on every sweep.
+/// </para>
 /// </remarks>
 internal static class CronEvaluationFingerprint
 {

@@ -678,9 +678,15 @@ zone's offsets and adjustment rules); only equality is meaningful.
 
 A background sweep rebases definitions whose fingerprint no longer matches, independently of whether their projection
 is due. That independence is the point: a rule change that moves an occurrence *earlier* hides behind the stale later
-projection, so a sweep keyed on due-ness would skip exactly the definitions that need it. The rebase anchors the new
-projection at or after the current instant, so a tick the changed rules moved into the past is surfaced rather than
-replayed as a misfire.
+projection, so a sweep keyed on due-ness would skip exactly the definitions that need it. The rebase keeps the
+definition's watermark (`ReconciledThroughUtc`) and sets `NextDueUtc` to the first occurrence after it under the current
+rules. Every instant those rules place between the watermark and now is owed: the next dispatch finds it pending and
+applies the definition's `OnMissedRun` policy, so `Coalesce` runs it once and `Skip` records it as missed. A definition
+with no position yet (`NextDueUtc` unset, as a just-created or just-edited row is stored) is left to dispatch, which
+positions it at the store instant. Every write that moves a projection (dispatch, recovery, and the rebase) is fenced on
+the `NextDueUtc` it read and stamps the fingerprint of the rules it evaluated, so a dispatch that read a row before a
+rebase loses its compare-and-set instead of firing an instant the old rules placed, and a row's fingerprint always names
+the rules behind its projection.
 
 After the host starts, a [warm-up](utilities.md#warm-up) (`JobsActivation`) drains one fixed high-water snapshot
 before scheduler pickup is enabled, so the host start does not wait on one store query per page and one write per stale
@@ -707,6 +713,46 @@ definition's revision moves, and disappears entirely when the process restarts w
 suppression removes the definition's durable quarantine, the scheduler's bounded candidate read takes a resume cursor
 (`CronDispatchCandidateCursor`) and pages past a page it cannot use — filtering an already-read page would let one page
 of unresolvable definitions starve every healthy definition ordered behind it.
+
+#### Fleet agreement
+
+On the durable store, a node rebases only when every node that runs the sweep evaluates cron under the same rules.
+Without that gate, nodes on different rules (a rolling deploy that changes NCrontab, tzdata, or the DST rule; hosts with
+different tzdata; nodes configured with different `SchedulerTimeZone`) rewrite each other's definitions on every sweep.
+
+- **What a node publishes.** At registration every durable Jobs node adds two keys to its coordination metadata
+  ([coordination.md](coordination.md#node-metadata)): `headless.jobs.cron-rules-digest`, a SHA-256 over the evaluation
+  fingerprint of every IANA zone on the host plus the `SchedulerTimeZone` fallback, and
+  `headless.jobs.fingerprint-sweep`, `true` when background services run (they own the sweep) and `false` otherwise.
+  Equal digests mean equal fingerprints for every zone. The metadata is written once per registration, so a node
+  republishes its digest only when it restarts.
+- **Who counts.** Each sweep call reads the liveness snapshot (bounded at 10 seconds) and compares every `Alive` or
+  `Suspected` node whose sweep flag is `true` with the digest this node published. A node without the flag (a
+  Messaging-only node sharing the cluster) or with `false` (an API-only Jobs host) never sweeps, so it never counts. A
+  fleet of one agrees.
+- **What deferral does.** When a sweeping peer published another digest, or the snapshot cannot be read, the call
+  rebases nothing and returns `CronFingerprintSweepResult.DeferralReason` (`FleetDisagreement` or
+  `MembershipUnavailable`) with `HasMore = false`. The startup drain completes normally, so activation and the `jobs`
+  readiness check never wait on the fleet. The periodic sweep drops its retained snapshot and retries within
+  `min(FingerprintSweepInterval, 5 minutes)`.
+- **Guarantee.** Each definition is rebased once per fleet-wide rule change, after every sweeping node runs the new
+  rules, and every instant the new rules place after the watermark is owed. That is not one run per local slot: a
+  definition already rebased under mixed rules before the fleet agreed gets one more rebase when it agrees.
+- **Mixed window.** Dispatch does not wait for agreement. While nodes disagree, each dispatches under its own rules, so
+  a definition's next instant follows whichever node advanced it last. A node that registers after a sweep read the
+  snapshot is not seen by that sweep.
+- **Same images.** Fingerprints hash each operating system's own adjustment rules, so a fleet that mixes OS families,
+  or nodes with and without tzdata, never agrees. Give every sweeping node the same OS family and tzdata source, or
+  disable background services on the outlier.
+- **One coordination cluster per Jobs store.** Two Jobs stores whose nodes share one coordination `ClusterName` gate
+  each other's rebases. Give each store its own cluster.
+- **Observability.** `headless.jobs.cron.fingerprint_sweep.deferred` on the `Headless.Jobs` meter counts deferred
+  passes, tagged `reason` (`fleet_disagreement` or `membership_unavailable`). A node whose disagreement with one set of
+  peers lasts over an hour logs one warning (event 3233) listing each digest with the node identities that publish it;
+  a change in the disagreeing set, such as a peer restarting, starts a new hour. An unreadable snapshot logs event 3234
+  and neither starts nor ends that hour. The sweep and startup-drain completion logs report `passDeferredBy`.
+
+The in-memory store is one process, so it rebases on its own rule change without any agreement check.
 
 Recovery and rebase outcomes are reported through the framework's existing logging instrumentation. A missed count is
 always accompanied by whether it is exact or a lower bound — a long outage on a seconds-resolution schedule stops
@@ -740,9 +786,10 @@ seconds field included, and to shifts of any length, base-offset changes include
   resumed after its first pass gets the next day's run.
 
 There is no per-definition override of the overlap rule. The rule is an input to the
-[evaluation fingerprint](#schedule-interpretation-drift), so a change to it rebases every definition once. During a
-rolling deploy that changes this rule on a transition night, nodes on the old and new versions can compute different
-instants for one occurrence and run it twice.
+[evaluation fingerprint](#schedule-interpretation-drift), so a change to it rebases every definition once, after every
+sweeping node runs the new rule ([fleet agreement](#fleet-agreement)). During a rolling deploy that changes this rule on
+a transition night, nodes on the old and new versions dispatch under their own rules and can compute different instants
+for one occurrence and run it twice.
 
 ## Cluster-wide concurrency
 
@@ -1102,9 +1149,9 @@ Cron pause/resume is durable and definition-specific. Pause atomically marks the
 
 Ordinary cron dispatch first commits the expected schedule position and its occurrence outcome through one persistence operation. A newly materialized occurrence is `Idle`, unowned, and unleased; only the later claim stamps `Queued`, owner, and lease using the provider's time authority. A crash after materialization therefore leaves exactly one claimable occurrence rather than an advanced position with a missing tick.
 
-Initialize the relational Jobs database from the current EF model before starting workers or writers. Include cancellation, cron control, schedule watermarks, recovery and fingerprint-defer fields, the fingerprint retry/keyset index, and the required occurrence `Disposition` column. Custom persistence providers must supply equivalent mappings, constraints, and indexes. Custom persistence providers must implement atomic pause/resume/update plus candidate selection, atomic materialization/recovery, bounded stale-fingerprint paging, fenced defer, and compare-and-advance before use; plan the recovery half with `CronRecoveryPlanner` rather than re-deriving it. Candidate selection additionally takes a `CronDispatchCandidateCursor? after` between `limit` and the cancellation token, which must be applied inside the query — before the limit truncates — on the same `(NextDueUtc, CronJobId)` ordering the result is sorted by. Two further SPI members are store-clock contracts, not conveniences: `InsertCronJobsAsync(jobs, CronSchedulePositionSeeder, ct)` must read the store's **current statement** clock inside the inserting transaction, hand it to the seeder, persist the result, and return it (the caller arms its scheduler wake from the returned value, never from a locally recomputed projection); and `GetEarliestTimeJobsAsync` now returns `EarliestTimeJobs`, whose `StoreUtcNow` must be read in the same statement as the peek, matching `CronDispatchCandidates.StoreUtcNow`; the peek must also omit rows this node already holds, while `QueueTimeJobsAsync` keeps accepting them and refuses any row not yet due on the store's clock. Run the shared schedule-position and recovery conformance suites for every custom provider.
+Initialize the relational Jobs database from the current EF model before starting workers or writers. Include cancellation, cron control, schedule watermarks, recovery and fingerprint-defer fields, the fingerprint retry/keyset index, and the required occurrence `Disposition` column. Custom persistence providers must supply equivalent mappings, constraints, and indexes. Custom persistence providers must implement atomic pause/resume/update plus candidate selection, atomic materialization/recovery, bounded stale-fingerprint paging, fenced defer, and compare-and-advance before use; plan the recovery half with `CronRecoveryPlanner` rather than re-deriving it. The compare-and-advance fence covers the observed watermark, the observed projection (`CronScheduleAdvance.ObservedNextDueUtc` and `CronRecoveryRequest.ObservedNextDueUtc` must equal the stored `NextDueUtc`), the schedule revision, and a non-paused row, so advance, materialization, and recovery all reject a position derived before a rebase moved the projection. Materialization and advance write a non-null `EvaluationFingerprint` with the position and clear the fingerprint defer state; recovery always writes `CronRecoveryRequest.EvaluationFingerprint`. Candidate selection additionally takes a `CronDispatchCandidateCursor? after` between `limit` and the cancellation token, which must be applied inside the query — before the limit truncates — on the same `(NextDueUtc, CronJobId)` ordering the result is sorted by. Two further SPI members are store-clock contracts, not conveniences: `InsertCronJobsAsync(jobs, CronSchedulePositionSeeder, ct)` must read the store's **current statement** clock inside the inserting transaction, hand it to the seeder, persist the result, and return it (the caller arms its scheduler wake from the returned value, never from a locally recomputed projection); and `GetEarliestTimeJobsAsync` now returns `EarliestTimeJobs`, whose `StoreUtcNow` must be read in the same statement as the peek, matching `CronDispatchCandidates.StoreUtcNow`; the peek must also omit rows this node already holds, while `QueueTimeJobsAsync` keeps accepting them and refuses any row not yet due on the store's clock. Run the shared schedule-position and recovery conformance suites for every custom provider.
 
-Cron expressions use `RecurringJobOptions.TimeZoneId` when present and otherwise fall back to `SchedulerTimeZone`. Both must be IANA zones: an unknown or non-IANA `TimeZoneId` is rejected, and `AddHeadlessJobs` throws `InvalidOperationException` when `SchedulerTimeZone` has no IANA id (a Windows id, a custom zone, or a non-IANA `TimeZoneInfo.Local`); `TimeZoneInfo.Utc` is accepted. Configure the same zone on every node. A tick never runs twice when nodes disagree, because dispatch advances the definition with a compare-and-set and occurrences are unique per instant, but each tick then fires at the time projected in the zone of whichever node advanced it last, misfire classification can be wrong, and the fingerprint sweep keeps rebasing the other nodes' definitions that name no zone. Occurrences remain UTC; a spring-forward gap and a fall-back overlap follow the [DST transition rule](#cron-across-dst-transitions): every occurrence a gap removes fires shifted forward by the gap, the first pass of a repeated local time always fires, and its second pass fires only when the expression's cadence continues across the repeated window.
+Cron expressions use `RecurringJobOptions.TimeZoneId` when present and otherwise fall back to `SchedulerTimeZone`. Both must be IANA zones: an unknown or non-IANA `TimeZoneId` is rejected, and `AddHeadlessJobs` throws `InvalidOperationException` when `SchedulerTimeZone` has no IANA id (a Windows id, a custom zone, or a non-IANA `TimeZoneInfo.Local`); `TimeZoneInfo.Utc` is accepted. Configure the same zone on every node. A tick never runs twice when nodes disagree, because dispatch advances the definition with a compare-and-set and occurrences are unique per instant, but each tick then fires at the time projected in the zone of whichever node advanced it last, and misfire classification can be wrong. The fallback zone is part of the published cron rules digest, so nodes with different `SchedulerTimeZone` never agree and the fingerprint sweep defers every rebase until they do ([fleet agreement](#fleet-agreement)). Occurrences remain UTC; a spring-forward gap and a fall-back overlap follow the [DST transition rule](#cron-across-dst-transitions): every occurrence a gap removes fires shifted forward by the gap, the first pass of a repeated local time always fires, and its second pass fires only when the expression's cadence continues across the repeated window.
 
 ### Install
 
