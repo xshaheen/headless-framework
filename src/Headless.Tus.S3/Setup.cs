@@ -81,6 +81,7 @@ public static class SetupTusS3Store
         services.TryAddSingleton(provider => new TusS3Store(
             provider.GetRequiredService<IAmazonS3>(),
             provider.GetRequiredService<IOptions<TusS3StoreOptions>>().Value,
+            provider.GetService<ITusFileIdProvider>(),
             provider.GetService<ILoggerFactory>(),
             provider.GetService<TimeProvider>(),
             provider.GetService<IHttpContextAccessor>()

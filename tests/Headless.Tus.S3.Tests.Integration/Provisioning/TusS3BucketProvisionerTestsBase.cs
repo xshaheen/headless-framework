@@ -180,7 +180,7 @@ public abstract class TusS3BucketProvisionerTestsBase(IS3TestBackend backend) : 
     public virtual Task should_make_no_storage_request_when_constructing_the_store()
     {
         // when
-        _ = new TusS3Store(_S3, _options, LoggerFactory);
+        _ = new TusS3Store(_S3, _options, loggerFactory: LoggerFactory);
 
         // then
         _client.Gate.TotalRequests.Should().Be(0);

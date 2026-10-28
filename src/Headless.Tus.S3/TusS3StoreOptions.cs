@@ -26,6 +26,9 @@ public sealed class TusS3StoreOptions
     internal const int MaxPartSizeLimit = 1024 * 1024 * 1024;
 
     /// <summary>The abort window Cloudflare R2 applies to incomplete multipart uploads.</summary>
+    /// <summary>The widest claim window, which still leaves 9,000 of the 10,000 part numbers for the upload's length.</summary>
+    internal const int MaxPartClaimWindow = 250;
+
     internal static readonly TimeSpan R2MultipartUploadLifetime = TimeSpan.FromDays(7);
 
     /// <summary>The bucket that holds the uploads. Required.</summary>
@@ -65,8 +68,12 @@ public sealed class TusS3StoreOptions
 
     /// <summary>
     /// How many part numbers a PATCH request reserves with one state write before uploading parts. Defaults to 64;
-    /// must be at least 1.
+    /// must be between 1 and 250.
     /// </summary>
+    /// <remarks>
+    /// Four windows of part numbers are held back from the 10,000 parts a multipart upload allows, so a wider window
+    /// lowers the largest upload: at the defaults an upload created without a length can grow to 9,744 parts.
+    /// </remarks>
     public int PartClaimWindow { get; set; } = 64;
 
     /// <summary>
@@ -126,7 +133,14 @@ internal sealed class TusS3StoreOptionsValidator : AbstractValidator<TusS3StoreO
             .WithMessage("MaxPartSize must not exceed 1 GiB, because each part is buffered in one array");
 
         RuleFor(x => x.MaxConcurrentPartUploads).GreaterThanOrEqualTo(1);
-        RuleFor(x => x.PartClaimWindow).GreaterThanOrEqualTo(1);
+        // Four windows of part numbers stay in reserve for crash recovery, so a wider window would eat most of the
+        // 10,000-part budget an upload's length is spread over.
+        RuleFor(x => x.PartClaimWindow)
+            .GreaterThanOrEqualTo(1)
+            .LessThanOrEqualTo(TusS3StoreOptions.MaxPartClaimWindow)
+            .WithMessage(
+                "PartClaimWindow must be between 1 and 250, because four windows are reserved from 10,000 parts"
+            );
         RuleFor(x => x.MaxTailSegments).GreaterThanOrEqualTo(1);
         RuleFor(x => x.PersistTimeout).GreaterThan(TimeSpan.Zero);
 

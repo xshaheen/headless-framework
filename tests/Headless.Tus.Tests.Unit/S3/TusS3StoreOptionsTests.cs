@@ -133,6 +133,29 @@ public sealed class TusS3StoreOptionsTests : TestBase
         _validator.TestValidate(options).ShouldHaveValidationErrorFor(x => x.PartClaimWindow);
     }
 
+    [Theory]
+    [InlineData(250, false)]
+    [InlineData(251, true)]
+    public void should_bound_part_claim_window_so_the_reserve_leaves_a_part_budget(int window, bool rejected)
+    {
+        // given - four windows are reserved out of 10,000 part numbers
+        var options = _Valid();
+        options.PartClaimWindow = window;
+
+        // when
+        var result = _validator.TestValidate(options);
+
+        // then
+        if (rejected)
+        {
+            result.ShouldHaveValidationErrorFor(x => x.PartClaimWindow);
+        }
+        else
+        {
+            result.ShouldNotHaveValidationErrorFor(x => x.PartClaimWindow);
+        }
+    }
+
     [Fact]
     public void should_reject_max_tail_segments_below_one()
     {

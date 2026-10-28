@@ -40,7 +40,7 @@ internal sealed class TusS3StoreFactory : IDisposable
         // before a scenario touches it.
         await new TusS3BucketProvisioner(client.S3, options, loggerFactory).ProvisionAsync(cancellationToken);
 
-        return new TusS3Store(client.S3, options, loggerFactory);
+        return new TusS3Store(client.S3, options, loggerFactory: loggerFactory);
     }
 
     public void Dispose()
