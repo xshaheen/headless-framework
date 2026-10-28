@@ -158,7 +158,8 @@ public sealed partial class TusAzureStore : ITusExpirationStore
                 var blobItem in _containerClient.GetBlobsAsync(
                     traits: BlobTraits.Metadata,
                     states: BlobStates.None,
-                    prefix: _options.BlobPrefix,
+                    // Normalized like _ExtractFileIdFromBlobName, so "uploads" does not also list "uploads-other/".
+                    prefix: _options.BlobPrefix.EnsureEndsWith('/'),
                     cancellationToken: cancellationToken
                 )
             )
