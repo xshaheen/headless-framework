@@ -11,6 +11,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests.Internal;
 
+#pragma warning disable CA2000 // False positive: each fake attempt is handed to the runner, which disposes every attempt it begins, and the tests assert that dispose.
+
 /// <summary>
 /// The inbox attempt protocol every relational storage shares: the handler runs at most once per reserved attempt,
 /// the inbox completion joins the attempt's transaction, and an ambiguous commit is settled by probing the row
@@ -332,3 +334,4 @@ public sealed class InboxTransactionRunnerTests : TestBase
 
     #endregion
 }
+#pragma warning restore CA2000
