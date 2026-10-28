@@ -2079,6 +2079,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 || current.IsPaused
                 || current.ScheduleRevision != request.ExpectedScheduleRevision
                 || current.ReconciledThroughUtc != request.ObservedReconciledThroughUtc
+                || current.NextDueUtc != request.ObservedNextDueUtc
             )
             {
                 return Task.FromResult<CronRecoveryResult<TCronJob>?>(null);
@@ -2213,6 +2214,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             var updated = _CloneCronJob(current);
             updated.ReconciledThroughUtc = resolution.ReconciledThroughUtc;
             updated.NextDueUtc = resolution.NextDueUtc;
+            updated.EvaluationFingerprint = request.EvaluationFingerprint;
+            updated.FingerprintFailureCount = 0;
+            updated.FingerprintRetryAfterUtc = null;
             _SetCronJob(updated);
 
             return Task.FromResult<CronRecoveryResult<TCronJob>?>(
@@ -2321,6 +2325,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 || current.IsPaused
                 || current.ScheduleRevision != advance.ExpectedScheduleRevision
                 || current.ReconciledThroughUtc != advance.ObservedReconciledThroughUtc
+                || current.NextDueUtc != advance.ObservedNextDueUtc
             )
             {
                 return Task.FromResult<CronScheduleAdvanceResult?>(null);
@@ -2375,6 +2380,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             "The occurrence instant must equal the schedule position's reconciled-through instant.",
             nameof(materialization)
         );
+        Argument.IsTrue(
+            materialization.ExecutionTimeUtc == advance.ObservedNextDueUtc,
+            "The occurrence instant must equal the observed projection it materializes.",
+            nameof(materialization)
+        );
 
         lock (_GetCronDefinitionLock(advance.CronJobId))
         {
@@ -2385,7 +2395,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 || current.IsPaused
                 || current.ScheduleRevision != advance.ExpectedScheduleRevision
                 || current.ReconciledThroughUtc != advance.ObservedReconciledThroughUtc
-                || current.NextDueUtc != materialization.ExecutionTimeUtc
+                || current.NextDueUtc != advance.ObservedNextDueUtc
             )
             {
                 return Task.FromResult(

@@ -357,6 +357,7 @@ public abstract class JobsOverlapConformanceTests<TFixture>(TFixture fixture) : 
             {
                 CronJobId = cronId,
                 ObservedReconciledThroughUtc = seeded.ReconciledThroughUtc,
+                ObservedNextDueUtc = seeded.NextDueUtc,
                 ExpectedScheduleRevision = 0L,
                 ReconciledThroughUtc = seeded.NextDueUtc,
                 NextDueUtc = seeded.NextDueUtc.AddHours(1),
@@ -370,8 +371,10 @@ public abstract class JobsOverlapConformanceTests<TFixture>(TFixture fixture) : 
         {
             CronJobId = cronId,
             ObservedReconciledThroughUtc = seeded.ReconciledThroughUtc,
+            ObservedNextDueUtc = seeded.NextDueUtc,
             ExpectedScheduleRevision = 0L,
             RecoveredThroughUtc = seeded.NextDueUtc.AddHours(2),
+            EvaluationFingerprint = "fingerprint-current",
             NextDueUtc = seeded.NextDueUtc.AddHours(3),
             BoundedProgressThroughUtc = seeded.NextDueUtc.AddHours(2),
             NextDueAfterBoundedProgressUtc = seeded.NextDueUtc.AddHours(3),

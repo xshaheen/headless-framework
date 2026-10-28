@@ -306,9 +306,11 @@ public sealed class CronPendingEvaluationTests : TestBase
         {
             CronJobId = Guid.NewGuid(),
             ObservedReconciledThroughUtc = watermark,
+            ObservedNextDueUtc = pending.EarliestPendingUtc!.Value,
             ExpectedScheduleRevision = 1,
             RecoveredThroughUtc = storeNow,
             NextDueUtc = cache.GetNextOccurrenceOrDefault("0 30 23 * * *", storeNow)!.Value,
+            EvaluationFingerprint = "fingerprint-current",
             BoundedProgressThroughUtc = latest,
             NextDueAfterBoundedProgressUtc = cache.GetNextOccurrenceOrDefault("0 30 23 * * *", latest)!.Value,
             EvaluationSaturated = pending.CountSaturated,

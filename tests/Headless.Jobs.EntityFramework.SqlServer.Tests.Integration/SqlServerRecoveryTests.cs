@@ -19,6 +19,18 @@ public abstract class SqlServerRecoveryTestsBase<TFixture>(TFixture fixture)
     }
 
     [Fact]
+    public override Task recovery_that_read_before_a_rebase_changes_nothing_after_it()
+    {
+        return base.recovery_that_read_before_a_rebase_changes_nothing_after_it();
+    }
+
+    [Fact]
+    public override Task committed_recovery_stamps_the_evaluation_fingerprint()
+    {
+        return base.committed_recovery_stamps_the_evaluation_fingerprint();
+    }
+
+    [Fact]
     public override Task skip_materializes_nothing_and_still_advances_the_watermark()
     {
         return base.skip_materializes_nothing_and_still_advances_the_watermark();

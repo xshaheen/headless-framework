@@ -2044,18 +2044,23 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     var definitions = dbContext.Set<TCronJob>();
                     var initialRecoveredThroughUtc = request.RecoveredThroughUtc;
                     var initialNextDueUtc = request.NextDueUtc;
+                    var fingerprint = request.EvaluationFingerprint;
 
                     var advanced = await definitions
                         .WhereScheduleAdvanceFenceHolds(
                             request.CronJobId,
                             request.ObservedReconciledThroughUtc,
+                            request.ObservedNextDueUtc,
                             request.ExpectedScheduleRevision
                         )
                         .ExecuteUpdateAsync(
                             setter =>
                                 setter
                                     .SetProperty(x => x.ReconciledThroughUtc, initialRecoveredThroughUtc)
-                                    .SetProperty(x => x.NextDueUtc, initialNextDueUtc),
+                                    .SetProperty(x => x.NextDueUtc, initialNextDueUtc)
+                                    .SetProperty(x => x.EvaluationFingerprint, fingerprint)
+                                    .SetProperty(x => x.FingerprintFailureCount, 0)
+                                    .SetProperty(x => x.FingerprintRetryAfterUtc, (DateTime?)null),
                             cancellationToken
                         )
                         .ConfigureAwait(false);
@@ -2403,6 +2408,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var fenced = definitions.WhereScheduleAdvanceFenceHolds(
             advance.CronJobId,
             advance.ObservedReconciledThroughUtc,
+            advance.ObservedNextDueUtc,
             advance.ExpectedScheduleRevision
         );
 
@@ -2504,12 +2510,16 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             "The occurrence instant must equal the schedule position's reconciled-through instant.",
             nameof(materialization)
         );
+        Argument.IsTrue(
+            materialization.ExecutionTimeUtc == advance.ObservedNextDueUtc,
+            "The occurrence instant must equal the observed projection it materializes.",
+            nameof(materialization)
+        );
 
         await using var eligibilityContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var executionTimeUtc = materialization.ExecutionTimeUtc;
         // Authorize due-ness in autocommit before opening the atomic write transaction. PostgreSQL translates
         // DateTime.UtcNow to now(), whose value is frozen at transaction start; evaluating it here gives the current
         // statement clock and avoids a row-lock wait making a newly due projection look future. Time is monotonic, and
@@ -2521,9 +2531,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .WhereScheduleAdvanceFenceHolds(
                 advance.CronJobId,
                 advance.ObservedReconciledThroughUtc,
+                advance.ObservedNextDueUtc,
                 advance.ExpectedScheduleRevision
             )
-            .Where(x => x.NextDueUtc == executionTimeUtc)
             .Select(x => new { IsDue = x.NextDueUtc <= DateTime.UtcNow, StoreUtcNow = DateTime.UtcNow })
             .SingleOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -2555,9 +2565,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     var fenced = definitions.WhereScheduleAdvanceFenceHolds(
                         advance.CronJobId,
                         advance.ObservedReconciledThroughUtc,
+                        advance.ObservedNextDueUtc,
                         advance.ExpectedScheduleRevision
                     );
-                    fenced = fenced.Where(x => x.NextDueUtc == executionTimeUtc);
 
                     var reconciledThroughUtc = advance.ReconciledThroughUtc;
                     var nextDueUtc = advance.NextDueUtc;

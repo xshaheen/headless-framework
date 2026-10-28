@@ -326,6 +326,7 @@ public sealed class CronOverlapPolicyProviderTests : TestBase
             {
                 CronJobId = definition.Id,
                 ObservedReconciledThroughUtc = definition.ReconciledThroughUtc,
+                ObservedNextDueUtc = definition.NextDueUtc,
                 ExpectedScheduleRevision = definition.ScheduleRevision,
                 ReconciledThroughUtc = _Due,
                 NextDueUtc = _Next,
@@ -339,8 +340,10 @@ public sealed class CronOverlapPolicyProviderTests : TestBase
         {
             CronJobId = definition.Id,
             ObservedReconciledThroughUtc = definition.ReconciledThroughUtc,
+            ObservedNextDueUtc = definition.NextDueUtc,
             ExpectedScheduleRevision = definition.ScheduleRevision,
             RecoveredThroughUtc = _Now.UtcDateTime,
+            EvaluationFingerprint = "fingerprint-current",
             NextDueUtc = _Next,
             BoundedProgressThroughUtc = _Now.UtcDateTime,
             NextDueAfterBoundedProgressUtc = _Next,

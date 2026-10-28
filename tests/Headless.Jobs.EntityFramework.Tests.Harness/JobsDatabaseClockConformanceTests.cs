@@ -287,6 +287,7 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
                 {
                     CronJobId = cronId,
                     ObservedReconciledThroughUtc = seeded.ReconciledThroughUtc,
+                    ObservedNextDueUtc = seeded.NextDueUtc,
                     ExpectedScheduleRevision = 0L,
                     ReconciledThroughUtc = seeded.NextDueUtc,
                     NextDueUtc = seeded.NextDueUtc.AddMinutes(1),
@@ -339,6 +340,7 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
                 {
                     CronJobId = cronId,
                     ObservedReconciledThroughUtc = afterAdvance.ReconciledThroughUtc,
+                    ObservedNextDueUtc = afterAdvance.NextDueUtc,
                     ExpectedScheduleRevision = 0L,
                     ReconciledThroughUtc = afterAdvance.NextDueUtc,
                     NextDueUtc = afterAdvance.NextDueUtc.AddMinutes(1),

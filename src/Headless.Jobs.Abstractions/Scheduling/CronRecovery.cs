@@ -16,6 +16,13 @@ public sealed record CronRecoveryRequest
     /// <summary>The exact durable watermark the caller observed. Also the exclusive lower bound of the missed window.</summary>
     public required DateTime ObservedReconciledThroughUtc { get; init; }
 
+    /// <summary>
+    /// The exact durable projection (<see cref="CronJobEntity.NextDueUtc"/>) the caller observed. Recovery is rejected
+    /// if it no longer matches, so a backlog evaluated under rules a concurrent rebase already replaced is never
+    /// resolved.
+    /// </summary>
+    public required DateTime ObservedNextDueUtc { get; init; }
+
     /// <summary>The exact durable schedule revision the caller observed.</summary>
     public required long ExpectedScheduleRevision { get; init; }
 
@@ -27,6 +34,12 @@ public sealed record CronRecoveryRequest
 
     /// <summary>The projection to persist: the first occurrence after <see cref="RecoveredThroughUtc"/>.</summary>
     public required DateTime NextDueUtc { get; init; }
+
+    /// <summary>
+    /// Fingerprint of the rules the backlog and the new projection were evaluated under, persisted with the position
+    /// so the definition's fingerprint always names the rules behind its projection.
+    /// </summary>
+    public required string EvaluationFingerprint { get; init; }
 
     /// <summary>
     /// Last schedule instant actually examined by a saturated bounded evaluation. Used only when coalesce found every

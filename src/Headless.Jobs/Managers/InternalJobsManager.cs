@@ -682,6 +682,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 {
                     CronJobId = candidate.CronJobId,
                     ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
+                    ObservedNextDueUtc = candidate.NextDueUtc,
                     ExpectedScheduleRevision = candidate.ScheduleRevision,
                     ReconciledThroughUtc = storeUtcNow,
                     NextDueUtc = firstOccurrence ?? DateTime.MaxValue,
@@ -731,9 +732,11 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 {
                     CronJobId = candidate.CronJobId,
                     ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
+                    ObservedNextDueUtc = candidate.NextDueUtc,
                     ExpectedScheduleRevision = candidate.ScheduleRevision,
                     RecoveredThroughUtc = storeUtcNow,
                     NextDueUtc = nextAfterRecovery ?? DateTime.MaxValue,
+                    EvaluationFingerprint = cronScheduleCache.ComputeEvaluationFingerprint(candidate.TimeZoneId),
                     BoundedProgressThroughUtc = boundedProgressThroughUtc,
                     NextDueAfterBoundedProgressUtc = nextAfterBoundedProgress ?? DateTime.MaxValue,
                     EvaluationSaturated = pending.CountSaturated,
@@ -887,6 +890,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                     {
                         CronJobId = candidate.CronJobId,
                         ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
+                        ObservedNextDueUtc = candidate.NextDueUtc,
                         ExpectedScheduleRevision = candidate.ScheduleRevision,
                         ReconciledThroughUtc = candidate.NextDueUtc,
                         // A schedule with no further occurrence (an exhausted or unparseable expression) parks its
@@ -1716,6 +1720,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 {
                     CronJobId = candidate.CronJobId,
                     ObservedReconciledThroughUtc = candidate.ReconciledThroughUtc,
+                    ObservedNextDueUtc = candidate.NextDueUtc,
                     ExpectedScheduleRevision = candidate.ScheduleRevision,
                     // Environmental rule drift is a non-replay boundary: the prior interpretation's backlog is
                     // deliberately discarded and both cursor and projection move to the provider-time anchor.

@@ -223,8 +223,10 @@ public abstract class JobsOccupiedInstantConformanceTests<TFixture>(TFixture fix
                 {
                     CronJobId = cronId,
                     ObservedReconciledThroughUtc = seeded.ReconciledThroughUtc,
+                    ObservedNextDueUtc = seeded.NextDueUtc,
                     ExpectedScheduleRevision = 0,
                     RecoveredThroughUtc = missedInstant,
+                    EvaluationFingerprint = "fingerprint-current",
                     NextDueUtc = missedInstant.AddMinutes(1),
                     BoundedProgressThroughUtc = missedInstant,
                     NextDueAfterBoundedProgressUtc = missedInstant.AddMinutes(1),
@@ -494,6 +496,7 @@ public abstract class JobsOccupiedInstantConformanceTests<TFixture>(TFixture fix
             {
                 CronJobId = cronJobId,
                 ObservedReconciledThroughUtc = position.ReconciledThroughUtc,
+                ObservedNextDueUtc = position.NextDueUtc,
                 ExpectedScheduleRevision = 0,
                 ReconciledThroughUtc = position.NextDueUtc,
                 NextDueUtc = position.NextDueUtc.AddMinutes(1),

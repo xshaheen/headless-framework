@@ -75,6 +75,52 @@ public sealed class CronSchedulePositionProviderTests : TestBase
     }
 
     [Fact]
+    public async Task should_reject_the_advance_when_only_the_observed_projection_no_longer_matches()
+    {
+        var provider = _Create();
+        var definition = _Definition();
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+
+        var result = await provider.AdvanceCronScheduleAsync(
+            _Advance(definition, _Projection, _Projection.AddMinutes(1)) with
+            {
+                ObservedNextDueUtc = _Projection.AddMinutes(-30),
+            },
+            AbortToken
+        );
+
+        result.Should().BeNull("the projection moved under a matching watermark and revision, so the read is stale");
+        await _AssertPositionUnchangedAsync(provider, definition.Id);
+    }
+
+    [Fact]
+    public async Task should_lose_the_dispatch_materialization_when_a_rebase_moved_the_projection_after_the_read()
+    {
+        var provider = _Create();
+        var definition = _Definition();
+        await provider.InsertCronJobsAsync([definition], AbortToken);
+        var dispatch = _Materialization(definition);
+        var rebasedProjection = _Projection.AddSeconds(-30);
+
+        var rebased = await provider.AdvanceCronScheduleAsync(
+            _Advance(definition, reconciledThroughUtc: _Watermark, nextDueUtc: rebasedProjection) with
+            {
+                EvaluationFingerprint = "fingerprint-rebased",
+            },
+            AbortToken
+        );
+        rebased.Should().NotBeNull();
+
+        var result = await provider.MaterializeCronScheduleOccurrenceAsync(dispatch, AbortToken);
+
+        result.Outcome.Should().Be(CronScheduleMaterializationOutcome.LostFence);
+        var stored = await provider.GetCronJobByIdAsync(definition.Id, AbortToken);
+        stored!.ReconciledThroughUtc.Should().Be(_Watermark);
+        stored.NextDueUtc.Should().Be(rebasedProjection);
+        (await provider.GetAllCronJobOccurrencesAsync(null, AbortToken)).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_reject_the_advance_when_the_observed_revision_no_longer_matches()
     {
         var provider = _Create();
@@ -436,6 +482,7 @@ public sealed class CronSchedulePositionProviderTests : TestBase
         {
             CronJobId = definition.Id,
             ObservedReconciledThroughUtc = definition.ReconciledThroughUtc,
+            ObservedNextDueUtc = definition.NextDueUtc,
             ExpectedScheduleRevision = definition.ScheduleRevision,
             ReconciledThroughUtc = reconciledThroughUtc,
             NextDueUtc = nextDueUtc,

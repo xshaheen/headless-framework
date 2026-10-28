@@ -172,8 +172,10 @@ public sealed class CronOccupiedInstantMatrixTests : TestBase
                 {
                     CronJobId = definition.Id,
                     ObservedReconciledThroughUtc = definition.ReconciledThroughUtc,
+                    ObservedNextDueUtc = definition.NextDueUtc,
                     ExpectedScheduleRevision = definition.ScheduleRevision,
                     RecoveredThroughUtc = _Projection,
+                    EvaluationFingerprint = "fingerprint-current",
                     NextDueUtc = _Projection.AddMinutes(1),
                     BoundedProgressThroughUtc = _Projection,
                     NextDueAfterBoundedProgressUtc = _Projection.AddMinutes(1),
@@ -473,6 +475,7 @@ public sealed class CronOccupiedInstantMatrixTests : TestBase
             {
                 CronJobId = definition.Id,
                 ObservedReconciledThroughUtc = definition.ReconciledThroughUtc,
+                ObservedNextDueUtc = definition.NextDueUtc,
                 ExpectedScheduleRevision = definition.ScheduleRevision,
                 ReconciledThroughUtc = _Projection,
                 NextDueUtc = _Projection.AddMinutes(1),

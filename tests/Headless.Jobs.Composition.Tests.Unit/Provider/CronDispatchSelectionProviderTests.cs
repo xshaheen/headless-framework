@@ -235,6 +235,7 @@ public sealed class CronDispatchSelectionProviderTests : TestBase
             {
                 CronJobId = due.Id,
                 ObservedReconciledThroughUtc = before.ReconciledThroughUtc,
+                ObservedNextDueUtc = before.NextDueUtc,
                 ExpectedScheduleRevision = before.ScheduleRevision,
                 ReconciledThroughUtc = before.NextDueUtc,
                 NextDueUtc = before.NextDueUtc.AddMinutes(1),
