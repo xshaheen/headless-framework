@@ -261,14 +261,27 @@ internal static class MappingExtensions
             .SetProperty(x => x.ReconciledThroughUtc, reconciledThroughUtc)
             .SetProperty(x => x.NextDueUtc, nextDueUtc);
 
-        // Null leaves the persisted fingerprint alone; a value also clears any defer state the old rules caused.
+        // Null leaves the persisted fingerprint alone.
         if (advance.EvaluationFingerprint is { } fingerprint)
         {
-            setters
-                .SetProperty(x => x.EvaluationFingerprint, fingerprint)
-                .SetProperty(x => x.FingerprintFailureCount, 0)
-                .SetProperty(x => x.FingerprintRetryAfterUtc, (DateTime?)null);
+            setters.SetCronEvaluationFingerprint(fingerprint);
         }
+    }
+
+    /// <summary>
+    /// Records the rules a new projection was derived under and clears any defer state the old rules caused, since a
+    /// definition that evaluates under current rules is no longer stale.
+    /// </summary>
+    internal static void SetCronEvaluationFingerprint<TCronJob>(
+        this UpdateSettersBuilder<TCronJob> setters,
+        string fingerprint
+    )
+        where TCronJob : CronJobEntity
+    {
+        setters
+            .SetProperty(x => x.EvaluationFingerprint, fingerprint)
+            .SetProperty(x => x.FingerprintFailureCount, 0)
+            .SetProperty(x => x.FingerprintRetryAfterUtc, (DateTime?)null);
     }
 
     internal static void UpdateCronJobOccurrence<TCronJob>(

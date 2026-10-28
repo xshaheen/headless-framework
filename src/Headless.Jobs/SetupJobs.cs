@@ -513,7 +513,9 @@ public static class SetupJobs
         services.Configure<CoordinationOptions>(options =>
         {
             options.Metadata[CronRulesDigest.DigestMetadataKey] = CronRulesDigest.ForProcess(schedulerTimeZone);
-            options.Metadata[CronRulesDigest.FingerprintSweepMetadataKey] = claimsWork ? "true" : "false";
+            options.Metadata[CronRulesDigest.FingerprintSweepMetadataKey] = claimsWork
+                ? CronRulesDigest.SweepEnabled
+                : CronRulesDigest.SweepDisabled;
         });
 
         // Only nodes sharing a durable store have a fleet whose cron rules must agree before a rebase.

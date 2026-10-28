@@ -68,25 +68,18 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     // Registered only with the durable store. Its absence is how the in-memory store, a single process with no fleet to
     // agree with, rebases on its own rule change; Messaging may register an INodeMembership on that host, so the
     // presence of membership cannot decide it.
-    private CronFleetAgreement? _fleetAgreement;
-    private bool _fleetAgreementResolved;
+    private readonly Lazy<CronFleetAgreement?> _fleetAgreement = new(serviceProvider.GetService<CronFleetAgreement>);
 
     private async Task<CronFingerprintSweepDeferralReason> _CheckFleetAgreementAsync(
         CancellationToken cancellationToken
     )
     {
-        if (!_fleetAgreementResolved)
-        {
-            _fleetAgreement = serviceProvider.GetService<CronFleetAgreement>();
-            _fleetAgreementResolved = true;
-        }
-
-        if (_fleetAgreement is null)
+        if (_fleetAgreement.Value is not { } fleetAgreement)
         {
             return CronFingerprintSweepDeferralReason.None;
         }
 
-        var agreement = await _fleetAgreement.CheckAsync(cancellationToken).ConfigureAwait(false);
+        var agreement = await fleetAgreement.CheckAsync(cancellationToken).ConfigureAwait(false);
 
         return agreement.Outcome switch
         {

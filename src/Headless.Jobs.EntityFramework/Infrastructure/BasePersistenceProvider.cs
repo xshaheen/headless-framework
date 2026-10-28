@@ -2055,12 +2055,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         )
                         .ExecuteUpdateAsync(
                             setter =>
+                            {
                                 setter
                                     .SetProperty(x => x.ReconciledThroughUtc, initialRecoveredThroughUtc)
-                                    .SetProperty(x => x.NextDueUtc, initialNextDueUtc)
-                                    .SetProperty(x => x.EvaluationFingerprint, fingerprint)
-                                    .SetProperty(x => x.FingerprintFailureCount, 0)
-                                    .SetProperty(x => x.FingerprintRetryAfterUtc, (DateTime?)null),
+                                    .SetProperty(x => x.NextDueUtc, initialNextDueUtc);
+                                setter.SetCronEvaluationFingerprint(fingerprint);
+                            },
                             cancellationToken
                         )
                         .ConfigureAwait(false);

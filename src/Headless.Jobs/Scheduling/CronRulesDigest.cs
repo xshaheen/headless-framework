@@ -28,6 +28,10 @@ internal static class CronRulesDigest
     /// </summary>
     internal const string FingerprintSweepMetadataKey = "headless.jobs.fingerprint-sweep";
 
+    internal const string SweepEnabled = "true";
+
+    internal const string SweepDisabled = "false";
+
     // Bump when the canonical text below changes shape, so nodes on different formats never agree by accident.
     private const int _FormatVersion = 1;
 

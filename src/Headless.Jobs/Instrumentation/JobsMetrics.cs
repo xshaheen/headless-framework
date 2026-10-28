@@ -27,10 +27,6 @@ internal static class JobsMetrics
     /// </summary>
     internal const string TagSweepDeferralReason = "reason";
 
-    internal const string SweepDeferralFleetDisagreement = "fleet_disagreement";
-
-    internal const string SweepDeferralMembershipUnavailable = "membership_unavailable";
-
     /// <summary>Due cron occurrences recorded as skipped instead of running.</summary>
     internal const string CronOccurrencesSkippedName = "headless.jobs.cron.occurrences.skipped";
 
@@ -181,14 +177,21 @@ internal static class JobsMetrics
             + "by reason."
     );
 
-    internal static void FingerprintSweepDeferred(string reason)
+    internal static void FingerprintSweepDeferred(CronFingerprintSweepDeferralReason reason)
     {
         if (!_FingerprintSweepDeferred.Enabled)
         {
             return;
         }
 
-        _FingerprintSweepDeferred.Add(1, new TagList { { TagSweepDeferralReason, reason } });
+        var tag = reason switch
+        {
+            CronFingerprintSweepDeferralReason.FleetDisagreement => "fleet_disagreement",
+            CronFingerprintSweepDeferralReason.MembershipUnavailable => "membership_unavailable",
+            _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Only a deferred pass is counted."),
+        };
+
+        _FingerprintSweepDeferred.Add(1, new TagList { { TagSweepDeferralReason, tag } });
     }
 
     internal static void PostCommitSignalDropped(string reason)

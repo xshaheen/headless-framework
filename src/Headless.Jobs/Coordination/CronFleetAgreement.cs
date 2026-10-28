@@ -32,6 +32,8 @@ internal sealed class CronFleetAgreement(
     // A rolling deploy disagrees for minutes; an hour means a node that will not converge on its own.
     private static readonly TimeSpan _HoldoutWarningAfter = TimeSpan.FromHours(1);
 
+    private const string _NoDigest = "<none>";
+
     // The drain and the periodic sweep can check at the same moment, and both update the one episode.
     private readonly Lock _episodeLock = new();
     private string? _episodeKey;
@@ -44,9 +46,10 @@ internal sealed class CronFleetAgreement(
     {
         IReadOnlyList<NodeLivenessSnapshot> snapshot;
 
-        using (var timeout = new CancellationTokenSource(_SnapshotTimeout))
-        using (var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token))
+        using (var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
         {
+            linked.CancelAfter(_SnapshotTimeout);
+
             try
             {
                 snapshot = await membership.GetLivenessSnapshotAsync(linked.Token).ConfigureAwait(false);
@@ -57,7 +60,7 @@ internal sealed class CronFleetAgreement(
             {
                 // Not a disagreement: no node can be named, so this neither starts nor ends a holdout episode.
                 JobsFingerprintSweepLog.MembershipUnavailable(logger, exception);
-                JobsMetrics.FingerprintSweepDeferred(JobsMetrics.SweepDeferralMembershipUnavailable);
+                JobsMetrics.FingerprintSweepDeferred(CronFingerprintSweepDeferralReason.MembershipUnavailable);
 
                 return CronFleetAgreementResult.Unavailable;
             }
@@ -94,7 +97,7 @@ internal sealed class CronFleetAgreement(
             return CronFleetAgreementResult.Agreed;
         }
 
-        JobsMetrics.FingerprintSweepDeferred(JobsMetrics.SweepDeferralFleetDisagreement);
+        JobsMetrics.FingerprintSweepDeferred(CronFingerprintSweepDeferralReason.FleetDisagreement);
         _TrackEpisode(disagreeing, local);
 
         return CronFleetAgreementResult.Disagreed(disagreeing);
@@ -106,7 +109,7 @@ internal sealed class CronFleetAgreement(
     {
         return string.Equals(
             node.Metadata.GetValueOrDefault(CronRulesDigest.FingerprintSweepMetadataKey),
-            "true",
+            CronRulesDigest.SweepEnabled,
             StringComparison.Ordinal
         );
     }
@@ -151,7 +154,7 @@ internal sealed class CronFleetAgreement(
         JobsFingerprintSweepLog.FleetHoldout(
             logger,
             _HoldoutWarningAfter,
-            local ?? "<none>",
+            local ?? _NoDigest,
             _DescribeGroups(disagreeing)
         );
     }
@@ -162,7 +165,7 @@ internal sealed class CronFleetAgreement(
         return string.Join(
             "; ",
             disagreeing
-                .GroupBy(static peer => peer.Digest ?? "<none>", StringComparer.Ordinal)
+                .GroupBy(static peer => peer.Digest ?? _NoDigest, StringComparer.Ordinal)
                 .OrderBy(static group => group.Key, StringComparer.Ordinal)
                 .Select(static group =>
                     $"{group.Key}: {string.Join(", ", group.Select(static peer => peer.Identity.ToString()).Order(StringComparer.Ordinal))}"
