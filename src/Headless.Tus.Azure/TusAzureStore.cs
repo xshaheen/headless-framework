@@ -57,10 +57,10 @@ namespace Headless.Tus;
 /// blob, and its digest comparison is what rejects blocks a different writer staged in between.
 /// </para>
 /// <para>
-/// When <see cref="TusAzureStoreOptions.CreateContainerIfNotExists"/> is <see langword="true"/>
-/// (the default), the container is created <em>synchronously</em> inside the constructor. Any
-/// connectivity or authorization failure is therefore surfaced at startup, not on the first
-/// upload.
+/// The store never creates its container. <c>AddTusAzureStore</c> registers it as a provisioned
+/// resource, so a deploy step creates it with <c>resources provision -k AzureBlob</c> and a
+/// starting host only checks that it exists; a manually constructed store needs the container
+/// created beforehand.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -83,9 +83,8 @@ public sealed partial class TusAzureStore
     private readonly ArrayPool<byte> _chunkPool;
 
     /// <summary>
-    /// Initializes a new <c>TusAzureStore</c> and, when
-    /// <see cref="TusAzureStoreOptions.CreateContainerIfNotExists"/> is <see langword="true"/>,
-    /// creates the Blob Storage container synchronously before returning.
+    /// Initializes a new <c>TusAzureStore</c> over an existing Blob Storage container. Construction
+    /// makes no network call.
     /// </summary>
     /// <param name="blobServiceClient">authenticated Azure Blob service client</param>
     /// <param name="options">store configuration</param>
@@ -99,9 +98,6 @@ public sealed partial class TusAzureStore
     /// </param>
     /// <param name="loggerFactory">optional logger factory; defaults to the null logger</param>
     /// <param name="timeProvider">optional time abstraction; defaults to <c>TimeProvider.System</c></param>
-    /// <exception cref="Azure.RequestFailedException">
-    /// thrown during construction when container creation is enabled and Azure returns an error
-    /// </exception>
     public TusAzureStore(
         BlobServiceClient blobServiceClient,
         TusAzureStoreOptions options,
@@ -125,25 +121,6 @@ public sealed partial class TusAzureStore
         _chunkPool = ArrayPool<byte>.Create(_options.BlobMaxChunkSize, maxArraysPerBucket: 8);
 
         _containerClient = blobServiceClient.GetBlobContainerClient(_options.ContainerName);
-
-        if (_options.CreateContainerIfNotExists)
-        {
-            _Initialize();
-        }
-    }
-
-    private void _Initialize()
-    {
-        try
-        {
-            _containerClient.CreateIfNotExists(_options.ContainerPublicAccessType);
-            _logger.BlobContainerInitialized(_options.ContainerName);
-        }
-        catch (Exception ex)
-        {
-            _logger.BlobContainerInitializationFailed(ex, _options.ContainerName);
-            throw;
-        }
     }
 
     /// <summary>
@@ -328,20 +305,6 @@ public sealed partial class TusAzureStore
 
 internal static partial class TusAzureStoreLog
 {
-    [LoggerMessage(
-        EventId = 3215,
-        Level = LogLevel.Information,
-        Message = "Initialized Azure Blob container: {ContainerName}"
-    )]
-    internal static partial void BlobContainerInitialized(this ILogger logger, string containerName);
-
-    [LoggerMessage(EventId = 3216, Level = LogLevel.Error, Message = "Failed to initialize container: {ContainerName}")]
-    internal static partial void BlobContainerInitializationFailed(
-        this ILogger logger,
-        Exception ex,
-        string containerName
-    );
-
     [LoggerMessage(
         EventId = 3251,
         Level = LogLevel.Warning,

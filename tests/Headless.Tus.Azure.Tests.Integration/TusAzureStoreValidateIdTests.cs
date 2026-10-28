@@ -4,6 +4,7 @@ using System.IO.Pipelines;
 using Azure.Storage.Blobs;
 using Headless.Testing.Tests;
 using Headless.Tus;
+using Headless.Tus.Internal;
 using Tests.TestSetup;
 using tusdotnet.Models;
 
@@ -21,6 +22,7 @@ public sealed class TusAzureStoreValidateIdTests : TestBase
     private const string _InvalidFileId = "not-a-guid-!!";
 
     private readonly TusAzureStore _store;
+    private readonly TusAzureContainerProvisioner _provisioner;
 
     public TusAzureStoreValidateIdTests(TusAzureFixture fixture)
     {
@@ -31,6 +33,14 @@ public sealed class TusAzureStoreValidateIdTests : TestBase
 
         var storeOptions = new TusAzureStoreOptions { ContainerName = "tusvalidate", BlobPrefix = "tusvalidate/" };
         _store = new TusAzureStore(blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
+        _provisioner = new TusAzureContainerProvisioner(blobServiceClient, storeOptions);
+    }
+
+    // The store does not create its container; the deploy-time provisioner does.
+    public override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync();
+        await _provisioner.ProvisionAsync(AbortToken);
     }
 
     private static IReadOnlyList<(string Name, Func<TusAzureStore, CancellationToken, Task> Act)> _EntryPoints()

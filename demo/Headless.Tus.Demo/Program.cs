@@ -3,6 +3,7 @@
 using System.Net.Mime;
 using Azure.Storage.Blobs;
 using Demo.Services;
+using Headless.Hosting;
 using Headless.Tus;
 using Microsoft.Extensions.Azure;
 using Microsoft.Net.Http.Headers;
@@ -25,6 +26,10 @@ builder.Services.AddAzureClients(clients =>
 
 // Registers TusAzureStore as a singleton with validated options bound from the "Tus" section.
 builder.Services.AddTusAzureStore(builder.Configuration.GetSection("Tus"));
+
+// The store never creates its container. A deployment runs `resources provision`; this demo
+// creates it as the host starts instead.
+builder.Services.AddDeployStepsOnStartup();
 
 builder.Services.AddSingleton<UploadDirectory>();
 

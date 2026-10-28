@@ -34,16 +34,6 @@ public sealed class TusAzureStoreOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_default_create_container_if_not_exists_to_true()
-    {
-        // when
-        var options = new TusAzureStoreOptions();
-
-        // then
-        options.CreateContainerIfNotExists.Should().BeTrue();
-    }
-
-    [Fact]
     public void should_default_enable_chunk_splitting_to_true()
     {
         // when
@@ -233,7 +223,6 @@ public sealed class TusAzureStoreOptionsTests : TestBase
         {
             ContainerName = "custom-container",
             BlobPrefix = "custom/prefix/",
-            CreateContainerIfNotExists = false,
             EnableChunkSplitting = false,
             BlobMaxChunkSize = 50 * 1024 * 1024,
             BlobDefaultChunkSize = 2 * 1024 * 1024,

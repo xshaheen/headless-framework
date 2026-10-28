@@ -2,6 +2,7 @@
 
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
+using Headless.Hosting;
 using Headless.Testing.Tests;
 using Headless.Tus;
 using Microsoft.Extensions.Configuration;
@@ -13,7 +14,7 @@ namespace Tests.Azure;
 public sealed class SetupTusAzureStoreTests : TestBase
 {
     // Constructing BlobServiceClient from the well-known dev connection string makes no network
-    // calls; combined with CreateContainerIfNotExists = false the store constructor is offline.
+    // calls, and neither does the store constructor.
     private static ServiceCollection _Services()
     {
         var services = new ServiceCollection();
@@ -27,7 +28,7 @@ public sealed class SetupTusAzureStoreTests : TestBase
     {
         // given
         var services = _Services();
-        services.AddTusAzureStore(options => options.CreateContainerIfNotExists = false);
+        services.AddTusAzureStore(_ => { });
         using var provider = services.BuildServiceProvider();
 
         // when
@@ -48,7 +49,6 @@ public sealed class SetupTusAzureStoreTests : TestBase
                 {
                     ["ContainerName"] = "my-uploads",
                     ["BlobPrefix"] = "tenant-a/",
-                    ["CreateContainerIfNotExists"] = "false",
                 }
             )
             .Build();
@@ -63,7 +63,6 @@ public sealed class SetupTusAzureStoreTests : TestBase
         // then
         options.ContainerName.Should().Be("my-uploads");
         options.BlobPrefix.Should().Be("tenant-a/");
-        options.CreateContainerIfNotExists.Should().BeFalse();
     }
 
     [Fact]
@@ -77,7 +76,6 @@ public sealed class SetupTusAzureStoreTests : TestBase
             (options, provider) =>
             {
                 options.ContainerName = provider.GetRequiredService<ContainerNameSource>().Name;
-                options.CreateContainerIfNotExists = false;
             }
         );
         using var provider = services.BuildServiceProvider();
@@ -94,7 +92,7 @@ public sealed class SetupTusAzureStoreTests : TestBase
     {
         // given
         var services = _Services();
-        services.AddTusAzureStore(options => options.CreateContainerIfNotExists = false);
+        services.AddTusAzureStore(_ => { });
         using var provider = services.BuildServiceProvider();
 
         // when / then
@@ -110,7 +108,7 @@ public sealed class SetupTusAzureStoreTests : TestBase
         // given - a custom provider registered before AddTusAzureStore wins (TryAdd semantics)
         var services = _Services();
         services.AddSingleton<ITusAzureBlobHttpHeadersProvider, FakeHeadersProvider>();
-        services.AddTusAzureStore(options => options.CreateContainerIfNotExists = false);
+        services.AddTusAzureStore(_ => { });
         using var provider = services.BuildServiceProvider();
 
         // when / then
@@ -123,11 +121,7 @@ public sealed class SetupTusAzureStoreTests : TestBase
     {
         // given - empty container name violates the FluentValidation rules
         var services = _Services();
-        services.AddTusAzureStore(options =>
-        {
-            options.ContainerName = "";
-            options.CreateContainerIfNotExists = false;
-        });
+        services.AddTusAzureStore(options => options.ContainerName = "");
         using var provider = services.BuildServiceProvider();
 
         // when
@@ -142,7 +136,7 @@ public sealed class SetupTusAzureStoreTests : TestBase
     {
         // given - AddTusAzureStore requires the app to register BlobServiceClient
         var services = new ServiceCollection();
-        services.AddTusAzureStore(options => options.CreateContainerIfNotExists = false);
+        services.AddTusAzureStore(_ => { });
         using var provider = services.BuildServiceProvider();
 
         // when
@@ -150,6 +144,37 @@ public sealed class SetupTusAzureStoreTests : TestBase
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*BlobServiceClient*");
+    }
+
+    [Fact]
+    public void should_register_container_as_provisioned_resource()
+    {
+        // given
+        var services = _Services();
+        services.AddTusAzureStore(options => options.ContainerName = "my-uploads");
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var provisioners = provider.GetServices<IResourceProvisioner>().ToList();
+
+        // then
+        provisioners.Should().ContainSingle();
+        provisioners[0].Kind.Should().Be("AzureBlob");
+        provisioners[0].Name.Should().Be("my-uploads");
+        provisioners[0].StartupCheck.Should().Be(ResourceStartupCheck.GateReadiness);
+    }
+
+    [Fact]
+    public void should_register_one_provisioner_when_called_twice()
+    {
+        // given
+        var services = _Services();
+        services.AddTusAzureStore(_ => { });
+        services.AddTusAzureStore(_ => { });
+        using var provider = services.BuildServiceProvider();
+
+        // when / then
+        provider.GetServices<IResourceProvisioner>().Should().ContainSingle();
     }
 
     private sealed record ContainerNameSource(string Name);

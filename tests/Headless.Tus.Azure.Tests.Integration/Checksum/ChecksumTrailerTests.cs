@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using Azure.Storage.Blobs;
 using Headless.Testing.Tests;
 using Headless.Tus;
+using Headless.Tus.Internal;
 using Tests.TestSetup;
 using tusdotnet.Helpers;
 using TusAzureMetadata = Headless.Tus.Models.TusAzureMetadata;
@@ -22,6 +23,7 @@ namespace Tests.Checksum;
 public sealed class ChecksumTrailerTests : TestBase
 {
     private readonly TusAzureStore _store;
+    private readonly TusAzureContainerProvisioner _provisioner;
     private readonly BlobContainerClient _containerClient;
     private const string _ContainerName = "tustrailer";
     private const string _BlobPrefix = "tustrailer/";
@@ -44,6 +46,14 @@ public sealed class ChecksumTrailerTests : TestBase
 
         _store = new TusAzureStore(blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
         _containerClient = blobServiceClient.GetBlobContainerClient(_ContainerName);
+        _provisioner = new TusAzureContainerProvisioner(blobServiceClient, storeOptions);
+    }
+
+    // The store does not create its container; the deploy-time provisioner does.
+    public override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync();
+        await _provisioner.ProvisionAsync(AbortToken);
     }
 
     [Fact]

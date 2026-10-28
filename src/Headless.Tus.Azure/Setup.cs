@@ -2,6 +2,8 @@
 
 using Azure.Storage.Blobs;
 using Headless.Checks;
+using Headless.Hosting;
+using Headless.Tus.Internal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -36,9 +38,9 @@ public static class SetupTusAzureStore
         /// Requires a <see cref="BlobServiceClient"/> registration (for example via
         /// <c>Microsoft.Extensions.Azure</c>'s <c>AddAzureClients</c>). An
         /// <c>ITusAzureBlobHttpHeadersProvider</c> or <c>ITusFileIdProvider</c> registered before
-        /// this call is honored; otherwise the defaults apply. When
-        /// <see cref="TusAzureStoreOptions.CreateContainerIfNotExists"/> is <see langword="true"/>,
-        /// the container is created synchronously when the store is first resolved.
+        /// this call is honored; otherwise the defaults apply. The container is registered as a
+        /// provisioned resource of kind <c>AzureBlob</c>: a deploy step creates it with
+        /// <c>resources provision</c>, and a starting host holds readiness until it exists.
         /// </remarks>
         public IServiceCollection AddTusAzureStore(IConfiguration config)
         {
@@ -71,6 +73,9 @@ public static class SetupTusAzureStore
 
     private static IServiceCollection _AddTusAzureStoreCore(IServiceCollection services)
     {
+        // A repeated call keeps the first store (TryAdd), so it must not register a second provisioner either.
+        var storeAlreadyRegistered = services.Any(static d => d.ServiceType == typeof(TusAzureStore));
+
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<ITusAzureBlobHttpHeadersProvider, DefaultTusAzureBlobHttpHeadersProvider>();
 
@@ -82,6 +87,14 @@ public static class SetupTusAzureStore
             provider.GetService<ILoggerFactory>(),
             provider.GetService<TimeProvider>()
         ));
+
+        if (!storeAlreadyRegistered)
+        {
+            services.AddResourceProvisioner(static provider => new TusAzureContainerProvisioner(
+                provider.GetRequiredService<BlobServiceClient>(),
+                provider.GetRequiredService<IOptions<TusAzureStoreOptions>>().Value
+            ));
+        }
 
         // Lets cross-cutting consumers (e.g. AddTusExpiredUploadsCleanup) resolve the store by
         // its tusdotnet capability interface without knowing the provider.

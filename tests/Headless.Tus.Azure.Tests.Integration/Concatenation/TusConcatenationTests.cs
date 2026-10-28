@@ -3,6 +3,7 @@
 using Azure.Storage.Blobs;
 using Headless.Testing.Tests;
 using Headless.Tus;
+using Headless.Tus.Internal;
 using Tests.TestSetup;
 using tusdotnet.Models.Concatenation;
 using TusAzureMetadata = Headless.Tus.Models.TusAzureMetadata;
@@ -13,6 +14,7 @@ namespace Tests.Concatenation;
 public sealed class TusConcatenationTests : TestBase
 {
     private readonly TusAzureStore _store;
+    private readonly TusAzureContainerProvisioner _provisioner;
     private readonly BlobServiceClient _blobServiceClient;
     private readonly BlobContainerClient _containerClient;
     private const string _ContainerName = "tuscontainer";
@@ -28,6 +30,14 @@ public sealed class TusConcatenationTests : TestBase
         var storeOptions = new TusAzureStoreOptions { ContainerName = _ContainerName, BlobPrefix = _BlobPrefix };
         _containerClient = _blobServiceClient.GetBlobContainerClient(_ContainerName);
         _store = new TusAzureStore(_blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
+        _provisioner = new TusAzureContainerProvisioner(_blobServiceClient, storeOptions);
+    }
+
+    // The store does not create its container; the deploy-time provisioner does.
+    public override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync();
+        await _provisioner.ProvisionAsync(AbortToken);
     }
 
     /* CreatePartialFileAsync */
