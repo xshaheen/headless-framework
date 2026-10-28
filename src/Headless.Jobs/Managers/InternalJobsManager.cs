@@ -897,6 +897,9 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                         // projection beyond any wake. Leaving the old projection in place would keep the definition
                         // permanently due and spin the scheduler at its minimum sleep forever.
                         NextDueUtc = nextAfterDue ?? DateTime.MaxValue,
+                        // The new projection was derived under this node's rules, so the row names them. Another
+                        // node's fingerprint left in place would claim a projection its rules never produced.
+                        EvaluationFingerprint = cronScheduleCache.ComputeEvaluationFingerprint(candidate.TimeZoneId),
                         RequireProjectionDue = true,
                     },
                     ExecutionTimeUtc = candidate.NextDueUtc,

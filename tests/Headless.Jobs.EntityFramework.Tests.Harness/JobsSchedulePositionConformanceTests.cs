@@ -186,6 +186,39 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
         position.NextDueUtc.Should().BeCloseTo(rebasedProjection, TimeSpan.FromMicroseconds(1));
     }
 
+    public virtual async Task materialization_stamps_the_fingerprint_of_the_rules_it_evaluated()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("materialize-fingerprint");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(
+            cronId,
+            "materialize-fingerprint",
+            "* * * * *",
+            NodeDeathPolicy.Retry,
+            ct,
+            reconciledThroughOffsetSeconds: -600,
+            nextDueOffsetSeconds: -300
+        );
+        var seeded = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
+        var materialization = _Materialization(cronId, seeded);
+
+        var result = await persistence.MaterializeCronScheduleOccurrenceAsync(
+            materialization with
+            {
+                Advance = materialization.Advance with { EvaluationFingerprint = "fingerprint-local" },
+            },
+            ct
+        );
+
+        result.Outcome.Should().Be(CronScheduleMaterializationOutcome.OccurrenceCreated);
+        (await persistence.GetCronJobByIdAsync(cronId, ct))!.EvaluationFingerprint.Should().Be("fingerprint-local");
+    }
+
     public virtual async Task advance_with_a_stale_schedule_revision_changes_nothing()
     {
         var ct = AbortToken;

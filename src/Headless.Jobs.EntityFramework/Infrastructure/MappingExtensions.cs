@@ -243,6 +243,34 @@ internal static class MappingExtensions
         };
     }
 
+    /// <summary>
+    /// Writes an advance's schedule position, and its evaluation fingerprint when it carries one, so every path that
+    /// moves a projection records the rules that produced it in the same statement.
+    /// </summary>
+    internal static void SetCronSchedulePosition<TCronJob>(
+        this UpdateSettersBuilder<TCronJob> setters,
+        CronScheduleAdvance advance
+    )
+        where TCronJob : CronJobEntity
+    {
+        // Plain locals, so the setter expressions capture DateTime and string values rather than property accesses on
+        // the record that EF would have to translate.
+        var reconciledThroughUtc = advance.ReconciledThroughUtc;
+        var nextDueUtc = advance.NextDueUtc;
+        setters
+            .SetProperty(x => x.ReconciledThroughUtc, reconciledThroughUtc)
+            .SetProperty(x => x.NextDueUtc, nextDueUtc);
+
+        // Null leaves the persisted fingerprint alone; a value also clears any defer state the old rules caused.
+        if (advance.EvaluationFingerprint is { } fingerprint)
+        {
+            setters
+                .SetProperty(x => x.EvaluationFingerprint, fingerprint)
+                .SetProperty(x => x.FingerprintFailureCount, 0)
+                .SetProperty(x => x.FingerprintRetryAfterUtc, (DateTime?)null);
+        }
+    }
+
     internal static void UpdateCronJobOccurrence<TCronJob>(
         this UpdateSettersBuilder<CronJobOccurrenceEntity<TCronJob>> setters,
         JobExecutionState functionContext

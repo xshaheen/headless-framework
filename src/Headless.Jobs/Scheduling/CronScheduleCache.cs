@@ -15,6 +15,11 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
 
     private readonly ConcurrentDictionary<CadenceKey, bool> _cadenceVerdicts = new();
 
+    // Dispatch stamps a fingerprint on every advance, so this keeps that to a lookup instead of a SHA-256 per advance.
+    // Keyed by the resolved instance, which the resolver hands out once per identifier, and never invalidated: .NET
+    // caches a zone's rules for the process lifetime, so its fingerprint cannot change while this cache lives.
+    private readonly ConcurrentDictionary<TimeZoneInfo, string> _fingerprints = new(ReferenceEqualityComparer.Instance);
+
     private static readonly CrontabSchedule.ParseOptions _Opts = new() { IncludingSeconds = true };
 
     private static string _Normalize(string expr)
@@ -390,7 +395,7 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
     /// </remarks>
     public string ComputeEvaluationFingerprint(string? timeZoneId)
     {
-        return CronEvaluationFingerprint.Compute(CronTimeZoneResolver.Resolve(timeZoneId, TimeZoneInfo));
+        return _Fingerprint(CronTimeZoneResolver.Resolve(timeZoneId, TimeZoneInfo));
     }
 
     /// <summary>
@@ -422,9 +427,14 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
             return false;
         }
 
-        fingerprint = CronEvaluationFingerprint.Compute(timeZone);
+        fingerprint = _Fingerprint(timeZone);
 
         return true;
+    }
+
+    private string _Fingerprint(TimeZoneInfo timeZone)
+    {
+        return _fingerprints.GetOrAdd(timeZone, static zone => CronEvaluationFingerprint.Compute(zone));
     }
 
     internal int CadenceVerdictCount => _cadenceVerdicts.Count;

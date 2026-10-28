@@ -2428,32 +2428,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // occurrence work that accompanies an advance is provided by self-healing rather than by this statement: a
         // crash in between leaves a watermark with no occurrence, and the next wake re-derives the projection from the
         // persisted watermark and materializes it, idempotently against the filtered uniqueness index.
-        //
-        // The local copies exist so the ExecuteUpdate expression trees capture plain DateTime values; capturing
-        // `advance` would put a property access on the record inside the tree for EF to translate.
-        var reconciledThroughUtc = advance.ReconciledThroughUtc;
-        var nextDueUtc = advance.NextDueUtc;
-        var fingerprint = advance.EvaluationFingerprint;
-
         var affected = await fenced
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.ReconciledThroughUtc, reconciledThroughUtc)
-                        .SetProperty(x => x.NextDueUtc, nextDueUtc)
-                        // Null leaves the persisted value alone, so an ordinary dispatch advance does not have to know
-                        // or restate the fingerprint just to move the watermark.
-                        .SetProperty(x => x.EvaluationFingerprint, x => fingerprint ?? x.EvaluationFingerprint)
-                        .SetProperty(
-                            x => x.FingerprintFailureCount,
-                            x => fingerprint == null ? x.FingerprintFailureCount : 0
-                        )
-                        .SetProperty(
-                            x => x.FingerprintRetryAfterUtc,
-                            x => fingerprint == null ? x.FingerprintRetryAfterUtc : null
-                        ),
-                cancellationToken
-            )
+            .ExecuteUpdateAsync(setter => setter.SetCronSchedulePosition(advance), cancellationToken)
             .ConfigureAwait(false);
 
         if (affected == 0)
@@ -2569,16 +2545,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         advance.ExpectedScheduleRevision
                     );
 
-                    var reconciledThroughUtc = advance.ReconciledThroughUtc;
-                    var nextDueUtc = advance.NextDueUtc;
                     var affected = await fenced
-                        .ExecuteUpdateAsync(
-                            setter =>
-                                setter
-                                    .SetProperty(x => x.ReconciledThroughUtc, reconciledThroughUtc)
-                                    .SetProperty(x => x.NextDueUtc, nextDueUtc),
-                            cancellationToken
-                        )
+                        .ExecuteUpdateAsync(setter => setter.SetCronSchedulePosition(advance), cancellationToken)
                         .ConfigureAwait(false);
 
                     if (affected == 0)

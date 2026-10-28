@@ -2214,9 +2214,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             var updated = _CloneCronJob(current);
             updated.ReconciledThroughUtc = resolution.ReconciledThroughUtc;
             updated.NextDueUtc = resolution.NextDueUtc;
-            updated.EvaluationFingerprint = request.EvaluationFingerprint;
-            updated.FingerprintFailureCount = 0;
-            updated.FingerprintRetryAfterUtc = null;
+            _ApplyEvaluationFingerprint(updated, request.EvaluationFingerprint);
             _SetCronJob(updated);
 
             return Task.FromResult<CronRecoveryResult<TCronJob>?>(
@@ -2345,12 +2343,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             var updated = _CloneCronJob(current);
             updated.ReconciledThroughUtc = advance.ReconciledThroughUtc;
             updated.NextDueUtc = advance.NextDueUtc;
-            updated.EvaluationFingerprint = advance.EvaluationFingerprint ?? updated.EvaluationFingerprint;
-            if (advance.EvaluationFingerprint is not null)
-            {
-                updated.FingerprintFailureCount = 0;
-                updated.FingerprintRetryAfterUtc = null;
-            }
+            _ApplyEvaluationFingerprint(updated, advance.EvaluationFingerprint);
 
             _SetCronJob(updated);
 
@@ -2516,6 +2509,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             var updated = _CloneCronJob(current);
             updated.ReconciledThroughUtc = advance.ReconciledThroughUtc;
             updated.NextDueUtc = advance.NextDueUtc;
+            _ApplyEvaluationFingerprint(updated, advance.EvaluationFingerprint);
             _SetCronJob(updated);
 
             return Task.FromResult(
@@ -4192,6 +4186,20 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     private bool _DefersReplacementToMaterialization(Guid cronJobId, CronOverlapPolicy onOverlap) =>
         CronOverlapRule.ForbidsOverlap(onOverlap)
         && _cronOccurrences.Values.Any(x => x.CronJobId == cronJobId && CronOverlapRule.IsUnfinished(x.Status));
+
+    // Null leaves the persisted fingerprint alone; a value is the rules the new position was derived under, and
+    // clears any defer state those rules made obsolete.
+    private static void _ApplyEvaluationFingerprint(TCronJob updated, string? fingerprint)
+    {
+        if (fingerprint is null)
+        {
+            return;
+        }
+
+        updated.EvaluationFingerprint = fingerprint;
+        updated.FingerprintFailureCount = 0;
+        updated.FingerprintRetryAfterUtc = null;
+    }
 
     private static TCronJob _CloneCronJob(TCronJob job)
     {
