@@ -25,10 +25,10 @@ public sealed class TusS3StoreOptions
     /// </summary>
     internal const int MaxPartSizeLimit = 1024 * 1024 * 1024;
 
-    /// <summary>The abort window Cloudflare R2 applies to incomplete multipart uploads.</summary>
     /// <summary>The widest claim window, which still leaves 9,000 of the 10,000 part numbers for the upload's length.</summary>
     internal const int MaxPartClaimWindow = 250;
 
+    /// <summary>The abort window Cloudflare R2 applies to incomplete multipart uploads by default.</summary>
     internal static readonly TimeSpan R2MultipartUploadLifetime = TimeSpan.FromDays(7);
 
     /// <summary>The bucket that holds the uploads. Required.</summary>
