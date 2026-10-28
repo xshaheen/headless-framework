@@ -5,6 +5,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Storage.SqlServer;
 using Headless.Sql;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -59,6 +60,31 @@ public sealed class SetupTests : TestBase
                 options.EnableTransactionalInbox = false;
             })
         );
+
+        await using var provider = services.BuildServiceProvider();
+
+        // then
+        _StorageGuarantee(provider).Should().Be(InboxGuarantee.Durable);
+    }
+
+    [Fact]
+    public async Task should_bind_transactional_inbox_switch_from_configuration()
+    {
+        // given
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["ConnectionString"] = "Server=localhost;Database=test;TrustServerCertificate=True",
+                    ["EnableTransactionalInbox"] = "false",
+                }
+            )
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when
+        services.AddHeadlessMessaging(setup => setup.UseSqlServer(configuration));
 
         await using var provider = services.BuildServiceProvider();
 
