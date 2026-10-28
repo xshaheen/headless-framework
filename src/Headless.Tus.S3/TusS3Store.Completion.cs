@@ -46,7 +46,9 @@ public sealed partial class TusS3Store
         };
 
         await _stateStore.CommitCompletionAsync(fileId, record, CancellationToken.None).ConfigureAwait(false);
-        await _DeleteSegmentsAsync(fileId, state.Segments).ConfigureAwait(false);
+        await TusS3PartWriter
+            .DeleteSegmentsAsync(_appendServices, fileId, state.Segments, CancellationToken.None)
+            .ConfigureAwait(false);
 
         _logger.LogS3UploadCompleted(fileId, length);
     }
@@ -101,21 +103,9 @@ public sealed partial class TusS3Store
 
         try
         {
-            var position = 0;
-
-            foreach (var segment in state.Segments)
-            {
-                await TusS3PartWriter
-                    .ReadSegmentAsync(
-                        _appendServices,
-                        segment,
-                        0,
-                        buffer.AsMemory(position, (int)segment.Length),
-                        CancellationToken.None
-                    )
-                    .ConfigureAwait(false);
-                position += (int)segment.Length;
-            }
+            await TusS3PartWriter
+                .ReadSegmentsAsync(_appendServices, state.Segments, buffer, CancellationToken.None)
+                .ConfigureAwait(false);
 
             await _PutFinishedObjectAsync(fileId, state.Metadata, buffer, (int)length, CancellationToken.None)
                 .ConfigureAwait(false);
@@ -134,8 +124,7 @@ public sealed partial class TusS3Store
         {
             if (buffer.Length > 0)
             {
-                // clearArray: the buffer held upload bytes that must not reach another pool user.
-                _appendServices.PartPool.Return(buffer, clearArray: true);
+                _appendServices.ReturnPartBuffer(buffer);
             }
         }
     }
@@ -172,7 +161,7 @@ public sealed partial class TusS3Store
             // get here. A second attempt meets NoSuchUpload below once the first has completed.
             await _s3.CompleteMultipartUploadAsync(request, CancellationToken.None).ConfigureAwait(false);
         }
-        catch (AmazonS3Exception e) when (_IsErrorCode(e, "NoSuchUpload"))
+        catch (AmazonS3Exception e) when (e.HasErrorCode(TusS3ErrorCodes.NoSuchUpload))
         {
             if (await _FinishedObjectHasLengthAsync(fileId, length).ConfigureAwait(false))
             {
@@ -186,9 +175,9 @@ public sealed partial class TusS3Store
             throw new TusStoreException($"File {fileId} does not exist: its multipart upload is gone");
         }
         catch (AmazonS3Exception e)
-            when (_IsErrorCode(e, "InvalidPart")
-                || _IsErrorCode(e, "InvalidPartOrder")
-                || _IsErrorCode(e, "EntityTooSmall")
+            when (e.HasErrorCode(TusS3ErrorCodes.InvalidPart)
+                || e.HasErrorCode(TusS3ErrorCodes.InvalidPartOrder)
+                || e.HasErrorCode(TusS3ErrorCodes.EntityTooSmall)
             )
         {
             // The provider lost or refuses the recorded parts; retrying cannot change that, so the upload is gone.
@@ -256,7 +245,7 @@ public sealed partial class TusS3Store
         }
         finally
         {
-            _appendServices.PartPool.Return(buffer, clearArray: true);
+            _appendServices.ReturnPartBuffer(buffer);
         }
 
         return etags;
@@ -270,22 +259,20 @@ public sealed partial class TusS3Store
         int length
     )
     {
-        await using var body = new MemoryStream(buffer, 0, length, writable: false);
+        var etag = await TusS3Requests
+            .UploadPartAsync(
+                _s3,
+                _options,
+                _keys.FinishedObject(fileId),
+                state.MultipartUploadId,
+                partNumber,
+                buffer,
+                length,
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
 
-        var request = new UploadPartRequest
-        {
-            BucketName = _options.Bucket,
-            Key = _keys.FinishedObject(fileId),
-            UploadId = state.MultipartUploadId,
-            PartNumber = partNumber,
-            InputStream = body,
-        };
-
-        TusS3RequestPresets.Apply(request, _options.Provider);
-
-        var response = await _s3.UploadPartAsync(request, CancellationToken.None).ConfigureAwait(false);
-
-        return new PartETag(partNumber, response.ETag);
+        return new PartETag(partNumber, etag);
     }
 
     private async Task<bool> _FinishedObjectHasLengthAsync(string fileId, long length)
@@ -309,48 +296,7 @@ public sealed partial class TusS3Store
     private async Task _MarkGoneAsync(string fileId, TusS3LoadedUpload upload, string errorCode)
     {
         _logger.LogS3CompletionPartsRejected(fileId, errorCode);
-        upload.State!.Status = TusS3UploadStatus.Gone;
-
-        try
-        {
-            await _stateStore.UpdateAsync(fileId, upload, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (AmazonS3Exception e) when (TusS3StateStore.IsStaleWrite(e) || e.StatusCode is HttpStatusCode.NotFound)
-        {
-            // Another request already moved the upload on (finished it, or marked it gone itself).
-        }
-    }
-
-    private async Task _DeleteSegmentsAsync(string fileId, List<TusS3CommittedSegment> segments)
-    {
-        if (segments.Count == 0)
-        {
-            return;
-        }
-
-        try
-        {
-            var request = new DeleteObjectsRequest
-            {
-                BucketName = _options.Bucket,
-                Objects = [.. segments.Select(segment => new KeyVersion { Key = segment.Key })],
-                Quiet = true,
-            };
-
-            await _s3.DeleteObjectsAsync(request, CancellationToken.None).ConfigureAwait(false);
-        }
-#pragma warning disable CA1031 // The upload is already complete; a leftover segment only costs storage until the upload is removed.
-        catch (Exception e)
-#pragma warning restore CA1031
-        {
-            _logger.LogS3SegmentCleanupFailed(e, fileId, segments.Count);
-        }
-    }
-
-    // Matched by code: the SDK throws a typed exception only for AbortMultipartUpload.
-    private static bool _IsErrorCode(AmazonS3Exception exception, string errorCode)
-    {
-        return string.Equals(exception.ErrorCode, errorCode, StringComparison.Ordinal);
+        await _stateStore.TryMarkGoneAsync(fileId, upload, CancellationToken.None).ConfigureAwait(false);
     }
 
     /// <summary>

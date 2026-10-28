@@ -268,30 +268,23 @@ public sealed partial class TusS3Store
         }
 
         var prefix = _options.NormalizedPrefix;
-        var request = new ListMultipartUploadsRequest { BucketName = _options.Bucket, Prefix = prefix };
 
         try
         {
-            ListMultipartUploadsResponse response;
-
-            do
+            await foreach (
+                var upload in TusS3Requests
+                    .ListMultipartUploadsAsync(_s3, _options.Bucket, prefix, cancellationToken)
+                    .ConfigureAwait(false)
+            )
             {
-                response = await _s3.ListMultipartUploadsAsync(request, cancellationToken).ConfigureAwait(false);
-
-                foreach (var upload in response.MultipartUploads ?? [])
+                if (_IsUnrecordedLeak(upload, prefix, tracked, now, out var fileId))
                 {
-                    if (_IsUnrecordedLeak(upload, prefix, tracked, now, out var fileId))
-                    {
-                        await _AbortMultipartUploadIfExistsAsync(fileId, upload.UploadId, CancellationToken.None)
-                            .ConfigureAwait(false);
+                    await _AbortMultipartUploadIfExistsAsync(fileId, upload.UploadId, CancellationToken.None)
+                        .ConfigureAwait(false);
 
-                        _logger.LogS3UnrecordedMultipartUploadAborted(fileId, upload.UploadId);
-                    }
+                    _logger.LogS3UnrecordedMultipartUploadAborted(fileId, upload.UploadId);
                 }
-
-                request.KeyMarker = response.NextKeyMarker;
-                request.UploadIdMarker = response.NextUploadIdMarker;
-            } while (response.IsTruncated is true);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -323,7 +316,7 @@ public sealed partial class TusS3Store
             || !tracked.TryGetValue(key[prefix.Length..], out var recorded)
             || string.Equals(recorded, upload.UploadId, StringComparison.Ordinal)
             || upload.Initiated is not { } initiated
-            || _AsUtc(initiated) > now - _UnrecordedMultipartUploadGrace
+            || new DateTimeOffset(initiated.NormalizeToUtc()) > now - _UnrecordedMultipartUploadGrace
         )
         {
             return false;
@@ -332,14 +325,6 @@ public sealed partial class TusS3Store
         fileId = key[prefix.Length..];
 
         return true;
-    }
-
-    // The SDK parses the timestamp as UTC; an unspecified kind is treated as UTC too rather than as local time.
-    private static DateTimeOffset _AsUtc(DateTime value)
-    {
-        return value.Kind == DateTimeKind.Unspecified
-            ? new DateTimeOffset(value, TimeSpan.Zero)
-            : new DateTimeOffset(value.ToUniversalTime(), TimeSpan.Zero);
     }
 
     /// <summary>What one listing pass found, in the order it found it.</summary>

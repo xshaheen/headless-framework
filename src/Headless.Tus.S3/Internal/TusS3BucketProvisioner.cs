@@ -16,12 +16,6 @@ namespace Headless.Tus.Internal;
 internal sealed class TusS3BucketProvisioner(IAmazonS3 s3, TusS3StoreOptions options, ILoggerFactory? loggerFactory)
     : IResourceProvisioner
 {
-    internal const string WorkingSetFolder = ".tus/";
-    internal const string CompletedFolder = ".tus-completed/";
-
-    // S3's DeleteObjects accepts at most 1,000 keys per call.
-    private const int _DeleteBatchSize = 1000;
-
     private readonly ILogger _logger = (
         loggerFactory ?? NullLoggerFactory.Instance
     ).CreateLogger<TusS3BucketProvisioner>();
@@ -41,8 +35,7 @@ internal sealed class TusS3BucketProvisioner(IAmazonS3 s3, TusS3StoreOptions opt
 
             _logger.LogS3BucketCreated(options.Bucket);
         }
-        catch (AmazonS3Exception e)
-            when (string.Equals(e.ErrorCode, "BucketAlreadyOwnedByYou", StringComparison.Ordinal))
+        catch (AmazonS3Exception e) when (e.HasErrorCode(TusS3ErrorCodes.BucketAlreadyOwnedByYou))
         {
             // The bucket already exists and this account owns it, so provisioning is a repeatable deploy step.
         }
@@ -131,7 +124,7 @@ internal sealed class TusS3BucketProvisioner(IAmazonS3 s3, TusS3StoreOptions opt
 
     private async Task _DeleteStoreObjectsAsync(CancellationToken cancellationToken)
     {
-        var completedPrefix = _prefix + CompletedFolder;
+        var completedPrefix = _prefix + TusS3Keys.CompletedFolder;
 
         // A completed record names its finished object, which lives directly under the prefix beside foreign keys.
         // Each finished object goes before its record, so a purge interrupted part-way can simply run again.
@@ -148,7 +141,8 @@ internal sealed class TusS3BucketProvisioner(IAmazonS3 s3, TusS3StoreOptions opt
             )
             .ConfigureAwait(false);
 
-        await _ForEachPageAsync(_prefix + WorkingSetFolder, _DeleteKeysAsync, cancellationToken).ConfigureAwait(false);
+        await _ForEachPageAsync(_prefix + TusS3Keys.WorkingSetFolder, _DeleteKeysAsync, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task _ForEachPageAsync(
@@ -161,7 +155,7 @@ internal sealed class TusS3BucketProvisioner(IAmazonS3 s3, TusS3StoreOptions opt
         {
             BucketName = options.Bucket,
             Prefix = keyPrefix,
-            MaxKeys = _DeleteBatchSize,
+            MaxKeys = TusS3Requests.MaxKeysPerDelete,
         };
 
         ListObjectsV2Response response;
@@ -181,28 +175,14 @@ internal sealed class TusS3BucketProvisioner(IAmazonS3 s3, TusS3StoreOptions opt
         } while (response.IsTruncated is true);
     }
 
-    private async Task _DeleteKeysAsync(List<string> keys, CancellationToken cancellationToken)
+    private Task _DeleteKeysAsync(List<string> keys, CancellationToken cancellationToken)
     {
-        var response = await s3.DeleteObjectsAsync(
-                new DeleteObjectsRequest
-                {
-                    BucketName = options.Bucket,
-                    Objects = keys.ConvertAll(key => new KeyVersion { Key = key }),
-                    Quiet = true,
-                },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        // DeleteObjects reports per-key failures in a 200 response instead of throwing, so a purge that silently left
-        // objects behind would look successful.
-        if (response.DeleteErrors is { Count: > 0 } errors)
-        {
-            var first = errors[0];
-
-            throw new ResourceProvisioningException(
-                $"Failed to delete {errors.Count} tus object(s) from bucket '{options.Bucket}'; first: '{first.Key}' ({first.Code}: {first.Message})."
-            );
-        }
+        return TusS3Requests.DeleteKeysAsync(
+            s3,
+            options.Bucket,
+            keys,
+            message => new ResourceProvisioningException(message),
+            cancellationToken
+        );
     }
 }

@@ -9,9 +9,6 @@ namespace Headless.Tus;
 
 public sealed partial class TusS3Store
 {
-    // S3's DeleteObjects accepts at most 1,000 keys per call.
-    private const int _DeleteBatchSize = 1000;
-
     /// <summary>
     /// Removes everything the upload owns: every multipart upload under its finished key, its finished object and
     /// completed record, and its working set (state object and tail segments, recorded or not).
@@ -75,26 +72,19 @@ public sealed partial class TusS3Store
     private async Task _AbortMultipartUploadsOnFinishedKeyAsync(string fileId, CancellationToken cancellationToken)
     {
         var finishedKey = _keys.FinishedObject(fileId);
-        var request = new ListMultipartUploadsRequest { BucketName = _options.Bucket, Prefix = finishedKey };
-        ListMultipartUploadsResponse response;
-
-        do
+        await foreach (
+            var upload in TusS3Requests
+                .ListMultipartUploadsAsync(_s3, _options.Bucket, finishedKey, cancellationToken)
+                .ConfigureAwait(false)
+        )
         {
-            response = await _s3.ListMultipartUploadsAsync(request, cancellationToken).ConfigureAwait(false);
-
-            foreach (var upload in response.MultipartUploads ?? [])
+            // The prefix also matches longer keys, which belong to other uploads.
+            if (string.Equals(upload.Key, finishedKey, StringComparison.Ordinal))
             {
-                // The prefix also matches longer keys, which belong to other uploads.
-                if (string.Equals(upload.Key, finishedKey, StringComparison.Ordinal))
-                {
-                    await _AbortMultipartUploadIfExistsAsync(fileId, upload.UploadId, cancellationToken)
-                        .ConfigureAwait(false);
-                }
+                await _AbortMultipartUploadIfExistsAsync(fileId, upload.UploadId, cancellationToken)
+                    .ConfigureAwait(false);
             }
-
-            request.KeyMarker = response.NextKeyMarker;
-            request.UploadIdMarker = response.NextUploadIdMarker;
-        } while (response.IsTruncated is true);
+        }
     }
 
     /// <summary>Aborts one multipart upload of the file, treating one that no longer exists as already aborted.</summary>
@@ -115,7 +105,7 @@ public sealed partial class TusS3Store
 
             await _s3.AbortMultipartUploadAsync(request, cancellationToken).ConfigureAwait(false);
         }
-        catch (AmazonS3Exception e) when (_IsErrorCode(e, "NoSuchUpload"))
+        catch (AmazonS3Exception e) when (e.HasErrorCode(TusS3ErrorCodes.NoSuchUpload))
         {
             // Completed, aborted by another request, or removed by the provider's abort rule: nothing is left to free.
         }
@@ -153,31 +143,14 @@ public sealed partial class TusS3Store
 
     /// <summary>Deletes the keys in batches, failing if storage refused any of them.</summary>
     /// <exception cref="AmazonS3Exception">Storage refused the delete of at least one key.</exception>
-    private async Task _DeleteObjectKeysAsync(List<string> keys, CancellationToken cancellationToken)
+    private Task _DeleteObjectKeysAsync(List<string> keys, CancellationToken cancellationToken)
     {
-        foreach (var batch in keys.Chunk(_DeleteBatchSize))
-        {
-            var response = await _s3.DeleteObjectsAsync(
-                    new DeleteObjectsRequest
-                    {
-                        BucketName = _options.Bucket,
-                        Objects = [.. batch.Select(key => new KeyVersion { Key = key })],
-                        Quiet = true,
-                    },
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            // DeleteObjects reports per-key failures in a 200 response instead of throwing, so a removal that left
-            // objects behind would otherwise look successful.
-            if (response.DeleteErrors is { Count: > 0 } errors)
-            {
-                var first = errors[0];
-
-                throw new AmazonS3Exception(
-                    $"Failed to delete {errors.Count} tus object(s) from bucket '{_options.Bucket}'; first: '{first.Key}' ({first.Code}: {first.Message})."
-                );
-            }
-        }
+        return TusS3Requests.DeleteKeysAsync(
+            _s3,
+            _options.Bucket,
+            keys,
+            message => new AmazonS3Exception(message),
+            cancellationToken
+        );
     }
 }

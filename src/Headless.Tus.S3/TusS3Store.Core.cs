@@ -12,8 +12,7 @@ public sealed partial class TusS3Store
     // retried against fresh state instead of failing a PATCH whose bytes already committed.
     private const int _MaxExpirationWriteAttempts = 3;
 
-    // How close a requested expiry may be to the stored one for the refresh to count as already applied.
-    private static readonly TimeSpan _ExpirationFoldTolerance = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan _AlreadyAppliedExpiryTolerance = TimeSpan.FromSeconds(1);
 
     /// <summary>
     /// Returns <see langword="true"/> when the upload exists and can still make progress or be read.
@@ -261,7 +260,7 @@ public sealed partial class TusS3Store
         // to teach the window.
         if (
             state is { SlidingExpirationWindow: not null, ExpiresAt: { } stored }
-            && (expires - stored).Duration() <= _ExpirationFoldTolerance
+            && (expires - stored).Duration() <= _AlreadyAppliedExpiryTolerance
         )
         {
             _logger.LogS3ExpirationAlreadyFolded(fileId);

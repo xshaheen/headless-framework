@@ -20,4 +20,12 @@ internal sealed record TusS3AppendServices(
     ILogger Logger,
     TimeProvider TimeProvider,
     Func<string, string?, CancellationToken, Task<string>> CreateMultipartUploadAsync
-);
+)
+{
+    /// <summary>Returns a buffer rented from <see cref="PartPool"/>.</summary>
+    public void ReturnPartBuffer(byte[] buffer)
+    {
+        // clearArray: the buffer held upload bytes that must not reach another pool user.
+        PartPool.Return(buffer, clearArray: true);
+    }
+}

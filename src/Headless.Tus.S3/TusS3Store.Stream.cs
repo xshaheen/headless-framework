@@ -21,11 +21,11 @@ public sealed partial class TusS3Store
     /// </param>
     /// <returns>bytes appended by this PATCH request</returns>
     /// <remarks>
-    /// Behaves exactly like the <c>PipeReader</c> overload. The PATCH that stores the last byte also assembles the
-    /// finished object. A PATCH to an upload whose bytes are all stored but whose completion failed reads and discards
-    /// its body, which the client re-sent, and finishes the completion. The new offset covers every byte stored, including bytes
-    /// received before a disconnect. When storage refuses a part, its bytes and every later byte are stored as tail
-    /// segments instead; only bytes storage refuses outright are not counted.
+    /// The <c>Stream</c> and <c>PipeReader</c> overloads store a body the same way. The PATCH that stores the last byte
+    /// also assembles the finished object. A PATCH to an upload whose bytes are all stored but whose completion failed
+    /// reads and discards its body, which the client re-sent, and finishes the completion. The new offset covers every
+    /// byte stored, including bytes received before a disconnect. When storage refuses a part, its bytes and every later
+    /// byte are stored as tail segments instead; only bytes storage refuses outright are not counted.
     /// </remarks>
     /// <exception cref="TusStoreException">
     /// The upload does not exist, is gone or complete, or the body runs past the upload length.
@@ -99,8 +99,6 @@ public sealed partial class TusS3Store
         }
     }
 
-    // Reads the rest of a body whose bytes are not stored, so the client's request completes normally. A disconnect
-    // ends the body early; the bytes are discarded either way.
     private static async Task<long> _DrainAsync(Stream stream, CancellationToken cancellationToken)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(16 * 1024);

@@ -142,7 +142,6 @@ public sealed partial class TusS3Store
         return lengths;
     }
 
-    // A final upload of at most one part, written in one request from the partials' bytes.
     private async Task _PutFinalObjectAsync(
         string fileId,
         string[] partialFiles,
@@ -169,8 +168,7 @@ public sealed partial class TusS3Store
         }
         finally
         {
-            // clearArray: the buffer held upload bytes that must not reach another pool user.
-            _appendServices.PartPool.Return(buffer, clearArray: true);
+            _appendServices.ReturnPartBuffer(buffer);
         }
     }
 
@@ -283,31 +281,28 @@ public sealed partial class TusS3Store
         try
         {
             await _ReadConcatSourcesAsync(partialFiles, part, buffer, cancellationToken).ConfigureAwait(false);
-            await using var body = new MemoryStream(buffer, 0, (int)part.Length, writable: false);
 
-            var request = new UploadPartRequest
-            {
-                BucketName = _options.Bucket,
-                Key = _keys.FinishedObject(fileId),
-                UploadId = uploadId,
-                PartNumber = part.Number,
-                InputStream = body,
-            };
-
-            TusS3RequestPresets.Apply(request, _options.Provider);
-
-            var response = await _s3.UploadPartAsync(request, cancellationToken).ConfigureAwait(false);
-
-            return response.ETag;
+            return await TusS3Requests
+                .UploadPartAsync(
+                    _s3,
+                    _options,
+                    _keys.FinishedObject(fileId),
+                    uploadId,
+                    part.Number,
+                    buffer,
+                    (int)part.Length,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
         finally
         {
-            // clearArray: the buffer held upload bytes that must not reach another pool user.
-            _appendServices.PartPool.Return(buffer, clearArray: true);
+            _appendServices.ReturnPartBuffer(buffer);
         }
     }
 
-    // Fills the front of the buffer with the part's bytes, one ranged read per partial range.
+    // The ranges fill non-overlapping slices of the buffer, so they are read concurrently, under the same bound as
+    // the part uploads because each read holds a connection.
     private async Task _ReadConcatSourcesAsync(
         string[] partialFiles,
         TusS3ConcatPart part,
@@ -315,60 +310,51 @@ public sealed partial class TusS3Store
         CancellationToken cancellationToken
     )
     {
-        var position = 0;
+        var positions = new int[part.Sources.Count];
 
-        foreach (var source in part.Sources)
+        for (var i = 1; i < positions.Length; i++)
         {
-            var partialFileId = partialFiles[source.PartialIndex];
-            var destination = buffer.AsMemory(position, (int)source.Length);
-
-            try
-            {
-                await _ReadFinishedObjectRangeAsync(partialFileId, source.Offset, destination, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (AmazonS3Exception e) when (_IsMissingObject(e))
-            {
-                throw new TusStoreException($"Partial file {partialFileId} does not exist");
-            }
-
-            position += destination.Length;
+            positions[i] = positions[i - 1] + (int)part.Sources[i - 1].Length;
         }
-    }
 
-    /// <summary>Reads the destination's length of a finished object, starting <paramref name="from"/> bytes into it.</summary>
-    /// <exception cref="InvalidDataException">The finished object holds fewer bytes than its upload recorded.</exception>
-    private async Task _ReadFinishedObjectRangeAsync(
-        string fileId,
-        long from,
-        Memory<byte> destination,
-        CancellationToken cancellationToken
-    )
-    {
-        var request = new GetObjectRequest
+        var parallelOptions = new ParallelOptions
         {
-            BucketName = _options.Bucket,
-            Key = _keys.FinishedObject(fileId),
-            ByteRange = new ByteRange(from, from + destination.Length - 1),
+            MaxDegreeOfParallelism = _options.MaxConcurrentPartUploads,
+            CancellationToken = cancellationToken,
         };
 
-        using var response = await _s3.GetObjectAsync(request, cancellationToken).ConfigureAwait(false);
-        await using var content = response.ResponseStream;
-        var read = 0;
+        await Parallel
+            .ForAsync(
+                0,
+                positions.Length,
+                parallelOptions,
+                async (i, token) =>
+                {
+                    var source = part.Sources[i];
+                    var partialFileId = partialFiles[source.PartialIndex];
 
-        while (read < destination.Length)
-        {
-            var n = await content.ReadAsync(destination[read..], cancellationToken).ConfigureAwait(false);
-
-            if (n == 0)
-            {
-                throw new InvalidDataException(
-                    $"The finished object of file {fileId} holds fewer bytes than its upload recorded."
-                );
-            }
-
-            read += n;
-        }
+                    try
+                    {
+                        await TusS3Requests
+                            .ReadRangeAsync(
+                                _s3,
+                                _options.Bucket,
+                                _keys.FinishedObject(partialFileId),
+                                source.Offset,
+                                buffer.AsMemory(positions[i], (int)source.Length),
+                                () =>
+                                    $"The finished object of file {partialFileId} holds fewer bytes than its upload recorded.",
+                                token
+                            )
+                            .ConfigureAwait(false);
+                    }
+                    catch (AmazonS3Exception e) when (_IsMissingObject(e))
+                    {
+                        throw new TusStoreException($"Partial file {partialFileId} does not exist");
+                    }
+                }
+            )
+            .ConfigureAwait(false);
     }
 
     private async Task _AbortFinalMultipartUploadAsync(string fileId, string uploadId)
@@ -397,7 +383,7 @@ public sealed partial class TusS3Store
     // A ranged read or part copy whose source object is gone: the partial was removed after it was checked.
     private static bool _IsMissingObject(AmazonS3Exception exception)
     {
-        return exception.StatusCode is HttpStatusCode.NotFound && _IsErrorCode(exception, "NoSuchKey");
+        return exception.StatusCode is HttpStatusCode.NotFound && exception.HasErrorCode(TusS3ErrorCodes.NoSuchKey);
     }
 }
 

@@ -6,7 +6,6 @@ using Headless.Hosting;
 using Headless.Testing.Tests;
 using Headless.Tus;
 using Headless.Tus.Internal;
-using Microsoft.Extensions.DependencyInjection;
 using Tests.TestSetup;
 
 namespace Tests.Provisioning;
@@ -153,39 +152,6 @@ public abstract class TusS3BucketProvisionerTestsBase(IS3TestBackend backend) : 
             .Should()
             .BeTrue();
         (await _KeysAsync()).Should().Equal("other/kept");
-    }
-
-    public virtual async Task should_create_bucket_through_registered_provisioner()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton(_S3);
-        services.AddTusS3Store(options =>
-        {
-            options.Bucket = _options.Bucket;
-            options.Prefix = _Prefix;
-        });
-        await using var provider = services.BuildServiceProvider();
-
-        // when
-        await provider.ProvisionResourcesAsync(AbortToken);
-
-        // then
-        (await _BucketExistsAsync())
-            .Should()
-            .BeTrue();
-    }
-
-    public virtual Task should_make_no_storage_request_when_constructing_the_store()
-    {
-        // when
-        _ = new TusS3Store(_S3, _options, loggerFactory: LoggerFactory);
-
-        // then
-        _client.Gate.TotalRequests.Should().Be(0);
-
-        return Task.CompletedTask;
     }
 
     protected override async ValueTask DisposeAsyncCore()

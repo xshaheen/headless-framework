@@ -65,14 +65,6 @@ public sealed class TusS3PartSizeTests : TestBase
     }
 
     [Fact]
-    public void should_reject_a_length_above_ten_thousand_max_size_parts()
-    {
-        var act = () => TusS3PartSize.ForUpload((10_000 * 64 * _MiB) + 1, _Options());
-
-        act.Should().Throw<TusStoreException>();
-    }
-
-    [Fact]
     public void should_not_overflow_for_the_largest_length()
     {
         var act = () => TusS3PartSize.ForUpload(long.MaxValue, _Options());

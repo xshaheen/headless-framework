@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Buffers;
-using System.Net;
 using System.Runtime.ExceptionServices;
 using Amazon.S3;
 using Amazon.S3.Model;
@@ -100,7 +99,6 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
 
         if (_tailLength < _partSize)
         {
-            // Leave room for the tail at the front of the first part; it is read in only if the part fills.
             _filling = _services.PartPool.Rent(_partSize);
             _fillCount = (int)_tailLength;
             _prefixPending = true;
@@ -243,7 +241,7 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
             _newSegments.Count
         );
 
-        await _DeleteSegmentsAsync(consumed).ConfigureAwait(false);
+        await DeleteSegmentsAsync(_services, _fileId, consumed, StorageToken).ConfigureAwait(false);
 
         _halt?.Throw();
 
@@ -267,19 +265,19 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
             }
 #pragma warning restore ERP022
 
-            _Return(pending.Buffer);
+            _services.ReturnPartBuffer(pending.Buffer);
         }
 
         foreach (var held in _fallback)
         {
-            _Return(held.Buffer);
+            _services.ReturnPartBuffer(held.Buffer);
         }
 
         _fallback.Clear();
 
         if (_filling is not null)
         {
-            _Return(_filling);
+            _services.ReturnPartBuffer(_filling);
             _filling = null;
         }
 
@@ -295,7 +293,6 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
             return;
         }
 
-        // Hold at most the configured number of parts in flight; waiting on the oldest also releases parts in order.
         while (!_partFailed && _uploading.Count >= _services.Options.MaxConcurrentPartUploads)
         {
             await _CompleteOldestAsync().ConfigureAwait(false);
@@ -337,7 +334,16 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
                 held.Buffer,
                 held.Offset,
                 length,
-                _UploadPartAsync(partNumber, held.Buffer, length)
+                TusS3Requests.UploadPartAsync(
+                    _services.S3,
+                    _services.Options,
+                    _services.Keys.FinishedObject(_fileId),
+                    _state.MultipartUploadId,
+                    partNumber,
+                    held.Buffer,
+                    length,
+                    StorageToken
+                )
             )
         );
     }
@@ -368,7 +374,7 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
         {
             // Crashes and lost fences used every part number this multipart upload has; no later part can be stored.
             _services.Logger.LogS3PartNumbersExhausted(_fileId);
-            await _MarkGoneAsync().ConfigureAwait(false);
+            _upload = await _services.StateStore.TryMarkGoneAsync(_fileId, _upload, StorageToken).ConfigureAwait(false);
 
             throw new TusStoreException($"File {_fileId} has used every part number and can no longer be resumed");
         }
@@ -393,28 +399,6 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
         _window = window;
     }
 
-    private async Task<string> _UploadPartAsync(int partNumber, byte[] buffer, int length)
-    {
-        await using var body = new MemoryStream(buffer, 0, length, writable: false);
-
-        var request = new UploadPartRequest
-        {
-            BucketName = _services.Options.Bucket,
-            Key = _services.Keys.FinishedObject(_fileId),
-            UploadId = _state.MultipartUploadId,
-            PartNumber = partNumber,
-            InputStream = body,
-        };
-
-        TusS3RequestPresets.Apply(request, _services.Options.Provider);
-
-        var response = await _services.S3.UploadPartAsync(request, StorageToken).ConfigureAwait(false);
-
-        return response.ETag;
-    }
-
-    // Waits for the oldest part in flight. A success is committed and its buffer released; a failure turns that part
-    // and every later one into tail segments, because only a contiguous run of parts can be committed.
     private async Task _CompleteOldestAsync()
     {
         var oldest = _uploading.Dequeue();
@@ -423,15 +407,15 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
         {
             var etag = await oldest.Upload.ConfigureAwait(false);
             _committedParts.Add(new TusS3CommittedPart(oldest.Number, etag, oldest.Length));
-            _Return(oldest.Buffer);
+            _services.ReturnPartBuffer(oldest.Buffer);
 
             return;
         }
-        catch (AmazonS3Exception e) when (string.Equals(e.ErrorCode, "NoSuchUpload", StringComparison.Ordinal))
+        catch (AmazonS3Exception e) when (e.HasErrorCode(TusS3ErrorCodes.NoSuchUpload))
         {
-            _Return(oldest.Buffer);
+            _services.ReturnPartBuffer(oldest.Buffer);
             _services.Logger.LogS3MultipartUploadMissing(_fileId);
-            await _MarkGoneAsync().ConfigureAwait(false);
+            _upload = await _services.StateStore.TryMarkGoneAsync(_fileId, _upload, StorageToken).ConfigureAwait(false);
 
             throw new TusStoreException($"File {_fileId} does not exist: its multipart upload is gone");
         }
@@ -552,7 +536,7 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
             }
             finally
             {
-                _Return(held.Buffer);
+                _services.ReturnPartBuffer(held.Buffer);
             }
         }
     }
@@ -583,19 +567,11 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
 
     private async Task _LoadPrefixAsync(byte[] buffer)
     {
-        var position = 0;
-
-        foreach (var segment in _oldSegments)
-        {
-            await _ReadSegmentAsync(segment, 0, buffer.AsMemory(position, (int)segment.Length)).ConfigureAwait(false);
-            position += (int)segment.Length;
-        }
+        await ReadSegmentsAsync(_services, _oldSegments, buffer, StorageToken).ConfigureAwait(false);
 
         _prefixPending = false;
     }
 
-    // Reads part of a committed segment by the range its recorded length allows, so a segment object that somehow
-    // holds more bytes cannot shift the upload's content.
     private Task _ReadSegmentAsync(TusS3CommittedSegment segment, long from, Memory<byte> destination)
     {
         return ReadSegmentAsync(_services, segment, from, destination, StorageToken);
@@ -605,8 +581,12 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
     /// Reads <paramref name="destination"/>'s length of a committed segment, starting <paramref name="from"/> bytes
     /// into it.
     /// </summary>
+    /// <remarks>
+    /// A ranged read bounded by the recorded length, so a segment object that somehow holds more bytes cannot shift the
+    /// upload's content.
+    /// </remarks>
     /// <exception cref="InvalidDataException">The segment object holds fewer bytes than its upload recorded.</exception>
-    public static async Task ReadSegmentAsync(
+    public static Task ReadSegmentAsync(
         TusS3AppendServices services,
         TusS3CommittedSegment segment,
         long from,
@@ -616,39 +596,64 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
     {
         if (destination.IsEmpty)
         {
-            return;
+            return Task.CompletedTask;
         }
 
-        var request = new GetObjectRequest
-        {
-            BucketName = services.Options.Bucket,
-            Key = segment.Key,
-            ByteRange = new ByteRange(from, from + destination.Length - 1),
-        };
-
-        using var response = await services.S3.GetObjectAsync(request, cancellationToken).ConfigureAwait(false);
-        await using var content = response.ResponseStream;
-        var read = 0;
-
-        while (read < destination.Length)
-        {
-            var n = await content.ReadAsync(destination[read..], cancellationToken).ConfigureAwait(false);
-
-            if (n == 0)
-            {
-                throw new InvalidDataException(
-                    string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"Tail segment '{segment.Key}' holds fewer bytes than the {segment.Length} its upload recorded."
-                    )
-                );
-            }
-
-            read += n;
-        }
+        return TusS3Requests.ReadRangeAsync(
+            services.S3,
+            services.Options.Bucket,
+            segment.Key,
+            from,
+            destination,
+            () =>
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Tail segment '{segment.Key}' holds fewer bytes than the {segment.Length} its upload recorded."
+                ),
+            cancellationToken
+        );
     }
 
-    private async Task _DeleteSegmentsAsync(List<TusS3CommittedSegment> segments)
+    /// <summary>
+    /// Reads whole committed segments into the front of <paramref name="buffer"/>, in order, each into its own slice.
+    /// The reads run concurrently because the slices never overlap.
+    /// </summary>
+    /// <exception cref="InvalidDataException">A segment object holds fewer bytes than its upload recorded.</exception>
+    public static async Task ReadSegmentsAsync(
+        TusS3AppendServices services,
+        List<TusS3CommittedSegment> segments,
+        byte[] buffer,
+        CancellationToken cancellationToken
+    )
+    {
+        var reads = new Task[segments.Count];
+        var position = 0;
+
+        for (var i = 0; i < segments.Count; i++)
+        {
+            var segment = segments[i];
+            reads[i] = ReadSegmentAsync(
+                services,
+                segment,
+                0,
+                buffer.AsMemory(position, (int)segment.Length),
+                cancellationToken
+            );
+            position += (int)segment.Length;
+        }
+
+        // Awaiting WhenAll waits for every read before the buffer can go back to the pool, then rethrows the first
+        // failure in segment order.
+        await Task.WhenAll(reads).ConfigureAwait(false);
+    }
+
+    /// <summary>Deletes tail segments a committed state no longer records; a failure is logged, never thrown.</summary>
+    public static async Task DeleteSegmentsAsync(
+        TusS3AppendServices services,
+        string fileId,
+        List<TusS3CommittedSegment> segments,
+        CancellationToken cancellationToken
+    )
     {
         if (segments.Count == 0)
         {
@@ -659,32 +664,18 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
         {
             var request = new DeleteObjectsRequest
             {
-                BucketName = _services.Options.Bucket,
+                BucketName = services.Options.Bucket,
                 Objects = [.. segments.Select(segment => new KeyVersion { Key = segment.Key })],
                 Quiet = true,
             };
 
-            await _services.S3.DeleteObjectsAsync(request, StorageToken).ConfigureAwait(false);
+            await services.S3.DeleteObjectsAsync(request, cancellationToken).ConfigureAwait(false);
         }
-#pragma warning disable CA1031 // The commit already landed; a leftover segment only costs storage until the upload is removed.
+#pragma warning disable CA1031 // Runs after the commit that dropped the segments; a leftover segment only costs storage until the upload is removed.
         catch (Exception e)
 #pragma warning restore CA1031
         {
-            _services.Logger.LogS3SegmentCleanupFailed(e, _fileId, segments.Count);
-        }
-    }
-
-    private async Task _MarkGoneAsync()
-    {
-        _state.Status = TusS3UploadStatus.Gone;
-
-        try
-        {
-            _upload = await _services.StateStore.UpdateAsync(_fileId, _upload, StorageToken).ConfigureAwait(false);
-        }
-        catch (AmazonS3Exception e) when (TusS3StateStore.IsStaleWrite(e) || e.StatusCode is HttpStatusCode.NotFound)
-        {
-            // Another request already moved the upload on; it will meet the same missing parts itself.
+            services.Logger.LogS3SegmentCleanupFailed(e, fileId, segments.Count);
         }
     }
 
@@ -708,12 +699,6 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
         {
             _services.Logger.LogS3MultipartAbortFailed(e, _fileId);
         }
-    }
-
-    private void _Return(byte[] buffer)
-    {
-        // clearArray: the buffer held upload bytes that must not reach another pool user.
-        _services.PartPool.Return(buffer, clearArray: true);
     }
 
     private sealed record PendingPart(int Number, byte[] Buffer, long Start, int Length, Task<string> Upload);

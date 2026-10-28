@@ -38,12 +38,4 @@ public sealed class LocalStackTusS3BucketProvisionerTests(TusS3LocalStackFixture
     [Fact]
     public override Task should_keep_bucket_holding_foreign_keys_when_deleting() =>
         base.should_keep_bucket_holding_foreign_keys_when_deleting();
-
-    [Fact]
-    public override Task should_create_bucket_through_registered_provisioner() =>
-        base.should_create_bucket_through_registered_provisioner();
-
-    [Fact]
-    public override Task should_make_no_storage_request_when_constructing_the_store() =>
-        base.should_make_no_storage_request_when_constructing_the_store();
 }

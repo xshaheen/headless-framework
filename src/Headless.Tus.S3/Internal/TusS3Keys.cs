@@ -15,6 +15,12 @@ namespace Headless.Tus.Internal;
 /// </remarks>
 internal sealed class TusS3Keys(string normalizedPrefix)
 {
+    /// <summary>The folder under the prefix that holds every incomplete upload's working set.</summary>
+    public const string WorkingSetFolder = ".tus/";
+
+    /// <summary>The folder under the prefix that holds every completed upload's record.</summary>
+    public const string CompletedFolder = ".tus-completed/";
+
     private const string _InfoName = "info";
     private const string _SegmentFolder = "seg/";
 
@@ -25,7 +31,7 @@ internal sealed class TusS3Keys(string normalizedPrefix)
     }
 
     /// <summary>The prefix every incomplete upload's working set lives under, one folder per upload.</summary>
-    public string WorkingSetRoot => normalizedPrefix + TusS3BucketProvisioner.WorkingSetFolder;
+    public string WorkingSetRoot => normalizedPrefix + WorkingSetFolder;
 
     /// <summary>The prefix every object of an incomplete upload's working set starts with.</summary>
     public string WorkingSet(string fileId)
@@ -57,7 +63,7 @@ internal sealed class TusS3Keys(string normalizedPrefix)
     /// <summary>The key of the record a completed upload keeps beside its finished object.</summary>
     public string CompletedRecord(string fileId)
     {
-        return normalizedPrefix + TusS3BucketProvisioner.CompletedFolder + EnsureValid(fileId);
+        return normalizedPrefix + CompletedFolder + EnsureValid(fileId);
     }
 
     /// <summary>

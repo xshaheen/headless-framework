@@ -111,6 +111,16 @@ public sealed class SetupTusS3StoreTests : TestBase
     }
 
     [Fact]
+    public void should_make_no_storage_request_when_constructing_the_store()
+    {
+        // when
+        _ = new TusS3Store(_s3, new TusS3StoreOptions { Bucket = "uploads-bucket" });
+
+        // then
+        _s3.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
     public void should_register_the_bucket_as_a_provisioned_resource()
     {
         // given

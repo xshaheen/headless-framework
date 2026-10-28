@@ -175,6 +175,29 @@ internal sealed class TusS3StateStore(
     }
 
     /// <summary>
+    /// Marks the upload gone, unless another request already moved it on (finished it, or marked it gone itself), in
+    /// which case that request meets the same missing parts itself.
+    /// </summary>
+    /// <returns>the upload as written, or <paramref name="upload"/> when the write lost to another request</returns>
+    public async Task<TusS3LoadedUpload> TryMarkGoneAsync(
+        string fileId,
+        TusS3LoadedUpload upload,
+        CancellationToken cancellationToken
+    )
+    {
+        upload.State!.Status = TusS3UploadStatus.Gone;
+
+        try
+        {
+            return await UpdateAsync(fileId, upload, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AmazonS3Exception e) when (IsStaleWrite(e) || e.StatusCode is HttpStatusCode.NotFound)
+        {
+            return upload;
+        }
+    }
+
+    /// <summary>
     /// Whether a conditional write failed because storage no longer holds the version the writer read. Matched by
     /// status and error code: the SDK does not throw a dedicated exception type for these.
     /// </summary>
@@ -184,13 +207,9 @@ internal sealed class TusS3StateStore(
         {
             HttpStatusCode.PreconditionFailed => true,
             // S3 answers 409 when a concurrent conditional write to the same key is still in flight.
-            HttpStatusCode.Conflict => string.Equals(
-                exception.ErrorCode,
-                "ConditionalRequestConflict",
-                StringComparison.Ordinal
-            ),
+            HttpStatusCode.Conflict => exception.HasErrorCode(TusS3ErrorCodes.ConditionalRequestConflict),
             // If-Match on a key another writer deleted (completion or termination won the race).
-            HttpStatusCode.NotFound => string.Equals(exception.ErrorCode, "NoSuchKey", StringComparison.Ordinal),
+            HttpStatusCode.NotFound => exception.HasErrorCode(TusS3ErrorCodes.NoSuchKey),
             _ => false,
         };
     }
@@ -229,7 +248,6 @@ internal sealed class TusS3StateStore(
         return response.ETag;
     }
 
-    // A create (If-None-Match: *), a replace of one ETag (If-Match), or an unconditional write.
     private readonly record struct PutCondition(bool IsCreate, string? ETag)
     {
         public static PutCondition None => default;
@@ -249,10 +267,15 @@ internal sealed class TusS3StateStore(
                 )
                 .ConfigureAwait(false);
 
-            await using var buffer = new MemoryStream();
+            // A state object is small, so sizing the buffer from the declared length avoids regrowing it, and a buffer
+            // filled exactly is handed over without the copy ToArray makes.
+            var capacity = response.ContentLength is > 0 and <= int.MaxValue ? (int)response.ContentLength : 0;
+            await using var buffer = new MemoryStream(capacity);
             await response.ResponseStream.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
 
-            return (buffer.ToArray(), response.ETag);
+            var content = buffer.Length == capacity && capacity > 0 ? buffer.GetBuffer() : buffer.ToArray();
+
+            return (content, response.ETag);
         }
         catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
         {

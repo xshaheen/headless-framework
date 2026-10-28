@@ -226,7 +226,7 @@ public abstract class ConcatenationTestsBase(IS3TestBackend backend) : TestBase
             new ListObjectsV2Request
             {
                 BucketName = _options.Bucket,
-                Prefix = _options.Prefix + TusS3BucketProvisioner.CompletedFolder,
+                Prefix = _options.Prefix + TusS3Keys.CompletedFolder,
             },
             AbortToken
         );

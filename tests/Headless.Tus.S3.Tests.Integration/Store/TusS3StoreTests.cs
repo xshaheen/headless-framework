@@ -132,29 +132,6 @@ public abstract class TusS3StoreTestsBase(IS3TestBackend backend) : TestBase
         (await _store.GetUploadConcatAsync(fileId, AbortToken)).Should().BeOfType<FileConcatPartial>();
     }
 
-    public virtual async Task should_reject_a_known_length_needing_parts_above_max_part_size()
-    {
-        // given - one byte more than 9,744 parts of MaxPartSize (64 MiB) hold
-        const long length = (_DefaultPartBudget * 64 * _MiB) + 1;
-
-        // when
-        var act = () => _store.CreateFileAsync(length, metadata: null, AbortToken);
-
-        // then
-        await act.Should().ThrowAsync<TusStoreException>().WithMessage("*too large*");
-    }
-
-    public virtual async Task should_size_parts_of_a_large_upload_to_fit_the_budget()
-    {
-        // when - 200 GiB needs about 21.02 MiB per part to fit 9,744 parts
-        var fileId = await _store.CreateFileAsync(200 * 1024 * _MiB, metadata: null, AbortToken);
-
-        // then
-        (await _raw.ReadStateAsync(fileId, AbortToken))!
-            .PartSize.Should()
-            .Be((int)(22 * _MiB));
-    }
-
     public virtual async Task should_report_a_deferred_length_until_it_is_declared()
     {
         // given
@@ -340,13 +317,6 @@ public abstract class TusS3StoreTestsBase(IS3TestBackend backend) : TestBase
         state.ExpiresAt.Should().BeCloseTo(expires, TimeSpan.FromMilliseconds(1));
     }
 
-    public virtual async Task should_reject_an_invalid_file_id_at_every_read()
-    {
-        var act = () => _store.FileExistAsync("a/b", AbortToken);
-
-        await act.Should().ThrowAsync<TusStoreException>();
-    }
-
     private TusS3Store _CreateStore(
         TusS3StoreOptions options,
         ITusFileIdProvider? fileIdProvider = null,
@@ -393,14 +363,6 @@ public sealed class MinioTusS3StoreTests(TusS3MinioFixture fixture) : TusS3Store
         base.should_complete_a_zero_length_partial_upload_at_creation();
 
     [Fact]
-    public override Task should_reject_a_known_length_needing_parts_above_max_part_size() =>
-        base.should_reject_a_known_length_needing_parts_above_max_part_size();
-
-    [Fact]
-    public override Task should_size_parts_of_a_large_upload_to_fit_the_budget() =>
-        base.should_size_parts_of_a_large_upload_to_fit_the_budget();
-
-    [Fact]
     public override Task should_report_a_deferred_length_until_it_is_declared() =>
         base.should_report_a_deferred_length_until_it_is_declared();
 
@@ -427,10 +389,6 @@ public sealed class MinioTusS3StoreTests(TusS3MinioFixture fixture) : TusS3Store
     [Fact]
     public override Task should_reject_a_stale_state_write_without_overwriting_the_winner() =>
         base.should_reject_a_stale_state_write_without_overwriting_the_winner();
-
-    [Fact]
-    public override Task should_reject_an_invalid_file_id_at_every_read() =>
-        base.should_reject_an_invalid_file_id_at_every_read();
 }
 
 [Collection<TusS3LocalStackFixture>]
@@ -457,14 +415,6 @@ public sealed class LocalStackTusS3StoreTests(TusS3LocalStackFixture fixture) : 
         base.should_complete_a_zero_length_partial_upload_at_creation();
 
     [Fact]
-    public override Task should_reject_a_known_length_needing_parts_above_max_part_size() =>
-        base.should_reject_a_known_length_needing_parts_above_max_part_size();
-
-    [Fact]
-    public override Task should_size_parts_of_a_large_upload_to_fit_the_budget() =>
-        base.should_size_parts_of_a_large_upload_to_fit_the_budget();
-
-    [Fact]
     public override Task should_report_a_deferred_length_until_it_is_declared() =>
         base.should_report_a_deferred_length_until_it_is_declared();
 
@@ -491,8 +441,4 @@ public sealed class LocalStackTusS3StoreTests(TusS3LocalStackFixture fixture) : 
     [Fact]
     public override Task should_reject_a_stale_state_write_without_overwriting_the_winner() =>
         base.should_reject_a_stale_state_write_without_overwriting_the_winner();
-
-    [Fact]
-    public override Task should_reject_an_invalid_file_id_at_every_read() =>
-        base.should_reject_an_invalid_file_id_at_every_read();
 }

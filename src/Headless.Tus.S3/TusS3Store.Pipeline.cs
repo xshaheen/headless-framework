@@ -2,7 +2,6 @@
 
 using System.Buffers;
 using System.IO.Pipelines;
-using Amazon.S3;
 using Headless.Checks;
 using Headless.Tus.Internal;
 using tusdotnet.Models;
@@ -23,17 +22,10 @@ public sealed partial class TusS3Store
     /// </param>
     /// <returns>bytes appended by this PATCH request</returns>
     /// <remarks>
-    /// Behaves exactly like the <c>Stream</c> overload. A cancelled read is a disconnect: the bytes it hands over are
-    /// stored before the reader stops.
+    /// <inheritdoc cref="AppendDataAsync(string, Stream, CancellationToken)" path="/remarks/node()"/>
+    /// A cancelled read is a disconnect: the bytes it hands over are stored before the reader stops.
     /// </remarks>
-    /// <exception cref="TusStoreException">
-    /// The upload does not exist, is gone or complete, or the body runs past the upload length.
-    /// </exception>
-    /// <exception cref="AmazonS3Exception">
-    /// Another request wrote the upload's state after this one read it (412, 409, or 404), so nothing this request
-    /// wrote is recorded (see the <c>TusS3Store</c> remarks); or storage refused bytes, after every byte before them
-    /// was recorded.
-    /// </exception>
+    /// <inheritdoc cref="AppendDataAsync(string, Stream, CancellationToken)" path="/exception"/>
     public async Task<long> AppendDataAsync(string fileId, PipeReader pipeReader, CancellationToken cancellationToken)
     {
         Argument.IsNotNull(pipeReader);
@@ -111,8 +103,6 @@ public sealed partial class TusS3Store
         }
     }
 
-    // Reads the rest of a body whose bytes are not stored, so the client's request completes normally. A disconnect or
-    // cancelled read ends the body early; the bytes are discarded either way.
     private static async Task<long> _DrainAsync(PipeReader pipeReader, CancellationToken cancellationToken)
     {
         var total = 0L;
@@ -141,7 +131,6 @@ public sealed partial class TusS3Store
         return total;
     }
 
-    // Copies one read into the writer's part buffers.
     private static async ValueTask<bool> _CopyAsync(ReadOnlySequence<byte> source, TusS3PartWriter writer)
     {
         while (!source.IsEmpty)
