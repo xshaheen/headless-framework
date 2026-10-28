@@ -242,9 +242,11 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// The owner that claimed the run. Only an <c>InProgress</c> row still stamped with it is settled.
     /// </param>
     /// <param name="reason">The exception message (<c>MarkFailed</c>) or skip reason (<c>Skip</c>) to record.</param>
-    /// <param name="retryExecutionTime">
-    /// Under <c>Retry</c>, the instant the job should next become due, or <see langword="null"/> to keep the stored
-    /// one; ignored by the terminal policies.
+    /// <param name="retryAfter">
+    /// Under <c>Retry</c>, the part of an in-process retry wait the job still owed when the stop caught it, never
+    /// negative, or <see langword="null"/> to keep the stored <c>ExecutionTime</c>; ignored by the terminal policies.
+    /// The store adds it to its own clock at the write, so the job becomes due after the remaining wait whatever the
+    /// settling node's clock says. A store that has no clock of its own adds it to its <see cref="TimeProvider"/>.
     /// </param>
     /// <param name="cancellationToken">Token that aborts the write before it starts.</param>
     /// <returns><c>1</c> when the row was settled; <c>0</c> when the fence excluded it.</returns>
@@ -256,12 +258,13 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <exception cref="ArgumentException">
     /// <paramref name="claimOwner"/> or <paramref name="reason"/> is <see langword="null"/> or empty.
     /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="retryAfter"/> is negative.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> SettleInterruptedTimeJobAsync(
         Guid jobId,
         string claimOwner,
         string reason,
-        DateTime? retryExecutionTime,
+        TimeSpan? retryAfter,
         CancellationToken cancellationToken = default
     );
 

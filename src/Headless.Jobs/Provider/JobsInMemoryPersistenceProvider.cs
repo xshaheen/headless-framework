@@ -437,7 +437,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         cancellationToken.ThrowIfCancellationRequested();
 
         return Task.FromResult(
-            _SettleInterruptedTimeJob(jobId, claimOwner, reason: null, executionTime: null, NodeDeathPolicy.Retry)
+            _SettleInterruptedTimeJob(jobId, claimOwner, reason: null, retryAfter: null, NodeDeathPolicy.Retry)
         );
     }
 
@@ -445,17 +445,16 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         Guid jobId,
         string claimOwner,
         string reason,
-        DateTime? retryExecutionTime,
+        TimeSpan? retryAfter,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(claimOwner);
         Argument.IsNotNullOrEmpty(reason);
+        Argument.IsPositiveOrZero(retryAfter);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return Task.FromResult(
-            _SettleInterruptedTimeJob(jobId, claimOwner, reason, retryExecutionTime, policyOverride: null)
-        );
+        return Task.FromResult(_SettleInterruptedTimeJob(jobId, claimOwner, reason, retryAfter, policyOverride: null));
     }
 
     // A policy override settles the row as that policy; without one, the row's own node-death policy decides.
@@ -463,7 +462,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         Guid jobId,
         string claimOwner,
         string? reason,
-        DateTime? executionTime,
+        TimeSpan? retryAfter,
         NodeDeathPolicy? policyOverride
     )
     {
@@ -493,9 +492,10 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 default:
                     updated.Status = JobStatus.Idle;
                     updated.OwnerId = null;
-                    if (executionTime is { } dueAt)
+                    // This store's TimeProvider is its clock, so the remaining wait runs from the settle's instant.
+                    if (retryAfter is { } remaining)
                     {
-                        updated.ExecutionTime = dueAt;
+                        updated.ExecutionTime = now.UtcDateTime + remaining;
                     }
 
                     break;

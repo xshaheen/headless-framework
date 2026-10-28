@@ -1131,7 +1131,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
 
     public async Task<int> SettleInterruptedAsync(
         JobExecutionState context,
-        DateTime? retryExecutionTime,
+        TimeSpan? retryAfter,
         CancellationToken cancellationToken = default
     )
     {
@@ -1154,7 +1154,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                     context.JobId,
                     claimOwner,
                     _HostShutdownReason,
-                    retryExecutionTime,
+                    retryAfter,
                     cancellationToken
                 )
                 .ConfigureAwait(false);

@@ -190,12 +190,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         Guid jobId,
         string claimOwner,
         string reason,
-        DateTime? retryExecutionTime,
+        TimeSpan? retryAfter,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(claimOwner);
         Argument.IsNotNullOrEmpty(reason);
+        Argument.IsPositiveOrZero(retryAfter);
         cancellationToken.ThrowIfCancellationRequested();
 
         await using var dbContext = await DbContextFactory
@@ -233,11 +234,18 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         )
                         .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow);
 
-                    if (retryExecutionTime is { } dueAt)
+                    // The remaining wait is added to the database clock inside this autocommit statement, so a
+                    // skewed node clock cannot move the due time; with no caller transaction, PostgreSQL's
+                    // transaction-start now() is this statement's instant.
+                    if (retryAfter is { } remaining)
                     {
+                        var remainingSeconds = remaining.TotalSeconds;
                         setter.SetProperty(
                             x => x.ExecutionTime,
-                            x => x.OnNodeDeath == NodeDeathPolicy.Retry ? dueAt : x.ExecutionTime
+                            x =>
+                                x.OnNodeDeath == NodeDeathPolicy.Retry
+                                    ? DateTime.UtcNow.AddSeconds(remainingSeconds)
+                                    : x.ExecutionTime
                         );
                     }
                 },

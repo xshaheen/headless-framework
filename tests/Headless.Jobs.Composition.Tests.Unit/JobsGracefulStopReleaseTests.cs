@@ -90,29 +90,40 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         (expected == JobStatus.Failed ? stored.ExceptionMessage : stored.SkippedReason).Should().Be(_ShutdownReason);
     }
 
-    [Fact]
-    public async Task should_park_a_job_stopped_in_its_retry_wait_at_its_planned_retry_instant()
+    [Theory]
+    [InlineData(20, 40)]
+    [InlineData(90, 0)]
+    public async Task should_park_a_job_stopped_in_its_retry_wait_at_the_store_clock_plus_the_delay_it_still_owed(
+        int waitedSeconds,
+        int owedSeconds
+    )
     {
         // given: the first attempt fails, and the next one is planned a minute out
+        var clock = new SteppableClock();
+        var retryPlanned = new RetryPlannedSignal();
         var probe = new StopProbe(StopProbeMode.Fail);
-        using var host = _BuildHost(probe);
+        using var host = _BuildHost(probe, timeProvider: clock, exceptionHandler: retryPlanned);
         await host.StartAsync(AbortToken);
-        var beforeFailure = DateTime.UtcNow;
         var id = await _Scheduler(host).EnqueueAsync<StopJob>(o => o.WithRetries(2).WithRetryIntervals(60), AbortToken);
-        var store = _Store(host);
-        await _WaitForAsync(store, id, row => row.RetryCount == 1);
-        var afterFailure = DateTime.UtcNow;
+        await retryPlanned.Observed.WaitAsync(_WaitBudget, AbortToken);
+
+        // and part of the wait passes while the store's wall clock steps two minutes back, so a due time anchored on
+        // the instant the retry was planned lands two minutes away from one anchored on the store's clock at the stop
+        clock.Pass(TimeSpan.FromSeconds(waitedSeconds));
+        clock.StepWallClock(TimeSpan.FromMinutes(-2));
+        var beforeStop = clock.GetUtcNow().UtcDateTime;
 
         // when
         await host.StopAsync(AbortToken);
+        var afterStop = clock.GetUtcNow().UtcDateTime;
 
-        // then
-        var stored = await store.GetTimeJobByIdAsync(id, AbortToken);
+        // then: due at the store's instant at the stop plus what the wait still owed, clamped at zero
+        var stored = await _Store(host).GetTimeJobByIdAsync(id, AbortToken);
         stored!.Status.Should().Be(JobStatus.Idle);
         stored.RetryCount.Should().Be(1, "only the attempt that actually failed is charged");
         stored.OwnerId.Should().BeNull();
-        stored.ExecutionTime.Should().BeOnOrAfter(beforeFailure.AddSeconds(60));
-        stored.ExecutionTime.Should().BeOnOrBefore(afterFailure.AddSeconds(60));
+        stored.ExecutionTime.Should().BeOnOrAfter(beforeStop.AddSeconds(owedSeconds - 1));
+        stored.ExecutionTime.Should().BeOnOrBefore(afterStop.AddSeconds(owedSeconds));
         probe.Invocations.Should().Be(1);
     }
 
@@ -344,12 +355,24 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         TimeSpan? stopBudget = null,
         TimeSpan? hostShutdownTimeout = null,
         TimeSpan? fallbackInterval = null,
-        TimeSpan? laterServiceStop = null
+        TimeSpan? laterServiceStop = null,
+        TimeProvider? timeProvider = null,
+        IJobExceptionHandler? exceptionHandler = null
     )
     {
         return new HostBuilder()
             .ConfigureServices(services =>
             {
+                if (timeProvider is not null)
+                {
+                    services.AddSingleton(timeProvider);
+                }
+
+                if (exceptionHandler is not null)
+                {
+                    services.AddSingleton(exceptionHandler);
+                }
+
                 services.Configure<HostOptions>(options =>
                     options.ShutdownTimeout = hostShutdownTimeout ?? _ShutdownTimeout
                 );
@@ -479,6 +502,54 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
                     return;
             }
         }
+    }
+
+    // A wall clock and a monotonic clock the test moves on top of real time: passing time moves both, a wall-clock
+    // step moves only the wall clock, as an NTP correction does. Timers stay on real time.
+    private sealed class SteppableClock : TimeProvider
+    {
+        private long _wallOffsetTicks;
+        private long _timestampOffset;
+
+        public override DateTimeOffset GetUtcNow() =>
+            System.GetUtcNow().AddTicks(Interlocked.Read(ref _wallOffsetTicks));
+
+        public override long GetTimestamp() => System.GetTimestamp() + Interlocked.Read(ref _timestampOffset);
+
+        public void Pass(TimeSpan duration)
+        {
+            StepWallClock(duration);
+            Interlocked.Add(ref _timestampOffset, (long)(duration.TotalSeconds * TimestampFrequency));
+        }
+
+        public void StepWallClock(TimeSpan step) => Interlocked.Add(ref _wallOffsetTicks, step.Ticks);
+    }
+
+    // The executor observes a retryable failure only after it has planned the next attempt, so this signal marks the
+    // point from which the retry wait is running.
+    private sealed class RetryPlannedSignal : IJobExceptionHandler
+    {
+        private readonly TaskCompletionSource _observed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Observed => _observed.Task;
+
+        public Task HandleExceptionAsync(
+            Exception exception,
+            Guid jobId,
+            JobType jobType,
+            CancellationToken cancellationToken = default
+        )
+        {
+            _observed.TrySetResult();
+            return Task.CompletedTask;
+        }
+
+        public Task HandleCanceledExceptionAsync(
+            Exception exception,
+            Guid jobId,
+            JobType jobType,
+            CancellationToken cancellationToken = default
+        ) => Task.CompletedTask;
     }
 
     // A service whose own graceful stop takes a fixed time, which is what the scenario models, not a stand-in for
