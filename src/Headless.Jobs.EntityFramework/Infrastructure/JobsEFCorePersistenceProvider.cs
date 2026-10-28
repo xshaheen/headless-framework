@@ -1635,9 +1635,28 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<int> InsertCronJobOccurrencesAsync(
+    public Task<int> InsertCronJobOccurrencesAsync(
         CronJobOccurrenceEntity<TCronJob>[] cronJobOccurrences,
         CancellationToken cancellationToken = default
+    )
+    {
+        return _InsertCronJobOccurrencesAsync(cronJobOccurrences, stampRunNow: false, cancellationToken);
+    }
+
+    public async Task<DateTime> InsertRunNowCronJobOccurrenceAsync(
+        CronJobOccurrenceEntity<TCronJob> occurrence,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(occurrence);
+        await _InsertCronJobOccurrencesAsync([occurrence], stampRunNow: true, cancellationToken).ConfigureAwait(false);
+        return occurrence.ExecutionTime;
+    }
+
+    private async Task<int> _InsertCronJobOccurrencesAsync(
+        CronJobOccurrenceEntity<TCronJob>[] cronJobOccurrences,
+        bool stampRunNow,
+        CancellationToken cancellationToken
     )
     {
         await using var dbContext = await DbContextFactory
@@ -1679,10 +1698,20 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                                 .Where(x => definitionIds.Contains(x.Id))
                                 .ToDictionaryAsync(x => x.Id, ct)
                                 .ConfigureAwait(false);
+                    // Read inside the retried attempt so a retry stamps the instant of the write that lands. A
+                    // backend without a registered statement clock falls back to the host clock.
+                    DateTime? storeUtcNow = stampRunNow
+                        ? await JobsStoreClock.TryGetStatementUtcNowAsync(context, ct).ConfigureAwait(false)
+                            ?? TimeProvider.GetUtcNow().UtcDateTime
+                        : null;
                     foreach (var occurrence in candidates)
                     {
                         occurrence.SnapshotContract(definitions[occurrence.CronJobId]);
                         occurrence.CronJob = null!;
+                        if (storeUtcNow is { } runNowAt)
+                        {
+                            occurrence.ExecutionTime = runNowAt;
+                        }
                     }
 
                     await context

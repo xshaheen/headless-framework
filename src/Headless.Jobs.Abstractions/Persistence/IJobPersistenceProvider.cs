@@ -1653,6 +1653,32 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     );
 
     /// <summary>
+    /// Inserts one on-demand "run this cron now" occurrence, stamping its <c>ExecutionTime</c> from the store's own
+    /// clock in the same write.
+    /// </summary>
+    /// <param name="occurrence">
+    /// The occurrence to insert. Its incoming <c>ExecutionTime</c> is ignored; on return it carries the persisted one.
+    /// </param>
+    /// <param name="cancellationToken">Token that aborts the write.</param>
+    /// <returns>The <c>ExecutionTime</c> the occurrence was persisted with.</returns>
+    /// <remarks>
+    /// Claims decide due-ness on the store's clock, so an occurrence stamped from a node minutes ahead of the database
+    /// would not be claimable until the database caught up whenever its immediate acquire loses (for example to a
+    /// saturated cluster limit). Otherwise this behaves as <see cref="InsertCronJobOccurrencesAsync"/>.
+    /// <para>
+    /// <b>The stamp must be the store's CURRENT STATEMENT clock</b> — PostgreSQL <c>clock_timestamp()</c>, SQL Server
+    /// <c>SYSUTCDATETIME()</c> — read inside the inserting write, never a transaction-start clock. A store with no such
+    /// clock may use the host's <see cref="TimeProvider"/>.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">The occurrence's cron definition does not exist.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<DateTime> InsertRunNowCronJobOccurrenceAsync(
+        CronJobOccurrenceEntity<TCronJob> occurrence,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Deletes cron occurrence rows — the history-pruning path for the dashboard.
     /// </summary>
     /// <param name="cronJobOccurrences">Identifiers of the occurrences to delete.</param>

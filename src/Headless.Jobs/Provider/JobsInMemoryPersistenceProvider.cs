@@ -3853,6 +3853,18 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         return Task.FromResult(count);
     }
 
+    public async Task<DateTime> InsertRunNowCronJobOccurrenceAsync(
+        CronJobOccurrenceEntity<TCronJob> occurrence,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(occurrence);
+        // This store's clock is the injected TimeProvider.
+        occurrence.ExecutionTime = _timeProvider.GetUtcNow().UtcDateTime;
+        await InsertCronJobOccurrencesAsync([occurrence], cancellationToken).ConfigureAwait(false);
+        return occurrence.ExecutionTime;
+    }
+
     public Task<int> RemoveCronJobOccurrencesAsync(
         Guid[] cronJobOccurrences,
         CancellationToken cancellationToken = default

@@ -100,10 +100,8 @@ public sealed class JobsDashboardRegistryTests : TestBase
 
             await persistence
                 .Received(1)
-                .InsertCronJobOccurrencesAsync(
-                    Arg.Is<CronJobOccurrenceEntity<CronJobEntity>[]>(items =>
-                        items.Length == 1 && items[0].Id == occurrenceId
-                    ),
+                .InsertRunNowCronJobOccurrenceAsync(
+                    Arg.Is<CronJobOccurrenceEntity<CronJobEntity>>(item => item.Id == occurrenceId),
                     AbortToken
                 );
 

@@ -83,4 +83,10 @@ public abstract class PostgreSqlStoreClockEnqueueTestsBase<TFixture>(TFixture fi
     {
         return base.coordinated_overflowing_delay_throws_and_leaves_the_caller_transaction_usable();
     }
+
+    [Fact]
+    public override Task run_now_cron_occurrence_from_a_host_ahead_of_the_store_is_stamped_by_the_store_and_claimed_without_waiting()
+    {
+        return base.run_now_cron_occurrence_from_a_host_ahead_of_the_store_is_stamped_by_the_store_and_claimed_without_waiting();
+    }
 }

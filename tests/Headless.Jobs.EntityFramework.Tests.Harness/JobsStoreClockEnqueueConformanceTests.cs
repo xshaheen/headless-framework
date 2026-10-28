@@ -341,6 +341,98 @@ public abstract class JobsStoreClockEnqueueConformanceTests<TFixture>(TFixture f
         }
     }
 
+    /// <summary>
+    /// A dashboard "Run now" whose immediate acquire loses, for example to a saturated cluster limit, leaves an idle
+    /// occurrence for the fallback sweep to claim once a slot frees. Stamped from a host two minutes ahead, the sweep
+    /// would skip it until the database caught up; stamped by the store, it is claimable as soon as it is overdue.
+    /// </summary>
+    public virtual async Task run_now_cron_occurrence_from_a_host_ahead_of_the_store_is_stamped_by_the_store_and_claimed_without_waiting()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("run-now-cron-ahead", timeProvider: new SkewedTimeProvider(_Skew));
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var cronId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(
+                cronId,
+                "run-now-cron",
+                "0 0 * * * *",
+                NodeDeathPolicy.Retry,
+                ct,
+                reconciledThroughOffsetSeconds: -3600,
+                nextDueOffsetSeconds: 3600
+            );
+            var occurrence = new CronJobOccurrenceEntity<CronJobEntity> { Id = Guid.NewGuid(), CronJobId = cronId };
+
+            var before = await _StoreUtcNowAsync(ct);
+            var returned = await persistence.InsertRunNowCronJobOccurrenceAsync(occurrence, ct);
+            var after = await _StoreUtcNowAsync(ct);
+
+            var stamp = await _ReadCronOccurrenceExecutionTimeAsync(occurrence.Id, ct);
+            stamp.Should().BeOnOrAfter(before - _Tolerance).And.BeOnOrBefore(after + _Tolerance);
+            returned.Should().BeCloseTo(stamp, TimeSpan.FromMilliseconds(1));
+            occurrence.ExecutionTime.Should().BeCloseTo(stamp, TimeSpan.FromMilliseconds(1));
+
+            // The fallback sweep claims occurrences more than one second overdue on the database clock, so a store
+            // stamp is claimed within seconds while a node stamp two minutes ahead outlasts the whole bound.
+            (await _SweepUntilClaimedAsync(persistence, occurrence.Id, ct))
+                .Should()
+                .BeTrue("the occurrence is due on the store clock as soon as it is written");
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    private static async Task<bool> _SweepUntilClaimedAsync(
+        IJobPersistenceProvider<TimeJobEntity, CronJobEntity> persistence,
+        Guid occurrenceId,
+        CancellationToken cancellationToken
+    )
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(_ImmediateDispatchBound);
+
+        try
+        {
+            while (true)
+            {
+                var claimed = await persistence
+                    .QueueTimedOutCronJobOccurrencesAsync(timeout.Token)
+                    .ToArrayAsync(timeout.Token);
+                if (claimed.Any(x => x.Id == occurrenceId))
+                {
+                    return true;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(100), timeout.Token);
+            }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+    }
+
+    private async Task<DateTime> _ReadCronOccurrenceExecutionTimeAsync(Guid id, CancellationToken cancellationToken)
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = fixture.Sql(
+            $"SELECT \"ExecutionTime\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;"
+        );
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@id", id);
+
+        return _AsUtc(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
     private async Task _DelayedIsDueAtTheStoreInstantPlusTheDelayAsync(string nodeId, TimeSpan skew)
     {
         var ct = AbortToken;
