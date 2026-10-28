@@ -171,4 +171,27 @@ internal static partial class JobsFingerprintSweepLog
             + "state is retained for the next interval."
     )]
     internal static partial void DrainBoundReached(ILogger logger, int count);
+
+    [LoggerMessage(
+        EventId = 3233,
+        Level = LogLevel.Warning,
+        Message = "Cron fingerprint rebases have been deferred for over {HoldoutAfter} because nodes that run the "
+            + "fingerprint sweep publish different cron rules. This node publishes {LocalDigest}; disagreeing nodes by "
+            + "digest: {DigestGroups}. Give every sweeping node the same OS family and tzdata, or disable background "
+            + "services on the outliers."
+    )]
+    internal static partial void FleetHoldout(
+        ILogger logger,
+        TimeSpan holdoutAfter,
+        string localDigest,
+        string digestGroups
+    );
+
+    [LoggerMessage(
+        EventId = 3234,
+        Level = LogLevel.Warning,
+        Message = "Cron fingerprint rebases deferred: the coordination membership snapshot could not be read, so fleet "
+            + "agreement on cron rules cannot be shown. The next sweep retries within five minutes."
+    )]
+    internal static partial void MembershipUnavailable(ILogger logger, Exception exception);
 }

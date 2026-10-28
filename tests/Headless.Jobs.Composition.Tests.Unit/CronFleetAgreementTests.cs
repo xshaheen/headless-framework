@@ -5,8 +5,10 @@ using Headless.Jobs;
 using Headless.Jobs.Coordination;
 using Headless.Jobs.Internal;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -148,7 +150,163 @@ public sealed class CronFleetAgreementTests : TestBase
         return _Create(membership);
     }
 
-    private static CronFleetAgreement _Create(INodeMembership membership)
+    [Fact]
+    public async Task should_warn_once_naming_each_digest_and_its_nodes_after_an_hour_of_one_disagreement()
+    {
+        var fleet = new Fleet(
+            _Sweeping(_Identity("p1", 1), _OtherDigest),
+            _Sweeping(_Identity("p2", 1), _OtherDigest),
+            _Sweeping(_Identity("p3", 1), "digest-d3")
+        );
+
+        await fleet.CheckAsync();
+        fleet.Time.Advance(TimeSpan.FromMinutes(59));
+        await fleet.CheckAsync();
+        fleet.Warnings.Should().BeEmpty("an hour has not passed");
+
+        fleet.Time.Advance(TimeSpan.FromMinutes(2));
+        await fleet.CheckAsync();
+        fleet.Time.Advance(TimeSpan.FromHours(3));
+        await fleet.CheckAsync();
+
+        var warning = fleet.Warnings.Should().ContainSingle("one warning per episode").Subject;
+        warning
+            .Should()
+            .Contain($"{_OtherDigest}: {_Identity("p1", 1)}, {_Identity("p2", 1)}")
+            .And.Contain($"digest-d3: {_Identity("p3", 1)}")
+            .And.Contain(_LocalDigest);
+    }
+
+    [Fact]
+    public async Task should_start_a_new_episode_after_an_agreed_pass()
+    {
+        var disagreeing = _Sweeping(_Identity("p1", 1), _OtherDigest);
+        var fleet = new Fleet(disagreeing);
+
+        await fleet.CheckAsync();
+        fleet.Time.Advance(TimeSpan.FromMinutes(61));
+        await fleet.CheckAsync();
+        fleet.Snapshot = [];
+        await fleet.CheckAsync();
+        fleet.Snapshot = [disagreeing];
+        await fleet.CheckAsync();
+        fleet.Time.Advance(TimeSpan.FromMinutes(30));
+        await fleet.CheckAsync();
+        fleet.Warnings.Should().ContainSingle("the second episode is only 30 minutes old");
+
+        fleet.Time.Advance(TimeSpan.FromMinutes(31));
+        await fleet.CheckAsync();
+
+        fleet.Warnings.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task should_start_a_new_episode_when_a_disagreeing_peer_restarts_as_a_new_incarnation()
+    {
+        var fleet = new Fleet(_Sweeping(_Identity("p1", 1), _OtherDigest));
+
+        await fleet.CheckAsync();
+        fleet.Time.Advance(TimeSpan.FromMinutes(50));
+        fleet.Snapshot = [_Sweeping(_Identity("p1", 2), _OtherDigest)];
+        await fleet.CheckAsync();
+        fleet.Time.Advance(TimeSpan.FromMinutes(20));
+        await fleet.CheckAsync();
+        fleet.Warnings.Should().BeEmpty("the restarted incarnation has disagreed for only 20 minutes");
+
+        fleet.Time.Advance(TimeSpan.FromMinutes(41));
+        await fleet.CheckAsync();
+
+        fleet.Warnings.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task should_neither_start_nor_end_an_episode_when_the_snapshot_cannot_be_read()
+    {
+        var disagreeing = _Sweeping(_Identity("p1", 1), _OtherDigest);
+        var fleet = new Fleet(disagreeing) { Failure = new InvalidOperationException("store down") };
+
+        // An unreadable snapshot names no node, so an hour of it is not an hour of disagreement.
+        await fleet.CheckAsync();
+        fleet.Time.Advance(TimeSpan.FromMinutes(61));
+        fleet.Failure = null;
+        await fleet.CheckAsync();
+        fleet.Warnings.Should().BeEmpty("the episode began at the first readable disagreement");
+
+        // And it does not end one: the episode that just began keeps its start.
+        fleet.Time.Advance(TimeSpan.FromMinutes(30));
+        fleet.Failure = new InvalidOperationException("store down");
+        await fleet.CheckAsync();
+        fleet.Time.Advance(TimeSpan.FromMinutes(31));
+        fleet.Failure = null;
+        await fleet.CheckAsync();
+
+        fleet.Warnings.Should().ContainSingle();
+    }
+
+    /// <summary>A gate over a fleet whose snapshot and clock a test drives, recording the warnings it logs.</summary>
+    private sealed class Fleet
+    {
+        private readonly CapturingLogger _logger = new();
+        private readonly CronFleetAgreement _agreement;
+
+        public Fleet(params NodeLivenessSnapshot[] snapshot)
+        {
+            Snapshot = snapshot;
+            var membership = Substitute.For<INodeMembership>();
+            membership
+                .GetLivenessSnapshotAsync(Arg.Any<CancellationToken>())
+                .Returns(_ =>
+                    Failure is null
+                        ? new ValueTask<IReadOnlyList<NodeLivenessSnapshot>>(Snapshot)
+                        : ValueTask.FromException<IReadOnlyList<NodeLivenessSnapshot>>(Failure)
+                );
+            _agreement = _Create(membership, Time, _logger);
+        }
+
+        public FakeTimeProvider Time { get; } = new();
+
+        public IReadOnlyList<NodeLivenessSnapshot> Snapshot { get; set; }
+
+        public Exception? Failure { get; set; }
+
+        public IReadOnlyList<string> Warnings => _logger.Holdouts;
+
+        public Task CheckAsync() => _agreement.CheckAsync(AbortToken);
+    }
+
+    private sealed class CapturingLogger : ILogger<CronFleetAgreement>
+    {
+        // The holdout warning's event id; the snapshot-unavailable warning is a different event.
+        private const int _HoldoutEventId = 3233;
+        private readonly List<string> _holdouts = [];
+
+        public IReadOnlyList<string> Holdouts => _holdouts;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (eventId.Id == _HoldoutEventId)
+            {
+                _holdouts.Add(formatter(state, exception));
+            }
+        }
+    }
+
+    private static CronFleetAgreement _Create(
+        INodeMembership membership,
+        TimeProvider? time = null,
+        ILogger<CronFleetAgreement>? logger = null
+    )
     {
         var options = new CoordinationOptions();
         options.Metadata[CronRulesDigest.DigestMetadataKey] = _LocalDigest;
@@ -166,7 +324,8 @@ public sealed class CronFleetAgreementTests : TestBase
             membership,
             Options.Create(options),
             owner,
-            NullLogger<CronFleetAgreement>.Instance
+            time ?? TimeProvider.System,
+            logger ?? NullLogger<CronFleetAgreement>.Instance
         );
     }
 

@@ -2,13 +2,17 @@
 
 using System.Diagnostics.Metrics;
 using Headless;
+using Headless.Coordination;
 using Headless.Jobs;
+using Headless.Jobs.Coordination;
 using Headless.Jobs.Dispatcher;
 using Headless.Jobs.Instrumentation;
+using Headless.Jobs.Internal;
 using Headless.Jobs.JobsThreadPool;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using OpenTelemetry.Metrics;
 
@@ -484,6 +488,63 @@ public sealed class JobsMetricsTests : TestBase
                     MaxConcurrency = 0,
                 },
             }
+        );
+    }
+
+    [Fact]
+    public async Task should_count_a_deferred_fingerprint_sweep_by_reason_without_naming_nodes()
+    {
+        // given
+        using var recorder = new MetricRecorder();
+        var unreadable = Substitute.For<INodeMembership>();
+        unreadable
+            .GetLivenessSnapshotAsync(Arg.Any<CancellationToken>())
+            .Returns<ValueTask<IReadOnlyList<NodeLivenessSnapshot>>>(_ => throw new InvalidOperationException("down"));
+        var disagreeing = Substitute.For<INodeMembership>();
+        disagreeing
+            .GetLivenessSnapshotAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                new ValueTask<IReadOnlyList<NodeLivenessSnapshot>>([
+                    new NodeLivenessSnapshot(
+                        new NodeIdentity(new NodeId("peer"), new NodeIncarnation(1)),
+                        NodeLivenessState.Alive,
+                        Role: null,
+                        new Dictionary<string, string>(StringComparer.Ordinal)
+                        {
+                            ["headless.jobs.cron-rules-digest"] = "other-rules",
+                            ["headless.jobs.fingerprint-sweep"] = "true",
+                        }
+                    ),
+                ])
+            );
+
+        // when
+        await _Agreement(unreadable).CheckAsync(AbortToken);
+        await _Agreement(disagreeing).CheckAsync(AbortToken);
+
+        // then
+        recorder
+            .Of(_SweepDeferred)
+            .Select(x => (x.Value, Reason: x.Tags[_ReasonTag]))
+            .Should()
+            .Equal((1d, "membership_unavailable"), (1d, "fleet_disagreement"));
+        recorder.Of(_SweepDeferred).Should().OnlyContain(x => x.Tags.Count == 1, "a node tag would be unbounded");
+    }
+
+    private const string _SweepDeferred = "headless.jobs.cron.fingerprint_sweep.deferred";
+    private const string _ReasonTag = "reason";
+
+    private static CronFleetAgreement _Agreement(INodeMembership membership)
+    {
+        var options = new CoordinationOptions();
+        options.Metadata["headless.jobs.cron-rules-digest"] = "local-rules";
+
+        return new CronFleetAgreement(
+            membership,
+            Options.Create(options),
+            Substitute.For<IJobsOwnerIdentity>(),
+            TimeProvider.System,
+            NullLogger<CronFleetAgreement>.Instance
         );
     }
 
