@@ -23,17 +23,31 @@ public sealed class SqlServerOptions
     /// </summary>
     public string? ConnectionString { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether each durable consumer attempt runs in one database transaction that
+    /// completes the inbox row, so writes the handler makes through <c>ConsumeContext.UnitOfWork</c> commit or roll
+    /// back with it. Defaults to <see langword="true" />, which declares the <c>Transactional</c> inbox guarantee.
+    /// </summary>
+    /// <remarks>
+    /// When <see langword="false" />, the storage declares the <c>Durable</c> guarantee, durable consumers need
+    /// <c>MessagingOptions.MinimumInboxGuarantee = InboxGuarantee.Durable</c> to start, and they run with no unit of
+    /// work. An attempt holds one pooled connection and an open transaction while its handler runs. An additional
+    /// outbox (<c>AddOutbox().UseSqlServer(...)</c>) ignores this setting.
+    /// </remarks>
+    public bool EnableTransactionalInbox { get; set; } = true;
+
     internal string Version { get; set; } = null!;
+
+    /// <summary>Creates an unopened connection to the configured database.</summary>
+    internal SqlConnection CreateConnection() => new(ConnectionString);
 
     /// <summary>Describes this database to the relational messaging storage.</summary>
     internal RelationalMessagingStorage ToStorage()
     {
-        var connectionString = ConnectionString;
-
         return new RelationalMessagingStorage(
             SqlServerDialect.Instance,
             "SqlServer",
-            () => new SqlConnection(connectionString),
+            CreateConnection,
             OwnerColumnMaxLength
         );
     }

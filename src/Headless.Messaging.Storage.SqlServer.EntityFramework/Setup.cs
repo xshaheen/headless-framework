@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using System.Data.Common;
 using System.Runtime.ExceptionServices;
 using Headless.Checks;
 using Headless.Messaging.Internal;
@@ -92,12 +93,27 @@ public static class SetupMessagingSqlServerEntityFramework
     {
         public void AddServices(IServiceCollection services)
         {
-            new SetupMessagingSqlServer.SqlServerMessagesOptionsExtension(storageServices =>
-                storageServices.Configure<SqlServerOptions, SqlServerOptionsValidator>(storageOptions =>
-                {
-                    storageOptions.OwnerColumnMaxLength = options.OwnerColumnMaxLength;
-                    storageOptions.Version = version;
-                })
+            new SetupMessagingSqlServer.SqlServerMessagesOptionsExtension(
+                storageServices =>
+                    storageServices.Configure<SqlServerOptions, SqlServerOptionsValidator>(storageOptions =>
+                    {
+                        storageOptions.OwnerColumnMaxLength = options.OwnerColumnMaxLength;
+                        storageOptions.Version = version;
+                    }),
+                // Known at registration, so composing the capability never resolves the storage options, which
+                // would build the application's DbContext.
+                isTransactionalInboxEnabled: _ => options.EnableTransactionalInbox,
+                inboxRunnerFactory: options.EnableTransactionalInbox
+                    ? serviceProvider => new EntityFrameworkInboxTransactionRunner<TContext>(
+                        serviceProvider.GetRequiredService<TContext>(),
+                        serviceProvider.GetRequiredService<IUnitOfWorkFactory>(),
+                        serviceProvider.GetRequiredService<IDeliveryCoordinationResolver>(),
+                        serviceProvider.GetRequiredService<RelationalDataStorage>(),
+                        serviceProvider
+                            .GetRequiredService<ILoggerFactory>()
+                            .CreateLogger<EntityFrameworkInboxTransactionRunner<TContext>>()
+                    )
+                    : null
             ).AddServices(services);
 
             services.AddSingleton<IConfigureOptions<SqlServerOptions>, ConfigureSqlServerOptions<TContext>>();
@@ -105,65 +121,20 @@ public static class SetupMessagingSqlServerEntityFramework
             if (options.EnableTransactionalInbox)
             {
                 services.AddEntityFrameworkUnitOfWork();
-                _PromoteStorageCapability(services, "SqlServer");
-                services.AddScoped<IInboxTransactionRunner>(
-                    serviceProvider => new SqlServerInboxTransactionRunner<TContext>(
-                        serviceProvider.GetRequiredService<TContext>(),
-                        serviceProvider.GetRequiredService<IUnitOfWorkFactory>(),
-                        serviceProvider.GetRequiredService<IDeliveryCoordinationResolver>(),
-                        serviceProvider.GetRequiredService<RelationalDataStorage>(),
-                        serviceProvider
-                            .GetRequiredService<ILoggerFactory>()
-                            .CreateLogger<SqlServerInboxTransactionRunner<TContext>>()
-                    )
-                );
             }
         }
     }
 
-    private static void _PromoteStorageCapability(IServiceCollection services, string provider)
-    {
-        var descriptor = services.LastOrDefault(candidate =>
-            candidate.ServiceType == typeof(MessagingProviderCapabilities)
-            && candidate.ImplementationInstance
-                is MessagingProviderCapabilities
-                {
-                    Role: MessagingProviderRole.Storage,
-                    Provider: var registeredProvider,
-                }
-            && string.Equals(registeredProvider, provider, StringComparison.Ordinal)
-        );
-        var current =
-            descriptor?.ImplementationInstance as MessagingProviderCapabilities
-            ?? throw new InvalidOperationException(
-                $"The {provider} storage capability must be registered before enabling its EF inbox transaction runner."
-            );
-
-        services.Remove(descriptor!);
-        services.AddMessagingProviderCapabilities(
-            MessagingProviderCapabilities.Storage(
-                current.Provider,
-                current.Lanes.ToArray(),
-                current.SupportsDelayedScheduling,
-                InboxGuarantee.Transactional
-            )
-        );
-    }
-
-    private sealed class SqlServerInboxTransactionRunner<TContext>(
+    private sealed class EntityFrameworkInboxTransactionRunner<TContext>(
         TContext context,
         IUnitOfWorkFactory unitOfWorkFactory,
         IDeliveryCoordinationResolver coordinationResolver,
         RelationalDataStorage storage,
         ILogger logger
-    ) : IInboxTransactionRunner
+    ) : InboxTransactionRunner(coordinationResolver, storage, logger)
         where TContext : DbContext
     {
-        public async Task ExecuteAsync(
-            MediumMessage message,
-            Func<IUnitOfWork, CancellationToken, Task> handler,
-            CancellationToken cancellationToken
-        )
+        protected override void EnsureNoAmbientTransaction()
         {
             if (context.Database.CurrentTransaction is not null || context.UnitOfWork() is not null)
             {
@@ -171,120 +142,66 @@ public static class SetupMessagingSqlServerEntityFramework
                     "Transactional inbox execution cannot enter an already-active or nested transaction boundary."
                 );
             }
-
-            var attemptError = await context
-                .Database.CreateExecutionStrategy()
-                .ExecuteAsync(
-                    async ct =>
-                    {
-                        var handlerEntered = false;
-                        try
-                        {
-                            await using var transaction = await context
-                                .Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct)
-                                .ConfigureAwait(false);
-                            var dbTransaction = transaction.GetDbTransaction();
-                            // Observed mode: the runner commits; the unit is handed to the handler so the
-                            // consumer's context and a callback publish enlist in this transaction.
-                            await using var unitOfWork = unitOfWorkFactory.Enlist(context, transaction);
-                            var coordination = coordinationResolver.Resolve(unitOfWork);
-                            if (coordination.Status is not DeliveryCoordinationStatus.Compatible)
-                            {
-                                throw new InvalidOperationException(
-                                    $"The EF inbox transaction is incompatible with messaging storage: {coordination.Mismatch}."
-                                );
-                            }
-
-                            handlerEntered = true;
-                            await handler(unitOfWork, ct).ConfigureAwait(false);
-                            await context.SaveChangesAsync(ct).ConfigureAwait(false);
-                            var completed = await ((ITransactionalInboxStorage)storage)
-                                .CompleteReceivedInboxAsync(message, dbTransaction, ct)
-                                .ConfigureAwait(false);
-                            if (!completed)
-                            {
-                                throw new StaleInboxAttemptException(message.StorageId);
-                            }
-
-                            try
-                            {
-                                await transaction.CommitAsync(ct).ConfigureAwait(false);
-                            }
-                            catch (Exception commitException)
-                            {
-                                if (
-                                    await ((ITransactionalInboxStorage)storage)
-                                        .ProbeReceivedInboxCommitAsync(message, CancellationToken.None)
-                                        .ConfigureAwait(false) is InboxCommitProbe.Committed
-                                )
-                                {
-                                    await _CompleteAfterDurableCommitAsync(unitOfWork, message).ConfigureAwait(false);
-                                    return null;
-                                }
-
-                                try
-                                {
-                                    await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-                                    await unitOfWork.RollbackAsync().ConfigureAwait(false);
-                                }
-                                catch (Exception rollbackException)
-                                {
-                                    if (
-                                        await ((ITransactionalInboxStorage)storage)
-                                            .ProbeReceivedInboxCommitAsync(message, CancellationToken.None)
-                                            .ConfigureAwait(false) is InboxCommitProbe.Committed
-                                    )
-                                    {
-                                        await _CompleteAfterDurableCommitAsync(unitOfWork, message)
-                                            .ConfigureAwait(false);
-                                        return null;
-                                    }
-
-                                    return ExceptionDispatchInfo.Capture(
-                                        new IndeterminateInboxCommitException(
-                                            message.StorageId,
-                                            commitException,
-                                            rollbackException
-                                        )
-                                    );
-                                }
-
-                                return ExceptionDispatchInfo.Capture(
-                                    new UncommittedInboxCommitException(message.StorageId, commitException)
-                                );
-                            }
-
-                            // Outside the commit's catch: a drain fault here is not a commit fault and must not
-                            // be probed and "completed" a second time.
-                            await _CompleteAfterDurableCommitAsync(unitOfWork, message).ConfigureAwait(false);
-                            return null;
-                        }
-                        catch (Exception exception) when (handlerEntered)
-                        {
-                            // Persisted inbox recovery owns every retry after entry, including failures
-                            // raised while disposing the unit of work or transaction.
-                            return ExceptionDispatchInfo.Capture(exception);
-                        }
-                    },
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-            attemptError?.Throw();
         }
 
-        // The row is durable once the commit (or its probe) says so; the unit's drain only accelerates the
-        // dispatch of the enlisted callbacks. A drain fault must not turn a committed attempt into a retry that
-        // re-invokes the consumer, so it is logged and the attempt reports success — the same policy as the
-        // unit-of-work runners; the relay recovers any enlisted rows.
-        private async Task _CompleteAfterDurableCommitAsync(IUnitOfWork unitOfWork, MediumMessage message)
+        // EF's execution strategy replays a transient fault; the shared runner reports every fault after handler
+        // entry as a result instead, so only an attempt that never reached the handler is replayed.
+        protected override Task<ExceptionDispatchInfo?> ExecuteWithPreEntryRetryAsync(
+            Func<CancellationToken, Task<ExceptionDispatchInfo?>> attempt,
+            CancellationToken cancellationToken
+        )
         {
+            return context.Database.CreateExecutionStrategy().ExecuteAsync(attempt, cancellationToken);
+        }
+
+        protected override async ValueTask<InboxAttemptTransaction> BeginAttemptAsync(
+            CancellationToken cancellationToken
+        )
+        {
+            var transaction = await context
+                .Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+                .ConfigureAwait(false);
             try
             {
-                await unitOfWork.CompleteAsync(CancellationToken.None).ConfigureAwait(false);
+                // Observed mode: the runner commits; the unit is handed to the handler so the consumer's context and
+                // a callback publish enlist in this transaction.
+                return new Attempt(context, transaction, unitOfWorkFactory.Enlist(context, transaction));
             }
-            catch (Exception ex) when (unitOfWork.State == UnitOfWorkState.Completed)
+            catch
             {
-                logger.InboxPostCommitDrainFaulted(ex, message.StorageId);
+                await transaction.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
+        }
+
+        private sealed class Attempt(TContext context, IDbContextTransaction transaction, IUnitOfWork unitOfWork)
+            : InboxAttemptTransaction
+        {
+            public override IUnitOfWork UnitOfWork => unitOfWork;
+
+            public override DbTransaction Transaction => transaction.GetDbTransaction();
+
+            public override async ValueTask FlushAsync(CancellationToken cancellationToken)
+            {
+                await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            public override Task CommitAsync(CancellationToken cancellationToken) =>
+                transaction.CommitAsync(cancellationToken);
+
+            public override Task RollbackAsync(CancellationToken cancellationToken) =>
+                transaction.RollbackAsync(cancellationToken);
+
+            public override async ValueTask DisposeAsync()
+            {
+                try
+                {
+                    await unitOfWork.DisposeAsync().ConfigureAwait(false);
+                }
+                finally
+                {
+                    await transaction.DisposeAsync().ConfigureAwait(false);
+                }
             }
         }
     }
