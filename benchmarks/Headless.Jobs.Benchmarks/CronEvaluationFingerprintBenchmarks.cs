@@ -19,7 +19,9 @@ public class CronEvaluationFingerprintBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _zone = ZoneId == "UTC" ? TimeZoneInfo.Utc : TimeZoneInfo.FindSystemTimeZoneById(ZoneId);
+        _zone = string.Equals(ZoneId, "UTC", StringComparison.Ordinal)
+            ? TimeZoneInfo.Utc
+            : TimeZoneInfo.FindSystemTimeZoneById(ZoneId);
         _cache = new CronScheduleCache(_zone);
 
         // Warm the memo: dispatch reaches it after the first advance in a zone.
