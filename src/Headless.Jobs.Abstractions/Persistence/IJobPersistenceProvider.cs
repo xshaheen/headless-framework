@@ -478,7 +478,8 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </returns>
     /// <remarks>
     /// <para>
-    /// The caller decides a row is due on its own clock; the store applies the same due test as
+    /// The caller asks for every run-now root it wrote, for a delayed root whose delay its monotonic clock says has
+    /// elapsed since the write, and for an absolute root due on its own clock; the store applies the same due test as
     /// <see cref="QueueTimeJobsAsync"/>, on its own clock, and leaves a row that is not yet due untouched for the
     /// scheduler's claim. A node whose clock runs ahead therefore cannot start a scheduled job early through enqueue.
     /// </para>

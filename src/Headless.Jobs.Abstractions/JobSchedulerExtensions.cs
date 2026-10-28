@@ -110,7 +110,7 @@ public static class JobSchedulerExtensions
 
         /// <summary>Schedules a typed job due the delay after the store's clock at write time, with a freshly built options snapshot.</summary>
         /// <exception cref="ArgumentNullException">The scheduler or configuration callback is null.</exception>
-        /// <exception cref="ArgumentOutOfRangeException">The scheduler rejects a negative or overflowing delay.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">The delay is negative or overflows the store's instant.</exception>
         public Task<Guid> ScheduleAfterAsync<TArgs>(
             TArgs request,
             TimeSpan delay,
@@ -127,7 +127,7 @@ public static class JobSchedulerExtensions
 
         /// <summary>Schedules a job that takes no arguments due the delay after the store's clock at write time, with a freshly built options snapshot.</summary>
         /// <exception cref="ArgumentNullException">The scheduler or configuration callback is null.</exception>
-        /// <exception cref="ArgumentOutOfRangeException">The scheduler rejects a negative or overflowing delay.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">The delay is negative or overflows the store's instant.</exception>
         public Task<Guid> ScheduleAfterAsync<TJob>(
             TimeSpan delay,
             Action<JobOptionsBuilder> configure,
