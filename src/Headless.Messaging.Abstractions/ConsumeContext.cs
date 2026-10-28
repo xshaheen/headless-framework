@@ -69,8 +69,8 @@ public record ConsumeContext
     /// <returns>The attempt's unit of work.</returns>
     /// <exception cref="InvalidOperationException">
     /// The attempt runs outside an inbox transaction: the host's minimum inbox guarantee or its storage provider is
-    /// weaker than <c>Transactional</c> (for EF Core storage, <c>EnableTransactionalInbox</c> is off), or the consumer is
-    /// an every-instance consumer, which has no durable inbox row.
+    /// weaker than <c>Transactional</c> (the relational storage's <c>EnableTransactionalInbox</c> is off), or the
+    /// consumer is an every-instance consumer, which has no durable inbox row.
     /// </exception>
 #pragma warning disable CA1024 // False positive: it throws when the unit is absent, and a throwing getter would also throw whenever a debugger shows the context.
     public IUnitOfWork GetRequiredUnitOfWork()
@@ -81,7 +81,7 @@ public record ConsumeContext
                 $"The consume attempt for message '{MessageName}' has no unit of work: it runs outside an inbox "
                     + "transaction. A unit exists only for a durable consumer under the Transactional inbox guarantee; "
                     + "check that MessagingOptions.MinimumInboxGuarantee is Transactional and that the storage provider "
-                    + "enforces it (for EF Core storage, keep EnableTransactionalInbox on). An every-instance consumer "
+                    + "enforces it (for a relational storage, keep EnableTransactionalInbox on). An every-instance consumer "
                     + "never has one; open a unit of work in the handler when it must publish atomically."
             );
     }
