@@ -215,7 +215,7 @@ internal sealed class MessagePublisher(
                             "Durable delivery requires a configured messaging storage provider."
                         );
                     if (
-                        decision.Path is DeliveryPath.DurableCoordinated
+                        decision.Path is DeliveryPath.DurableEnlisted
                         && options?.IsRetainedForTransactionReplay is not true
                         && decision.Coordination.UnitOfWork!.Resource is { IsOwned: false }
                     )

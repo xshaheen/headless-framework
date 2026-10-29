@@ -31,7 +31,7 @@ internal sealed class OutboxMessageWriter(
             // Use the unit of work/transaction captured in the caller's frame — never re-read Current here. If the
             // captured transaction has since completed, StoreMessageAsync fails loudly rather than silently dropping
             // to the non-atomic immediate path.
-            if (decision.Path is DeliveryPath.DurableCoordinated)
+            if (decision.Path is DeliveryPath.DurableEnlisted)
             {
                 var unitOfWork =
                     decision.Coordination.UnitOfWork

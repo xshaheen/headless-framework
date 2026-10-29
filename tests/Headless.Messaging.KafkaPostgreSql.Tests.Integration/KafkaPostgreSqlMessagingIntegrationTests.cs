@@ -39,7 +39,6 @@ public sealed class KafkaPostgreSqlMessagingIntegrationTests(KafkaPostgreSqlFixt
 
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
-        setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
         setup.UsePostgreSql(fixture.StorageConnectionString);
     }
 

@@ -8,9 +8,11 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.PostgreSql;
 using Headless.Sql;
 using Headless.Sql.PostgreSql;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Headless.Messaging;
 
@@ -225,24 +227,55 @@ public static class SetupMessagingPostgreSql
         Action<IServiceCollection> configureOptions
     )
     {
-        setup.RegisterExtension(new PostgreSqlMessagesOptionsExtension(configureOptions));
+        setup.RegisterExtension(
+            new PostgreSqlMessagesOptionsExtension(
+                configureOptions,
+                // Bound from configuration or a delegate, so the switch is known only once the provider is built.
+                isTransactionalInboxEnabled: sp =>
+                    sp.GetRequiredService<IOptions<PostgreSqlOptions>>().Value.EnableTransactionalInbox,
+                inboxRunnerFactory: _CreateInboxRunner
+            )
+        );
         return setup;
     }
 
-    internal sealed class PostgreSqlMessagesOptionsExtension(Action<IServiceCollection> configureOptions)
-        : IMessagesOptionsExtension
+    private static AdoNetInboxTransactionRunner _CreateInboxRunner(IServiceProvider serviceProvider) =>
+        AdoNetInboxTransactionRunner.Create(
+            serviceProvider,
+            serviceProvider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value.CreateConnection,
+            static (unitOfWorkFactory, connection, transaction) =>
+                unitOfWorkFactory.Enlist((NpgsqlConnection)connection, (NpgsqlTransaction)transaction)
+        );
+
+    /// <summary>Registers the PostgreSQL storage; the raw and EF-context paths differ only in how the inbox runs.</summary>
+    /// <param name="configureOptions">Registers <see cref="PostgreSqlOptions"/>.</param>
+    /// <param name="isTransactionalInboxEnabled">Whether the storage declares the <c>Transactional</c> inbox guarantee.</param>
+    /// <param name="inboxRunnerFactory">The attempt runner, or <see langword="null"/> when the path registers none.</param>
+    internal sealed class PostgreSqlMessagesOptionsExtension(
+        Action<IServiceCollection> configureOptions,
+        Func<IServiceProvider, bool> isTransactionalInboxEnabled,
+        Func<IServiceProvider, IInboxTransactionRunner>? inboxRunnerFactory
+    ) : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageStorageMarkerService("PostgreSql"));
-            services.AddMessagingProviderCapabilities(
+            services.AddMessagingProviderCapabilities(sp =>
                 MessagingProviderCapabilities.Storage(
                     "PostgreSql",
                     [MessageLane.Bus, MessageLane.Queue],
                     supportsDelayedScheduling: true,
-                    inboxGuarantee: InboxGuarantee.Durable
+                    inboxGuarantee: isTransactionalInboxEnabled(sp)
+                        ? InboxGuarantee.Transactional
+                        : InboxGuarantee.Durable
                 )
             );
+
+            if (inboxRunnerFactory is not null)
+            {
+                services.AddScoped(inboxRunnerFactory);
+            }
+
             // The schema is feature-owned, so this provider only validates it, once, against PostgreSQL's
             // identifier rules. The EF-context storage path reuses this extension and is validated here too.
             services.AddOptions<MessagingStorageOptions, PostgreSqlMessagingStorageOptionsValidator>();

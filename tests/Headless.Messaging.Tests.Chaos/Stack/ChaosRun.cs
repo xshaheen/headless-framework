@@ -352,7 +352,6 @@ public sealed class ChaosRun : IAsyncDisposable
             var options = setup.Options;
             options.MessageNamePrefix = Prefix;
             options.Version = Version;
-            options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             options.ConsumerThreadCount = Settings.ClientsPerHost;
             options.RetryBatchSize = Settings.RetryBatchSize;
             options.ShutdownTimeout = Settings.ShutdownTimeout;

@@ -8,6 +8,8 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.SqlServer;
 using Headless.Sql;
 using Headless.Sql.SqlServer;
+using Headless.UnitOfWork;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -222,24 +224,55 @@ public static class SetupMessagingSqlServer
         Action<IServiceCollection> configureOptions
     )
     {
-        setup.RegisterExtension(new SqlServerMessagesOptionsExtension(configureOptions));
+        setup.RegisterExtension(
+            new SqlServerMessagesOptionsExtension(
+                configureOptions,
+                // Bound from configuration or a delegate, so the switch is known only once the provider is built.
+                isTransactionalInboxEnabled: sp =>
+                    sp.GetRequiredService<IOptions<SqlServerOptions>>().Value.EnableTransactionalInbox,
+                inboxRunnerFactory: _CreateInboxRunner
+            )
+        );
         return setup;
     }
 
-    internal sealed class SqlServerMessagesOptionsExtension(Action<IServiceCollection> configureOptions)
-        : IMessagesOptionsExtension
+    private static AdoNetInboxTransactionRunner _CreateInboxRunner(IServiceProvider serviceProvider) =>
+        AdoNetInboxTransactionRunner.Create(
+            serviceProvider,
+            serviceProvider.GetRequiredService<IOptions<SqlServerOptions>>().Value.CreateConnection,
+            static (unitOfWorkFactory, connection, transaction) =>
+                unitOfWorkFactory.Enlist((SqlConnection)connection, (SqlTransaction)transaction)
+        );
+
+    /// <summary>Registers the SQL Server storage; the raw and EF-context paths differ only in how the inbox runs.</summary>
+    /// <param name="configureOptions">Registers <see cref="SqlServerOptions"/>.</param>
+    /// <param name="isTransactionalInboxEnabled">Whether the storage declares the <c>Transactional</c> inbox guarantee.</param>
+    /// <param name="inboxRunnerFactory">The attempt runner, or <see langword="null"/> when the path registers none.</param>
+    internal sealed class SqlServerMessagesOptionsExtension(
+        Action<IServiceCollection> configureOptions,
+        Func<IServiceProvider, bool> isTransactionalInboxEnabled,
+        Func<IServiceProvider, IInboxTransactionRunner>? inboxRunnerFactory
+    ) : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageStorageMarkerService("SqlServer"));
-            services.AddMessagingProviderCapabilities(
+            services.AddMessagingProviderCapabilities(sp =>
                 MessagingProviderCapabilities.Storage(
                     "SqlServer",
                     [MessageLane.Bus, MessageLane.Queue],
                     supportsDelayedScheduling: true,
-                    inboxGuarantee: InboxGuarantee.Durable
+                    inboxGuarantee: isTransactionalInboxEnabled(sp)
+                        ? InboxGuarantee.Transactional
+                        : InboxGuarantee.Durable
                 )
             );
+
+            if (inboxRunnerFactory is not null)
+            {
+                services.AddScoped(inboxRunnerFactory);
+            }
+
             // The schema is feature-owned, so this provider only validates it, once, against SQL Server's
             // identifier rules. The EF-context storage path reuses this extension and is validated here too.
             services.AddOptions<MessagingStorageOptions, SqlServerMessagingStorageOptionsValidator>();

@@ -16,7 +16,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
     private const int _Incompatible = (int)DeliveryCoordinationStatus.Incompatible;
     private const int _DirectPath = (int)DeliveryPath.Direct;
     private const int _StandalonePath = (int)DeliveryPath.DurableStandalone;
-    private const int _CoordinatedPath = (int)DeliveryPath.DurableCoordinated;
+    private const int _CoordinatedPath = (int)DeliveryPath.DurableEnlisted;
 
     // Every resolving cell of the (DeliveryMode x requireCoordination x coordination state) matrix, for both
     // lanes:
@@ -455,7 +455,7 @@ public sealed class DeliveryDecisionResolverTests : TestBase
             scheduledAt: _Now.AddHours(1)
         );
 
-        decision.Path.Should().Be(DeliveryPath.DurableCoordinated);
+        decision.Path.Should().Be(DeliveryPath.DurableEnlisted);
         decision.PublishAt.Should().Be(_Now.AddHours(1));
     }
 

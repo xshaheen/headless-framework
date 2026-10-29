@@ -175,7 +175,7 @@ internal static class DeliveryDecisionResolver
         {
             DeliveryMode.Direct => DeliveryPath.Direct,
             DeliveryMode.Durable when coordinationStatus is DeliveryCoordinationStatus.Compatible =>
-                DeliveryPath.DurableCoordinated,
+                DeliveryPath.DurableEnlisted,
             DeliveryMode.Durable => DeliveryPath.DurableStandalone,
             _ => throw new UnreachableException(),
         };
@@ -229,7 +229,7 @@ internal enum DeliveryPath
 {
     Direct = 0,
     DurableStandalone = 1,
-    DurableCoordinated = 2,
+    DurableEnlisted = 2,
 }
 
 internal readonly record struct DeliveryDecision(
@@ -244,5 +244,5 @@ internal readonly record struct DeliveryDecision(
     DateTimeOffset? ScheduledAt = null
 )
 {
-    internal bool IsTransactional => Path is DeliveryPath.DurableCoordinated;
+    internal bool IsTransactional => Path is DeliveryPath.DurableEnlisted;
 }

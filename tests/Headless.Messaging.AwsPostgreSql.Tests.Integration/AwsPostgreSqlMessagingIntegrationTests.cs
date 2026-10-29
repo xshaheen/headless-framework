@@ -46,7 +46,6 @@ public sealed class AwsPostgreSqlMessagingIntegrationTests(AwsPostgreSqlFixture 
 
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
-        setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
         setup.UsePostgreSql(fixture.StorageConnectionString);
     }
 

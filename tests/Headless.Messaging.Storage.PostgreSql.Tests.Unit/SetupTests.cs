@@ -9,6 +9,7 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.PostgreSql;
 using Headless.Sql;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -25,7 +26,6 @@ public sealed class SetupTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Options.Version = "v7";
-            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             setup.UseInMemory();
             setup.UsePostgreSql("Host=localhost;Database=test");
         });
@@ -49,23 +49,107 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public async Task should_not_enable_transactional_outbox_on_raw_path()
+    public async Task should_run_durable_attempts_in_a_transaction_by_default()
     {
+        // given
         var services = new ServiceCollection();
         services.AddLogging();
 
+        // when
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             setup.UseInMemory();
             setup.UsePostgreSql("Host=localhost;Database=test");
         });
 
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
+        // then
+        services
+            .Should()
+            .ContainSingle(descriptor =>
+                descriptor.ServiceType == typeof(IInboxTransactionRunner)
+                && descriptor.Lifetime == ServiceLifetime.Scoped
+            );
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            scope
+                .ServiceProvider.GetRequiredService<IInboxTransactionRunner>()
+                .Should()
+                .BeOfType<AdoNetInboxTransactionRunner>();
+        }
+
+        _StorageGuarantee(provider).Should().Be(InboxGuarantee.Transactional);
+        var validate = () =>
+            provider.GetRequiredService<MessagingCapabilityModel>().ValidateStartup([], hasDurableConsumers: true);
+        validate.Should().NotThrow();
+    }
+
+    [Fact]
+    public async Task should_declare_durable_inbox_when_transactional_inbox_is_disabled()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            setup.UsePostgreSql(options =>
+            {
+                options.ConnectionString = "Host=localhost;Database=test";
+                options.EnableTransactionalInbox = false;
+            });
+        });
+
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
+        // then
+        _StorageGuarantee(provider).Should().Be(InboxGuarantee.Durable);
+        var model = provider.GetRequiredService<MessagingCapabilityModel>();
+        var validateDefault = () => model.ValidateStartup([], hasDurableConsumers: true);
+        validateDefault.Should().Throw<MessagingConfigurationException>().WithMessage("*declares Durable*");
+        var validateDurable = () =>
+            model.ValidateStartup([], hasDurableConsumers: true, minimumInboxGuarantee: InboxGuarantee.Durable);
+        validateDurable.Should().NotThrow();
+    }
+
+    [Fact]
+    public async Task should_bind_transactional_inbox_switch_from_configuration()
+    {
+        // given
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["ConnectionString"] = "Host=localhost;Database=test",
+                    ["EnableTransactionalInbox"] = "false",
+                }
+            )
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            setup.UsePostgreSql(configuration);
+        });
+
         await using var provider = services.BuildServiceProvider();
 
-        // The raw (non-EF) path never enables the transactional inbox runner — that only exists when
-        // UsePostgreSqlEntityFramework<TContext>() wires an EF-backed transaction boundary.
-        provider.GetService<IInboxTransactionRunner>().Should().BeNull();
+        // then
+        _StorageGuarantee(provider).Should().Be(InboxGuarantee.Durable);
+    }
+
+    private static InboxGuarantee? _StorageGuarantee(IServiceProvider provider)
+    {
+        return provider
+            .GetServices<MessagingProviderCapabilities>()
+            .Single(capability => string.Equals(capability.Provider, "PostgreSql", StringComparison.Ordinal))
+            .InboxGuarantee;
     }
 
     [Fact]
@@ -77,7 +161,6 @@ public sealed class SetupTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             setup.UseInMemory();
             setup.UsePostgreSql();
         });
@@ -99,7 +182,6 @@ public sealed class SetupTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             setup.UseInMemory();
             setup.UsePostgreSql("Host=localhost;Database=own");
         });
@@ -120,7 +202,6 @@ public sealed class SetupTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             setup.UseInMemory();
             setup.UsePostgreSql();
         });
