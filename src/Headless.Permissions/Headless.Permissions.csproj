@@ -28,6 +28,7 @@
     <ProjectReference Include="..\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Sql.Abstractions\Headless.Sql.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
   </ItemGroup>
   <ItemGroup Label="Resources">
     <EmbeddedResource Update="Resources\Messages.resx" />
