@@ -88,7 +88,12 @@ internal interface IInternalJobManager
 
     Task<T?> GetRequestAsync<T>(Guid jobId, JobType type, CancellationToken cancellationToken = default);
     Task<JobExecutionState[]> RunTimedOutTickers(CancellationToken cancellationToken = default);
-    Task MigrateDefinedCronJobs(CronSeedDefinition[] cronExpressions, CancellationToken cancellationToken = default);
+
+    Task MigrateDefinedCronJobs(
+        string seedOwner,
+        CronSeedDefinition[] cronExpressions,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Processes one bounded keyset page of cron definitions whose persisted evaluation fingerprint no longer matches

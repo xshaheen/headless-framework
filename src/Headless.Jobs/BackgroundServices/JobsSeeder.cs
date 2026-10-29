@@ -16,7 +16,8 @@ namespace Headless.Jobs.BackgroundServices;
 /// </summary>
 /// <remarks>
 /// The seed is what applies a changed cron expression or time zone, retires a removed cron and its pending occurrences,
-/// and creates a new cron's row. Rows carry a deterministic id per function, so concurrent seeds converge on one row.
+/// and creates a new cron's row. It reconciles only the rows of this host's seed owner, and each row carries a
+/// deterministic id derived from the owner and function, so concurrent seeds of one owner converge on one row.
 /// </remarks>
 internal sealed class JobsSeeder(
     IServiceProvider serviceProvider,
@@ -46,7 +47,12 @@ internal sealed class JobsSeeder(
 
         if (options?.SeedDefinedCronJobs != false)
         {
-            await SeedDefinedCronJobsAsync(schedulerOptions, cancellationToken).ConfigureAwait(false);
+            await SeedDefinedCronJobsAsync(
+                    schedulerOptions,
+                    options?.SeedOwner ?? JobsSeedId.DefaultOwner,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         // Each seeder runs inside its own scope. A consumer-supplied seeder commonly resolves the scoped
@@ -68,6 +74,7 @@ internal sealed class JobsSeeder(
     // the seeder and calls this directly.
     internal async Task SeedDefinedCronJobsAsync(
         SchedulerOptionsBuilder schedulerOptions,
+        string seedOwner,
         CancellationToken cancellationToken
     )
     {
@@ -84,6 +91,7 @@ internal sealed class JobsSeeder(
             .Functions.Where(x => !string.IsNullOrEmpty(x.Value.CronExpression))
             .Select(x =>
                 _ToSeed(
+                    seedOwner,
                     x.Key,
                     x.Value,
                     schedulerOptions,
@@ -102,7 +110,9 @@ internal sealed class JobsSeeder(
         // it is never the correctness boundary — per-row predicates, node@incarnation ownership, and per-job leases are.
         if (!schedulerOptions.UseStorageLock)
         {
-            await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed, cancellationToken).ConfigureAwait(false);
+            await internalJobsManager
+                .MigrateDefinedCronJobs(seedOwner, functionsToSeed, cancellationToken)
+                .ConfigureAwait(false);
             return;
         }
 
@@ -149,7 +159,9 @@ internal sealed class JobsSeeder(
 
         await using (lease.ConfigureAwait(false))
         {
-            await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed, cancellationToken).ConfigureAwait(false);
+            await internalJobsManager
+                .MigrateDefinedCronJobs(seedOwner, functionsToSeed, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 
@@ -160,6 +172,7 @@ internal sealed class JobsSeeder(
     /// stores them.
     /// </summary>
     private static CronSeedDefinition _ToSeed(
+        string seedOwner,
         string function,
         JobFunctionRegistration registration,
         SchedulerOptionsBuilder schedulerOptions,
@@ -202,7 +215,8 @@ internal sealed class JobsSeeder(
             );
         }
 
-        return new CronSeedDefinition(
+        return CronSeedDefinition.ForCronFunction(
+            seedOwner,
             function,
             registration.CronExpression,
             onMissedRun,

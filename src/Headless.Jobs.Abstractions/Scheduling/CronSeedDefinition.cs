@@ -1,12 +1,24 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Jobs.Internal;
+
 namespace Headless.Jobs;
 
 /// <summary>
-/// One code-declared cron function as startup reconciliation sees it: the durable name and expression, plus the
-/// recovery and overlap settings to stamp on the definition <b>if it has to be created</b>.
+/// One seeded cron definition as the seed reconcile sees it: the row's identity and ownership marker, the job's
+/// function and expression, plus the recovery and overlap settings to stamp on the definition <b>if it has to be
+/// created</b>.
 /// </summary>
-/// <param name="Function">Unique function name; also the seed row's deterministic identity.</param>
+/// <param name="Id">
+/// Deterministic primary key of the seeded row, derived from <paramref name="Marker"/>. The reconcile matches stored
+/// rows by this id, never by function, so a runtime row of the same function is never adopted, and concurrent seeds
+/// converge on one row through primary-key dedup.
+/// </param>
+/// <param name="Marker">
+/// Ownership marker stored on the row. It starts with the seed owner's prefix, so a reconcile deletes only rows its own
+/// owner seeded, and it names the entry's source, so entries from different sources never share an id.
+/// </param>
+/// <param name="Function">Registered function name the definition runs.</param>
 /// <param name="Expression">Six-field cron expression, already resolved from configuration when it was a <c>%</c> key.</param>
 /// <param name="OnMissedRun">Recovery policy to seed at creation.</param>
 /// <param name="MissedRunGraceSeconds">Misfire grace, in seconds, to seed at creation.</param>
@@ -46,6 +58,8 @@ namespace Headless.Jobs;
 /// </remarks>
 [PublicAPI]
 public readonly record struct CronSeedDefinition(
+    Guid Id,
+    string Marker,
     string Function,
     string Expression,
     MissedRunPolicy OnMissedRun,
@@ -56,4 +70,38 @@ public readonly record struct CronSeedDefinition(
     string? TimeZoneId = null,
     int Retries = 0,
     int[]? RetryIntervals = null
-);
+)
+{
+    /// <summary>
+    /// Builds the entry <paramref name="owner"/> seeds for the attribute cron of <paramref name="function"/>.
+    /// </summary>
+    internal static CronSeedDefinition ForCronFunction(
+        string owner,
+        string function,
+        string expression,
+        MissedRunPolicy onMissedRun,
+        int missedRunGraceSeconds,
+        CronOverlapPolicy onOverlap,
+        string? evaluationFingerprint = null,
+        string contractVersion = JobContract.InitialVersion,
+        string? timeZoneId = null,
+        int retries = 0,
+        int[]? retryIntervals = null
+    )
+    {
+        return new(
+            JobsSeedId.ForCronSeed(owner, function),
+            JobsSeedId.CronSeedMarker(owner, function),
+            function,
+            expression,
+            onMissedRun,
+            missedRunGraceSeconds,
+            onOverlap,
+            evaluationFingerprint,
+            contractVersion,
+            timeZoneId,
+            retries,
+            retryIntervals
+        );
+    }
+}

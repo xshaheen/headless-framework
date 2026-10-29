@@ -1470,10 +1470,15 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     #region Core_Cron_Ticker_Methods
 
     public async Task MigrateDefinedCronJobsAsync(
+        string seedOwner,
         CronSeedDefinition[] cronJobs,
         CancellationToken cancellationToken = default
     )
     {
+        JobsSeedId.ValidateEntries(seedOwner, cronJobs);
+        var ownerPrefix = JobsSeedId.OwnerMarkerPrefix(seedOwner);
+        var declaredIds = cronJobs.Select(x => x.Id).ToHashSet();
+
         await JobsStoreTransaction
             .ExecuteAsync<TDbContext>(
                 DbContextFactory,
@@ -1481,25 +1486,19 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 {
                     var dbContext = attempt.DbContext;
                     var now = TimeProvider.GetUtcNow();
-
-                    var functions = cronJobs.Select(x => x.Function).ToArray();
                     var cronSet = dbContext.Set<TCronJob>();
 
-                    // Identify seeded cron jobs (created from in-memory definitions)
-                    const string seedPrefix = "MemoryTicker_Seeded_";
-
-                    var seededCron = await cronSet
-                        .Where(c => c.InitIdentifier != null && c.InitIdentifier.StartsWith(seedPrefix))
+                    // Only this owner's seeded rows take part. A runtime row carries no marker and another owner's
+                    // rows carry another prefix, so neither is ever matched, rewritten, or deleted here. A row that
+                    // occupies a declared id without this owner's marker is not ours either: the insert below then
+                    // collides with it and the conflict verification refuses to treat it as a benign race.
+                    var ownedRows = await cronSet
+                        .Where(c => c.InitIdentifier != null && c.InitIdentifier.StartsWith(ownerPrefix))
                         .ToListAsync(cancellationToken)
                         .ConfigureAwait(false);
 
-                    var newFunctionSet = functions.ToHashSet(StringComparer.Ordinal);
-
-                    // Delete seeded cron jobs whose function no longer exists in the code definitions
-                    var seededToDelete = seededCron
-                        .Where(c => !newFunctionSet.Contains(c.Function))
-                        .Select(c => c.Id)
-                        .ToArray();
+                    // Delete this owner's seeded rows that the declared set no longer contains.
+                    var seededToDelete = ownedRows.Where(c => !declaredIds.Contains(c.Id)).Select(c => c.Id).ToArray();
 
                     if (seededToDelete.Length > 0)
                     {
@@ -1528,42 +1527,18 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                             .ConfigureAwait(false);
                     }
 
-                    // Load existing (remaining) cron jobs for the current function set
-                    var existing = await cronSet
-                        .Where(c => ((IEnumerable<string>)functions).Contains(c.Function))
-                        .ToListAsync(cancellationToken)
-                        .ConfigureAwait(false);
-
-                    var existingByFunction = existing
-                        .GroupBy(c => c.Function, StringComparer.Ordinal)
-                        .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+                    var existingById = ownedRows.Where(c => declaredIds.Contains(c.Id)).ToDictionary(c => c.Id);
                     var changedDefinitionIds = new List<Guid>();
-                    var orderedCronJobs = cronJobs
-                        .Select(x =>
-                            (
-                                x.Function,
-                                x.Expression,
-                                x.OnMissedRun,
-                                x.MissedRunGraceSeconds,
-                                x.OnOverlap,
-                                x.EvaluationFingerprint,
-                                x.ContractVersion,
-                                x.TimeZoneId,
-                                x.Retries,
-                                x.RetryIntervals,
-                                Id: existingByFunction.TryGetValue(x.Function, out var existingDefinition)
-                                    ? existingDefinition.Id
-                                    : JobsSeedId.ForCronSeed(x.Function)
-                            )
-                        )
-                        .OrderBy(x => x.Id)
-                        .ToArray();
+                    // Canonical id order, so concurrent seeds take the row locks below in the same order.
+                    var orderedCronJobs = cronJobs.OrderBy(x => x.Id).ToArray();
                     var insertedSeeds = orderedCronJobs
-                        .Where(x => !existingByFunction.ContainsKey(x.Function))
-                        .ToDictionary(x => x.Id, x => x.Function);
+                        .Where(x => !existingById.ContainsKey(x.Id))
+                        .ToDictionary(x => x.Id, x => (x.Function, x.Marker));
 
                     foreach (
                         var (
+                            id,
+                            marker,
                             function,
                             expression,
                             onMissedRun,
@@ -1573,12 +1548,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                             contractVersion,
                             timeZoneId,
                             retries,
-                            retryIntervals,
-                            _
+                            retryIntervals
                         ) in orderedCronJobs
                     )
                     {
-                        if (existingByFunction.TryGetValue(function, out var cron))
+                        if (existingById.TryGetValue(id, out var cron))
                         {
                             // Reseeding cannot upgrade the schema label of bytes already stored by an older writer.
                             // Existing function/version/request tuples change only through an explicit definition edit.
@@ -1625,18 +1599,18 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         }
                         else
                         {
-                            // Insert new seeded cron job. The id is DETERMINISTIC (derived from the function) so two
-                            // nodes seeding the same new function concurrently target the same primary key — the DB
+                            // Insert new seeded cron job. The id is DETERMINISTIC (derived from the owner's marker) so
+                            // two nodes seeding the same new entry concurrently target the same primary key — the DB
                             // dedups to a single row instead of inserting two distinct-id rows and double-scheduling
                             // the function.
                             var entity = new TCronJob
                             {
-                                Id = JobsSeedId.ForCronSeed(function),
+                                Id = id,
                                 Function = function,
                                 ContractVersion = contractVersion,
                                 Expression = expression,
                                 TimeZoneId = timeZoneId,
-                                InitIdentifier = $"MemoryTicker_Seeded_{function}",
+                                InitIdentifier = marker,
                                 CreatedAt = now,
                                 UpdatedAt = now,
                                 Request = [],
@@ -1705,14 +1679,24 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         var winningSeeds = await verificationContext
                             .Set<TCronJob>()
                             .Where(x => ((IEnumerable<Guid>)insertedSeeds.Keys).Contains(x.Id))
-                            .Select(x => new { x.Id, x.Function })
-                            .ToDictionaryAsync(x => x.Id, x => x.Function, CancellationToken.None)
+                            .Select(x => new
+                            {
+                                x.Id,
+                                x.Function,
+                                x.InitIdentifier,
+                            })
+                            .ToDictionaryAsync(x => x.Id, x => (x.Function, x.InitIdentifier), CancellationToken.None)
                             .ConfigureAwait(false);
 
                         if (
                             insertedSeeds.Any(expected =>
-                                !winningSeeds.TryGetValue(expected.Key, out var function)
-                                || !string.Equals(function, expected.Value, StringComparison.Ordinal)
+                                !winningSeeds.TryGetValue(expected.Key, out var winner)
+                                || !string.Equals(winner.Function, expected.Value.Function, StringComparison.Ordinal)
+                                || !string.Equals(
+                                    winner.InitIdentifier,
+                                    expected.Value.Marker,
+                                    StringComparison.Ordinal
+                                )
                             )
                         )
                         {

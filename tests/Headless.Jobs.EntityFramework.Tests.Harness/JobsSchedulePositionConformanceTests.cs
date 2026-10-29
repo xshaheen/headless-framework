@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.Jobs;
+using Headless.Jobs.Internal;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -863,14 +864,25 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         var persistence = _Persistence(host);
 
-        var cronId = Guid.NewGuid();
-        await fixture.SeedCronJobAsync(cronId, "migrate-reset", "0 0 3 1 1 *", NodeDeathPolicy.Retry, ct);
+        // A row the default owner seeded earlier, so the reconcile matches it by id rather than leaving it as a
+        // runtime row.
+        var cronId = JobsSeedId.ForCronSeed(JobsSeedId.DefaultOwner, "migrate-reset");
+        await fixture.SeedCronJobAsync(
+            cronId,
+            "migrate-reset",
+            "0 0 3 1 1 *",
+            NodeDeathPolicy.Retry,
+            ct,
+            initIdentifier: JobsSeedId.CronSeedMarker(JobsSeedId.DefaultOwner, "migrate-reset")
+        );
         var before = await fixture.ReadCronSchedulePositionAsync(cronId, ct);
         before.NextDueUtc.Should().NotBe(default, "the seeded definition carries an initialized position");
 
         await persistence.MigrateDefinedCronJobsAsync(
+            JobsSeedId.DefaultOwner,
             [
-                new CronSeedDefinition(
+                CronSeedDefinition.ForCronFunction(
+                    JobsSeedId.DefaultOwner,
                     "migrate-reset",
                     "0 */5 * * * *",
                     MissedRunPolicy.Coalesce,

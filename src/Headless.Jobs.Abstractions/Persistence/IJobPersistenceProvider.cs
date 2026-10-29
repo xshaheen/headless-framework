@@ -558,22 +558,35 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     #region Cron_Ticker_Core_Methods
 
     /// <summary>
-    /// Seeds and reconciles the cron definitions declared in code (via <c>[Job]</c>) into durable storage
-    /// at startup: inserts rows for newly declared functions, updates the expression in place when it changed, and
-    /// deletes previously seeded rows — together with their occurrences — whose function no longer exists in code.
+    /// Reconciles the complete set of cron definitions one seed owner declares into durable storage: inserts a row for
+    /// each new entry, restores the expression and zone of an existing entry's row when they differ, and deletes the
+    /// owner's previously seeded rows, together with their occurrences, that the set no longer contains.
     /// </summary>
-    /// <param name="cronJobs">The function name and cron expression of every cron function discovered in code.</param>
+    /// <param name="seedOwner">
+    /// The seed owner. Only rows whose marker starts with this owner's prefix are matched or deleted, so apps sharing
+    /// one store with distinct owners never touch each other's rows.
+    /// </param>
+    /// <param name="cronJobs">Every entry the owner declares, each with its deterministic id and owned marker.</param>
     /// <param name="cancellationToken">Token that aborts the migration.</param>
     /// <returns>A task that completes when the seed reconciliation has been persisted.</returns>
     /// <remarks>
-    /// Rows are keyed by an identifier derived deterministically from the function name, so a re-seed updates the
-    /// same row rather than inserting a duplicate, and concurrent seeding by several nodes converges on one row.
-    /// The relational provider treats a lost insert race as benign — the winner's row stands, so the redundant
-    /// insert is discarded and logged at <c>Debug</c> rather than thrown. Cron definitions created by the
-    /// application at runtime are not seeded rows and are never touched by this reconciliation.
+    /// Rows are matched by the entry's id, never by function, so a re-seed updates the same row rather than inserting
+    /// a duplicate, concurrent seeding by several nodes converges on one row, and a runtime row of the same function
+    /// is never adopted. The relational provider treats a lost insert race as benign: the winner's row stands, so the
+    /// redundant insert is discarded and logged at <c>Debug</c> rather than thrown. Cron definitions created by the
+    /// application at runtime carry no seed marker and are never touched by this reconciliation. Policies are written
+    /// only when a row is created, and pause state is never written.
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="seedOwner"/> is blank or contains <c>:</c>, an entry's marker is not owned by it, or two entries
+    /// share an id.
+    /// </exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
-    Task MigrateDefinedCronJobsAsync(CronSeedDefinition[] cronJobs, CancellationToken cancellationToken = default);
+    Task MigrateDefinedCronJobsAsync(
+        string seedOwner,
+        CronSeedDefinition[] cronJobs,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Loads every cron definition so the scheduler can compute the next occurrence for each expression. This is

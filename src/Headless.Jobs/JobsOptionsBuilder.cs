@@ -2,6 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
+using Headless.Jobs.Internal;
 using Headless.Reliability;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -274,6 +275,9 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// </summary>
     internal bool SeedDefinedCronJobs { get; set; } = true;
 
+    /// <summary>The seed owner set by <see cref="SeedOwner"/>, else the shared default.</summary>
+    internal string SeedOwnerName { get; private set; } = JobsSeedId.DefaultOwner;
+
     /// <summary>
     /// Controls whether background services (job processors) should be registered.
     /// Defaults to true. Set to false to only register managers for queuing jobs.
@@ -313,6 +317,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
 
     // Explicit interface implementation for IJobsOptionsSeeding
     bool IJobsOptionsSeeding.SeedDefinedCronJobs => SeedDefinedCronJobs;
+    string IJobsOptionsSeeding.SeedOwner => SeedOwnerName;
     Func<IServiceProvider, Task>? IJobsOptionsSeeding.TimeSeederAction => TimeSeederAction;
     Func<IServiceProvider, Task>? IJobsOptionsSeeding.CronSeederAction => CronSeederAction;
 
@@ -412,6 +417,29 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     public JobsOptionsBuilder<TTimeJob, TCronJob> IgnoreSeedDefinedCronJobs()
     {
         SeedDefinedCronJobs = false;
+        return this;
+    }
+
+    /// <summary>
+    /// Names the owner of the cron definitions this host seeds. The seed reconciles only rows seeded under this owner:
+    /// it never matches, rewrites, or deletes a row another owner seeded or a row created at runtime.
+    /// </summary>
+    /// <remarks>
+    /// Without this call the owner is <c>"default"</c>, one value shared by every host that sets none, so all hosts of
+    /// one app, including an app split across executables, converge on one row per seeded definition. Apps that share
+    /// one Jobs store must set distinct owners, and every host of one app must set the same owner. Changing the owner
+    /// orphans the rows seeded under the old one: the next seed creates new rows and never deletes the old ones.
+    /// </remarks>
+    /// <param name="owner">The owner name. It is stored in each seeded row's marker and hashed into its id.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="owner"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="owner"/> is empty or whitespace, or contains <c>:</c>, which would let one owner's marker prefix
+    /// match another owner's rows.
+    /// </exception>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> SeedOwner(string owner)
+    {
+        SeedOwnerName = JobsSeedId.ValidateOwner(owner);
         return this;
     }
 

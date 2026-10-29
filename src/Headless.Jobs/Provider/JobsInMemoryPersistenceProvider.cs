@@ -1774,14 +1774,49 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     #region Cron Job Methods
 
     public Task MigrateDefinedCronJobsAsync(
+        string seedOwner,
         CronSeedDefinition[] cronJobs,
         CancellationToken cancellationToken = default
     )
     {
+        JobsSeedId.ValidateEntries(seedOwner, cronJobs);
         var now = _timeProvider.GetUtcNow();
+        var ownerPrefix = JobsSeedId.OwnerMarkerPrefix(seedOwner);
+        var declaredIds = cronJobs.Select(x => x.Id).ToHashSet();
+
+        // Delete this owner's seeded rows that the declared set no longer contains, with their occurrences. Runtime
+        // rows carry no marker and another owner's rows carry another prefix, so neither is selected.
+        var removedIds = _cronJobs
+            .Values.Where(x =>
+                x.InitIdentifier?.StartsWith(ownerPrefix, StringComparison.Ordinal) == true
+                && !declaredIds.Contains(x.Id)
+            )
+            .Select(x => x.Id)
+            .ToArray();
+
+        foreach (var removedId in removedIds)
+        {
+            lock (_GetCronDefinitionLock(removedId))
+            {
+                lock (_cronJobIdIndexLock)
+                {
+                    if (_TryRemoveCronJob(removedId))
+                    {
+                        _cronJobIds.Remove(removedId);
+                    }
+                }
+
+                foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == removedId).ToArray())
+                {
+                    _cronOccurrences.TryRemove(pair.Key, out _);
+                }
+            }
+        }
 
         foreach (
             var (
+                id,
+                marker,
                 function,
                 expression,
                 onMissedRun,
@@ -1795,11 +1830,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             ) in cronJobs
         )
         {
-            // Deterministic id keyed by function (matches the durable provider's seed identity): a re-seed — including
-            // a changed expression — updates the same row in place rather than inserting a duplicate. Single-process
-            // provider, so there is no cross-node race here.
-            var id = JobsSeedId.ForCronSeed(function);
-
+            // The entry's deterministic id (the durable provider's seed identity): a re-seed — including a changed
+            // expression — updates the same row in place rather than inserting a duplicate. Single-process provider,
+            // so there is no cross-node race here.
             if (_cronJobs.TryGetValue(id, out var existing))
             {
                 // Reseeding cannot upgrade the schema label of bytes already stored by an older writer.
@@ -1868,7 +1901,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 ContractVersion = contractVersion,
                 Expression = expression,
                 TimeZoneId = timeZoneId,
-                InitIdentifier = $"MemoryTicker_Seeded_{function}",
+                InitIdentifier = marker,
                 CreatedAt = now,
                 UpdatedAt = now,
                 Request = [],

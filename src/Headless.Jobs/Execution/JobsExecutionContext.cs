@@ -93,6 +93,7 @@ internal sealed class JobsExecutionContext
 internal interface IJobsOptionsSeeding
 {
     bool SeedDefinedCronJobs { get; }
+    string SeedOwner { get; }
     Func<IServiceProvider, Task>? TimeSeederAction { get; }
     Func<IServiceProvider, Task>? CronSeederAction { get; }
 }

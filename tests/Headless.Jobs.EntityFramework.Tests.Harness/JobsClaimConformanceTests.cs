@@ -6,6 +6,7 @@ using Headless;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Infrastructure;
+using Headless.Jobs.Internal;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -24,20 +25,21 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        var seed = new CronSeedDefinition(
+        var seed = CronSeedDefinition.ForCronFunction(
+            JobsSeedId.DefaultOwner,
             "seeded.contract",
             "* * * * *",
             MissedRunPolicy.Skip,
             60,
             CronOverlapPolicy.Allow,
-            ContractVersion: "1"
+            contractVersion: "1"
         );
         Guid definitionId;
         using (var host = fixture.BuildHost("seed-v1"))
         {
             await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
             var provider = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-            await provider.MigrateDefinedCronJobsAsync([seed], ct);
+            await provider.MigrateDefinedCronJobsAsync(JobsSeedId.DefaultOwner, [seed], ct);
             definitionId = (await provider.GetAllCronJobExpressionsAsync(ct)).Single().Id;
             var definition = (await provider.GetCronJobByIdAsync(definitionId, ct))!;
             definition.Request = [1, 2, 3];
@@ -54,7 +56,19 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             Expression = changeExpression ? "*/2 * * * *" : seed.Expression,
         };
         await restartedProvider.MigrateDefinedCronJobsAsync(
-            [upgradedSeed, upgradedSeed with { Function = "new.contract" }],
+            JobsSeedId.DefaultOwner,
+            [
+                upgradedSeed,
+                CronSeedDefinition.ForCronFunction(
+                    JobsSeedId.DefaultOwner,
+                    "new.contract",
+                    upgradedSeed.Expression,
+                    MissedRunPolicy.Skip,
+                    60,
+                    CronOverlapPolicy.Allow,
+                    contractVersion: "2"
+                ),
+            ],
             ct
         );
 

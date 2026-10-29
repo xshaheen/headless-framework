@@ -754,6 +754,10 @@ public static partial class JobsCoordinationFixtureExtensions
     /// The dispatch projection, as an offset from the store's instant. Defaults to one minute out, so a definition
     /// seeded by an unrelated test is not incidentally due. Pass a negative value to seed an already-due definition.
     /// </param>
+    /// <param name="initIdentifier">
+    /// The seed marker, or <see langword="null"/> for a runtime row. Pass a seed owner's marker to stand in for a row
+    /// that owner seeded.
+    /// </param>
     /// <remarks>
     /// The position, grace, and policy columns are non-nullable and the harness builds its schema from the EF model
     /// (<c>CreateTablesAsync</c>). There is no column default to fall back on, so this explicit column list must carry them. Grace and policy are seeded at the entity's own
@@ -775,7 +779,8 @@ public static partial class JobsCoordinationFixtureExtensions
         long scheduleRevision = 0L,
         int reconciledThroughOffsetSeconds = 0,
         int nextDueOffsetSeconds = 60,
-        CronOverlapPolicy onOverlap = CronOverlapPolicy.Allow
+        CronOverlapPolicy onOverlap = CronOverlapPolicy.Allow,
+        string? initIdentifier = null
     )
     {
         await using var connection = fixture.CreateConnection();
@@ -783,13 +788,14 @@ public static partial class JobsCoordinationFixtureExtensions
         await using var command = connection.CreateCommand();
 
         command.CommandText = fixture.Sql(
-            $"INSERT INTO {fixture.QualifiedCronJobsTable} ({_CronInsertColumns}, \"ContractVersion\", \"OnOverlap\") "
+            $"INSERT INTO {fixture.QualifiedCronJobsTable} ({_CronInsertColumns}, \"ContractVersion\", \"OnOverlap\", \"InitIdentifier\") "
                 + "VALUES (@id, @function, @function, @expression, @timeZoneId, @isPaused, @scheduleRevision, 0, "
                 + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, @onNodeDeath, "
                 + $"{fixture.UtcNowOffsetSqlExpression(reconciledThroughOffsetSeconds)}, "
                 + $"{fixture.UtcNowOffsetSqlExpression(nextDueOffsetSeconds)}, "
-                + "@missedRunGraceSeconds, @onMissedRun, '1', @onOverlap);"
+                + "@missedRunGraceSeconds, @onMissedRun, '1', @onOverlap, @initIdentifier);"
         );
+        AddParameter(command, "@initIdentifier", (object?)initIdentifier ?? DBNull.Value);
 
         AddParameter(command, "@id", id);
         AddParameter(command, "@function", function);
