@@ -7,6 +7,7 @@ using Headless.Hosting;
 using Headless.Messaging;
 using Headless.MultiTenancy;
 using Headless.Permissions.Resources;
+using Headless.UnitOfWork;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -195,6 +196,11 @@ public static class SetupPermissions
         services.TryAddSingleton<IPermissionGrantStore, PermissionGrantStore>();
         services.TryAddSingleton<IPermissionGrantProviderManager, PermissionGrantProviderManager>();
         services.TryAddSingleton<IPermissionManager, PermissionManager>();
+
+        // unit.Permissions: the enlisted writes, resolved by the unit of work from this container. A second, stateless
+        // PermissionManager instance, so a host that replaces IPermissionManager keeps the framework's enlisted path.
+        services.AddUnitOfWork();
+        services.TryAddSingleton<IUnitOfWorkPermissions, PermissionManager>();
 
         services.AddSingleton<IAuthorizationHandler, PermissionRequirementHandler>();
         services.AddSingleton<IAuthorizationHandler, PermissionsRequirementHandler>();
