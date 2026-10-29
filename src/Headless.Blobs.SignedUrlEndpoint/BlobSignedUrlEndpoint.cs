@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Blobs.Internal;
 using Headless.IO;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
@@ -42,11 +43,24 @@ internal static class BlobSignedUrlEndpoint
         // FileSystem, Redis, and SFTP store no content type, so derive it from the key the same way UploadAsync does
         // for a null content type. An attachment disposition names the saved file after the blob rather than the
         // opaque token, and keeps a top-level navigation from rendering the bytes in the application's origin at all;
-        // browsers ignore it for subresources, so <img> and similar embeds still work.
+        // browsers ignore it for subresources, so <img> and similar embeds still work. A file name signed into the
+        // grant replaces the blob's name, written with the same header builder the cloud providers sign.
+        string? fileDownloadName = null;
+
+        if (grant.FileName is { } fileName)
+        {
+            context.Response.Headers[HeaderNames.ContentDisposition] =
+                BlobStorageHelpers.BuildAttachmentContentDisposition(fileName);
+        }
+        else
+        {
+            fileDownloadName = _FileName(grant.Location.Path);
+        }
+
         return Results.Stream(
             download.Stream,
-            mimeTypeProvider.GetMimeType(grant.Location.Path),
-            fileDownloadName: _FileName(grant.Location.Path),
+            grant.ContentType ?? mimeTypeProvider.GetMimeType(grant.Location.Path),
+            fileDownloadName,
             enableRangeProcessing: download.Stream.CanSeek
         );
     }

@@ -73,7 +73,7 @@ public sealed class SetupBlobSignedUrlTests : TestBase
         var url = await presigned.GetPresignedDownloadUrlAsync(
             new BlobLocation("c", "a.txt"),
             TimeSpan.FromMinutes(1),
-            AbortToken
+            cancellationToken: AbortToken
         );
 
         // then
@@ -141,7 +141,8 @@ public sealed class SetupBlobSignedUrlTests : TestBase
                 new PresignedUploadConstraints { MaxLength = 0 },
                 AbortToken
             );
-        var badExpiry = async () => await presigned.GetPresignedDownloadUrlAsync(location, TimeSpan.Zero, AbortToken);
+        var badExpiry = async () =>
+            await presigned.GetPresignedDownloadUrlAsync(location, TimeSpan.Zero, cancellationToken: AbortToken);
 
         // then
         await badType.Should().ThrowAsync<ArgumentException>();

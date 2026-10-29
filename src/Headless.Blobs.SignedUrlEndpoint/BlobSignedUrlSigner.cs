@@ -22,7 +22,7 @@ internal sealed class BlobSignedUrlSigner(
 )
 {
     // Bumping the version invalidates every URL minted with the previous payload layout instead of misreading it.
-    private const byte _PayloadVersion = 1;
+    private const byte _PayloadVersion = 2;
 
     // Resolved on first use, not at construction. The signer is built while its store is being built, and a key ring
     // persisted to blob storage (PersistKeysToBlobStorage) resolves that same store when data protection starts, so an
@@ -36,7 +36,9 @@ internal sealed class BlobSignedUrlSigner(
         string? store,
         BlobLocation location,
         TimeSpan expiry,
-        PresignedUploadConstraints? constraints
+        string? contentType = null,
+        long? maxLength = null,
+        string? fileName = null
     )
     {
         var grant = new BlobSignedUrlGrant(
@@ -44,8 +46,9 @@ internal sealed class BlobSignedUrlSigner(
             store,
             location,
             timeProvider.GetUtcNow().Add(expiry),
-            constraints?.ContentType,
-            constraints?.MaxLength
+            contentType,
+            maxLength,
+            fileName
         );
 
         var token = Base64Url.EncodeToString(_protector.Value.Protect(_Serialize(grant)));
@@ -107,6 +110,8 @@ internal sealed class BlobSignedUrlSigner(
             {
                 writer.Write(grant.MaxLength.Value);
             }
+
+            _WriteNullable(writer, grant.FileName);
         }
 
         return stream.ToArray();
@@ -127,8 +132,9 @@ internal sealed class BlobSignedUrlSigner(
         var expiresAt = DateTimeOffset.FromUnixTimeMilliseconds(reader.ReadInt64());
         var contentType = _ReadNullable(reader);
         long? maxLength = reader.ReadBoolean() ? reader.ReadInt64() : null;
+        var fileName = _ReadNullable(reader);
 
-        return new BlobSignedUrlGrant(access, store, location, expiresAt, contentType, maxLength);
+        return new BlobSignedUrlGrant(access, store, location, expiresAt, contentType, maxLength, fileName);
     }
 
     private static void _WriteNullable(BinaryWriter writer, string? value)
@@ -155,11 +161,17 @@ internal enum BlobSignedUrlAccess : byte
 
 /// <summary>What a verified token grants: one verb on one blob of one store, until an instant.</summary>
 /// <param name="Store">The named store, or <see langword="null"/> for the default (unkeyed) store.</param>
+/// <param name="ContentType">
+/// For an upload, the media type the request must declare; for a download, the media type the response declares.
+/// </param>
+/// <param name="MaxLength">For an upload, the largest body the request may send.</param>
+/// <param name="FileName">For a download, the file name the response's <c>Content-Disposition</c> carries.</param>
 internal sealed record BlobSignedUrlGrant(
     BlobSignedUrlAccess Access,
     string? Store,
     BlobLocation Location,
     DateTimeOffset ExpiresAt,
     string? ContentType,
-    long? MaxLength
+    long? MaxLength,
+    string? FileName
 );

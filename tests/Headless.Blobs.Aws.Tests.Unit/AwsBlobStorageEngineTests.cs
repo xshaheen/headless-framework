@@ -6,6 +6,7 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using Headless.Blobs;
 using Headless.Blobs.Aws;
+using Headless.Blobs.Internal;
 using Headless.IO;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
@@ -16,6 +17,22 @@ namespace Tests;
 public sealed class AwsBlobStorageEngineTests : TestBase
 {
     private readonly IAmazonS3 _s3 = Substitute.For<IAmazonS3>();
+
+    // SigV4 presigning is local, so a real client shows what the SDK puts in the URL without a server round trip. The
+    // storage owns the client and disposes it.
+    private static AwsBlobStorage _CreateSigningSut()
+    {
+        return new AwsBlobStorage(
+            new AmazonS3Client(
+                new BasicAWSCredentials("access", "secret"),
+                new AmazonS3Config { ServiceURL = "http://localhost:9000", ForcePathStyle = true }
+            ),
+            new MimeTypeProvider(),
+            TimeProvider.System,
+            new OptionsWrapper<AwsBlobStorageOptions>(new AwsBlobStorageOptions()),
+            new AwsBlobNamingNormalizer()
+        );
+    }
 
     private AwsBlobStorage _CreateSut(AwsBlobStorageOptions? options = null)
     {
@@ -669,7 +686,11 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         var sut = _CreateSut();
 
         var act = async () =>
-            await sut.GetPresignedDownloadUrlAsync(new BlobLocation("bucket", "file.txt"), TimeSpan.Zero, AbortToken);
+            await sut.GetPresignedDownloadUrlAsync(
+                new BlobLocation("bucket", "file.txt"),
+                TimeSpan.Zero,
+                cancellationToken: AbortToken
+            );
 
         await act.Should().ThrowAsync<ArgumentException>();
     }
@@ -690,7 +711,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         var url = await sut.GetPresignedDownloadUrlAsync(
             new BlobLocation("bucket", "file.txt"),
             TimeSpan.FromMinutes(15),
-            AbortToken
+            cancellationToken: AbortToken
         );
 
         url.Should().Be(new Uri("https://example.com/signed-get"));
@@ -790,6 +811,55 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         url.Should().Be(new Uri("https://example.com/signed-put"));
         await _s3.Received(1)
             .GetPreSignedURLAsync(Arg.Is<GetPreSignedUrlRequest>(r => r.ContentType == "application/pdf"));
+    }
+
+    [Fact]
+    public async Task presigned_download_url_signs_the_response_header_overrides()
+    {
+        // given
+        await using var sut = _CreateSigningSut();
+        const string fileName = "تقرير مارس.pdf";
+
+        // when
+        var url = await sut.GetPresignedDownloadUrlAsync(
+            new BlobLocation("bucket", "report.bin"),
+            TimeSpan.FromMinutes(15),
+            new PresignedDownloadOptions { FileName = fileName, ContentType = "application/pdf" },
+            AbortToken
+        );
+
+        // then
+        var query = System.Web.HttpUtility.ParseQueryString(url.Query);
+        query["response-content-type"].Should().Be("application/pdf");
+        var disposition = query["response-content-disposition"];
+        disposition.Should().Be(BlobStorageHelpers.BuildAttachmentContentDisposition(fileName));
+        System.Net.Http.Headers.ContentDispositionHeaderValue.Parse(disposition!).FileNameStar.Should().Be(fileName);
+    }
+
+    [Fact]
+    public async Task presigned_download_url_carries_no_overrides_when_the_options_are_empty()
+    {
+        // given
+        await using var sut = _CreateSigningSut();
+        var location = new BlobLocation("bucket", "report.pdf");
+
+        // when
+        var withoutOptions = await sut.GetPresignedDownloadUrlAsync(
+            location,
+            TimeSpan.FromMinutes(15),
+            cancellationToken: AbortToken
+        );
+        var withEmptyOptions = await sut.GetPresignedDownloadUrlAsync(
+            location,
+            TimeSpan.FromMinutes(15),
+            new PresignedDownloadOptions(),
+            AbortToken
+        );
+
+        // then
+        var keys = System.Web.HttpUtility.ParseQueryString(withoutOptions.Query).AllKeys;
+        keys.Should().NotContain(key => key!.StartsWith("response-", StringComparison.Ordinal));
+        System.Web.HttpUtility.ParseQueryString(withEmptyOptions.Query).AllKeys.Should().BeEquivalentTo(keys);
     }
 
     [Fact]
