@@ -16,6 +16,36 @@ public sealed class ConsumerHealthTests : TestBase
     private static readonly TimeSpan _OpenDuration = TimeSpan.FromMinutes(2);
 
     [Fact]
+    public async Task should_stop_a_client_whose_shutdown_waits_for_its_own_cancel_event_on_another_thread()
+    {
+        // given: a client that, like a RabbitMQ channel's synchronous Dispose, blocks its shutdown until the consumer
+        // cancel it raises on the transport's dispatcher thread has been handled
+        await using var host = await LedgerHosts.StartAsync(new PipelineProbe(), AbortToken);
+        var clients = new List<DispatcherCancelOnShutdownClient>();
+        host.ClientFactory()
+            .WrapClients(inner =>
+            {
+                var client = new DispatcherCancelOnShutdownClient(inner);
+                lock (clients)
+                {
+                    clients.Add(client);
+                }
+
+                return client;
+            });
+        await host.Register().ReStartAsync(force: true, AbortToken);
+
+        // when: the host stops, retiring every subscription
+        await host.DisposeAsync();
+
+        // then: each subscription client's cancel event was handled while its shutdown waited on it (the probe clients
+        // that only read message names are disposed, never shut down)
+        var shutDown = clients.Where(static client => client.CancelHandledDuringShutdown is not null).ToArray();
+        shutDown.Should().NotBeEmpty();
+        shutDown.Should().OnlyContain(static client => client.CancelHandledDuringShutdown == true);
+    }
+
+    [Fact]
     public async Task should_report_unhealthy_when_a_client_shut_down_and_another_client_of_its_subscription_registers()
     {
         // given
@@ -163,4 +193,87 @@ public sealed class ConsumerHealthTests : TestBase
         string.Equals(id, "order-1", StringComparison.Ordinal) && attempt == 1
             ? throw new TimeoutException("The dependency timed out.")
             : ValueTask.CompletedTask;
+
+    /// <summary>
+    /// A client whose shutdown raises <see cref="MqLogType.ConsumerCancelled"/> on another thread and blocks until the
+    /// register's callback returns, as RabbitMQ does when a channel is disposed: a callback that waits on a lock the
+    /// shutting-down thread holds never returns.
+    /// </summary>
+    private sealed class DispatcherCancelOnShutdownClient(IConsumerClient inner) : IConsumerClient
+    {
+        private static readonly TimeSpan _DispatcherWait = TimeSpan.FromSeconds(10);
+
+        public bool? CancelHandledDuringShutdown { get; private set; }
+
+        public BrokerAddress BrokerAddress => inner.BrokerAddress;
+
+        public Action<LogMessageEventArgs>? OnLogCallback => inner.OnLogCallback;
+
+        public Func<TransportMessage, object?, Task>? OnMessageCallback => inner.OnMessageCallback;
+
+        public ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+        {
+            var onLog = inner.OnLogCallback;
+            var dispatcher = new Thread(() =>
+                onLog?.Invoke(new LogMessageEventArgs { LogType = MqLogType.ConsumerCancelled, Reason = "shutdown" })
+            )
+            {
+                IsBackground = true,
+            };
+            dispatcher.Start();
+#pragma warning disable CA1849 // The synchronous wait is the transport behavior this double reproduces.
+            CancelHandledDuringShutdown = dispatcher.Join(_DispatcherWait);
+#pragma warning restore CA1849
+
+            return inner.ShutdownAsync(timeout, cancellationToken);
+        }
+
+        public ValueTask DisposeAsync() => inner.DisposeAsync();
+
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        ) => inner.FetchMessageNamesAsync(messageNames, cancellationToken);
+
+        public ValueTask SubscribeAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        ) => inner.SubscribeAsync(messageNames, cancellationToken);
+
+        public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            inner.ListeningAsync(timeout, cancellationToken);
+
+        public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default) =>
+            inner.WaitUntilReadyAsync(cancellationToken);
+
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
+            inner.CommitAsync(sender, cancellationToken);
+
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
+            inner.RejectAsync(sender, cancellationToken);
+
+        public ValueTask RejectAsync(object? sender, TimeSpan redeliveryDelay, CancellationToken cancellationToken) =>
+            inner.RejectAsync(sender, redeliveryDelay, cancellationToken);
+
+        public ValueTask DeadLetterAsync(
+            object? sender,
+            string reason,
+            string? description,
+            CancellationToken cancellationToken = default
+        ) => inner.DeadLetterAsync(sender, reason, description, cancellationToken);
+
+        public ValueTask PauseAsync(CancellationToken cancellationToken = default) =>
+            inner.PauseAsync(cancellationToken);
+
+        public ValueTask ResumeAsync(CancellationToken cancellationToken = default) =>
+            inner.ResumeAsync(cancellationToken);
+
+        public void AttachCallbacks(
+            Func<TransportMessage, object?, Task>? onMessage,
+            Action<LogMessageEventArgs>? onLog
+        ) => inner.AttachCallbacks(onMessage, onLog);
+
+        public void AttachReestablishedCallback(Func<CancellationToken, Task>? onReestablished) =>
+            inner.AttachReestablishedCallback(onReestablished);
+    }
 }

@@ -1411,7 +1411,7 @@ internal sealed partial class ConsumerRegister(
             case MqLogType.ConsumerCancelled:
                 // A transport that pauses by cancelling its consumer reports that cancel too, so a paused handle's
                 // cancel is not a failure. A broker cancel during the pause surfaces when the resume consumes again.
-                if (handle is not null && client is not null && !handle.IsPaused)
+                if (handle is not null && client is not null && !handle.IsPausedForEvent)
                 {
                     handle.MarkClientDegraded(client);
                 }
@@ -1553,6 +1553,11 @@ internal sealed partial class ConsumerRegister(
         // it is recorded under this marker, which no client's ConsumerRegistered removes; only the replacement clears it.
         private static readonly object _FailedClientLoop = new();
 
+        // Client event callbacks read and write health, and a transport can raise them on its own dispatcher thread
+        // while a thread holding _clientsLock waits on that dispatcher (a RabbitMQ channel's synchronous Dispose during
+        // shutdown does), so health never takes _clientsLock.
+        private readonly Lock _healthLock = new();
+
         // Health is kept per client because one client's ConsumerRegistered says nothing about a sibling that lost its
         // channel; the handle is degraded while any entry remains.
         private readonly HashSet<object> _degraded = new(ReferenceEqualityComparer.Instance);
@@ -1602,16 +1607,22 @@ internal sealed partial class ConsumerRegister(
         {
             get
             {
-                lock (_clientsLock)
+                lock (_healthLock)
                 {
                     return _degraded.Count > 0;
                 }
             }
         }
 
+        /// <summary>
+        /// Gets whether the circuit breaker has paused the handle, for a client event callback. It reads the flag without
+        /// <c>_clientsLock</c> for the reason <c>_healthLock</c> exists; a pause racing the event decides it either way.
+        /// </summary>
+        public bool IsPausedForEvent => Volatile.Read(ref _isPaused);
+
         public void MarkClientDegraded(IConsumerClient client)
         {
-            lock (_clientsLock)
+            lock (_healthLock)
             {
                 _degraded.Add(client);
             }
@@ -1619,7 +1630,7 @@ internal sealed partial class ConsumerRegister(
 
         public void MarkClientHealthy(IConsumerClient client)
         {
-            lock (_clientsLock)
+            lock (_healthLock)
             {
                 _degraded.Remove(client);
             }
@@ -1627,7 +1638,7 @@ internal sealed partial class ConsumerRegister(
 
         public void MarkClientLoopFailed()
         {
-            lock (_clientsLock)
+            lock (_healthLock)
             {
                 _degraded.Add(_FailedClientLoop);
             }

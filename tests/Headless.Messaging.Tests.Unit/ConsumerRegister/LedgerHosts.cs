@@ -128,6 +128,13 @@ internal sealed class ControlledClientFactory(SimulatedBroker broker) : IConsume
     private readonly Lock _lock = new();
     private readonly Dictionary<string, int> _created = new(StringComparer.Ordinal);
     private readonly List<(string Subscription, int Ordinal, Func<CancellationToken, Task> Action)> _scripted = [];
+    private Func<IConsumerClient, IConsumerClient>? _wrap;
+
+    /// <summary>Wraps every client created from now on, to give it a transport's threading behavior.</summary>
+    public void WrapClients(Func<IConsumerClient, IConsumerClient> wrap)
+    {
+        Volatile.Write(ref _wrap, wrap);
+    }
 
     /// <summary>Gets how many clients <paramref name="subscription"/> asked for, its probe clients included.</summary>
     public int CreatedFor(string subscription)
@@ -184,7 +191,8 @@ internal sealed class ControlledClientFactory(SimulatedBroker broker) : IConsume
             await action(cancellationToken).ConfigureAwait(false);
         }
 
-        return broker.CreateConsumerClient(request);
+        var client = broker.CreateConsumerClient(request);
+        return Volatile.Read(ref _wrap) is { } wrap ? wrap(client) : client;
     }
 
     private void _Script(string subscription, int skip, Func<CancellationToken, Task> action)
