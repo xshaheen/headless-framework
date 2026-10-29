@@ -126,7 +126,7 @@ internal sealed class HeadlessJwtBearerOptionsValidator : AbstractValidator<Head
         );
 
         RuleForEach(x => x.QueryPathPrefixes)
-            .Must(prefix => prefix is not null && prefix.Length > 1 && prefix[0] == '/')
+            .Must(prefix => prefix?.Length > 1 && prefix[0] == '/')
             .WithMessage((_, prefix) => $"Query path prefix '{prefix}' must start with '/' and name a path.");
     }
 

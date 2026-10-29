@@ -105,7 +105,7 @@ public sealed class SameOriginRequestValidatorTests : TestBase
 
         if (value is not null)
         {
-            request.Headers["X-Requested-With"] = value;
+            request.Headers.XRequestedWith = value;
         }
 
         SameOriginRequestValidator.IsSameOrigin(request, options).Should().Be(expected);

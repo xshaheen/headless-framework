@@ -90,7 +90,7 @@ internal static class JwtTokenSourceResolver
     {
         string? authorization = request.Headers[HeaderNames.Authorization];
 
-        if (authorization is null || !authorization.StartsWith(_BearerPrefix, StringComparison.OrdinalIgnoreCase))
+        if (authorization?.StartsWith(_BearerPrefix, StringComparison.OrdinalIgnoreCase) != true)
         {
             return null;
         }

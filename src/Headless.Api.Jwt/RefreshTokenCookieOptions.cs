@@ -52,15 +52,14 @@ internal sealed class RefreshTokenCookieOptionsValidator : AbstractValidator<Ref
             );
 
         RuleFor(x => x.Path)
-            .Must(path => path is not null && path.StartsWith('/'))
+            .Must(path => path?.StartsWith('/') == true)
             .WithMessage("The refresh-token cookie Path must start with '/'.");
 
         RuleFor(x => x.Domain).NotEmpty().When(x => x.Domain is not null);
 
         // Browsers drop a __Host- cookie that has another path or any domain, so the write would silently do nothing.
         When(
-            x =>
-                x.Name is not null && x.Name.StartsWith(RefreshTokenCookieOptions.HostPrefix, StringComparison.Ordinal),
+            x => x.Name?.StartsWith(RefreshTokenCookieOptions.HostPrefix, StringComparison.Ordinal) == true,
             () =>
             {
                 RuleFor(x => x.Path).Equal("/").WithMessage("A cookie named with the __Host- prefix needs Path '/'.");

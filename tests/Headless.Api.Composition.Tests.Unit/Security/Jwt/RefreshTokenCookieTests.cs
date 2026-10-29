@@ -5,6 +5,7 @@ using Headless.Api;
 using Headless.Api.Security;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -152,6 +153,51 @@ public sealed class RefreshTokenCookieTests : TestBase
         provider.GetRequiredService<IRefreshTokenCookie>().Should().BeOfType<RefreshTokenCookie>();
         provider.GetRequiredService<IOptions<RefreshTokenCookieOptions>>().Value.Name.Should().Be("refresh");
     }
+
+    [Fact]
+    public void should_bind_options_from_configuration_when_registered_with_a_section()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["Name"] = "refresh",
+                    ["Path"] = "/auth",
+                    ["SameSite"] = "Lax",
+                }
+            )
+            .Build();
+        var services = new ServiceCollection();
+        services.AddHeadlessRefreshTokenCookie(configuration);
+        using var provider = services.BuildServiceProvider();
+
+        var options = provider.GetRequiredService<IOptions<RefreshTokenCookieOptions>>().Value;
+
+        options.Name.Should().Be("refresh");
+        options.Path.Should().Be("/auth");
+        options.SameSite.Should().Be(SameSiteMode.Lax);
+        provider.GetRequiredService<IRefreshTokenCookie>().Should().BeOfType<RefreshTokenCookie>();
+    }
+
+    [Fact]
+    public void should_pass_the_service_provider_when_registered_with_a_provider_callback()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new ServiceMarker("/session"));
+        services.AddHeadlessRefreshTokenCookie(
+            (options, provider) =>
+            {
+                options.Name = "refresh";
+                options.Path = provider.GetRequiredService<ServiceMarker>().Path;
+            }
+        );
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<IOptions<RefreshTokenCookieOptions>>().Value.Path.Should().Be("/session");
+        provider.GetRequiredService<IRefreshTokenCookie>().Should().BeOfType<RefreshTokenCookie>();
+    }
+
+    private sealed record ServiceMarker(string Path);
 
     [Fact]
     public void should_accept_the_default_options()
