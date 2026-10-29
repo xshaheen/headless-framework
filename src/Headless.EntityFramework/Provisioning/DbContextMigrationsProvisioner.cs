@@ -10,7 +10,8 @@ namespace Headless.EntityFramework;
 /// <summary>
 /// Offers the EF Core migrations of <typeparamref name="TDbContext"/> as a resource provisioner of kind
 /// <c>EntityFramework</c>: <c>resources provision</c> applies the pending migrations, and a host start fails while any is
-/// pending, the way it fails on a missing schema step.
+/// pending, the way it fails on a missing schema step. It runs after every <c>Schema</c> resource, so a migration can
+/// depend on objects the framework's schema steps create.
 /// </summary>
 /// <remarks>
 /// The context is resolved from a scope of its own; when it is not registered, its <c>IDbContextFactory</c> is used.
@@ -21,6 +22,9 @@ namespace Headless.EntityFramework;
 internal sealed class DbContextMigrationsProvisioner<TDbContext>(IServiceProvider services) : IResourceProvisioner
     where TDbContext : DbContext
 {
+    // The kind the schema runner gives each contribution's provisioner.
+    private const string _SchemaKind = "Schema";
+
     public string Kind => "EntityFramework";
 
     public string Name => typeof(TDbContext).Name;
@@ -31,6 +35,12 @@ internal sealed class DbContextMigrationsProvisioner<TDbContext>(IServiceProvide
     public bool CanPurge => false;
 
     public bool CanDelete => false;
+
+    // Framework DDL lands first: an app migration may add a column generated from a framework function, or a foreign
+    // key to a framework table, and fails when that object does not exist yet. No schema contribution depends on an
+    // application's tables, so this cannot form a cycle.
+    public IEnumerable<IResourceProvisioner> DependsOn(IReadOnlyList<IResourceProvisioner> provisioners) =>
+        provisioners.Where(static p => string.Equals(p.Kind, _SchemaKind, StringComparison.Ordinal));
 
     public async Task ProvisionAsync(CancellationToken cancellationToken)
     {
