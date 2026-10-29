@@ -180,7 +180,12 @@ internal sealed class RelationalMonitoringApi(
             _dialect.AddParameter(command, "ConsumerIdentity", SqlColumnType.KeyText(200), query.ConsumerIdentity);
             _dialect.AddParameter(command, "Name", SqlColumnType.Text(200), query.Name);
             // Escaped so a literal %, _, [ or \\ in the user's search term matches literally instead of as a wildcard.
-            _dialect.AddParameter(command, "Content", SqlColumnType.Text(-1), $"%{EscapeLike(query.Content)}%");
+            _dialect.AddParameter(
+                command,
+                "Content",
+                SqlColumnType.Text(-1),
+                query.Content is null ? null : SqlLikePattern.Contains(query.Content)
+            );
             _dialect.AddParameter(
                 command,
                 "IntentType",
@@ -386,24 +391,6 @@ internal sealed class RelationalMonitoringApi(
     {
         var tableName = type == MessageType.Publish ? _publishedTable : _receivedTable;
         return _GetHourlyTimelineAsync(tableName, nameof(StatusName.Failed), cancellationToken);
-    }
-
-    /// <summary>
-    /// Escapes the escape character and the LIKE wildcards (<c>%</c>, <c>_</c>, and SQL Server's <c>[</c>) so user text
-    /// matches literally under <c>ESCAPE '\'</c>.
-    /// </summary>
-    internal static string EscapeLike(string? value)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return string.Empty;
-        }
-
-        return value
-            .Replace("\\", "\\\\", StringComparison.Ordinal)
-            .Replace("%", "\\%", StringComparison.Ordinal)
-            .Replace("_", "\\_", StringComparison.Ordinal)
-            .Replace("[", "\\[", StringComparison.Ordinal);
     }
 
     private async ValueTask<long> _GetNumberOfMessageAsync(
