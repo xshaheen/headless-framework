@@ -110,6 +110,47 @@ public sealed class AuditLogPagingIntegrationTests : TestBase
         byBoth.Items.Select(e => e.EntityId).Should().Equal("match");
     }
 
+    [Theory]
+    [InlineData("order_", "order_created")]
+    [InlineData("50%", "50%off.applied")]
+    [InlineData("[draft]", "[draft].saved")]
+    [InlineData("a\\b", "a\\b.ran")]
+    public async Task should_match_action_prefix_literally(string prefix, string expectedAction)
+    {
+        // given — each decoy matches the prefix only when its wildcard characters are left unescaped
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync();
+        await using var _ = conn;
+        await using var __ = sp;
+        string[] actions =
+        [
+            "order_created",
+            "orderXcreated",
+            "50%off.applied",
+            "50Xoff.applied",
+            "[draft].saved",
+            "draft.saved",
+            "a\\b.ran",
+            "ab.ran",
+        ];
+        await using (
+            var db = await sp.GetRequiredService<IDbContextFactory<AuditTestDbContext>>()
+                .CreateDbContextAsync(AbortToken)
+        )
+        {
+            db.Set<AuditLogEntry>()
+                .AddRange(actions.Select(action => new AuditLogEntry { Action = action, CreatedAt = _T0 }));
+            await db.SaveChangesAsync(AbortToken);
+        }
+
+        var reader = sp.GetRequiredService<IReadAuditLog<AuditTestDbContext>>();
+
+        // when
+        var page = await reader.QueryAsync(new() { ActionPrefix = prefix }, AbortToken);
+
+        // then
+        page.Items.Select(e => e.Action).Should().Equal(expectedAction);
+    }
+
     [Fact]
     public async Task should_commit_writer_entry_without_flushing_pending_changes_of_the_scoped_context()
     {
