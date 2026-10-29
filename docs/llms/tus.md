@@ -382,6 +382,8 @@ TUS store for Cloudflare R2, Amazon S3, and S3-compatible servers such as MinIO.
 
 R2 rejects the CRC checksums AWS SDK v4 adds to every request by default, so an R2 client must set `RequestChecksumCalculation` and `ResponseChecksumValidation` to `WHEN_REQUIRED`. `Provider` changes only per-request settings. Every object and part write sends a plain `Content-Length` body (`UseChunkEncoding = false`) for all three. `R2` sends unsigned payloads (`DisablePayloadSigning = true`), which skips a hash pass over every part. `S3Compatible` keeps payloads signed, because the SDK refuses unsigned payloads over plain `http`. `Aws` keeps the SDK's signing default. `R2` also sets the default `MultipartUploadLifetime` to 7 days.
 
+Set the client's `Timeout` and `MaxErrorRetry` deliberately. Completion, the expiry refresh after a PATCH, and the sweep's removals run on `CancellationToken.None`, so a client disconnect or host shutdown cannot interrupt them halfway; the client's timeout and retry count are then the only bound on how long one of those calls waits on a slow or unreachable server.
+
 R2 behavior is tested against a real R2 bucket in the release checks. Amazon S3 behavior is verified against LocalStack, not a real AWS account. MinIO is supported as an S3-compatible endpoint; its upstream repository was archived in April 2026.
 
 **Object layout.** The store owns every key under `Prefix` (default `uploads/`), so give it a prefix no other writer uses: `resources purge` deletes objects there. An upload with file id `{id}` uses:
