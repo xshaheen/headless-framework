@@ -118,9 +118,10 @@ internal sealed class JobsSeeder(
         ];
 
         // No lock configured (default): run the seed directly. Seeded rows carry a DETERMINISTIC primary key derived
-        // from the function, so simultaneous first-boot on N nodes converges on a single row (PK dedup) — no duplicate
-        // schedules even without the lock. The optional lock below only removes the redundant N-node scan/write storm;
-        // it is never the correctness boundary — per-row predicates, node@incarnation ownership, and per-job leases are.
+        // from the seed owner and the function or declaration key, so simultaneous first-boot on N nodes converges on a
+        // single row (PK dedup) — no duplicate schedules even without the lock. The optional lock below only removes the
+        // redundant N-node scan/write storm; it is never the correctness boundary — per-row predicates,
+        // node@incarnation ownership, and per-job leases are.
         if (!schedulerOptions.UseStorageLock)
         {
             await internalJobsManager

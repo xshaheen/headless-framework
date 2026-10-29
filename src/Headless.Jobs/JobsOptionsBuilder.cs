@@ -271,8 +271,8 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
         JobsRequestSerializationOptions.DefaultMaxDecompressedRequestBytes;
 
     /// <summary>
-    /// Controls whether code-defined cron jobs are seeded on startup.
-    /// Defaults to true.
+    /// Controls whether the seed writes the crons declared with <c>[Job(Cron)]</c>. Defaults to true. Declarations
+    /// always seed.
     /// </summary>
     internal bool SeedDefinedCronJobs { get; set; } = true;
 
@@ -437,10 +437,11 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// longer makes. Several declarations may run one job with different arguments, zones, or expressions. Changing a
     /// key deletes the old definition and creates a new one.
     /// <para>
-    /// A changed expression or zone is restored on the next seed; the definition's schedule position is then reset
-    /// without replaying missed runs. The arguments, description, retries, node-death policy, correlation and causation
-    /// ids, and the job's missed-run and overlap policies are written only when the definition is created, and the
-    /// seed never writes pause state.
+    /// Code wins on the expression, zone, and arguments: when any of them differs from the stored definition, including
+    /// after an operator edit, the next seed restores it, together with the job's current contract version, and resets
+    /// the definition's schedule position without replaying missed runs. The description, retries, node-death policy,
+    /// correlation and causation ids, and the job's missed-run and overlap policies are written only when the
+    /// definition is created, and the seed never writes pause state.
     /// </para>
     /// <para>
     /// The request is serialized when the seed runs, with the host's request serialization settings, as
@@ -554,9 +555,13 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     }
 
     /// <summary>
-    /// Registers a startup seeder delegate for time jobs. The delegate is invoked once during host
-    /// startup via <c>IHostedService</c> initialization, after the operational store is ready.
+    /// Registers a seeder delegate for time jobs. The Jobs seeder runs it on every seed (the <c>seed</c> verb, or
+    /// <c>AddDeployStepsOnStartup</c>), after it reconciles the seeded crons.
     /// </summary>
+    /// <remarks>
+    /// The delegate is imperative: the seed does not track what it wrote, so it runs again on every seed and must make
+    /// its own writes idempotent.
+    /// </remarks>
     /// <param name="timeSeeder">
     /// Async factory that receives <c>ITimeJobManager</c> and enqueues initial time jobs.
     /// </param>
@@ -578,11 +583,16 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     }
 
     /// <summary>
-    /// Registers a startup seeder delegate for cron jobs. The delegate is invoked once during host
-    /// startup via <c>IHostedService</c> initialization, after the operational store is ready.
+    /// Registers a seeder delegate for cron jobs. The Jobs seeder runs it on every seed (the <c>seed</c> verb, or
+    /// <c>AddDeployStepsOnStartup</c>), after it reconciles the seeded crons.
     /// </summary>
+    /// <remarks>
+    /// The delegate is imperative: the seed does not track what it wrote, so it runs again on every seed, and an
+    /// <c>ICronJobManager.AddAsync</c> call inside it inserts a new definition each time. Declare recurring jobs with
+    /// <c>SeedRecurringJob</c> instead to get one reconciled definition each.
+    /// </remarks>
     /// <param name="cronSeeder">
-    /// Async factory that receives <c>ICronJobManager</c> and inserts or upserts initial cron job definitions.
+    /// Async factory that receives <c>ICronJobManager</c> and writes cron job definitions.
     /// </param>
     /// <returns>This builder for method chaining.</returns>
     public JobsOptionsBuilder<TTimeJob, TCronJob> UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>? cronSeeder)
@@ -602,7 +612,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     }
 
     /// <summary>
-    /// Registers startup seeder delegates for both time and cron jobs in a single call.
+    /// Registers seeder delegates for both time and cron jobs in a single call. Both run on every seed.
     /// </summary>
     /// <param name="timeSeeder">Seeder for time jobs.</param>
     /// <param name="cronSeeder">Seeder for cron job definitions.</param>
