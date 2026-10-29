@@ -559,8 +559,10 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
 
     /// <summary>
     /// Reconciles the complete set of cron definitions one seed owner declares into durable storage: inserts a row for
-    /// each new entry, restores the expression and zone of an existing entry's row when they differ, and deletes the
-    /// owner's previously seeded rows, together with their occurrences, that the set no longer contains.
+    /// each new entry, restores the expression and zone of an existing entry's row when they differ, restores the
+    /// payload and contract version of an entry that carries a <see cref="CronSeedDefinition.RequestHash"/> when they
+    /// drifted, and deletes the owner's previously seeded rows, together with their occurrences, that the set no longer
+    /// contains. Any restore bumps the row's revision and resets its schedule position.
     /// </summary>
     /// <param name="seedOwner">
     /// The seed owner. Only rows whose marker starts with this owner's prefix are matched or deleted, so apps sharing

@@ -1535,7 +1535,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .Where(x => !existingById.ContainsKey(x.Id))
                         .ToDictionary(x => x.Id, x => (x.Function, x.Marker));
 
-                    foreach (
+                    foreach (var entry in orderedCronJobs)
+                    {
                         var (
                             id,
                             marker,
@@ -1553,18 +1554,19 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                             description,
                             onNodeDeath,
                             correlationId,
-                            causationId
-                        ) in orderedCronJobs
-                    )
-                    {
+                            causationId,
+                            _
+                        ) = entry;
+
                         if (existingById.TryGetValue(id, out var cron))
                         {
-                            // Reseeding cannot upgrade the schema label of bytes already stored by an older writer.
-                            // Existing function/version/request tuples change only through an explicit definition edit.
-                            // Update the schedule if its expression or zone changed
+                            // Code wins on the expression, the zone, and a declaration's arguments. An entry without a
+                            // request hash (an attribute cron) never rewrites the payload: a new registration version
+                            // cannot relabel bytes an older writer stored.
                             if (
                                 !string.Equals(cron.Expression, expression, StringComparison.Ordinal)
                                 || !string.Equals(cron.TimeZoneId, timeZoneId, StringComparison.Ordinal)
+                                || JobsSeedPayload.Differs(cron, entry)
                             )
                             {
                                 await cronSet
@@ -1575,14 +1577,27 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                     )
                                     .ConfigureAwait(false);
                                 await dbContext.Entry(cron).ReloadAsync(cancellationToken).ConfigureAwait(false);
+                                // Re-decided on the locked row: a concurrent seed may already have restored it.
+                                var payloadDiffers = JobsSeedPayload.Differs(cron, entry);
 
                                 if (
                                     !string.Equals(cron.Expression, expression, StringComparison.Ordinal)
                                     || !string.Equals(cron.TimeZoneId, timeZoneId, StringComparison.Ordinal)
+                                    || payloadDiffers
                                 )
                                 {
                                     cron.Expression = expression;
                                     cron.TimeZoneId = timeZoneId;
+
+                                    if (payloadDiffers)
+                                    {
+                                        // The payload and its version are rewritten together, in the same update that
+                                        // bumps the revision, so stored bytes are never labelled with a version they
+                                        // were not written under.
+                                        cron.Request = request ?? [];
+                                        cron.ContractVersion = contractVersion;
+                                    }
+
                                     cron.ScheduleRevision++;
                                     cron.UpdatedAt = now;
 

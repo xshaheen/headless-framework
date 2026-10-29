@@ -248,6 +248,15 @@ internal sealed class JobsSeeder(
             );
             var resolved = policies.ResolveRecurring(descriptor, declaration.Options);
             var options = declaration.Options;
+            var request = descriptor.RequestType is null ? null : declaration.SerializeRequest(serializationOptions);
+            // The seed compares this hash with the stored payload's to decide whether the arguments drifted. Hashing
+            // the canonical form, not the bytes, keeps hosts that serialize the same arguments differently, or compress
+            // them, from rewriting each other's row on every seed.
+            var requestHash =
+                JobsHelper.TryComputeCanonicalRequestHash(request ?? [])
+                ?? throw new InvalidOperationException(
+                    $"The arguments of the recurring job declaration '{declaration.Key}' did not serialize to valid JSON."
+                );
 
             seeds[i] = CronSeedDefinition.ForDeclaration(
                 seedOwner,
@@ -257,12 +266,13 @@ internal sealed class JobsSeeder(
                 onMissedRun,
                 graceSeconds,
                 onOverlap,
+                requestHash,
                 scheduleCache.ComputeEvaluationFingerprint(options?.TimeZoneId),
                 descriptor.ContractVersion,
                 options?.TimeZoneId,
                 resolved.Retries ?? 0,
                 resolved.RetryIntervals,
-                descriptor.RequestType is null ? null : declaration.SerializeRequest(serializationOptions),
+                request,
                 options?.Description,
                 resolved.OnNodeDeath ?? NodeDeathPolicy.Retry,
                 options?.CorrelationId,

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Jobs.Internal;
 
 namespace Headless.Jobs;
@@ -45,6 +46,12 @@ namespace Headless.Jobs;
 /// <param name="OnNodeDeath">Node-death policy to store at creation.</param>
 /// <param name="CorrelationId">Business correlation each occurrence captures, stored at creation.</param>
 /// <param name="CausationId">Immediate business cause each occurrence captures, stored at creation.</param>
+/// <param name="RequestHash">
+/// Lowercase hexadecimal SHA-256 of the canonical JSON of <paramref name="Request"/> (object members in ordinal name
+/// order, no insignificant whitespace, decompressed first; the empty sequence for an empty payload), or
+/// <see langword="null"/> for an entry whose stored payload and contract version the seed never rewrites. A recurring-job
+/// declaration carries it; an attribute cron does not.
+/// </param>
 /// <remarks>
 /// The recovery and overlap settings are already resolved by the caller — attribute value, else the scheduler-wide setting, else
 /// the framework default — so the provider persists a concrete value rather than re-deriving one. That matters because
@@ -56,8 +63,13 @@ namespace Headless.Jobs;
 /// provenance marker to persist and no way for a redeploy to silently revert it.
 /// </para>
 /// <para>
-/// Existing function/version/request tuples also remain unchanged. A new registration version cannot relabel
-/// previously stored request bytes; changing an existing payload contract requires an explicit definition edit.
+/// The arguments are part of a declaration, as its expression and zone are, so code wins on them. An entry with a
+/// <paramref name="RequestHash"/> restores <paramref name="Request"/> and <paramref name="ContractVersion"/> together
+/// when the stored contract version differs, when the stored payload has no canonical form, or when its canonical hash
+/// differs; the rewrite bumps the revision and resets the schedule position, as a changed expression does. Comparing
+/// canonical hashes rather than raw bytes keeps two hosts that serialize the same arguments differently, with or
+/// without compression, from rewriting each other's row. An entry without a hash leaves an existing row's payload and
+/// contract version unchanged: a new registration version cannot relabel request bytes an older writer stored.
 /// </para>
 /// <para>
 /// The retry settings follow the same creation-only rule, so a failure policy changed in code does not reach an existing
@@ -82,7 +94,8 @@ public readonly record struct CronSeedDefinition(
     string? Description = null,
     NodeDeathPolicy OnNodeDeath = NodeDeathPolicy.Retry,
     string? CorrelationId = null,
-    string? CausationId = null
+    string? CausationId = null,
+    string? RequestHash = null
 )
 {
     /// <summary>
@@ -122,6 +135,10 @@ public readonly record struct CronSeedDefinition(
     /// Builds the entry <paramref name="owner"/> seeds for the recurring-job declaration keyed <paramref name="key"/>,
     /// which runs <paramref name="function"/>. Several declarations may run one function; each key is its own row.
     /// </summary>
+    /// <param name="requestHash">
+    /// Canonical hash of <paramref name="request"/>, as <see cref="RequestHash"/> describes. A declaration always
+    /// carries one, so the seed restores arguments that drifted from it.
+    /// </param>
     internal static CronSeedDefinition ForDeclaration(
         string owner,
         string key,
@@ -130,6 +147,7 @@ public readonly record struct CronSeedDefinition(
         MissedRunPolicy onMissedRun,
         int missedRunGraceSeconds,
         CronOverlapPolicy onOverlap,
+        string requestHash,
         string? evaluationFingerprint = null,
         string contractVersion = JobContract.InitialVersion,
         string? timeZoneId = null,
@@ -159,7 +177,8 @@ public readonly record struct CronSeedDefinition(
             description,
             onNodeDeath,
             correlationId,
-            causationId
+            causationId,
+            Argument.IsNotNullOrWhiteSpace(requestHash)
         );
     }
 }

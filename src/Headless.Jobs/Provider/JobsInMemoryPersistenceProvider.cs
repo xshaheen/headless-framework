@@ -1813,7 +1813,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             }
         }
 
-        foreach (
+        foreach (var entry in cronJobs)
+        {
             var (
                 id,
                 marker,
@@ -1831,20 +1832,22 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 description,
                 onNodeDeath,
                 correlationId,
-                causationId
-            ) in cronJobs
-        )
-        {
+                causationId,
+                _
+            ) = entry;
+
             // The entry's deterministic id (the durable provider's seed identity): a re-seed — including a changed
             // expression — updates the same row in place rather than inserting a duplicate. Single-process provider,
             // so there is no cross-node race here.
             if (_cronJobs.TryGetValue(id, out var existing))
             {
-                // Reseeding cannot upgrade the schema label of bytes already stored by an older writer.
-                // Existing function/version/request tuples change only through an explicit definition edit.
+                // Code wins on the expression, the zone, and a declaration's arguments. An entry without a request
+                // hash (an attribute cron) never rewrites the payload: a new registration version cannot relabel bytes
+                // an older writer stored.
                 if (
                     !string.Equals(existing.Expression, expression, StringComparison.Ordinal)
                     || !string.Equals(existing.TimeZoneId, timeZoneId, StringComparison.Ordinal)
+                    || JobsSeedPayload.Differs(existing, entry)
                 )
                 {
                     lock (_GetCronDefinitionLock(id))
@@ -1857,6 +1860,15 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         var updated = _CloneCronJob(current);
                         updated.Expression = expression;
                         updated.TimeZoneId = timeZoneId;
+
+                        if (JobsSeedPayload.Differs(current, entry))
+                        {
+                            // The payload and its version are rewritten together, so the stored bytes are never
+                            // labelled with a version they were not written under.
+                            updated.Request = request?.ToArray() ?? [];
+                            updated.ContractVersion = contractVersion;
+                        }
+
                         updated.ScheduleRevision++;
                         updated.UpdatedAt = now;
 

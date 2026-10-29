@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Headless.Hosting;
 using Headless.Jobs;
@@ -382,6 +384,228 @@ public sealed class InMemorySeedReconcileTests : TestBase
             services.AddHeadlessJobs(options => options.SeedRecurringJob(key, new ReportArgs("eu"), _DailyCron));
 
         act.Should().Throw<ArgumentException>();
+    }
+
+    // ----------------------------------------------------------------------------------------------------------------
+    // Code wins on a declaration's expression and arguments; policies and pause stay the operator's
+    // ----------------------------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task should_restore_an_edited_expression_and_keep_the_operators_retries_and_pause()
+    {
+        await using var host = _CreateHost(options =>
+            options.SeedRecurringJob(
+                "daily-us",
+                new ReportArgs("us"),
+                _DailyCron,
+                new RecurringJobOptions { Retries = 2, RetryIntervals = [10, 20] }
+            )
+        );
+        var store = _Store(host);
+        await _RunSeedAsync(host);
+        var id = await _DeclarationIdAsync(store, "daily-us");
+        await store.PauseCronJobAsync(id, _Now, AbortToken);
+        var edited = (await store.GetCronJobByIdAsync(id, AbortToken))!;
+        edited.Expression = _RuntimeExpression;
+        edited.Retries = 7;
+        edited.RetryIntervals = [5, 5, 5, 5, 5, 5, 5];
+        (await store.UpdateCronJobsAsync([edited], AbortToken)).Should().Be(1);
+        var revisionBefore = edited.ScheduleRevision;
+
+        await _RunSeedAsync(host);
+
+        var reseeded = (await store.GetCronJobByIdAsync(id, AbortToken))!;
+        reseeded.Expression.Should().Be(_DailyCron, "code wins on the expression");
+        reseeded.ScheduleRevision.Should().Be(revisionBefore + 1);
+        reseeded.Retries.Should().Be(7, "retries are written only when the definition is created");
+        reseeded.RetryIntervals.Should().Equal(5, 5, 5, 5, 5, 5, 5);
+        reseeded.IsPaused.Should().BeTrue("the seed never writes pause state");
+        _Region(reseeded).Should().Be("us");
+    }
+
+    [Fact]
+    public async Task should_rewrite_the_stored_arguments_once_when_the_declared_arguments_change()
+    {
+        await using var first = _CreateHost(options =>
+            options.SeedRecurringJob("daily-us", new ReportArgs("us"), _DailyCron)
+        );
+        var store = _Store(first);
+        await _RunSeedAsync(first);
+        var id = await _DeclarationIdAsync(store, "daily-us");
+        var created = (await store.GetCronJobByIdAsync(id, AbortToken))!;
+        await using var second = _CreateHost(
+            options => options.SeedRecurringJob("daily-us", new ReportArgs("us-east"), _DailyCron),
+            store
+        );
+
+        await _RunSeedAsync(second);
+
+        var rewritten = (await store.GetCronJobByIdAsync(id, AbortToken))!;
+        _Region(rewritten).Should().Be("us-east", "code wins on the arguments");
+        rewritten.ContractVersion.Should().Be("3");
+        rewritten.ScheduleRevision.Should().Be(created.ScheduleRevision + 1);
+        rewritten.Expression.Should().Be(_DailyCron);
+
+        await _RunSeedAsync(second);
+
+        var unchanged = (await store.GetCronJobByIdAsync(id, AbortToken))!;
+        unchanged
+            .ScheduleRevision.Should()
+            .Be(rewritten.ScheduleRevision, "the restored arguments match the declaration");
+        unchanged.UpdatedAt.Should().Be(rewritten.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task should_not_rewrite_arguments_a_host_with_other_serializer_settings_stored()
+    {
+        await using var compressing = _CreateHost(options =>
+            options
+                .UseGZipCompression()
+                .ConfigureRequestJsonOptions(json => json.WriteIndented = true)
+                .SeedRecurringJob("daily-us", new ReportArgs("us"), _DailyCron)
+        );
+        var store = _Store(compressing);
+        await _RunSeedAsync(compressing);
+        var id = await _DeclarationIdAsync(store, "daily-us");
+        var stored = (await store.GetCronJobByIdAsync(id, AbortToken))!;
+        await using var plain = _CreateHost(
+            options => options.SeedRecurringJob("daily-us", new ReportArgs("us"), _DailyCron),
+            store
+        );
+
+        await _RunSeedAsync(plain);
+
+        var reseeded = (await store.GetCronJobByIdAsync(id, AbortToken))!;
+        reseeded.Request.Should().Equal(stored.Request, "the same arguments compare equal however they were written");
+        reseeded.ScheduleRevision.Should().Be(stored.ScheduleRevision);
+    }
+
+    [Fact]
+    public async Task should_overwrite_a_stored_payload_that_is_not_json_without_failing_the_seed()
+    {
+        await using var host = _CreateHost(options =>
+            options.SeedRecurringJob("daily-us", new ReportArgs("us"), _DailyCron)
+        );
+        var store = _Store(host);
+        await _RunSeedAsync(host);
+        var id = await _DeclarationIdAsync(store, "daily-us");
+        var corrupted = (await store.GetCronJobByIdAsync(id, AbortToken))!;
+        corrupted.Request = [0x7b, 0xff, 0x00];
+        (await store.UpdateCronJobsAsync([corrupted], AbortToken)).Should().Be(1);
+
+        await _RunSeedAsync(host);
+
+        var restored = (await store.GetCronJobByIdAsync(id, AbortToken))!;
+        _Region(restored).Should().Be("us");
+        restored.ScheduleRevision.Should().Be(corrupted.ScheduleRevision + 1);
+    }
+
+    [Fact]
+    public async Task should_leave_the_payload_and_version_of_an_attribute_cron_row_unchanged()
+    {
+        await using var host = _CreateHost(_ => { });
+        var store = _Store(host);
+        await _RunSeedAsync(host);
+        var row = (
+            await store.GetCronJobsAsync(
+                x => x.InitIdentifier == $"headless.jobs.seed:{_Owner}:cron:{_NightlyFunction}",
+                AbortToken
+            )
+        ).Single();
+        var edited = (await store.GetCronJobByIdAsync(row.Id, AbortToken))!;
+        edited.Request = [.. "{\"edited\":true}"u8];
+        edited.ContractVersion = "9";
+        (await store.UpdateCronJobsAsync([edited], AbortToken)).Should().Be(1);
+
+        await _RunSeedAsync(host);
+
+        var reseeded = (await store.GetCronJobByIdAsync(row.Id, AbortToken))!;
+        reseeded.Request.Should().Equal(edited.Request, "an attribute cron declares no arguments to restore");
+        reseeded.ContractVersion.Should().Be("9");
+        reseeded.ScheduleRevision.Should().Be(edited.ScheduleRevision);
+    }
+
+    [Fact]
+    public async Task should_rewrite_the_contract_version_once_when_it_changes_with_unchanged_arguments()
+    {
+        var provider = _Create();
+        byte[] request = [.. "{\"Region\":\"us\"}"u8];
+        var hash = _CanonicalHash("{\"Region\":\"us\"}");
+        await provider.MigrateDefinedCronJobsAsync(_Owner, [_Declaration("daily-us", request, hash, "1")], AbortToken);
+        var id = _Declaration("daily-us", request, hash, "1").Id;
+        var created = (await provider.GetCronJobByIdAsync(id, AbortToken))!;
+
+        await provider.MigrateDefinedCronJobsAsync(_Owner, [_Declaration("daily-us", request, hash, "2")], AbortToken);
+
+        var relabelled = (await provider.GetCronJobByIdAsync(id, AbortToken))!;
+        relabelled.ContractVersion.Should().Be("2");
+        relabelled.Request.Should().Equal(request);
+        relabelled.ScheduleRevision.Should().Be(created.ScheduleRevision + 1);
+
+        await provider.MigrateDefinedCronJobsAsync(_Owner, [_Declaration("daily-us", request, hash, "2")], AbortToken);
+
+        (await provider.GetCronJobByIdAsync(id, AbortToken))!
+            .ScheduleRevision.Should()
+            .Be(relabelled.ScheduleRevision, "the stored version already matches");
+    }
+
+    [Fact]
+    public async Task should_compare_declared_arguments_by_canonical_form_not_bytes()
+    {
+        var provider = _Create();
+        byte[] written = [.. "{ \"b\": [1, 2.50, {\"y\": null, \"x\": true}],\n  \"a\": \"\\u0065u\" }"u8];
+        var hash = _CanonicalHash("{\"a\":\"eu\",\"b\":[1,2.50,{\"x\":true,\"y\":null}]}");
+        await provider.MigrateDefinedCronJobsAsync(_Owner, [_Declaration("daily-eu", written, hash)], AbortToken);
+        var id = _Declaration("daily-eu", written, hash).Id;
+        var created = (await provider.GetCronJobByIdAsync(id, AbortToken))!;
+        byte[] compact = [.. "{\"a\":\"eu\",\"b\":[1,2.50,{\"x\":true,\"y\":null}]}"u8];
+
+        await provider.MigrateDefinedCronJobsAsync(_Owner, [_Declaration("daily-eu", compact, hash)], AbortToken);
+
+        var reseeded = (await provider.GetCronJobByIdAsync(id, AbortToken))!;
+        reseeded.Request.Should().Equal(written, "member order, whitespace, and escapes are not arguments");
+        reseeded.ScheduleRevision.Should().Be(created.ScheduleRevision);
+    }
+
+    private static CronSeedDefinition _Declaration(
+        string key,
+        byte[] request,
+        string requestHash,
+        string contractVersion = JobContract.InitialVersion
+    )
+    {
+        return CronSeedDefinition.ForDeclaration(
+            _Owner,
+            key,
+            _ReportFunction,
+            _DailyCron,
+            MissedRunPolicy.Coalesce,
+            JobsRecoveryDefaults.MissedRunGraceSeconds,
+            CronOverlapPolicy.Allow,
+            requestHash,
+            contractVersion: contractVersion,
+            request: request
+        );
+    }
+
+    // The canonical-hash contract of a seed entry, computed here from hand-written canonical JSON rather than by the
+    // code under test.
+    private static string _CanonicalHash(string canonicalJson)
+    {
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalJson)));
+    }
+
+    private static async Task<Guid> _DeclarationIdAsync(
+        IJobPersistenceProvider<TimeJobEntity, CronJobEntity> store,
+        string key
+    )
+    {
+        var rows = await store.GetCronJobsAsync(
+            x => x.InitIdentifier == $"headless.jobs.seed:{_Owner}:decl:{key}",
+            AbortToken
+        );
+
+        return rows.Single().Id;
     }
 
     private static string? _Region(CronJobEntity row)

@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Security.Cryptography;
+using System.Text;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +22,8 @@ public abstract class JobsSeedReconcileConformanceTests<TFixture>(TFixture fixtu
     private const string _Function = "seed.cleanup";
     private const string _SeededExpression = "0 */5 * * * *";
     private const string _RuntimeExpression = "0 0 * * * *";
+    private static readonly byte[] _UsRequest = [.. "{\"region\":\"us\"}"u8];
+    private static readonly string _UsHash = _CanonicalHash("{\"region\":\"us\"}");
 
     public virtual async Task seed_leaves_a_runtime_row_of_an_attributed_function_unchanged()
     {
@@ -248,6 +252,171 @@ public abstract class JobsSeedReconcileConformanceTests<TFixture>(TFixture fixtu
             .Be("headless.jobs.seed:billing_app:decl:daily-europe");
     }
 
+    public virtual async Task seed_restores_a_declarations_expression_and_keeps_the_operators_retries_and_pause()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("seed-declaration-operator-edit");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var declared = _Declaration(_Owner, "daily-us", request: _UsRequest, requestHash: _UsHash);
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [declared], ct);
+        (await persistence.PauseCronJobAsync(declared.Id, DateTimeOffset.UtcNow, ct)).Should().NotBeNull();
+        var edited = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
+        edited.Expression = _RuntimeExpression;
+        edited.Retries = 7;
+        edited.RetryIntervals = [5, 5, 5, 5, 5, 5, 5];
+        (await persistence.UpdateCronJobsAsync([edited], ct)).Should().Be(1);
+        var beforeSeed = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
+
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [declared], ct);
+
+        var reseeded = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
+        reseeded.Expression.Should().Be(_SeededExpression, "code wins on the expression");
+        reseeded.ScheduleRevision.Should().Be(beforeSeed.ScheduleRevision + 1);
+        reseeded.Retries.Should().Be(7, "retries are written only when the definition is created");
+        reseeded.RetryIntervals.Should().Equal(5, 5, 5, 5, 5, 5, 5);
+        reseeded.IsPaused.Should().BeTrue("the seed never writes pause state");
+        reseeded.Request.Should().Equal(_UsRequest);
+    }
+
+    public virtual async Task changed_declared_arguments_rewrite_the_payload_and_version_once()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("seed-declaration-arguments");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var original = _Declaration(_Owner, "daily-us", request: _UsRequest, requestHash: _UsHash);
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [original], ct);
+        var created = (await persistence.GetCronJobByIdAsync(original.Id, ct))!;
+        byte[] eastRequest = [.. "{\"region\":\"us-east\"}"u8];
+        var changed = _Declaration(
+            _Owner,
+            "daily-us",
+            request: eastRequest,
+            contractVersion: "2",
+            requestHash: _CanonicalHash("{\"region\":\"us-east\"}")
+        );
+
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [changed], ct);
+
+        var rewritten = (await persistence.GetCronJobByIdAsync(original.Id, ct))!;
+        rewritten.Request.Should().Equal(eastRequest, "code wins on the arguments");
+        rewritten.ContractVersion.Should().Be("2", "the payload and its version are rewritten together");
+        rewritten.ScheduleRevision.Should().Be(created.ScheduleRevision + 1);
+        rewritten.Expression.Should().Be(_SeededExpression);
+
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [changed], ct);
+
+        var unchanged = (await persistence.GetCronJobByIdAsync(original.Id, ct))!;
+        unchanged
+            .ScheduleRevision.Should()
+            .Be(rewritten.ScheduleRevision, "the restored arguments match the declaration");
+        unchanged.UpdatedAt.Should().Be(rewritten.UpdatedAt);
+    }
+
+    public virtual async Task the_same_arguments_written_compressed_and_reordered_are_not_rewritten()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("seed-declaration-canonical");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        // Another host's writer: indented, members in another order, then compressed.
+        var compressed = JobsHelper.CreateJobRequest<byte[]>(
+            [.. "{\n  \"zone\": \"America/New_York\",\n  \"region\": \"us\"\n}"u8],
+            new JobsRequestSerializationOptions { UseGZipCompression = true }
+        );
+        var hash = _CanonicalHash("{\"region\":\"us\",\"zone\":\"America/New_York\"}");
+        var first = _Declaration(_Owner, "daily-us", request: compressed, requestHash: hash);
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [first], ct);
+        var stored = (await persistence.GetCronJobByIdAsync(first.Id, ct))!;
+        byte[] plain = [.. "{\"region\":\"us\",\"zone\":\"America/New_York\"}"u8];
+
+        await persistence.MigrateDefinedCronJobsAsync(
+            _Owner,
+            [_Declaration(_Owner, "daily-us", request: plain, requestHash: hash)],
+            ct
+        );
+
+        var reseeded = (await persistence.GetCronJobByIdAsync(first.Id, ct))!;
+        reseeded.Request.Should().Equal(compressed, "the same arguments compare equal however they were written");
+        reseeded.ScheduleRevision.Should().Be(stored.ScheduleRevision);
+    }
+
+    public virtual async Task a_changed_contract_version_with_unchanged_arguments_is_rewritten_once()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("seed-declaration-version");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var original = _Declaration(_Owner, "daily-us", request: _UsRequest, requestHash: _UsHash);
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [original], ct);
+        var created = (await persistence.GetCronJobByIdAsync(original.Id, ct))!;
+        var bumped = _Declaration(_Owner, "daily-us", request: _UsRequest, contractVersion: "2", requestHash: _UsHash);
+
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [bumped], ct);
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [bumped], ct);
+
+        var relabelled = (await persistence.GetCronJobByIdAsync(original.Id, ct))!;
+        relabelled.ContractVersion.Should().Be("2");
+        relabelled.Request.Should().Equal(_UsRequest);
+        relabelled.ScheduleRevision.Should().Be(created.ScheduleRevision + 1, "only the first seed finds drift");
+    }
+
+    public virtual async Task a_stored_payload_that_is_not_json_is_overwritten_without_failing_the_seed()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("seed-declaration-corrupt");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var declared = _Declaration(_Owner, "daily-us", request: _UsRequest, requestHash: _UsHash);
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [declared], ct);
+        var corrupted = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
+        corrupted.Request = [0x7b, 0xff, 0x00];
+        (await persistence.UpdateCronJobsAsync([corrupted], ct)).Should().Be(1);
+        var beforeSeed = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
+
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [declared], ct);
+
+        var restored = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
+        restored.Request.Should().Equal(_UsRequest);
+        restored.ScheduleRevision.Should().Be(beforeSeed.ScheduleRevision + 1);
+    }
+
+    public virtual async Task an_attribute_cron_rows_payload_and_version_are_never_rewritten()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("seed-attribute-payload");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        await _SeedAsync(persistence, _Owner, [(_Function, _SeededExpression)], ct);
+        var row = (await persistence.GetCronJobsAsync(predicate: null, ct)).Single();
+        var edited = (await persistence.GetCronJobByIdAsync(row.Id, ct))!;
+        edited.Request = [.. "{\"edited\":true}"u8];
+        edited.ContractVersion = "9";
+        (await persistence.UpdateCronJobsAsync([edited], ct)).Should().Be(1);
+        var beforeSeed = (await persistence.GetCronJobByIdAsync(row.Id, ct))!;
+
+        await _SeedAsync(persistence, _Owner, [(_Function, _SeededExpression)], ct);
+
+        var reseeded = (await persistence.GetCronJobByIdAsync(row.Id, ct))!;
+        reseeded.Request.Should().Equal(edited.Request, "an attribute cron declares no arguments to restore");
+        reseeded.ContractVersion.Should().Be("9");
+        reseeded.ScheduleRevision.Should().Be(beforeSeed.ScheduleRevision);
+    }
+
+    // The canonical-hash contract of a seed entry, computed here from hand-written canonical JSON rather than by the
+    // code under test.
+    private static string _CanonicalHash(string canonicalJson)
+    {
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalJson)));
+    }
+
     private static CronSeedDefinition _Declaration(
         string owner,
         string key,
@@ -257,7 +426,8 @@ public abstract class JobsSeedReconcileConformanceTests<TFixture>(TFixture fixtu
         NodeDeathPolicy onNodeDeath = NodeDeathPolicy.Retry,
         string? correlationId = null,
         string? causationId = null,
-        string contractVersion = JobContract.InitialVersion
+        string contractVersion = JobContract.InitialVersion,
+        string? requestHash = null
     )
     {
         return CronSeedDefinition.ForDeclaration(
@@ -268,6 +438,7 @@ public abstract class JobsSeedReconcileConformanceTests<TFixture>(TFixture fixtu
             MissedRunPolicy.Coalesce,
             JobsRecoveryDefaults.MissedRunGraceSeconds,
             CronOverlapPolicy.Allow,
+            requestHash ?? _CanonicalHash(request is null ? "" : Encoding.UTF8.GetString(request)),
             contractVersion: contractVersion,
             timeZoneId: timeZoneId,
             request: request,
