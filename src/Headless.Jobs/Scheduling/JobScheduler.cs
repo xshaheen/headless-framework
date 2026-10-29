@@ -362,27 +362,24 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         var write = (resolved.IdempotencyKey, delay) switch
         {
             (null, null) => _timeJobManager.AddAsync(entity, cancellationToken),
-            (null, { } after) => _GetDelayedTimeJobManager().AddAfterAsync(entity, after, cancellationToken),
+            (null, { } after) => _timeJobManager.AddAsync(entity, after, cancellationToken),
             ({ } key, null) => _timeJobManager.AddIdempotentAsync(
                 entity,
                 key,
                 resolved.IdempotencyTtl!.Value,
                 cancellationToken
             ),
-            ({ } key, { } after) => _GetDelayedTimeJobManager()
-                .AddIdempotentAfterAsync(entity, key, resolved.IdempotencyTtl!.Value, after, cancellationToken),
+            ({ } key, { } after) => _timeJobManager.AddIdempotentAsync(
+                entity,
+                key,
+                resolved.IdempotencyTtl!.Value,
+                after,
+                cancellationToken
+            ),
         };
 
         var persisted = await write.ConfigureAwait(false);
         return persisted.Id;
-    }
-
-    private IDelayedTimeJobManager<TTimeJob> _GetDelayedTimeJobManager()
-    {
-        return _timeJobManager as IDelayedTimeJobManager<TTimeJob>
-            ?? throw new InvalidOperationException(
-                $"The time-job manager '{_timeJobManager.GetType().Name}' cannot schedule a delayed job: it does not resolve the delay against the store's clock."
-            );
     }
 
     private async Task<Guid> _ScheduleRecurringAsync<TArgs>(

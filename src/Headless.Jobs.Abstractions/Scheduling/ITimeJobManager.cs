@@ -51,7 +51,7 @@ public interface ITimeJobManager<TTimeJob>
     /// observes a live reservation and returns its job without inserting anything.
     /// </summary>
     /// <remarks>
-    /// Same receiver-decided routing as <see cref="AddAsync"/> (inside the unit's transaction for the manager from
+    /// Same receiver-decided routing as <see cref="AddAsync(TTimeJob, CancellationToken)"/> (inside the unit's transaction for the manager from
     /// <c>unit.TimeJobs&lt;TTimeJob&gt;()</c>, a direct insert for the injected manager), with the reservation
     /// mutation written in the same transaction as the job so a rollback removes both. Tenant capture and the schedule pipeline run before the reservation identity is formed. On a
     /// dedup hit the returned entity's identifier is the reserved job's ID (overwritten from the reservation) and no
@@ -72,6 +72,60 @@ public interface ITimeJobManager<TTimeJob>
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Enqueues a time job due <paramref name="delay"/> after the store's instant at write, and returns the persisted
+    /// entity.
+    /// </summary>
+    /// <remarks>
+    /// The store resolves the due time inside the write, as its own instant plus <paramref name="delay"/>, so the
+    /// calling node's clock skew never moves when the job becomes due; an enlisted write is stamped when the row is
+    /// written, not when the unit commits. The entity's <c>ExecutionTime</c> must be null on entry; a schedule
+    /// middleware that sets an absolute <c>ExecutionTime</c> wins over the delay. Otherwise the same receiver-decided
+    /// routing and throw-on-failure contract as <see cref="AddAsync(TTimeJob, CancellationToken)"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="delay"/> is negative (thrown synchronously), or the store's instant plus the delay overflows
+    /// (thrown before any row is written).
+    /// </exception>
+    /// <exception cref="Headless.Jobs.JobValidatorException">The job failed validation (unknown function).</exception>
+    /// <exception cref="ArgumentException">The entity already carries an <c>ExecutionTime</c>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// On the enlisted manager only: the unit carries no live relational resource, its resource is dead or belongs
+    /// to another database, or the configured persistence provider cannot write inside it (a mis-wire).
+    /// </exception>
+    Task<TTimeJob> AddAsync(TTimeJob entity, TimeSpan delay, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Enqueues a time job behind an idempotency reservation, due <paramref name="delay"/> after the store's instant
+    /// at write; a live reservation is observed and its job returned without inserting anything.
+    /// </summary>
+    /// <remarks>
+    /// The idempotent form of <see cref="AddAsync(TTimeJob, TimeSpan, CancellationToken)"/>, with the reservation
+    /// semantics of <see cref="AddIdempotentAsync(TTimeJob, string, TimeSpan, CancellationToken)"/>. Only a creation
+    /// is stamped; a dedup hit writes nothing and keeps the reserved job's due time.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="delay"/> is negative (thrown synchronously), or the store's instant plus the delay overflows
+    /// (thrown before any row is written).
+    /// </exception>
+    /// <exception cref="Headless.Jobs.JobValidatorException">The job failed validation (unknown function).</exception>
+    /// <exception cref="ArgumentException">
+    /// The entity already carries an <c>ExecutionTime</c>, the key is not a valid Jobs name, or the TTL is outside 1
+    /// second to 30 days.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// On the enlisted manager only: the unit carries no live relational resource, its resource is dead, belongs to
+    /// another database, or cannot create savepoints, or the configured persistence provider cannot write inside it
+    /// (a mis-wire).
+    /// </exception>
+    Task<TTimeJob> AddIdempotentAsync(
+        TTimeJob entity,
+        string idempotencyKey,
+        TimeSpan idempotencyTtl,
+        TimeSpan delay,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Updates an existing time job and returns the result.</summary>
     /// <remarks>
     /// Only a job no node has started can be edited: one that is idle and unclaimed, or queued. Editing a queued job
@@ -87,7 +141,7 @@ public interface ITimeJobManager<TTimeJob>
 
     // Batch operations
 
-    /// <inheritdoc cref="AddAsync" />
+    /// <inheritdoc cref="AddAsync(TTimeJob, CancellationToken)" />
     /// <exception cref="Headless.Jobs.JobValidatorException">
     /// One or more jobs failed validation; <see cref="Headless.Jobs.JobValidatorException.Errors" /> lists each.
     /// </exception>

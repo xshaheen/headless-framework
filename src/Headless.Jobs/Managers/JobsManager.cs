@@ -83,6 +83,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken
     )
     {
+        _RejectInvalidDelayedEntry(entity, delay);
         JobIntentFingerprint.RejectOrdinaryMutation(entity);
         return _AddTimeJobCoreAsync(entity, unitOfWork, idempotency: null, delay, cancellationToken);
     }
@@ -118,8 +119,22 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken
     )
     {
+        _RejectInvalidDelayedEntry(entity, delay);
         JobIntentFingerprint.RejectOrdinaryMutation(entity);
         return _AddIdempotentTimeJobAsync(entity, idempotencyKey, idempotencyTtl, delay, unitOfWork, cancellationToken);
+    }
+
+    // The delayed entry points are public through ITimeJobManager, so they reject their own bad input synchronously:
+    // an entity that already carries an absolute ExecutionTime would silently drop the delay.
+    private static void _RejectInvalidDelayedEntry(TTimeJob entity, TimeSpan delay)
+    {
+        Argument.IsNotNull(entity);
+        Argument.IsGreaterThanOrEqualTo(delay, TimeSpan.Zero);
+        Argument.IsTrue(
+            entity.ExecutionTime is null,
+            "A delayed time job must not carry an ExecutionTime: the store resolves its due time from the delay.",
+            nameof(entity)
+        );
     }
 
     internal Task<JobResult<TCronJob>> UpdateCronJobAsync(TCronJob cronJob, CancellationToken cancellationToken)

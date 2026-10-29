@@ -38,7 +38,6 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         // A relative schedule reaches the manager with no due time and its delay alongside: the store, not this node,
         // turns the delay into an instant.
         var (scheduler, time, _) = _CreateScheduler();
-        var delayed = (IDelayedTimeJobManager<TimeJobEntity>)time;
         await (
             fluent
                 ? scheduler.ScheduleAfterAsync(
@@ -49,9 +48,8 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 )
                 : scheduler.ScheduleAfterAsync(new Request(), TimeSpan.FromHours(2), AbortToken)
         );
-        await delayed
-            .Received(1)
-            .AddAfterAsync(
+        await time.Received(1)
+            .AddAsync(
                 Arg.Is<TimeJobEntity>(job => job.Function == _Typed.FunctionName && job.ExecutionTime == null),
                 TimeSpan.FromHours(2),
                 AbortToken
@@ -65,9 +63,8 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 )
                 : scheduler.ScheduleAfterAsync<RequestlessJob>(TimeSpan.Zero, AbortToken)
         );
-        await delayed
-            .Received(1)
-            .AddAfterAsync(
+        await time.Received(1)
+            .AddAsync(
                 Arg.Is<TimeJobEntity>(job => job.Function == _Requestless.FunctionName && job.ExecutionTime == null),
                 TimeSpan.Zero,
                 AbortToken
@@ -92,7 +89,6 @@ public sealed class JobSchedulingDefaultsTests : TestBase
     public async Task idempotent_relative_schedule_carries_the_delay_with_the_idempotency_window()
     {
         var (scheduler, time, _) = _CreateScheduler();
-        var delayed = (IDelayedTimeJobManager<TimeJobEntity>)time;
 
         await scheduler.ScheduleAfterAsync<RequestlessJob>(
             TimeSpan.FromMinutes(10),
@@ -100,9 +96,8 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             AbortToken
         );
 
-        await delayed
-            .Received(1)
-            .AddIdempotentAfterAsync(
+        await time.Received(1)
+            .AddIdempotentAsync(
                 Arg.Is<TimeJobEntity>(job => job.ExecutionTime == null),
                 "delayed-key",
                 TimeSpan.FromHours(1),
@@ -124,7 +119,6 @@ public sealed class JobSchedulingDefaultsTests : TestBase
     public void a_negative_delay_throws_synchronously_before_the_manager_is_called(bool fluent)
     {
         var (scheduler, time, _) = _CreateScheduler();
-        var delayed = (IDelayedTimeJobManager<TimeJobEntity>)time;
         Action negative = () =>
             _ = fluent
                 ? scheduler.ScheduleAfterAsync(new Request(), TimeSpan.FromTicks(-1), _ => { }, AbortToken)
@@ -137,7 +131,6 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         negative.Should().Throw<ArgumentOutOfRangeException>();
         negativeRequestless.Should().Throw<ArgumentOutOfRangeException>();
         time.ReceivedCalls().Should().BeEmpty();
-        delayed.ReceivedCalls().Should().BeEmpty();
     }
 
     [Fact]
@@ -802,16 +795,13 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         ICronJobManager<CronJobEntity> Cron
     ) _CreateScheduler(JobSchedulingPolicies? policies = null)
     {
-        var time = Substitute.For<ITimeJobManager<TimeJobEntity>, IDelayedTimeJobManager<TimeJobEntity>>();
+        var time = Substitute.For<ITimeJobManager<TimeJobEntity>>();
         var cron = Substitute.For<ICronJobManager<CronJobEntity>>();
         time.AddAsync(Arg.Any<TimeJobEntity>(), Arg.Any<CancellationToken>())
             .Returns(call => call.Arg<TimeJobEntity>());
-        var delayed = (IDelayedTimeJobManager<TimeJobEntity>)time;
-        delayed
-            .AddAfterAsync(Arg.Any<TimeJobEntity>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+        time.AddAsync(Arg.Any<TimeJobEntity>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(call => call.Arg<TimeJobEntity>());
-        delayed
-            .AddIdempotentAfterAsync(
+        time.AddIdempotentAsync(
                 Arg.Any<TimeJobEntity>(),
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan>(),
