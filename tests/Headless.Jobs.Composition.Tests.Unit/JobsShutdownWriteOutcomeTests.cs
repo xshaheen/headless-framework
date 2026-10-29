@@ -93,7 +93,7 @@ public sealed class JobsShutdownWriteOutcomeTests : TestBase
         // then
         await run.Should().NotThrowAsync();
         context.LeaseLost.Should().BeTrue();
-        await fixture.Manager.Received(1).SettleInterruptedAsync(context, Arg.Any<DateTime?>(), CancellationToken.None);
+        await fixture.Manager.Received(1).SettleInterruptedAsync(context, Arg.Any<TimeSpan?>(), CancellationToken.None);
         await fixture.ShouldHaveWrittenNothingElseAsync();
         fixture.ShutdownWriteFailures.Should().Be(write == ShutdownWrite.Throws ? 1 : 0);
     }
@@ -194,7 +194,7 @@ public sealed class JobsShutdownWriteOutcomeTests : TestBase
             manager
                 .SettleInterruptedAsync(
                     Arg.Any<JobExecutionState>(),
-                    Arg.Any<DateTime?>(),
+                    Arg.Any<TimeSpan?>(),
                     Arg.Any<CancellationToken>()
                 )
                 .Returns(outcome);

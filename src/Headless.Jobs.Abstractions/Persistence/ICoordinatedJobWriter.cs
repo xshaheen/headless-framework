@@ -34,6 +34,7 @@ internal interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
         TTimeJob job,
         string idempotencyKey,
         TimeSpan idempotencyTtl,
+        TimeJobDueTimeSeeder? seeder,
         IRelationalUnitOfWorkResource relationalResource,
         CancellationToken cancellationToken = default
     );
@@ -60,8 +61,15 @@ internal interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
     /// Writes the time-job rows inside the transaction surfaced by <paramref name="relationalResource" />, preserving
     /// insertion order. Does not dispatch, restart the scheduler, or notify — the manager defers those to commit.
     /// </summary>
-    Task WriteTimeJobsAsync(
+    /// <remarks>
+    /// With a <paramref name="seeder" />, each root's relative due time is resolved against the store's CURRENT
+    /// STATEMENT clock read inside the caller's transaction, for the same reason as
+    /// <see cref="WriteCronJobsAsync" />: a transaction-start clock would make a run-now job due before it was written.
+    /// Without one, no clock is read and the rows' due times are stored as given.
+    /// </remarks>
+    Task<TimeJobDueTimeSeedResult> WriteTimeJobsAsync(
         TTimeJob[] jobs,
+        TimeJobDueTimeSeeder? seeder,
         IRelationalUnitOfWorkResource relationalResource,
         CancellationToken cancellationToken = default
     );

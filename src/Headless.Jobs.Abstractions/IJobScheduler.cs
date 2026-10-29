@@ -200,6 +200,11 @@ public interface IJobScheduler
     Task<JobRequeueOutcome> RequeueOccurrenceAsync(Guid occurrenceId, CancellationToken cancellationToken = default);
 
     /// <summary>Enqueues a typed job for immediate execution and returns its persisted entity identifier.</summary>
+    /// <remarks>
+    /// The job is due at the store's instant when its row is written, read inside the write, not at this node's
+    /// clock, so a node ahead of the database does not leave a row the store will not claim yet. A store without a
+    /// statement clock uses the host's <see cref="TimeProvider"/>.
+    /// </remarks>
     Task<Guid> EnqueueAsync<TArgs>(TArgs request, CancellationToken cancellationToken = default);
 
     Task<Guid> EnqueueAsync<TArgs>(TArgs request, JobOptions? options, CancellationToken cancellationToken = default);
@@ -235,10 +240,20 @@ public interface IJobScheduler
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
+    /// <summary>Schedules an ordinary one-shot job due the delay after the store's clock at write time; delay must be non-negative.</summary>
+    /// <remarks>
+    /// The store adds the delay to its own instant inside the write, so this node's clock skew from the database does
+    /// not move the due time. A store without a statement clock (an EF backend other than PostgreSQL or SQL Server)
+    /// uses the host's <see cref="TimeProvider"/> instead. Through a unit of work the delay is anchored at the write,
+    /// not at the commit. <c>CreatedAt</c> still comes from this node's clock.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="delay"/> is negative (thrown synchronously), or overflows when added to the store's instant (no
+    /// row is written).
+    /// </exception>
     Task<Guid> ScheduleAfterAsync<TArgs>(TArgs request, TimeSpan delay, CancellationToken cancellationToken = default);
 
-    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
+    /// <summary>Schedules an ordinary one-shot job due the delay after the store's clock at write time; delay must be non-negative.</summary>
     Task<Guid> ScheduleAfterAsync<TArgs>(
         TArgs request,
         TimeSpan delay,
@@ -362,7 +377,7 @@ public interface IJobScheduler
     )
         where TJob : IJob;
 
-    /// <summary>Schedules a one-shot run of a job that takes no arguments relative to the configured application clock; delay must be non-negative.</summary>
+    /// <summary>Schedules a one-shot run of a job that takes no arguments due the delay after the store's clock at write time; delay must be non-negative.</summary>
     /// <typeparam name="TJob">The <c>[Job]</c> class to run.</typeparam>
     Task<Guid> ScheduleAfterAsync<TJob>(TimeSpan delay, CancellationToken cancellationToken = default)
         where TJob : IJob;

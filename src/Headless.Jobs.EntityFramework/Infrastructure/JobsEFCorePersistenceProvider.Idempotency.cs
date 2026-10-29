@@ -2,6 +2,7 @@
 
 using System.Runtime.ExceptionServices;
 using Headless.Checks;
+using Headless.Jobs.Internal;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Jobs.Infrastructure;
@@ -18,6 +19,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         TTimeJob job,
         string idempotencyKey,
         TimeSpan idempotencyTtl,
+        TimeJobDueTimeSeeder? seeder,
         CancellationToken cancellationToken = default
     )
     {
@@ -27,12 +29,19 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         JobContract.ValidateName(idempotencyKey);
         JobContract.ValidateIdempotencyTtl(idempotencyTtl);
 
-        var (result, _) = await _ExecuteKeyedTransactionAsync(
+        var (result, persisted) = await _ExecuteKeyedTransactionAsync(
                 async (context, ct) =>
                 {
                     // Clone so a rolled-back attempt never leaves durable stamps on the caller's entity.
                     var candidate = job.Clone();
-                    var outcome = await _AddIdempotentAsync(context, candidate, idempotencyKey, idempotencyTtl, ct)
+                    var outcome = await _AddIdempotentAsync(
+                            context,
+                            candidate,
+                            idempotencyKey,
+                            idempotencyTtl,
+                            seeder,
+                            ct
+                        )
                         .ConfigureAwait(false);
                     return (outcome, candidate);
                 },
@@ -41,8 +50,14 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .ConfigureAwait(false);
 
         // Preserve the successful input-entity updates (mirrors the keyed kernel) so the manager's caller sees
-        // the durable state. A hit replaces the pre-stamped id with the reservation's stored job id.
+        // the durable state. A hit replaces the pre-stamped id with the reservation's stored job id; a creation also
+        // carries back the due time the store resolved.
         job.Id = result.JobId;
+        if (result.Created)
+        {
+            job.ExecutionTime = persisted.ExecutionTime;
+        }
+
         return result;
     }
 
@@ -52,6 +67,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         TTimeJob job,
         string idempotencyKey,
         TimeSpan idempotencyTtl,
+        TimeJobDueTimeSeeder? seeder,
         CancellationToken cancellationToken
     )
     {
@@ -116,8 +132,15 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             reservation.UpdatedAt = now;
         }
 
+        // The statement clock that just decided the reservation's expiry also anchors a relative due time, so one read
+        // serves both and the due time cannot predate the reservation.
+        if (seeder is not null)
+        {
+            TimeJobDueTimeSeeding.Apply([job], seeder, now);
+        }
+
         await context.Set<TTimeJob>().AddAsync(job, cancellationToken).ConfigureAwait(false);
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return new JobIdempotencyEnqueueResult(job.Id, Created: true);
+        return new JobIdempotencyEnqueueResult(job.Id, Created: true) { StoreUtcNow = seeder is null ? null : now };
     }
 }

@@ -52,7 +52,13 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
         var ct = AbortToken;
         await Fixture.ResetDatabaseAsync(ct);
 
-        using var host = Fixture.BuildHost("node-a");
+        // The node lags the database by two minutes, so a due time it computed itself would miss the tolerance below.
+        var capture = new LeaseSqlCapture();
+        using var host = Fixture.BuildHost(
+            "node-a",
+            timeProvider: new SkewedTimeProvider(TimeSpan.FromMinutes(-2)),
+            interceptor: capture
+        );
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
@@ -68,9 +74,23 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
             lockedUntil: DateTime.UtcNow.AddMinutes(5)
         );
         var before = await persistence.GetTimeJobByIdAsync(id, ct);
-        var retryAt = new DateTime(2035, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+        var remaining = TimeSpan.FromSeconds(20);
 
-        (await persistence.SettleInterruptedTimeJobAsync(id, _StopOwner, _StopReason, retryAt, ct)).Should().Be(1);
+        capture.Clear();
+        var storeBefore = await _StoreUtcNowAsync(ct);
+        (await persistence.SettleInterruptedTimeJobAsync(id, _StopOwner, _StopReason, remaining, ct)).Should().Be(1);
+        var storeAfter = await _StoreUtcNowAsync(ct);
+
+        // The database computes the due time: the settle binds no instant, only the remaining seconds.
+        var settle = capture
+            .Statements.Should()
+            .ContainSingle(statement =>
+                statement.Sql.TrimStart().StartsWith("UPDATE", StringComparison.OrdinalIgnoreCase)
+            )
+            .Subject;
+        settle.Parameters.Values.Should().NotContain(parameter => parameter.IsTemporal, settle.Sql);
+        settle.Sql.Should().Contain(Fixture.EfTranslatedDatabaseClockSql);
+        settle.InExplicitTransaction.Should().BeFalse("the database clock is read in the settle's own statement");
 
         var (status, ownerId, lockedUntil, exceptionMessage, skippedReason) = await Fixture.ReadTimeJobDetailAsync(
             id,
@@ -85,7 +105,10 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
             case NodeDeathPolicy.Retry:
                 status.Should().Be((int)JobStatus.Idle);
                 ownerId.Should().BeNull();
-                stored.ExecutionTime.Should().Be(retryAt);
+                stored
+                    .ExecutionTime.Should()
+                    .BeOnOrAfter(storeBefore + remaining - TimeSpan.FromSeconds(1))
+                    .And.BeOnOrBefore(storeAfter + remaining + TimeSpan.FromSeconds(1));
                 break;
             case NodeDeathPolicy.MarkFailed:
                 status.Should().Be((int)JobStatus.Failed);
@@ -309,6 +332,22 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>
         {
             await second.StopAsync(ct);
         }
+    }
+
+    // Read on its own connection, so the bound around a store-stamped instant absorbs only round-trip latency.
+    private async Task<DateTime> _StoreUtcNowAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = Fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT {Fixture.UtcNowSqlExpression}";
+
+        return await command.ExecuteScalarAsync(cancellationToken) switch
+        {
+            DateTimeOffset instant => instant.UtcDateTime,
+            DateTime instant => DateTime.SpecifyKind(instant, DateTimeKind.Utc),
+            _ => throw new InvalidOperationException("The store did not return an instant."),
+        };
     }
 
     private IHost _BuildGracefulStopHost(string nodeId) =>

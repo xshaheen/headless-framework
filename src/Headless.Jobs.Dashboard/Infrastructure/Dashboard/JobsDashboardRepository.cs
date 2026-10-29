@@ -401,7 +401,6 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         {
             Id = _guidGenerator.Create(),
             Status = JobStatus.Idle,
-            ExecutionTime = now.UtcDateTime,
             LockedUntil = null,
             CronJobId = id,
             TraceParent = JobTraceParent.Capture(scheduleActivity),
@@ -410,8 +409,10 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         };
         scheduleActivity?.SetTag("headless.job.id", onDemandOccurrence.Id.ToString());
 
+        // The store stamps the due time on its own clock: if the immediate acquire below loses (a saturated cluster
+        // limit, say), the fallback sweep must find the occurrence due on the database clock, not a skew later.
         await _persistenceProvider
-            .InsertCronJobOccurrencesAsync([onDemandOccurrence], cancellationToken)
+            .InsertRunNowCronJobOccurrenceAsync(onDemandOccurrence, cancellationToken)
             .ConfigureAwait(false);
 
         // Acquire and run immediately

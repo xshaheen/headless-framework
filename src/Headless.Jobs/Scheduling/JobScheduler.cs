@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Jobs.Managers;
 using Headless.UnitOfWork;
 
 namespace Headless.Jobs;
@@ -18,7 +19,6 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     private readonly Func<Type, JobFunctionDescriptor?> _descriptorByJobType;
     private readonly JobsRequestSerializationOptions _serializationOptions;
     private readonly int _maxChainDepth;
-    private readonly TimeProvider? _timeProvider;
     private readonly JobSchedulingPolicies _policies;
 
     public JobScheduler(
@@ -28,7 +28,6 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         IInternalJobManager internalJobManager,
         IJobsHostScheduler jobsHostScheduler,
         JobsRequestSerializationOptions serializationOptions,
-        TimeProvider timeProvider,
         JobSchedulingPolicies policies,
         SchedulerOptionsBuilder? schedulerOptions = null
     )
@@ -42,7 +41,6 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             functionRegistry.DescriptorsByJobType.GetValueOrDefault,
             serializationOptions,
             schedulerOptions?.MaxChainDepth ?? SchedulerOptionsBuilder.DefaultMaxChainDepth,
-            timeProvider,
             policies
         ) { }
 
@@ -56,7 +54,6 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         Func<Type, JobFunctionDescriptor?>? descriptorByJobType = null,
         JobsRequestSerializationOptions? serializationOptions = null,
         int maxChainDepth = SchedulerOptionsBuilder.DefaultMaxChainDepth,
-        TimeProvider? timeProvider = null,
         JobSchedulingPolicies? policies = null
     )
     {
@@ -69,7 +66,6 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         _descriptorByJobType = descriptorByJobType ?? (static _ => null);
         _serializationOptions = serializationOptions ?? JobsRequestSerializationOptions.Default;
         _maxChainDepth = Argument.IsPositive(maxChainDepth);
-        _timeProvider = timeProvider;
         _policies = policies ?? JobSchedulingPolicies.Empty;
     }
 
@@ -144,7 +140,14 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         CancellationToken cancellationToken = default
     )
     {
-        return _ScheduleTimeAsync(_GetDescriptor<TArgs>(), request, executionTime: null, options, cancellationToken);
+        return _ScheduleTimeAsync(
+            _GetDescriptor<TArgs>(),
+            request,
+            executionTime: null,
+            delay: null,
+            options,
+            cancellationToken
+        );
     }
 
     public Task<Guid> EnqueueAsync<TJob>(CancellationToken cancellationToken = default)
@@ -157,6 +160,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             _GetJobDescriptor(typeof(TJob)),
             request: null,
             executionTime: null,
+            delay: null,
             options,
             cancellationToken
         );
@@ -205,6 +209,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             _GetDescriptor<TArgs>(),
             request,
             executionTime.UtcDateTime,
+            delay: null,
             options,
             cancellationToken
         );
@@ -224,44 +229,59 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             _GetJobDescriptor(typeof(TJob)),
             request: null,
             executionTime.UtcDateTime,
+            delay: null,
             options,
             cancellationToken
         );
     }
 
-    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
+    /// <summary>Schedules an ordinary one-shot job due the delay after the store's clock at write time; delay must be non-negative.</summary>
     public Task<Guid> ScheduleAfterAsync<TArgs>(
         TArgs request,
         TimeSpan delay,
         CancellationToken cancellationToken = default
     ) => ScheduleAfterAsync(request, delay, options: null, cancellationToken);
 
-    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
+    /// <summary>Schedules an ordinary one-shot job due the delay after the store's clock at write time; delay must be non-negative.</summary>
     public Task<Guid> ScheduleAfterAsync<TArgs>(
         TArgs request,
         TimeSpan delay,
         JobOptions? options,
         CancellationToken cancellationToken = default
-    ) => ScheduleAsync(request, _GetExecutionTime(delay), options, cancellationToken);
+    )
+    {
+        Argument.IsGreaterThanOrEqualTo(delay, TimeSpan.Zero);
+        return _ScheduleTimeAsync(
+            _GetDescriptor<TArgs>(),
+            request,
+            executionTime: null,
+            delay,
+            options,
+            cancellationToken
+        );
+    }
 
-    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
+    /// <summary>Schedules an ordinary one-shot job due the delay after the store's clock at write time; delay must be non-negative.</summary>
     public Task<Guid> ScheduleAfterAsync<TJob>(TimeSpan delay, CancellationToken cancellationToken = default)
         where TJob : IJob => ScheduleAfterAsync<TJob>(delay, options: null, cancellationToken);
 
-    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
+    /// <summary>Schedules an ordinary one-shot job due the delay after the store's clock at write time; delay must be non-negative.</summary>
     public Task<Guid> ScheduleAfterAsync<TJob>(
         TimeSpan delay,
         JobOptions? options,
         CancellationToken cancellationToken = default
     )
-        where TJob : IJob => ScheduleAsync<TJob>(_GetExecutionTime(delay), options, cancellationToken);
-
-    private DateTimeOffset _GetExecutionTime(TimeSpan delay)
+        where TJob : IJob
     {
         Argument.IsGreaterThanOrEqualTo(delay, TimeSpan.Zero);
-        var clock =
-            _timeProvider ?? throw new InvalidOperationException("Job scheduling requires an injected TimeProvider.");
-        return clock.GetUtcNow().Add(delay);
+        return _ScheduleTimeAsync<object?>(
+            _GetJobDescriptor(typeof(TJob)),
+            request: null,
+            executionTime: null,
+            delay,
+            options,
+            cancellationToken
+        );
     }
 
     public Task<Guid> ScheduleRecurringAsync<TArgs>(
@@ -309,6 +329,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         JobFunctionDescriptor descriptor,
         TArgs request,
         DateTime? executionTime,
+        TimeSpan? delay,
         JobOptions? options,
         CancellationToken cancellationToken
     )
@@ -333,19 +354,32 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             IsSystemJob = resolved.IsSystemJob,
         };
 
-        if (resolved.IdempotencyKey is not { } idempotencyKey)
+        // A delayed job keeps ExecutionTime unset and hands its delay to the manager, so the store adds it to its own
+        // clock inside the write: an instant computed here would be shifted by this node's skew from the database.
+        // An idempotent job needs the resolved entity (function, contract version, final tenant scope), and policy
+        // resolution above already validated the key/TTL pair, so the entity is fully built when the manager dedups
+        // the reservation against it.
+        var write = (resolved.IdempotencyKey, delay) switch
         {
-            var persisted = await _timeJobManager.AddAsync(entity, cancellationToken).ConfigureAwait(false);
-            return persisted.Id;
-        }
+            (null, null) => _timeJobManager.AddAsync(entity, cancellationToken),
+            (null, { } after) => _timeJobManager.AddAsync(entity, after, cancellationToken),
+            ({ } key, null) => _timeJobManager.AddIdempotentAsync(
+                entity,
+                key,
+                resolved.IdempotencyTtl!.Value,
+                cancellationToken
+            ),
+            ({ } key, { } after) => _timeJobManager.AddIdempotentAsync(
+                entity,
+                key,
+                resolved.IdempotencyTtl!.Value,
+                after,
+                cancellationToken
+            ),
+        };
 
-        // The identity contract needs the resolved entity (function, contract version, final tenant scope), and
-        // policy resolution above already validated the key/TTL pair, so the entity is fully built when the
-        // manager dedups the reservation against it.
-        var idempotent = await _timeJobManager
-            .AddIdempotentAsync(entity, idempotencyKey, resolved.IdempotencyTtl!.Value, cancellationToken)
-            .ConfigureAwait(false);
-        return idempotent.Id;
+        var persisted = await write.ConfigureAwait(false);
+        return persisted.Id;
     }
 
     private async Task<Guid> _ScheduleRecurringAsync<TArgs>(

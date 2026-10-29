@@ -101,11 +101,18 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <see cref="JobIdempotencyEnqueueResult.Created"/> = <see langword="false"/>; the payload is not compared.
     /// An expired reservation is atomically replaced by exactly one contender under concurrency. No default
     /// implementation exists because a correct fallback cannot be atomic.
+    /// <para>
+    /// When <paramref name="seeder"/> is supplied and this call creates the job, call it with the same store instant
+    /// that decided the reservation's expiry, set the job's <c>ExecutionTime</c> from it as
+    /// <see cref="AddTimeJobsAsync(TTimeJob[],TimeJobDueTimeSeeder,CancellationToken)"/> describes, and report that
+    /// instant in <see cref="JobIdempotencyEnqueueResult.StoreUtcNow"/>. A dedup hit writes nothing and needs no seed.
+    /// </para>
     /// </remarks>
     Task<JobIdempotencyEnqueueResult> AddIdempotentTimeJobAsync(
         TTimeJob job,
         string idempotencyKey,
         TimeSpan idempotencyTtl,
+        TimeJobDueTimeSeeder? seeder,
         CancellationToken cancellationToken = default
     );
 
@@ -235,9 +242,11 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// The owner that claimed the run. Only an <c>InProgress</c> row still stamped with it is settled.
     /// </param>
     /// <param name="reason">The exception message (<c>MarkFailed</c>) or skip reason (<c>Skip</c>) to record.</param>
-    /// <param name="retryExecutionTime">
-    /// Under <c>Retry</c>, the instant the job should next become due, or <see langword="null"/> to keep the stored
-    /// one; ignored by the terminal policies.
+    /// <param name="retryAfter">
+    /// Under <c>Retry</c>, the part of an in-process retry wait the job still owed when the stop caught it, never
+    /// negative, or <see langword="null"/> to keep the stored <c>ExecutionTime</c>; ignored by the terminal policies.
+    /// The store adds it to its own clock at the write, so the job becomes due after the remaining wait whatever the
+    /// settling node's clock says. A store that has no clock of its own adds it to its <see cref="TimeProvider"/>.
     /// </param>
     /// <param name="cancellationToken">Token that aborts the write before it starts.</param>
     /// <returns><c>1</c> when the row was settled; <c>0</c> when the fence excluded it.</returns>
@@ -249,12 +258,13 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <exception cref="ArgumentException">
     /// <paramref name="claimOwner"/> or <paramref name="reason"/> is <see langword="null"/> or empty.
     /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="retryAfter"/> is negative.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> SettleInterruptedTimeJobAsync(
         Guid jobId,
         string claimOwner,
         string reason,
-        DateTime? retryExecutionTime,
+        TimeSpan? retryAfter,
         CancellationToken cancellationToken = default
     );
 
@@ -468,7 +478,8 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </returns>
     /// <remarks>
     /// <para>
-    /// The caller decides a row is due on its own clock; the store applies the same due test as
+    /// The caller asks for every run-now root it wrote, for a delayed root whose delay its monotonic clock says has
+    /// elapsed since the write, and for an absolute root due on its own clock; the store applies the same due test as
     /// <see cref="QueueTimeJobsAsync"/>, on its own clock, and leaves a row that is not yet due untouched for the
     /// scheduler's claim. A node whose clock runs ahead therefore cannot start a scheduled job early through enqueue.
     /// </para>
@@ -1182,6 +1193,33 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Inserts new time jobs together with their child chains, resolving each root's relative due time against the
+    /// store's own clock in the same write.
+    /// </summary>
+    /// <param name="jobs">The root jobs to insert; nested children are inserted with their parent link set.</param>
+    /// <param name="seeder">Returns a root's due time from the store anchor the provider supplies.</param>
+    /// <param name="cancellationToken">Token that aborts the write.</param>
+    /// <returns>The store anchor used and the rows written, counting children as well as roots.</returns>
+    /// <remarks>
+    /// This is the enqueue path for a job that runs now or after a delay;
+    /// <see cref="AddTimeJobsAsync(TTimeJob[],CancellationToken)"/> remains the raw insert for jobs whose due times are
+    /// already absolute. Read the store's clock once for the whole call, pass that instant to
+    /// <paramref name="seeder"/> for every root, and set the root's <c>ExecutionTime</c> to each non-null result before
+    /// inserting. Descendants are not seeded.
+    /// <para>
+    /// <b>The anchor must be the store's CURRENT STATEMENT clock</b> — PostgreSQL <c>clock_timestamp()</c>, SQL Server
+    /// <c>SYSUTCDATETIME()</c> — read after any retry begins, never a transaction-start clock. A store with no such clock
+    /// may use the host's <see cref="TimeProvider"/>. The same all-or-nothing contract as the raw insert applies.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<TimeJobDueTimeSeedResult> AddTimeJobsAsync(
+        TTimeJob[] jobs,
+        TimeJobDueTimeSeeder seeder,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Overwrites the schedulable fields of existing time jobs and their child chains, refusing any job a node has
     /// started.
     /// </summary>
@@ -1612,6 +1650,32 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> InsertCronJobOccurrencesAsync(
         CronJobOccurrenceEntity<TCronJob>[] cronJobOccurrences,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Inserts one on-demand "run this cron now" occurrence, stamping its <c>ExecutionTime</c> from the store's own
+    /// clock in the same write.
+    /// </summary>
+    /// <param name="occurrence">
+    /// The occurrence to insert. Its incoming <c>ExecutionTime</c> is ignored; on return it carries the persisted one.
+    /// </param>
+    /// <param name="cancellationToken">Token that aborts the write.</param>
+    /// <returns>The <c>ExecutionTime</c> the occurrence was persisted with.</returns>
+    /// <remarks>
+    /// Claims decide due-ness on the store's clock, so an occurrence stamped from a node minutes ahead of the database
+    /// would not be claimable until the database caught up whenever its immediate acquire loses (for example to a
+    /// saturated cluster limit). Otherwise this behaves as <see cref="InsertCronJobOccurrencesAsync"/>.
+    /// <para>
+    /// <b>The stamp must be the store's CURRENT STATEMENT clock</b> — PostgreSQL <c>clock_timestamp()</c>, SQL Server
+    /// <c>SYSUTCDATETIME()</c> — read inside the inserting write, never a transaction-start clock. A store with no such
+    /// clock may use the host's <see cref="TimeProvider"/>.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">The occurrence's cron definition does not exist.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<DateTime> InsertRunNowCronJobOccurrenceAsync(
+        CronJobOccurrenceEntity<TCronJob> occurrence,
         CancellationToken cancellationToken = default
     );
 
