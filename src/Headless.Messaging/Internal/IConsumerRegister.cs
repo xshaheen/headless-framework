@@ -83,7 +83,14 @@ internal sealed partial class ConsumerRegister(
 #pragma warning restore CA2213
     private Task? _shutdownTask;
     private Task? _quiesceTask;
-    private volatile bool _isHealthy = true;
+
+    // Set by a failure no single subscription owns: the broker refused a subscription before it had a handle, or a
+    // generation did not stop in time, or a rebuild discarded every handle. Only a full restart recovers from it.
+    private volatile bool _needsFullRestart;
+
+    // Set when a subscription's replacement failed to start: it has no handle to carry the failure, so the register
+    // holds it until the next pass recreates the missing subscription.
+    private volatile bool _needsPartialRestart;
     private int _pendingTopologyRefresh;
 
     private MethodMatcherCache _selector = null!;
@@ -99,7 +106,21 @@ internal sealed partial class ConsumerRegister(
 
     public bool IsHealthy()
     {
-        return _isHealthy;
+        if (_needsFullRestart || _needsPartialRestart)
+        {
+            return false;
+        }
+
+        // Enumerating the dictionary itself takes no locks; its Values property locks every bucket and copies them.
+        foreach (var (_, handle) in _subscriptionHandles)
+        {
+            if (handle.IsDegraded)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public async ValueTask StartAsync(CancellationToken stoppingToken)
@@ -186,6 +207,11 @@ internal sealed partial class ConsumerRegister(
         }
     }
 
+    /// <summary>
+    /// Restarts consumers when the register is unhealthy, or every subscription when <paramref name="force"/> is set.
+    /// Without it, only the subscriptions that hold a degraded client are rebuilt, so the healthy ones keep consuming;
+    /// a failure no single subscription owns still rebuilds every subscription.
+    /// </summary>
     public async ValueTask ReStartAsync(bool force = false, CancellationToken cancellationToken = default)
     {
         if ((LifecycleState)Volatile.Read(ref _state) is LifecycleState.Disposing or LifecycleState.Disposed)
@@ -198,7 +224,17 @@ internal sealed partial class ConsumerRegister(
             await _restartGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                await _RestartCoreAsync().ConfigureAwait(false);
+                // Rebuilding single subscriptions needs a running generation to keep. Before one runs, or once a
+                // failed rebuild discarded it, only a full restart starts the consumers again.
+                if (force || _needsFullRestart || (LifecycleState)Volatile.Read(ref _state) != LifecycleState.Running)
+                {
+                    await _RestartCoreAsync().ConfigureAwait(false);
+                }
+                else
+                {
+                    await _ApplyTopologyChangeAsync(rebuildDegraded: true).ConfigureAwait(false);
+                }
+
                 await _DrainPendingTopologyRefreshesAsync().ConfigureAwait(false);
             }
             finally
@@ -269,14 +305,20 @@ internal sealed partial class ConsumerRegister(
 
     /// <summary>
     /// Rebuilds the subscription groups whose shape differs from the running ones, under the restart gate. A group's
-    /// shape is its concurrency and its consumers, so it changes when a runtime subscription joins or leaves it.
+    /// shape is its concurrency and its consumers, so it changes when a runtime subscription joins or leaves it. With
+    /// <paramref name="rebuildDegraded"/>, a group holding a degraded client is rebuilt too; its group is resolved
+    /// against the current subscriptions like any other, so a group removed or reshaped since is not recreated as it was.
     /// </summary>
-    private async ValueTask _ApplyTopologyChangeAsync()
+    private async ValueTask _ApplyTopologyChangeAsync(bool rebuildDegraded = false)
     {
         if ((LifecycleState)Volatile.Read(ref _state) != LifecycleState.Running)
         {
             return;
         }
+
+        // The diff below recreates every desired subscription missing from the map, so it owns the one a failed start
+        // left behind; a failure in this pass marks it again.
+        _needsPartialRestart = false;
 
         var desired = _selector
             .GetCandidatesBySubscription()
@@ -288,15 +330,14 @@ internal sealed partial class ConsumerRegister(
 
         var stale = _subscriptionHandles
             .Where(handle =>
-                !desired.TryGetValue(handle.Key, out var wanted)
+                (rebuildDegraded && handle.Value.IsDegraded)
+                || !desired.TryGetValue(handle.Key, out var wanted)
                 || !string.Equals(wanted.Shape, handle.Value.Shape, StringComparison.Ordinal)
             )
             .ToArray();
+        var staleNames = stale.Select(static handle => handle.Key).ToHashSet(StringComparer.Ordinal);
         var added = desired
-            .Where(wanted =>
-                !_subscriptionHandles.TryGetValue(wanted.Key, out var handle)
-                || !string.Equals(wanted.Value.Shape, handle.Shape, StringComparison.Ordinal)
-            )
+            .Where(wanted => !_subscriptionHandles.ContainsKey(wanted.Key) || staleNames.Contains(wanted.Key))
             .Select(static wanted => wanted.Value.Group)
             .ToArray();
 
@@ -311,7 +352,7 @@ internal sealed partial class ConsumerRegister(
                 .ConfigureAwait(false)
         )
         {
-            _isHealthy = false;
+            _needsFullRestart = true;
             _logger.ProcessorStopFailed(
                 new TimeoutException("The changed subscriptions did not stop before the topology deadline."),
                 nameof(ConsumerRegister)
@@ -324,13 +365,18 @@ internal sealed partial class ConsumerRegister(
             _subscriptionHandles.TryRemove(handle);
         }
 
+        // Final shutdown can win while the stale clients drain; replacements started now would outlive it.
+        if ((LifecycleState)Volatile.Read(ref _state) != LifecycleState.Running)
+        {
+            return;
+        }
+
         _RegisterKnownCircuits(desired.Values.Select(static x => x.Group));
 
         try
         {
             // Nothing waits for the establishment hooks under the restart gate, for the reason a rebuild gives.
             _ = await _StartSubscriptionsAsync(added).ConfigureAwait(false);
-            await _PauseSurvivorsOfOpenCircuitsAsync(added).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
             when ((LifecycleState)Volatile.Read(ref _state) is LifecycleState.Disposing or LifecycleState.Disposed)
@@ -339,10 +385,19 @@ internal sealed partial class ConsumerRegister(
         }
         catch
         {
-            // A group that failed to start leaves the host short of a subscription; the health watchdog's full
-            // rebuild recovers it.
-            _isHealthy = false;
+            // A group that failed to start leaves the host short of a subscription, which the transport check's next
+            // pass recreates.
+            _needsPartialRestart = true;
             throw;
+        }
+        finally
+        {
+            // A group aborts its circuits' half-open probes before its clients start, so a group whose start then
+            // failed has still reopened them, and the subscriptions sharing those circuits must be paused all the same.
+            if ((LifecycleState)Volatile.Read(ref _state) == LifecycleState.Running)
+            {
+                await _PauseSurvivorsOfOpenCircuitsAsync(added).ConfigureAwait(false);
+            }
         }
     }
 
@@ -827,14 +882,17 @@ internal sealed partial class ConsumerRegister(
                         _stoppingCts.Token
                     )
                     .ConfigureAwait(false);
-                client.AttachCallbacks(onMessage: null, onLog: _WriteLog);
+                // The probe belongs to no handle, and its failures surface as exceptions here, so its events log and
+                // report connectivity without touching any subscription's health.
+                client.AttachCallbacks(onMessage: null, onLog: log => _WriteLog(log, handle: null, client: null));
                 messageNames = await client
                     .FetchMessageNamesAsync(match.Value.Select(x => x.MessageName), _stoppingCts.Token)
                     .ConfigureAwait(false);
             }
             catch (BrokerConnectionException e)
             {
-                _isHealthy = false;
+                // This and every later subscription in the pass get no handle, so no handle can carry the failure.
+                _needsFullRestart = true;
                 _connectivity.ReportBrokerFailure();
                 _logger.FailedToConnectToBroker(e);
                 return establishments;
@@ -939,14 +997,14 @@ internal sealed partial class ConsumerRegister(
                             catch (BrokerConnectionException e)
                             {
                                 startupReady.TrySetException(e);
-                                _isHealthy = false;
+                                handle.MarkClientLoopFailed();
                                 _connectivity.ReportBrokerFailure();
                                 _logger.FailedToConnectToBroker(e);
                             }
                             catch (Exception e)
                             {
                                 startupReady.TrySetException(e);
-                                _isHealthy = false;
+                                handle.MarkClientLoopFailed();
                                 _logger.ConsumerProcessingLoopFailed(e);
                             }
                         },
@@ -1069,7 +1127,7 @@ internal sealed partial class ConsumerRegister(
         // are orthogonal to handler failures tracked by the circuit breaker.
         if (!await PulseAsync(removeCircuitState: false).ConfigureAwait(false))
         {
-            _isHealthy = false;
+            _needsFullRestart = true;
             _logger.ProcessorStopFailed(
                 new TimeoutException("The previous consumer generation did not stop before the restart deadline."),
                 nameof(ConsumerRegister)
@@ -1092,7 +1150,9 @@ internal sealed partial class ConsumerRegister(
             _stoppingCtsRegistration = _stoppingCts.Token.Register(_OnCancellationRequested);
         }
 
-        _isHealthy = true;
+        // Every handle is recreated below, so no earlier failure survives this generation.
+        _needsFullRestart = false;
+        _needsPartialRestart = false;
 
         try
         {
@@ -1121,6 +1181,9 @@ internal sealed partial class ConsumerRegister(
             }
 #pragma warning restore ERP022
 
+            // The cleanup discarded every handle and the degraded clients they held, so the register itself must say
+            // that no consumer runs.
+            _needsFullRestart = true;
             Interlocked.CompareExchange(ref _state, (int)LifecycleState.NotStarted, (int)LifecycleState.Starting);
             Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
             throw;
@@ -1319,7 +1382,7 @@ internal sealed partial class ConsumerRegister(
                         hostShutdownToken
                     );
                 },
-                _WriteLog
+                log => _WriteLog(log, clientHandle, client)
             );
 
             return;
@@ -1339,22 +1402,37 @@ internal sealed partial class ConsumerRegister(
                     hostShutdownToken
                 );
             },
-            _WriteLog
+            log => _WriteLog(log, clientHandle, client)
         );
     }
 
-    private void _WriteLog(LogMessageEventArgs logMessage)
+    /// <summary>
+    /// Logs a client's transport event and applies it to that client's health on <paramref name="handle"/>, the handle
+    /// the client was created for. Binding the handle object rather than its name keeps a retired client's late event
+    /// on the retired handle, which nothing reads, instead of on its replacement.
+    /// </summary>
+    private void _WriteLog(LogMessageEventArgs logMessage, SubscriptionHandle? handle, IConsumerClient? client)
     {
         var reason = LogSanitizer.Sanitize(logMessage.Reason) ?? string.Empty;
 
         switch (logMessage.LogType)
         {
             case MqLogType.ConsumerCancelled:
-                _isHealthy = false;
+                // A transport that pauses by cancelling its consumer reports that cancel too, so a paused handle's
+                // cancel is not a failure. A broker cancel during the pause surfaces when the resume consumes again.
+                if (handle is not null && client is not null && !handle.IsPausedForEvent)
+                {
+                    handle.MarkClientDegraded(client);
+                }
+
                 _logger.RabbitMqConsumerCancelled(reason);
                 break;
             case MqLogType.ConsumerRegistered:
-                _isHealthy = true;
+                if (client is not null)
+                {
+                    handle?.MarkClientHealthy(client);
+                }
+
                 _connectivity.ReportBrokerSuccess();
                 _logger.RabbitMqConsumerRegistered(reason);
                 break;
@@ -1362,7 +1440,7 @@ internal sealed partial class ConsumerRegister(
                 _logger.RabbitMqConsumerUnregistered(reason);
                 break;
             case MqLogType.ConsumerShutdown:
-                _isHealthy = false;
+                _MarkClientDegraded(handle, client);
                 _connectivity.ReportBrokerFailure();
                 _logger.RabbitMqConsumerShutdown(reason);
                 break;
@@ -1373,7 +1451,7 @@ internal sealed partial class ConsumerRegister(
                 _logger.KafkaClientConsumeRetrying(reason);
                 break;
             case MqLogType.ServerConnError:
-                _isHealthy = false;
+                _MarkClientDegraded(handle, client);
                 _connectivity.ReportBrokerFailure();
                 _logger.KafkaServerConnectionError(reason);
                 break;
@@ -1384,7 +1462,7 @@ internal sealed partial class ConsumerRegister(
                 _logger.NatsSubscriberReceivedError(reason);
                 break;
             case MqLogType.ConnectError:
-                _isHealthy = false;
+                _MarkClientDegraded(handle, client);
                 _connectivity.ReportBrokerFailure();
                 _logger.NatsServerConnectionError(reason);
                 break;
@@ -1394,14 +1472,14 @@ internal sealed partial class ConsumerRegister(
             case MqLogType.MessageNotInflight:
                 _logger.AmazonSqsMessageNotInflight(reason);
                 break;
+            // A malformed stream entry says nothing about the client's connection, so it is diagnostic only.
             case MqLogType.RedisConsumeError:
-                _isHealthy = true;
                 _logger.RedisClientConsumeError(reason);
                 break;
             case MqLogType.TransportConfigurationWarning:
                 _logger.TransportConfigurationWarning(reason);
                 break;
-            // The client recovers on its own, so these leave the restart flag alone: rebuilding a client that is
+            // The client recovers on its own, so these leave its health alone: rebuilding a client that is
             // already retrying would only add churn while the broker is down.
             case MqLogType.BrokerUnreachable:
             {
@@ -1425,6 +1503,14 @@ internal sealed partial class ConsumerRegister(
                 break;
             default:
                 throw new InvalidOperationException($"Unknown {nameof(MqLogType)}={logMessage.LogType}");
+        }
+    }
+
+    private static void _MarkClientDegraded(SubscriptionHandle? handle, IConsumerClient? client)
+    {
+        if (handle is not null && client is not null)
+        {
+            handle.MarkClientDegraded(client);
         }
     }
 
@@ -1472,6 +1558,19 @@ internal sealed partial class ConsumerRegister(
 
         private readonly List<IConsumerClient> _clients = [];
 
+        // A client loop that ended in failure no longer consumes, and no later event from its client can revive it, so
+        // it is recorded under this marker, which no client's ConsumerRegistered removes; only the replacement clears it.
+        private static readonly object _FailedClientLoop = new();
+
+        // Client event callbacks read and write health, and a transport can raise them on its own dispatcher thread
+        // while a thread holding _clientsLock waits on that dispatcher (a RabbitMQ channel's synchronous Dispose during
+        // shutdown does), so health never takes _clientsLock.
+        private readonly Lock _healthLock = new();
+
+        // Health is kept per client because one client's ConsumerRegistered says nothing about a sibling that lost its
+        // channel; the handle is degraded while any entry remains.
+        private readonly HashSet<object> _degraded = new(ReferenceEqualityComparer.Instance);
+
         public required ILogger Logger { get; init; }
         public required CancellationTokenSource Cts { get; init; }
         public required string SubscriptionName { get; init; }
@@ -1483,9 +1582,6 @@ internal sealed partial class ConsumerRegister(
         public FrozenSet<string> CircuitKeys { get; init; } = [];
         public ConcurrentBag<Task> ConsumerTasks { get; init; } = [];
 
-        // Production reads the pause state through the private _isPaused field (see AddClientAsync); the public getter
-        // exists for setter symmetry and is exercised by the reflection-based ConsumerRegisterTests. Not dead state.
-        // ReSharper disable once UnusedMember.Local
         public bool IsPaused
         {
             get
@@ -1512,6 +1608,47 @@ internal sealed partial class ConsumerRegister(
                 {
                     return _disposing;
                 }
+            }
+        }
+
+        public bool IsDegraded
+        {
+            get
+            {
+                lock (_healthLock)
+                {
+                    return _degraded.Count > 0;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets whether the circuit breaker has paused the handle, for a client event callback. It reads the flag without
+        /// <c>_clientsLock</c> for the reason <c>_healthLock</c> exists; a pause racing the event decides it either way.
+        /// </summary>
+        public bool IsPausedForEvent => Volatile.Read(ref _isPaused);
+
+        public void MarkClientDegraded(IConsumerClient client)
+        {
+            lock (_healthLock)
+            {
+                _degraded.Add(client);
+            }
+        }
+
+        public void MarkClientHealthy(IConsumerClient client)
+        {
+            lock (_healthLock)
+            {
+                _degraded.Remove(client);
+            }
+        }
+
+        public void MarkClientLoopFailed()
+        {
+            lock (_healthLock)
+            {
+                _degraded.Add(_FailedClientLoop);
             }
         }
 
