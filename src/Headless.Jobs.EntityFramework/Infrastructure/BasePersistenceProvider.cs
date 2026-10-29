@@ -1537,37 +1537,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
                     foreach (var entry in orderedCronJobs)
                     {
-                        var (
-                            id,
-                            marker,
-                            function,
-                            expression,
-                            onMissedRun,
-                            missedRunGraceSeconds,
-                            onOverlap,
-                            evaluationFingerprint,
-                            contractVersion,
-                            timeZoneId,
-                            retries,
-                            retryIntervals,
-                            request,
-                            description,
-                            onNodeDeath,
-                            correlationId,
-                            causationId,
-                            _
-                        ) = entry;
-
-                        if (existingById.TryGetValue(id, out var cron))
+                        if (existingById.TryGetValue(entry.Id, out var cron))
                         {
                             // Code wins on the expression, the zone, and a declaration's arguments. An entry without a
                             // request hash (an attribute cron) never rewrites the payload: a new registration version
                             // cannot relabel bytes an older writer stored.
-                            if (
-                                !string.Equals(cron.Expression, expression, StringComparison.Ordinal)
-                                || !string.Equals(cron.TimeZoneId, timeZoneId, StringComparison.Ordinal)
-                                || JobsSeedPayload.Differs(cron, entry)
-                            )
+                            if (JobsSeedDrift.Differs(cron, entry))
                             {
                                 await cronSet
                                     .Where(x => x.Id == cron.Id)
@@ -1578,24 +1553,20 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                     .ConfigureAwait(false);
                                 await dbContext.Entry(cron).ReloadAsync(cancellationToken).ConfigureAwait(false);
                                 // Re-decided on the locked row: a concurrent seed may already have restored it.
-                                var payloadDiffers = JobsSeedPayload.Differs(cron, entry);
+                                var payloadDiffers = JobsSeedDrift.PayloadDiffers(cron, entry);
 
-                                if (
-                                    !string.Equals(cron.Expression, expression, StringComparison.Ordinal)
-                                    || !string.Equals(cron.TimeZoneId, timeZoneId, StringComparison.Ordinal)
-                                    || payloadDiffers
-                                )
+                                if (JobsSeedDrift.ScheduleDiffers(cron, entry) || payloadDiffers)
                                 {
-                                    cron.Expression = expression;
-                                    cron.TimeZoneId = timeZoneId;
+                                    cron.Expression = entry.Expression;
+                                    cron.TimeZoneId = entry.TimeZoneId;
 
                                     if (payloadDiffers)
                                     {
                                         // The payload and its version are rewritten together, in the same update that
                                         // bumps the revision, so stored bytes are never labelled with a version they
                                         // were not written under.
-                                        cron.Request = request ?? [];
-                                        cron.ContractVersion = contractVersion;
+                                        cron.Request = entry.Request ?? [];
+                                        cron.ContractVersion = entry.ContractVersion;
                                     }
 
                                     cron.ScheduleRevision++;
@@ -1610,7 +1581,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                     // contract.
                                     cron.ReconciledThroughUtc = default;
                                     cron.NextDueUtc = default;
-                                    cron.EvaluationFingerprint = evaluationFingerprint;
+                                    cron.EvaluationFingerprint = entry.EvaluationFingerprint;
                                     cron.FingerprintFailureCount = 0;
                                     cron.FingerprintRetryAfterUtc = null;
                                     changedDefinitionIds.Add(cron.Id);
@@ -1625,29 +1596,29 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                             // the function.
                             var entity = new TCronJob
                             {
-                                Id = id,
-                                Function = function,
-                                ContractVersion = contractVersion,
-                                Expression = expression,
-                                TimeZoneId = timeZoneId,
-                                InitIdentifier = marker,
+                                Id = entry.Id,
+                                Function = entry.Function,
+                                ContractVersion = entry.ContractVersion,
+                                Expression = entry.Expression,
+                                TimeZoneId = entry.TimeZoneId,
+                                InitIdentifier = entry.Marker,
                                 CreatedAt = now,
                                 UpdatedAt = now,
-                                Request = request ?? [],
-                                CorrelationId = correlationId,
-                                CausationId = causationId,
+                                Request = entry.Request ?? [],
+                                CorrelationId = entry.CorrelationId,
+                                CausationId = entry.CausationId,
                                 // Seeded at CREATION only. The expression-changed branch above deliberately leaves
                                 // these alone, so a value set later through ICronJobManager survives every redeploy and
                                 // is an operator override by construction — which is why no provenance marker is
                                 // persisted.
-                                OnMissedRun = onMissedRun,
-                                MissedRunGraceSeconds = missedRunGraceSeconds,
-                                OnOverlap = onOverlap,
-                                Retries = retries,
-                                RetryIntervals = retryIntervals?.ToArray(),
-                                OnNodeDeath = onNodeDeath,
-                                Description = description,
-                                EvaluationFingerprint = evaluationFingerprint,
+                                OnMissedRun = entry.OnMissedRun,
+                                MissedRunGraceSeconds = entry.MissedRunGraceSeconds,
+                                OnOverlap = entry.OnOverlap,
+                                Retries = entry.Retries,
+                                RetryIntervals = entry.RetryIntervals?.ToArray(),
+                                OnNodeDeath = entry.OnNodeDeath,
+                                Description = entry.Description,
+                                EvaluationFingerprint = entry.EvaluationFingerprint,
                             };
                             await cronSet.AddAsync(entity, cancellationToken).ConfigureAwait(false);
                         }
