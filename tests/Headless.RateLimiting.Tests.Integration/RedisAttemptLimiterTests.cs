@@ -106,6 +106,63 @@ public sealed class RedisAttemptLimiterTests(RedisAttemptLimiterFixture fixture)
             .BeEmpty();
     }
 
+    [Fact]
+    public async Task should_count_in_the_named_redis_cache_when_cache_name_is_set()
+    {
+        // given - the default and the named cache share one server, told apart by their key prefixes
+        await _FlushAsync();
+        var limiter = await _StartNamedCacheLimiterAsync();
+
+        // when
+        var result = await limiter.AcquireAsync(
+            "otp-delivery",
+            "+201012345678",
+            new AttemptQuota(5, TimeSpan.FromMinutes(1)),
+            AbortToken
+        );
+
+        // then
+        result.Count.Should().Be(1);
+        var key = (await _ScanKeysAsync()).Should().ContainSingle().Which;
+        key.Should().StartWith("limits:").And.Contain("attempts:v1:otp-delivery:60:");
+    }
+
+    private async Task<IAttemptLimiter> _StartNamedCacheLimiterAsync()
+    {
+        var connection = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
+        _connections.Add(connection);
+
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddHeadlessCaching(setup =>
+        {
+            setup.UseRedis(options =>
+            {
+                options.ConnectionMultiplexer = connection;
+                options.KeyPrefix = "app:";
+            });
+            setup.AddNamed(
+                "limits",
+                instance =>
+                    instance.UseRedis(options =>
+                    {
+                        options.ConnectionMultiplexer = connection;
+                        options.KeyPrefix = "limits:";
+                    })
+            );
+        });
+        builder.Services.AddAttemptLimiter(options =>
+        {
+            options.SubjectKey = _SubjectKey;
+            options.CacheName = "limits";
+        });
+
+        var host = builder.Build();
+        _hosts.Add(host);
+        await host.StartAsync(AbortToken);
+
+        return host.Services.GetRequiredService<IAttemptLimiter>();
+    }
+
     private async Task<IAttemptLimiter> _StartLimiterAsync()
     {
         var connection = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);

@@ -23,6 +23,13 @@ public sealed class AttemptLimiterOptions
     /// that share one cache.
     /// </summary>
     public string KeyPrefix { get; set; } = "attempts";
+
+    /// <summary>
+    /// The named cache instance (<c>setup.AddNamed(name, ...)</c>) that holds the counters, or <see langword="null"/>
+    /// for the default <c>ICache</c>. Use a store that does not evict and survives restarts: a lost counter reopens
+    /// its budget. The host refuses to start when no cache is registered under this name.
+    /// </summary>
+    public string? CacheName { get; set; }
 }
 
 internal sealed class AttemptLimiterOptionsValidator : AbstractValidator<AttemptLimiterOptions>
@@ -30,6 +37,9 @@ internal sealed class AttemptLimiterOptionsValidator : AbstractValidator<Attempt
     public AttemptLimiterOptionsValidator()
     {
         RuleFor(x => x.KeyPrefix).NotEmpty();
+
+        // Null selects the default cache; an empty or blank name (an unset configuration value) names no instance.
+        RuleFor(x => x.CacheName).NotEmpty().When(x => x.CacheName is not null);
 
         RuleFor(x => x.SubjectKey)
             .NotEmpty()
