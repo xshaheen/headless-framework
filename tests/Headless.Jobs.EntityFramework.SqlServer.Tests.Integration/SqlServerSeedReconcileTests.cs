@@ -30,4 +30,28 @@ public sealed class SqlServerSeedReconcileTests(SqlServerJobsCoordinationFixture
     {
         return base.seed_restores_the_expression_of_a_paused_row_and_keeps_it_paused();
     }
+
+    [Fact]
+    public override Task declarations_of_one_function_seed_one_row_each_with_their_declared_values()
+    {
+        return base.declarations_of_one_function_seed_one_row_each_with_their_declared_values();
+    }
+
+    [Fact]
+    public override Task removing_a_declaration_deletes_its_row_and_occurrences_and_nothing_else()
+    {
+        return base.removing_a_declaration_deletes_its_row_and_occurrences_and_nothing_else();
+    }
+
+    [Fact]
+    public override Task an_attribute_cron_and_a_declaration_of_one_function_keep_both_rows()
+    {
+        return base.an_attribute_cron_and_a_declaration_of_one_function_keep_both_rows();
+    }
+
+    [Fact]
+    public override Task renaming_a_declaration_key_replaces_its_row()
+    {
+        return base.renaming_a_declaration_key_replaces_its_row();
+    }
 }

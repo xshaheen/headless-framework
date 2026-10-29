@@ -4,6 +4,7 @@ using System.Globalization;
 using Headless.DistributedLocks;
 using Headless.Hosting;
 using Headless.Jobs.Internal;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -15,9 +16,11 @@ namespace Headless.Jobs.BackgroundServices;
 /// startup seeding finishes before the scheduler's activation barrier opens.
 /// </summary>
 /// <remarks>
-/// The seed is what applies a changed cron expression or time zone, retires a removed cron and its pending occurrences,
-/// and creates a new cron's row. It reconciles only the rows of this host's seed owner, and each row carries a
-/// deterministic id derived from the owner and function, so concurrent seeds of one owner converge on one row.
+/// The code-declared crons are the <c>[Job(Cron)]</c> crons and the <c>SeedRecurringJob</c> declarations, reconciled as
+/// one set. The seed is what applies a changed cron expression or time zone, retires a removed cron and its pending
+/// occurrences, and creates a new cron's row. It reconciles only the rows of this host's seed owner, and each row
+/// carries a deterministic id derived from the owner and the function or declaration key, so concurrent seeds of one
+/// owner converge on one row.
 /// </remarks>
 internal sealed class JobsSeeder(
     IServiceProvider serviceProvider,
@@ -45,15 +48,7 @@ internal sealed class JobsSeeder(
         var schedulerOptions = serviceProvider.GetRequiredService<SchedulerOptionsBuilder>();
         var options = executionContext.OptionsSeeding;
 
-        if (options?.SeedDefinedCronJobs != false)
-        {
-            await SeedDefinedCronJobsAsync(
-                    schedulerOptions,
-                    options?.SeedOwner ?? JobsSeedId.DefaultOwner,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
+        await SeedDefinedCronJobsAsync(schedulerOptions, options, cancellationToken).ConfigureAwait(false);
 
         // Each seeder runs inside its own scope. A consumer-supplied seeder commonly resolves the scoped
         // ITimeJobManager<>/ICronJobManager<>/IJobScheduler facades.
@@ -74,10 +69,12 @@ internal sealed class JobsSeeder(
     // the seeder and calls this directly.
     internal async Task SeedDefinedCronJobsAsync(
         SchedulerOptionsBuilder schedulerOptions,
-        string seedOwner,
+        IJobsOptionsSeeding? options,
         CancellationToken cancellationToken
     )
     {
+        var seedOwner = options?.SeedOwner ?? JobsSeedId.DefaultOwner;
+
         // Its own scope, like the TimeSeederAction/CronSeederAction seeders, against a scoped resolution creeping into
         // this path (IInternalJobManager itself is singleton today).
         await using var scope = serviceProvider.CreateAsyncScope();
@@ -87,22 +84,38 @@ internal sealed class JobsSeeder(
         // Resolve the per-definition knobs HERE rather than in the provider, so every node seeds the same values: if
         // each provider resolved them from local configuration, two nodes could disagree about whether the same
         // instant misfired.
-        var functionsToSeed = functionRegistry
-            .Functions.Where(x => !string.IsNullOrEmpty(x.Value.CronExpression))
-            .Select(x =>
-                _ToSeed(
-                    seedOwner,
-                    x.Key,
-                    x.Value,
-                    schedulerOptions,
-                    scopedProvider
-                        .GetRequiredService<CronScheduleCache>()
-                        .ComputeEvaluationFingerprint(x.Value.TimeZoneId),
-                    functionRegistry.Descriptors[x.Key].ContractVersion,
-                    functionRegistry.GetFlattenedFailurePolicy(x.Key)
-                )
-            )
-            .ToArray();
+        IEnumerable<CronSeedDefinition> attributeSeeds =
+            options?.SeedDefinedCronJobs == false
+                ? []
+                : functionRegistry
+                    .Functions.Where(x => !string.IsNullOrEmpty(x.Value.CronExpression))
+                    .Select(x =>
+                        _ToSeed(
+                            seedOwner,
+                            x.Key,
+                            x.Value,
+                            schedulerOptions,
+                            scopedProvider
+                                .GetRequiredService<CronScheduleCache>()
+                                .ComputeEvaluationFingerprint(x.Value.TimeZoneId),
+                            functionRegistry.Descriptors[x.Key].ContractVersion,
+                            functionRegistry.GetFlattenedFailurePolicy(x.Key)
+                        )
+                    );
+
+        // Every entry is built before the store is touched, so a declaration that cannot be built fails the seed with
+        // nothing written. The reconcile then runs even when the list is empty: that is what deletes this owner's rows
+        // for crons and declarations the app no longer makes.
+        CronSeedDefinition[] functionsToSeed =
+        [
+            .. attributeSeeds,
+            .. _ToDeclarationSeeds(
+                seedOwner,
+                options?.RecurringJobDeclarations ?? [],
+                schedulerOptions,
+                scopedProvider
+            ),
+        ];
 
         // No lock configured (default): run the seed directly. Seeded rows carry a DETERMINISTIC primary key derived
         // from the function, so simultaneous first-boot on N nodes converges on a single row (PK dedup) — no duplicate
@@ -181,9 +194,98 @@ internal sealed class JobsSeeder(
         (int Retries, int[]? RetryIntervals) flattenedFailurePolicy
     )
     {
-        var onMissedRun = registration.OnMissedRun ?? schedulerOptions.DefaultMissedRunPolicy;
-        var graceSeconds = registration.MissedRunGraceSeconds ?? schedulerOptions.DefaultMissedRunGraceSeconds;
-        var onOverlap = registration.OnOverlap ?? schedulerOptions.DefaultOverlapPolicy;
+        var (onMissedRun, graceSeconds, onOverlap) = _ResolveCreationPolicies(function, registration, schedulerOptions);
+
+        return CronSeedDefinition.ForCronFunction(
+            seedOwner,
+            function,
+            registration.CronExpression,
+            onMissedRun,
+            graceSeconds,
+            onOverlap,
+            evaluationFingerprint,
+            contractVersion,
+            registration.TimeZoneId,
+            flattenedFailurePolicy.Retries,
+            flattenedFailurePolicy.RetryIntervals
+        );
+    }
+
+    /// <summary>
+    /// Builds one entry per declaration. The declaration's own recurring options win, as they do for a
+    /// <c>ScheduleRecurringAsync</c> call; the missed-run and overlap policies come from the job, as for its attribute
+    /// cron.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">A declaration names a job this host does not register.</exception>
+    private CronSeedDefinition[] _ToDeclarationSeeds(
+        string seedOwner,
+        IReadOnlyList<RecurringJobDeclaration> declarations,
+        SchedulerOptionsBuilder schedulerOptions,
+        IServiceProvider scopedProvider
+    )
+    {
+        if (declarations.Count == 0)
+        {
+            return [];
+        }
+
+        var policies = scopedProvider.GetRequiredService<JobSchedulingPolicies>();
+        var serializationOptions = scopedProvider.GetRequiredService<JobsRequestSerializationOptions>();
+        var scheduleCache = scopedProvider.GetRequiredService<CronScheduleCache>();
+        var configuration = scopedProvider.GetService<IConfiguration>();
+        var seeds = new CronSeedDefinition[declarations.Count];
+
+        for (var i = 0; i < declarations.Count; i++)
+        {
+            var declaration = declarations[i];
+            var descriptor =
+                declaration.TryResolve(functionRegistry, out var error) ?? throw new InvalidOperationException(error);
+            var function = descriptor.FunctionName;
+            var (onMissedRun, graceSeconds, onOverlap) = _ResolveCreationPolicies(
+                function,
+                functionRegistry.Functions.GetValueOrDefault(function),
+                schedulerOptions
+            );
+            var resolved = policies.ResolveRecurring(descriptor, declaration.Options);
+            var options = declaration.Options;
+
+            seeds[i] = CronSeedDefinition.ForDeclaration(
+                seedOwner,
+                declaration.Key,
+                function,
+                JobFunctionRegistryBuilder.ResolveCronExpression(declaration.CronExpression, configuration),
+                onMissedRun,
+                graceSeconds,
+                onOverlap,
+                scheduleCache.ComputeEvaluationFingerprint(options?.TimeZoneId),
+                descriptor.ContractVersion,
+                options?.TimeZoneId,
+                resolved.Retries ?? 0,
+                resolved.RetryIntervals,
+                descriptor.RequestType is null ? null : declaration.SerializeRequest(serializationOptions),
+                options?.Description,
+                resolved.OnNodeDeath ?? NodeDeathPolicy.Retry,
+                options?.CorrelationId,
+                options?.CausationId
+            );
+        }
+
+        return seeds;
+    }
+
+    private static (
+        MissedRunPolicy OnMissedRun,
+        int GraceSeconds,
+        CronOverlapPolicy OnOverlap
+    ) _ResolveCreationPolicies(
+        string function,
+        JobFunctionRegistration? registration,
+        SchedulerOptionsBuilder schedulerOptions
+    )
+    {
+        var onMissedRun = registration?.OnMissedRun ?? schedulerOptions.DefaultMissedRunPolicy;
+        var graceSeconds = registration?.MissedRunGraceSeconds ?? schedulerOptions.DefaultMissedRunGraceSeconds;
+        var onOverlap = registration?.OnOverlap ?? schedulerOptions.DefaultOverlapPolicy;
 
         if (!Enum.IsDefined(onMissedRun))
         {
@@ -215,18 +317,6 @@ internal sealed class JobsSeeder(
             );
         }
 
-        return CronSeedDefinition.ForCronFunction(
-            seedOwner,
-            function,
-            registration.CronExpression,
-            onMissedRun,
-            graceSeconds,
-            onOverlap,
-            evaluationFingerprint,
-            contractVersion,
-            registration.TimeZoneId,
-            flattenedFailurePolicy.Retries,
-            flattenedFailurePolicy.RetryIntervals
-        );
+        return (onMissedRun, graceSeconds, onOverlap);
     }
 }

@@ -236,6 +236,10 @@ public static class SetupJobs
         // seeding (the seed verb or AddDeployStepsOnStartup), never by the activation pipeline below.
         services.AddSeeder<JobsSeeder>();
 
+        // Registered on every host, not only on one that seeds: the seed verb runs startup validators before seeders,
+        // and a normal start should report a bad declaration rather than carry it to the next deploy.
+        services.AddStartupValidator<JobsSeedDeclarationStartupValidator>();
+
         // The activation gate itself — registered before every service that signals or waits on it. Registration order
         // of the hosted services below is a readability convention only; the barrier is the actual ordering guarantee,
         // because HostOptions.ServicesStartConcurrently lets a consuming host start all of them at once.

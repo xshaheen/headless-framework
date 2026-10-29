@@ -1548,7 +1548,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                             contractVersion,
                             timeZoneId,
                             retries,
-                            retryIntervals
+                            retryIntervals,
+                            request,
+                            description,
+                            onNodeDeath,
+                            correlationId,
+                            causationId
                         ) in orderedCronJobs
                     )
                     {
@@ -1613,7 +1618,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                 InitIdentifier = marker,
                                 CreatedAt = now,
                                 UpdatedAt = now,
-                                Request = [],
+                                Request = request ?? [],
+                                CorrelationId = correlationId,
+                                CausationId = causationId,
                                 // Seeded at CREATION only. The expression-changed branch above deliberately leaves
                                 // these alone, so a value set later through ICronJobManager survives every redeploy and
                                 // is an operator override by construction — which is why no provenance marker is
@@ -1623,6 +1630,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                 OnOverlap = onOverlap,
                                 Retries = retries,
                                 RetryIntervals = retryIntervals?.ToArray(),
+                                OnNodeDeath = onNodeDeath,
+                                Description = description,
                                 EvaluationFingerprint = evaluationFingerprint,
                             };
                             await cronSet.AddAsync(entity, cancellationToken).ConfigureAwait(false);

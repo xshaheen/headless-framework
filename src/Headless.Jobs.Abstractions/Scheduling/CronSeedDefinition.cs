@@ -37,6 +37,14 @@ namespace Headless.Jobs;
 /// Per-retry delays in whole seconds to seed at creation, or <see langword="null"/> when the policy does not retry:
 /// <c>0</c> for each immediate retry, then each delayed retry's delay before jitter, rounded up.
 /// </param>
+/// <param name="Request">
+/// Serialized request payload to store at creation, or <see langword="null"/> for a job that takes no arguments, which
+/// stores an empty payload.
+/// </param>
+/// <param name="Description">Human-readable description to store at creation.</param>
+/// <param name="OnNodeDeath">Node-death policy to store at creation.</param>
+/// <param name="CorrelationId">Business correlation each occurrence captures, stored at creation.</param>
+/// <param name="CausationId">Immediate business cause each occurrence captures, stored at creation.</param>
 /// <remarks>
 /// The recovery and overlap settings are already resolved by the caller — attribute value, else the scheduler-wide setting, else
 /// the framework default — so the provider persists a concrete value rather than re-deriving one. That matters because
@@ -69,7 +77,12 @@ public readonly record struct CronSeedDefinition(
     string ContractVersion = JobContract.InitialVersion,
     string? TimeZoneId = null,
     int Retries = 0,
-    int[]? RetryIntervals = null
+    int[]? RetryIntervals = null,
+    byte[]? Request = null,
+    string? Description = null,
+    NodeDeathPolicy OnNodeDeath = NodeDeathPolicy.Retry,
+    string? CorrelationId = null,
+    string? CausationId = null
 )
 {
     /// <summary>
@@ -102,6 +115,51 @@ public readonly record struct CronSeedDefinition(
             timeZoneId,
             retries,
             retryIntervals
+        );
+    }
+
+    /// <summary>
+    /// Builds the entry <paramref name="owner"/> seeds for the recurring-job declaration keyed <paramref name="key"/>,
+    /// which runs <paramref name="function"/>. Several declarations may run one function; each key is its own row.
+    /// </summary>
+    internal static CronSeedDefinition ForDeclaration(
+        string owner,
+        string key,
+        string function,
+        string expression,
+        MissedRunPolicy onMissedRun,
+        int missedRunGraceSeconds,
+        CronOverlapPolicy onOverlap,
+        string? evaluationFingerprint = null,
+        string contractVersion = JobContract.InitialVersion,
+        string? timeZoneId = null,
+        int retries = 0,
+        int[]? retryIntervals = null,
+        byte[]? request = null,
+        string? description = null,
+        NodeDeathPolicy onNodeDeath = NodeDeathPolicy.Retry,
+        string? correlationId = null,
+        string? causationId = null
+    )
+    {
+        return new(
+            JobsSeedId.ForDeclaration(owner, key),
+            JobsSeedId.DeclarationSeedMarker(owner, key),
+            function,
+            expression,
+            onMissedRun,
+            missedRunGraceSeconds,
+            onOverlap,
+            evaluationFingerprint,
+            contractVersion,
+            timeZoneId,
+            retries,
+            retryIntervals,
+            request,
+            description,
+            onNodeDeath,
+            correlationId,
+            causationId
         );
     }
 }

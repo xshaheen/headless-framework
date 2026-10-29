@@ -78,7 +78,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
             seedLockWait
         );
 
-        await seeder.SeedDefinedCronJobsAsync(options, JobsSeedId.DefaultOwner, cancellationToken);
+        await seeder.SeedDefinedCronJobsAsync(options, options: null, cancellationToken);
     }
 
     [Fact]
@@ -487,7 +487,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
         var seeder = new JobsSeeder(sp, _EmptyRegistry, NullLogger<JobsSeeder>.Instance);
 
-        var act = () => seeder.SeedDefinedCronJobsAsync(options, JobsSeedId.DefaultOwner, AbortToken);
+        var act = () => seeder.SeedDefinedCronJobsAsync(options, options: null, AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("no IDistributedLock registered");
         await manager

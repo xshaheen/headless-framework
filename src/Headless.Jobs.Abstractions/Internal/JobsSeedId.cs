@@ -61,6 +61,22 @@ internal static class JobsSeedId
     }
 
     /// <summary>
+    /// The marker of the row that <paramref name="owner"/> seeds for the recurring-job declaration keyed
+    /// <paramref name="key"/>. Declarations have their own namespace, so a key equal to a function name never shares a
+    /// row with that function's attribute cron.
+    /// </summary>
+    public static string DeclarationSeedMarker(string owner, string key)
+    {
+        return OwnerMarkerPrefix(owner) + "decl:" + key;
+    }
+
+    /// <summary>Deterministic primary key of the row <paramref name="owner"/> seeds for a recurring-job declaration.</summary>
+    public static Guid ForDeclaration(string owner, string key)
+    {
+        return _ForMarker(DeclarationSeedMarker(owner, key));
+    }
+
+    /// <summary>
     /// Rejects a seed list that a reconcile for <paramref name="owner"/> could not keep consistent: an entry whose
     /// marker belongs to another owner would never be deleted by this owner and could be deleted by the other, and two
     /// entries with one id would collide on the primary key.

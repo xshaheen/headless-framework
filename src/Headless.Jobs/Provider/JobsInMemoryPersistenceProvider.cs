@@ -1826,7 +1826,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 contractVersion,
                 timeZoneId,
                 retries,
-                retryIntervals
+                retryIntervals,
+                request,
+                description,
+                onNodeDeath,
+                correlationId,
+                causationId
             ) in cronJobs
         )
         {
@@ -1904,7 +1909,10 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 InitIdentifier = marker,
                 CreatedAt = now,
                 UpdatedAt = now,
-                Request = [],
+                // A copy, so the stored row never aliases the caller's buffer.
+                Request = request?.ToArray() ?? [],
+                CorrelationId = correlationId,
+                CausationId = causationId,
                 // Seeded at CREATION only. The update branch above deliberately leaves these alone, so a value
                 // set later through ICronJobManager survives every redeploy and is an operator override by
                 // construction — which is why no provenance marker is persisted.
@@ -1913,6 +1921,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 OnOverlap = onOverlap,
                 Retries = retries,
                 RetryIntervals = retryIntervals?.ToArray(),
+                OnNodeDeath = onNodeDeath,
+                Description = description,
                 EvaluationFingerprint = evaluationFingerprint,
             };
 

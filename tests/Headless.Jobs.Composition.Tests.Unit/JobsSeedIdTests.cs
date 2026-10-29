@@ -57,6 +57,32 @@ public sealed class JobsSeedIdTests
     }
 
     [Fact]
+    public void declaration_seed_marker_starts_with_the_owner_prefix_in_its_own_namespace()
+    {
+        JobsSeedId.DeclarationSeedMarker("billing", "daily-eu").Should().Be("headless.jobs.seed:billing:decl:daily-eu");
+    }
+
+    [Fact]
+    public void for_declaration_differs_from_the_attribute_cron_of_a_function_with_the_same_name()
+    {
+        JobsSeedId.ForDeclaration("billing", "Nightly").Should().NotBe(JobsSeedId.ForCronSeed("billing", "Nightly"));
+    }
+
+    [Fact]
+    public void for_declaration_is_deterministic_per_owner_and_key()
+    {
+        JobsSeedId.ForDeclaration("billing", "daily-eu").Should().Be(JobsSeedId.ForDeclaration("billing", "daily-eu"));
+        JobsSeedId
+            .ForDeclaration("billing", "daily-eu")
+            .Should()
+            .NotBe(JobsSeedId.ForDeclaration("reports", "daily-eu"));
+        JobsSeedId
+            .ForDeclaration("billing", "daily-eu")
+            .Should()
+            .NotBe(JobsSeedId.ForDeclaration("billing", "daily-us"));
+    }
+
+    [Fact]
     public void default_owner_is_one_shared_constant()
     {
         JobsSeedId.DefaultOwner.Should().Be("default");
