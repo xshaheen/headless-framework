@@ -262,6 +262,64 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
         byCorrelation.Items.Select(e => e.EntityId).Should().BeEquivalentTo("match", "other-account");
     }
 
+    [Theory]
+    [InlineData("order_", "order_created")]
+    [InlineData("50%", "50%off.applied")]
+    [InlineData("[draft]", "[draft].saved")]
+    [InlineData("a\\b", "a\\b.ran")]
+    public async Task should_match_action_prefix_literally(string prefix, string expectedAction)
+    {
+        // given — each decoy matches the prefix only when its wildcard characters are left unescaped
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(AbortToken);
+        await using var scope = host.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
+        var reader = scope.ServiceProvider.GetRequiredService<IReadAuditLog<object>>();
+        var createdAt = new DateTimeOffset(2026, 5, 24, 12, 0, 0, TimeSpan.Zero);
+        string[] actions =
+        [
+            "order_created",
+            "orderXcreated",
+            "50%off.applied",
+            "50Xoff.applied",
+            "[draft].saved",
+            "draft.saved",
+            "a\\b.ran",
+            "ab.ran",
+        ];
+        await store.SaveAsync(
+            actions.Select(action => new AuditLogEntryData { Action = action, CreatedAt = createdAt }).ToArray(),
+            savingContext: new object(),
+            AbortToken
+        );
+
+        // when
+        var page = await reader.QueryAsync(new() { ActionPrefix = prefix }, cancellationToken: AbortToken);
+
+        // then
+        page.Items.Select(e => e.Action).Should().Equal(expectedAction);
+    }
+
+    [Fact]
+    public async Task should_reject_read_query_with_both_action_and_action_prefix()
+    {
+        // given
+        using var host = _CreateHost();
+        await using var scope = host.Services.CreateAsyncScope();
+        var reader = scope.ServiceProvider.GetRequiredService<IReadAuditLog<object>>();
+
+        // when
+        var act = () =>
+            reader.QueryAsync(
+                new() { Action = "order.created", ActionPrefix = "order." },
+                cancellationToken: AbortToken
+            );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("query");
+    }
+
     [Fact]
     public async Task should_commit_writer_entry_immediately()
     {

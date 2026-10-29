@@ -7,7 +7,7 @@ using Headless.Checks;
 namespace Headless.AuditLog;
 
 /// <summary>
-/// Validates <see cref="AuditLogQuery"/> paging input and encodes the keyset position <c>(CreatedAt, Id)</c> of a
+/// Validates <see cref="AuditLogQuery"/> filter and paging input and encodes the keyset position <c>(CreatedAt, Id)</c> of a
 /// page's last entry as the opaque continuation token every audit-log store emits and accepts, so every provider
 /// rejects the same input and a token keeps one meaning across providers.
 /// </summary>
@@ -21,7 +21,10 @@ internal static class AuditLogPaging
     /// <summary>Validates <paramref name="query"/> and returns the position to resume after, if any.</summary>
     /// <exception cref="ArgumentNullException"><paramref name="query"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">The page size is less than one or equal to int.MaxValue.</exception>
-    /// <exception cref="ArgumentException">The direction is undefined or the continuation token is malformed.</exception>
+    /// <exception cref="ArgumentException">
+    /// The direction is undefined, the continuation token is malformed, both <see cref="AuditLogQuery.Action"/> and
+    /// <see cref="AuditLogQuery.ActionPrefix"/> are set, or <see cref="AuditLogQuery.ActionPrefix"/> is empty.
+    /// </exception>
     public static (DateTime CreatedAtUtc, long Id)? Validate(AuditLogQuery query)
     {
         Argument.IsNotNull(query);
@@ -34,6 +37,21 @@ internal static class AuditLogPaging
             nameof(query)
         );
         Argument.IsInEnum(query.Direction, paramName: nameof(query));
+
+        if (query.ActionPrefix is not null)
+        {
+            // An exact action already names one action, so a prefix beside it is a caller mistake, not a narrower
+            // filter; an empty prefix would silently match everything.
+            if (query.Action is not null)
+            {
+                throw new ArgumentException("The query cannot filter by both Action and ActionPrefix.", nameof(query));
+            }
+
+            if (query.ActionPrefix.Length == 0)
+            {
+                throw new ArgumentException("The query ActionPrefix must not be empty.", nameof(query));
+            }
+        }
 
         return query.ContinuationToken is null ? null : _Decode(query.ContinuationToken, nameof(query));
     }

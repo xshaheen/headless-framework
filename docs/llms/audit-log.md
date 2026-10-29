@@ -57,7 +57,7 @@ The pipeline produces two kinds of rows:
 
 Each entry carries:
 
-- **Actor** — `UserId`, `AccountId`, `TenantId` (resolved from `ICurrentUser` / `ICurrentTenant`), `CorrelationId` (from `ICorrelationIdProvider`), and optionally `IpAddress` / `UserAgent` (must be set explicitly — the pipeline does not auto-populate these).
+- **Actor** — `UserId`, `AccountId`, `TenantId` (resolved from `ICurrentUser` / `ICurrentTenant`), `CorrelationId` (from `ICorrelationIdProvider`; the default is the W3C trace ID), and optionally `IpAddress` / `UserAgent` (must be set explicitly — the pipeline does not auto-populate these).
 - **Entity identity** — `EntityType` (full CLR type name) and `EntityId` (plain string for single-column keys; JSON array for composite keys).
 - **Change data** — `OldValues` and `NewValues` as `Dictionary<string, object?>` (serialized to JSON), and `ChangedFields` as `List<string>`. After a provider round-trip, non-string values deserialize as `JsonElement` — use `GetDecimal()`, `GetBoolean()`, etc.
 - **Outcome** — `Success` flag and optional `ErrorCode`.
@@ -138,8 +138,9 @@ do
 - Send a token with the same filters and `Direction` that produced it. The token carries only a position, so a changed filter still returns entries after that position under the new filter, which is rarely what a UI wants.
 - Entries written after the first page was read appear only when they sort after the current position: with `OldestFirst` they show up at the end of the walk, and with `NewestFirst` they appear only when you start again from the first page.
 - A token stays valid across providers and process restarts.
-- `QueryAsync` throws `ArgumentException` for a token it did not issue or an undefined `Direction`, and `ArgumentOutOfRangeException` when `Size` is less than one or equal to int.MaxValue.
+- `QueryAsync` throws `ArgumentException` for a token it did not issue, an undefined `Direction`, both `Action` and `ActionPrefix` set, or an empty `ActionPrefix`, and `ArgumentOutOfRangeException` when `Size` is less than one or equal to int.MaxValue.
 - Filters: `Action`, `EntityType`, `EntityId`, `UserId` (the actor), `AccountId`, `TenantId`, `CorrelationId`, `From` (inclusive), and `To` (exclusive). Every provider ships an index for each common filter that ends in `(CreatedAt, Id)`, so a filtered page seeks to its position instead of scanning.
+- `ActionPrefix` matches every action that starts with the given text, such as `"authorization."` for both denial actions. It cannot be combined with `Action`. Every provider escapes it with `SqlLikePattern` from `Headless.Extensions` and compares with `LIKE … ESCAPE '\'`, so `%`, `_`, `[`, and `\` in the prefix match themselves. Case sensitivity is the database's `LIKE` on the action column: case-sensitive on PostgreSQL (the same as `Action`), the column collation on SQL Server (the same as `Action`), and ASCII case-insensitive on SQLite (unlike `Action`). A prefix reads a range of the `(TenantId, Action, CreatedAt, Id)` index, so the page sorts the matching rows instead of seeking to its position; filter by `TenantId` and a narrow `From`/`To` to keep that range small. On PostgreSQL the index serves a `LIKE` prefix only under the `C` collation; under any other collation the query filters the tenant's rows.
 
 ### Standalone writes
 
@@ -162,7 +163,7 @@ do
 
 The request body, query string, headers, and raw path are never recorded. The entry commits before the challenge or forbid response is written, and the write is not cancelled when the client disconnects, so resetting the connection does not erase the record. A failed audit write is logged as an error (`AuthorizationDenialAuditWriteFailed`) and the denial response proceeds unchanged. Call the registration after any custom `IAuthorizationMiddlewareResultHandler`, which it wraps; a handler registered after it replaces it. Every audited denial costs one database insert and commit, including denials of anonymous traffic, so put rate limiting ahead of authorization on endpoints that attract scanners or credential stuffing. Denials raised outside the authorization middleware, such as a `Results.Forbid()` returned by an endpoint, are not audited.
 
-Query denials with `new AuditLogQuery { TenantId = tenantId, Action = "authorization.forbidden" }`.
+Query denials with `new AuditLogQuery { TenantId = tenantId, Action = "authorization.forbidden" }`, or both kinds with `ActionPrefix = "authorization."`.
 
 ### Field length limits
 
@@ -201,7 +202,7 @@ Defines the property-level audit log contracts for tracking entity mutations and
 - `AuditLogWriteRequest` — explicit event data with a required `Action` initializer and optional entity, payload, success, and error metadata.
 - `IAuditLogWriter<TContext>` — explicit logging that commits each entry immediately in its own transaction; see [Standalone writes](#standalone-writes).
 - `IReadAuditLog<TContext>` — keyset-paged query abstraction returning `ContinuationPage<AuditLogEntryData>`; see [Paging audit history](#paging-audit-history).
-- `AuditLogQuery` — implements `IContinuationPageRequest`: filters (`Action`, `EntityType`, `EntityId`, `UserId`, `AccountId`, `TenantId`, `CorrelationId`, `From`, `To`), `Direction`, `Size` (default 100), and `ContinuationToken`.
+- `AuditLogQuery` — implements `IContinuationPageRequest`: filters (`Action` or `ActionPrefix`, `EntityType`, `EntityId`, `UserId`, `AccountId`, `TenantId`, `CorrelationId`, `From`, `To`), `Direction`, `Size` (default 100), and `ContinuationToken`.
 - `AuditLogSortDirection` — `NewestFirst` (default) or `OldestFirst`.
 - `AuditLogEntryData` — immutable record capturing all fields; `OldValues`/`NewValues` are `Dictionary<string, object?>`.
 - `IAuditLogStore` — storage abstraction called by the change-tracking pipeline; `Save`/`SaveAsync` take the saving `DbContext` and return `IAuditLogStoreEntry` handles. `AddsToSavingContext` (default `false`) must be `true` only for a store whose `Save` merely adds rows to the context without writing; only then may the pipeline call it before the entity save.

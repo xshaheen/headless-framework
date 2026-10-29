@@ -22,9 +22,13 @@ Log.Logger = SerilogFactory.CreateBootstrapLoggerConfiguration().CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Logging.ClearProviders(); // Serilog owns the console; clear before AddHeadless() adds OpenTelemetry
+builder.AddHeadless();
+
 builder.Host.UseSerilog(
     (ctx, services, cfg) =>
-        cfg.ConfigureReloadableLoggerConfiguration(services, ctx.Configuration, ctx.HostingEnvironment)
+        cfg.ConfigureReloadableLoggerConfiguration(services, ctx.Configuration, ctx.HostingEnvironment),
+    writeToProviders: true // forward every event to the OpenTelemetry logger provider
 );
 ```
 
@@ -32,6 +36,8 @@ builder.Host.UseSerilog(
 
 - Call `SerilogFactory.CreateBootstrapLoggerConfiguration()` (or the extension `loggerConfiguration.ConfigureBootstrapLoggerConfiguration()`) **before** `WebApplication.CreateBuilder()` — the bootstrap logger must be assigned to `Log.Logger` early to capture DI and configuration-loading exceptions.
 - Call `ConfigureReloadableLoggerConfiguration()` inside `UseSerilog(…)` — that delegate receives the fully-built `IServiceProvider`, enabling `ReadFrom.Services(services)` for DI-registered enrichers/sinks.
+- With OpenTelemetry logging (`Headless.Api.ServiceDefaults` `AddHeadless()`, or your own `builder.Logging.AddOpenTelemetry(...)`), pass `writeToProviders: true` to `UseSerilog(…)`. Without it, Serilog replaces the `ILoggerFactory` and no `ILogger` record reaches the OpenTelemetry exporter; logs still print to the console, so nothing looks wrong locally. The forwarded records keep their structured attributes.
+- With `writeToProviders: true`, call `builder.Logging.ClearProviders()` **before** `AddHeadless()`. The default Console, Debug, and EventSource providers would otherwise print every event a second time beside Serilog's console sink, and clearing after `AddHeadless()` removes the OpenTelemetry provider too.
 - Configure log levels exclusively via `Serilog:MinimumLevel` in `appsettings.json`; do not call `loggerConfiguration.MinimumLevel.*` in code when using the reloadable path — `ReadFrom.Configuration` owns the level.
 - The bootstrap path does **not** call `ReadFrom.Configuration`; log levels there are fixed (all events) at bootstrap time.
 - Pass a `SerilogOptions` instance to either method only to override file-output defaults — directory, rolling interval, retention count, flush interval. Do not reconfigure the named sinks manually.
@@ -88,10 +94,15 @@ try
 {
     var builder = WebApplication.CreateBuilder(args);
 
-    // 2. Replace with reloadable production logger
+    // 2. Drop the default providers (Serilog owns the console) before AddHeadless() adds OpenTelemetry
+    builder.Logging.ClearProviders();
+    builder.AddHeadless();
+
+    // 3. Replace with reloadable production logger; writeToProviders feeds the OpenTelemetry provider
     builder.Host.UseSerilog(
         (ctx, services, cfg) =>
-            cfg.ConfigureReloadableLoggerConfiguration(services, ctx.Configuration, ctx.HostingEnvironment)
+            cfg.ConfigureReloadableLoggerConfiguration(services, ctx.Configuration, ctx.HostingEnvironment),
+        writeToProviders: true
     );
 
     var app = builder.Build();
@@ -116,7 +127,8 @@ Log.Logger = SerilogFactory.CreateBootstrapLoggerConfiguration(serilogOptions).C
 
 builder.Host.UseSerilog(
     (ctx, services, cfg) =>
-        cfg.ConfigureReloadableLoggerConfiguration(services, ctx.Configuration, ctx.HostingEnvironment, serilogOptions)
+        cfg.ConfigureReloadableLoggerConfiguration(services, ctx.Configuration, ctx.HostingEnvironment, serilogOptions),
+    writeToProviders: true
 );
 ```
 
@@ -161,3 +173,4 @@ Log level changes here take effect at runtime without restart (hot-reload via `R
 - Writes `Logs/bootstrap-.log` for Fatal/Error/Warning events during the bootstrap phase.
 - Writes to the Debug output window when running in `#DEBUG` builds.
 - Emits structured log lines to stdout/stderr via the console sink.
+- With `writeToProviders: true`, also hands each event to every registered `ILoggerProvider`, which is how OpenTelemetry log export receives it. Without it, only Serilog's own sinks see `ILogger` output.

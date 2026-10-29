@@ -85,7 +85,7 @@ Implementations and DI setup for the ambient context: principal access, correlat
 
 - `PrincipalCurrentUser` — `ICurrentUser` over an explicit `ClaimsPrincipal` (for example `HttpContext.User`).
 - `CurrentPrincipalAccessor` — base class layering an `AsyncLocal` override slot over an implementation-defined fallback; `ThreadCurrentPrincipalAccessor` uses `Thread.CurrentPrincipal` (console apps, worker services).
-- `ActivityCorrelationIdProvider` — reads the correlation ID from `Activity.Current`; works automatically for OpenTelemetry users, returns `null` when no activity is active.
+- `ActivityCorrelationIdProvider` — returns the W3C trace ID of `Activity.Current` as 32 lowercase hex characters (`Activity.TraceId.ToHexString()`), so every span of one request, and every audit row or log written under it, shares one ID that matches the trace in your tracing backend. It returns `null` when no activity is active or the activity uses the legacy hierarchical ID format. It works automatically for OpenTelemetry users. It used to return the full `Activity.Id` (`00-<trace>-<span>-<flags>`), which differed per span.
 - `BuildInformationAccessor` — reads build metadata from `AssemblyInformation.Entry`; all members return `null` when there is no managed entry assembly.
 - `HostIdentityAccessor` + `AddHeadlessHostIdentity()` — registers `IHostIdentityAccessor` with its build-information and GUID dependencies. Every registration is `TryAdd`, so feature packages call this for the identity they need and the host's own call, or an earlier package's, wins. `ApplicationName` defaults to the entry assembly title and `HostName` to `POD_NAMESPACE/POD_NAME`, then the machine name.
 

@@ -127,11 +127,17 @@ TEST_MAX_PARALLEL ?= 3
 # and 92 s at 8 parallel modules on a 14-core machine. TEST_MAX_PARALLEL stays at 3 for integration
 # modules, which each start containers, and for CI's smaller runners.
 UNIT_TEST_MAX_PARALLEL ?= 6
-# Per test module. The affected test stages pass it too (unless TEST_ARGS already carries a --timeout), so a hung
-# module (a broker suite once hung 57 min) fails its stage instead of holding the machine; the longest module in recent
-# proof runs took about 7 min under load.
+# Per test module. The affected test stages pass it too (unless TEST_ARGS already carries a --timeout); the longest
+# module in recent proof runs took about 7 min under load. It only cancels the session's token, so a test blocked
+# where it never observes cancellation runs past it: a broker suite was still running 7 min into a 4m --timeout.
 TEST_TIMEOUT ?= 15m
 AFFECTED_TIMEOUT_ARGS = $(if $(findstring --timeout,$(TEST_ARGS)),,--timeout $(TEST_TIMEOUT))
+# The hang bound that does hold: the Test SDK's dumps run the test host under a controller process that dumps and kills
+# its whole process tree once no test has progressed for 10 min. The SDK turns them on only in CI, so a local hang,
+# often in an unattended agent run, held its container slot until something outside killed it. Every target that runs
+# dotnet test inherits this; EnableTestDumps=false opts out for a debugger session. CI sets the same value, so the SDK
+# adds the options once.
+export EnableTestDumps ?= true
 # Inner-loop build flags. Analyzers are over half of the compiler's CPU on this solution (9 analyzer
 # packs, AnalysisMode=All, AnalysisLevel=latest-all, EnforceCodeStyleInBuild), and MinVer shells out
 # to git once per src project. Neither changes the emitted IL, so a compile-only loop can skip both.
