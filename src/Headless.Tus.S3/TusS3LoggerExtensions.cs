@@ -158,14 +158,6 @@ internal static partial class TusS3LoggerExtensions
     );
 
     [LoggerMessage(
-        EventId = 3285,
-        EventName = "S3MultipartAbortFailed",
-        Level = LogLevel.Warning,
-        Message = "Failed to abort the unrecorded multipart upload of file {FileId}; its parts remain until the expiry sweep or the bucket's abort rules collect them"
-    )]
-    internal static partial void LogS3MultipartAbortFailed(this ILogger logger, Exception e, string fileId);
-
-    [LoggerMessage(
         EventId = 3286,
         EventName = "S3MultipartUploadMissing",
         Level = LogLevel.Warning,

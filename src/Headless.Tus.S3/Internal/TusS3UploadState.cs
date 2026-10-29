@@ -67,6 +67,12 @@ internal sealed class TusS3UploadState
     public DateTimeOffset? ExpiresAtBeforeCompleting { get; set; }
 
     /// <summary>
+    /// When the upload entered <see cref="TusS3UploadStatus.Committing"/>, so the expiry sweep can tell a completion
+    /// that died after writing the finished object from one still recording it.
+    /// </summary>
+    public DateTimeOffset? CommittingAt { get; set; }
+
+    /// <summary>
     /// The sliding expiration window, learned from the expiry tusdotnet sets right after an append. Once known, each
     /// append's commit moves the expiry itself, so the refresh that follows the append needs no write of its own.
     /// <see langword="null"/> under absolute expiration, which tusdotnet never refreshes after an append.
@@ -105,8 +111,9 @@ internal enum TusS3UploadStatus
 
     /// <summary>
     /// The finished object is written and one request is recording it; only the completed record and the removal of
-    /// the working set remain. Reads as <see cref="Completing"/> to clients, but the expiry sweep never claims it, so
-    /// the sweep cannot delete a finished object whose completion is about to report success.
+    /// the working set remain. Reads as <see cref="Completing"/> to clients. The expiry sweep claims it only once it is
+    /// past its expiry and has been committing for longer than any completion takes to record it, so the sweep does
+    /// not delete a finished object whose completion is about to report success.
     /// </summary>
     Committing = 3,
 }

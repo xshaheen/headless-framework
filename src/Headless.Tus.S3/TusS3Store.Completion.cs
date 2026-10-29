@@ -20,8 +20,9 @@ public sealed partial class TusS3Store
     /// Once the finished object is written, the state moves to <see cref="TusS3UploadStatus.Committing"/> with
     /// <c>If-Match</c> on the ETag this request holds, before the record is written. The expiry sweep claims an
     /// abandoned completing upload with <c>If-Match</c> on the same state, so at most one of the two writes lands: a
-    /// sweep that claimed first makes this write fail and nothing is recorded, and a sweep that comes later finds a
-    /// status it never claims. A completion that finds the upload already committing only records it.
+    /// sweep that claimed first makes this write fail and nothing is recorded, and a sweep that comes later leaves a
+    /// committing upload alone until it is old enough that its completion must have died. A completion that finds the
+    /// upload already committing only records it.
     /// </para>
     /// <para>
     /// Storage calls take no request token. The bytes are durable before this starts, and a client that disconnects
@@ -55,6 +56,7 @@ public sealed partial class TusS3Store
             }
 
             state.Status = TusS3UploadStatus.Committing;
+            state.CommittingAt = _timeProvider.GetUtcNow();
             await _stateStore.UpdateAsync(fileId, upload, CancellationToken.None).ConfigureAwait(false);
         }
 

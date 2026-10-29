@@ -359,14 +359,11 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
 
     private async Task _ReserveWindowAsync()
     {
-        string? createdUploadId = null;
-
         if (_state.MultipartUploadId is null)
         {
-            createdUploadId = await _services
+            _state.MultipartUploadId = await _services
                 .CreateMultipartUploadAsync(_fileId, _state.Metadata, StorageToken)
                 .ConfigureAwait(false);
-            _state.MultipartUploadId = createdUploadId;
             _state.MultipartUploadCreatedAt = _services.TimeProvider.GetUtcNow();
         }
 
@@ -381,20 +378,11 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
 
         _state.NextPartNumber = window.End;
 
-        try
-        {
-            _upload = await _services.StateStore.UpdateAsync(_fileId, _upload, StorageToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            if (createdUploadId is not null)
-            {
-                // The losing request's multipart upload is recorded nowhere, so nothing else would ever abort it.
-                await _AbortMultipartUploadAsync(createdUploadId).ConfigureAwait(false);
-            }
-
-            throw;
-        }
+        // A failed write does not abort the multipart upload this request created. A 412 can answer an SDK retry of a
+        // write that already landed, and then the state records that upload and a later append writes parts to it.
+        // The upload holds no part yet, so leaving it costs nothing; when the write truly lost, the expiry sweep aborts
+        // it once it is older than its grace period.
+        _upload = await _services.StateStore.UpdateAsync(_fileId, _upload, StorageToken).ConfigureAwait(false);
 
         _window = window;
     }
@@ -680,28 +668,6 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
             {
                 services.Logger.LogS3SegmentCleanupFailed(e, fileId, batch.Length);
             }
-        }
-    }
-
-    private async Task _AbortMultipartUploadAsync(string uploadId)
-    {
-        try
-        {
-            var request = new AbortMultipartUploadRequest
-            {
-                BucketName = _services.Options.Bucket,
-                Key = _services.Keys.FinishedObject(_fileId),
-                UploadId = uploadId,
-            };
-
-            // Not the writer's token: the abort must run even when the request failed because that token fired.
-            await _services.S3.AbortMultipartUploadAsync(request, CancellationToken.None).ConfigureAwait(false);
-        }
-#pragma warning disable CA1031 // Best effort: the claim failure is what the caller must see, and the sweep collects a leak.
-        catch (Exception e)
-#pragma warning restore CA1031
-        {
-            _services.Logger.LogS3MultipartAbortFailed(e, _fileId);
         }
     }
 

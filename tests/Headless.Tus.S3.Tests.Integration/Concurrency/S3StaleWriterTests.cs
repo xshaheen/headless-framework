@@ -76,13 +76,47 @@ public abstract class S3StaleWriterTestsBase(IS3TestBackend backend) : TestBase
         var loser = outcomes.Single(o => o.Error is not null).Error;
         loser.Should().BeOfType<AmazonS3Exception>().Which.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
 
-        // and only the winner uploaded a part; the loser aborted the multipart upload it created
+        // and only the winner uploaded a part; the loser left the empty multipart upload it created to the sweep
         _client.Gate.Count(S3Operation.UploadPart).Should().Be(1);
-        _client.Gate.Count(S3Operation.AbortMultipartUpload).Should().Be(1);
+        _client.Gate.Count(S3Operation.AbortMultipartUpload).Should().Be(0);
 
         var winner = outcomes[0].Appended is not null ? first : second;
         (await _store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(winner.Length);
         (await _raw.ReadDurableBytesAsync(fileId, AbortToken)).Should().Equal(winner);
+    }
+
+    public virtual async Task should_keep_the_multipart_upload_when_a_landed_reservation_is_answered_with_412()
+    {
+        // given - the reservation of the upload's first part lands, but is answered with a 412, as an SDK retry of a
+        // write whose response was lost would be
+        var content = Faker.Random.Bytes(6 * _MiB);
+        var fileId = await _store.CreateFileAsync(20 * _MiB, metadata: null, AbortToken);
+        var infoKey = _raw.Keys.Info(fileId);
+        var rejected = 0;
+        _client.Gate.Reset();
+        _client.Gate.LandThenRejectWhen(request =>
+            string.Equals(S3Operation.Of(request), S3Operation.PutObject, StringComparison.Ordinal)
+            && (request.RequestUri?.AbsolutePath ?? "").EndsWith(infoKey, StringComparison.Ordinal)
+            && Interlocked.Increment(ref rejected) == 1
+        );
+
+        // when
+        var (_, error) = await _Settle(_AppendAsync(fileId, content));
+        _client.Gate.LandThenRejectWhen(null);
+
+        // then - the append fails as a stale write, and the multipart upload the landed state records survives
+        TusS3StateStore.IsStaleWrite(error.Should().BeAssignableTo<AmazonS3Exception>().Subject).Should().BeTrue();
+        _client.Gate.Count(S3Operation.AbortMultipartUpload).Should().Be(0);
+        (await _raw.ReadStateAsync(fileId, AbortToken))!.MultipartUploadId.Should().NotBeNull();
+
+        // when - the client re-sends the PATCH from the offset HEAD reports
+        var offset = await _store.GetUploadOffsetAsync(fileId, AbortToken);
+        var appended = await _AppendAsync(fileId, content[(int)offset..]);
+
+        // then - the bytes land in that multipart upload
+        offset.Should().Be(0);
+        appended.Should().Be(content.Length);
+        (await _raw.ReadDurableBytesAsync(fileId, AbortToken)).Should().Equal(content);
     }
 
     public virtual async Task should_reject_the_stale_commit_of_two_tail_only_appends()
@@ -152,6 +186,10 @@ public sealed class MinioS3StaleWriterTests(TusS3MinioFixture fixture) : S3Stale
         base.should_let_one_of_two_part_reservations_win_and_fail_the_other_before_any_part();
 
     [Fact]
+    public override Task should_keep_the_multipart_upload_when_a_landed_reservation_is_answered_with_412() =>
+        base.should_keep_the_multipart_upload_when_a_landed_reservation_is_answered_with_412();
+
+    [Fact]
     public override Task should_reject_the_stale_commit_of_two_tail_only_appends() =>
         base.should_reject_the_stale_commit_of_two_tail_only_appends();
 }
@@ -162,6 +200,10 @@ public sealed class LocalStackS3StaleWriterTests(TusS3LocalStackFixture fixture)
     [Fact]
     public override Task should_let_one_of_two_part_reservations_win_and_fail_the_other_before_any_part() =>
         base.should_let_one_of_two_part_reservations_win_and_fail_the_other_before_any_part();
+
+    [Fact]
+    public override Task should_keep_the_multipart_upload_when_a_landed_reservation_is_answered_with_412() =>
+        base.should_keep_the_multipart_upload_when_a_landed_reservation_is_answered_with_412();
 
     [Fact]
     public override Task should_reject_the_stale_commit_of_two_tail_only_appends() =>

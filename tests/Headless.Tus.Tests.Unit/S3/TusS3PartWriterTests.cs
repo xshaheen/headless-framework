@@ -364,7 +364,7 @@ public sealed class TusS3PartWriterTests : TestBase
     }
 
     [Fact]
-    public async Task should_fail_a_stale_reservation_before_any_part_and_abort_its_new_multipart_upload()
+    public async Task should_fail_a_stale_reservation_before_any_part_and_leave_its_empty_multipart_upload_to_the_sweep()
     {
         // given - this request read the state, then another request wrote it
         await _SeedAsync(new TusS3UploadState { PartSize = _PartSize, UploadLength = 100 });
@@ -378,7 +378,8 @@ public sealed class TusS3PartWriterTests : TestBase
         // then - the stale write is not translated, so tusdotnet answers 500 and the client resumes
         var thrown = await act.Should().ThrowAsync<AmazonS3Exception>();
         thrown.Which.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
-        _s3.Requests.Should().Equal("CreateMultipartUpload", "PutObject", "AbortMultipartUpload");
+        // and the new multipart upload is not aborted: the 412 might answer a retry of a write that landed
+        _s3.Requests.Should().Equal("CreateMultipartUpload", "PutObject");
         _ReadState().MultipartUploadId.Should().BeNull();
     }
 

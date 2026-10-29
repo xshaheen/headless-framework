@@ -100,7 +100,7 @@ public abstract class CompletionSweepRaceTestsBase(IS3TestBackend backend) : Tes
         (await _store.FileExistAsync(fileId, AbortToken)).Should().BeFalse();
     }
 
-    public virtual async Task should_finish_a_committing_upload_on_the_resent_final_patch_and_never_sweep_it()
+    public virtual async Task should_finish_a_committing_upload_on_the_resent_final_patch_within_the_grace()
     {
         // given - a final PATCH that wrote the finished object, moved the state on, and then failed its record write
         var content = Faker.Random.Bytes(7 * _MiB);
@@ -122,7 +122,7 @@ public abstract class CompletionSweepRaceTestsBase(IS3TestBackend backend) : Tes
         (await _store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(3 * _MiB);
         (await _store.GetExpirationAsync(fileId, AbortToken)).Should().BeNull();
 
-        // and a sweep past its expiry leaves it alone
+        // and a sweep past its expiry, but inside the grace period, leaves it alone
         _clock.Advance(TimeSpan.FromMinutes(30));
         (await _store.RemoveExpiredFilesAsync(AbortToken)).Should().Be(0);
         (await _raw.ReadFinishedObjectAsync(fileId, AbortToken)).Should().Equal(content);
@@ -139,6 +139,38 @@ public abstract class CompletionSweepRaceTestsBase(IS3TestBackend backend) : Tes
     }
 
     // An upload holding its first bytes, set to expire ten minutes from now on the test clock.
+    public virtual async Task should_remove_a_committing_upload_once_past_its_expiry_and_the_grace()
+    {
+        // given - a final PATCH that wrote the finished object, moved the state on, and then failed its record write,
+        // from a client that never re-sends it
+        var content = Faker.Random.Bytes(7 * _MiB);
+        var fileId = await _CreateExpiringUploadAsync(content, 3 * _MiB);
+        var recordKey = _raw.Keys.CompletedRecord(fileId);
+        _client.Gate.FailWhen(request =>
+            string.Equals(S3Operation.Of(request), S3Operation.PutObject, StringComparison.Ordinal)
+            && (request.RequestUri?.AbsolutePath ?? "").EndsWith(recordKey, StringComparison.Ordinal)
+        );
+
+        var (_, recordError) = await _Settle(_AppendAsync(fileId, content[(3 * _MiB)..]));
+        recordError.Should().BeAssignableTo<AmazonS3Exception>();
+        _client.Gate.FailWhen(null);
+
+        // when - the sweep runs past the expiry but inside the grace period, then past both
+        _clock.Advance(TimeSpan.FromMinutes(30));
+        var removedWithinGrace = await _store.RemoveExpiredFilesAsync(AbortToken);
+        _clock.Advance(TimeSpan.FromMinutes(31));
+        var removedPastGrace = await _store.RemoveExpiredFilesAsync(AbortToken);
+
+        // then - only the second pass removes the upload, with its finished object
+        removedWithinGrace.Should().Be(0);
+        removedPastGrace.Should().Be(1);
+        (await _raw.ReadFinishedObjectAsync(fileId, AbortToken)).Should().BeNull();
+        (await _raw.ReadCompletedRecordAsync(fileId, AbortToken)).Should().BeNull();
+        (await _raw.ReadStateAsync(fileId, AbortToken)).Should().BeNull();
+        (await _raw.ListSegmentKeysAsync(fileId, AbortToken)).Should().BeEmpty();
+        (await _store.FileExistAsync(fileId, AbortToken)).Should().BeFalse();
+    }
+
     private async Task<string> _CreateExpiringUploadAsync(byte[] content, int stored)
     {
         var fileId = await _store.CreateFileAsync(content.Length, metadata: null, AbortToken);
@@ -194,8 +226,12 @@ public sealed class MinioCompletionSweepRaceTests(TusS3MinioFixture fixture) : C
         base.should_record_nothing_when_the_sweep_claimed_the_upload_first();
 
     [Fact]
-    public override Task should_finish_a_committing_upload_on_the_resent_final_patch_and_never_sweep_it() =>
-        base.should_finish_a_committing_upload_on_the_resent_final_patch_and_never_sweep_it();
+    public override Task should_finish_a_committing_upload_on_the_resent_final_patch_within_the_grace() =>
+        base.should_finish_a_committing_upload_on_the_resent_final_patch_within_the_grace();
+
+    [Fact]
+    public override Task should_remove_a_committing_upload_once_past_its_expiry_and_the_grace() =>
+        base.should_remove_a_committing_upload_once_past_its_expiry_and_the_grace();
 }
 
 [Collection<TusS3LocalStackFixture>]
@@ -211,6 +247,10 @@ public sealed class LocalStackCompletionSweepRaceTests(TusS3LocalStackFixture fi
         base.should_record_nothing_when_the_sweep_claimed_the_upload_first();
 
     [Fact]
-    public override Task should_finish_a_committing_upload_on_the_resent_final_patch_and_never_sweep_it() =>
-        base.should_finish_a_committing_upload_on_the_resent_final_patch_and_never_sweep_it();
+    public override Task should_finish_a_committing_upload_on_the_resent_final_patch_within_the_grace() =>
+        base.should_finish_a_committing_upload_on_the_resent_final_patch_within_the_grace();
+
+    [Fact]
+    public override Task should_remove_a_committing_upload_once_past_its_expiry_and_the_grace() =>
+        base.should_remove_a_committing_upload_once_past_its_expiry_and_the_grace();
 }

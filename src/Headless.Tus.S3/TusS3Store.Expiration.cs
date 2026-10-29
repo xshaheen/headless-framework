@@ -12,6 +12,12 @@ public sealed partial class TusS3Store
     // only a leak once it is older than any append could take to record it.
     private static readonly TimeSpan _UnrecordedMultipartUploadGrace = TimeSpan.FromHours(1);
 
+    // A completion records its finished object within seconds of marking the upload committing, since every storage
+    // call it makes is bounded by the SDK's timeouts. A committing upload older than this lost its completion to a
+    // crash, and the client has not re-sent its final PATCH. The one case this misjudges is a completion frozen for
+    // longer, between two calls, which would then record an object the sweep already deleted.
+    private static readonly TimeSpan _AbandonedCommitGrace = TimeSpan.FromHours(1);
+
     /// <summary>
     /// Lists the incomplete uploads the cleanup pass would remove: those past their expiry, and those marked gone
     /// whatever their expiry.
@@ -182,9 +188,10 @@ public sealed partial class TusS3Store
             // The re-sent final PATCH stays the way a completing upload finishes, so the pass waits out the expiry it
             // had before completing.
             TusS3UploadStatus.Completing => state.ExpiresAtBeforeCompleting <= now,
-            // The finished object exists and its completion is recording it; removing it now would delete an object
-            // that completion reports as finished.
-            TusS3UploadStatus.Committing => false,
+            // The finished object exists. A client may still re-send the final PATCH to finish it until the expiry it
+            // had before completing, and a completion may still be recording it until the grace period has passed.
+            TusS3UploadStatus.Committing => state.ExpiresAtBeforeCompleting <= now
+                && state.CommittingAt <= now - _AbandonedCommitGrace,
             // An upload past the provider's abort window has lost its parts and already reads as missing.
             _ => state.ExpiresAt <= now || _MultipartUploadLifetimePassed(state),
         };

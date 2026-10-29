@@ -20,6 +20,7 @@ internal sealed class S3RequestGate : DelegatingHandler
     private readonly Channel<string> _arrivals = Channel.CreateUnbounded<string>();
     private volatile Armed? _armed;
     private volatile Func<HttpRequestMessage, bool>? _fail;
+    private volatile Func<HttpRequestMessage, bool>? _landThenReject;
     private int _total;
 
 #pragma warning disable CA2000 // False positive: DelegatingHandler disposes its inner handler when it is disposed.
@@ -68,6 +69,16 @@ internal sealed class S3RequestGate : DelegatingHandler
         _fail = predicate;
     }
 
+    /// <summary>
+    /// Sends every request <paramref name="predicate" /> matches to the server, then answers it with a 412 instead of
+    /// the server's response, as an SDK retry of a write whose response was lost would be answered;
+    /// <see langword="null" /> stops it.
+    /// </summary>
+    public void LandThenRejectWhen(Func<HttpRequestMessage, bool>? predicate)
+    {
+        _landThenReject = predicate;
+    }
+
     /// <summary>Completes with the held request's key when one more matching request is waiting for release.</summary>
     public ValueTask<string> WaitForArrivalAsync(CancellationToken cancellationToken)
     {
@@ -96,6 +107,22 @@ internal sealed class S3RequestGate : DelegatingHandler
                 RequestMessage = request,
                 Content = new StringContent(
                     "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Error><Code>InvalidRequest</Code><Message>Failed by the test gate</Message></Error>",
+                    Encoding.UTF8,
+                    "application/xml"
+                ),
+            };
+        }
+
+        if (_landThenReject?.Invoke(request) == true)
+        {
+            using var landed = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            landed.EnsureSuccessStatusCode();
+
+            return new HttpResponseMessage(HttpStatusCode.PreconditionFailed)
+            {
+                RequestMessage = request,
+                Content = new StringContent(
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Error><Code>PreconditionFailed</Code><Message>At least one of the pre-conditions you specified did not hold</Message></Error>",
                     Encoding.UTF8,
                     "application/xml"
                 ),
