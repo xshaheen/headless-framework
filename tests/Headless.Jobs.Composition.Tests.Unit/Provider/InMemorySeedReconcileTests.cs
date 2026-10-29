@@ -387,6 +387,23 @@ public sealed class InMemorySeedReconcileTests : TestBase
     }
 
     [Fact]
+    public async Task should_fail_startup_validation_when_a_declaration_has_negative_retries()
+    {
+        await using var host = _CreateHost(options =>
+            options.SeedRecurringJob(
+                "daily-eu",
+                new ReportArgs("eu"),
+                _DailyCron,
+                new RecurringJobOptions { Retries = -1 }
+            )
+        );
+
+        var act = async () => await _ValidateStartupAsync(host);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*'daily-eu' has invalid options*");
+    }
+
+    [Fact]
     public async Task should_fail_startup_validation_when_a_declared_time_zone_is_unknown()
     {
         await using var host = _CreateHost(options =>
