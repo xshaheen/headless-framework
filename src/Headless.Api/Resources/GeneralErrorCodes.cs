@@ -79,4 +79,10 @@ public static class GeneralErrorCodes
 
     /// <summary>A tenant-owned write targeted a tenant other than the current tenant context. Maps to 409.</summary>
     public const string CrossTenantWrite = "g:cross_tenant_write";
+
+    /// <summary>
+    /// A cookie-authenticated request did not prove it came from the API's own origin or a configured trusted origin,
+    /// so it was refused as a possible cross-site request forgery. Maps to 403.
+    /// </summary>
+    public const string CrossSiteRequest = "g:cross_site_request";
 }

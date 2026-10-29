@@ -8,6 +8,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Api.ServiceDefaults" />
     <InternalsVisibleTo Include="Headless.Api.Mvc" />
+    <InternalsVisibleTo Include="Headless.Api.Jwt" />
     <InternalsVisibleTo Include="Headless.Idempotency.ResponseReplay" />
     <InternalsVisibleTo Include="Headless.Api.MinimalApi" />
     <InternalsVisibleTo Include="Headless.Api.Composition.Tests.Unit" />

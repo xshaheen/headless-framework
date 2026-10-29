@@ -138,4 +138,13 @@ public static class GeneralMessageDescriber
     {
         return new(code: GeneralErrorCodes.CrossTenantWrite, description: Messages.g_cross_tenant_write);
     }
+
+    /// <summary>
+    /// Returns a descriptor for a request a same-origin guard refused because it did not come from the API's own
+    /// origin or a trusted one (<c>g:cross_site_request</c>).
+    /// </summary>
+    public static ErrorDescriptor CrossSiteRequest()
+    {
+        return new(code: GeneralErrorCodes.CrossSiteRequest, description: Messages.g_cross_site_request);
+    }
 }

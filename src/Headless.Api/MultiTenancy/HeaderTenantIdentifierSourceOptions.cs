@@ -89,31 +89,11 @@ internal sealed class HeaderTenantIdentifierSourceOptionsValidator
             .Cascade(CascadeMode.Stop)
             .NotEmpty()
             .WithMessage("A tenant header name must not be blank.")
-            .Must(_IsHttpToken)
+            .Must(HttpSyntax.IsToken)
             .WithMessage(
                 (_, headerName) =>
                     $"The tenant header name '{headerName}' is not a valid HTTP token: only letters, digits, "
                     + "and !#$%&'*+-.^_`|~ are allowed (no whitespace or separators)."
             );
-    }
-
-    /// <summary>
-    /// RFC 9110 <c>token</c>: one or more <c>tchar</c>, where <c>tchar</c> is a letter, a digit, or one
-    /// of <c>!#$%&amp;'*+-.^_`|~</c>. A char loop rather than a regex: the alphabet is fixed and there
-    /// is no pattern to time out.
-    /// </summary>
-    private static bool _IsHttpToken(string headerName)
-    {
-        const string tcharPunctuation = "!#$%&'*+-.^_`|~";
-
-        foreach (var c in headerName)
-        {
-            if (!char.IsAsciiLetterOrDigit(c) && !tcharPunctuation.Contains(c, StringComparison.Ordinal))
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 }

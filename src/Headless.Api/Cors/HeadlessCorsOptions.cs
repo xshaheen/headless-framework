@@ -198,7 +198,7 @@ internal sealed class HeadlessCorsOptionsValidator : AbstractValidator<HeadlessC
             return;
         }
 
-        var problem = _DescribeOriginProblem(origin);
+        var problem = HttpSyntax.DescribeOriginProblem(origin);
 
         if (problem is not null)
         {
@@ -235,7 +235,7 @@ internal sealed class HeadlessCorsOptionsValidator : AbstractValidator<HeadlessC
 
         // Validate the suffix as a concrete origin, so the template obeys every rule an exact origin does.
         var concrete = string.Concat(template.AsSpan(0, schemeEnd + 3), suffix);
-        var problem = _DescribeOriginProblem(concrete);
+        var problem = HttpSyntax.DescribeOriginProblem(concrete);
 
         if (problem is not null)
         {
@@ -253,58 +253,5 @@ internal sealed class HeadlessCorsOptionsValidator : AbstractValidator<HeadlessC
                     + " such as 'https://*.example.com'."
             );
         }
-    }
-
-    /// <summary>Returns why <paramref name="origin"/> is not a bare serialized origin, or null when it is one.</summary>
-    private static string? _DescribeOriginProblem(string origin)
-    {
-        // Uri silently trims surrounding whitespace, which would hide a copy-paste error in configuration.
-        if (origin.AsSpan().Trim().Length != origin.Length)
-        {
-            return "must not contain leading or trailing whitespace.";
-        }
-
-        // Any scheme with a host is a real origin: hybrid mobile webviews send 'capacitor://localhost' or
-        // 'ionic://localhost'. A file URL serializes to the opaque origin 'null', so it can never match.
-        if (
-            !origin.Contains("://", StringComparison.Ordinal)
-            || !Uri.TryCreate(origin, UriKind.Absolute, out var uri)
-            || string.IsNullOrEmpty(uri.Host)
-            || string.Equals(uri.Scheme, Uri.UriSchemeFile, StringComparison.Ordinal)
-        )
-        {
-            return "must be an absolute origin with a scheme and host, such as 'https://app.example.com'.";
-        }
-
-        if (!string.IsNullOrEmpty(uri.UserInfo))
-        {
-            return "must not contain user info.";
-        }
-
-        if (!string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment))
-        {
-            return "must not contain a query or fragment.";
-        }
-
-        // Uri normalizes an empty path to '/', so read the raw string: 'https://a.com/' and 'https://a.com/x' both
-        // fail, since the browser's Origin header never carries a path.
-        var authorityStart = origin.IndexOf("://", StringComparison.Ordinal) + 3;
-
-        if (origin.IndexOf('/', authorityStart) >= 0)
-        {
-            return "must not contain a path or trailing slash.";
-        }
-
-        // Browsers drop a default port from the Origin header, and ASP.NET compares configured origins as lowercased
-        // strings without dropping it, so 'https://a.com:443' would never match. The bracket check keeps an IPv6
-        // literal's colons from reading as a port.
-        var authority = origin.AsSpan(authorityStart);
-
-        if (uri.IsDefaultPort && authority.LastIndexOf(':') > authority.LastIndexOf(']'))
-        {
-            return $"must not spell out the default port; write it as '{uri.Scheme}://{uri.Authority}'.";
-        }
-
-        return null;
     }
 }

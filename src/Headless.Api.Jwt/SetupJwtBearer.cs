@@ -20,7 +20,9 @@ namespace Headless.Api;
 /// The scheme validates with the same rules as <see cref="IJwtTokenFactory.ParseJwtTokenAsync"/>: HMAC-SHA256
 /// signature from the UTF-8 signing key, optional decryption key, required expiry, zero clock skew, the Headless
 /// name and role claim types, and no inbound claim mapping. Configure the keys and expected claims once in
-/// <see cref="HeadlessJwtBearerOptions"/> instead of rebuilding <c>TokenValidationParameters</c> by hand.
+/// <see cref="HeadlessJwtBearerOptions"/> instead of rebuilding <c>TokenValidationParameters</c> by hand. The same
+/// options choose where the token is read: the <c>Authorization</c> header by default, or also a cookie (guarded by
+/// the same-origin check) or the query string on listed paths.
 /// </remarks>
 [PublicAPI]
 public static class SetupJwtBearer
@@ -33,8 +35,9 @@ public static class SetupJwtBearer
         /// <param name="configuration">The section bound to <see cref="HeadlessJwtBearerOptions"/>.</param>
         /// <param name="authenticationScheme">The scheme name. Defaults to <c>Bearer</c>.</param>
         /// <param name="configureBearer">
-        /// Optional callback that runs after the Headless validation rules, for events such as reading a token from
-        /// the query string. Changing <c>TokenValidationParameters</c> here makes the scheme diverge from the factory.
+        /// Optional callback that runs after the Headless validation rules, for events. An <c>OnMessageReceived</c> it
+        /// assigns runs before the <see cref="HeadlessJwtBearerOptions.TokenSources"/>, which apply only when it set no
+        /// token. Changing <c>TokenValidationParameters</c> here makes the scheme diverge from the factory.
         /// </param>
         /// <returns>The same <see cref="AuthenticationBuilder"/>.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
@@ -64,8 +67,9 @@ public static class SetupJwtBearer
         /// <param name="setupAction">Configures <see cref="HeadlessJwtBearerOptions"/>.</param>
         /// <param name="authenticationScheme">The scheme name. Defaults to <c>Bearer</c>.</param>
         /// <param name="configureBearer">
-        /// Optional callback that runs after the Headless validation rules, for events such as reading a token from
-        /// the query string. Changing <c>TokenValidationParameters</c> here makes the scheme diverge from the factory.
+        /// Optional callback that runs after the Headless validation rules, for events. An <c>OnMessageReceived</c> it
+        /// assigns runs before the <see cref="HeadlessJwtBearerOptions.TokenSources"/>, which apply only when it set no
+        /// token. Changing <c>TokenValidationParameters</c> here makes the scheme diverge from the factory.
         /// </param>
         /// <returns>The same <see cref="AuthenticationBuilder"/>.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
@@ -96,8 +100,9 @@ public static class SetupJwtBearer
         /// <param name="setupAction">Configures <see cref="HeadlessJwtBearerOptions"/>.</param>
         /// <param name="authenticationScheme">The scheme name. Defaults to <c>Bearer</c>.</param>
         /// <param name="configureBearer">
-        /// Optional callback that runs after the Headless validation rules, for events such as reading a token from
-        /// the query string. Changing <c>TokenValidationParameters</c> here makes the scheme diverge from the factory.
+        /// Optional callback that runs after the Headless validation rules, for events. An <c>OnMessageReceived</c> it
+        /// assigns runs before the <see cref="HeadlessJwtBearerOptions.TokenSources"/>, which apply only when it set no
+        /// token. Changing <c>TokenValidationParameters</c> here makes the scheme diverge from the factory.
         /// </param>
         /// <returns>The same <see cref="AuthenticationBuilder"/>.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
@@ -147,6 +152,34 @@ public static class SetupJwtBearer
                             options.ValidateIssuer,
                             options.ValidateAudience
                         );
+                    }
+                );
+
+            // A post-configure step runs after configureBearer, so a callback that replaces Events or assigns its own
+            // OnMessageReceived is wrapped instead of silently dropping the configured token sources.
+            builder
+                .Services.AddOptions<JwtBearerOptions>(authenticationScheme)
+                .PostConfigure<IOptionsMonitor<HeadlessJwtBearerOptions>>(
+                    (bearer, monitor) =>
+                    {
+                        var options = monitor.Get(authenticationScheme);
+
+                        if (options.TokenSources == JwtTokenSources.Header)
+                        {
+                            return;
+                        }
+
+                        if (bearer.EventsType is not null)
+                        {
+                            throw new InvalidOperationException(
+                                $"The JWT bearer scheme '{authenticationScheme}' sets EventsType, which replaces the"
+                                    + $" Events instance that reads the token sources '{options.TokenSources}'. Assign"
+                                    + " JwtBearerOptions.Events in configureBearer instead, or keep TokenSources at Header."
+                            );
+                        }
+
+                        bearer.Events ??= new JwtBearerEvents();
+                        JwtTokenSourceResolver.Attach(bearer.Events, options);
                     }
                 );
 

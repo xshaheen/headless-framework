@@ -237,6 +237,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 
 - `AddHeadlessProblemDetails(problems => ...)` — the same registration plus the application's `HeadlessProblemDetailsOptions` mappings (`MapException<TException>(status, describe)`, `MapError<TError>(status)`, read-only `MappedStatusCodes`)
 - `AddHeadlessProblemDetails()` — registers `IProblemDetailsCreator`, a no-op `IErrorDescriptionLocalizer` (`TryAddSingleton`), `HeadlessApiExceptionHandler`, and the `CustomizeProblemDetails` hook that normalizes every response
+- `GeneralMessageDescriber.CrossSiteRequest()` (`g:cross_site_request`) — the 403 the same-origin guard answers
 - `GeneralMessageDescriber.TenantRequired()` (`g:tenant_required`), `CrossTenantWrite()` (`g:cross_tenant_write`), `InvalidRequestType()` (`g:invalid_request_type`), and `InvalidParameterValue(parameter)` (`g:invalid_parameter_value`, answered by MVC when a request value cannot be bound) — per-call localized descriptors for the framework's tenancy and request-type failures, with their codes on `GeneralErrorCodes`
 - `AddHeadlessApiResponseCompression()` — Brotli + Gzip at `Fastest` level; extends MIME list with `application/problem+json`, `image/svg+xml`, `image/x-icon`
 - `AddHeadlessAntiforgery()` — antiforgery service registration
@@ -254,6 +255,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - HTTP tenant authorization: `TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`
 - `AddHeadlessAuthorizationDenialAudit<TContext>()` — opt-in; wraps `IAuthorizationMiddlewareResultHandler` and writes an `authorization.challenged` or `authorization.forbidden` audit entry (method, route template, policy names; never the body or path) through `IAuditLogWriter<TContext>`. Requires an audit log storage provider; see [Authorization denial entries](audit-log.md#authorization-denial-entries)
 - `AddHeadlessCors([policyName,] IConfiguration | Action<HeadlessCorsOptions>)` — registers a named CORS policy from validated `HeadlessCorsOptions`, once per name; without a name it registers `HeadlessCorsConstants.RestrictedCors`. `AddHeadlessAllowAnyCors(Action<HeadlessCorsOptions>?)` registers `HeadlessCorsConstants.AllowAnyCors` (any origin, never credentials). `AddHeadlessCorsOriginSource<TSource>(policyName, lifetime)` attaches an `ICorsOriginSource` that approves origins at request time for any policy, including one written with `AddCors`. `HeadlessCorsOptions.FrameworkExposedHeaders` lists the framework's non-safelisted response headers for an `AddCors` policy's `WithExposedHeaders`. Opt-in; `AddHeadless()` calls none of them
+- Same-origin guard: `.RequireSameOrigin()` on a Minimal API endpoint, route group, or `MapControllers()`, and `[RequireSameOrigin]` on an MVC controller or action, refuse a request that does not come from the API's own origin or a trusted one with 403 `g:cross_site_request`. `AddHeadlessSameOriginGuard(IConfiguration | Action<HeadlessSameOriginOptions> | Action<HeadlessSameOriginOptions, IServiceProvider>)` configures `AllowedOrigins` and `RequiredHeaderName`, validated at startup; without it the guard admits only the API's own origin. Opt-in per endpoint; see [Same-origin guard](#same-origin-guard)
 - Single-claim authorization: `RequireSingleClaimValue(claimType, value)`, `RequireSingleClaim(claimType, predicate)`, and `SingleClaimRequirement`
 - HTTP edge rate limiting: `RateLimiterOptions.UseHeadlessProblemDetails()` rejects with 429 ProblemDetails (`g:rate_limit_exceeded`, `Retry-After`, `Cache-Control: no-store`), and `HttpContext.GetIpAddressPartition(ipv6PrefixLength = 64)` keys anonymous callers by IPv4 address or IPv6 /64. The application owns the limiter itself; see [HTTP edge limits](rate-limiting.md#http-edge-limits)
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
@@ -459,6 +461,43 @@ Startup fails with `OptionsValidationException` when:
 - An origin or template is not a bare `scheme://host[:port]` origin: it carries a path or trailing slash, user info, a query, a fragment, surrounding whitespace, or an explicit default port (`https://app.example.com:443`), has no host, is a `file:` URL, or is not absolute (including the literal `null`). The browser's `Origin` header never carries these parts, so such an entry would silently match nothing.
 - A template does not start with `<scheme>://*.`, has a second `*`, or has a literal suffix of fewer than two labels (`https://*`, `https://*.`, `https://*.com`). A two-label public suffix such as `https://*.co.uk` passes and admits every site under it; never configure one.
 - A header, method, or exposed-header entry is blank, or `MaxAge` is negative.
+
+#### Same-origin guard
+
+A browser attaches cookies to every request to the API's host, whatever site started it. An endpoint that trusts a cookie, such as a token refresh or logout, must also prove that a page on the API's own origin sent the request. CORS does not do this: it only controls whether a script may read the response, and a cross-site form post never asks. The guard reads the browser-set `Origin` and `Sec-Fetch-Site` headers, which page script cannot forge. Apply it per endpoint:
+
+```csharp
+builder.Services.AddHeadlessSameOriginGuard(o => o.AllowedOrigins = ["https://app.example.com"]);
+
+app.MapGroup("/auth").RequireSameOrigin();     // Minimal API endpoint or group
+app.MapControllers().RequireSameOrigin();      // every controller action, as an endpoint filter
+
+[RequireSameOrigin]                            // one MVC controller or action, as an authorization filter
+public sealed class SessionController : ControllerBase { }
+```
+
+The guard applies these rules in order and fails closed. An unknown, repeated, or contradictory header value refuses the request.
+
+| Request | Result |
+|---|---|
+| `Origin` present and neither the request's own origin (`scheme://host[:port]`, default port dropped) nor in `AllowedOrigins` | Refused |
+| `Sec-Fetch-Site: same-origin` | Passes |
+| `Sec-Fetch-Site: same-site` | Passes only when `Origin` is in `AllowedOrigins`, such as a SPA on `app.example.com` calling `api.example.com` |
+| `Sec-Fetch-Site: cross-site`, `none`, or any other value | Refused, even with a listed `Origin` |
+| Neither `Origin` nor `Sec-Fetch-Site` | Refused |
+| `RequiredHeaderName` set and the header missing or blank | Refused |
+
+A refusal is a 403 `application/problem+json` response with `error.code` `g:cross_site_request`. A request with only a matching `Origin` (a browser that sends no fetch metadata) passes.
+
+| Property | Default | Notes |
+|---|---|---|
+| `AllowedOrigins` | `[]` | Bare `http` or `https` origins. No path, trailing slash, query, user info, or default port. They pass only on a `same-site` request, so a listed origin on another site is still refused. |
+| `RequiredHeaderName` | `null` | A header every guarded request must carry with a value, such as `X-Requested-With`. A cross-origin page cannot add it without a CORS preflight. |
+
+- The guard compares against the request's scheme and host. Behind a reverse proxy, run `UseForwardedHeaders()` first, or every browser request is refused.
+- A non-browser client that calls a guarded endpoint must send `Origin` set to the API's own origin.
+- `.RequireSameOrigin()` runs as an endpoint filter. Endpoints without a filter pipeline, such as SignalR hubs, ignore it. On a Minimal API handler, `[RequireSameOrigin]` is metadata only and checks nothing, so use the extension.
+- The JWT cookie token source runs the same check. See [Token sources](#token-sources).
 
 #### API surfaces
 
@@ -940,6 +979,8 @@ JWT issuing, parsing, and bearer authentication for Headless APIs.
 
 - `IJwtTokenFactory` / `JwtTokenFactory` — creates HMAC-SHA256 tokens, optionally encrypted, and parses them back into a `ClaimsPrincipal`
 - `AuthenticationBuilder.AddHeadlessJwtBearer(IConfiguration | Action<HeadlessJwtBearerOptions> | Action<HeadlessJwtBearerOptions, IServiceProvider>, authenticationScheme = "Bearer", configureBearer = null)` — adds a JWT bearer scheme that validates the tokens `IJwtTokenFactory` issues with the factory's own rules. `HeadlessJwtBearerOptions` carries `SigningKey`, `EncryptingKey`, `Issuer`, `Audience`, `ValidateIssuer`, and `ValidateAudience`, validated at startup
+- Token sources — `HeadlessJwtBearerOptions.TokenSources` (`[Flags] JwtTokenSources`: `Header`, `Cookie`, `QueryString`; default `Header`) chooses where the scheme reads the access token, with `CookieName` (default `__Host-access_token`), `QueryParameterName` (default `access_token`), and `QueryPathPrefixes`. See [Token sources](#token-sources)
+- `IRefreshTokenCookie` — `Write(token, expiresAt)`, `Read()`, and `Delete()` for a refresh token kept in a `Secure`, `HttpOnly` cookie. `IServiceCollection.AddHeadlessRefreshTokenCookie(IConfiguration | Action<RefreshTokenCookieOptions> | Action<RefreshTokenCookieOptions, IServiceProvider>)` registers it with `Name`, `Path`, `Domain`, and `SameSite`. See [Refresh-token cookie](#refresh-token-cookie)
 - JWT request contracts — `JwtTokenRequest` groups token creation values, while `JwtTokenValidationRequest` uses required initializers for the token, signing key, issuer, and audience and groups the validation switches for `IJwtTokenFactory.ParseJwtTokenAsync(...)`
 
 ### Install
@@ -955,26 +996,77 @@ Validate bearer tokens the factory issued with `AddHeadlessJwtBearer`, configure
 ```csharp
 builder.Services
     .AddAuthentication(AuthenticationConstants.Schemas.Bearer)
-    .AddHeadlessJwtBearer(
-        builder.Configuration.GetSection("Jwt"), // SigningKey, EncryptingKey, Issuer, Audience
-        configureBearer: bearer =>
-            bearer.Events = new JwtBearerEvents
-            {
-                // WebSocket clients cannot send headers; read the token from the query string on the hub path only.
-                OnMessageReceived = context =>
-                {
-                    if (context.HttpContext.Request.Path.StartsWithSegments("/hubs"))
-                    {
-                        context.Token = context.Request.Query["access_token"];
-                    }
-
-                    return Task.CompletedTask;
-                },
-            }
-    );
+    .AddHeadlessJwtBearer(builder.Configuration.GetSection("Jwt")); // SigningKey, EncryptingKey, Issuer, Audience
 ```
 
 The scheme and `IJwtTokenFactory.ParseJwtTokenAsync` share one rule set: HMAC-SHA256 signature from the UTF-8 signing key (at least 32 bytes), optional decryption with `EncryptingKey`, a required `exp` with zero clock skew, `UserClaimTypes.UserName` and `UserClaimTypes.Roles` as the name and role claim types, and no inbound claim mapping. `configureBearer` runs after those rules; use it for events, and leave `TokenValidationParameters` alone, or the scheme stops accepting exactly what the factory issues. The options are named by scheme, so two `AddHeadlessJwtBearer` calls with different scheme names keep separate keys.
+
+#### Token sources
+
+`TokenSources` chooses where the scheme reads the access token. The scheme tries the sources in a fixed order and uses the first token it finds:
+
+1. `Header`: `Authorization: Bearer <token>`. This is the default and the only source unless you add others.
+2. `Cookie`: the cookie named `CookieName`. It is used only when the request also passes the [same-origin guard](#same-origin-guard), with the options `AddHeadlessSameOriginGuard` configures. A browser sends the cookie on cross-site requests too. A header token is never subject to the guard.
+3. `QueryString`: the parameter named `QueryParameterName`, read only on a path under one of `QueryPathPrefixes`. Browser WebSocket and server-sent-event clients, such as SignalR, cannot send a header. A URL lands in access logs and proxies, so keep the prefixes to those paths.
+
+```json
+{
+  "Jwt": {
+    "SigningKey": "...", "Issuer": "https://api.example.com", "Audience": "api",
+    "TokenSources": "Header, Cookie, QueryString",
+    "CookieName": "__Host-access_token",
+    "QueryPathPrefixes": [ "/hubs" ]
+  }
+}
+```
+
+- When `TokenSources` leaves out `Header`, the scheme ignores the `Authorization` header.
+- An `OnMessageReceived` handler set in `configureBearer` runs first, even one that replaces `Events`. The sources apply only when it sets no token and no result. A `JwtBearerEvents` subclass that overrides `MessageReceived` must call `base.MessageReceived(context)`, or the sources never run.
+- Setting `JwtBearerOptions.EventsType` together with any source other than `Header` throws `InvalidOperationException` when the scheme's options are first built. `EventsType` replaces the events that read the sources.
+- Startup fails with `OptionsValidationException` in these cases: `TokenSources` is `None` or has an unknown flag. `Cookie` is set and `CookieName` is not a valid cookie name. `QueryString` is set and `QueryParameterName` is empty or `QueryPathPrefixes` is empty. A prefix does not start with `/` or is `/` alone.
+
+#### Refresh-token cookie
+
+`IRefreshTokenCookie` carries a refresh token in a cookie. Issuing, storing, rotating, and revoking refresh tokens stay with the application. The service writes the cookie with `Secure` and `HttpOnly` always set. Neither is an option.
+
+| Property | Default | Notes |
+|---|---|---|
+| `Name` | `__Host-refresh_token` | A valid cookie name. With the `__Host-` prefix, `Path` must be `/` and `Domain` unset, or the browser drops the cookie. To narrow `Path` to the refresh endpoint, use a `__Secure-` name. |
+| `Path` | `/` | Starts with `/`. |
+| `Domain` | `null` | `null` sends the cookie only to the host that set it. |
+| `SameSite` | `Strict` | `Strict` or `Lax`. `None` and `Unspecified` are refused, because cross-site use is what the same-origin guard rejects. |
+
+- `Write(token, expiresAt)` sets `Expires` for each call, normally to the refresh token's own expiry. It throws `ArgumentOutOfRangeException` when `expiresAt` is not later than the registered `TimeProvider`'s current time.
+- `Read()` returns the value, or `null` when the cookie is absent or empty.
+- `Delete()` expires the cookie with the same `Path`, `Domain`, and `Secure` it was written with, so the browser matches and removes it.
+- Each member throws `InvalidOperationException` outside an HTTP request.
+
+Every endpoint that reads the cookie needs the same-origin guard. A refresh or logout endpoint looks like this:
+
+```csharp
+builder.Services.AddHeadlessRefreshTokenCookie(builder.Configuration.GetSection("RefreshCookie"));
+builder.Services.AddHeadlessSameOriginGuard(builder.Configuration.GetSection("SameOrigin"));
+
+var auth = app.MapGroup("/auth").RequireSameOrigin();
+
+auth.MapPost("/refresh", async (IRefreshTokenCookie cookie, MyRefreshService refresh, CancellationToken ct) =>
+{
+    if (cookie.Read() is not { } current)
+    {
+        return Results.Unauthorized();
+    }
+
+    var result = await refresh.ExchangeAsync(current, ct);   // the application's own store and rotation
+    cookie.Write(result.RefreshToken, result.RefreshTokenExpiresAt);
+    return Results.Ok(new { accessToken = result.AccessToken });
+});
+
+auth.MapPost("/logout", (IRefreshTokenCookie cookie) =>
+{
+    cookie.Delete();
+    return Results.NoContent();
+});
+```
 
 JWT validation outside the authentication middleware uses a request object instead of positional token, key, issuer, audience, and validation arguments:
 
@@ -1010,6 +1102,7 @@ public sealed class TokenValidator(IJwtTokenFactory tokens)
 
 - `AddHeadlessJwtBearer(...)` registers `IJwtTokenFactory` (`TryAddSingleton`), so the scheme and the factory share one rule set. A host that only issues tokens and validates none registers `JwtTokenFactory` itself.
 - `AddHeadless()` registers no JWT services and leaves the `JsonWebTokenHandler` statics alone.
+- `AddHeadlessRefreshTokenCookie(...)` registers `IRefreshTokenCookie` as a singleton over `IHttpContextAccessor`. It adds the accessor, and `TimeProvider.System` when no `TimeProvider` is registered.
 
 ---
 

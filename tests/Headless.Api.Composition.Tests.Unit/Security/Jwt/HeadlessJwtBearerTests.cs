@@ -110,6 +110,69 @@ public sealed class HeadlessJwtBearerTests : TestBase
     }
 
     [Fact]
+    public async Task should_keep_token_sources_when_bearer_callback_replaces_events()
+    {
+        // given - the callback replaces Events wholesale, which would discard handlers set before it
+        var consumerCalls = 0;
+        await using var app = await _CreateAppAsync(
+            _ConfigureCookieSource,
+            bearer =>
+                bearer.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = _ =>
+                    {
+                        consumerCalls++;
+                        return Task.CompletedTask;
+                    },
+                }
+        );
+        using var client = _CreateClient(app);
+        using var request = _CookieRequest(origin: app.Urls.Single());
+
+        // when
+        using var response = await client.SendAsync(request, AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        consumerCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_not_authenticate_a_cookie_token_on_a_cross_site_request()
+    {
+        // given
+        await using var app = await _CreateAppAsync(_ConfigureCookieSource);
+        using var client = _CreateClient(app);
+        using var request = _CookieRequest(origin: "https://evil.example.net");
+        request.Headers.Add("Sec-Fetch-Site", "cross-site");
+
+        // when
+        using var response = await client.SendAsync(request, AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task should_refuse_events_type_with_token_sources_beyond_the_header()
+    {
+        // given - an EventsType instance replaces Events at request time, so the sources would never run
+        await using var app = await _CreateAppAsync(
+            _ConfigureCookieSource,
+            bearer => bearer.EventsType = typeof(JwtBearerEvents)
+        );
+
+        // when
+        var act = () =>
+            app
+                .Services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
+                .Get(AuthenticationConstants.Schemas.Bearer);
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*EventsType*");
+    }
+
+    [Fact]
     public async Task should_fail_start_when_signing_key_is_shorter_than_32_bytes()
     {
         // given
@@ -133,6 +196,22 @@ public sealed class HeadlessJwtBearerTests : TestBase
         options.EncryptingKey = _EncryptingKey;
         options.Issuer = _Issuer;
         options.Audience = _Audience;
+    }
+
+    private static void _ConfigureCookieSource(HeadlessJwtBearerOptions options)
+    {
+        _Configure(options);
+        options.TokenSources = JwtTokenSources.Header | JwtTokenSources.Cookie;
+        options.CookieName = "access";
+    }
+
+    private static HttpRequestMessage _CookieRequest(string origin)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/me");
+        request.Headers.Add("Cookie", "access=" + _CreateToken(TimeProvider.System, TimeSpan.FromMinutes(5)));
+        request.Headers.Add("Origin", origin);
+
+        return request;
     }
 
     private static WebApplicationBuilder _CreateBuilder(

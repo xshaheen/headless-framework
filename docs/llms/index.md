@@ -32,7 +32,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 
 | Task | Read |
 | --- | --- |
-| Bootstrap an ASP.NET Core host; Problem Details; validation; Minimal API or MVC; JWT, ASP.NET Core Identity, or User-Agent parsing | [API & Web](api.md) |
+| Bootstrap an ASP.NET Core host; Problem Details; validation; Minimal API or MVC; JWT, ASP.NET Core Identity, or User-Agent parsing; access tokens from a cookie or query string, a refresh-token cookie, or a same-origin guard for cookie-authenticated endpoints | [API & Web](api.md) |
 | Generate OpenAPI or expose Scalar UI | [OpenAPI](openapi.md) |
 | Use ASP.NET Core Identity with the Headless EF pipeline | [Identity](identity.md) |
 | Resolve tenants from claims, host, route, or catalog; enforce tenant reads/writes | [Multi-tenancy](multi-tenancy.md) |
