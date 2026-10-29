@@ -111,7 +111,8 @@ internal sealed partial class ConsumerRegister(
             return false;
         }
 
-        foreach (var handle in _subscriptionHandles.Values)
+        // Enumerating the dictionary itself takes no locks; its Values property locks every bucket and copies them.
+        foreach (var (_, handle) in _subscriptionHandles)
         {
             if (handle.IsDegraded)
             {
@@ -376,7 +377,6 @@ internal sealed partial class ConsumerRegister(
         {
             // Nothing waits for the establishment hooks under the restart gate, for the reason a rebuild gives.
             _ = await _StartSubscriptionsAsync(added).ConfigureAwait(false);
-            await _PauseSurvivorsOfOpenCircuitsAsync(added).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
             when ((LifecycleState)Volatile.Read(ref _state) is LifecycleState.Disposing or LifecycleState.Disposed)
@@ -389,6 +389,15 @@ internal sealed partial class ConsumerRegister(
             // pass recreates.
             _needsPartialRestart = true;
             throw;
+        }
+        finally
+        {
+            // A group aborts its circuits' half-open probes before its clients start, so a group whose start then
+            // failed has still reopened them, and the subscriptions sharing those circuits must be paused all the same.
+            if ((LifecycleState)Volatile.Read(ref _state) == LifecycleState.Running)
+            {
+                await _PauseSurvivorsOfOpenCircuitsAsync(added).ConfigureAwait(false);
+            }
         }
     }
 
@@ -1602,7 +1611,6 @@ internal sealed partial class ConsumerRegister(
             }
         }
 
-        /// <summary>Gets whether any client of the handle lost its broker consumer or its consumer loop.</summary>
         public bool IsDegraded
         {
             get

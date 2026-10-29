@@ -173,6 +173,38 @@ public sealed class ClientRestartTests : TestBase
     }
 
     [Fact]
+    public async Task should_pause_a_subscription_sharing_the_circuit_when_the_replacement_fails_to_start()
+    {
+        // given: the ledger's circuit opened and half-opened, so both of its subscriptions take deliveries again
+        var probe = new PipelineProbe { Behavior = _FailFirstOrder };
+        await using var host = await LedgerHosts.StartAsync(probe, AbortToken, _OpenOnFirstFailure);
+        var order = host.OrderSubscription();
+        var refund = host.RefundSubscription();
+        await host.EnqueueAsync("order-1", AbortToken);
+        await host.WaitUntilAsync(() => host.LedgerCircuit().State == CircuitBreakerState.Open, AbortToken);
+        await host.RunForAsync(_OpenDuration + PipelineHosts.PollInterval, AbortToken);
+        var survivor = _OnlyClient(host, refund);
+        await host.WaitUntilAsync(
+            () => host.LedgerCircuit().State == CircuitBreakerState.HalfOpen && !survivor.IsPaused,
+            AbortToken
+        );
+
+        // and: the order subscription lost its channel, and its replacement client will fail after the probe client
+        // read its message names, which is after starting it aborted the circuit's half-open probe
+        _OnlyClient(host, order).CloseChannel();
+        host.ClientFactory().Fail(order, skip: 1, new InvalidOperationException("The client factory failed."));
+
+        // when
+        var failed = async () => await host.Register().ReStartAsync(cancellationToken: AbortToken);
+        await failed.Should().ThrowAsync<InvalidOperationException>();
+
+        // then: the circuit is open again, and the subscription that kept its client is held by it
+        host.LedgerCircuit().State.Should().Be(CircuitBreakerState.Open);
+        _OnlyClient(host, refund).Should().BeSameAs(survivor);
+        survivor.IsPaused.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_retire_and_not_recreate_a_degraded_subscription_whose_group_was_removed()
     {
         // given: a runtime subscription whose client lost its channel
