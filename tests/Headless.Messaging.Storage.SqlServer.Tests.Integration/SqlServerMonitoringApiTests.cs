@@ -418,6 +418,32 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         result.Items.Single().Name.Should().Be("orders.created");
     }
 
+    [Theory]
+    [InlineData("50%off")]
+    [InlineData("user_id")]
+    [InlineData("[draft]")]
+    public async Task should_match_content_search_literally(string term)
+    {
+        // given — the decoy matches the term only when its wildcard characters are left unescaped
+        var decoy = term.Replace('%', 'X').Replace('_', 'X').Replace("[draft]", "d", StringComparison.Ordinal);
+        await _CreatePublishedMessageWithPayload(new { Data = $"before {term} after" });
+        await _CreatePublishedMessageWithPayload(new { Data = $"before {decoy} after" });
+
+        var query = new MessageQuery
+        {
+            MessageType = MessageType.Publish,
+            Content = term,
+            CurrentPage = 0,
+            PageSize = 10,
+        };
+
+        // when
+        var result = await _monitoringApi.GetMessagesAsync(query, AbortToken);
+
+        // then
+        result.Items.Should().ContainSingle().Which.Content.Should().Contain(term);
+    }
+
     [Fact]
     public async Task should_project_delivery_metadata_without_failing_on_malformed_envelopes()
     {
@@ -680,6 +706,17 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         await _storage.ChangePublishStateAsync(stored, status, cancellationToken: AbortToken);
 
         return stored;
+    }
+
+    private async Task _CreatePublishedMessageWithPayload(object payload)
+    {
+        var header = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = Guid.NewGuid().ToString("D"),
+        };
+        var stored = await _storage.StoreMessageAsync("test.name", new Message(header, payload), null, AbortToken);
+        stored.ExpiresAt = _timeProvider.GetUtcNow().AddHours(1);
+        await _storage.ChangePublishStateAsync(stored, StatusName.Succeeded, cancellationToken: AbortToken);
     }
 
     private async Task<MediumMessage> _CreateReceivedMessage(StatusName status)
