@@ -179,20 +179,9 @@ public sealed class R2TusS3StoreConformanceTests(TusS3R2Fixture fixture)
     [Fact]
     public override Task should_persist_received_bytes_when_pipe_read_is_cancelled() =>
         base.should_persist_received_bytes_when_pipe_read_is_cancelled();
-}
-
-[Collection<TusS3R2Fixture>]
-public sealed class R2TusS3ConcatenationConformanceTests(TusS3R2Fixture fixture)
-    : TusConcatenationConformanceTestsBase<TusS3Store>(fixture)
-{
-    [Fact]
-    public override Task should_get_partial_file_info() => base.should_get_partial_file_info();
 
     [Fact]
-    public override Task should_return_null_for_regular_file() => base.should_return_null_for_regular_file();
-
-    [Fact]
-    public override Task should_return_null_for_nonexistent_file() => base.should_return_null_for_nonexistent_file();
+    public override Task should_get_expired_files() => base.should_get_expired_files();
 }
 
 [Collection<TusS3R2Fixture>]
@@ -214,6 +203,9 @@ public sealed class R2TusS3ProtocolConformanceTests(TusS3R2Fixture fixture)
     [Fact]
     public override Task patch_with_wrong_offset_conflicts_without_modifying_the_upload() =>
         base.patch_with_wrong_offset_conflicts_without_modifying_the_upload();
+
+    [Fact]
+    public override Task delete_terminates_the_upload() => base.delete_terminates_the_upload();
 }
 
 [Collection<TusS3R2Fixture>]
@@ -272,25 +264,18 @@ public sealed class R2TusS3ExpirationConformanceTests(TusS3R2Fixture fixture)
 }
 
 [Collection<TusS3R2Fixture>]
-public sealed class R2TusS3ExpiredFilesConformanceTests(TusS3R2Fixture fixture)
-    : TusStoreConformanceTestsBase<TusS3Store>(fixture)
-{
-    [Fact]
-    public override Task should_get_expired_files() => base.should_get_expired_files();
-}
-
-[Collection<TusS3R2Fixture>]
-public sealed class R2TusS3TerminationConformanceTests(TusS3R2Fixture fixture)
-    : TusProtocolConformanceTestsBase<TusS3Store>(fixture)
-{
-    [Fact]
-    public override Task delete_terminates_the_upload() => base.delete_terminates_the_upload();
-}
-
-[Collection<TusS3R2Fixture>]
-public sealed class R2TusS3FinalUploadConformanceTests(TusS3R2Fixture fixture)
+public sealed class R2TusS3ConcatenationConformanceTests(TusS3R2Fixture fixture)
     : TusConcatenationConformanceTestsBase<TusS3Store>(fixture)
 {
+    [Fact]
+    public override Task should_get_partial_file_info() => base.should_get_partial_file_info();
+
+    [Fact]
+    public override Task should_return_null_for_regular_file() => base.should_return_null_for_regular_file();
+
+    [Fact]
+    public override Task should_return_null_for_nonexistent_file() => base.should_return_null_for_nonexistent_file();
+
     [Fact]
     public override Task should_throw_when_create_final_file_with_empty_partials() =>
         base.should_throw_when_create_final_file_with_empty_partials();

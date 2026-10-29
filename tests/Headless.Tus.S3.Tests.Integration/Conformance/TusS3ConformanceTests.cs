@@ -57,6 +57,9 @@ public sealed class MinioTusS3StoreConformanceTests(TusS3MinioFixture fixture)
     [Fact]
     public override Task should_persist_received_bytes_when_pipe_read_is_cancelled() =>
         base.should_persist_received_bytes_when_pipe_read_is_cancelled();
+
+    [Fact]
+    public override Task should_get_expired_files() => base.should_get_expired_files();
 }
 
 [Collection<TusS3LocalStackFixture>]
@@ -108,34 +111,9 @@ public sealed class LocalStackTusS3StoreConformanceTests(TusS3LocalStackFixture 
     [Fact]
     public override Task should_persist_received_bytes_when_pipe_read_is_cancelled() =>
         base.should_persist_received_bytes_when_pipe_read_is_cancelled();
-}
-
-[Collection<TusS3MinioFixture>]
-public sealed class MinioTusS3ConcatenationConformanceTests(TusS3MinioFixture fixture)
-    : TusConcatenationConformanceTestsBase<TusS3Store>(fixture)
-{
-    [Fact]
-    public override Task should_get_partial_file_info() => base.should_get_partial_file_info();
 
     [Fact]
-    public override Task should_return_null_for_regular_file() => base.should_return_null_for_regular_file();
-
-    [Fact]
-    public override Task should_return_null_for_nonexistent_file() => base.should_return_null_for_nonexistent_file();
-}
-
-[Collection<TusS3LocalStackFixture>]
-public sealed class LocalStackTusS3ConcatenationConformanceTests(TusS3LocalStackFixture fixture)
-    : TusConcatenationConformanceTestsBase<TusS3Store>(fixture)
-{
-    [Fact]
-    public override Task should_get_partial_file_info() => base.should_get_partial_file_info();
-
-    [Fact]
-    public override Task should_return_null_for_regular_file() => base.should_return_null_for_regular_file();
-
-    [Fact]
-    public override Task should_return_null_for_nonexistent_file() => base.should_return_null_for_nonexistent_file();
+    public override Task should_get_expired_files() => base.should_get_expired_files();
 }
 
 [Collection<TusS3MinioFixture>]
@@ -157,6 +135,9 @@ public sealed class MinioTusS3ProtocolConformanceTests(TusS3MinioFixture fixture
     [Fact]
     public override Task patch_with_wrong_offset_conflicts_without_modifying_the_upload() =>
         base.patch_with_wrong_offset_conflicts_without_modifying_the_upload();
+
+    [Fact]
+    public override Task delete_terminates_the_upload() => base.delete_terminates_the_upload();
 }
 
 [Collection<TusS3LocalStackFixture>]
@@ -178,6 +159,9 @@ public sealed class LocalStackTusS3ProtocolConformanceTests(TusS3LocalStackFixtu
     [Fact]
     public override Task patch_with_wrong_offset_conflicts_without_modifying_the_upload() =>
         base.patch_with_wrong_offset_conflicts_without_modifying_the_upload();
+
+    [Fact]
+    public override Task delete_terminates_the_upload() => base.delete_terminates_the_upload();
 }
 
 [Collection<TusS3MinioFixture>]

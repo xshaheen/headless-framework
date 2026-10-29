@@ -82,19 +82,3 @@ public sealed class LocalStackTusS3ExpirationConformanceTests(TusS3LocalStackFix
     public override Task should_return_partial_results_instead_of_throwing_when_cancelled() =>
         base.should_return_partial_results_instead_of_throwing_when_cancelled();
 }
-
-[Collection<TusS3MinioFixture>]
-public sealed class MinioTusS3ExpiredFilesConformanceTests(TusS3MinioFixture fixture)
-    : TusStoreConformanceTestsBase<TusS3Store>(fixture)
-{
-    [Fact]
-    public override Task should_get_expired_files() => base.should_get_expired_files();
-}
-
-[Collection<TusS3LocalStackFixture>]
-public sealed class LocalStackTusS3ExpiredFilesConformanceTests(TusS3LocalStackFixture fixture)
-    : TusStoreConformanceTestsBase<TusS3Store>(fixture)
-{
-    [Fact]
-    public override Task should_get_expired_files() => base.should_get_expired_files();
-}
