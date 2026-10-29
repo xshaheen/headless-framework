@@ -23,6 +23,14 @@ internal sealed class EfReadAuditLog<TContext>(IDbContextFactory<TContext> dbFac
             entriesQuery = entriesQuery.Where(e => e.Action == query.Action);
         }
 
+        if (query.ActionPrefix is not null)
+        {
+            var pattern = SqlLikePattern.StartsWith(query.ActionPrefix);
+            entriesQuery = entriesQuery.Where(e =>
+                EF.Functions.Like(e.Action, pattern, SqlLikePattern.EscapeCharacter)
+            );
+        }
+
         if (query.EntityType is not null)
         {
             entriesQuery = entriesQuery.Where(e => e.EntityType == query.EntityType);

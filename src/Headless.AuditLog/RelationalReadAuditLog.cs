@@ -50,6 +50,22 @@ internal sealed class RelationalReadAuditLog<TContext>(RelationalAuditLogTable t
         var binders = new List<Action<DbCommand>>();
 
         _AddFilter(filters, binders, "Action", query.Action, AuditLogFieldLimits.Action);
+
+        if (query.ActionPrefix is not null)
+        {
+            // Plain LIKE, not the dialect's case-insensitive form, so the prefix compares like the exact Action filter.
+            var pattern = SqlLikePattern.StartsWith(query.ActionPrefix);
+            filters.Add($"{table.Column("Action")} LIKE @ActionPrefix ESCAPE '{SqlLikePattern.EscapeCharacter}'");
+            binders.Add(command =>
+                _dialect.AddParameter(
+                    command,
+                    "ActionPrefix",
+                    SqlColumnType.LookupText(AuditLogFieldLimits.Action, pattern),
+                    pattern
+                )
+            );
+        }
+
         _AddFilter(filters, binders, "EntityType", query.EntityType, AuditLogFieldLimits.EntityType);
         _AddFilter(filters, binders, "EntityId", query.EntityId, AuditLogFieldLimits.EntityId);
         _AddFilter(filters, binders, "UserId", query.UserId, AuditLogFieldLimits.UserId);

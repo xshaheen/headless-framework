@@ -21,8 +21,20 @@ public sealed class AuditLogQuery : ContinuationPageRequest
         Size = 100;
     }
 
-    /// <summary>Gets the optional exact action-name filter.</summary>
+    /// <summary>Gets the optional exact action-name filter. Cannot be combined with <see cref="ActionPrefix"/>.</summary>
     public string? Action { get; init; }
+
+    /// <summary>
+    /// Gets the optional action-name prefix filter, matching every action that starts with this text, such as
+    /// <c>"authorization."</c> for all authorization events. Cannot be combined with <see cref="Action"/>.
+    /// </summary>
+    /// <remarks>
+    /// The prefix matches literally: <c>%</c>, <c>_</c>, <c>[</c>, and <c>\</c> in it are escaped, never wildcards. Case
+    /// sensitivity follows the database's <c>LIKE</c> on the action column: case-sensitive on PostgreSQL, the column's
+    /// collation on SQL Server, and ASCII case-insensitive on SQLite. An empty prefix is rejected; leave it
+    /// <see langword="null"/> to match every action.
+    /// </remarks>
+    public string? ActionPrefix { get; init; }
 
     /// <summary>Gets the optional exact entity-type filter.</summary>
     public string? EntityType { get; init; }
