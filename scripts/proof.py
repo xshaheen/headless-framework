@@ -455,7 +455,11 @@ def empty_selection_stage(affected: dict) -> Stage | None:
 
 
 def summarize(
-    directory: Path, gate_scope: str = "none", floors: dict[str, float] | None = None, strict: bool = False
+    directory: Path,
+    gate_scope: str = "none",
+    floors: dict[str, float] | None = None,
+    strict: bool = False,
+    input_key: str = "",
 ) -> int:
     stages = read_stages(directory)
     affected_path = directory / "affected.json"
@@ -511,6 +515,7 @@ def summarize(
         "coverage_gate": gate,
         "target": TARGET_BY_SUFFIX.get(directory.name.rsplit("-", 1)[-1], "make verify-affected"),
         "integration_ran": any(stage.name == "integration-tests" and stage.exit_code >= 0 for stage in stages),
+        "input_key": input_key,
     }
     (directory / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     (directory / "summary.md").write_text(render_markdown(summary), encoding="utf-8")
@@ -532,6 +537,15 @@ def render_markdown(summary: dict) -> str:
         "",
         f"Commit `{summary['commit'][:12]}`{' with uncommitted changes' if summary['dirty'] else ''}, base `{summary['base']}`.",
         "",
+    ]
+    reused = summary.get("reused_from")
+    if reused:
+        lines += [
+            f"Reused: commit `{reused['commit'][:12]}` proved the same inputs on {reused['generated_at']} "
+            f"(input key `{summary['input_key'][:12]}`), so no stage ran again for this commit.",
+            "",
+        ]
+    lines += [
         "| Stage | Result | Time |",
         "| --- | --- | --- |",
     ]
@@ -647,6 +661,45 @@ def analyzers_clean(directory: Path) -> int:
     for finding in findings[:20]:
         print(f"[proof] {finding['severity']} {finding['id']} {finding['file']}:{finding['line']} {finding['message']}", file=sys.stderr)
     return 1 if findings else 0
+
+
+def reuse_bundle(directory: Path, root: Path, key: str) -> int:
+    """Write DIRECTORY's summary from the newest passing bundle of its kind that proved the same input key.
+
+    Exit 1 when none did, so the target runs its stages. Only a pass is reused: a failure can be a flaky test, and
+    re-running it is how the author finds out. The summary names the commit that ran the stages, so a PR that cites a
+    reused proof still says where the evidence came from.
+    """
+    if not key:
+        return 1
+    kind = directory.name.rsplit("-", 1)[-1]
+    for bundle in sorted(root.glob(f"*-{kind}"), reverse=True):
+        path = bundle / "summary.json"
+        if bundle.resolve() == directory.resolve() or not path.is_file():
+            continue
+        try:
+            earlier = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if earlier.get("input_key") != key or earlier.get("verdict") != "pass":
+            continue
+        affected_path = directory / "affected.json"
+        affected = json.loads(affected_path.read_text(encoding="utf-8")) if affected_path.exists() else {}
+        # A reuse of a reuse still points at the run that executed the stages.
+        origin = earlier.get("reused_from") or {"bundle": relative(str(bundle)), "commit": earlier["commit"], "generated_at": earlier["generated_at"]}
+        summary = earlier | {
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "commit": git("rev-parse", "HEAD"),
+            "dirty": bool(git("status", "--porcelain")),
+            "base": affected.get("base", earlier.get("base")),
+            "reused_from": origin,
+        }
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+        (directory / "summary.md").write_text(render_markdown(summary), encoding="utf-8")
+        print(f"[proof] reused {origin['bundle']}: commit {origin['commit'][:12]} proved the same inputs", file=sys.stderr)
+        return 0
+    return 1
 
 
 def latest_bundle(root: Path) -> Path | None:
@@ -845,6 +898,11 @@ def main() -> int:
         default="warn",
         help="warn: report a miss and keep the proof passing (comply or explain); fail: a miss fails the proof",
     )
+    summary.add_argument("--input-key", default="", help="the bundle's `project-graph.py input-key`, recorded so a later run can reuse it")
+    reuse = commands.add_parser("reuse", help="write DIR's summary from an earlier passing bundle with the same input key; exit 1 when none")
+    reuse.add_argument("--dir", required=True, type=Path)
+    reuse.add_argument("--root", type=Path, default=REPO_ROOT / "artifacts" / "proof", help="where the bundles live")
+    reuse.add_argument("--key", required=True)
     clean = commands.add_parser("analyzers-clean", help="exit 1 when the bundle's analyzer stage reported a visible finding")
     clean.add_argument("--dir", required=True, type=Path)
     failed = commands.add_parser("failed", help="print the test projects that failed in a bundle")
@@ -880,8 +938,10 @@ def main() -> int:
         return failed_projects(args.dir, args.root)
     if args.command == "analyzers-clean":
         return analyzers_clean(args.dir)
+    if args.command == "reuse":
+        return reuse_bundle(args.dir, args.root, args.key)
     floors = {"unit": args.unit_floor, "line": args.line_floor, "branch": args.branch_floor}
-    return summarize(args.dir, args.coverage_gate, floors, args.coverage_gate_mode == "fail")
+    return summarize(args.dir, args.coverage_gate, floors, args.coverage_gate_mode == "fail", args.input_key)
 
 
 if __name__ == "__main__":
