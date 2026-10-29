@@ -1,44 +1,24 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure.Storage.Blobs;
-using Headless.Testing.Tests;
 using Headless.Tus;
-using Headless.Tus.Internal;
 using Tests.TestSetup;
-using tusdotnet.Models.Concatenation;
 using TusAzureMetadata = Headless.Tus.Models.TusAzureMetadata;
 
 namespace Tests.Concatenation;
 
 [Collection<TusAzureFixture>]
-public sealed class TusConcatenationTests : TestBase
+public sealed class TusConcatenationTests(TusAzureFixture fixture)
+    : TusConcatenationConformanceTestsBase<TusAzureStore>(fixture)
 {
-    private readonly TusAzureStore _store;
-    private readonly TusAzureContainerProvisioner _provisioner;
-    private readonly BlobServiceClient _blobServiceClient;
-    private readonly BlobContainerClient _containerClient;
-    private const string _ContainerName = "tuscontainer";
-    private const string _BlobPrefix = "tusfiles/";
+    private readonly BlobServiceClient _blobServiceClient = fixture.CreateBlobServiceClient();
 
-    public TusConcatenationTests(TusAzureFixture fixture)
-    {
-        _blobServiceClient = new BlobServiceClient(
-            fixture.Container.GetConnectionString(),
-            new BlobClientOptions(BlobClientOptions.ServiceVersion.V2024_11_04)
-        );
+    private readonly BlobContainerClient _containerClient = fixture
+        .CreateBlobServiceClient()
+        .GetBlobContainerClient(TusAzureFixture.ContainerName);
 
-        var storeOptions = new TusAzureStoreOptions { ContainerName = _ContainerName, BlobPrefix = _BlobPrefix };
-        _containerClient = _blobServiceClient.GetBlobContainerClient(_ContainerName);
-        _store = new TusAzureStore(_blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
-        _provisioner = new TusAzureContainerProvisioner(_blobServiceClient, storeOptions);
-    }
-
-    // The store does not create its container; the deploy-time provisioner does.
-    public override async ValueTask InitializeAsync()
-    {
-        await base.InitializeAsync();
-        await _provisioner.ProvisionAsync(AbortToken);
-    }
+    private const string _ContainerName = TusAzureFixture.ContainerName;
+    private const string _BlobPrefix = TusAzureFixture.BlobPrefix;
 
     /* CreatePartialFileAsync */
 
@@ -51,7 +31,7 @@ public sealed class TusConcatenationTests : TestBase
         var metadata = $"filename {fileName.ToBase64()}";
 
         // when
-        var fileId = await _store.CreatePartialFileAsync(uploadLength, metadata, AbortToken);
+        var fileId = await Store.CreatePartialFileAsync(uploadLength, metadata, AbortToken);
 
         // then
         fileId.Should().NotBeNullOrEmpty();
@@ -81,7 +61,7 @@ public sealed class TusConcatenationTests : TestBase
         var uploadLength = Faker.Random.Number(100, 1_000);
 
         // when
-        var fileId = await _store.CreatePartialFileAsync(uploadLength, metadata: null, AbortToken);
+        var fileId = await Store.CreatePartialFileAsync(uploadLength, metadata: null, AbortToken);
 
         // then
         fileId.Should().NotBeNullOrEmpty();
@@ -100,23 +80,23 @@ public sealed class TusConcatenationTests : TestBase
         var data1 = Faker.Random.Bytes(500);
         var data2 = Faker.Random.Bytes(700);
 
-        var partialId1 = await _store.CreatePartialFileAsync(data1.Length, metadata: null, AbortToken);
+        var partialId1 = await Store.CreatePartialFileAsync(data1.Length, metadata: null, AbortToken);
         await using (var stream1 = new MemoryStream(data1))
         {
-            await _store.AppendDataAsync(partialId1, stream1, AbortToken);
+            await Store.AppendDataAsync(partialId1, stream1, AbortToken);
         }
 
-        var partialId2 = await _store.CreatePartialFileAsync(data2.Length, metadata: null, AbortToken);
+        var partialId2 = await Store.CreatePartialFileAsync(data2.Length, metadata: null, AbortToken);
         await using (var stream2 = new MemoryStream(data2))
         {
-            await _store.AppendDataAsync(partialId2, stream2, AbortToken);
+            await Store.AppendDataAsync(partialId2, stream2, AbortToken);
         }
 
         var fileName = Faker.System.FileName();
         var metadata = $"filename {fileName.ToBase64()}";
 
         // when
-        var finalFileId = await _store.CreateFinalFileAsync([partialId1, partialId2], metadata, AbortToken);
+        var finalFileId = await Store.CreateFinalFileAsync([partialId1, partialId2], metadata, AbortToken);
 
         // then
         finalFileId.Should().NotBeNullOrEmpty();
@@ -142,243 +122,7 @@ public sealed class TusConcatenationTests : TestBase
         properties.Value.Metadata[TusAzureMetadata.UploadLengthKey].Should().Be(expectedTotalSize.ToInvariantString());
     }
 
-    [Fact]
-    public async Task should_throw_when_create_final_file_with_empty_partials()
-    {
-        // given
-        string[] emptyPartials = [];
-
-        // when
-        var act = async () => await _store.CreateFinalFileAsync(emptyPartials, metadata: null, AbortToken);
-
-        // then
-        await act.Should().ThrowAsync<ArgumentException>();
-    }
-
-    [Fact]
-    public async Task should_throw_when_create_final_file_with_nonexistent_partial()
-    {
-        // given
-        var nonExistentPartialId = Guid.NewGuid().ToString("n");
-
-        // when
-        var act = async () => await _store.CreateFinalFileAsync([nonExistentPartialId], metadata: null, AbortToken);
-
-        // then
-        await act.Should()
-            .ThrowAsync<tusdotnet.Models.TusStoreException>()
-            .WithMessage($"Partial file {nonExistentPartialId} does not exist");
-    }
-
-    [Fact]
-    public async Task should_throw_when_create_final_file_with_regular_file_as_partial()
-    {
-        // given - create a regular (non-partial) file
-        var uploadLength = Faker.Random.Number(100, 500);
-        var regularFileId = await _store.CreateFileAsync(uploadLength, metadata: null, AbortToken);
-
-        // when
-        var act = async () => await _store.CreateFinalFileAsync([regularFileId], metadata: null, AbortToken);
-
-        // then
-        await act.Should()
-            .ThrowAsync<tusdotnet.Models.TusStoreException>()
-            .WithMessage($"File {regularFileId} is not a partial file");
-    }
-
-    [Fact]
-    public async Task should_throw_when_create_final_file_with_incomplete_partial()
-    {
-        // given - create partial file but don't upload all data
-        const int uploadLength = 1000;
-        var partialData = Faker.Random.Bytes(500); // Only half the data
-        var partialId = await _store.CreatePartialFileAsync(uploadLength, metadata: null, AbortToken);
-
-        await using (var stream = new MemoryStream(partialData))
-        {
-            await _store.AppendDataAsync(partialId, stream, AbortToken);
-        }
-
-        // when
-        var act = async () => await _store.CreateFinalFileAsync([partialId], metadata: null, AbortToken);
-
-        // then
-        await act.Should()
-            .ThrowAsync<tusdotnet.Models.TusStoreException>()
-            .WithMessage($"Partial file {partialId} is incomplete*");
-    }
-
-    /* GetUploadConcatAsync */
-
-    [Fact]
-    public async Task should_get_partial_file_info()
-    {
-        // given
-        var uploadLength = Faker.Random.Number(100, 1_000);
-        var partialId = await _store.CreatePartialFileAsync(uploadLength, metadata: null, AbortToken);
-
-        // when
-        var concat = await _store.GetUploadConcatAsync(partialId, AbortToken);
-
-        // then
-        concat.Should().NotBeNull();
-        concat.Should().BeOfType<FileConcatPartial>();
-    }
-
-    [Fact]
-    public async Task should_get_final_file_info()
-    {
-        // given - create complete partial files
-        var data1 = Faker.Random.Bytes(300);
-        var data2 = Faker.Random.Bytes(400);
-
-        var partialId1 = await _store.CreatePartialFileAsync(data1.Length, metadata: null, AbortToken);
-        await using (var stream1 = new MemoryStream(data1))
-        {
-            await _store.AppendDataAsync(partialId1, stream1, AbortToken);
-        }
-
-        var partialId2 = await _store.CreatePartialFileAsync(data2.Length, metadata: null, AbortToken);
-        await using (var stream2 = new MemoryStream(data2))
-        {
-            await _store.AppendDataAsync(partialId2, stream2, AbortToken);
-        }
-
-        var finalFileId = await _store.CreateFinalFileAsync([partialId1, partialId2], metadata: null, AbortToken);
-
-        // when
-        var concat = await _store.GetUploadConcatAsync(finalFileId, AbortToken);
-
-        // then
-        concat.Should().NotBeNull();
-        concat.Should().BeOfType<FileConcatFinal>();
-
-        var finalConcat = (FileConcatFinal)concat!;
-        finalConcat.Files.Should().HaveCount(2);
-        finalConcat.Files.Should().Contain(partialId1);
-        finalConcat.Files.Should().Contain(partialId2);
-    }
-
-    [Fact]
-    public async Task should_return_null_for_regular_file()
-    {
-        // given - create a regular (non-concatenation) file
-        var uploadLength = Faker.Random.Number(100, 500);
-        var regularFileId = await _store.CreateFileAsync(uploadLength, metadata: null, AbortToken);
-
-        // when
-        var concat = await _store.GetUploadConcatAsync(regularFileId, AbortToken);
-
-        // then
-        concat.Should().BeNull();
-    }
-
-    [Fact]
-    public async Task should_return_null_for_nonexistent_file()
-    {
-        // given
-        var nonExistentFileId = Guid.NewGuid().ToString("n");
-
-        // when
-        var concat = await _store.GetUploadConcatAsync(nonExistentFileId, AbortToken);
-
-        // then
-        concat.Should().BeNull();
-    }
-
     /* Data Integrity */
-
-    [Fact]
-    public async Task should_preserve_data_integrity_after_concatenation()
-    {
-        // given - create partial files with known content
-        var data1 = Faker.Random.Bytes(1_000);
-        var data2 = Faker.Random.Bytes(1_500);
-        var data3 = Faker.Random.Bytes(800);
-
-        var partialId1 = await _store.CreatePartialFileAsync(data1.Length, metadata: null, AbortToken);
-        await using (var stream1 = new MemoryStream(data1))
-        {
-            await _store.AppendDataAsync(partialId1, stream1, AbortToken);
-        }
-
-        var partialId2 = await _store.CreatePartialFileAsync(data2.Length, metadata: null, AbortToken);
-        await using (var stream2 = new MemoryStream(data2))
-        {
-            await _store.AppendDataAsync(partialId2, stream2, AbortToken);
-        }
-
-        var partialId3 = await _store.CreatePartialFileAsync(data3.Length, metadata: null, AbortToken);
-        await using (var stream3 = new MemoryStream(data3))
-        {
-            await _store.AppendDataAsync(partialId3, stream3, AbortToken);
-        }
-
-        // when
-        var finalFileId = await _store.CreateFinalFileAsync(
-            [partialId1, partialId2, partialId3],
-            metadata: null,
-            AbortToken
-        );
-
-        // then - download and verify content
-        var blobClient = _containerClient.GetBlobClient(_BlobPrefix + finalFileId);
-        await using var downloadStream = new MemoryStream();
-        await blobClient.DownloadToAsync(downloadStream, AbortToken);
-
-        var downloadedContent = downloadStream.ToArray();
-        var expectedContent = data1.Concat(data2).Concat(data3).ToArray();
-
-        downloadedContent.Should().BeEquivalentTo(expectedContent);
-    }
-
-    [Fact]
-    public async Task should_create_final_file_from_single_partial()
-    {
-        // given
-        var data = Faker.Random.Bytes(500);
-        var partialId = await _store.CreatePartialFileAsync(data.Length, metadata: null, AbortToken);
-
-        await using (var stream = new MemoryStream(data))
-        {
-            await _store.AppendDataAsync(partialId, stream, AbortToken);
-        }
-
-        // when
-        var finalFileId = await _store.CreateFinalFileAsync([partialId], metadata: null, AbortToken);
-
-        // then
-        var blobClient = _containerClient.GetBlobClient(_BlobPrefix + finalFileId);
-        await using var downloadStream = new MemoryStream();
-        await blobClient.DownloadToAsync(downloadStream, AbortToken);
-
-        downloadStream.ToArray().Should().BeEquivalentTo(data);
-    }
-
-    [Fact]
-    public async Task should_allow_same_partial_multiple_times_in_final_file()
-    {
-        // given - the tus spec: partials "MAY however be used multiple times to form a final
-        // resource", including repeated entries in one Upload-Concat list
-        var data = Faker.Random.Bytes(400);
-        var partialId = await _store.CreatePartialFileAsync(data.Length, metadata: null, AbortToken);
-
-        await using (var stream = new MemoryStream(data))
-        {
-            await _store.AppendDataAsync(partialId, stream, AbortToken);
-        }
-
-        // when - the same partial is listed twice
-        var finalFileId = await _store.CreateFinalFileAsync([partialId, partialId], metadata: null, AbortToken);
-
-        // then - its content appears twice, in order
-        var blobClient = _containerClient.GetBlobClient(_BlobPrefix + finalFileId);
-        await using var downloadStream = new MemoryStream();
-        await blobClient.DownloadToAsync(downloadStream, AbortToken);
-
-        downloadStream.ToArray().Should().BeEquivalentTo(data.Concat(data).ToArray());
-        (await _store.GetUploadLengthAsync(finalFileId, AbortToken)).Should().Be(data.Length * 2);
-    }
 
     [Fact]
     public async Task should_delete_partials_after_concat_when_enabled()
@@ -427,48 +171,80 @@ public sealed class TusConcatenationTests : TestBase
     }
 
     [Fact]
-    public async Task should_keep_partials_after_concat_by_default()
+    public override Task should_throw_when_create_final_file_with_empty_partials()
     {
-        // given
-        var data = Faker.Random.Bytes(250);
-        var partialId = await _store.CreatePartialFileAsync(data.Length, metadata: null, AbortToken);
-
-        await using (var stream = new MemoryStream(data))
-        {
-            await _store.AppendDataAsync(partialId, stream, AbortToken);
-        }
-
-        // when
-        _ = await _store.CreateFinalFileAsync([partialId], metadata: null, AbortToken);
-
-        // then - the spec allows reusing partials for multiple finals; the default keeps them
-        (await _store.FileExistAsync(partialId, AbortToken))
-            .Should()
-            .BeTrue();
+        return base.should_throw_when_create_final_file_with_empty_partials();
     }
 
     [Fact]
-    public async Task should_preserve_user_metadata_in_final_file()
+    public override Task should_throw_when_create_final_file_with_nonexistent_partial()
     {
-        // given
-        var data = Faker.Random.Bytes(300);
-        var partialId = await _store.CreatePartialFileAsync(data.Length, metadata: null, AbortToken);
+        return base.should_throw_when_create_final_file_with_nonexistent_partial();
+    }
 
-        await using (var stream = new MemoryStream(data))
-        {
-            await _store.AppendDataAsync(partialId, stream, AbortToken);
-        }
+    [Fact]
+    public override Task should_throw_when_create_final_file_with_regular_file_as_partial()
+    {
+        return base.should_throw_when_create_final_file_with_regular_file_as_partial();
+    }
 
-        var fileName = Faker.System.FileName();
-        var customValue = Faker.Random.AlphaNumeric(10);
-        var metadata = $"filename {fileName.ToBase64()},customkey {customValue.ToBase64()}";
+    [Fact]
+    public override Task should_throw_when_create_final_file_with_incomplete_partial()
+    {
+        return base.should_throw_when_create_final_file_with_incomplete_partial();
+    }
 
-        // when
-        var finalFileId = await _store.CreateFinalFileAsync([partialId], metadata, AbortToken);
+    [Fact]
+    public override Task should_get_partial_file_info()
+    {
+        return base.should_get_partial_file_info();
+    }
 
-        // then
-        var retrievedMetadata = await _store.GetUploadMetadataAsync(finalFileId, AbortToken);
-        retrievedMetadata.Should().Contain("filename");
-        retrievedMetadata.Should().Contain("customkey");
+    [Fact]
+    public override Task should_get_final_file_info()
+    {
+        return base.should_get_final_file_info();
+    }
+
+    [Fact]
+    public override Task should_return_null_for_regular_file()
+    {
+        return base.should_return_null_for_regular_file();
+    }
+
+    [Fact]
+    public override Task should_return_null_for_nonexistent_file()
+    {
+        return base.should_return_null_for_nonexistent_file();
+    }
+
+    [Fact]
+    public override Task should_preserve_data_integrity_after_concatenation()
+    {
+        return base.should_preserve_data_integrity_after_concatenation();
+    }
+
+    [Fact]
+    public override Task should_create_final_file_from_single_partial()
+    {
+        return base.should_create_final_file_from_single_partial();
+    }
+
+    [Fact]
+    public override Task should_allow_same_partial_multiple_times_in_final_file()
+    {
+        return base.should_allow_same_partial_multiple_times_in_final_file();
+    }
+
+    [Fact]
+    public override Task should_keep_partials_after_concat_by_default()
+    {
+        return base.should_keep_partials_after_concat_by_default();
+    }
+
+    [Fact]
+    public override Task should_preserve_user_metadata_in_final_file()
+    {
+        return base.should_preserve_user_metadata_in_final_file();
     }
 }

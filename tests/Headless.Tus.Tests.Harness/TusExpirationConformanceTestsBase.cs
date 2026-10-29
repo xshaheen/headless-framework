@@ -1,0 +1,310 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using tusdotnet.Interfaces;
+
+namespace Tests;
+
+/// <summary>
+/// Expiration behavior every tus store must share: the cleanup pass removes expired incomplete uploads only, never a
+/// completed or live one, and a cancelled pass degrades to a partial result instead of throwing.
+/// </summary>
+public abstract class TusExpirationConformanceTestsBase<TStore>(ITusConformanceBackend<TStore> backend)
+    : TusConformanceTestsBase<TStore>(backend)
+    where TStore : class,
+        ITusStore,
+        ITusPipelineStore,
+        ITusCreationStore,
+        ITusCreationDeferLengthStore,
+        ITusTerminationStore,
+        ITusExpirationStore,
+        ITusReadableStore,
+        ITusConcatenationStore
+{
+    /* Test #105: Full expiration cleanup flow */
+
+    public virtual async Task should_cleanup_expired_uploads()
+    {
+        // given - create expired INCOMPLETE uploads (the TUS Expiration extension targets
+        // unfinished uploads only)
+        var expiredFileId1 = await _CreateIncompleteUploadAsync(1_000, uploadedBytes: 500);
+        await Store.SetExpirationAsync(expiredFileId1, DateTimeOffset.UtcNow.AddMinutes(-30), AbortToken);
+
+        var expiredFileId2 = await _CreateIncompleteUploadAsync(1_400, uploadedBytes: 700);
+        await Store.SetExpirationAsync(expiredFileId2, DateTimeOffset.UtcNow.AddMinutes(-15), AbortToken);
+
+        // given - create active incomplete file (not expired)
+        var activeFileId = await _CreateIncompleteUploadAsync(1_200, uploadedBytes: 600);
+        await Store.SetExpirationAsync(activeFileId, DateTimeOffset.UtcNow.AddHours(1), AbortToken);
+
+        // verify all files exist before cleanup
+        (await Store.FileExistAsync(expiredFileId1, AbortToken))
+            .Should()
+            .BeTrue();
+        (await Store.FileExistAsync(expiredFileId2, AbortToken)).Should().BeTrue();
+        (await Store.FileExistAsync(activeFileId, AbortToken)).Should().BeTrue();
+
+        // when - run expiration cleanup
+        var removedCount = await Store.RemoveExpiredFilesAsync(AbortToken);
+
+        // then - expired incomplete files should be removed
+        removedCount.Should().BeGreaterThanOrEqualTo(2);
+
+        (await Store.FileExistAsync(expiredFileId1, AbortToken)).Should().BeFalse();
+        (await Store.FileExistAsync(expiredFileId2, AbortToken)).Should().BeFalse();
+
+        // and active file should still exist
+        (await Store.FileExistAsync(activeFileId, AbortToken))
+            .Should()
+            .BeTrue();
+    }
+
+    /* Test: Completed uploads survive expiration cleanup */
+
+    public virtual async Task should_not_delete_expired_completed_uploads()
+    {
+        // given - a COMPLETED upload whose expiration has passed. tusdotnet refreshes the sliding
+        // expiration on the completing PATCH, so completed uploads routinely carry a past
+        // tus_expiration; cleanup must never destroy them (TusDiskStore parity).
+        var content = Faker.Random.Bytes(800);
+        var completedFileId = await _CreateAndUploadFileAsync(content);
+        await Store.SetExpirationAsync(completedFileId, DateTimeOffset.UtcNow.AddMinutes(-30), AbortToken);
+
+        // when
+        var expiredFiles = (await Store.GetExpiredFilesAsync(AbortToken)).ToList();
+        _ = await Store.RemoveExpiredFilesAsync(AbortToken);
+
+        // then - the completed upload is neither listed as expired nor deleted
+        expiredFiles.Should().NotContain(completedFileId);
+        (await Store.FileExistAsync(completedFileId, AbortToken)).Should().BeTrue();
+
+        // and its content is intact
+        (await ReadContentAsync(completedFileId))
+            .Should()
+            .BeEquivalentTo(content);
+    }
+
+    /* Test: Defer-length uploads (no declared length) count as incomplete */
+
+    public virtual async Task should_cleanup_expired_defer_length_uploads()
+    {
+        // given - an expired defer-length upload that never declared its final length; an upload
+        // with unknown length is unfinished by definition (TusDiskStore parity)
+        var fileId = await Store.CreateFileAsync(-1L, metadata: null, AbortToken);
+
+        await using (var stream = new MemoryStream(Faker.Random.Bytes(300)))
+        {
+            await Store.AppendDataAsync(fileId, stream, AbortToken);
+        }
+
+        await Store.SetExpirationAsync(fileId, DateTimeOffset.UtcNow.AddMinutes(-5), AbortToken);
+
+        // when
+        var removedCount = await Store.RemoveExpiredFilesAsync(AbortToken);
+
+        // then
+        removedCount.Should().BeGreaterThanOrEqualTo(1);
+        (await Store.FileExistAsync(fileId, AbortToken)).Should().BeFalse();
+    }
+
+    /* Test #106: Active uploads not deleted */
+
+    public virtual async Task should_not_delete_active_uploads()
+    {
+        // given - create multiple active (non-expired) files
+        var activeFiles = new List<(string FileId, byte[] Content)>();
+
+        for (var i = 0; i < 3; i++)
+        {
+            var content = Faker.Random.Bytes(Faker.Random.Number(400, 800));
+            var fileId = await _CreateAndUploadFileAsync(content);
+
+            // Set expiration in the future
+            await Store.SetExpirationAsync(fileId, DateTimeOffset.UtcNow.AddHours(i + 1), AbortToken);
+
+            activeFiles.Add((fileId, content));
+        }
+
+        // given - also create a file without expiration (should be treated as active)
+        var noExpirationContent = Faker.Random.Bytes(500);
+        var noExpirationFileId = await _CreateAndUploadFileAsync(noExpirationContent);
+
+        // verify all files exist before cleanup
+        foreach (var (fileId, _) in activeFiles)
+        {
+            (await Store.FileExistAsync(fileId, AbortToken)).Should().BeTrue();
+        }
+
+        (await Store.FileExistAsync(noExpirationFileId, AbortToken)).Should().BeTrue();
+
+        // when - run expiration cleanup (return value intentionally ignored; the assertions below
+        // verify our active files are preserved, not the removed count)
+        _ = await Store.RemoveExpiredFilesAsync(AbortToken);
+
+        // then - no active files should be removed (may be 0 or more if other expired files exist)
+        // The key assertion is that OUR active files are preserved
+        foreach (var (fileId, content) in activeFiles)
+        {
+            // File should still exist
+            (await Store.FileExistAsync(fileId, AbortToken))
+                .Should()
+                .BeTrue();
+
+            // Content should be preserved
+            (await ReadContentAsync(fileId))
+                .Should()
+                .BeEquivalentTo(content);
+        }
+
+        // and file without expiration should still exist
+        (await Store.FileExistAsync(noExpirationFileId, AbortToken))
+            .Should()
+            .BeTrue();
+
+        (await ReadContentAsync(noExpirationFileId)).Should().BeEquivalentTo(noExpirationContent);
+    }
+
+    /* Test: Expired incomplete uploads should be cleaned */
+
+    public virtual async Task should_cleanup_expired_incomplete_uploads()
+    {
+        // given - create incomplete upload (partially uploaded)
+        var fullContent = Faker.Random.Bytes(1_000);
+        var partialContent = fullContent[..500]; // Only first half
+
+        var fileName = Faker.System.FileName();
+        var metadata = $"filename {fileName.ToBase64()}";
+        var fileId = await Store.CreateFileAsync(fullContent.Length, metadata, AbortToken);
+
+        // Upload only partial content
+        await using (var stream = new MemoryStream(partialContent))
+        {
+            await Store.AppendDataAsync(fileId, stream, AbortToken);
+        }
+
+        // Set as expired
+        await Store.SetExpirationAsync(fileId, DateTimeOffset.UtcNow.AddMinutes(-10), AbortToken);
+
+        // Verify file exists and is incomplete
+        (await Store.FileExistAsync(fileId, AbortToken))
+            .Should()
+            .BeTrue();
+        var offset = await Store.GetUploadOffsetAsync(fileId, AbortToken);
+        var length = await Store.GetUploadLengthAsync(fileId, AbortToken);
+        length.Should().NotBeNull();
+        offset.Should().BeLessThan(length!.Value);
+
+        // when - run cleanup
+        var removedCount = await Store.RemoveExpiredFilesAsync(AbortToken);
+
+        // then - expired incomplete upload should be removed
+        removedCount.Should().BeGreaterThanOrEqualTo(1);
+        (await Store.FileExistAsync(fileId, AbortToken)).Should().BeFalse();
+    }
+
+    /* Test: Completed uploads report no expiration (tus HEAD/DELETE must keep working) */
+
+    public virtual async Task should_report_no_expiration_for_completed_uploads()
+    {
+        // given - a completed upload whose sliding expiration has passed (tusdotnet refreshes the
+        // expiration on the completing PATCH, so this state is routine)
+        var content = Faker.Random.Bytes(400);
+        var fileId = await _CreateAndUploadFileAsync(content);
+        await Store.SetExpirationAsync(fileId, DateTimeOffset.UtcNow.AddMinutes(-10), AbortToken);
+
+        // when
+        var expiration = await Store.GetExpirationAsync(fileId, AbortToken);
+
+        // then - null keeps tusdotnet's FileHasNotExpired requirement from 404ing the completed
+        // upload, so HEAD and DELETE (termination) keep working after the window elapses
+        expiration.Should().BeNull();
+
+        // and an incomplete upload still reports its expiration
+        var incompleteId = await _CreateIncompleteUploadAsync(1_000, uploadedBytes: 300);
+        var expires = DateTimeOffset.UtcNow.AddMinutes(30);
+        await Store.SetExpirationAsync(incompleteId, expires, AbortToken);
+        (await Store.GetExpirationAsync(incompleteId, AbortToken)).Should().BeCloseTo(expires, TimeSpan.FromSeconds(1));
+    }
+
+    /* Test: SetExpiration must complete even with a cancelled request token */
+
+    public virtual async Task should_set_expiration_even_when_request_token_is_cancelled()
+    {
+        // given - tusdotnet refreshes the sliding expiration AFTER a PATCH with the request's
+        // token, which is already cancelled when the client paused/disconnected mid-request —
+        // exactly when the committed partial data still needs its window extended to resume later
+        var fileId = await _CreateIncompleteUploadAsync(1_000, uploadedBytes: 500);
+        var expires = DateTimeOffset.UtcNow.AddMinutes(30);
+
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        // when
+        await Store.SetExpirationAsync(fileId, expires, cancelled.Token);
+
+        // then
+        var stored = await Store.GetExpirationAsync(fileId, AbortToken);
+        stored.Should().BeCloseTo(expires, TimeSpan.FromSeconds(1));
+    }
+
+    /* Test: GetExpiredFilesAsync returns correct files */
+
+    public virtual async Task should_list_only_expired_files()
+    {
+        // given - create mix of expired and active INCOMPLETE files
+        var expiredFileId = await _CreateIncompleteUploadAsync(800, uploadedBytes: 400);
+        await Store.SetExpirationAsync(expiredFileId, DateTimeOffset.UtcNow.AddMinutes(-5), AbortToken);
+
+        var activeFileId = await _CreateIncompleteUploadAsync(1_000, uploadedBytes: 500);
+        await Store.SetExpirationAsync(activeFileId, DateTimeOffset.UtcNow.AddHours(2), AbortToken);
+
+        // when - get expired files list
+        var expiredFiles = (await Store.GetExpiredFilesAsync(AbortToken)).ToList();
+
+        // then - only expired file should be in the list
+        expiredFiles.Should().Contain(expiredFileId);
+        expiredFiles.Should().NotContain(activeFileId);
+    }
+
+    /* Test: cancellation during a cleanup pass degrades gracefully */
+
+    public virtual async Task should_return_partial_results_instead_of_throwing_when_cancelled()
+    {
+        // given - a cleanup pass whose token is already cancelled (host shutdown mid-pass);
+        // TusDiskStore parity: the enumeration returns what it found so far and never throws,
+        // so the service exits quietly and the next pass reclaims the remainder
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        // when
+        var listAct = async () => await Store.GetExpiredFilesAsync(cancelled.Token);
+        var removeAct = async () => _ = await Store.RemoveExpiredFilesAsync(cancelled.Token);
+
+        // then
+        await listAct.Should().NotThrowAsync();
+        await removeAct.Should().NotThrowAsync();
+    }
+
+    private async Task<string> _CreateAndUploadFileAsync(byte[] content)
+    {
+        var fileName = Faker.System.FileName();
+        var metadata = $"filename {fileName.ToBase64()}";
+        var fileId = await Store.CreateFileAsync(content.Length, metadata, AbortToken);
+
+        await using var stream = new MemoryStream(content);
+        await Store.AppendDataAsync(fileId, stream, AbortToken);
+
+        return fileId;
+    }
+
+    private async Task<string> _CreateIncompleteUploadAsync(int declaredLength, int uploadedBytes)
+    {
+        var fileName = Faker.System.FileName();
+        var metadata = $"filename {fileName.ToBase64()}";
+        var fileId = await Store.CreateFileAsync(declaredLength, metadata, AbortToken);
+
+        await using var stream = new MemoryStream(Faker.Random.Bytes(uploadedBytes));
+        await Store.AppendDataAsync(fileId, stream, AbortToken);
+
+        return fileId;
+    }
+}

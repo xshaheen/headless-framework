@@ -12,5 +12,6 @@
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
     <ProjectReference Include="..\..\src\Headless.Tus.Azure\Headless.Tus.Azure.csproj" />
+    <ProjectReference Include="..\Headless.Tus.Tests.Harness\Headless.Tus.Tests.Harness.csproj" />
   </ItemGroup>
 </Project>

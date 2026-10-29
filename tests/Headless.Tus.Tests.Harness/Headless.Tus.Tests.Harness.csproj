@@ -1,0 +1,16 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <IsTestProject>false</IsTestProject>
+    <IsTestHarnessProject>true</IsTestHarnessProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <!-- TreatAsUsed: supplies the tusdotnet store contracts and MapTus the scenarios run against. -->
+    <ProjectReference Include="..\..\src\Headless.Tus\Headless.Tus.csproj" TreatAsUsed="true" />
+  </ItemGroup>
+</Project>
