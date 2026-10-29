@@ -5,8 +5,10 @@ using Headless.Checks;
 using Headless.Context;
 using Headless.Hosting;
 using Headless.Messaging;
+using Headless.MultiTenancy;
 using Headless.Security;
 using Headless.Settings.Resources;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -251,6 +253,16 @@ public static class SetupSettings
 
         services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>();
         services.TryAddSingleton<ISettingManager, SettingManager>();
+
+        // unit.Settings: the enlisted writes, resolved by the unit of work from this container. A second, stateless
+        // SettingManager instance, so a host that replaces ISettingManager keeps the framework's enlisted path.
+        services.AddUnitOfWork();
+        services.TryAddSingleton<IUnitOfWorkSettings, SettingManager>();
+
+        // The manager stamps an enlisted write's change announcement with the writing tenant. Same fallback as
+        // Permissions, Messaging, and Jobs: an AsyncLocal-backed tenant, replaced by any real tenancy registration.
+        services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
+        services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
         services.TryAddSingleton<IClientVisibleSettingsReader, ClientVisibleSettingsReader>();
 
         return services;
