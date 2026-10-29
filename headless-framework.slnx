@@ -554,6 +554,16 @@
     <Folder Name="/Reliability/Tests/">
         <Project Path="tests\Headless.Reliability.Abstractions.Tests.Unit\Headless.Reliability.Abstractions.Tests.Unit.csproj" />
     </Folder>
+    <Folder Name="/Search/">
+        <Project Path="src\Headless.Search\Headless.Search.csproj" />
+        <Project Path="src\Headless.Search.PostgreSql\Headless.Search.PostgreSql.csproj" />
+    </Folder>
+    <Folder Name="/Search/Tests/">
+        <Project Path="tests\Headless.Search.Tests.Unit\Headless.Search.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Search.PostgreSql.Tests.Unit\Headless.Search.PostgreSql.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Search.PostgreSql.Tests.Integration\Headless.Search.PostgreSql.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Search.Tests.Harness\Headless.Search.Tests.Harness.csproj" />
+    </Folder>
     <Folder Name="/Seo/">
         <Project Path="src\Headless.Sitemaps\Headless.Sitemaps.csproj" />
         <Project Path="src\Headless.Slugs\Headless.Slugs.csproj" />

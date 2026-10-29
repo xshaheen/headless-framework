@@ -1,0 +1,15 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <IsTestProject>false</IsTestProject>
+    <IsTestHarnessProject>true</IsTestHarnessProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Search\Headless.Search.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Corpus\arabic-search-corpus.v1.tsv" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

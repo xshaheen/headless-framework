@@ -55,6 +55,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | React when a setting, feature, or permission grant changes instead of polling | [Settings](settings.md), [Features](features.md), [Permissions](permissions.md) — each has a "Reacting to a change" section |
 | Record entity changes or explicit audit events | [Audit Log](audit-log.md) |
 | Issue per-tenant consecutive numbers (receipts, invoices, case numbers), gap-free when audited | [Sequences](sequences.md) |
+| Search Arabic names and text so hamza, tashkeel, teh marbuta, alef maksura, and Persian or Urdu spellings match, through a PostgreSQL trigram index | [Search](search.md) |
 | Grant a durable, cross-process lease that fences a stale or zombie attempt's writes; hand work to an external executor | [Fencing](fencing.md) |
 | Admit a keyed operation once across retries, processes, or executors, and replay its stored result; replay HTTP responses for `Idempotency-Key` retries | [Idempotency](idempotency.md) |
 
