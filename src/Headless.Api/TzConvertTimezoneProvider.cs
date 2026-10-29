@@ -39,14 +39,21 @@ public sealed class TzConvertTimezoneProvider : ITimezoneProvider
 
     private static ReadOnlyCollection<TimezoneOption> _BuildTimezones(IEnumerable<string> timeZoneIds)
     {
-        return timeZoneIds
-            .Order(StringComparer.Ordinal)
-            .Select(value => new TimezoneOption(
-                $"{value} ({_GetTimezoneOffset(TZConvert.GetTimeZoneInfo(value))})",
-                value
-            ))
-            .ToList()
-            .AsReadOnly();
+        // TZConvert's known-id tables are compiled into the library, but resolution reads the host's tz database.
+        // A host with newer tzdata drops ids the tables still list (CST6CDT and the other POSIX-style legacy names
+        // on Ubuntu 26), and one unresolvable id would fail the whole list, so an option the host cannot resolve
+        // is left out: offering it would only fail later in GetTimeZoneInfo.
+        var options = new List<TimezoneOption>();
+
+        foreach (var value in timeZoneIds.Order(StringComparer.Ordinal))
+        {
+            if (TZConvert.TryGetTimeZoneInfo(value, out var timeZoneInfo))
+            {
+                options.Add(new TimezoneOption($"{value} ({_GetTimezoneOffset(timeZoneInfo)})", value));
+            }
+        }
+
+        return options.AsReadOnly();
     }
 
     /// <inheritdoc/>
