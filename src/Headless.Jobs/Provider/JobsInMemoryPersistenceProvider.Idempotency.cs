@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Jobs.Internal;
 
 namespace Headless.Jobs.Provider;
 
@@ -20,6 +21,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         TTimeJob job,
         string idempotencyKey,
         TimeSpan idempotencyTtl,
+        TimeJobDueTimeSeeder? seeder,
         CancellationToken cancellationToken = default
     )
     {
@@ -48,6 +50,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             // Winner (no reservation, or expired): atomically replace/insert the reservation keyed by the
             // entity's pre-stamped id, then insert the job. A rejected insert cannot happen inside this lock —
             // the id was validated against stored rows before any mutation (same protocol as AddTimeJobsAsync).
+            if (seeder is not null)
+            {
+                TimeJobDueTimeSeeding.Apply([job], seeder, utcNow);
+            }
+
             _idempotencyReservations[identity] = (job.Id, utcNow + idempotencyTtl);
             var inserted = _AddTickerWithChildren(job);
             if (inserted == 0)
@@ -59,7 +66,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 );
             }
 
-            return Task.FromResult(new JobIdempotencyEnqueueResult(job.Id, Created: true));
+            return Task.FromResult(
+                new JobIdempotencyEnqueueResult(job.Id, Created: true) { StoreUtcNow = seeder is null ? null : utcNow }
+            );
         }
     }
 }

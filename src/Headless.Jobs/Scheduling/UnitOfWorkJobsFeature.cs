@@ -17,7 +17,6 @@ internal sealed class UnitOfWorkJobsFeature<TTimeJob, TCronJob>(
     IInternalJobManager internalJobManager,
     IJobsHostScheduler jobsHostScheduler,
     JobsRequestSerializationOptions serializationOptions,
-    TimeProvider timeProvider,
     JobSchedulingPolicies policies,
     SchedulerOptionsBuilder? schedulerOptions = null
 ) : IUnitOfWorkJobs
@@ -45,7 +44,6 @@ internal sealed class UnitOfWorkJobsFeature<TTimeJob, TCronJob>(
             internalJobManager,
             jobsHostScheduler,
             serializationOptions,
-            timeProvider,
             policies,
             schedulerOptions
         );

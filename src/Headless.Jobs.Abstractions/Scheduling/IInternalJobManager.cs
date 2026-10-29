@@ -37,13 +37,13 @@ internal interface IInternalJobManager
 
     /// <summary>
     /// Settles a run a graceful stop interrupted, by the row's node-death policy and without charging its retry
-    /// budget. <paramref name="retryExecutionTime"/> is the instant a time job's next attempt was planned for when the
-    /// stop caught it waiting between retries. Returns the affected row count; <c>0</c> means a peer already owns the
-    /// row.
+    /// budget. <paramref name="retryAfter"/> is the part of a time job's retry wait still owed when the stop caught it
+    /// waiting between retries; the store adds it to its own clock. Returns the affected row count; <c>0</c> means a
+    /// peer already owns the row.
     /// </summary>
     Task<int> SettleInterruptedAsync(
         JobExecutionState context,
-        DateTime? retryExecutionTime,
+        TimeSpan? retryAfter,
         CancellationToken cancellationToken = default
     );
 

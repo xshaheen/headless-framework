@@ -69,8 +69,9 @@ public class TimeJobEntity<TTicker> : BaseJobEntity
     public virtual byte[]? Request { get; set; }
 
     /// <summary>
-    /// UTC time at which the job becomes eligible for dispatch. <see langword="null"/> means dispatch
-    /// immediately on enqueue.
+    /// UTC time at which the job becomes eligible for dispatch. <see langword="null"/> on a new root means run now:
+    /// the store sets it to its own instant when it writes the row, so the enqueuing node's clock skew does not move
+    /// it.
     /// </summary>
     public virtual DateTime? ExecutionTime { get; set; }
 

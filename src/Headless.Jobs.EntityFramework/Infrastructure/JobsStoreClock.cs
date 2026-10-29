@@ -43,17 +43,49 @@ internal static class JobsStoreClock
     {
         var providerName = dbContext.Database.ProviderName;
 
-        var sql = providerName switch
+        if (_StatementClockSql(providerName) is not { } sql)
         {
-            _NpgsqlProvider => _NpgsqlStatementClockSql,
-            _SqlServerProvider => _SqlServerStatementClockSql,
-            _ => throw new NotSupportedException(
+            throw new NotSupportedException(
                 "Seeding a cron definition's schedule position needs the store's current-statement clock, and EF "
                     + $"provider '{providerName}' has none registered. Supported backends: "
                     + $"'{_NpgsqlProvider}' (clock_timestamp()) and '{_SqlServerProvider}' (SYSUTCDATETIME())."
-            ),
-        };
+            );
+        }
 
+        return await _ReadAsync(dbContext, sql, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reads the store's instant as of THIS statement like <see cref="GetStatementUtcNowAsync"/>, or returns
+    /// <see langword="null"/> without a round trip when the backend has no known statement-clock function.
+    /// </summary>
+    /// <remarks>
+    /// For a time job's due time the caller can fall back to the host clock: generic EF promises time jobs on any
+    /// backend, and on an embedded database such as SQLite the host clock IS the store clock. A cron position cannot
+    /// fall back, which is why <see cref="GetStatementUtcNowAsync"/> throws instead.
+    /// </remarks>
+    public static async Task<DateTime?> TryGetStatementUtcNowAsync(
+        DbContext dbContext,
+        CancellationToken cancellationToken
+    )
+    {
+        return _StatementClockSql(dbContext.Database.ProviderName) is { } sql
+            ? await _ReadAsync(dbContext, sql, cancellationToken).ConfigureAwait(false)
+            : null;
+    }
+
+    private static string? _StatementClockSql(string? providerName)
+    {
+        return providerName switch
+        {
+            _NpgsqlProvider => _NpgsqlStatementClockSql,
+            _SqlServerProvider => _SqlServerStatementClockSql,
+            _ => null,
+        };
+    }
+
+    private static async Task<DateTime> _ReadAsync(DbContext dbContext, string sql, CancellationToken cancellationToken)
+    {
         var storeUtcNow = await dbContext
             .Database.SqlQueryRaw<DateTime>(sql)
             .SingleAsync(cancellationToken)

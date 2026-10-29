@@ -437,7 +437,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         cancellationToken.ThrowIfCancellationRequested();
 
         return Task.FromResult(
-            _SettleInterruptedTimeJob(jobId, claimOwner, reason: null, executionTime: null, NodeDeathPolicy.Retry)
+            _SettleInterruptedTimeJob(jobId, claimOwner, reason: null, retryAfter: null, NodeDeathPolicy.Retry)
         );
     }
 
@@ -445,17 +445,16 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         Guid jobId,
         string claimOwner,
         string reason,
-        DateTime? retryExecutionTime,
+        TimeSpan? retryAfter,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(claimOwner);
         Argument.IsNotNullOrEmpty(reason);
+        Argument.IsPositiveOrZero(retryAfter);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return Task.FromResult(
-            _SettleInterruptedTimeJob(jobId, claimOwner, reason, retryExecutionTime, policyOverride: null)
-        );
+        return Task.FromResult(_SettleInterruptedTimeJob(jobId, claimOwner, reason, retryAfter, policyOverride: null));
     }
 
     // A policy override settles the row as that policy; without one, the row's own node-death policy decides.
@@ -463,7 +462,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         Guid jobId,
         string claimOwner,
         string? reason,
-        DateTime? executionTime,
+        TimeSpan? retryAfter,
         NodeDeathPolicy? policyOverride
     )
     {
@@ -493,9 +492,10 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 default:
                     updated.Status = JobStatus.Idle;
                     updated.OwnerId = null;
-                    if (executionTime is { } dueAt)
+                    // The remaining wait runs from the settle's instant.
+                    if (retryAfter is { } remaining)
                     {
-                        updated.ExecutionTime = dueAt;
+                        updated.ExecutionTime = now.UtcDateTime + remaining;
                     }
 
                     break;
@@ -1280,6 +1280,21 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     public Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
+        return Task.FromResult(_AddTimeJobs(jobs, seeder: null).AffectedRows);
+    }
+
+    public Task<TimeJobDueTimeSeedResult> AddTimeJobsAsync(
+        TTimeJob[] jobs,
+        TimeJobDueTimeSeeder seeder,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(seeder);
+        return Task.FromResult(_AddTimeJobs(jobs, seeder));
+    }
+
+    private TimeJobDueTimeSeedResult _AddTimeJobs(TTimeJob[] jobs, TimeJobDueTimeSeeder? seeder)
+    {
         lock (_keyedOperations)
         {
             // Cross-root all-or-nothing (IJobPersistenceProvider.AddTimeJobsAsync contract): the WHOLE call — every
@@ -1303,11 +1318,23 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 if (!seen.Add(node.Id) || _timeJobs.ContainsKey(node.Id))
                 {
                     // Duplicate id within the call, or a collision with an existing row — reject the whole call.
-                    return Task.FromResult(0);
+                    return default;
                 }
             }
 
-            return Task.FromResult(_CommitValidatedSubtrees(flattened));
+            // Read once under the lock so every root of the call shares one anchor.
+            DateTime? storeUtcNow = null;
+            if (seeder is not null)
+            {
+                storeUtcNow = _timeProvider.GetUtcNow().UtcDateTime;
+                TimeJobDueTimeSeeding.Apply(jobs, seeder, storeUtcNow.Value);
+            }
+
+            return new TimeJobDueTimeSeedResult
+            {
+                StoreUtcNow = storeUtcNow,
+                AffectedRows = _CommitValidatedSubtrees(flattened),
+            };
         }
     }
 
@@ -3823,6 +3850,17 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         }
 
         return Task.FromResult(count);
+    }
+
+    public async Task<DateTime> InsertRunNowCronJobOccurrenceAsync(
+        CronJobOccurrenceEntity<TCronJob> occurrence,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(occurrence);
+        occurrence.ExecutionTime = _timeProvider.GetUtcNow().UtcDateTime;
+        await InsertCronJobOccurrencesAsync([occurrence], cancellationToken).ConfigureAwait(false);
+        return occurrence.ExecutionTime;
     }
 
     public Task<int> RemoveCronJobOccurrencesAsync(

@@ -363,6 +363,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
                     var write = async () =>
                         await ((ICoordinatedJobWriter<TimeJobEntity, CronJobEntity>)store).WriteTimeJobsAsync(
                             [unrelated, child],
+                            seeder: null,
                             relational,
                             ct
                         );

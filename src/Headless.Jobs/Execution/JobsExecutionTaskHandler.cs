@@ -511,8 +511,11 @@ internal sealed class JobsExecutionTaskHandler
             return _cancellationRegistry.TryBeginCompletion(cancellationRegistration);
         }
 
-        // Set while the run waits between attempts: the instant its next attempt is due.
-        DateTime? plannedRetryAt = null;
+        // Set while the run waits between attempts: the wait and the monotonic instant it began. A stop persists only
+        // what the wait still owes, which the store adds to its own clock, so neither this node's wall-clock skew nor a
+        // wall-clock step during the wait moves the next attempt.
+        TimeSpan? plannedRetryDelay = null;
+        long plannedRetryFrom = 0;
 
         // A graceful stop is not an attempt the job used up: these two exits hand the row back without charging its
         // retry budget, under CancellationToken.None so the write lands even after the stop token fired.
@@ -535,10 +538,16 @@ internal sealed class JobsExecutionTaskHandler
             }
 
             // Only a time job owns its due instant; an occurrence's execution time identifies it.
-            var retryAt = context.Type == JobType.TimeJob ? plannedRetryAt : null;
+            TimeSpan? retryAfter = null;
+            if (context.Type == JobType.TimeJob && plannedRetryDelay is { } delay)
+            {
+                var owed = delay - _timeProvider.GetElapsedTime(plannedRetryFrom);
+                retryAfter = owed > TimeSpan.Zero ? owed : TimeSpan.Zero;
+            }
+
             var settled = await _TryShutdownWriteAsync(
                     context,
-                    () => _internalJobsManager.SettleInterruptedAsync(context, retryAt, CancellationToken.None)
+                    () => _internalJobsManager.SettleInterruptedAsync(context, retryAfter, CancellationToken.None)
                 )
                 .ConfigureAwait(false);
 
@@ -758,7 +767,7 @@ internal sealed class JobsExecutionTaskHandler
                         context,
                         async (retryCount, attemptToken) =>
                         {
-                            plannedRetryAt = null;
+                            plannedRetryDelay = null;
                             jobFunctionContext.RetryCount = retryCount;
                             jobActivity?.SetTag("headless.job.current_attempt", retryCount + 1);
                             handlerInvoked = true;
@@ -832,7 +841,8 @@ internal sealed class JobsExecutionTaskHandler
                                 throw new OperationCanceledException(cancellationTokenSource.Token);
                             }
 
-                            plannedRetryAt = _timeProvider.GetUtcNow().UtcDateTime + retryDelay;
+                            plannedRetryFrom = _timeProvider.GetTimestamp();
+                            plannedRetryDelay = retryDelay;
                             JobsMetrics.RetryStarted(JobsMetrics.RetryKindInProcess);
 
                             // #278: observe under the job's tenant so a tenant-aware handler is not system-scoped.

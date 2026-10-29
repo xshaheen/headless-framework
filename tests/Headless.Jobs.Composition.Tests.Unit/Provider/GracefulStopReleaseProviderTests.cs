@@ -74,25 +74,54 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
         stored.OwnerId.Should().Be(ownerId);
     }
 
-    [Fact]
-    public async Task should_settle_an_interrupted_retry_time_job_to_idle_at_its_planned_retry_instant()
+    [Theory]
+    [InlineData(20)]
+    [InlineData(0)]
+    public async Task should_settle_an_interrupted_retry_time_job_to_idle_at_the_store_clock_plus_the_remaining_delay(
+        int remainingSeconds
+    )
     {
-        // given
-        var provider = _Create();
+        // given: the store's clock has moved on since the job was claimed
+        var clock = new FakeTimeProvider(_Now);
+        var provider = _Create(clock);
         var job = _TimeJob(JobStatus.InProgress, _Owner, NodeDeathPolicy.Retry, retryCount: 1);
         await provider.AddTimeJobsAsync([job], AbortToken);
-        var retryAt = _Now.UtcDateTime.AddMinutes(1);
+        clock.Advance(TimeSpan.FromMinutes(3));
 
         // when
-        var affected = await provider.SettleInterruptedTimeJobAsync(job.Id, _Owner, _Reason, retryAt, AbortToken);
+        var affected = await provider.SettleInterruptedTimeJobAsync(
+            job.Id,
+            _Owner,
+            _Reason,
+            TimeSpan.FromSeconds(remainingSeconds),
+            AbortToken
+        );
 
-        // then
+        // then: due at the store's instant at the settle plus the delay still owed
         affected.Should().Be(1);
         var stored = (await provider.GetTimeJobByIdAsync(job.Id, AbortToken))!;
         stored.Status.Should().Be(JobStatus.Idle);
         stored.OwnerId.Should().BeNull();
         stored.RetryCount.Should().Be(1, "a graceful stop is not an attempt the job used up");
-        stored.ExecutionTime.Should().Be(retryAt);
+        stored.ExecutionTime.Should().Be(new DateTime(2026, 06, 17, 12, 03, remainingSeconds, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public async Task should_settle_an_interrupted_retry_time_job_at_its_stored_instant_when_no_delay_is_owed()
+    {
+        // given
+        var provider = _Create();
+        var job = _TimeJob(JobStatus.InProgress, _Owner, NodeDeathPolicy.Retry);
+        await provider.AddTimeJobsAsync([job], AbortToken);
+
+        // when
+        var affected = await provider.SettleInterruptedTimeJobAsync(job.Id, _Owner, _Reason, null, AbortToken);
+
+        // then
+        affected.Should().Be(1);
+        var stored = (await provider.GetTimeJobByIdAsync(job.Id, AbortToken))!;
+        stored.Status.Should().Be(JobStatus.Idle);
+        stored.ExecutionTime.Should().Be(job.ExecutionTime);
     }
 
     [Theory]
@@ -113,7 +142,7 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
             job.Id,
             _Owner,
             _Reason,
-            _Now.UtcDateTime.AddMinutes(1),
+            TimeSpan.FromMinutes(1),
             AbortToken
         );
 
@@ -211,10 +240,10 @@ public sealed class GracefulStopReleaseProviderTests : TestBase
         stored.OwnerId.Should().Be(_Peer);
     }
 
-    private static JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> _Create()
+    private static JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> _Create(FakeTimeProvider? clock = null)
     {
         var services = new ServiceCollection();
-        services.AddSingleton<TimeProvider>(new FakeTimeProvider(_Now));
+        services.AddSingleton<TimeProvider>(clock ?? new FakeTimeProvider(_Now));
         services.AddHeadlessGuidGenerator();
         services.AddSingleton(
             new SchedulerOptionsBuilder { NodeId = "node-a", LeaseDuration = TimeSpan.FromMinutes(5) }

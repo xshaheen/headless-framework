@@ -84,6 +84,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
             .Writer.DidNotReceive()
             .WriteTimeJobsAsync(
                 Arg.Any<TimeJobEntity[]>(),
+                Arg.Any<TimeJobDueTimeSeeder?>(),
                 Arg.Any<IRelationalUnitOfWorkResource>(),
                 Arg.Any<CancellationToken>()
             );

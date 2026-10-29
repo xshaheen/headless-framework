@@ -18,4 +18,10 @@ public sealed record JobIdempotencyEnqueueResult(Guid JobId, bool Created)
     /// caller's state only after that commit.
     /// </summary>
     public bool IsProvisional { get; init; }
+
+    /// <summary>
+    /// The store instant the created job's due time was resolved against, or <see langword="null"/> on a dedup hit or
+    /// when the call passed no seeder.
+    /// </summary>
+    public DateTime? StoreUtcNow { get; init; }
 }
