@@ -93,7 +93,7 @@ public static class SetupAuditLogEntityFramework
                 .When(x => !string.IsNullOrEmpty(x.CreatedAtColumnType));
             // The application's migrations own this table, so the provider has no schema step to add the trigger in.
             RuleFor(x => x.AppendOnly)
-                .Equal(false)
+                .Must(appendOnly => !appendOnly)
                 .WithMessage(
                     $"{nameof(AuditLogStorageOptions.AppendOnly)} applies to the PostgreSql and SqlServer audit-log providers. With Entity Framework storage, add the append-only trigger in a migration; IAuditLogRetention<TContext> still purges through it."
                 );
