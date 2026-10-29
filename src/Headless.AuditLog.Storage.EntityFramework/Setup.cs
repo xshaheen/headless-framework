@@ -59,6 +59,10 @@ public static class SetupAuditLogEntityFramework
                 typeof(IReadAuditLog<>).MakeGenericType(dbContextType),
                 typeof(EfReadAuditLog<>).MakeGenericType(dbContextType)
             );
+            services.TryAddSingleton(
+                typeof(IAuditLogRetention<>).MakeGenericType(dbContextType),
+                typeof(EfAuditLogRetention<>).MakeGenericType(dbContextType)
+            );
             services.RequireSingletonService(
                 typeof(IDbContextFactory<>).MakeGenericType(dbContextType),
                 requiredBy: "Headless audit log EF storage",
@@ -87,6 +91,12 @@ public static class SetupAuditLogEntityFramework
                 .MaximumLength(64)
                 .Matches(@"^[A-Za-z][A-Za-z0-9 ]*(\([0-9]+\))?$")
                 .When(x => !string.IsNullOrEmpty(x.CreatedAtColumnType));
+            // The application's migrations own this table, so the provider has no schema step to add the trigger in.
+            RuleFor(x => x.AppendOnly)
+                .Equal(false)
+                .WithMessage(
+                    $"{nameof(AuditLogStorageOptions.AppendOnly)} applies to the PostgreSql and SqlServer audit-log providers. With Entity Framework storage, add the append-only trigger in a migration; IAuditLogRetention<TContext> still purges through it."
+                );
         }
     }
 }
