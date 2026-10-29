@@ -77,6 +77,27 @@ public sealed class ConsumerHealthTests : TestBase
         host.Register().IsHealthy().Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData(MqLogType.ConsumerShutdown)]
+    [InlineData(MqLogType.ServerConnError)]
+    [InlineData(MqLogType.ConnectError)]
+    public async Task should_report_unhealthy_when_a_client_loses_its_connection_and_another_subscription_registers(
+        MqLogType connectionLoss
+    )
+    {
+        // given
+        await using var host = await LedgerHosts.StartAsync(new PipelineProbe(), AbortToken);
+        var order = host.Broker.ClientsOf(host.OrderSubscription()).Should().ContainSingle().Subject;
+        var refund = host.Broker.ClientsOf(host.RefundSubscription()).Should().ContainSingle().Subject;
+
+        // when
+        order.Report(connectionLoss);
+        refund.Report(MqLogType.ConsumerRegistered);
+
+        // then
+        host.Register().IsHealthy().Should().BeFalse();
+    }
+
     [Fact]
     public async Task should_report_healthy_again_when_the_degraded_client_itself_registers()
     {
