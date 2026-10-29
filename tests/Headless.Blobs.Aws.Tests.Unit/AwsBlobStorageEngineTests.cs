@@ -22,6 +22,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     // storage owns the client and disposes it.
     private static AwsBlobStorage _CreateSigningSut()
     {
+#pragma warning disable CA2000 // False positive: AwsBlobStorage takes ownership of the client and disposes it in DisposeAsync.
         return new AwsBlobStorage(
             new AmazonS3Client(
                 new BasicAWSCredentials("access", "secret"),
@@ -32,6 +33,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
             new OptionsWrapper<AwsBlobStorageOptions>(new AwsBlobStorageOptions()),
             new AwsBlobNamingNormalizer()
         );
+#pragma warning restore CA2000
     }
 
     private AwsBlobStorage _CreateSut(AwsBlobStorageOptions? options = null)

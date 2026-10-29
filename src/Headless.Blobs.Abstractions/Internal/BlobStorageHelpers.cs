@@ -466,7 +466,7 @@ public static class BlobStorageHelpers
     {
         Argument.IsNotNullOrWhiteSpace(fileName);
 
-        var builder = new StringBuilder(fileName.Length * 4 + 40);
+        var builder = new StringBuilder((fileName.Length * 4) + 40);
         builder.Append("attachment; filename=\"");
 
         foreach (var rune in fileName.EnumerateRunes())
