@@ -374,6 +374,36 @@ public sealed class InMemorySeedReconcileTests : TestBase
     }
 
     [Theory]
+    [InlineData("0 0 * * *", "invalid")]
+    [InlineData("not a cron", "invalid")]
+    [InlineData("%Jobs:Missing:Cron%", "Jobs:Missing:Cron")]
+    public async Task should_fail_startup_validation_when_a_declared_cron_cannot_fire(string cron, string reason)
+    {
+        await using var host = _CreateHost(options => options.SeedRecurringJob("daily-eu", new ReportArgs("eu"), cron));
+
+        var act = async () => await _ValidateStartupAsync(host);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage($"*'daily-eu'*{reason}*");
+    }
+
+    [Fact]
+    public async Task should_fail_startup_validation_when_a_declared_time_zone_is_unknown()
+    {
+        await using var host = _CreateHost(options =>
+            options.SeedRecurringJob(
+                "daily-eu",
+                new ReportArgs("eu"),
+                _DailyCron,
+                new RecurringJobOptions { TimeZoneId = "Nowhere/Atlantis" }
+            )
+        );
+
+        var act = async () => await _ValidateStartupAsync(host);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*'daily-eu'*Nowhere/Atlantis*");
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("   ")]
     public void should_reject_a_blank_declaration_key_when_it_is_declared(string key)
