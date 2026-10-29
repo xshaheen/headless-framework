@@ -1,8 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.UnitOfWork;
+
 namespace Headless.Features;
 
 /// <summary>Read-write contract for a feature value provider; extends <see cref="IFeatureValueReadProvider"/> with mutation operations.</summary>
+/// <remarks>
+/// New members arrive as default interface members. <see cref="SetAllEnlistedAsync" /> and
+/// <see cref="DeleteAllEnlistedAsync" /> default to throwing <see cref="NotSupportedException" />, so
+/// <c>unit.Features</c> refuses a provider that cannot write inside a unit of work;
+/// <see cref="StoreFeatureValueProvider" /> implements them.
+/// </remarks>
 public interface IFeatureValueProvider : IFeatureValueReadProvider
 {
     /// <summary>Persists <paramref name="value"/> for <paramref name="feature"/> under <paramref name="providerKey"/>.</summary>
@@ -50,6 +58,53 @@ public interface IFeatureValueProvider : IFeatureValueReadProvider
                 await SetAsync(feature, value, providerKey, cancellationToken).ConfigureAwait(false);
             }
         }
+    }
+
+    /// <summary>
+    /// Persists <paramref name="values"/> under <paramref name="providerKey"/> inside <paramref name="unitOfWork" />'s
+    /// transaction; a <see langword="null"/> value clears the feature.
+    /// </summary>
+    /// <param name="unitOfWork">The unit whose transaction holds the writes.</param>
+    /// <param name="values">The feature definitions and the values to store.</param>
+    /// <param name="providerKey">An optional key that qualifies the scope (e.g. tenant or edition identifier).</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <exception cref="InvalidOperationException">The unit cannot host the writes.</exception>
+    /// <exception cref="NotSupportedException">This provider cannot write inside a unit of work.</exception>
+    Task SetAllEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyList<KeyValuePair<FeatureDefinition, string?>> values,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        throw _NotEnlistable(Name);
+    }
+
+    /// <summary>
+    /// Deletes every value this provider stores under <paramref name="providerKey"/> inside
+    /// <paramref name="unitOfWork" />'s transaction.
+    /// </summary>
+    /// <param name="unitOfWork">The unit whose transaction holds the delete.</param>
+    /// <param name="providerKey">An optional key that qualifies the scope (e.g. tenant or edition identifier).</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>The names whose values were deleted; empty when the scope stored none.</returns>
+    /// <exception cref="InvalidOperationException">The unit cannot host the delete.</exception>
+    /// <exception cref="NotSupportedException">This provider cannot write inside a unit of work.</exception>
+    Task<IReadOnlyList<string>> DeleteAllEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        throw _NotEnlistable(Name);
+    }
+
+    private static NotSupportedException _NotEnlistable(string name)
+    {
+        return new NotSupportedException(
+            $"The feature value provider '{name}' cannot write inside a unit of work. Write through the injected "
+                + "IFeatureManager, or implement SetAllEnlistedAsync and DeleteAllEnlistedAsync."
+        );
     }
 }
 
@@ -99,4 +154,28 @@ public interface IFeatureValueReadProvider
         string? providerKey = null,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Returns the stored value for <paramref name="feature"/> as seen inside <paramref name="unitOfWork" />'s
+    /// transaction. <c>FeatureManager</c> uses it for the inherited-value comparison of an enlisted write, so a value
+    /// the unit already wrote is seen.
+    /// </summary>
+    /// <remarks>
+    /// The default is <see cref="GetOrDefaultAsync"/>, which is right for a provider whose values do not live in the
+    /// unit's database (definition defaults). A provider that reads that database overrides it.
+    /// </remarks>
+    /// <param name="unitOfWork">The unit whose transaction runs the read.</param>
+    /// <param name="feature">The feature definition to look up.</param>
+    /// <param name="providerKey">An optional key that qualifies the scope.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>The stored value, or <see langword="null"/> if not found.</returns>
+    Task<string?> GetOrDefaultEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        FeatureDefinition feature,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        return GetOrDefaultAsync(feature, providerKey, cancellationToken);
+    }
 }

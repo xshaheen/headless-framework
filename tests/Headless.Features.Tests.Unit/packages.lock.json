@@ -803,6 +803,7 @@
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.AspNetCore.Authorization": "[10.0.13, )"
         }
       },
@@ -810,14 +811,16 @@
         "type": "Project",
         "dependencies": {
           "Headless.Extensions": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )"
+          "Headless.Serializer.Json": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
         }
       },
       "headless.features.storage.entityframework": {
         "type": "Project",
         "dependencies": {
           "Headless.EntityFramework": "[1.0.0, )",
-          "Headless.Features": "[1.0.0, )"
+          "Headless.Features": "[1.0.0, )",
+          "Headless.UnitOfWork.EntityFramework": "[1.0.0, )"
         }
       },
       "headless.fluentvalidation": {

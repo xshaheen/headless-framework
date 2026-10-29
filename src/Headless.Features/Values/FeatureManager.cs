@@ -4,20 +4,27 @@ using Headless.Checks;
 using Headless.Context;
 using Headless.Features.Resources;
 using Headless.Messaging;
+using Headless.MultiTenancy;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.Features;
 
-/// <summary>Default implementation of <see cref="IFeatureManager"/> that walks the registered provider chain to resolve and mutate feature values.</summary>
+/// <summary>
+/// Default implementation of <see cref="IFeatureManager"/> that walks the registered provider chain to resolve and
+/// mutate feature values. Also backs <c>unit.Features</c> (<see cref="IUnitOfWorkFeatures"/>), whose writes run inside
+/// the caller's unit of work.
+/// </summary>
 public sealed class FeatureManager(
     IFeatureDefinitionManager definitionManager,
     IFeatureValueProviderManager valueProviderManager,
     IFeatureErrorsDescriptor errorsDescriptor,
     IHostIdentityAccessor hostIdentity,
+    ICurrentTenant currentTenant,
     IBus? bus = null,
     ILogger<FeatureManager>? logger = null
-) : IFeatureManager
+) : IFeatureManager, IUnitOfWorkFeatures
 {
     private readonly ILogger _logger = logger ?? NullLogger<FeatureManager>.Instance;
 
@@ -225,12 +232,44 @@ public sealed class FeatureManager(
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="values"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
     /// <exception cref="ConflictException">A feature in <paramref name="values"/> is not defined (<c>FeatureIsNotDefined</c>), the provider named <paramref name="providerName"/> is not registered (<c>ProviderNotFound</c>), or the provider is read-only (<c>ProviderIsReadonly</c>).</exception>
-    public async Task SetAsync(
+    public Task SetAsync(
         IReadOnlyDictionary<string, string?> values,
         string providerName,
         string? providerKey,
         bool forceToSet = false,
         CancellationToken cancellationToken = default
+    )
+    {
+        return _SetCoreAsync(unitOfWork: null, values, providerName, providerKey, forceToSet, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task SetAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(unitOfWork);
+
+        return _SetCoreAsync(unitOfWork, values, providerName, providerKey, forceToSet, cancellationToken);
+    }
+
+    /// <summary>
+    /// Validates every feature and the provider, clears values equal to their fallback, and writes them through each
+    /// provider registered under <paramref name="providerName"/>. With a unit, the fallback comparison and the writes
+    /// run inside its transaction and the change is announced after it commits.
+    /// </summary>
+    private async Task _SetCoreAsync(
+        IUnitOfWork? unitOfWork,
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        bool forceToSet,
+        CancellationToken cancellationToken
     )
     {
         Argument.IsNotNull(values);
@@ -281,17 +320,40 @@ public sealed class FeatureManager(
         // A batch of clears has nothing to compare, so it skips opening the provider context.
         if (providers.Count > 1 && !forceToSet && writes.Exists(write => write.Value is not null))
         {
-            await _ClearFallbackEqualValuesAsync(writes, providers, providerName, providerKey, cancellationToken)
+            await _ClearFallbackEqualValuesAsync(
+                    writes,
+                    providers,
+                    providerName,
+                    providerKey,
+                    unitOfWork,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
 
         foreach (var provider in writeProviders)
         {
-            await provider.SetAllAsync(writes, providerKey, cancellationToken).ConfigureAwait(false);
+            if (unitOfWork is null)
+            {
+                await provider.SetAllAsync(writes, providerKey, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await provider
+                    .SetAllEnlistedAsync(unitOfWork, writes, providerKey, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
-        await _PublishChangedAsync([.. values.Keys], providerName, providerKey, cancellationToken)
-            .ConfigureAwait(false);
+        if (unitOfWork is null)
+        {
+            await _PublishChangedAsync([.. values.Keys], providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            _PublishChangedAfterCommit(unitOfWork, [.. values.Keys], providerName, providerKey);
+        }
     }
 
     /// <summary>
@@ -303,6 +365,7 @@ public sealed class FeatureManager(
         List<IFeatureValueReadProvider> providers,
         string providerName,
         string? providerKey,
+        IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
     )
     {
@@ -324,6 +387,7 @@ public sealed class FeatureManager(
                         providers[1].Name,
                         providerKey: null,
                         fallback: true,
+                        unitOfWork,
                         cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -392,16 +456,74 @@ public sealed class FeatureManager(
         }
     }
 
+    /// <inheritdoc/>
+    public async Task DeleteAsync(
+        IUnitOfWork unitOfWork,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(unitOfWork);
+
+        var writableProviders = valueProviderManager
+            .ValueProviders.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
+            .TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal))
+            .OfType<IFeatureValueProvider>()
+            .ToList();
+
+        var removedNames = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var provider in writableProviders)
+        {
+            var names = await provider
+                .DeleteAllEnlistedAsync(unitOfWork, providerKey, cancellationToken)
+                .ConfigureAwait(false);
+
+            removedNames.UnionWith(names);
+        }
+
+        _PublishChangedAfterCommit(unitOfWork, [.. removedNames], providerName, providerKey);
+    }
+
+    /// <summary>
+    /// Announces an enlisted write once its unit commits, so a peer that re-reads on the announcement loads the
+    /// committed value; a rolled-back unit announces nothing. The callback restores the write's tenant, which the
+    /// announcement carries and the code completing the unit may no longer hold.
+    /// </summary>
+    private void _PublishChangedAfterCommit(
+        IUnitOfWork unitOfWork,
+        string[] featureNames,
+        string providerName,
+        string? providerKey
+    )
+    {
+        if (bus is null || featureNames.Length == 0)
+        {
+            return;
+        }
+
+        var tenantId = currentTenant.Id;
+        var tenantName = currentTenant.Name;
+
+        unitOfWork.OnCompleted(async () =>
+        {
+            using (currentTenant.Change(tenantId, tenantName))
+            {
+                await _PublishChangedAsync(featureNames, providerName, providerKey, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+        });
+    }
+
     /// <summary>
     /// Announces a completed write so every instance holding a copy of the value, this one included, can re-read it.
     /// </summary>
     /// <remarks>
     /// <para>
     /// Published after the write, never before: a receiver that re-read on an announcement of a write that then
-    /// failed would cache the old value and believe it fresh. The write has already committed when this runs: the
-    /// stores save through their own context or connection and never join a unit of work the caller has open, so a peer
-    /// that re-reads on the announcement loads the new value. A <c>SetAsync</c> inside a unit that later rolls back
-    /// therefore leaves the value changed; the consumer contract in <c>docs/llms/features.md</c> states this.
+    /// failed would cache the old value and believe it fresh. An autonomous write has committed in the store's own
+    /// context or connection when this runs; an enlisted write publishes from the unit's post-commit callback.
     /// </para>
     /// <para>
     /// Best-effort by design — messaging is optional, and a failed announcement must not fail the write that
@@ -462,11 +584,34 @@ public sealed class FeatureManager(
             .ConfigureAwait(false);
     }
 
+    private Task<FeatureValue> _CoreGetOrDefaultAsync(
+        FeatureDefinition definition,
+        string? providerName,
+        string? providerKey,
+        bool fallback,
+        CancellationToken cancellationToken
+    )
+    {
+        return _CoreGetOrDefaultAsync(
+            definition,
+            providerName,
+            providerKey,
+            fallback,
+            unitOfWork: null,
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// Walks the provider chain for <paramref name="definition"/>; with a unit, each provider reads inside its
+    /// transaction (<see cref="IFeatureValueReadProvider.GetOrDefaultEnlistedAsync"/>).
+    /// </summary>
     private async Task<FeatureValue> _CoreGetOrDefaultAsync(
         FeatureDefinition definition,
         string? providerName,
         string? providerKey,
         bool fallback,
+        IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
     )
     {
@@ -486,7 +631,11 @@ public sealed class FeatureManager(
         foreach (var provider in providers)
         {
             var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
-            var value = await provider.GetOrDefaultAsync(definition, pk, cancellationToken).ConfigureAwait(false);
+            var value = unitOfWork is null
+                ? await provider.GetOrDefaultAsync(definition, pk, cancellationToken).ConfigureAwait(false)
+                : await provider
+                    .GetOrDefaultEnlistedAsync(unitOfWork, definition, pk, cancellationToken)
+                    .ConfigureAwait(false);
 
             if (value is not null)
             {
