@@ -1817,9 +1817,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         {
             if (_cronJobs.TryGetValue(entry.Id, out var existing))
             {
-                // Code wins on the expression, the zone, and a declaration's arguments. An entry without a request
-                // hash (an attribute cron) never rewrites the payload: a new registration version cannot relabel bytes
-                // an older writer stored.
+                // Code wins on the job, the expression, the zone, and a declaration's arguments. An entry without a
+                // request hash (an attribute cron) rewrites the payload only when the row names another job: a new
+                // registration version cannot relabel bytes an older writer stored.
                 if (JobsSeedDrift.Differs(existing, entry))
                 {
                     lock (_GetCronDefinitionLock(entry.Id))
@@ -1837,6 +1837,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         {
                             // The payload and its version are rewritten together, so the stored bytes are never
                             // labelled with a version they were not written under.
+                            updated.Function = entry.Function;
                             updated.Request = entry.Request?.ToArray() ?? [];
                             updated.ContractVersion = entry.ContractVersion;
                         }

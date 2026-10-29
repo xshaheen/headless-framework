@@ -1837,6 +1837,10 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
+        // Validated here, before the store, so a custom persistence provider receives a checked set and does not
+        // reimplement the owner and id rules.
+        JobsSeedId.ValidateEntries(seedOwner, cronExpressions);
+
         await persistenceProvider
             .MigrateDefinedCronJobsAsync(seedOwner, cronExpressions, cancellationToken)
             .ConfigureAwait(false);

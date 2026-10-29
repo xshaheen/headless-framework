@@ -1546,9 +1546,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     {
                         if (existingById.TryGetValue(entry.Id, out var cron))
                         {
-                            // Code wins on the expression, the zone, and a declaration's arguments. An entry without a
-                            // request hash (an attribute cron) never rewrites the payload: a new registration version
-                            // cannot relabel bytes an older writer stored.
+                            // Code wins on the job, the expression, the zone, and a declaration's arguments. An entry
+                            // without a request hash (an attribute cron) rewrites the payload only when the row names
+                            // another job: a new registration version cannot relabel bytes an older writer stored.
                             if (JobsSeedDrift.Differs(cron, entry))
                             {
                                 await cronSet
@@ -1572,6 +1572,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                         // The payload and its version are rewritten together, in the same update that
                                         // bumps the revision, so stored bytes are never labelled with a version they
                                         // were not written under.
+                                        cron.Function = entry.Function;
                                         cron.Request = entry.Request ?? [];
                                         cron.ContractVersion = entry.ContractVersion;
                                     }

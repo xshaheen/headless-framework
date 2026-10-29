@@ -27,16 +27,23 @@ internal static class JobsSeedDrift
     }
 
     /// <summary>
-    /// Whether the seed must rewrite the stored payload and contract version of <paramref name="stored"/> to match
-    /// <paramref name="entry"/>.
+    /// Whether the seed must rewrite the stored job, payload, and contract version of <paramref name="stored"/> to
+    /// match <paramref name="entry"/>.
     /// </summary>
     /// <returns>
-    /// <see langword="false"/> for an entry without a request hash, whose payload the seed never rewrites. Otherwise
-    /// <see langword="true"/> when the stored contract version differs, when the stored payload has no canonical form,
-    /// or when its canonical hash differs from the entry's.
+    /// <see langword="true"/> when the stored row names another job, whatever the entry: its payload and version then
+    /// belong to that job's contract, so the seed restores the entry's job with the entry's own payload and version.
+    /// Otherwise <see langword="false"/> for an entry without a request hash, whose payload the seed never rewrites,
+    /// and <see langword="true"/> when the stored contract version differs, when the stored payload has no canonical
+    /// form, or when its canonical hash differs from the entry's.
     /// </returns>
     public static bool PayloadDiffers(CronJobEntity stored, in CronSeedDefinition entry)
     {
+        if (!string.Equals(stored.Function, entry.Function, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
         if (entry.RequestHash is null)
         {
             return false;

@@ -26,6 +26,24 @@ public sealed class PostgreSqlSeedReconcileTests(PostgreSqlJobsCoordinationFixtu
     }
 
     [Fact]
+    public override Task seed_restores_a_declarations_zone_an_operator_changed()
+    {
+        return base.seed_restores_a_declarations_zone_an_operator_changed();
+    }
+
+    [Fact]
+    public override Task seed_restores_the_declared_job_and_arguments_of_a_repointed_row()
+    {
+        return base.seed_restores_the_declared_job_and_arguments_of_a_repointed_row();
+    }
+
+    [Fact]
+    public override Task concurrent_seeds_restore_a_drifted_declaration_once_and_delete_a_removed_one()
+    {
+        return base.concurrent_seeds_restore_a_drifted_declaration_once_and_delete_a_removed_one();
+    }
+
+    [Fact]
     public override Task concurrent_seeds_of_one_set_leave_one_row_per_function()
     {
         return base.concurrent_seeds_of_one_set_leave_one_row_per_function();

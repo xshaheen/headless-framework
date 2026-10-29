@@ -273,6 +273,90 @@ public abstract class JobsSeedReconcileConformanceTests<TFixture>(TFixture fixtu
             .Be("headless.jobs.seed:billing_app:decl:daily-europe");
     }
 
+    public virtual async Task seed_restores_a_declarations_zone_an_operator_changed()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("seed-declaration-zone");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var declared = _Declaration(
+            _Owner,
+            "daily-us",
+            timeZoneId: "America/New_York",
+            request: _UsRequest,
+            requestHash: _UsHash
+        );
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [declared], ct);
+        var edited = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
+        edited.TimeZoneId = "Europe/Berlin";
+        (await persistence.UpdateCronJobsAsync([edited], ct)).Should().Be(1);
+        var beforeSeed = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
+
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [declared], ct);
+
+        var reseeded = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
+        reseeded.TimeZoneId.Should().Be("America/New_York", "code wins on the zone");
+        reseeded.Expression.Should().Be(_SeededExpression);
+        reseeded.ScheduleRevision.Should().Be(beforeSeed.ScheduleRevision + 1);
+    }
+
+    public virtual async Task seed_restores_the_declared_job_and_arguments_of_a_repointed_row()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("seed-declaration-repointed");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var declared = _Declaration(_Owner, "daily-us", request: _UsRequest, requestHash: _UsHash);
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [declared], ct);
+        var edited = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
+        edited.Function = "seed.other";
+        (await persistence.UpdateCronJobsAsync([edited], ct)).Should().Be(1);
+        var beforeSeed = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
+        beforeSeed.Function.Should().Be("seed.other");
+
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [declared], ct);
+
+        var reseeded = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
+        reseeded.Function.Should().Be(_Function, "code wins on the job a declaration names");
+        reseeded.Request.Should().Equal(_UsRequest, "the declared arguments come back with the declared job");
+        reseeded.ScheduleRevision.Should().Be(beforeSeed.ScheduleRevision + 1);
+    }
+
+    public virtual async Task concurrent_seeds_restore_a_drifted_declaration_once_and_delete_a_removed_one()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var firstHost = fixture.BuildHost("seed-converge-drift-a");
+        using var secondHost = fixture.BuildHost("seed-converge-drift-b");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(firstHost, ct);
+        var first = _Persistence(firstHost);
+        var second = _Persistence(secondHost);
+        var kept = _Declaration(_Owner, "daily-us", request: _UsRequest, requestHash: _UsHash);
+        var removed = _Declaration(_Owner, "daily-eu", request: _UsRequest, requestHash: _UsHash);
+        await first.MigrateDefinedCronJobsAsync(_Owner, [kept, removed], ct);
+        var edited = (await first.GetCronJobByIdAsync(kept.Id, ct))!;
+        edited.Expression = _RuntimeExpression;
+        (await first.UpdateCronJobsAsync([edited], ct)).Should().Be(1);
+        var beforeSeed = (await first.GetCronJobByIdAsync(kept.Id, ct))!;
+
+        for (var round = 0; round < 3; round++)
+        {
+            await Task.WhenAll(
+                first.MigrateDefinedCronJobsAsync(_Owner, [kept], ct),
+                second.MigrateDefinedCronJobsAsync(_Owner, [kept], ct)
+            );
+        }
+
+        var rows = await first.GetCronJobsAsync(predicate: null, ct);
+        var row = rows.Should().ContainSingle("the removed declaration is gone and the kept one stays").Subject;
+        row.Id.Should().Be(kept.Id);
+        row.Expression.Should().Be(_SeededExpression);
+        row.ScheduleRevision.Should()
+            .Be(beforeSeed.ScheduleRevision + 1, "the seed that loses the row lock sees the restored row and skips");
+    }
+
     public virtual async Task seed_restores_a_declarations_expression_and_keeps_the_operators_retries_and_pause()
     {
         var ct = AbortToken;

@@ -471,6 +471,90 @@ public sealed class InMemorySeedReconcileTests : TestBase
     }
 
     [Fact]
+    public async Task should_restore_a_declaration_zone_an_operator_changed()
+    {
+        await using var host = _CreateHost(options =>
+            options.SeedRecurringJob(
+                "daily-us",
+                new ReportArgs("us"),
+                _DailyCron,
+                new RecurringJobOptions { TimeZoneId = "America/New_York" }
+            )
+        );
+        var store = _Store(host);
+        await _RunSeedAsync(host);
+        var id = await _DeclarationIdAsync(store, "daily-us");
+        var edited = (await store.GetCronJobByIdAsync(id, AbortToken))!;
+        edited.TimeZoneId = "Europe/Berlin";
+        (await store.UpdateCronJobsAsync([edited], AbortToken)).Should().Be(1);
+        var revisionBefore = edited.ScheduleRevision;
+
+        await _RunSeedAsync(host);
+
+        var reseeded = (await store.GetCronJobByIdAsync(id, AbortToken))!;
+        reseeded.TimeZoneId.Should().Be("America/New_York", "code wins on the zone");
+        reseeded.Expression.Should().Be(_DailyCron);
+        reseeded.ScheduleRevision.Should().Be(revisionBefore + 1);
+    }
+
+    [Fact]
+    public async Task should_restore_the_declared_job_and_arguments_when_an_operator_repointed_the_row()
+    {
+        await using var host = _CreateHost(options =>
+            options.SeedRecurringJob("daily-us", new ReportArgs("us"), _DailyCron)
+        );
+        var store = _Store(host);
+        await _RunSeedAsync(host);
+        var id = await _DeclarationIdAsync(store, "daily-us");
+        var declared = (await store.GetCronJobByIdAsync(id, AbortToken))!;
+        var declaredVersion = declared.ContractVersion;
+        var edited = (await store.GetCronJobByIdAsync(id, AbortToken))!;
+        edited.Function = _NightlyFunction;
+        (await store.UpdateCronJobsAsync([edited], AbortToken)).Should().Be(1);
+        var revisionBefore = edited.ScheduleRevision;
+
+        await _RunSeedAsync(host);
+
+        var reseeded = (await store.GetCronJobByIdAsync(id, AbortToken))!;
+        reseeded.Function.Should().Be(_ReportFunction, "code wins on the job a declaration names");
+        reseeded.ContractVersion.Should().Be(declaredVersion);
+        _Region(reseeded).Should().Be("us", "the declared arguments come back with the declared job");
+        reseeded.ScheduleRevision.Should().Be(revisionBefore + 1);
+    }
+
+    [Fact]
+    public async Task should_restore_an_attribute_cron_job_when_an_operator_repointed_the_row()
+    {
+        await using var host = _CreateHost(_ => { });
+        var store = _Store(host);
+        await _RunSeedAsync(host);
+        var seeded = (await store.GetCronJobsAsync(x => x.Function == _NightlyFunction, AbortToken)).Single();
+        seeded.Function = _ReportFunction;
+        (await store.UpdateCronJobsAsync([seeded], AbortToken)).Should().Be(1);
+
+        await _RunSeedAsync(host);
+
+        var reseeded = (await store.GetCronJobByIdAsync(seeded.Id, AbortToken))!;
+        reseeded.Function.Should().Be(_NightlyFunction, "the attribute's job owns its seeded row");
+        (reseeded.Request ?? []).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_reject_an_invalid_seed_set_before_the_store_is_called()
+    {
+        await using var host = _CreateHost(_ => { });
+        var manager = host.GetRequiredService<IInternalJobManager>();
+        var foreign = _Declaration("daily-eu", [], _CanonicalHash("{}")) with
+        {
+            Marker = "headless.jobs.seed:other:decl:x",
+        };
+
+        var act = async () => await manager.MigrateDefinedCronJobs(_Owner, [foreign], AbortToken);
+
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*not owned by seed owner*");
+    }
+
+    [Fact]
     public async Task should_rewrite_the_stored_arguments_once_when_the_declared_arguments_change()
     {
         await using var first = _CreateHost(options =>

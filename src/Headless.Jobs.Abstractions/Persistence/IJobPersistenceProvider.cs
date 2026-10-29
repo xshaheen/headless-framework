@@ -577,12 +577,14 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// is never adopted. The relational provider treats a lost insert race as benign: the winner's row stands, so the
     /// redundant insert is discarded and logged at <c>Debug</c> rather than thrown. Cron definitions created by the
     /// application at runtime carry no seed marker and are never touched by this reconciliation. Policies are written
-    /// only when a row is created, and pause state is never written.
+    /// only when a row is created, and pause state is never written. An existing row that names another job than its
+    /// entry is restored to the entry's job, payload, and contract version.
+    /// <para>
+    /// The seed validates the set before this call: the owner is not blank and has no <c>:</c>, every entry's marker
+    /// starts with the owner's prefix, and no two entries share an id. An implementation can rely on those rules and
+    /// need not check them again.
+    /// </para>
     /// </remarks>
-    /// <exception cref="ArgumentException">
-    /// <paramref name="seedOwner"/> is blank or contains <c>:</c>, an entry's marker is not owned by it, or two entries
-    /// share an id.
-    /// </exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task MigrateDefinedCronJobsAsync(
         string seedOwner,
