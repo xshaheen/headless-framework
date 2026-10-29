@@ -57,7 +57,7 @@ The pipeline produces two kinds of rows:
 
 Each entry carries:
 
-- **Actor** — `UserId`, `AccountId`, `TenantId` (resolved from `ICurrentUser` / `ICurrentTenant`), `CorrelationId` (from `ICorrelationIdProvider`), and optionally `IpAddress` / `UserAgent` (must be set explicitly — the pipeline does not auto-populate these).
+- **Actor** — `UserId`, `AccountId`, `TenantId` (resolved from `ICurrentUser` / `ICurrentTenant`), `CorrelationId` (from `ICorrelationIdProvider`; the default is the W3C trace ID), and optionally `IpAddress` / `UserAgent` (must be set explicitly — the pipeline does not auto-populate these).
 - **Entity identity** — `EntityType` (full CLR type name) and `EntityId` (plain string for single-column keys; JSON array for composite keys).
 - **Change data** — `OldValues` and `NewValues` as `Dictionary<string, object?>` (serialized to JSON), and `ChangedFields` as `List<string>`. After a provider round-trip, non-string values deserialize as `JsonElement` — use `GetDecimal()`, `GetBoolean()`, etc.
 - **Outcome** — `Success` flag and optional `ErrorCode`.
