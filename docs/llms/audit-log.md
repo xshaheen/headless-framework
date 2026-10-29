@@ -26,6 +26,7 @@ Code against `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAudit
 - Configure automatic capture in the EF model: `modelBuilder.Entity<TEntity>().IsAudited()` opts in, `ExcludeFromAudit()` opts an entity or property out, and `IsAuditSensitive(...)` marks a property as sensitive. These methods live in `Headless.EntityFramework.Primitives` (which `Headless.EntityFramework` references); domain entities need no audit marker or attributes.
 - Treat entity policy as tri-state. Explicit inclusion or exclusion wins; an unconfigured entity follows `AuditLogOptions.AuditByDefault`. Owned entries inherit eligibility from their root owner, and derived types inherit the nearest configured base policy unless overridden.
 - Apply property policy in this order: framework default exclusions, explicit `ExcludeFromAudit()`, and `PropertyFilter` veto before sensitive handling. A strategy passed to `IsAuditSensitive(...)` overrides the global `AuditLogOptions.SensitiveDataStrategy`.
+- Test audit coverage with `db.Model.GetAuditPolicies(options)` (or `entityType.GetAuditPolicy(options)`), passing the `AuditLogOptions` the host resolves. It applies the same rules as capture, so assert on `IsAudited`, `ConfiguredIsAudited`, `IsSensitive`, and `IsCaptured` instead of reading model annotations. See [Testing audit coverage](#testing-audit-coverage).
 - Register the audit log with exactly one `services.AddHeadlessAuditLog(setup => setup.Use...)` call. Put global audit options in `setup.ConfigureOptions(...)` and storage-table options in `setup.ConfigureStorage(...)`.
 - For EF storage, call `setup.UseEntityFramework<TContext>()`, register the same context with EF Core, register a singleton `IDbContextFactory<TContext>` (`AddDbContextFactory<TContext>()` or `AddPooledDbContextFactory<TContext>()` for a plain `DbContext`, or `AddHeadlessDbContext<TContext>()` or `AddHeadlessDbContextPool<TContext>()` for a `HeadlessDbContext`; both Headless registrations add the factory) for read-back, and call `modelBuilder.ConfigureHeadlessAuditLog(this)` inside `OnModelCreating`, which reads the storage options from the context's services and names every object in the database's convention (snake_case on PostgreSQL, PascalCase elsewhere). A startup gate validates this at boot and throws if it is missing. The factory must be a singleton (the default lifetime of all four registrations): the EF reader and startup gate are singletons that would capture a scoped or transient factory for the life of the host, so startup refuses one with `InvalidServiceLifetimeException`.
 - For raw storage, call `setup.UsePostgreSql(connectionString)` or `setup.UseSqlServer(connectionString)`, or the parameterless `UsePostgreSql()` / `UseSqlServer()` to reuse the connection registered by `AddPostgreSqlSql` / `AddSqlServerSql`; `resources provision` creates the audit table, a host start only verifies it, and the provider writes over its own connection.
@@ -72,6 +73,22 @@ Properties configured with `IsAuditSensitive()` are subject to a strategy applie
 - `Transform` — passes the value through `AuditLogOptions.SensitiveValueTransformer` (hash, mask, tokenize). The transformer receives a `SensitiveValueContext` carrying `EntityType`, `PropertyName`, `PropertyClrType`, and `Value`. Must be a pure, synchronous function.
 
 A strategy passed to `IsAuditSensitive(SensitiveDataStrategy.Exclude)` overrides the global default for that property. Explicit property exclusion and `PropertyFilter` vetoes run first, so an excluded property is never processed as sensitive.
+
+### Testing audit coverage
+
+`HeadlessAuditModelPolicyExtensions` (`Headless.EntityFramework.Primitives`, namespace `Microsoft.EntityFrameworkCore`) reads the resolved policy back from a built model: `model.GetAuditPolicies(options)` returns one `AuditEntityPolicy` per entity type, owned types included, and `entityType.GetAuditPolicy(options)` returns one. Capture resolves through the same rules, so a test asserts what a save records:
+
+```csharp
+var options = host.Services.GetRequiredService<IOptions<AuditLogOptions>>().Value;
+
+db.Model.GetAuditPolicies(options)
+    .Where(p => p.ConfiguredIsAudited is null)
+    .Should().BeEmpty("every entity needs an explicit IsAudited() or ExcludeFromAudit()");
+```
+
+- `AuditEntityPolicy.IsAudited` — the effective answer: the explicit configuration on the type or its nearest base, else `AuditByDefault`, unless `EntityFilter` vetoes it. `ConfiguredIsAudited` is the explicit part alone, `null` when unconfigured.
+- `AuditEntityPolicy.PolicyEntityType` — the type whose configuration decides: the entity itself, or for an owned type the root owner its metadata names. At save time an owned entry follows its runtime owner, so a derived owner's override shows on the derived owner's policy, not on the owned type's.
+- `AuditPropertyPolicy.IsSensitive`, `SensitiveDataStrategy` (the effective strategy, `null` when not sensitive), and `IsCaptured` (`false` for an explicit exclusion, a default excluded property, a `PropertyFilter` veto, or an unconfigured shadow property). A sensitive property with the `Exclude` strategy is captured but records no value.
 
 ### Scope and unit-of-work
 
