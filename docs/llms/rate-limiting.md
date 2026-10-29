@@ -20,6 +20,7 @@ The framework ships no edge limiter, because which endpoints get which limits an
 ## Agent Rules
 
 - Register a shared cache provider (`UseRedis` or `UseHybrid`) with the limiter. `UseInMemory` counts per process, so N replicas admit N times the limit.
+- When the default cache evicts (`allkeys-lru`) or does not persist, set `CacheName` to a named instance on a store that does neither.
 - Normalize the subject before calling `AcquireAsync`: lower-case emails, E.164 phone numbers, a canonical IP form. `"A@x.com"` and `"a@x.com"` are separate budgets.
 - Keep personal data out of the purpose string. The purpose appears in the cache key in the clear; only the subject is pseudonymised.
 - Acquire before the account lookup, so the response does not reveal whether an identifier exists.
@@ -145,7 +146,23 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(builder.Configuratio
 builder.Services.AddAttemptLimiter(builder.Configuration.GetSection("AttemptLimiter"));
 ```
 
-`AddAttemptLimiter` also accepts `Action<AttemptLimiterOptions>` and `Action<AttemptLimiterOptions, IServiceProvider>`. Host startup fails when no `ICache` is registered.
+`AddAttemptLimiter` also accepts `Action<AttemptLimiterOptions>` and `Action<AttemptLimiterOptions, IServiceProvider>`. Host startup fails when the cache the limiter counts in is not registered.
+
+The default `ICache` is usually tuned as a cache, with LRU eviction and no persistence. An evicted or lost counter reopens its budget, so point the counters at a store that does not evict and survives restarts with a named instance:
+
+```csharp
+builder.Services.AddHeadlessCaching(setup =>
+{
+    setup.UseRedis(builder.Configuration.GetSection("Redis"));
+    setup.AddNamed("attempt-limits", instance => instance.UseRedis(builder.Configuration.GetSection("RedisLimits")));
+});
+
+builder.Services.AddAttemptLimiter(options =>
+{
+    options.SubjectKey = builder.Configuration["AttemptLimiter:SubjectKey"]!;
+    options.CacheName = "attempt-limits";
+});
+```
 
 ```csharp
 public sealed class SendLoginCodeHandler(IAttemptLimiter limiter, ISmsSender sms)
@@ -181,6 +198,7 @@ await limiter.ResetAsync(attempt, cancellationToken);
 | --- | --- | --- |
 | `SubjectKey` | required | Base64 secret of at least 32 bytes. Subjects are HMAC-SHA256'd with it before they reach a cache key. |
 | `KeyPrefix` | `attempts` | First segment of every counter key. Change it when applications share one cache. |
+| `CacheName` | `null` | Named cache instance (`setup.AddNamed(name, ...)`) that holds the counters; `null` uses the default `ICache`. An empty or blank name fails options validation. |
 
 ### Design and runtime behavior
 
@@ -188,5 +206,6 @@ await limiter.ResetAsync(attempt, cancellationToken);
 - `ThrowIfRejected(error)` throws `Headless.TooManyRequestsException`. With `Headless.Api` problem details registered, that maps to 429, the `Retry-After` header in whole seconds rounded up, and `retryAfter` plus the optional `error` in the body. Outside HTTP, catch it or read `IsAllowed` instead.
 - Lowering a quota's `Limit` applies to the running window on the next attempt. Changing its `Window` starts every subject on a fresh counter, because the window length is part of the key.
 - Cache keys have the shape `{KeyPrefix}:v1:{purpose}:{windowSeconds}:{windowNumber}:{fingerprint}`. The fingerprint is a base64url HMAC of the purpose and subject, so the same subject yields unrelated fingerprints under different purposes.
+- The startup check only probes the registration: the default `ICache` when `CacheName` is `null`, otherwise the keyed `ICache` under that name. It resolves nothing and makes no round trip to the store, so an unreachable Redis still fails on the first attempt, not at startup. A missing registration throws `MissingRequiredServiceException` naming the `AddNamed` call to add.
 - A cache failure in `AcquireAsync` or `ResetAsync` propagates.
 - `AttemptResult` is publicly constructible, so a test can stub `IAttemptLimiter` without a cache: `new AttemptResult("otp-delivery", count: 6, limit: 5, retryAfter: TimeSpan.FromSeconds(30))` is a refusal. `ResetToken` is the opaque handle `ResetAsync` needs; a hand-built result has none, and the built-in limiter's `ResetAsync` throws `ArgumentException` for it. A custom `IAttemptLimiter` puts its own reset state in the token.
