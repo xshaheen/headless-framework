@@ -1492,10 +1492,17 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     // rows carry another prefix, so neither is ever matched, rewritten, or deleted here. A row that
                     // occupies a declared id without this owner's marker is not ours either: the insert below then
                     // collides with it and the conflict verification refuses to treat it as a benign race.
-                    var ownedRows = await cronSet
-                        .Where(c => c.InitIdentifier != null && c.InitIdentifier.StartsWith(ownerPrefix))
-                        .ToListAsync(cancellationToken)
-                        .ConfigureAwait(false);
+                    // The server-side prefix match follows the column's collation, so on a case-insensitive SQL Server
+                    // database it also returns an owner that differs only by case. The ordinal re-filter keeps that
+                    // owner's rows out of the delete below.
+                    var ownedRows = (
+                        await cronSet
+                            .Where(c => c.InitIdentifier != null && c.InitIdentifier.StartsWith(ownerPrefix))
+                            .ToListAsync(cancellationToken)
+                            .ConfigureAwait(false)
+                    )
+                        .Where(c => c.InitIdentifier!.StartsWith(ownerPrefix, StringComparison.Ordinal))
+                        .ToList();
 
                     // Delete this owner's seeded rows that the declared set no longer contains.
                     var seededToDelete = ownedRows.Where(c => !declaredIds.Contains(c.Id)).Select(c => c.Id).ToArray();

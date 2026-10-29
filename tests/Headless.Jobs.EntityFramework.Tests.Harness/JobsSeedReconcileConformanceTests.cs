@@ -69,6 +69,27 @@ public abstract class JobsSeedReconcileConformanceTests<TFixture>(TFixture fixtu
             );
     }
 
+    public virtual async Task seed_keeps_the_rows_of_an_owner_that_differs_only_by_case()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("seed-owner-case");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var upperOwner = _Owner.ToUpperInvariant();
+
+        await _SeedAsync(persistence, upperOwner, [(_Function, _SeededExpression)], ct);
+        await _SeedAsync(persistence, _Owner, [("seed.kept", _SeededExpression)], ct);
+
+        var rows = await persistence.GetCronJobsAsync(predicate: null, ct);
+        rows.Select(x => x.InitIdentifier)
+            .Should()
+            .BeEquivalentTo(
+                [$"headless.jobs.seed:{upperOwner}:cron:{_Function}", $"headless.jobs.seed:{_Owner}:cron:seed.kept"],
+                "a case-insensitive collation must not make one owner's seed delete another owner's rows"
+            );
+    }
+
     public virtual async Task concurrent_seeds_of_one_set_leave_one_row_per_function()
     {
         var ct = AbortToken;

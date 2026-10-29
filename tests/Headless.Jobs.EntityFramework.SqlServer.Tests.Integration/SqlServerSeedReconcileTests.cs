@@ -20,6 +20,12 @@ public sealed class SqlServerSeedReconcileTests(SqlServerJobsCoordinationFixture
     }
 
     [Fact]
+    public override Task seed_keeps_the_rows_of_an_owner_that_differs_only_by_case()
+    {
+        return base.seed_keeps_the_rows_of_an_owner_that_differs_only_by_case();
+    }
+
+    [Fact]
     public override Task concurrent_seeds_of_one_set_leave_one_row_per_function()
     {
         return base.concurrent_seeds_of_one_set_leave_one_row_per_function();
