@@ -16,7 +16,8 @@ internal sealed class JobsDeadOwnerReclaimer(
     IInternalJobManager internalJobManager,
     SchedulerOptionsBuilder optionsBuilder,
     IOptions<CoordinationOptions>? coordinationOptions = null,
-    ILogger<JobsDeadOwnerReclaimer>? logger = null
+    ILogger<JobsDeadOwnerReclaimer>? logger = null,
+    INodeMembership? membership = null
 ) : IDeadOwnerReclaimer
 {
     private readonly IInternalJobManager _internalJobManager = internalJobManager;
@@ -29,7 +30,8 @@ internal sealed class JobsDeadOwnerReclaimer(
         DeadOwnerReconcileInterval.Resolve(
             optionsBuilder.DeadNodeReconcileInterval,
             coordinationOptions?.Value,
-            logger ?? NullLogger<JobsDeadOwnerReclaimer>.Instance
+            logger ?? NullLogger<JobsDeadOwnerReclaimer>.Instance,
+            membership
         );
 
     public async Task ReclaimAsync(IReadOnlyCollection<string> owners, CancellationToken cancellationToken)

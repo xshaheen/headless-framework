@@ -17,7 +17,8 @@ public sealed class MessagingDeadOwnerReclaimerTests : TestBase
 
     private MessagingDeadOwnerReclaimer _CreateSut(
         TimeSpan? reconcileInterval = null,
-        ILogger<MessagingDeadOwnerReclaimer>? logger = null
+        ILogger<MessagingDeadOwnerReclaimer>? logger = null,
+        INodeMembership? membership = null
     )
     {
         var options = new MessagingOptions { DeadNodeReconcileInterval = reconcileInterval };
@@ -26,7 +27,8 @@ public sealed class MessagingDeadOwnerReclaimerTests : TestBase
             _storage,
             Options.Create(options),
             logger ?? NullLogger<MessagingDeadOwnerReclaimer>.Instance,
-            coordinationOptions: Options.Create(new CoordinationOptions())
+            coordinationOptions: Options.Create(new CoordinationOptions()),
+            membership: membership
         );
     }
 
@@ -152,6 +154,20 @@ public sealed class MessagingDeadOwnerReclaimerTests : TestBase
         // then
         sut.ReconcileInterval.Should().Be(TimeSpan.FromSeconds(15));
         captured.Should().ContainSingle().Which.Should().Be((LogLevel.Warning, 14));
+    }
+
+    [Fact]
+    public void should_keep_a_configured_reconcile_interval_without_a_warning_on_a_host_without_coordination()
+    {
+        // given
+        var captured = new List<(LogLevel Level, int Id)>();
+
+        // when: the host registered only the NullNodeMembership fallback
+        var sut = _CreateSut(TimeSpan.FromMinutes(1), _CreateCapturingLogger(captured), new NullNodeMembership());
+
+        // then
+        sut.ReconcileInterval.Should().Be(TimeSpan.FromMinutes(1));
+        captured.Should().BeEmpty();
     }
 
     [Fact]

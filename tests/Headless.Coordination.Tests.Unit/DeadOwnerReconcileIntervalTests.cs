@@ -49,6 +49,24 @@ public sealed class DeadOwnerReconcileIntervalTests : TestBase
     }
 
     [Fact]
+    public void should_keep_a_configured_interval_without_a_warning_when_the_host_has_no_membership_provider()
+    {
+        // Messaging registers NullNodeMembership as its fallback while the options system still resolves default
+        // coordination options, so a host with no coordination provider must not be clamped against that window.
+        var logger = new RecordingLogger();
+
+        var interval = DeadOwnerReconcileInterval.Resolve(
+            TimeSpan.FromMinutes(1),
+            _DefaultCoordination,
+            logger,
+            new NullNodeMembership()
+        );
+
+        interval.Should().Be(TimeSpan.FromMinutes(1));
+        logger.Entries.Should().BeEmpty();
+    }
+
+    [Fact]
     public void should_keep_a_configured_interval_when_coordination_is_absent()
     {
         var logger = new RecordingLogger();

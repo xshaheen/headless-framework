@@ -73,6 +73,22 @@ public sealed class JobsDeadOwnerReclaimerTests : TestBase
     }
 
     [Fact]
+    public void reconcile_interval_stays_configured_without_a_warning_when_the_host_has_no_membership_provider()
+    {
+        var logger = new RecordingLogger();
+        var reclaimer = new JobsDeadOwnerReclaimer(
+            Substitute.For<IInternalJobManager>(),
+            new SchedulerOptionsBuilder { DeadNodeReconcileInterval = TimeSpan.FromMinutes(1) },
+            Options.Create(new CoordinationOptions()),
+            logger,
+            new NullNodeMembership()
+        );
+
+        reclaimer.ReconcileInterval.Should().Be(TimeSpan.FromMinutes(1));
+        logger.EventIds.Should().BeEmpty();
+    }
+
+    [Fact]
     public void reconcile_interval_stays_configured_when_already_inside_the_window_or_without_coordination()
     {
         var withoutCoordination = new JobsDeadOwnerReclaimer(
