@@ -19,10 +19,22 @@ internal sealed class MessagingDeadOwnerReclaimer(
     IDataStorage storage,
     IOptions<MessagingOptions> options,
     ILogger<MessagingDeadOwnerReclaimer> logger,
-    MessagingOutboxes? outboxes = null
+    MessagingOutboxes? outboxes = null,
+    IOptions<CoordinationOptions>? coordinationOptions = null,
+    INodeMembership? membership = null
 ) : IDeadOwnerReclaimer
 {
-    public TimeSpan ReconcileInterval => options.Value.DeadNodeReconcileInterval;
+    /// <summary>
+    /// The effective reconcile cadence, derived from the coordination dead-retention window. Resolved and, when
+    /// clamped, logged once per host.
+    /// </summary>
+    public TimeSpan ReconcileInterval { get; } =
+        DeadOwnerReconcileInterval.Resolve(
+            options.Value.DeadNodeReconcileInterval,
+            coordinationOptions?.Value,
+            logger,
+            membership
+        );
 
     public async Task ReclaimAsync(IReadOnlyCollection<string> owners, CancellationToken cancellationToken)
     {

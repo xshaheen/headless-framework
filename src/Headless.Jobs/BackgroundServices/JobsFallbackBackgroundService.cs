@@ -33,11 +33,7 @@ internal sealed class JobsFallbackBackgroundService(
     // in-memory path, which never sweeps) falls back to the same resolution without coordination options.
     private readonly TimeSpan _orphanSweepInterval =
         deadOwnerReclaimer?.ReconcileInterval
-        ?? JobsDeadOwnerReclaimer.ResolveReconcileInterval(
-            schedulerOptions.DeadNodeReconcileInterval,
-            coordination: null,
-            logger
-        );
+        ?? DeadOwnerReconcileInterval.Resolve(schedulerOptions.DeadNodeReconcileInterval, coordination: null, logger);
 
     public override Task StartAsync(CancellationToken ct)
     {

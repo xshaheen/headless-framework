@@ -263,17 +263,18 @@ public sealed class MessagingOptions
     public TimeSpan SubscriptionEstablishedTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Gets or sets the cadence of the dead-owner recovery reconcile backstop. Default is 1 minute.
+    /// Gets or sets the cadence of the dead-owner recovery reconcile backstop.
     /// </summary>
     /// <remarks>
     /// The dead-owner recovery bridge reclaims orphaned outbox/inbox rows on two triggers: a low-latency
     /// <c>NodeLeft</c> membership-watch path and this periodic liveness-snapshot reconcile. The reconcile is
     /// the authoritative backstop that catches any death missed while the watch loop was not subscribed; the
-    /// watch path is best-effort acceleration. This cadence does not bound correctness — the per-row
-    /// <c>LockedUntil</c> lease floor recovers any row independently — so it can safely run longer than the
-    /// retry-poll interval. Mirrors <c>SchedulerOptionsBuilder.DeadNodeReconcileInterval</c> on the Jobs side.
+    /// watch path is best-effort acceleration. Defaults to <see langword="null"/>, which means half the coordination
+    /// <c>DeadRetentionWindow</c> (15 seconds with default coordination options): relational providers keep a dead
+    /// identity observable for only that window, so a slower reconcile could miss it and leave its rows to wait for
+    /// their <c>LockedUntil</c> lease. An explicit value above that ceiling is clamped to it with a warning.
     /// </remarks>
-    public TimeSpan DeadNodeReconcileInterval { get; set; } = TimeSpan.FromMinutes(1);
+    public TimeSpan? DeadNodeReconcileInterval { get; set; }
 
     /// <summary>
     /// Gets or sets how long a polling consumer client waits for messages before it polls again. Default is 1 second.
@@ -572,11 +573,11 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .WithMessage("SubscriptionEstablishedTimeout must be greater than zero.")
             .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
             .WithMessage("SubscriptionEstablishedTimeout must not exceed 5 minutes.");
-        // No upper bound: the reconcile is a backstop cadence, not a correctness deadline (the per-row
-        // LockedUntil floor recovers rows independently), so a long interval is a legitimate choice.
+        // The upper bound is not validated here: it comes from the coordination options, so the reclaimer clamps it.
         RuleFor(x => x.DeadNodeReconcileInterval)
             .GreaterThan(TimeSpan.Zero)
-            .WithMessage("DeadNodeReconcileInterval must be greater than zero.");
+            .When(x => x.DeadNodeReconcileInterval.HasValue)
+            .WithMessage("DeadNodeReconcileInterval must be greater than zero when set.");
         // Kafka blocks in one poll for the whole timeout without observing cancellation, so a long value would hold
         // shutdown; the bound keeps it inside the default ShutdownTimeout.
         RuleFor(x => x.ConsumerPollTimeout)
