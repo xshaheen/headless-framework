@@ -803,8 +803,7 @@
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Microsoft.AspNetCore.Authorization": "[10.0.13, )",
-          "Polly.Core": "[8.8.0, )"
+          "Microsoft.AspNetCore.Authorization": "[10.0.13, )"
         }
       },
       "headless.features.abstractions": {
@@ -951,8 +950,8 @@
           "Headless.Permissions.Abstractions": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Microsoft.AspNetCore.Authorization": "[10.0.13, )",
-          "Polly.Core": "[8.8.0, )"
+          "Headless.UnitOfWork": "[1.0.0, )",
+          "Microsoft.AspNetCore.Authorization": "[10.0.13, )"
         }
       },
       "headless.permissions.abstractions": {
@@ -960,7 +959,8 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Context.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )"
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
         }
       },
       "headless.primitives": {

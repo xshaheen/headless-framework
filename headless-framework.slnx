@@ -55,10 +55,13 @@
         <Project Path="demo\Headless.Tus.Demo\Headless.Tus.Demo.csproj" />
         <Project Path="src\Headless.Tus.Azure\Headless.Tus.Azure.csproj" />
         <Project Path="src\Headless.Tus.DistributedLocks\Headless.Tus.DistributedLocks.csproj" />
+        <Project Path="src\Headless.Tus.S3\Headless.Tus.S3.csproj" />
         <Project Path="src\Headless.Tus\Headless.Tus.csproj" />
     </Folder>
     <Folder Name="/Blobs.Tus/Tests/">
+        <Project Path="benchmarks/Headless.Tus.Benchmarks/Headless.Tus.Benchmarks.csproj" />
         <Project Path="tests\Headless.Tus.Azure.Tests.Integration\Headless.Tus.Azure.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Tus.S3.Tests.Integration\Headless.Tus.S3.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Tus.Tests.Harness\Headless.Tus.Tests.Harness.csproj" />
         <Project Path="tests\Headless.Tus.Tests.Unit\Headless.Tus.Tests.Unit.csproj" />
     </Folder>

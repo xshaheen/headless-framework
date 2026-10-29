@@ -8,5 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.Permissions\Headless.Permissions.csproj" />
     <ProjectReference Include="..\Headless.EntityFramework\Headless.EntityFramework.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork.EntityFramework\Headless.UnitOfWork.EntityFramework.csproj" />
   </ItemGroup>
 </Project>

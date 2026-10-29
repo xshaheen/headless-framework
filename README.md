@@ -44,7 +44,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 Every service, repository, and handler that injects `ICache` is untouched by that edit. The same holds for `IBlobStorage` across S3, Azure, Cloudflare R2, the file system, Redis, and SFTP; for `IEmailSender` across SES, Azure Communication Services, and SMTP; and for messaging across eight transports.
 
-**You install three packages, not 204.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
+**You install three packages, not 205.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
 
 **Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 122 unit-test projects and 63 integration-test projects on that split.
 
@@ -687,12 +687,13 @@ Base classes, builders, fixtures, and Testcontainers integration for real-databa
 
 ### TUS (Resumable Uploads)
 
-[TUS protocol](https://tus.io) support for resumable file uploads, with Azure Blob Storage and distributed locking.
+[TUS protocol](https://tus.io) support for resumable file uploads, with Azure Blob Storage, S3-compatible storage (Cloudflare R2, Amazon S3, MinIO), and distributed locking.
 
 | Package | Description |
 |---------|-------------|
 | [Headless.Tus](src/Headless.Tus/README.md) | TUS protocol utilities |
 | [Headless.Tus.Azure](src/Headless.Tus.Azure/README.md) | Azure Blob TUS store |
+| [Headless.Tus.S3](src/Headless.Tus.S3/README.md) | Cloudflare R2, Amazon S3, and S3-compatible TUS store |
 | [Headless.Tus.DistributedLocks](src/Headless.Tus.DistributedLocks/README.md) | TUS file locking |
 
 ### Utilities

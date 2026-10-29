@@ -66,16 +66,20 @@ public static class SetupAttemptLimiter
 
         private IServiceCollection _AddAttemptLimiterCore()
         {
-            // The limiter only counts through ICache; this package references the abstraction, so a caching
-            // provider must be installed or every attempt would fail at the first request.
-            services.RequireRegisteredService<ICache>(
-                requiredBy: "Headless attempt limiter counters",
-                remedy: "Call AddHeadlessCaching(...) with a shared provider (UseRedis / UseHybrid); UseInMemory "
-                    + "counts per process."
-            );
+            // The cache is chosen by AttemptLimiterOptions.CacheName, which is only known once options bind, so the
+            // registration check runs at startup instead of through RequireRegisteredService<ICache>.
+            services.AddStartupValidator<AttemptLimiterCacheStartupValidator>();
 
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<IAttemptLimiter, CacheAttemptLimiter>();
+            services.TryAddSingleton<IAttemptLimiter>(provider =>
+            {
+                var options = provider.GetRequiredService<IOptions<AttemptLimiterOptions>>();
+                var cache = options.Value.CacheName is { } name
+                    ? provider.GetRequiredKeyedService<ICache>(name)
+                    : provider.GetRequiredService<ICache>();
+
+                return new CacheAttemptLimiter(cache, provider.GetRequiredService<TimeProvider>(), options);
+            });
 
             return services;
         }

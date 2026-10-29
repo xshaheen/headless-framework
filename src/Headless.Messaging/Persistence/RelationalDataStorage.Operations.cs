@@ -73,7 +73,7 @@ internal sealed partial class RelationalDataStorage
                 command,
                 "ConsumerIdentityPattern",
                 SqlColumnType.KeyText(_Unbounded),
-                query.ConsumerIdentity is null ? null : RelationalMonitoringApi.EscapeLike(query.ConsumerIdentity)
+                query.ConsumerIdentity is null ? null : SqlLikePattern.Escape(query.ConsumerIdentity)
             );
             _dialect.AddParameter(
                 command,

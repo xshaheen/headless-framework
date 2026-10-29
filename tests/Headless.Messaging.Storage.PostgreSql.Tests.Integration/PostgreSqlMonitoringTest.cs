@@ -236,6 +236,44 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         result.Items[0].StatusName.Should().Be(StatusName.Succeeded);
     }
 
+    [Theory]
+    [InlineData("50%off")]
+    [InlineData("user_id")]
+    [InlineData("[draft]")]
+    public async Task should_match_content_search_literally(string term)
+    {
+        // given — the decoy matches the term only when its wildcard characters are left unescaped
+        var storage = _storage!;
+        var decoy = term.Replace('%', 'X').Replace('_', 'X').Replace("[draft]", "d", StringComparison.Ordinal);
+        await storage.StoreMessageAsync(
+            "search-test",
+            _CreateMessage($"before {term} after"),
+            cancellationToken: AbortToken
+        );
+        await storage.StoreMessageAsync(
+            "search-test",
+            _CreateMessage($"before {decoy} after"),
+            cancellationToken: AbortToken
+        );
+
+        // when
+        var result = await storage
+            .GetMonitoringApi()
+            .GetMessagesAsync(
+                new MessageQuery
+                {
+                    MessageType = MessageType.Publish,
+                    Content = term,
+                    CurrentPage = 0,
+                    PageSize = 10,
+                },
+                AbortToken
+            );
+
+        // then
+        result.Items.Should().ContainSingle();
+    }
+
     [Fact]
     public async Task should_return_hourly_succeeded_jobs()
     {
@@ -609,7 +647,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
 
     private static long _messageIdCounter = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() << 20;
 
-    private static Message _CreateMessage()
+    private static Message _CreateMessage(string data = "test")
     {
         var id = $"msg-{Interlocked.Increment(ref _messageIdCounter)}";
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -618,7 +656,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
             { Headers.MessageName, "TestMessage" },
             { Headers.SentTime, DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture) },
         };
-        return new Message(headers, new { Data = "test" });
+        return new Message(headers, new { Data = data });
     }
 
     private void _EnsureInitialized()

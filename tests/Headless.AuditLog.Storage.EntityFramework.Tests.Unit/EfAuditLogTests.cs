@@ -127,6 +127,37 @@ public sealed class EfAuditLogTests : TestBase
     }
 
     [Fact]
+    public async Task should_reject_read_query_with_both_action_and_action_prefix()
+    {
+        // given
+        var dbFactory = Substitute.For<IDbContextFactory<AuditStoreDbContext>>();
+        var sut = new EfReadAuditLog<AuditStoreDbContext>(dbFactory);
+
+        // when
+        var act = () =>
+            sut.QueryAsync(new() { Action = "order.created", ActionPrefix = "order." }, cancellationToken: AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("query");
+        await dbFactory.DidNotReceive().CreateDbContextAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_reject_read_query_with_empty_action_prefix()
+    {
+        // given
+        var dbFactory = Substitute.For<IDbContextFactory<AuditStoreDbContext>>();
+        var sut = new EfReadAuditLog<AuditStoreDbContext>(dbFactory);
+
+        // when
+        var act = () => sut.QueryAsync(new() { ActionPrefix = "" }, cancellationToken: AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("query");
+        await dbFactory.DidNotReceive().CreateDbContextAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task should_reject_undefined_read_query_direction()
     {
         // given
