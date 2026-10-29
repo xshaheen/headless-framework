@@ -198,6 +198,7 @@ Headless.Testing.Testcontainers
 Headless.Tus
 Headless.Tus.Azure
 Headless.Tus.DistributedLocks
+Headless.Tus.S3
 Headless.UnitOfWork
 Headless.UnitOfWork.Abstractions
 Headless.UnitOfWork.Analyzers

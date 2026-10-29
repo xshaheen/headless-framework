@@ -53,7 +53,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 أي service أو repository أو handler بياخد `ICache` مش هيتأثر بالتعديل دا. ونفس الكلام على `IBlobStorage` بين S3 و Azure و Cloudflare R2 و FileSystem و Redis و SFTP، وعلى `IEmailSender` بين SES و Azure Communication Services و SMTP، وعلى الـ messaging بين 8 transports.
 
-**هتركّب 3 packages، مش 204.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
+**هتركّب 3 packages، مش 205.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
 
 **الـ tests مش محتاجة Docker عشان تبقى سريعة.** الـ caching والـ distributed locks والـ messaging فيهم in-memory providers؛ والـ emails والـ SMS والـ push notifications فيهم dev providers مش بتبعت حاجة؛ والـ blob storage بيشتغل على الـ file system المحلي. يعني الـ unit tests بتجرّب نفس الـ contract الحقيقي من غير containers. ولما تحتاج الـ backend الحقيقي، `Headless.Testing.Testcontainers` بتجهّزلك الـ fixtures. الـ repo نفسه ماشي على التقسيمة دي: 122 مشروع unit tests و 63 مشروع integration tests.
 
@@ -466,6 +466,7 @@ Message bus موزّع بـ transactional outbox، وretries، وdelayed deliver
 | [Headless.Messaging.Bus.Abstractions](src/Headless.Messaging.Bus.Abstractions/README.md) | الـ contracts بتاعة الـ publisher بنمط pub/sub |
 | [Headless.Messaging.Queue.Abstractions](src/Headless.Messaging.Queue.Abstractions/README.md) | الـ contracts بتاعة الـ publisher والـ request client بنمط point-to-point |
 | [Headless.Messaging](src/Headless.Messaging/README.md) | الـ runtime engine: outbox، وretries، وdelayed delivery، وorchestration للـ consumers |
+| [Headless.Messaging.SourceGenerator](src/Headless.Messaging.SourceGenerator/README.md) | تسجيل وtyped dispatch وقت الـ compile للـ classes المعلّمة بـ `[BusConsumer]` و `[QueueConsumer]` |
 | [Headless.Messaging.Dashboard](src/Headless.Messaging.Dashboard/README.md) | Web UI لمتابعة الـ messages والـ failures وحالة النظام |
 | [Headless.Messaging.Dashboard.Consul](src/Headless.Messaging.Dashboard.Consul/README.md) | اكتشاف الـ nodes وتسجيلها في Consul |
 | [Headless.Messaging.Dashboard.K8s](src/Headless.Messaging.Dashboard.K8s/README.md) | اكتشاف الـ nodes أوتوماتيك جوه Kubernetes |
@@ -725,12 +726,13 @@ Base classes وbuilders وfixtures وتكامل Testcontainers لـ integration 
 
 ### TUS (Resumable Uploads)
 
-دعم [بروتوكول TUS](https://tus.io) للـ resumable uploads، مع Azure Blob Storage وdistributed locking.
+دعم [بروتوكول TUS](https://tus.io) للـ resumable uploads، مع Azure Blob Storage، وstorage متوافق مع S3 (Cloudflare R2، وAmazon S3، وMinIO)، وdistributed locking.
 
 | Package | الوصف |
 |---------|-------|
 | [Headless.Tus](src/Headless.Tus/README.md) | أدوات بروتوكول TUS |
 | [Headless.Tus.Azure](src/Headless.Tus.Azure/README.md) | TUS store على Azure Blob |
+| [Headless.Tus.S3](src/Headless.Tus.S3/README.md) | TUS store على Cloudflare R2 وAmazon S3 وأي storage متوافق مع S3 |
 | [Headless.Tus.DistributedLocks](src/Headless.Tus.DistributedLocks/README.md) | Locking لملفات الـ TUS |
 
 ### Utilities

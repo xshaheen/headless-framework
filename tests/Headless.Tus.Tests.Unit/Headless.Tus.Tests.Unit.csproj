@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Tus.Azure\Headless.Tus.Azure.csproj" />
     <ProjectReference Include="..\..\src\Headless.Tus.DistributedLocks\Headless.Tus.DistributedLocks.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Tus.S3\Headless.Tus.S3.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>
