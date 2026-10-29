@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using Headless.AuditLog;
+using Headless.Checks;
 using Headless.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -67,15 +68,10 @@ internal sealed class EfAuditChangeCapture(
     private bool _hasLoggedDisabledWarning;
 
     /// <inheritdoc />
-    public IReadOnlyList<AuditLogEntryData> CaptureChanges(
-        IEnumerable<object> entries,
-        string? userId,
-        string? accountId,
-        string? tenantId,
-        string? correlationId,
-        DateTimeOffset timestamp
-    )
+    public IReadOnlyList<AuditLogEntryData> CaptureChanges(IEnumerable<object> entries, AuditCaptureContext context)
     {
+        Argument.IsNotNull(context);
+
         var opts = options.Value;
         if (!opts.IsEnabled)
         {
@@ -106,7 +102,7 @@ internal sealed class EfAuditChangeCapture(
                     continue;
                 }
 
-                var data = _CaptureEntry(entry, plan, opts, userId, accountId, tenantId, correlationId, timestamp);
+                var data = _CaptureEntry(entry, plan, opts, context);
 
                 if (data is not null)
                 {
@@ -303,11 +299,7 @@ internal sealed class EfAuditChangeCapture(
         EntityEntry entry,
         AuditCapturePlan plan,
         AuditLogOptions opts,
-        string? userId,
-        string? accountId,
-        string? tenantId,
-        string? correlationId,
-        DateTimeOffset timestamp
+        AuditCaptureContext context
     )
     {
         var clrType = entry.Metadata.ClrType;
@@ -393,10 +385,12 @@ internal sealed class EfAuditChangeCapture(
 
         var data = new AuditLogEntryData
         {
-            UserId = userId,
-            AccountId = accountId,
-            TenantId = tenantId,
-            CorrelationId = correlationId,
+            UserId = context.UserId,
+            AccountId = context.AccountId,
+            TenantId = context.TenantId,
+            IpAddress = context.IpAddress,
+            UserAgent = context.UserAgent,
+            CorrelationId = context.CorrelationId,
             Action = action,
             ChangeType = changeType,
             EntityType = entityType,
@@ -404,7 +398,7 @@ internal sealed class EfAuditChangeCapture(
             OldValues = changeType == AuditChangeType.Created ? null : (oldValues.Count > 0 ? oldValues : null),
             NewValues = changeType == AuditChangeType.Deleted ? null : (newValues.Count > 0 ? newValues : null),
             ChangedFields = changedFields.Count > 0 ? changedFields : null,
-            CreatedAt = timestamp,
+            CreatedAt = context.Timestamp,
         };
 
         // Created entries whose key the store assigns need EntityId re-resolution once it does; a Created entry with a

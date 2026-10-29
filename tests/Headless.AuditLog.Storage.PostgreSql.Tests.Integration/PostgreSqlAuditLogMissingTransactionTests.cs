@@ -198,7 +198,35 @@ public sealed class PostgreSqlAuditLogMissingTransactionTests(PostgreSqlAuditLog
             .Be(1);
     }
 
-    private async Task<IHost> _StartHostAsync(MissingTransactionStrategy strategy)
+    [Fact]
+    public async Task should_record_registered_client_info_on_log_and_writer_entries()
+    {
+        // given
+        var clientInfo = Substitute.For<IAuditClientInfoProvider>();
+        clientInfo.IpAddress.Returns("198.51.100.23");
+        clientInfo.UserAgent.Returns("agent/1.0");
+        using var host = await _StartHostAsync(MissingTransactionStrategy.Throw, clientInfo);
+        await using var scope = host.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<StrictAuditDbContext>();
+        var auditLog = scope.ServiceProvider.GetRequiredService<IAuditLog<StrictAuditDbContext>>();
+        var writer = scope.ServiceProvider.GetRequiredService<IAuditLogWriter<StrictAuditDbContext>>();
+        await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
+
+        // when
+        await auditLog.LogAsync(new AuditLogWriteRequest { Action = "client.log" }, AbortToken);
+        await transaction.CommitAsync(AbortToken);
+        await writer.WriteAsync(new AuditLogWriteRequest { Action = "client.writer" }, AbortToken);
+
+        // then
+        (await _CountAuditRowsByClientAsync("198.51.100.23"))
+            .Should()
+            .Be(2);
+    }
+
+    private async Task<IHost> _StartHostAsync(
+        MissingTransactionStrategy strategy,
+        IAuditClientInfoProvider? clientInfo = null
+    )
     {
         await _ExecuteAsync(
             $"""DROP SCHEMA IF EXISTS "{_AuditSchema}" CASCADE; DROP SCHEMA IF EXISTS "{_AppSchema}" CASCADE;"""
@@ -214,6 +242,11 @@ public sealed class PostgreSqlAuditLogMissingTransactionTests(PostgreSqlAuditLog
             setup.ConfigureStorage(options => options.Schema = _AuditSchema);
             setup.UsePostgreSql(fixture.ConnectionString);
         });
+
+        if (clientInfo is not null)
+        {
+            builder.Services.AddSingleton(clientInfo);
+        }
 
         builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         var host = builder.Build();
@@ -239,6 +272,14 @@ public sealed class PostgreSqlAuditLogMissingTransactionTests(PostgreSqlAuditLog
         return await _ScalarAsync(
             $"""SELECT COUNT(*) FROM "{_AuditSchema}"."audit_log_entries" WHERE "entity_id" = @value;""",
             id.ToString()
+        );
+    }
+
+    private async Task<long> _CountAuditRowsByClientAsync(string ipAddress)
+    {
+        return await _ScalarAsync(
+            $"""SELECT COUNT(*) FROM "{_AuditSchema}"."audit_log_entries" WHERE "ip_address" = @value AND "user_agent" = 'agent/1.0';""",
+            ipAddress
         );
     }
 
