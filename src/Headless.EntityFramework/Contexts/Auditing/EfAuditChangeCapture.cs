@@ -50,7 +50,7 @@ internal sealed class EfAuditChangeCapture(
         IEntityType,
         EntityAuditPolicy
     >.CreateValueCallback _CreateEntityPolicy = static entityType => new EntityAuditPolicy(
-        _FindEntityAuditPolicy(entityType)
+        HeadlessAuditPolicyResolver.FindConfiguredIsAudited(entityType)
     );
 
     // Which properties of an entity type are captured, and how, depends only on the frozen model and the options, so it
@@ -210,14 +210,9 @@ internal sealed class EfAuditChangeCapture(
 
     private static bool _ShouldAudit(IEntityType policyEntityType, AuditLogOptions opts)
     {
-        var policy = _EntityPolicyCache.GetValue(policyEntityType, _CreateEntityPolicy).IsAudited;
+        var configured = _EntityPolicyCache.GetValue(policyEntityType, _CreateEntityPolicy).IsAudited;
 
-        if (!(policy ?? opts.AuditByDefault))
-        {
-            return false;
-        }
-
-        return !_ShouldExcludeEntity(policyEntityType.ClrType, opts);
+        return (configured ?? opts.AuditByDefault) && !_ShouldExcludeEntity(policyEntityType.ClrType, opts);
     }
 
     private static AuditCapturePlan _GetCapturePlan(IEntityType entityType, AuditLogOptions opts)
@@ -244,23 +239,12 @@ internal sealed class EfAuditChangeCapture(
 
         foreach (var property in entityType.GetProperties())
         {
-            var policy = new PropertyAuditPolicy(
-                property.FindAnnotation(HeadlessModelAnnotations.AuditLog.PropertyIsSensitive) is { Value: true },
-                property.FindAnnotation(HeadlessModelAnnotations.AuditLog.PropertyIsExcluded) is { Value: true },
-                _GetSensitiveDataStrategy(property)
-            );
+            var policy = HeadlessAuditPolicyResolver.ResolveProperty(property, clrType, opts);
 
-            if (
-                (property.PropertyInfo is null && !policy.IsSensitive) // Unconfigured shadow and field-only properties.
-                || opts.DefaultExcludedProperties.Contains(property.Name)
-                || policy.IsExcluded
-                || opts.PropertyFilter?.Invoke(clrType, property.Name) == true
-            )
+            if (policy.IsCaptured)
             {
-                continue;
+                properties.Add(new CapturedProperty(property, policy));
             }
-
-            properties.Add(new CapturedProperty(property, policy));
         }
 
         // An owned type's policy comes from the runtime principal of each entry, so it is not decided here.
@@ -289,7 +273,8 @@ internal sealed class EfAuditChangeCapture(
 
             if (principal is null)
             {
-                return _GetPolicyEntityTypeFromMetadata(entry.Metadata);
+                // The ownership of a runtime entity type points at runtime entity types, so the owner is one too.
+                return (IEntityType)HeadlessAuditPolicyResolver.GetOwnerFromMetadata(entry.Metadata);
             }
 
             entry = principal.ToEntityEntry();
@@ -298,29 +283,6 @@ internal sealed class EfAuditChangeCapture(
 #pragma warning restore EF1001
 
         return entry.Metadata;
-    }
-
-    private static IEntityType _GetPolicyEntityTypeFromMetadata(IEntityType entityType)
-    {
-        while (entityType.IsOwned())
-        {
-            entityType = entityType.FindOwnership()!.PrincipalEntityType;
-        }
-
-        return entityType;
-    }
-
-    private static bool? _FindEntityAuditPolicy(IEntityType entityType)
-    {
-        for (var current = entityType; current is not null; current = current.BaseType)
-        {
-            if (current.FindAnnotation(HeadlessModelAnnotations.AuditLog.EntityIsAudited) is { Value: bool isAudited })
-            {
-                return isAudited;
-            }
-        }
-
-        return null;
     }
 
     private static bool _ShouldExcludeEntity(Type clrType, AuditLogOptions opts)
@@ -378,7 +340,7 @@ internal sealed class EfAuditChangeCapture(
 
             if (policy.IsSensitive)
             {
-                var strategy = policy.SensitiveStrategy ?? opts.SensitiveDataStrategy;
+                var strategy = policy.SensitiveDataStrategy!.Value;
                 _ApplySensitiveValues(
                     changeType.Value,
                     strategy,
@@ -661,14 +623,6 @@ internal sealed class EfAuditChangeCapture(
         return JsonSerializer.Serialize(values.Select(static value => value?.ToString()).ToArray());
     }
 
-    private static SensitiveDataStrategy? _GetSensitiveDataStrategy(IProperty property)
-    {
-        return
-            property.FindAnnotation(HeadlessModelAnnotations.AuditLog.PropertySensitiveStrategy) is { Value: int value }
-            ? (SensitiveDataStrategy)value
-            : null;
-    }
-
     /// <summary>Annotation-derived audit policy for one entity type, memoized on its metadata instance.</summary>
     private sealed record EntityAuditPolicy(bool? IsAudited);
 
@@ -679,14 +633,7 @@ internal sealed class EfAuditChangeCapture(
     /// </summary>
     private sealed record AuditCapturePlan(AuditLogOptions Options, bool? IsAudited, CapturedProperty[] Properties);
 
-    private readonly record struct CapturedProperty(IProperty Metadata, PropertyAuditPolicy Policy);
-
-    /// <summary>Annotation-derived audit policy for one property.</summary>
-    private sealed record PropertyAuditPolicy(
-        bool IsSensitive,
-        bool IsExcluded,
-        SensitiveDataStrategy? SensitiveStrategy
-    );
+    private readonly record struct CapturedProperty(IProperty Metadata, AuditPropertyPolicy Policy);
 
     private sealed record DeferredEntryResolution(
         EntityEntry Entry,
