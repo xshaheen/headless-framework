@@ -21,6 +21,8 @@ public sealed partial class EfAuditChangeCaptureTests
             var order = _Policy<Order>(db, options);
             order.ConfiguredIsAudited.Should().BeTrue();
             order.IsAudited.Should().BeTrue();
+            order.ToString().Should().Be(nameof(Order));
+            _Property(order, nameof(Order.Email)).ToString().Should().Be(nameof(Order.Email));
 
             var product = _Policy<Product>(db, options);
             product.ConfiguredIsAudited.Should().BeNull();
@@ -67,7 +69,8 @@ public sealed partial class EfAuditChangeCaptureTests
             var options = new AuditLogOptions
             {
                 SensitiveDataStrategy = SensitiveDataStrategy.Transform,
-                PropertyFilter = (type, name) => type == typeof(Order) && name == nameof(Order.Amount),
+                PropertyFilter = (type, name) =>
+                    type == typeof(Order) && string.Equals(name, nameof(Order.Amount), StringComparison.Ordinal),
             };
 
             var order = _Policy<Order>(db, options);
@@ -175,6 +178,8 @@ public sealed partial class EfAuditChangeCaptureTests
 
     private static AuditPropertyPolicy _Property(AuditEntityPolicy policy, string name)
     {
-        return policy.Properties.Single(property => property.Property.Name == name);
+        return policy.Properties.Single(property =>
+            string.Equals(property.Property.Name, name, StringComparison.Ordinal)
+        );
     }
 }
