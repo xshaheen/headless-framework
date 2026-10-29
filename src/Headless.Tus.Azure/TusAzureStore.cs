@@ -90,8 +90,8 @@ public sealed partial class TusAzureStore
     /// <param name="options">store configuration</param>
     /// <param name="blobHttpHeadersProvider">
     /// optional provider for customizing blob HTTP headers (content type, cache control, etc.);
-    /// defaults to <c>DefaultTusAzureBlobHttpHeadersProvider</c>, which takes the content type from the
-    /// <c>filetype</c> metadata by <c>TusContentTypes.FromFileType</c>
+    /// defaults to <c>DefaultTusAzureBlobHttpHeadersProvider</c> which sets
+    /// <c>application/octet-stream</c>
     /// </param>
     /// <param name="fileIdProvider">
     /// optional strategy for generating TUS file identifiers; defaults to a GUID-based provider

@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Http;
+
 namespace Headless.Tus;
 
 /// <summary>
@@ -45,16 +47,22 @@ public sealed record TusS3ObjectHeaders
 }
 
 /// <summary>
-/// Default <see cref="ITusS3ObjectHeadersProvider"/>: the content type follows <see cref="TusContentTypes.FromFileType"/>,
-/// so it is the upload's <c>filetype</c> metadata when that is a well-formed media type a browser would not execute,
-/// and <c>application/octet-stream</c> otherwise. No other header is set.
+/// Default <see cref="ITusS3ObjectHeadersProvider"/>: every finished object is <c>application/octet-stream</c>, and no
+/// other header is set.
 /// </summary>
+/// <remarks>
+/// The client chooses its <c>filetype</c> metadata, so storing it as the content type would let any uploader plant a
+/// type a browser renders or runs when the object is opened from the bucket's or CDN's origin. Which types are safe to
+/// serve depends on where the app serves them from, so an app that wants the real type implements its own provider.
+/// </remarks>
 [PublicAPI]
 public sealed class DefaultTusS3ObjectHeadersProvider : ITusS3ObjectHeadersProvider
 {
+    private static readonly TusS3ObjectHeaders _Headers = new() { ContentType = ContentTypes.Applications.OctetStream };
+
     /// <inheritdoc />
     public ValueTask<TusS3ObjectHeaders> GetObjectHeadersAsync(Dictionary<string, string> metadata)
     {
-        return ValueTask.FromResult(new TusS3ObjectHeaders { ContentType = TusContentTypes.FromFileType(metadata) });
+        return ValueTask.FromResult(_Headers);
     }
 }

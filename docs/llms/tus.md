@@ -88,7 +88,7 @@ Any tus 1.0.0 client works against this endpoint (`tus-js-client`, Uppy's `@uppy
 - Checksum verification (SHA1, SHA256, SHA512, MD5) is handled automatically for both `Upload-Checksum` forms. Header flow: blocks are staged but not committed until the checksum passes; mismatched blocks are left uncommitted (Azure auto-removes them after 7 days). Trailer flow (`checksum-trailer`): data commits during the append with a recorded rollback offset (`tus_last_chunk_offset`); `VerifyChecksumAsync` hashes the committed range on demand and rolls the chunk back on mismatch or a faulty/missing trailer.
 - The concatenation extension uses server-side block copy (`StageBlockFromUri`) when available, falling back to streaming when it is not — Azurite returns HTTP 501, and a private container returns HTTP 403 for the bare source URI (no SAS).
 - `TusAzureStore` never creates its container; the constructor makes no network call. `AddTusAzureStore` registers the container as a [provisioned resource](utilities.md#resource-provisioning) of kind `AzureBlob`, named after `ContainerName`: the deployment runs `dotnet <app>.dll resources provision` (or `deploy`), which creates it with `ContainerPublicAccessType`, and a starting host only checks that it exists, holding the `warmup` readiness check until it does. A development or test host calls `services.AddDeployStepsOnStartup()` to create it as the host starts. A manually constructed store has no provisioner, so create its container beforehand. `resources purge` deletes the blobs under `BlobPrefix` and keeps the container; `resources delete` deletes them too, then the container only when nothing else is left in it, since a container can hold blobs outside `BlobPrefix`.
-- `ITusAzureBlobHttpHeadersProvider` lets you inject custom `Content-Type` / cache headers per file. The default takes `Content-Type` from the `filetype` metadata and falls back to `application/octet-stream` for a missing, malformed, or script-capable type ([Default content type](#default-content-type)).
+- `ITusAzureBlobHttpHeadersProvider` lets you inject custom `Content-Type` / cache headers per file. The default sets `application/octet-stream` for every upload ([Default content type](#default-content-type)).
 - `AddTusS3Store` takes `IAmazonS3` from DI and does not configure it. For Cloudflare R2, register the client with path style, `AuthenticationRegion = "auto"`, and `WHEN_REQUIRED` request and response checksums (R2 rejects the SDK's default CRC checksums), and set `Provider = TusS3Provider.R2`. See [Headless.Tus.S3](#headlesstuss3) for one client example per server.
 - `TusS3Store` does not support the Checksum extension, and an incomplete upload's content is not readable (`GetContentAsync` throws until the upload completes). On R2, an upload must finish within 7 days of its first part, when R2 aborts the multipart upload; keep the tus expiration below that.
 - A deferred-length upload on `TusS3Store` can grow to `(10,000 − 4 × PartClaimWindow) × PartSize` bytes, 77,952 MiB (about 76 GiB) at the defaults; a known length up to `(10,000 − 4 × PartClaimWindow) × MaxPartSize`, 623,616 MiB (about 609 GiB). Raise `PartSize` for larger deferred uploads.
@@ -147,7 +147,6 @@ Base package for the TUS stack: protocol-level helpers every deployment needs re
 - `TusCorsDefaults` — the tus 1.0.0 CORS surface as constants: `ExposedHeaders`, `AllowedHeaders`, `AllowedMethods` (includes the PATCH/DELETE that default CORS configs miss)
 - `CorsPolicyBuilder.WithTusHeaders()` — applies all three in one call; origins/credentials stay the caller's decision
 - `AddTusExpiredUploadsCleanup(...)` — registers an internal background hosted service calling `ITusExpirationStore.RemoveExpiredFilesAsync` on an interval (tuned via the public `TusExpiredUploadsCleanupOptions`)
-- `TusContentTypes.FromFileType(metadata)` — the content type rule both stores' default header providers share (see [Default content type](#default-content-type)); `TusContentTypes.FileTypeMetadataKey` is the `filetype` key. A custom or third-party headers provider calls it to keep the same rule.
 
 ### Design constraints
 
@@ -155,13 +154,11 @@ Cleanup targets **incomplete** uploads only — conforming Headless stores never
 
 #### Default content type
 
-The default headers provider of each store (`DefaultTusAzureBlobHttpHeadersProvider`, `DefaultTusS3ObjectHeadersProvider`) sets `Content-Type` through `TusContentTypes.FromFileType`:
+The default headers provider of each store (`DefaultTusAzureBlobHttpHeadersProvider`, `DefaultTusS3ObjectHeadersProvider`) stores every upload as `application/octet-stream` and ignores the `filetype` metadata.
 
-- When the upload's `filetype` metadata parses as one well-formed media type, the stored object takes it, normalized (`" image/png "` becomes `image/png`; parameters such as `charset` are kept).
-- When `filetype` is missing, empty, or malformed (no subtype, stray characters, line breaks, several values), the object gets `application/octet-stream`. The key is matched as sent: tus clients send `filetype` in lower case, and `FileType` does not count.
-- When `filetype` names a type a browser renders as an active document or runs as script, the object gets `application/octet-stream`: `text/html`, `application/xhtml+xml`, `image/svg+xml`, `text/xml`, `application/xml`, `text/javascript`, `application/javascript`, `application/ecmascript`, `text/ecmascript`, the legacy script aliases `application/x-javascript`, `text/x-javascript`, `text/jscript` and `text/xsl`, and every type whose subtype ends in `+xml`. The match ignores case and parameters.
+The client chooses `filetype`. An object served from the bucket's or CDN's origin as `text/html`, `image/svg+xml`, or another type a browser renders or runs would execute the uploader's script in that origin (stored XSS). Which types are safe depends on where the app serves its uploads from, so the framework does not decide it. A browser downloads an `application/octet-stream` object instead of displaying it.
 
-The client chooses `filetype`. An object served from the bucket's or CDN's origin with one of the blocked types runs the uploader's script in that origin (stored XSS), so the default does not trust it. An app that must serve one of these types writes its own headers provider, and serves those objects from an isolated origin or with `Content-Disposition: attachment`.
+An app that wants the real type implements the store's headers provider: allow-list the types it serves instead of storing `filetype` as sent, and serve anything a browser can run from an isolated origin or with `Content-Disposition: attachment`.
 
 ### Install
 
@@ -295,17 +292,29 @@ A single-node deployment can omit the lock provider and rely on tusdotnet's in-p
 With custom HTTP headers per upload:
 
 ```csharp
+using System.Collections.Frozen;
 using Azure.Storage.Blobs.Models;
 using Headless.Tus;
 
 public sealed class MyHeadersProvider : ITusAzureBlobHttpHeadersProvider
 {
+    // The client chooses "filetype", so store it only when it is a type this app serves safely.
+    private static readonly FrozenSet<string> _ServedTypes = FrozenSet.Create(
+        StringComparer.OrdinalIgnoreCase,
+        "image/png",
+        "image/jpeg",
+        "application/pdf"
+    );
+
     public ValueTask<BlobHttpHeaders> GetBlobHttpHeadersAsync(Dictionary<string, string> metadata)
     {
+        var contentType = metadata.TryGetValue("filetype", out var fileType) && _ServedTypes.Contains(fileType)
+            ? fileType
+            : "application/octet-stream";
+
         return ValueTask.FromResult(new BlobHttpHeaders
         {
-            // Keep the shared filetype rule, which refuses script-capable types.
-            ContentType = TusContentTypes.FromFileType(metadata),
+            ContentType = contentType,
             CacheControl = "private, max-age=3600",
         });
     }
@@ -419,7 +428,7 @@ Under sliding expiration, the first PATCH that writes after creation costs one m
 
 **Readable store.** `GetFileAsync` returns `null` for an unknown or gone upload. For an incomplete upload it returns the metadata, but `GetContentAsync` throws `InvalidOperationException`, because S3 does not serve the parts of an incomplete multipart upload. Inside `OnFileCompleteAsync` the upload is complete and `GetContentAsync` streams the finished object.
 
-**Object headers.** The finished object's headers are fixed when its multipart upload starts or its single write happens, and S3 cannot change them later without copying the object. `DefaultTusS3ObjectHeadersProvider` sets `Content-Type` by the [shared rule](#default-content-type) — the `filetype` metadata when it is a well-formed media type that is not script-capable, otherwise `application/octet-stream` — and sets no other header.
+**Object headers.** The finished object's headers are fixed when its multipart upload starts or its single write happens, and S3 cannot change them later without copying the object. `DefaultTusS3ObjectHeadersProvider` stores every object as `application/octet-stream` ([Default content type](#default-content-type)) and sets no other header.
 
 ### Install
 
@@ -542,7 +551,7 @@ public sealed class DownloadHeadersProvider : ITusS3ObjectHeadersProvider
 
     public async ValueTask<TusS3ObjectHeaders> GetObjectHeadersAsync(Dictionary<string, string> metadata)
     {
-        // Keep the default's validated Content-Type from "filetype".
+        // Content-Type stays application/octet-stream; see Default content type.
         var headers = await _default.GetObjectHeadersAsync(metadata);
 
         if (!metadata.TryGetValue("filename", out var fileName) || string.IsNullOrWhiteSpace(fileName))
@@ -561,7 +570,7 @@ public sealed class DownloadHeadersProvider : ITusS3ObjectHeadersProvider
 builder.Services.AddSingleton<ITusS3ObjectHeadersProvider, DownloadHeadersProvider>();
 ```
 
-Metadata values are client input. Validate or encode them before they become stored response headers, as `TusContentTypes.FromFileType` does for `filetype`.
+Metadata values are client input. Validate or encode them before they become stored response headers: allow-list a `filetype` instead of storing it as sent.
 
 ### Configuration
 

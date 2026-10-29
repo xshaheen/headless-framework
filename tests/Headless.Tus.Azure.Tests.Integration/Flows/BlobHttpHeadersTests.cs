@@ -28,7 +28,6 @@ public sealed class BlobHttpHeadersTests : TestBase
     private const string _CacheControl = "public, max-age=60";
 
     private readonly TusAzureStore _store;
-    private readonly TusAzureStore _defaultStore;
     private readonly TusAzureContainerProvisioner _provisioner;
     private readonly BlobContainerClient _containerClient;
 
@@ -55,7 +54,6 @@ public sealed class BlobHttpHeadersTests : TestBase
             blobHttpHeadersProvider: new CustomHeadersProvider(),
             loggerFactory: LoggerFactory
         );
-        _defaultStore = new TusAzureStore(blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
         _provisioner = new TusAzureContainerProvisioner(blobServiceClient, storeOptions);
     }
 
@@ -145,31 +143,6 @@ public sealed class BlobHttpHeadersTests : TestBase
         // then
         verified.Should().BeFalse();
         await _AssertHeadersPreservedAsync(fileId);
-    }
-
-    [Theory]
-    [InlineData("image/png", "image/png")]
-    [InlineData("text/html", "application/octet-stream")]
-    public async Task should_take_the_default_content_type_from_a_safe_filetype(string fileType, string expected)
-    {
-        // given - the default provider; a browser would run an uploaded text/html blob as script in the storage origin
-        var content = Faker.Random.Bytes(1_000);
-        var fileId = await _defaultStore.CreateFileAsync(
-            content.Length,
-            metadata: $"filetype {fileType.ToBase64()}",
-            AbortToken
-        );
-
-        // when
-        await using (var body = new MemoryStream(content))
-        {
-            await _defaultStore.AppendDataAsync(fileId, body, AbortToken);
-        }
-
-        // then
-        var blobClient = _containerClient.GetBlobClient(_BlobPrefix + fileId);
-        var properties = await blobClient.GetPropertiesAsync(cancellationToken: AbortToken);
-        properties.Value.ContentType.Should().Be(expected);
     }
 
     private async Task _AssertHeadersPreservedAsync(string fileId)

@@ -40,11 +40,11 @@ public abstract class ObjectHeadersTestsBase(IS3TestBackend backend) : TestBase
         await base.DisposeAsyncCore();
     }
 
-    public virtual async Task should_take_the_content_type_from_the_filetype_metadata_on_every_write_path()
+    public virtual async Task should_store_octet_stream_on_every_write_path_whatever_the_filetype()
     {
-        // given
+        // given - a filetype the client chose, which the default provider must not trust
         var store = _CreateStore(headersProvider: null);
-        var metadata = $"filetype {"image/png".ToBase64()}";
+        var metadata = $"filetype {"text/html".ToBase64()}";
 
         // when - one upload below one part, one across parts, one of zero bytes
         var small = await _UploadAsync(store, metadata, 1_000);
@@ -53,41 +53,6 @@ public abstract class ObjectHeadersTestsBase(IS3TestBackend backend) : TestBase
 
         // then
         foreach (var fileId in new[] { small, large, empty })
-        {
-            (await _raw.GetFinishedObjectHeadersAsync(fileId, AbortToken)).ContentType.Should().Be("image/png");
-        }
-    }
-
-    public virtual async Task should_fall_back_to_octet_stream_without_a_filetype()
-    {
-        // given
-        var store = _CreateStore(headersProvider: null);
-
-        // when
-        var small = await _UploadAsync(store, $"filename {"a.bin".ToBase64()}", 1_000);
-        var large = await _UploadAsync(store, metadata: null, 6 * _MiB);
-
-        // then
-        (await _raw.GetFinishedObjectHeadersAsync(small, AbortToken))
-            .ContentType.Should()
-            .Be("application/octet-stream");
-        (await _raw.GetFinishedObjectHeadersAsync(large, AbortToken))
-            .ContentType.Should()
-            .Be("application/octet-stream");
-    }
-
-    public virtual async Task should_fall_back_to_octet_stream_for_a_script_capable_filetype()
-    {
-        // given - a browser would run an uploaded text/html object as script in the bucket's origin
-        var store = _CreateStore(headersProvider: null);
-        var metadata = $"filetype {"text/html".ToBase64()}";
-
-        // when
-        var small = await _UploadAsync(store, metadata, 1_000);
-        var large = await _UploadAsync(store, metadata, 6 * _MiB);
-
-        // then
-        foreach (var fileId in new[] { small, large })
         {
             (await _raw.GetFinishedObjectHeadersAsync(fileId, AbortToken))
                 .ContentType.Should()
@@ -153,16 +118,8 @@ public abstract class ObjectHeadersTestsBase(IS3TestBackend backend) : TestBase
 public sealed class MinioObjectHeadersTests(TusS3MinioFixture fixture) : ObjectHeadersTestsBase(fixture)
 {
     [Fact]
-    public override Task should_take_the_content_type_from_the_filetype_metadata_on_every_write_path() =>
-        base.should_take_the_content_type_from_the_filetype_metadata_on_every_write_path();
-
-    [Fact]
-    public override Task should_fall_back_to_octet_stream_without_a_filetype() =>
-        base.should_fall_back_to_octet_stream_without_a_filetype();
-
-    [Fact]
-    public override Task should_fall_back_to_octet_stream_for_a_script_capable_filetype() =>
-        base.should_fall_back_to_octet_stream_for_a_script_capable_filetype();
+    public override Task should_store_octet_stream_on_every_write_path_whatever_the_filetype() =>
+        base.should_store_octet_stream_on_every_write_path_whatever_the_filetype();
 
     [Fact]
     public override Task should_apply_the_headers_a_custom_provider_returns() =>
@@ -173,16 +130,8 @@ public sealed class MinioObjectHeadersTests(TusS3MinioFixture fixture) : ObjectH
 public sealed class LocalStackObjectHeadersTests(TusS3LocalStackFixture fixture) : ObjectHeadersTestsBase(fixture)
 {
     [Fact]
-    public override Task should_take_the_content_type_from_the_filetype_metadata_on_every_write_path() =>
-        base.should_take_the_content_type_from_the_filetype_metadata_on_every_write_path();
-
-    [Fact]
-    public override Task should_fall_back_to_octet_stream_without_a_filetype() =>
-        base.should_fall_back_to_octet_stream_without_a_filetype();
-
-    [Fact]
-    public override Task should_fall_back_to_octet_stream_for_a_script_capable_filetype() =>
-        base.should_fall_back_to_octet_stream_for_a_script_capable_filetype();
+    public override Task should_store_octet_stream_on_every_write_path_whatever_the_filetype() =>
+        base.should_store_octet_stream_on_every_write_path_whatever_the_filetype();
 
     [Fact]
     public override Task should_apply_the_headers_a_custom_provider_returns() =>

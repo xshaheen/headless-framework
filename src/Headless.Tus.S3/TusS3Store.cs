@@ -70,7 +70,7 @@ public sealed partial class TusS3Store
     /// <param name="options">store configuration, validated here</param>
     /// <param name="objectHeadersProvider">
     /// optional provider of the headers each finished object carries; defaults to
-    /// <see cref="DefaultTusS3ObjectHeadersProvider"/>, which takes the content type from the <c>filetype</c> metadata
+    /// <see cref="DefaultTusS3ObjectHeadersProvider"/>, which stores every object as <c>application/octet-stream</c>
     /// </param>
     /// <param name="fileIdProvider">
     /// optional strategy for generating TUS file identifiers; defaults to a GUID-based provider
