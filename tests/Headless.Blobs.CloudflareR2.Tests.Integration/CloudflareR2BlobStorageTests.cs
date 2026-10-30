@@ -70,7 +70,7 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
         var url = await storage.GetPresignedDownloadUrlAsync(
             new BlobLocation("bucket", "file.txt"),
             TimeSpan.FromMinutes(5),
-            AbortToken
+            cancellationToken: AbortToken
         );
 
         url.Host.Should().Be("testacc.r2.cloudflarestorage.com");
@@ -99,12 +99,56 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
             await storage.UploadAsync(location, stream, cancellationToken: AbortToken);
         }
 
-        var url = await presigned.GetPresignedDownloadUrlAsync(location, TimeSpan.FromMinutes(5), AbortToken);
+        var url = await presigned.GetPresignedDownloadUrlAsync(
+            location,
+            TimeSpan.FromMinutes(5),
+            cancellationToken: AbortToken
+        );
 
         using var http = new HttpClient();
         var downloaded = await http.GetByteArrayAsync(url, AbortToken);
 
         downloaded.Should().Equal(content);
+    }
+
+    [Fact]
+    public async Task presigned_download_url_sends_the_signed_file_name_and_content_type()
+    {
+        var (accountId, accessKey, secretKey) = _RequireR2Credentials();
+
+#pragma warning disable CA2000 // Disposed by the storage.
+        var client = _CreateR2Client(accountId, accessKey, secretKey);
+#pragma warning restore CA2000
+        await using var storage = _CreateR2Storage(client);
+        var presigned = (IPresignedUrlBlobStorage)storage;
+        const string fileName = "تقرير مارس.pdf";
+
+        var container = $"presign-{Guid.NewGuid():N}";
+        var location = new BlobLocation(container, "report.bin");
+        var content = "presigned-content"u8.ToArray();
+
+        await _EnsureBucketAsync(client, container, AbortToken);
+
+        await using (var stream = new MemoryStream(content))
+        {
+            await storage.UploadAsync(location, stream, "application/octet-stream", cancellationToken: AbortToken);
+        }
+
+        var url = await presigned.GetPresignedDownloadUrlAsync(
+            location,
+            TimeSpan.FromMinutes(5),
+            new PresignedDownloadOptions { FileName = fileName, ContentType = "application/pdf" },
+            AbortToken
+        );
+
+        using var http = new HttpClient();
+        using var response = await http.GetAsync(url, AbortToken);
+
+        response.EnsureSuccessStatusCode();
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/pdf");
+        response.Content.Headers.ContentDisposition!.DispositionType.Should().Be("attachment");
+        response.Content.Headers.ContentDisposition.FileNameStar.Should().Be(fileName);
+        (await response.Content.ReadAsByteArrayAsync(AbortToken)).Should().Equal(content);
     }
 
     [Fact]
@@ -168,7 +212,11 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
             await storage.UploadAsync(location, stream, cancellationToken: AbortToken);
         }
 
-        var url = await presigned.GetPresignedDownloadUrlAsync(location, TimeSpan.FromSeconds(2), AbortToken);
+        var url = await presigned.GetPresignedDownloadUrlAsync(
+            location,
+            TimeSpan.FromSeconds(2),
+            cancellationToken: AbortToken
+        );
 
         await Task.Delay(TimeSpan.FromSeconds(3), AbortToken);
 
