@@ -49,6 +49,12 @@ public sealed partial class SchemaRunner(
     /// <summary>The history table's name in every schema the runner manages.</summary>
     public const string HistoryTableName = "headless_schema_history";
 
+    /// <summary>
+    /// The <see cref="IResourceProvisioner.Kind" /> of every schema contribution's resource, which a provisioner that
+    /// must run after the framework's DDL (such as EF Core migrations) selects in its <c>DependsOn</c>.
+    /// </summary>
+    public const string ResourceKind = "Schema";
+
     /// <summary>The default bound on how long a runner waits for another runner's lock.</summary>
     public static readonly TimeSpan DefaultLockTimeout = TimeSpan.FromMinutes(2);
 
