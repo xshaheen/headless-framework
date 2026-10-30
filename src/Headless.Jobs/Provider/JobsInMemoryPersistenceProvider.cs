@@ -1824,7 +1824,10 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 {
                     lock (_GetCronDefinitionLock(entry.Id))
                     {
-                        if (!_cronJobs.TryGetValue(entry.Id, out var current))
+                        // Re-decided on the locked row, as the relational provider does after its row lock: a
+                        // concurrent seed may already have restored it, and restoring again would bump the revision
+                        // and reset the schedule position a second time.
+                        if (!_cronJobs.TryGetValue(entry.Id, out var current) || !JobsSeedDrift.Differs(current, entry))
                         {
                             continue;
                         }

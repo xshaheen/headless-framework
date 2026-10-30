@@ -698,6 +698,41 @@ public sealed class InMemorySeedReconcileTests : TestBase
         reseeded.ScheduleRevision.Should().Be(created.ScheduleRevision);
     }
 
+    [Fact]
+    public async Task should_restore_a_drifted_declaration_once_when_seeds_run_concurrently()
+    {
+        var provider = _Create();
+        byte[] request = [.. "{\"region\":\"eu\"}"u8];
+        var declared = _Declaration("daily-eu", request, _CanonicalHash("{\"region\":\"eu\"}"));
+        await provider.MigrateDefinedCronJobsAsync(_Owner, [declared], AbortToken);
+        var edited = (await provider.GetCronJobByIdAsync(declared.Id, AbortToken))!;
+        edited.Expression = _RuntimeExpression;
+        (await provider.UpdateCronJobsAsync([edited], AbortToken)).Should().Be(1);
+        var beforeSeed = (await provider.GetCronJobByIdAsync(declared.Id, AbortToken))!;
+        using var start = new Barrier(16);
+
+        await Task.WhenAll(
+            Enumerable
+                .Range(0, 16)
+                .Select(_ =>
+                    Task.Run(
+                        () =>
+                        {
+                            start.SignalAndWait(AbortToken);
+                            return provider.MigrateDefinedCronJobsAsync(_Owner, [declared], AbortToken);
+                        },
+                        AbortToken
+                    )
+                )
+        );
+
+        var reseeded = (await provider.GetCronJobByIdAsync(declared.Id, AbortToken))!;
+        reseeded.Expression.Should().Be(_DailyCron);
+        reseeded
+            .ScheduleRevision.Should()
+            .Be(beforeSeed.ScheduleRevision + 1, "a seed that takes the lock after the restore sees no drift");
+    }
+
     private static CronSeedDefinition _Declaration(
         string key,
         byte[] request,
