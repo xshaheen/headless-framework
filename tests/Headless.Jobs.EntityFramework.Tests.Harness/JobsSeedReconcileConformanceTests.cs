@@ -267,13 +267,23 @@ public abstract class JobsSeedReconcileConformanceTests<TFixture>(TFixture fixtu
         var persistence = _Persistence(host);
         var declared = _Declaration(_Owner, "daily-us");
         await persistence.MigrateDefinedCronJobsAsync(_Owner, [declared], ct);
+        var executionTime = DateTime.UtcNow;
+        await fixture.SeedCronOccurrenceAsync(
+            Guid.NewGuid(),
+            declared.Id,
+            (int)JobStatus.InProgress,
+            "seed-worker",
+            NodeDeathPolicy.Retry,
+            executionTime.AddMinutes(10),
+            executionTime,
+            ct
+        );
+        // Removing the declaration while its run is in progress retires the row.
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [], ct);
         var retired = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
-        retired.InitIdentifier = "headless.jobs.seed:billing_app:retired:decl:daily-us";
-        retired.IsPaused = true;
-        retired.ReconciledThroughUtc = DateTime.UtcNow;
-        retired.NextDueUtc = DateTime.UtcNow.AddHours(1);
-        (await persistence.UpdateCronJobsAsync([retired], ct)).Should().Be(1);
-        var revisionBefore = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!.ScheduleRevision;
+        retired.InitIdentifier.Should().Be("headless.jobs.seed:billing_app:retired:decl:daily-us");
+        retired.IsPaused.Should().BeTrue();
+        var revisionBefore = retired.ScheduleRevision;
 
         await persistence.MigrateDefinedCronJobsAsync(_Owner, [declared], ct);
 

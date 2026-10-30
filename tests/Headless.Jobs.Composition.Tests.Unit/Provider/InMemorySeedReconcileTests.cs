@@ -118,13 +118,27 @@ public sealed class InMemorySeedReconcileTests : TestBase
         var provider = _Create();
         var declared = _Declaration("daily-us", [], _CanonicalHash(""));
         await provider.MigrateDefinedCronJobsAsync(_Owner, [declared], AbortToken);
+        await provider.InsertCronJobOccurrencesAsync(
+            [
+                new CronJobOccurrenceEntity<FakeCronJob>
+                {
+                    Id = Guid.NewGuid(),
+                    CronJobId = declared.Id,
+                    ExecutionTime = _Now.UtcDateTime,
+                    Status = JobStatus.InProgress,
+                    OwnerId = "node-a@incarnation",
+                    CreatedAt = _Now,
+                    UpdatedAt = _Now,
+                },
+            ],
+            AbortToken
+        );
+        // Removing the declaration while its run is in progress retires the row.
+        await provider.MigrateDefinedCronJobsAsync(_Owner, [], AbortToken);
         var retired = (await provider.GetCronJobByIdAsync(declared.Id, AbortToken))!;
-        retired.InitIdentifier = $"headless.jobs.seed:{_Owner}:retired:decl:daily-us";
-        retired.IsPaused = true;
-        retired.ReconciledThroughUtc = _Now.UtcDateTime;
-        retired.NextDueUtc = _Now.UtcDateTime.AddHours(1);
-        (await provider.UpdateCronJobsAsync([retired], AbortToken)).Should().Be(1);
-        var revisionBefore = (await provider.GetCronJobByIdAsync(declared.Id, AbortToken))!.ScheduleRevision;
+        retired.InitIdentifier.Should().Be($"headless.jobs.seed:{_Owner}:retired:decl:daily-us");
+        retired.IsPaused.Should().BeTrue();
+        var revisionBefore = retired.ScheduleRevision;
 
         await provider.MigrateDefinedCronJobsAsync(_Owner, [declared], AbortToken);
 
