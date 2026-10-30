@@ -29,14 +29,23 @@ internal sealed class SignedUrlBlobStorage(IBlobStorage inner, string? store, Bl
     public ValueTask<Uri> GetPresignedDownloadUrlAsync(
         BlobLocation location,
         TimeSpan expiry,
+        PresignedDownloadOptions? options = null,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
         Argument.IsPositive(expiry);
 
+        // The token is encrypted and authenticated, so the overrides travel inside it and the holder cannot alter them.
         return ValueTask.FromResult(
-            signer.CreateUrl(BlobSignedUrlAccess.Download, store, location, expiry, constraints: null)
+            signer.CreateUrl(
+                BlobSignedUrlAccess.Download,
+                store,
+                location,
+                expiry,
+                contentType: options?.ContentType,
+                fileName: options?.FileName
+            )
         );
     }
 
@@ -72,7 +81,16 @@ internal sealed class SignedUrlBlobStorage(IBlobStorage inner, string? store, Bl
             );
         }
 
-        return ValueTask.FromResult(signer.CreateUrl(BlobSignedUrlAccess.Upload, store, location, expiry, constraints));
+        return ValueTask.FromResult(
+            signer.CreateUrl(
+                BlobSignedUrlAccess.Upload,
+                store,
+                location,
+                expiry,
+                constraints?.ContentType,
+                constraints?.MaxLength
+            )
+        );
     }
 
     #endregion

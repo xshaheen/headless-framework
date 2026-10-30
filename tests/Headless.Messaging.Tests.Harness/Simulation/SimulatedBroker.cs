@@ -297,7 +297,7 @@ public sealed class SimulatedBroker
             Task activity;
             lock (Gate)
             {
-                if (_IsQuiescentLocked())
+                if (IsQuiescentLocked())
                 {
                     return;
                 }
@@ -636,7 +636,7 @@ public sealed class SimulatedBroker
         PulseActivityLocked();
     }
 
-    private bool _IsQuiescentLocked()
+    internal bool IsQuiescentLocked()
     {
         var now = Clock.GetUtcNow();
 

@@ -37,7 +37,8 @@ Code against `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAudit
 - Use `IAuditLogWriter<TContext>` for an explicit event that must persist even though no `SaveChanges` follows, such as a denied request. Use `IAuditLog<TContext>` when the entry must commit or roll back with the caller's entity changes. On EF storage the writer needs `IDbContextFactory<TContext>`.
 - Soft-delete transitions are detected automatically and emit `entity.soft_deleted` / `entity.restored` actions instead of `entity.updated`.
 - `EntityFilter` and `PropertyFilter` predicates are cached after first evaluation per `(Type, propertyName)`. Keep them pure and deterministic.
-- `IpAddress` and `UserAgent` are not auto-populated by EF change capture — set them explicitly through `IAuditLog<TContext>.LogAsync` when relevant.
+- `IpAddress` and `UserAgent` come from the registered `IAuditClientInfoProvider` whenever the writer leaves them `null`: on every EF change-capture entry, and on `IAuditLog<TContext>.LogAsync` and `IAuditLogWriter<TContext>.WriteAsync` when `AuditLogWriteRequest.IpAddress` / `UserAgent` are unset. `AddHeadless()` (`Headless.Api.ServiceDefaults`) registers one that reads the current request (`IRequestContext.WebClient`); a host without it, such as a worker, records `null` unless the request sets the values. Both are truncated to their column limits.
+- Delete audit rows only through `IAuditLogRetention<TContext>.PurgeAsync(olderThan, limit)`, called from a scheduled job until it returns less than `limit`. To make the raw PostgreSQL or SQL Server table append-only, set `AuditLogStorageOptions.AppendOnly = true` before `resources provision`; the purge keeps working with it on. See [Retention and append-only storage](#retention-and-append-only-storage).
 - On SQLite, override the default composite primary key `(CreatedAt, Id)` with a single-column key on `Id` — SQLite cannot autoincrement composite keys.
 - When reading `OldValues` / `NewValues` after a provider round-trip, expect `JsonElement` values; use `GetDecimal()`, `GetBoolean()`, etc. for typed access.
 - Raw providers (PostgreSql, SqlServer) write automatic entries in the saving context's transaction when its connection uses the provider's driver. A `HeadlessDbContext` save that produces audit entries begins its own transaction when the caller has none, so those entries commit or roll back with the entity changes. `IAuditLog<TContext>.LogAsync` joins the transaction of the scope's `TContext` and has no transaction of its own to fall back on. See [Transaction enrollment on raw storage](#transaction-enrollment-on-raw-storage).
@@ -58,7 +59,7 @@ The pipeline produces two kinds of rows:
 
 Each entry carries:
 
-- **Actor** — `UserId`, `AccountId`, `TenantId` (resolved from `ICurrentUser` / `ICurrentTenant`), `CorrelationId` (from `ICorrelationIdProvider`; the default is the W3C trace ID), and optionally `IpAddress` / `UserAgent` (must be set explicitly — the pipeline does not auto-populate these).
+- **Actor** — `UserId`, `AccountId`, `TenantId` (resolved from `ICurrentUser` / `ICurrentTenant`), `CorrelationId` (from `ICorrelationIdProvider`; the default is the W3C trace ID), and `IpAddress` / `UserAgent` (from `AuditLogWriteRequest` when set, else from the registered `IAuditClientInfoProvider`, which `AddHeadless()` wires to the current request; `null` outside a request).
 - **Entity identity** — `EntityType` (full CLR type name) and `EntityId` (plain string for single-column keys; JSON array for composite keys).
 - **Change data** — `OldValues` and `NewValues` as `Dictionary<string, object?>` (serialized to JSON), and `ChangedFields` as `List<string>`. After a provider round-trip, non-string values deserialize as `JsonElement` — use `GetDecimal()`, `GetBoolean()`, etc.
 - **Outcome** — `Success` flag and optional `ErrorCode`.
@@ -186,9 +187,54 @@ Query denials with `new AuditLogQuery { TenantId = tenantId, Action = "authoriza
 
 All string fields are silently truncated to column limits before persistence (`AuditLogFieldLimits` is the single source of truth shared by all providers). Key limits: `Action` 256, `EntityType` 512, `EntityId` 256, `UserId`/`AccountId`/`TenantId`/`CorrelationId` 128, `UserAgent` 512, `IpAddress` 45.
 
+### Retention and append-only storage
+
+`IAuditLogRetention<TContext>.PurgeAsync(olderThan, limit, ct)` deletes up to `limit` entries whose `CreatedAt` is more than `olderThan` before the registered `TimeProvider`'s now, oldest first in `(CreatedAt, Id)` order, in one transaction, and returns how many it deleted. Call it from a scheduled job and repeat while it returns `limit`; a non-positive `olderThan` or `limit` throws `ArgumentOutOfRangeException`. Every provider registers it.
+
+`AuditLogStorageOptions.AppendOnly = true` (default `false`) makes the raw providers' table append-only. `resources provision` then applies a third schema step (`AuditLog/3`) that installs a trigger:
+
+| Statement | PostgreSQL | SQL Server |
+| --- | --- | --- |
+| `UPDATE` | refused (`42501`, `insufficient_privilege`) | refused (`THROW 50000`) |
+| `DELETE` | refused, except the purge | refused, except the purge |
+| `TRUNCATE` | refused (statement trigger) | not covered: SQL Server fires no trigger on `TRUNCATE`; deny `ALTER` on the table to the application login |
+
+The purge passes because it first turns on the session setting `headless.audit_log_purge`: a transaction-local `set_config` on PostgreSQL, a `SESSION_CONTEXT` key on SQL Server that the purge clears before it commits. The trigger guards against application code and accidental statements, not a database principal who can run arbitrary SQL, because such a principal can set the same setting. Turning `AppendOnly` on later adds the trigger at the next `resources provision`; turning it off leaves the trigger until you drop it (`{table}_append_only` and `{table}_append_only_truncate` with function `{schema}.{table}_append_only` on PostgreSQL, `TR_{Table}_AppendOnly` on SQL Server).
+
+Entity Framework storage rejects `AppendOnly` at startup, because the application's migrations own its table. To get the same guard there, add the trigger in a migration with `migrationBuilder.Sql(...)`; `IAuditLogRetention<TContext>` sets the same session setting on PostgreSQL and SQL Server, so the EF purge still passes it. The raw providers install the equivalent of this, for the default `headless` schema and table names:
+
+```sql
+-- PostgreSQL
+CREATE OR REPLACE FUNCTION "headless"."audit_log_entries_append_only"() RETURNS trigger LANGUAGE plpgsql AS $headless$
+BEGIN
+    IF TG_OP = 'DELETE' AND pg_catalog.current_setting('headless.audit_log_purge', true) = 'on' THEN
+        RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'The audit log table %.% is append-only: % is not allowed.', TG_TABLE_SCHEMA, TG_TABLE_NAME, TG_OP
+        USING ERRCODE = 'insufficient_privilege';
+END;
+$headless$;
+CREATE TRIGGER "audit_log_entries_append_only" BEFORE UPDATE OR DELETE ON "headless"."audit_log_entries"
+    FOR EACH ROW EXECUTE FUNCTION "headless"."audit_log_entries_append_only"();
+CREATE TRIGGER "audit_log_entries_append_only_truncate" BEFORE TRUNCATE ON "headless"."audit_log_entries"
+    FOR EACH STATEMENT EXECUTE FUNCTION "headless"."audit_log_entries_append_only"();
+
+-- SQL Server (its own batch)
+CREATE OR ALTER TRIGGER [headless].[TR_AuditLogEntries_AppendOnly] ON [headless].[AuditLogEntries] AFTER UPDATE, DELETE AS
+BEGIN
+    SET NOCOUNT ON;
+    IF NOT EXISTS (SELECT 1 FROM inserted)
+        AND CONVERT(int, SESSION_CONTEXT(N'headless.audit_log_purge')) = 1
+        RETURN;
+    THROW 50000, N'The audit log table headless.AuditLogEntries is append-only: only the retention purge may delete rows.', 1;
+END
+```
+
+Partitioning the table by `CreatedAt` is not part of the framework.
+
 ### Schema setup
 
-Raw providers (`PostgreSql`, `SqlServer`) contribute the audit table (step `AuditLog/1`) and its indexes (step `AuditLog/2`) to the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). The deployment creates them with `resources provision`; a host start only verifies them and fails fast when a step is missing (see [Resource provisioning](utilities.md#resource-provisioning)). A configured `TableName` is part of the history id (`AuditLog:<table>`). `JsonColumnType` and `CreatedAtColumnType` shape the DDL, so changing either after the table exists fails startup with a checksum mismatch. When a migration tool owns the schema, run `resources provision` anyway: every step is idempotent, so the runner only records history for objects that already exist.
+Raw providers (`PostgreSql`, `SqlServer`) contribute the audit table (step `AuditLog/1`), its indexes (step `AuditLog/2`), and, with `AppendOnly` on, the append-only trigger (step `AuditLog/3`) to the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). The deployment creates them with `resources provision`; a host start only verifies them and fails fast when a step is missing (see [Resource provisioning](utilities.md#resource-provisioning)). A configured `TableName` is part of the history id (`AuditLog:<table>`). `JsonColumnType` and `CreatedAtColumnType` shape the DDL, so changing either after the table exists fails startup with a checksum mismatch. When a migration tool owns the schema, run `resources provision` anyway: every step is idempotent, so the runner only records history for objects that already exist.
 
 ## Choosing a Provider
 
@@ -216,15 +262,17 @@ Defines the property-level audit log contracts for tracking entity mutations and
 - `AuditLogOptions` — master enable/disable, `AuditByDefault` mode, per-entity/property filters, `CaptureErrorStrategy`, `MissingTransactionStrategy`, configurable default exclusions, sensitive-value transformer.
 - `MissingTransactionStrategy` — `Continue` (default; write on a separate connection and warn) or `Throw` (fail before writing) when a raw store cannot join the caller's transaction; see [Transaction enrollment on raw storage](#transaction-enrollment-on-raw-storage).
 - `IAuditLog<TContext>` — explicit logging of non-mutation events; `TContext` binds the logger to a specific persistence context for multi-context applications.
-- `AuditLogWriteRequest` — explicit event data with a required `Action` initializer and optional entity, payload, success, and error metadata.
+- `AuditLogWriteRequest` — explicit event data with a required `Action` initializer and optional entity, payload, success, error, `IpAddress`, and `UserAgent` metadata. A `null` `IpAddress` or `UserAgent` records the `IAuditClientInfoProvider` value.
+- `IAuditClientInfoProvider` — `IpAddress` and `UserAgent` of the current request, read when a writer or change capture leaves them unset. `Headless.Api.ServiceDefaults` registers the request-backed one; register your own to supply client info in another host.
 - `IAuditLogWriter<TContext>` — explicit logging that commits each entry immediately in its own transaction; see [Standalone writes](#standalone-writes).
 - `IReadAuditLog<TContext>` — keyset-paged query abstraction returning `ContinuationPage<AuditLogEntryData>`; see [Paging audit history](#paging-audit-history).
+- `IAuditLogRetention<TContext>` — `PurgeAsync(olderThan, limit)`, the sanctioned retention delete, which also passes the append-only trigger; see [Retention and append-only storage](#retention-and-append-only-storage).
 - `AuditLogQuery` — implements `IContinuationPageRequest`: filters (`Action` or `ActionPrefix`, `EntityType`, `EntityId`, `UserId`, `AccountId`, `TenantId`, `CorrelationId`, `From`, `To`), `Direction`, `Size` (default 100), and `ContinuationToken`.
 - `AuditLogSortDirection` — `NewestFirst` (default) or `OldestFirst`.
 - `AuditLogEntryData` — immutable record capturing all fields; `OldValues`/`NewValues` are `Dictionary<string, object?>`.
 - `IAuditLogStore` — storage abstraction called by the change-tracking pipeline; `Save`/`SaveAsync` take the saving `DbContext` and return `IAuditLogStoreEntry` handles. `AddsToSavingContext` (default `false`) must be `true` only for a store whose `Save` merely adds rows to the context without writing; only then may the pipeline call it before the entity save.
 - `IAuditLogStoreEntry` — provider handle; orchestrator calls `DiscardPendingChanges()` on failure and `ReleaseAfterCommit()` after success. Both must be idempotent.
-- `IAuditChangeCapture` — scans ChangeTracker entries and produces `AuditLogEntryData` records.
+- `IAuditChangeCapture` — scans ChangeTracker entries and produces `AuditLogEntryData` records, stamped from the `AuditCaptureContext` (actor, tenant, correlation, client IP and user agent, timestamp) the save pipeline passes.
 - `IAuditEntityIdResolver` — patches deferred entity IDs and temporary property values (store-generated keys, FKs to just-added principals) after `SaveChanges` assigns real keys. `RequiresDeferredResolution(entry)` (default `true`) lets a capture mark an entry complete so it can be saved with the entity change.
 - `IAmbientDbTransactionAccessor` — allows raw ADO.NET stores to enroll in the consumer's active `DbConnection`/`DbTransaction` without taking an EF dependency.
 
@@ -296,7 +344,7 @@ DI setup package for `Headless.AuditLog`: options validation, setup builders, an
 - `HeadlessAuditLogSetupBuilder` — fluent builder passed to `AddHeadlessAuditLog(setup => ...)`; exposes `ConfigureOptions`, `ConfigureStorage`, and `RegisterExtension`.
 - `HeadlessAuditLogBuilder` — returned by `AddHeadlessAuditLog(setup => ...)`; provides access to `IServiceCollection` for chaining.
 - `IAuditLogStorageOptionsExtension` — setup-time hook implemented by storage provider packages.
-- `AuditLogStorageOptions` — shared storage options: `Schema`, `TableName`, `JsonColumnType`, `CreatedAtColumnType`.
+- `AuditLogStorageOptions` — shared storage options: `Schema`, `TableName`, `JsonColumnType`, `CreatedAtColumnType`, `AppendOnly`.
 - `RelationalAuditLogOptions` — base of `PostgreSqlAuditLogOptions` and `SqlServerAuditLogOptions` (`ConnectionString`, `CommandTimeout`). Core also holds the one relational audit log, store, writer, and reader both raw providers run, written over the `ISqlDialect` statement kit; each provider package supplies only its options, DDL, and registration.
 - `AuditLogJsonColumnType` — provider-validated JSON column type enum: `Jsonb`, `Json`, `NvarcharMax`.
 - `AuditLogOptionsValidator` — validates transform-sensitive-data configuration at startup.
@@ -339,6 +387,7 @@ Storage options (`AuditLogStorageOptions`):
 | `TableName` | `null` (database convention) | Table name. `null` uses `audit_log_entries` on PostgreSQL and `AuditLogEntries` elsewhere; a configured name is used verbatim, at most 40 characters. The primary key and index names derive from it in the database's casing (`pk_{TableName}` and `ix_{TableName}_tenant_account_time` on PostgreSQL, `PK_{TableName}` and `IX_{TableName}_TenantAccountTime` on SQL Server, and siblings), so two audit tables can share one schema. The longest derived PostgreSQL name must fit the 63-byte identifier limit, so startup validation rejects a longer name on every provider. |
 | `JsonColumnType` | `null` (provider default) | Override JSON column type: `Jsonb`, `Json`, or `NvarcharMax`. |
 | `CreatedAtColumnType` | `null` (provider default) | Override the timestamp column DDL type string. |
+| `AppendOnly` | `false` | PostgreSQL and SQL Server only: add a trigger that refuses `UPDATE` and `DELETE` (and `TRUNCATE` on PostgreSQL) except the retention purge. Entity Framework storage rejects it. See [Retention and append-only storage](#retention-and-append-only-storage). |
 
 ### Runtime behavior
 
@@ -358,6 +407,7 @@ EF Core storage provider for automatic audit entries and explicit event logging.
 - `EfAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging; resolves `ICurrentUser`, `ICurrentTenant`, `ICorrelationIdProvider`, and `TimeProvider` from DI.
 - `EfAuditLogWriter<TContext>` — implements `IAuditLogWriter<TContext>`; saves each entry through a new context from `IDbContextFactory<TContext>`.
 - `EfReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` using `IDbContextFactory<TContext>` (no-tracking queries).
+- `EfAuditLogRetention<TContext>` — implements `IAuditLogRetention<TContext>` with `ExecuteDeleteAsync` over the oldest expired rows, in a transaction on a context from `IDbContextFactory<TContext>`. On PostgreSQL and SQL Server it sets the `headless.audit_log_purge` session setting first, so it passes an append-only trigger a migration added. `AuditLogStorageOptions.AppendOnly` is rejected at startup.
 - `AuditLogEntry` — EF entity excluded from automatic capture through EF model metadata, preventing recursion when `AuditByDefault` is enabled.
 - `HeadlessAuditLogModelBuilderExtensions.ConfigureHeadlessAuditLog(DbContext)` — registers and configures the `AuditLogEntry` entity type, resolving `AuditLogStorageOptions` from the context's services and the naming style from `Database.ProviderName`; idempotent. The `(AuditLogStorageOptions, StorageNamingStyle)` overload takes both explicitly; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` so the mapping matches the raw providers.
 - Object names follow the database: on PostgreSQL the table is `audit_log_entries` with snake_case columns (`created_at`, `tenant_id`, …), key `pk_audit_log_entries`, and indexes `ix_audit_log_entries_tenant_time` and siblings; elsewhere the table is `AuditLogEntries` with PascalCase columns, key `PK_AuditLogEntries`, and indexes `IX_AuditLogEntries_TenantTime` and siblings.
@@ -510,7 +560,8 @@ Raw PostgreSQL storage provider for audit rows. No Entity Framework dependency �
 - `IAuditLog<TContext>` (scoped) — writes in the transaction of the scope's `TContext`; otherwise follows `MissingTransactionStrategy`.
 - `IAuditLogWriter<TContext>` (singleton) — always commits on the provider's own connection.
 - `IReadAuditLog<TContext>` — parameterized keyset queries over `(created_at, id)`.
-- The audit table and indexes are two schema steps (`AuditLog/1`, `AuditLog/2`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
+- The audit table and indexes are two schema steps (`AuditLog/1`, `AuditLog/2`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts); `AppendOnly` adds `AuditLog/3`, a `BEFORE UPDATE OR DELETE` row trigger and a `BEFORE TRUNCATE` statement trigger over one PL/pgSQL function.
+- `IAuditLogRetention<TContext>` (singleton) — deletes expired rows in `(created_at, id)` order on its own connection, after `set_config('headless.audit_log_purge', 'on', true)`.
 - Batched INSERT: up to 100 rows per command, the size SQL Server's parameter limit allows, so both providers share one writer (statement text cached per row count).
 - `jsonb` by default for `OldValues`, `NewValues`, and `ChangedFields`; override via `AuditLogStorageOptions.JsonColumnType` (`Jsonb` or `Json` accepted; `NvarcharMax` rejected at options validation time).
 - `PostgreSqlAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s, applied to every write and read), inherited from `RelationalAuditLogOptions`.
@@ -600,7 +651,8 @@ Raw SQL Server storage provider for audit rows. No Entity Framework dependency �
 - `IAuditLog<TContext>` (scoped) — writes in the transaction of the scope's `TContext`; otherwise follows `MissingTransactionStrategy`.
 - `IAuditLogWriter<TContext>` (singleton) — always commits on the provider's own connection.
 - `IReadAuditLog<TContext>` — parameterized keyset queries over `(CreatedAt, Id)`, limited with `OFFSET 0 ROWS FETCH NEXT @Limit ROWS ONLY`. The writer and reader bind timestamps typed like the `CreatedAt` column (`datetimeoffset` by default, `datetime2` when `CreatedAtColumnType` says so), so stored values, range bounds, and continuation positions keep full precision and the column is never converted in a comparison.
-- The audit table and indexes are two schema steps (`AuditLog/1`, `AuditLog/2`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
+- The audit table and indexes are two schema steps (`AuditLog/1`, `AuditLog/2`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts); `AppendOnly` adds `AuditLog/3`, an `AFTER UPDATE, DELETE` trigger that throws unless the purge's `SESSION_CONTEXT` key is set. `TRUNCATE` fires no trigger on SQL Server.
+- `IAuditLogRetention<TContext>` (singleton) — deletes expired rows in `(CreatedAt, Id)` order on its own connection, between setting and clearing the `headless.audit_log_purge` `SESSION_CONTEXT` key.
 - Batched INSERT: up to 100 rows per command, within SQL Server's 2,100-parameter limit.
 - `nvarchar(max)` by default for JSON columns; `NvarcharMax` is the only accepted `AuditLogJsonColumnType` (PostgreSQL-specific types are rejected at options validation time).
 - `SqlServerAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s, applied to every write and read), inherited from `RelationalAuditLogOptions`.

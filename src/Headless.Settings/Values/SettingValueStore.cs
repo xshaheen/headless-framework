@@ -2,6 +2,8 @@
 
 using Headless.Caching;
 using Headless.Checks;
+using Headless.UnitOfWork;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Settings;
@@ -12,7 +14,8 @@ public sealed class SettingValueStore(
     ISettingDefinitionManager definitionManager,
     IGuidGenerator guidGenerator,
     ICache<SettingValueCacheItem> cache,
-    IOptions<SettingManagementOptions> options
+    IOptions<SettingManagementOptions> options,
+    ILogger<SettingValueStore> logger
 ) : ISettingValueStore
 {
     private readonly TimeSpan _cacheExpiration = options.Value.ValueCacheExpiration;
@@ -300,6 +303,105 @@ public sealed class SettingValueStore(
         }
     }
 
+    /// <inheritdoc/>
+    public async Task<string?> GetOrDefaultEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        string name,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(unitOfWork);
+        _EnsureKey(providerName, providerKey, name);
+
+        // Not through the cache: the unit may already have written this value, and the cache only learns of it after
+        // the commit.
+        var records = await valueRepository
+            .GetListEnlistedAsync(unitOfWork, [name], providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        return records is [var record, ..] ? record.Value : null;
+    }
+
+    /// <inheritdoc/>
+    public async Task SetAllEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(unitOfWork);
+        Argument.IsNotNull(values);
+        Argument.IsNotNull(providerName);
+        _EnsureKey(providerName, providerKey);
+        _EnsureNames(values.Keys);
+
+        if (values.Count == 0)
+        {
+            return;
+        }
+
+        // One attempt, unlike SetAllAsync: a failed statement aborts the unit's transaction, so only the unit's owner
+        // can decide whether to run the whole unit again.
+        var existingRecords = await valueRepository
+            .GetListEnlistedAsync(
+                unitOfWork,
+                values.Keys.ToHashSet(StringComparer.Ordinal),
+                providerName,
+                providerKey,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var changes = _PlanChanges(values, existingRecords, providerName, providerKey);
+
+        await valueRepository
+            .SaveEnlistedAsync(unitOfWork, changes.Inserted, changes.Updated, changes.Deleted, cancellationToken)
+            .ConfigureAwait(false);
+
+        SettingValueCacheInvalidation.RemoveAfterCommit(
+            unitOfWork,
+            cache,
+            [.. changes.CacheItems.Keys, .. changes.RemovedCacheKeys],
+            logger
+        );
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<string>> DeleteEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(unitOfWork);
+        _EnsureKey(providerName, providerKey);
+
+        var records = await valueRepository
+            .GetListEnlistedAsync(unitOfWork, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (records.Count == 0)
+        {
+            return [];
+        }
+
+        await valueRepository.SaveEnlistedAsync(unitOfWork, [], [], records, cancellationToken).ConfigureAwait(false);
+
+        SettingValueCacheInvalidation.RemoveAfterCommit(
+            unitOfWork,
+            cache,
+            [.. records.Select(x => SettingValueCacheItem.CalculateCacheKey(x.Name, providerName, providerKey))],
+            logger
+        );
+
+        return records.ConvertAll(x => x.Name);
+    }
+
     #region Helpers
 
     /// <summary>Returns setting values from the cache, fetching and caching any misses from the repository.</summary>
@@ -491,6 +593,10 @@ public sealed class SettingValueStore(
 /// it compares keys, so <c>"acme"</c> and <c>"acme "</c> would address one row there and two on PostgreSQL), a NUL
 /// character (PostgreSQL cannot store it), or an unpaired UTF-16 surrogate (SqlClient rewrites it to U+FFFD, merging
 /// distinct keys). See <c>Argument.IsPortableKey</c>.
+/// <para>
+/// New members arrive as default interface members. The enlisted members (<c>*EnlistedAsync</c>) default to throwing
+/// <see cref="NotSupportedException" />.
+/// </para>
 /// </remarks>
 public interface ISettingValueStore
 {
@@ -581,4 +687,74 @@ public interface ISettingValueStore
         string? providerKey,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Reads the stored value inside <paramref name="unitOfWork" />'s transaction, bypassing the cache, so a value the
+    /// unit already wrote is seen.
+    /// </summary>
+    /// <param name="unitOfWork">The unit whose transaction runs the read.</param>
+    /// <param name="name">The setting name.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">The provider-scoped key, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <returns>The stored value, or <see langword="null"/> when the scope stores none.</returns>
+    /// <exception cref="NotSupportedException">This store or its repository cannot run inside a unit of work.</exception>
+    Task<string?> GetOrDefaultEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        string name,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        throw _NotEnlistable();
+    }
+
+    /// <summary>
+    /// Writes several values for one scope inside <paramref name="unitOfWork" />'s transaction: the same writes as
+    /// <see cref="SetAllAsync"/> in one attempt, with the cache cleared after the unit commits.
+    /// </summary>
+    /// <param name="unitOfWork">The unit whose transaction holds the writes.</param>
+    /// <param name="values">The values; a <see langword="null"/> value deletes the stored value.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">The provider-scoped key, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <exception cref="InvalidOperationException">The unit cannot host the writes.</exception>
+    /// <exception cref="NotSupportedException">This store or its repository cannot run inside a unit of work.</exception>
+    Task SetAllEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        throw _NotEnlistable();
+    }
+
+    /// <summary>
+    /// Deletes every value of one scope inside <paramref name="unitOfWork" />'s transaction, and clears their cache
+    /// entries after the unit commits.
+    /// </summary>
+    /// <param name="unitOfWork">The unit whose transaction holds the delete.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">The provider-scoped key, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <returns>The names whose values were deleted; empty when the scope stored none.</returns>
+    /// <exception cref="InvalidOperationException">The unit cannot host the delete.</exception>
+    /// <exception cref="NotSupportedException">This store or its repository cannot run inside a unit of work.</exception>
+    Task<IReadOnlyList<string>> DeleteEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        throw _NotEnlistable();
+    }
+
+    private static NotSupportedException _NotEnlistable()
+    {
+        return new NotSupportedException("The configured setting value store cannot run inside a unit of work.");
+    }
 }

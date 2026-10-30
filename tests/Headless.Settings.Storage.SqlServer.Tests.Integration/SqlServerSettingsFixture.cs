@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Hosting;
 using Headless.Settings;
 using Headless.Testing.Testcontainers;
+using Headless.UnitOfWork;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
@@ -112,5 +114,27 @@ public sealed class SqlServerSettingsFixture
         }
 
         return pairs;
+    }
+
+    public string OtherDatabaseConnectionString =>
+        new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = "tempdb" }.ConnectionString;
+
+    public DbConnection CreateConnection(string connectionString)
+    {
+        return new SqlConnection(connectionString);
+    }
+
+    public ValueTask<IUnitOfWork> BeginUnitOfWorkAsync(
+        IUnitOfWorkFactory factory,
+        DbConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        return factory.BeginAsync((SqlConnection)connection, cancellationToken);
+    }
+
+    public IUnitOfWork EnlistUnitOfWork(IUnitOfWorkFactory factory, DbConnection connection, DbTransaction transaction)
+    {
+        return factory.Enlist((SqlConnection)connection, (SqlTransaction)transaction);
     }
 }

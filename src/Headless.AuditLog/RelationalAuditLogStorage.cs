@@ -65,6 +65,10 @@ internal static class RelationalAuditLogStorage
         services.TryAddScoped(typeof(IAuditLog<>), typeof(RelationalAuditLog<>));
         services.TryAddSingleton(typeof(IAuditLogWriter<>), typeof(RelationalStandaloneAuditLog<>));
         services.TryAddSingleton(typeof(IReadAuditLog<>), typeof(RelationalReadAuditLog<>));
+        services.TryAddSingleton(sp =>
+            provider.CreatePurgeStatements(sp.GetRequiredService<RelationalAuditLogTable>())
+        );
+        services.TryAddSingleton(typeof(IAuditLogRetention<>), typeof(RelationalAuditLogRetention<>));
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();
         services.TryAddSingleton<ICurrentUser, NullCurrentUser>();
@@ -77,6 +81,7 @@ internal static class RelationalAuditLogStorage
 /// <param name="DefaultJsonColumnType">The JSON column type used when none is configured.</param>
 /// <param name="JsonColumnTypes">The JSON column types the provider accepts.</param>
 /// <param name="JsonColumnTypeMessage">The validation message for any other JSON column type.</param>
+/// <param name="CreatePurgeStatements">Builds the retention purge for the table.</param>
 /// <param name="CreateCreatedAtBinder">
 /// Builds the <c>CreatedAt</c> binder for the configured column type, or <see langword="null"/> to bind every instant as
 /// the dialect's timestamp.
@@ -86,5 +91,6 @@ internal sealed record RelationalAuditLogProvider(
     AuditLogJsonColumnType DefaultJsonColumnType,
     IReadOnlyCollection<AuditLogJsonColumnType> JsonColumnTypes,
     string JsonColumnTypeMessage,
+    Func<RelationalAuditLogTable, AuditLogPurgeStatements> CreatePurgeStatements,
     Func<AuditLogStorageOptions, AuditLogCreatedAtBinder>? CreateCreatedAtBinder = null
 );

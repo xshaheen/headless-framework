@@ -3,6 +3,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using Headless.Blobs;
+using Headless.Blobs.Internal;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
@@ -23,7 +24,7 @@ public sealed class SignedUrlEndpointTests : TestBase
         await using var app = await SignedUrlTestApp.StartAsync(AbortToken);
         await _UploadAsync(app.DefaultStorage, _Report, "report-bytes");
         var url = await _Presigned(app.DefaultStorage)
-            .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), AbortToken);
+            .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), cancellationToken: AbortToken);
         using var client = app.CreateClient();
 
         // when
@@ -40,6 +41,90 @@ public sealed class SignedUrlEndpointTests : TestBase
     }
 
     [Fact]
+    public async Task should_send_the_signed_file_name_and_content_type_when_download_url_carries_options()
+    {
+        // given
+        const string fileName = "تقرير مارس.txt";
+        await using var app = await SignedUrlTestApp.StartAsync(AbortToken);
+        await _UploadAsync(app.DefaultStorage, _Report, "report-bytes");
+        var url = await _Presigned(app.DefaultStorage)
+            .GetPresignedDownloadUrlAsync(
+                _Report,
+                TimeSpan.FromMinutes(15),
+                new PresignedDownloadOptions { FileName = fileName, ContentType = "text/plain" },
+                AbortToken
+            );
+        using var client = app.CreateClient();
+
+        // when
+        using var response = await client.GetAsync(url, AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("text/plain");
+        response
+            .Content.Headers.GetValues("Content-Disposition")
+            .Should()
+            .Equal(BlobStorageHelpers.BuildAttachmentContentDisposition(fileName));
+        response.Content.Headers.ContentDisposition!.DispositionType.Should().Be("attachment");
+        response.Content.Headers.ContentDisposition.FileNameStar.Should().Be(fileName);
+        response.Headers.GetValues("X-Content-Type-Options").Should().Equal("nosniff");
+        (await response.Content.ReadAsStringAsync(AbortToken)).Should().Be("report-bytes");
+    }
+
+    [Fact]
+    public async Task should_ignore_header_overrides_added_to_the_query_when_download_url_is_valid()
+    {
+        // given
+        await using var app = await SignedUrlTestApp.StartAsync(AbortToken);
+        await _UploadAsync(app.DefaultStorage, _Report, "report-bytes");
+        var url = await _Presigned(app.DefaultStorage)
+            .GetPresignedDownloadUrlAsync(
+                _Report,
+                TimeSpan.FromMinutes(15),
+                new PresignedDownloadOptions { FileName = "signed.pdf" },
+                AbortToken
+            );
+        using var client = app.CreateClient();
+
+        // when
+        using var response = await client.GetAsync(
+            new Uri(url + "?response-content-disposition=inline&response-content-type=text%2Fhtml&rscd=inline"),
+            AbortToken
+        );
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/pdf");
+        response.Content.Headers.ContentDisposition!.DispositionType.Should().Be("attachment");
+        response.Content.Headers.ContentDisposition.FileNameStar.Should().Be("signed.pdf");
+    }
+
+    [Fact]
+    public async Task should_return_not_found_when_token_carrying_options_is_tampered()
+    {
+        // given
+        await using var app = await SignedUrlTestApp.StartAsync(AbortToken);
+        await _UploadAsync(app.DefaultStorage, _Report, "report-bytes");
+        var url = await _Presigned(app.DefaultStorage)
+            .GetPresignedDownloadUrlAsync(
+                _Report,
+                TimeSpan.FromMinutes(15),
+                new PresignedDownloadOptions { FileName = "signed.pdf", ContentType = "application/pdf" },
+                AbortToken
+            );
+        var tampered = url.Segments[^1].ToCharArray();
+        tampered[^2] = tampered[^2] == 'A' ? 'B' : 'A';
+        using var client = app.CreateClient();
+
+        // when
+        using var response = await client.GetAsync(new Uri(url, new string(tampered)), AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task should_start_and_serve_urls_when_key_ring_is_persisted_to_the_wrapped_store()
     {
         // given: the store's signer and the key ring each depend on the other, which once deadlocked the container
@@ -51,7 +136,7 @@ public sealed class SignedUrlEndpointTests : TestBase
             .WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
         await _UploadAsync(app.DefaultStorage, _Report, "report-bytes");
         var url = await _Presigned(app.DefaultStorage)
-            .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), AbortToken);
+            .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), cancellationToken: AbortToken);
         using var client = app.CreateClient();
 
         // when
@@ -70,7 +155,7 @@ public sealed class SignedUrlEndpointTests : TestBase
         await using var app = await SignedUrlTestApp.StartAsync(AbortToken);
         await _UploadAsync(app.DefaultStorage, _Report, "report-bytes");
         var url = await _Presigned(app.DefaultStorage)
-            .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), AbortToken);
+            .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), cancellationToken: AbortToken);
         using var client = app.CreateClient();
 
         // when
@@ -88,7 +173,7 @@ public sealed class SignedUrlEndpointTests : TestBase
         await using var app = await SignedUrlTestApp.StartAsync(AbortToken);
         await _UploadAsync(app.DefaultStorage, _Report, "report-bytes");
         var url = await _Presigned(app.DefaultStorage)
-            .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), AbortToken);
+            .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), cancellationToken: AbortToken);
         // Flip a character that carries only payload bits, so the token stays valid base64url but fails authentication.
         var tampered = url.Segments[^1].ToCharArray();
         tampered[^2] = tampered[^2] == 'A' ? 'B' : 'A';
@@ -107,7 +192,7 @@ public sealed class SignedUrlEndpointTests : TestBase
         // given
         await using var app = await SignedUrlTestApp.StartAsync(AbortToken);
         var url = await _Presigned(app.DefaultStorage)
-            .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), AbortToken);
+            .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), cancellationToken: AbortToken);
         using var client = app.CreateClient();
 
         // when
@@ -123,7 +208,7 @@ public sealed class SignedUrlEndpointTests : TestBase
         // given
         await using var app = await SignedUrlTestApp.StartAsync(AbortToken);
         var url = await _Presigned(app.DefaultStorage)
-            .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), AbortToken);
+            .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), cancellationToken: AbortToken);
         using var client = app.CreateClient();
 
         // when
@@ -159,7 +244,7 @@ public sealed class SignedUrlEndpointTests : TestBase
         await using var app = await SignedUrlTestApp.StartAsync(AbortToken);
         await _UploadAsync(app.DefaultStorage, _Report, "0123456789");
         var url = await _Presigned(app.DefaultStorage)
-            .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), AbortToken);
+            .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), cancellationToken: AbortToken);
         using var client = app.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Range = new RangeHeaderValue(2, 5);
@@ -203,7 +288,7 @@ public sealed class SignedUrlEndpointTests : TestBase
         await _UploadAsync(app.DefaultStorage, _Report, "default-bytes");
         await _UploadAsync(app.NamedStorage, _Report, "named-bytes");
         var url = await _Presigned(app.NamedStorage)
-            .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), AbortToken);
+            .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), cancellationToken: AbortToken);
         using var client = app.CreateClient();
 
         // when
@@ -320,7 +405,7 @@ public sealed class SignedUrlEndpointTests : TestBase
         {
             await _UploadAsync(app.DefaultStorage, _Report, "acme-report");
             url = await _Presigned(app.DefaultStorage)
-                .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), AbortToken);
+                .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), cancellationToken: AbortToken);
         }
 
         using var client = app.CreateClient();
@@ -386,7 +471,7 @@ public sealed class SignedUrlEndpointTests : TestBase
         {
             await _UploadAsync(app.DefaultStorage, _Report, "acme-report");
             url = await _Presigned(app.DefaultStorage)
-                .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), AbortToken);
+                .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), cancellationToken: AbortToken);
         }
 
         using var client = app.CreateClient();

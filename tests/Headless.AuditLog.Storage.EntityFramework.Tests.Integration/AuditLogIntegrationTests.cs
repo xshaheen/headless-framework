@@ -652,6 +652,51 @@ public sealed class AuditLogIntegrationTests : TestBase
     }
 
     [Fact]
+    public async Task change_capture_and_explicit_log_record_the_registered_client_info()
+    {
+        // given
+        var clientInfo = Substitute.For<IAuditClientInfoProvider>();
+        clientInfo.IpAddress.Returns("203.0.113.7");
+        clientInfo.UserAgent.Returns("agent/1.0");
+
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync(
+            configure: null,
+            configureServices: services => services.AddSingleton(clientInfo)
+        );
+        await using var _ = conn;
+        await using var __ = sp;
+        await using var scope = sp.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
+        var auditLog = scope.ServiceProvider.GetRequiredService<IAuditLog<AuditTestDbContext>>();
+
+        db.Orders.Add(
+            new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Heidi",
+                Email = "heidi@example.com",
+                Amount = 3m,
+            }
+        );
+        await auditLog.LogAsync(new AuditLogWriteRequest { Action = "pii.revealed" }, AbortToken);
+
+        // when
+        await db.SaveChangesAsync(AbortToken);
+        db.ChangeTracker.Clear();
+
+        // then
+        var entries = await db.Set<AuditLogEntry>().AsNoTracking().ToListAsync(AbortToken);
+        entries.Select(e => e.Action).Should().BeEquivalentTo(AuditActionNames.Created, "pii.revealed");
+        entries
+            .Should()
+            .AllSatisfy(e =>
+            {
+                e.IpAddress.Should().Be("203.0.113.7");
+                e.UserAgent.Should().Be("agent/1.0");
+            });
+    }
+
+    [Fact]
     public async Task save_changes_succeeds_when_audit_capture_throws()
     {
         // Regression guard for CaptureEntries' swallow-and-warn contract: a buggy IAuditChangeCapture
@@ -660,14 +705,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         // given
         var throwingCapture = Substitute.For<IAuditChangeCapture>();
         throwingCapture
-            .CaptureChanges(
-                Arg.Any<IEnumerable<object>>(),
-                Arg.Any<string?>(),
-                Arg.Any<string?>(),
-                Arg.Any<string?>(),
-                Arg.Any<string?>(),
-                Arg.Any<DateTimeOffset>()
-            )
+            .CaptureChanges(Arg.Any<IEnumerable<object>>(), Arg.Any<AuditCaptureContext>())
             .Returns(_ => throw new InvalidOperationException("Simulated capture failure."));
 
         var (sp, conn) = await AuditIntegrationFixture.CreateAsync(

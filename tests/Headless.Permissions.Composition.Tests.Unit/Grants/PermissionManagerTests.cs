@@ -3,6 +3,7 @@
 using Headless;
 using Headless.Context;
 using Headless.Messaging;
+using Headless.MultiTenancy;
 using Headless.Permissions;
 using Headless.Permissions.Resources;
 using Headless.Primitives;
@@ -15,7 +16,8 @@ public sealed class PermissionManagerTests : TestBase
 {
     private readonly IPermissionDefinitionManager _definitionManager;
     private readonly IPermissionGrantProviderManager _grantProviderManager;
-    private readonly IPermissionGrantRepository _repository;
+    private readonly IPermissionGrantStore _grantStore;
+    private readonly ICurrentTenant _currentTenant;
     private readonly IPermissionErrorsDescriptor _errorsDescriptor;
     private readonly IBus _bus;
     private readonly IHostIdentityAccessor _hostIdentity;
@@ -25,7 +27,8 @@ public sealed class PermissionManagerTests : TestBase
     {
         _definitionManager = Substitute.For<IPermissionDefinitionManager>();
         _grantProviderManager = Substitute.For<IPermissionGrantProviderManager>();
-        _repository = Substitute.For<IPermissionGrantRepository>();
+        _grantStore = Substitute.For<IPermissionGrantStore>();
+        _currentTenant = Substitute.For<ICurrentTenant>();
         _errorsDescriptor = Substitute.For<IPermissionErrorsDescriptor>();
         _bus = Substitute.For<IBus>();
         _hostIdentity = Substitute.For<IHostIdentityAccessor>();
@@ -34,9 +37,10 @@ public sealed class PermissionManagerTests : TestBase
         _sut = new PermissionManager(
             _definitionManager,
             _grantProviderManager,
-            _repository,
+            _grantStore,
             _errorsDescriptor,
             _hostIdentity,
+            _currentTenant,
             _bus
         );
     }
@@ -492,19 +496,13 @@ public sealed class PermissionManagerTests : TestBase
         // given
         const string providerName = "Role";
         const string providerKey = "admin";
-        var grants = new List<PermissionGrantRecord>
-        {
-            new(Guid.NewGuid(), "Users.Create", providerName, providerKey, true),
-            new(Guid.NewGuid(), "Users.Delete", providerName, providerKey, true),
-        };
-
-        _repository.GetListAsync(providerName, providerKey, AbortToken).Returns(grants);
+        _grantStore.DeleteAsync(providerName, providerKey, AbortToken).Returns(["Users.Create", "Users.Delete"]);
 
         // when
         await _sut.DeleteAsync(providerName, providerKey, AbortToken);
 
         // then
-        await _repository.Received(1).DeleteManyAsync(grants, AbortToken);
+        await _grantStore.Received(1).DeleteAsync(providerName, providerKey, AbortToken);
     }
 
     [Theory]
@@ -518,7 +516,7 @@ public sealed class PermissionManagerTests : TestBase
 
         // then
         await action.Should().ThrowExactlyAsync<ArgumentException>();
-        _repository.ReceivedCalls().Should().BeEmpty();
+        _grantStore.ReceivedCalls().Should().BeEmpty();
         _bus.ReceivedCalls().Should().BeEmpty();
     }
 
@@ -613,13 +611,7 @@ public sealed class PermissionManagerTests : TestBase
         // given
         const string providerName = "Role";
         const string providerKey = "admin";
-        List<PermissionGrantRecord> grants =
-        [
-            new(Guid.NewGuid(), "Users.Create", providerName, providerKey, true),
-            new(Guid.NewGuid(), "Users.Delete", providerName, providerKey, true),
-        ];
-
-        _repository.GetListAsync(providerName, providerKey, AbortToken).Returns(grants);
+        _grantStore.DeleteAsync(providerName, providerKey, AbortToken).Returns(["Users.Create", "Users.Delete"]);
 
         // when
         await _sut.DeleteAsync(providerName, providerKey, AbortToken);
@@ -642,7 +634,7 @@ public sealed class PermissionManagerTests : TestBase
     public async Task should_not_publish_when_a_delete_removed_nothing()
     {
         // given
-        _repository.GetListAsync("Role", "admin", AbortToken).Returns([]);
+        _grantStore.DeleteAsync("Role", "admin", AbortToken).Returns([]);
 
         // when
         await _sut.DeleteAsync("Role", "admin", AbortToken);
@@ -667,9 +659,10 @@ public sealed class PermissionManagerTests : TestBase
         var busless = new PermissionManager(
             _definitionManager,
             _grantProviderManager,
-            _repository,
+            _grantStore,
             _errorsDescriptor,
             _hostIdentity,
+            _currentTenant,
             bus: null
         );
 

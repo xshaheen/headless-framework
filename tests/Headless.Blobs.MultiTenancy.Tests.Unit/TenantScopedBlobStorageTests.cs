@@ -326,7 +326,10 @@ public sealed class TenantScopedBlobStorageTests : TestBase
         var presigned = (IPresignedUrlBlobStorage)_inner;
         var expiry = TimeSpan.FromMinutes(5);
         var constraints = new PresignedUploadConstraints { ContentType = "image/png" };
-        presigned.GetPresignedDownloadUrlAsync(_ScopedAvatar, expiry, AbortToken).Returns(new Uri("https://d"));
+        var downloadOptions = new PresignedDownloadOptions { FileName = "صورة.png", ContentType = "image/png" };
+        presigned
+            .GetPresignedDownloadUrlAsync(_ScopedAvatar, expiry, downloadOptions, AbortToken)
+            .Returns(new Uri("https://d"));
         presigned
             .GetPresignedUploadUrlAsync(_ScopedAvatar, expiry, constraints, AbortToken)
             .Returns(new Uri("https://u"));
@@ -339,7 +342,7 @@ public sealed class TenantScopedBlobStorageTests : TestBase
         using (tenant.Change(_Tenant))
         {
             var scoped = (IPresignedUrlBlobStorage)storage;
-            download = await scoped.GetPresignedDownloadUrlAsync(_Avatar, expiry, AbortToken);
+            download = await scoped.GetPresignedDownloadUrlAsync(_Avatar, expiry, downloadOptions, AbortToken);
             upload = await scoped.GetPresignedUploadUrlAsync(_Avatar, expiry, constraints, AbortToken);
         }
 

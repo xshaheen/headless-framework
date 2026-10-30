@@ -256,10 +256,11 @@ internal sealed class TenantScopedPresignedBlobStorage(IBlobStorage inner, Tenan
     public ValueTask<Uri> GetPresignedDownloadUrlAsync(
         BlobLocation location,
         TimeSpan expiry,
+        PresignedDownloadOptions? options = null,
         CancellationToken cancellationToken = default
     )
     {
-        return PresignedInner.GetPresignedDownloadUrlAsync(Scope.Apply(location), expiry, cancellationToken);
+        return PresignedInner.GetPresignedDownloadUrlAsync(Scope.Apply(location), expiry, options, cancellationToken);
     }
 
     public ValueTask<Uri> GetPresignedUploadUrlAsync(

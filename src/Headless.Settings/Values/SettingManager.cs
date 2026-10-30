@@ -3,13 +3,19 @@
 using Headless.Checks;
 using Headless.Context;
 using Headless.Messaging;
+using Headless.MultiTenancy;
 using Headless.Settings.Resources;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.Settings;
 
-/// <summary>Core implementation of <see cref="ISettingManager"/> that resolves, encrypts, and persists setting values across the registered provider stack.</summary>
+/// <summary>
+/// Core implementation of <see cref="ISettingManager"/> that resolves, encrypts, and persists setting values across the
+/// registered provider stack. Also backs <c>unit.Settings</c> (<see cref="IUnitOfWorkSettings"/>), whose writes run
+/// inside the caller's unit of work.
+/// </summary>
 public sealed class SettingManager(
     ISettingDefinitionManager definitionManager,
     ISettingValueStore valueStore,
@@ -17,9 +23,10 @@ public sealed class SettingManager(
     ISettingEncryptionService encryptionService,
     ISettingErrorsDescriptor errorsDescriptor,
     IHostIdentityAccessor hostIdentity,
+    ICurrentTenant currentTenant,
     IBus? bus = null,
     ILogger<SettingManager>? logger = null
-) : ISettingManager
+) : ISettingManager, IUnitOfWorkSettings
 {
     private readonly ILogger _logger = logger ?? NullLogger<SettingManager>.Instance;
 
@@ -338,12 +345,44 @@ public sealed class SettingManager(
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="values"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
     /// <exception cref="Headless.ConflictException">A setting in <paramref name="values"/> is not defined, the provider named <paramref name="providerName"/> is not registered, or the resolved provider does not support write operations.</exception>
-    public async Task SetAsync(
+    public Task SetAsync(
         IReadOnlyDictionary<string, string?> values,
         string providerName,
         string? providerKey,
         bool forceToSet = false,
         CancellationToken cancellationToken = default
+    )
+    {
+        return _SetCoreAsync(unitOfWork: null, values, providerName, providerKey, forceToSet, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task SetAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(unitOfWork);
+
+        return _SetCoreAsync(unitOfWork, values, providerName, providerKey, forceToSet, cancellationToken);
+    }
+
+    /// <summary>
+    /// Validates every setting and the provider, resolves the values to store, and writes them through each provider
+    /// registered under <paramref name="providerName"/>. With a unit, the fallback comparison and the writes run inside
+    /// its transaction and the change is announced after it commits.
+    /// </summary>
+    private async Task _SetCoreAsync(
+        IUnitOfWork? unitOfWork,
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        bool forceToSet,
+        CancellationToken cancellationToken
     )
     {
         Argument.IsNotNull(values);
@@ -395,7 +434,14 @@ public sealed class SettingManager(
 
         foreach (var (setting, value) in requested)
         {
-            var storedValue = await _ResolveStoredValueAsync(setting, value, providers, forceToSet, cancellationToken)
+            var storedValue = await _ResolveStoredValueAsync(
+                    setting,
+                    value,
+                    providers,
+                    forceToSet,
+                    unitOfWork,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             writes.Add(new(setting, storedValue));
@@ -403,11 +449,27 @@ public sealed class SettingManager(
 
         foreach (var provider in writeProviders)
         {
-            await provider.SetAllAsync(writes, providerKey, cancellationToken).ConfigureAwait(false);
+            if (unitOfWork is null)
+            {
+                await provider.SetAllAsync(writes, providerKey, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await provider
+                    .SetAllEnlistedAsync(unitOfWork, writes, providerKey, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
-        await _PublishChangedAsync([.. values.Keys], providerName, providerKey, cancellationToken)
-            .ConfigureAwait(false);
+        if (unitOfWork is null)
+        {
+            await _PublishChangedAsync([.. values.Keys], providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            _PublishChangedAfterCommit(unitOfWork, [.. values.Keys], providerName, providerKey);
+        }
     }
 
     /// <summary>
@@ -419,6 +481,7 @@ public sealed class SettingManager(
         string? value,
         List<ISettingValueReadProvider> providers,
         bool forceToSet,
+        IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
     )
     {
@@ -434,6 +497,7 @@ public sealed class SettingManager(
                     providers[1].Name,
                     providerKey: null,
                     fallback: true,
+                    unitOfWork,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -477,16 +541,61 @@ public sealed class SettingManager(
         }
     }
 
+    /// <inheritdoc/>
+    public async Task DeleteAsync(
+        IUnitOfWork unitOfWork,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(unitOfWork);
+
+        var removedNames = await valueStore
+            .DeleteEnlistedAsync(unitOfWork, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        _PublishChangedAfterCommit(unitOfWork, [.. removedNames], providerName, providerKey);
+    }
+
+    /// <summary>
+    /// Announces an enlisted write once its unit commits, so a peer that re-reads on the announcement loads the
+    /// committed value; a rolled-back unit announces nothing. The callback restores the write's tenant, which the
+    /// announcement carries and the code completing the unit may no longer hold.
+    /// </summary>
+    private void _PublishChangedAfterCommit(
+        IUnitOfWork unitOfWork,
+        string[] settingNames,
+        string providerName,
+        string? providerKey
+    )
+    {
+        if (bus is null || settingNames.Length == 0)
+        {
+            return;
+        }
+
+        var tenantId = currentTenant.Id;
+        var tenantName = currentTenant.Name;
+
+        unitOfWork.OnCompleted(async () =>
+        {
+            using (currentTenant.Change(tenantId, tenantName))
+            {
+                await _PublishChangedAsync(settingNames, providerName, providerKey, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+        });
+    }
+
     /// <summary>
     /// Announces a completed write so every instance holding a copy of the value, this one included, can re-read it.
     /// </summary>
     /// <remarks>
     /// <para>
     /// Published after the write, never before: a receiver that re-read on an announcement of a write that then
-    /// failed would cache the old value and believe it fresh. The write has already committed when this runs: the
-    /// stores save through their own context or connection and never join a unit of work the caller has open, so a peer
-    /// that re-reads on the announcement loads the new value. A <c>SetAsync</c> inside a unit that later rolls back
-    /// therefore leaves the value changed; the consumer contract in <c>docs/llms/settings.md</c> states this.
+    /// failed would cache the old value and believe it fresh. An autonomous write has committed in the store's own
+    /// context or connection when this runs; an enlisted write publishes from the unit's post-commit callback.
     /// </para>
     /// <para>
     /// Best-effort by design — messaging is optional, and a failed announcement must not fail the write that
@@ -557,6 +666,30 @@ public sealed class SettingManager(
         CancellationToken cancellationToken
     )
     {
+        return await _CoreGetOrDefaultAsync(
+                definition,
+                providerName,
+                providerKey,
+                fallback,
+                unitOfWork: null,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Walks the provider chain for <paramref name="definition"/>; with a unit, each provider reads inside its
+    /// transaction (<see cref="ISettingValueReadProvider.GetOrDefaultEnlistedAsync"/>).
+    /// </summary>
+    private async Task<SettingValue> _CoreGetOrDefaultAsync(
+        SettingDefinition definition,
+        string? providerName,
+        string? providerKey,
+        bool fallback,
+        IUnitOfWork? unitOfWork,
+        CancellationToken cancellationToken
+    )
+    {
         var settingName = definition.Name;
         IEnumerable<ISettingValueReadProvider> providers = valueProviderManager.Providers;
 
@@ -573,7 +706,11 @@ public sealed class SettingManager(
         foreach (var provider in providers)
         {
             var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
-            var value = await provider.GetOrDefaultAsync(definition, pk, cancellationToken).ConfigureAwait(false);
+            var value = unitOfWork is null
+                ? await provider.GetOrDefaultAsync(definition, pk, cancellationToken).ConfigureAwait(false)
+                : await provider
+                    .GetOrDefaultEnlistedAsync(unitOfWork, definition, pk, cancellationToken)
+                    .ConfigureAwait(false);
 
             if (value is null)
             {

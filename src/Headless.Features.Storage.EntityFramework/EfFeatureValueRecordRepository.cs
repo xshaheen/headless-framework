@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Features;
 
@@ -12,10 +14,16 @@ namespace Headless.Features;
 /// The feature-value cache shared with <c>FeatureValueStore</c>. A write here removes the affected cache key
 /// so a direct repository write (bypassing <c>IFeatureManager</c>) is reflected on the next read.
 /// </param>
-internal sealed class EfFeatureValueRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory, ICache cache)
-    : IFeatureValueRecordRepository
+internal sealed class EfFeatureValueRecordRepository<TContext>(
+    IDbContextFactory<TContext> dbFactory,
+    ICache cache,
+    ILogger<EfFeatureValueRecordRepository<TContext>> logger
+) : IFeatureValueRecordRepository
     where TContext : DbContext
 {
+    private const string _Owner = "the EF Core features storage";
+    private const string _Operation = "feature value";
+
     /// <inheritdoc/>
     public async Task<FeatureValueRecord?> FindAsync(
         string name,
@@ -150,6 +158,98 @@ internal sealed class EfFeatureValueRecordRepository<TContext>(IDbContextFactory
         await cache
             .RemoveAllAsync(inserted.Concat(updated).Concat(deleted).Select(_CacheKey), cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    public Task<List<FeatureValueRecord>> GetListEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        HashSet<string> names,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        return EntityFrameworkEnlistment.RunAsync(
+            dbFactory,
+            unitOfWork,
+            _Owner,
+            _Operation,
+            (db, ct) =>
+                db.Set<FeatureValueRecord>()
+                    .AsNoTracking()
+                    .Where(s =>
+                        names.Contains(s.Name) && s.ProviderName == providerName && s.ProviderKey == providerKey
+                    )
+                    .ToListAsync(ct),
+            cancellationToken
+        );
+    }
+
+    public Task<List<FeatureValueRecord>> GetListEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        return EntityFrameworkEnlistment.RunAsync(
+            dbFactory,
+            unitOfWork,
+            _Owner,
+            _Operation,
+            (db, ct) =>
+                db.Set<FeatureValueRecord>()
+                    .AsNoTracking()
+                    .Where(s => s.ProviderName == providerName && s.ProviderKey == providerKey)
+                    .ToListAsync(ct),
+            cancellationToken
+        );
+    }
+
+    public async Task SaveEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyCollection<FeatureValueRecord> inserted,
+        IReadOnlyCollection<FeatureValueRecord> updated,
+        IReadOnlyCollection<FeatureValueRecord> deleted,
+        CancellationToken cancellationToken
+    )
+    {
+        if (inserted.Count == 0 && updated.Count == 0 && deleted.Count == 0)
+        {
+            return;
+        }
+
+        await EntityFrameworkEnlistment
+            .RunAsync(
+                dbFactory,
+                unitOfWork,
+                _Owner,
+                _Operation,
+                (db, ct) =>
+                {
+                    // The enlisted context is not the owner's, so an observed unit's owner (the EF save pipeline)
+                    // cannot restore this write on replay; only an owned unit re-runs the caller's block.
+                    if (unitOfWork.Resource is { IsOwned: false })
+                    {
+                        unitOfWork.PreventRetry();
+                    }
+
+                    var set = db.Set<FeatureValueRecord>();
+                    set.AddRange(inserted);
+                    set.UpdateRange(updated);
+                    set.RemoveRange(deleted);
+
+                    return db.SaveChangesAsync(ct);
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        FeatureValueCacheInvalidation.RemoveAfterCommit(
+            unitOfWork,
+            cache,
+            [.. inserted.Concat(updated).Concat(deleted).Select(_CacheKey)],
+            logger
+        );
     }
 
     private static string _CacheKey(FeatureValueRecord featureValue)

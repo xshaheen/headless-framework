@@ -3,6 +3,7 @@
 using Headless;
 using Headless.Context;
 using Headless.Messaging;
+using Headless.MultiTenancy;
 using Headless.Settings;
 using Headless.Settings.Resources;
 using Headless.Testing.Tests;
@@ -39,6 +40,7 @@ public sealed class SettingManagerTests : TestBase
             _encryptionService,
             errorsDescriptor,
             _hostIdentity,
+            Substitute.For<ICurrentTenant>(),
             _bus
         );
     }
@@ -743,6 +745,7 @@ public sealed class SettingManagerTests : TestBase
             _encryptionService,
             new DefaultSettingErrorsDescriptor(),
             _hostIdentity,
+            Substitute.For<ICurrentTenant>(),
             bus: null
         );
 

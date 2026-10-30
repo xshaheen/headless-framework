@@ -18,6 +18,7 @@ Commands:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -583,9 +584,83 @@ CATEGORIES = {
 }
 
 
+# Inputs every proof stage reads whatever the selection: the gate recipes, the proof tooling, and the build-wide files.
+INPUT_KEY_REPO_PATHS = ("Makefile", "scripts", "eng", "headless-framework.slnx", *sorted(GLOBAL_FILES))
+
+
+def input_key(out_dir: Path, projects: dict[str, Project], salt: str) -> str:
+    """Hash what a proof of the selection in OUT_DIR depends on, so an equal key proves the same thing.
+
+    The key covers the content of every file in the build closure (each selected project, its ProjectReference
+    closure, and the files they link), the scoped build files above them, the repository-wide inputs, the branch's
+    patch against the merge base (the changed-line coverage gate reads it), and the selection itself. A rebase onto a
+    main that touched none of those, or an amend that changed only the message, yields the same key.
+    """
+    affected = json.loads((out_dir / "affected.json").read_text(encoding="utf-8"))
+    pending = [
+        item
+        for category in ("build_projects", "unit_tests", "integration_tests", "integration_unit_tests")
+        for item in affected.get(category, [])
+        if item in projects
+    ]
+    closure: set[str] = set()
+    while pending:
+        key = pending.pop()
+        if key not in closure:
+            closure.add(key)
+            pending.extend(projects[key].references)
+    paths = set(INPUT_KEY_REPO_PATHS)
+    for key in closure:
+        project = projects[key]
+        paths.add(project.directory.as_posix())
+        paths.update(project.linked_inputs)
+        for parent in project.directory.parents:
+            paths.update((parent / name).as_posix() for name in SCOPED_BUILD_FILES)
+    files = sorted(
+        set(git_lines("ls-files", "--cached", "--others", "--exclude-standard", "--", *(f":(literal){p}" for p in paths)))
+    )
+    present = [file for file in files if (REPO_ROOT / file).is_file()]
+    blobs = (
+        subprocess.run(
+            ["git", "hash-object", "--stdin-paths"],
+            cwd=REPO_ROOT,
+            input="".join(f"{file}\n" for file in present),
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.split()
+        if present
+        else []
+    )
+    digest = hashlib.sha256()
+    digest.update(salt.encode())
+    selection = {key: value for key, value in affected.items() if key != "base"}
+    digest.update(json.dumps(selection, sort_keys=True).encode())
+    for file, blob in zip(present, blobs, strict=True):
+        digest.update(f"{file}\0{blob}\n".encode())
+    # A tracked file deleted in the worktree has no blob, and its absence is part of what was proved.
+    for file in sorted(set(files) - set(present)):
+        digest.update(f"{file}\0deleted\n".encode())
+    merge_base = git_lines("merge-base", affected["base"], "HEAD")[0]
+    patch = subprocess.run(
+        ["git", "diff", "--no-color", "--no-ext-diff", "-U0", merge_base],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout
+    digest.update(patch)
+    return digest.hexdigest()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
+
+    key_parser = commands.add_parser(
+        "input-key", help="print a hash of every input a proof of the selection in DIR depends on"
+    )
+    key_parser.add_argument("--dir", required=True, type=Path, help="a directory `affected --out-dir` wrote")
+    key_parser.add_argument("--salt", default="", help="settings that change what the proof checks, such as the gate and its options")
 
     affected = commands.add_parser("affected", help="list projects affected by changes since BASE")
     affected.add_argument("--base", required=True, help="git ref to diff against (merge-base with HEAD)")
@@ -649,6 +724,10 @@ def main() -> int:
         return 0
 
     projects = load_graph()
+
+    if args.command == "input-key":
+        print(input_key(args.dir, projects, args.salt))
+        return 0
 
     if args.command == "layering":
         violations = layering_violations(projects) + namespace_violations() + folder_violations()

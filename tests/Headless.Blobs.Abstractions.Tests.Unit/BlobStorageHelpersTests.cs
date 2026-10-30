@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net.Http.Headers;
 using Headless.Blobs;
 using Headless.Blobs.Internal;
 using Headless.Primitives;
@@ -242,6 +243,78 @@ public sealed class BlobStorageHelpersTests : TestBase
 
         // Assert
         prefix.Should().Be(expected);
+    }
+
+    #endregion
+
+    #region BuildAttachmentContentDisposition Tests
+
+    [Fact]
+    public void should_quote_the_name_and_repeat_it_in_filename_star_when_the_name_is_ascii()
+    {
+        // when
+        var header = BlobStorageHelpers.BuildAttachmentContentDisposition("q3 report.pdf");
+
+        // then
+        header.Should().Be("attachment; filename=\"q3 report.pdf\"; filename*=UTF-8''q3%20report.pdf");
+    }
+
+    [Fact]
+    public void should_carry_an_arabic_name_in_filename_star_when_the_name_is_not_ascii()
+    {
+        // given
+        const string fileName = "تقرير مارس.pdf";
+
+        // when
+        var header = BlobStorageHelpers.BuildAttachmentContentDisposition(fileName);
+
+        // then
+        header
+            .Should()
+            .Be(
+                "attachment; filename=\"_____ ____.pdf\"; "
+                    + "filename*=UTF-8''%D8%AA%D9%82%D8%B1%D9%8A%D8%B1%20%D9%85%D8%A7%D8%B1%D8%B3.pdf"
+            );
+        var parsed = ContentDispositionHeaderValue.Parse(header);
+        parsed.DispositionType.Should().Be("attachment");
+        parsed.FileNameStar.Should().Be(fileName);
+    }
+
+    [Fact]
+    public void should_replace_quote_backslash_and_percent_in_the_fallback_when_the_name_contains_them()
+    {
+        // given
+        const string fileName = "a\"b\\c%d.txt";
+
+        // when
+        var header = BlobStorageHelpers.BuildAttachmentContentDisposition(fileName);
+
+        // then
+        header.Should().StartWith("attachment; filename=\"a_b_c_d.txt\"; ");
+        ContentDispositionHeaderValue.Parse(header).FileNameStar.Should().Be(fileName);
+    }
+
+    [Fact]
+    public void should_replace_a_surrogate_pair_with_one_underscore_in_the_fallback()
+    {
+        // given
+        const string fileName = "\U0001F600.png";
+
+        // when
+        var header = BlobStorageHelpers.BuildAttachmentContentDisposition(fileName);
+
+        // then
+        header.Should().Be("attachment; filename=\"_.png\"; filename*=UTF-8''%F0%9F%98%80.png");
+    }
+
+    [Fact]
+    public void should_reject_a_whitespace_name_when_building_content_disposition()
+    {
+        // when
+        var act = () => BlobStorageHelpers.BuildAttachmentContentDisposition("  ");
+
+        // then
+        act.Should().Throw<ArgumentException>();
     }
 
     #endregion
