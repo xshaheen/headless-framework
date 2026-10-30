@@ -463,6 +463,28 @@ public abstract class JobsSeedReconcileConformanceTests<TFixture>(TFixture fixtu
             .Be(beforeSeed.ScheduleRevision + 1, "the seed that loses the row lock sees the restored row and skips");
     }
 
+    public virtual async Task a_runtime_update_without_the_seed_marker_keeps_the_row_seeded()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("seed-runtime-update-marker");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var declared = _Declaration(_Owner, "daily-us", request: _UsRequest, requestHash: _UsHash);
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [declared], ct);
+        var edited = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
+        // A dashboard form posts the definition without the seed marker.
+        edited.InitIdentifier = null;
+        edited.Retries = 4;
+        (await persistence.UpdateCronJobsAsync([edited], ct)).Should().Be(1);
+
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [declared], ct);
+
+        var reseeded = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
+        reseeded.InitIdentifier.Should().Be(declared.Marker, "the seed marker belongs to the seed");
+        reseeded.Retries.Should().Be(4, "the operator's edit still applies");
+    }
+
     public virtual async Task seed_restores_a_declarations_expression_and_keeps_the_operators_retries_and_pause()
     {
         var ct = AbortToken;

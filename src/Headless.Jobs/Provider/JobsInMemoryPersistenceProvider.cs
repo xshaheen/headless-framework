@@ -2796,6 +2796,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 JobContract.ValidateVersion(definition.ContractVersion);
                 definition.CorrelationId = current.CorrelationId;
                 definition.CausationId = current.CausationId;
+                // The seed marker belongs to the seed: a runtime edit built from an entity that lacks it must not
+                // strip the row's seed ownership.
+                definition.InitIdentifier = current.InitIdentifier;
                 definition.IsPaused = current.IsPaused;
                 definition.ScheduleRevision = revisionChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision;
                 definition.CreatedAt = current.CreatedAt;
@@ -3038,6 +3041,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 job.CorrelationId = existing.CorrelationId;
                 job.CausationId = existing.CausationId;
+                // The seed marker belongs to the seed: a runtime edit built from an entity that lacks it must not
+                // strip the row's seed ownership.
+                job.InitIdentifier = existing.InitIdentifier;
                 if (_TryUpdateCronJob(job, existing))
                 {
                     count++;

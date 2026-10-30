@@ -44,6 +44,12 @@ public sealed class SqlServerSeedReconcileTests(SqlServerJobsCoordinationFixture
     }
 
     [Fact]
+    public override Task a_runtime_update_without_the_seed_marker_keeps_the_row_seeded()
+    {
+        return base.a_runtime_update_without_the_seed_marker_keeps_the_row_seeded();
+    }
+
+    [Fact]
     public override Task seed_restores_a_declarations_zone_an_operator_changed()
     {
         return base.seed_restores_a_declarations_zone_an_operator_changed();
