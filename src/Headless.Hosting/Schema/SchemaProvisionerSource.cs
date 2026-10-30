@@ -154,7 +154,7 @@ internal sealed class SchemaContributionProvisioner : IResourceProvisioner
     public static string BaseName(SchemaContribution contribution) =>
         $"{contribution.Dialect.Name}/{contribution.Schema}/{contribution.Feature}";
 
-    public string Kind => "Schema";
+    public string Kind => SchemaRunner.ResourceKind;
 
     public string Name { get; }
 
