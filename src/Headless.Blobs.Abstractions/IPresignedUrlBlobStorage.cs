@@ -47,11 +47,17 @@ public interface IPresignedUrlBlobStorage
     /// </summary>
     /// <param name="location">The blob the URL grants read access to.</param>
     /// <param name="expiry">How long the URL remains valid, measured from now.</param>
+    /// <param name="options">
+    /// The file name and content type the download response carries, or <see langword="null"/> to keep the backend's
+    /// defaults. Both are signed into the URL, so its holder cannot change them. With <see langword="null"/>, or with
+    /// both members <see langword="null"/>, the URL is the one the backend mints without options.
+    /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A signed, time-limited URL for downloading the blob.</returns>
     ValueTask<Uri> GetPresignedDownloadUrlAsync(
         BlobLocation location,
         TimeSpan expiry,
+        PresignedDownloadOptions? options = null,
         CancellationToken cancellationToken = default
     );
 

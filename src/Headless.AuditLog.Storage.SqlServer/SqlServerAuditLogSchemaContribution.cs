@@ -9,13 +9,15 @@ using Microsoft.Data.SqlClient;
 namespace Headless.AuditLog.SqlServer;
 
 /// <summary>
-/// The AuditLog feature's schema contribution for SQL Server: the audit log table and its read indexes, as two
-/// idempotent steps the Headless schema runner applies.
+/// The AuditLog feature's schema contribution for SQL Server: the audit log table and its read indexes, plus the
+/// append-only trigger when <see cref="AuditLogStorageOptions.AppendOnly"/> is on, as idempotent steps the Headless
+/// schema runner applies.
 /// </summary>
 internal static class SqlServerAuditLogSchemaContribution
 {
     public const string TableStepVersion = "1";
     public const string IndexesStepVersion = "2";
+    public const string AppendOnlyStepVersion = "3";
 
     public static SchemaContribution Create(
         SqlServerAuditLogOptions providerOptions,
@@ -97,6 +99,23 @@ internal static class SqlServerAuditLogSchemaContribution
             )
         );
 
+        List<SchemaStep> steps =
+        [
+            new(TableStepVersion, "Create the audit log table.", tableSql),
+            new(IndexesStepVersion, "Create the audit log read indexes.", indexesSql),
+        ];
+
+        if (storageOptions.AppendOnly)
+        {
+            steps.Add(
+                new(
+                    AppendOnlyStepVersion,
+                    "Make the audit log table append-only.",
+                    _AppendOnlySql(auditLogTable.Schema, tableName, table)
+                )
+            );
+        }
+
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
                 "AuditLog",
@@ -108,11 +127,7 @@ internal static class SqlServerAuditLogSchemaContribution
             dialect: SqlServerSchemaDialect.Instance,
             createConnection: () => SqlServerDialect.Instance.CreateConnection(providerOptions.ConnectionString),
             schema: auditLogTable.Schema,
-            steps:
-            [
-                new SchemaStep(TableStepVersion, "Create the audit log table.", tableSql),
-                new SchemaStep(IndexesStepVersion, "Create the audit log read indexes.", indexesSql),
-            ],
+            steps: steps,
             objects: [SchemaObject.Table(tableName)]
         );
     }
@@ -136,6 +151,51 @@ internal static class SqlServerAuditLogSchemaContribution
                     : new SqlParameter(parameter, SqlDbType.DateTime2) { Value = utc.UtcDateTime }
             );
         };
+    }
+
+    /// <summary>
+    /// The retention purge: sets the <c>SESSION_CONTEXT</c> key the append-only trigger lets through, deletes the
+    /// oldest expired rows in key order and returns how many it removed, then clears the key so the pooled connection
+    /// does not carry it.
+    /// </summary>
+    public static AuditLogPurgeStatements PurgeStatements(RelationalAuditLogTable table)
+    {
+        return new AuditLogPurgeStatements(
+            Enable: $"EXEC sys.sp_set_session_context @key = N'{AuditLogStorageNames.PurgeSetting}', @value = 1;",
+            // OUTPUT needs INTO on a table with a trigger, and a table variable counts what the DELETE removed.
+            Delete: $"""
+            DECLARE @deleted TABLE ([Deleted] int);
+            WITH expired AS (
+                SELECT TOP (@Limit) [CreatedAt], [Id] FROM {table.Qualified}
+                WHERE [CreatedAt] < @Cutoff
+                ORDER BY [CreatedAt], [Id]
+            )
+            DELETE FROM expired OUTPUT 1 INTO @deleted;
+            SELECT COUNT(*) FROM @deleted;
+            """,
+            Disable: $"EXEC sys.sp_set_session_context @key = N'{AuditLogStorageNames.PurgeSetting}', @value = NULL;"
+        );
+    }
+
+    private static string _AppendOnlySql(string schema, string tableName, string table)
+    {
+        var name = $"TR_{tableName}_{AuditLogStorageNames.AppendOnlyTrigger}";
+
+        // AFTER UPDATE, DELETE with THROW rolls the statement back. A DELETE (no inserted rows) passes only while the
+        // purge has the session key set. TRUNCATE fires no trigger on SQL Server, so it stays the job of permissions.
+        // CREATE TRIGGER must start its batch, hence EXEC.
+        var body = $"""
+            CREATE OR ALTER TRIGGER [{schema}].[{name}] ON {table} AFTER UPDATE, DELETE AS
+            BEGIN
+                SET NOCOUNT ON;
+                IF NOT EXISTS (SELECT 1 FROM inserted)
+                    AND CONVERT(int, SESSION_CONTEXT(N'{AuditLogStorageNames.PurgeSetting}')) = 1
+                    RETURN;
+                THROW 50000, N'The audit log table {schema}.{tableName} is append-only: only the retention purge may delete rows.', 1;
+            END
+            """;
+
+        return $"EXEC(N'{body.Replace("'", "''", StringComparison.Ordinal)}');";
     }
 
     /// <summary>The <c>CreatedAt</c> column's type: the configured override, else <c>datetimeoffset(7)</c>.</summary>
