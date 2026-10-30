@@ -2208,20 +2208,21 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
         {
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
             static CronSeedDefinition seed(string timeZoneId) =>
-                new(
+                CronSeedDefinition.ForCronFunction(
+                    JobsSeedId.DefaultOwner,
                     "billing.close-day",
                     "0 0 0 * * *",
                     MissedRunPolicy.Coalesce,
                     JobsRecoveryDefaults.MissedRunGraceSeconds,
                     CronOverlapPolicy.Allow,
-                    TimeZoneId: timeZoneId
+                    timeZoneId: timeZoneId
                 );
 
-            await persistence.MigrateDefinedCronJobsAsync([seed("Africa/Cairo")], ct);
+            await persistence.MigrateDefinedCronJobsAsync(JobsSeedId.DefaultOwner, [seed("Africa/Cairo")], ct);
             var created = (await persistence.GetAllCronJobExpressionsAsync(ct)).Single();
-            await persistence.MigrateDefinedCronJobsAsync([seed("Africa/Cairo")], ct);
+            await persistence.MigrateDefinedCronJobsAsync(JobsSeedId.DefaultOwner, [seed("Africa/Cairo")], ct);
             var unchanged = (await persistence.GetAllCronJobExpressionsAsync(ct)).Single();
-            await persistence.MigrateDefinedCronJobsAsync([seed("Europe/London")], ct);
+            await persistence.MigrateDefinedCronJobsAsync(JobsSeedId.DefaultOwner, [seed("Europe/London")], ct);
             var moved = (await persistence.GetAllCronJobExpressionsAsync(ct)).Single();
 
             created.TimeZoneId.Should().Be("Africa/Cairo");
@@ -2248,8 +2249,10 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
         {
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
             await persistence.MigrateDefinedCronJobsAsync(
+                JobsSeedId.DefaultOwner,
                 [
-                    new CronSeedDefinition(
+                    CronSeedDefinition.ForCronFunction(
+                        JobsSeedId.DefaultOwner,
                         "seeded",
                         "0 */5 * * * *",
                         MissedRunPolicy.Coalesce,
@@ -2264,8 +2267,10 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             (await persistence.InsertCronJobOccurrencesAsync([pending], ct)).Should().Be(1);
 
             await persistence.MigrateDefinedCronJobsAsync(
+                JobsSeedId.DefaultOwner,
                 [
-                    new CronSeedDefinition(
+                    CronSeedDefinition.ForCronFunction(
+                        JobsSeedId.DefaultOwner,
                         "seeded",
                         "0 */10 * * * *",
                         MissedRunPolicy.Coalesce,
@@ -2312,12 +2317,16 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
 
         var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-        await persistence.MigrateDefinedCronJobsAsync([seed("0 */5 * * * *", 5, [0, 0, 30, 60, 120])], ct);
+        await persistence.MigrateDefinedCronJobsAsync(
+            JobsSeedId.DefaultOwner,
+            [seed("0 */5 * * * *", 5, [0, 0, 30, 60, 120])],
+            ct
+        );
         var created = (await persistence.GetCronJobsAsync(predicate: null, ct)).Single();
 
         // A redeploy with a changed policy, and one that also moves the schedule, must leave the seeded retries alone.
-        await persistence.MigrateDefinedCronJobsAsync([seed("0 */5 * * * *", 1, [10])], ct);
-        await persistence.MigrateDefinedCronJobsAsync([seed("0 */10 * * * *", 1, [10])], ct);
+        await persistence.MigrateDefinedCronJobsAsync(JobsSeedId.DefaultOwner, [seed("0 */5 * * * *", 1, [10])], ct);
+        await persistence.MigrateDefinedCronJobsAsync(JobsSeedId.DefaultOwner, [seed("0 */10 * * * *", 1, [10])], ct);
         var reseeded = (await persistence.GetCronJobsAsync(predicate: null, ct)).Single();
 
         created.Retries.Should().Be(5);
@@ -2327,14 +2336,15 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
         reseeded.RetryIntervals.Should().Equal(0, 0, 30, 60, 120);
 
         static CronSeedDefinition seed(string expression, int retries, int[] intervals) =>
-            new(
+            CronSeedDefinition.ForCronFunction(
+                JobsSeedId.DefaultOwner,
                 "seeded-retries",
                 expression,
                 MissedRunPolicy.Coalesce,
                 JobsRecoveryDefaults.MissedRunGraceSeconds,
                 CronOverlapPolicy.Allow,
-                Retries: retries,
-                RetryIntervals: intervals
+                retries: retries,
+                retryIntervals: intervals
             );
     }
 
@@ -2351,7 +2361,8 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
         var second = secondHost.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
         CronSeedDefinition[] definitions =
         [
-            new(
+            CronSeedDefinition.ForCronFunction(
+                JobsSeedId.DefaultOwner,
                 "concurrent-seed",
                 "0 */5 * * * *",
                 MissedRunPolicy.Coalesce,
@@ -2361,13 +2372,13 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
         ];
 
         await Task.WhenAll(
-            first.MigrateDefinedCronJobsAsync(definitions, ct),
-            second.MigrateDefinedCronJobsAsync(definitions, ct)
+            first.MigrateDefinedCronJobsAsync(JobsSeedId.DefaultOwner, definitions, ct),
+            second.MigrateDefinedCronJobsAsync(JobsSeedId.DefaultOwner, definitions, ct)
         );
 
         insertGate.InterceptedCommands.Should().Be(2, "both transactions must reach INSERT before either can win");
         var persisted = (await first.GetAllCronJobExpressionsAsync(ct)).Should().ContainSingle().Subject;
-        persisted.Id.Should().Be(JobsSeedId.ForCronSeed("concurrent-seed"));
+        persisted.Id.Should().Be(JobsSeedId.ForCronSeed(JobsSeedId.DefaultOwner, "concurrent-seed"));
         persisted.Function.Should().Be("concurrent-seed");
     }
 
@@ -2379,7 +2390,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
         using var host = fixture.BuildHost("cron-seed-mismatch");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await fixture.SeedCronJobAsync(
-            JobsSeedId.ForCronSeed("intended-seed"),
+            JobsSeedId.ForCronSeed(JobsSeedId.DefaultOwner, "intended-seed"),
             "different-function",
             "0 */5 * * * *",
             NodeDeathPolicy.Retry,
@@ -2389,8 +2400,10 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
         var act = () =>
             persistence.MigrateDefinedCronJobsAsync(
+                JobsSeedId.DefaultOwner,
                 [
-                    new CronSeedDefinition(
+                    CronSeedDefinition.ForCronFunction(
+                        JobsSeedId.DefaultOwner,
                         "intended-seed",
                         "0 */5 * * * *",
                         MissedRunPolicy.Coalesce,

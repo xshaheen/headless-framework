@@ -71,7 +71,8 @@ Declare a job as a class that implements `IJob` (no arguments) or `IJob<TArgs>` 
 - Running jobs slide their pickup lease forward on the `LeaseRenewalInterval` cadence (default ≈ `LeaseDuration / 3`), so `LeaseDuration` (default 5 min) no longer needs to exceed the longest job runtime. Keep `LeaseDuration` ≥ `FallbackIntervalChecker` to avoid spurious re-claims of rows that are claimed but still waiting for pool admission.
 - Set `OnNodeDeath = NodeDeathPolicy.MarkFailed` or `Skip` on non-idempotent jobs — default `Retry` will re-run the job after a node crash.
 - Write handlers for at-least-once execution. A retry, a crash re-claim under `NodeDeathPolicy.Retry`, or an operator requeue runs the handler again. `JobContext.Id` is the job row's id and stays the same across those runs, so use it as the deduplication key for side effects. Each cron occurrence is its own row with its own `Id`. A follow-up job a handler schedules through `unit.Jobs` commits atomically with the handler's business writes, not with the job's completion, which the scheduler records afterwards in its own transaction. A crash between the two re-runs the handler and schedules the follow-up again, so key the follow-up with `JobOptions.IdempotencyKey` built from `JobContext.Id` plus the step name.
-- Declare static recurring jobs with `[Job(..., Cron = ...)]`. Seeding gives each declared cron job a primary key derived from its function, so N replicas starting together converge on one definition. `ScheduleRecurringAsync` and `ICronJobManager.AddAsync` insert a new definition on every call, so calling them at startup on N replicas creates N definitions, and each one runs every tick.
+- Declare startup-known recurring jobs in code: `[Job(..., Cron = ...)]` for one schedule of a job, `options.SeedRecurringJob(key, ...)` for a schedule with arguments or several schedules of one job. The `seed` step reconciles both as one set, each row with a primary key derived from the seed owner and the function or key, so N replicas seeding together converge on one definition per declaration. See [Seeded recurring jobs](#seeded-recurring-jobs). `ScheduleRecurringAsync` and `ICronJobManager.AddAsync` insert a new definition on every call, also inside a `UseJobsSeeder` delegate, so calling them at startup on N replicas creates N definitions, and each one runs every tick.
+- Apps that share one Jobs store must each call `options.SeedOwner("...")` with a distinct owner, and every host of one app must use the same owner. Without it every app seeds under the shared `"default"` owner and deletes the other apps' seeded rows.
 - Idempotent enqueue: supply `JobOptions.IdempotencyKey` plus `JobOptions.IdempotencyTtl` (both or neither; 1 s – 30 days, no host default) on `EnqueueAsync` / `ScheduleAsync` / `ScheduleAfterAsync`. The reservation identity is (tenant-or-system scope, function, contract version, key); the payload is NOT part of it, so a repeat with different payload bytes inside the window returns the first call's job ID — an enqueue deduplication window, not exactly-once execution. The key survives job completion, failure, cancellation, and retention deletion; only expiry (or one atomic replacement after it) releases it. Same-key contenders serialize on the store's transaction-owned key lock with a bounded wait, so a creator holding a long-open coordinated transaction makes same-key callers time out rather than observe. Keyed, recurring, and chain scheduling reject the key: keyed scheduling already has its own identity, and a chain is one atomic tree.
 - Keyed duplicates retain the first successful create's execution policy, including when a later call supplies explicit overrides. Use generation-fenced replacement to change policy while pending and unclaimed.
 - Do NOT install a Jobs-specific cache package. Jobs cron-expression caching reuses the host's `ICache` (`Headless.Caching.InMemory`, `.Redis`, or `.Hybrid`). Without a registered `ICache`, cron expressions are read directly from the database.
@@ -139,6 +140,73 @@ The identity (`owner.name`, at most 200 characters) is the durable function name
 
 Jobs with arguments are indexed by identity and by exact argument `Type`; jobs without arguments have `RequestType = null` and are indexed by their class. HF005 rejects a duplicate identity and HF011 a duplicate argument type in one compilation. Cross-assembly collisions fail the host's registry build with a deterministic ordinal-sorted report that names both modules, rather than choosing the first registration. Core builds one configuration-resolved runtime registry per `IHost` from the modules that host added.
 
+### Seeded recurring jobs
+
+A recurring job the app knows at startup belongs in the `seed` step, not in a startup `ScheduleRecurringAsync` call. The seed has two sources, reconciled as one set:
+
+- `[Job(Cron = ...)]` on a job class: one definition for that job, without arguments.
+- `SeedRecurringJob` on `JobsOptionsBuilder`: one definition per key, so one job can run on several schedules, with different arguments, or in different zones.
+
+```csharp
+using Headless.Jobs;
+
+public sealed record ReportRequest(string Region);
+
+[Job("reports.regional")]
+public sealed class RegionalReportJob : IJob<ReportRequest>
+{
+    public ValueTask ExecuteAsync(JobContext<ReportRequest> context, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+}
+
+builder.Services.AddHeadlessJobs(options =>
+{
+    options.AddModule<MyApp.JobsModule>();
+
+    // A job with arguments: TArgs picks the job, the request is stored with the definition.
+    options.SeedRecurringJob(
+        "reports.daily-eu",
+        new ReportRequest("eu"),
+        "0 0 6 * * *",
+        new RecurringJobOptions { TimeZoneId = "Europe/Berlin", Description = "EU daily report" }
+    );
+    options.SeedRecurringJob(
+        "reports.daily-us",
+        new ReportRequest("us"),
+        "%Reports:UsCron%", // a %name% value resolves from configuration, as [Job(Cron)] does
+        new RecurringJobOptions { TimeZoneId = "America/New_York" }
+    );
+
+    // A job without arguments, addressed by its class.
+    options.SeedRecurringJob<CleanupJob>("cleanup.nightly", "0 30 2 * * *");
+});
+```
+
+`SeedRecurringJob<TArgs>(key, request, cronExpression, options?)` addresses the job that accepts `TArgs`; `SeedRecurringJob<TJob>(key, cronExpression, options?)` addresses a job without arguments by its class. `RecurringJobOptions` carries the zone, description, retries, retry intervals, node-death policy, and correlation and causation ids, resolved against the job's policies as a `ScheduleRecurringAsync` call resolves them; the missed-run and overlap policies come from the job, as for its attribute cron. The request is serialized when the seed runs, with the host's request serialization settings. The builder rejects a blank key or expression at once. Startup validation, which the `seed` verb runs before any seeder, rejects two declarations with one key (keys compare ordinally), a declaration whose job the host does not register, a `SeedRecurringJob<TJob>` call on a job that takes arguments, invalid options, and a cron that cannot fire (an expression that does not parse as six fields or has no future occurrence, a `%name%` key configuration does not set, or a zone the host cannot resolve), before the seed writes anything. The cron check matters because the seed restores the declared expression over the stored one: without it, a typo would replace a working schedule with one that never runs.
+
+**Reconcile rules.** Each `seed` applies these to the rows of its own seed owner:
+
+- **One row per declaration.** Each `[Job(Cron)]` function and each declaration key has one definition, whose primary key is derived from the owner and the function or key. A declaration key never shares a row with an attribute cron, even when it equals the function name.
+- **Code wins on job, expression, zone, and arguments.** When the stored expression or zone differs, the seed restores it. When a declaration's stored arguments or contract version differ, the seed rewrites both. When a seeded row was pointed at another job, the seed restores the declared job together with its arguments and contract version, for attribute crons too. This includes values an operator changed through the dashboard or `ICronJobManager.UpdateAsync`. A restore bumps the definition's revision and resets its schedule position without replaying missed runs. Arguments compare by a hash of their canonical JSON, so hosts that serialize the same arguments differently, or with and without GZip, do not rewrite each other's row. Otherwise an attribute cron's arguments and contract version are never rewritten.
+- **Policies are written at creation only.** Missed-run, overlap, retry, node-death, description, and lineage values are set when the seed creates the definition; later code changes do not reach it, and operator edits to them stay. Edit them through `ICronJobManager`.
+- **An operator's pause survives.** A live seeded definition stays paused across seeds. Re-declaring a retired definition restores its live marker and unpauses it through the same restore path, even when its schedule and arguments are unchanged.
+- **Removed definitions stop scheduling without deleting running work.** For each owned definition missing from the set, the seed deletes its `Idle` and `Queued` occurrences. If an `InProgress` occurrence remains, the seed retires the definition: it pauses the row, changes its marker to `headless.jobs.seed:{owner}:retired:{kind}:{name}`, and refreshes `UpdatedAt`. The definition, running occurrences, and terminal history remain so workers can finish. A later seed deletes the retired definition and its remaining occurrences once none is `InProgress`. Without a running occurrence, removal deletes the definition and all its occurrences immediately. Renaming a key applies these rules to the old definition and creates a new one, with a new id and a fresh schedule position.
+- **Concurrent seeds converge.** Seeds of the same set from several hosts at once leave one row per declaration: the derived primary key turns a lost insert race into a no-op. On the EF store each seed's reconcile runs in one transaction.
+- **Nothing else is touched.** Rows created at runtime (`ScheduleRecurringAsync`, `ICronJobManager.AddAsync`, the dashboard) and rows another owner seeded are never matched, rewritten, or deleted, even when they run the same function.
+
+The reconcile runs on every seed, even when the app declares nothing, so removing the last declaration removes or retires its row under these rules. `IgnoreSeedDefinedCronJobs()` removes only the attribute crons from the set: their previously seeded rows are removed or retired on the next seed, and declarations still seed.
+
+**Seed owner.** `options.SeedOwner(owner)` names the owner every seeded row records. Without it the owner is `"default"`, one value shared by every host that sets none, so all hosts of one app, including an app split across executables with `RunOnly`, converge on one row per declaration. The owner must not be blank or contain `:`.
+
+- Apps that share one Jobs store must set distinct owners. Two apps under one owner treat each other's seeded rows as their own and remove or retire them.
+- Every host of one app must set the same owner. Hosts with different owners each create their own copy of every definition, and each copy fires.
+- Changing an owner orphans the rows seeded under the old one: the next seed creates new rows and never deletes the old ones. Delete the old rows through `ICronJobManager` or the dashboard.
+- Run the seed from one version of the app at a time. Each seed treats its own declared set as complete. During a rolling deploy, an older version's seed removes or retires definitions a newer version declared. The newer version's seed recreates or restores them, so the rows flip until every host runs one version. Run `seed` (or `deploy`) once from the new version as a deploy step, not from every replica at startup.
+
+**What stays imperative.** `UseJobsSeeder` delegates run after the reconcile on every seed, and the seed does not track what they write: an `AddAsync` call inside one inserts a new definition on each seed. A runtime `ScheduleRecurringAsync` call also inserts a new definition per call. Use declarations for recurring jobs the app knows at startup, and keep the runtime calls for definitions created by requests.
+
+The seed runs once per deployment. During a rolling deploy with `AddDeployStepsOnStartup`, old and new replicas can seed different sets and undo each other's changes until the old replicas stop; run the `seed` verb once per release instead.
+
 ### Failure policy
 
 A job's failure policy decides how many times a failed run retries, how long each retry waits, and which exceptions fail the run at once. The policy model, its delay math, and how it compares with Messaging are in [reliability.md](reliability.md). Name the policy type on the attribute:
@@ -199,7 +267,7 @@ A row with no intervals, such as a manager-added row or a call that set only a r
 
 **Execution.** Retries run in process under the job's lease, with the row `InProgress`; `RetryCount` is persisted before each wait, so a run resumed after a crash continues from the spent budget. Fail rules are looked up by function name when the run executes, so a changed fail rule applies to rows already stored; a changed count or delay applies only to rows scheduled afterwards. A failure a fail rule matches ends the run as `Failed` without its remaining retries, and a `FailWhen` that throws counts as a match and is logged. Cancellation and `TerminateExecutionException` never reach the policy. See [Error Handling and Retries](#error-handling-and-retries) for `OnExhausted`.
 
-**Cron definitions.** A `[Job(Cron = ...)]` definition is seeded with its resolved policy's flattened retries when the definition is created, and each occurrence runs with the definition's stored retries. Like `OnMissedRun`, the seed is never reapplied: a later policy change does not reach an existing definition. Edit it through `ICronJobManager` instead.
+**Cron definitions.** A `[Job(Cron = ...)]` definition is seeded with its resolved policy's flattened retries when the definition is created, and each occurrence runs with the definition's stored retries. Like `OnMissedRun`, the seed is never reapplied: a later policy change does not reach an existing definition. Edit it through `ICronJobManager` instead. A `SeedRecurringJob` declaration follows the same rule for its retries; see [Seeded recurring jobs](#seeded-recurring-jobs).
 
 ### Requeue a failed job
 
@@ -938,7 +1006,8 @@ Contracts, entity types, manager interfaces, and execution primitives for the Jo
 ### API and behavior
 
 - **Durable contract identity**: `[Job("invoice.create", ContractVersion = "schema-v2")]` and immutable `JobFunctionDescriptor.ContractVersion` declare the stored argument schema. The optional descriptor-constructor version defaults to `JobContract.InitialVersion` (`"1"`). `JobContract` defines a 200 UTF-16-unit function-name bound and a 100-unit version bound; names and versions are nonblank, ordinal, and reject surrounding whitespace, controls, and invalid Unicode without normalization or truncation.
-- **Jobs lineage**: `JobOptions` and `RecurringJobOptions` accept `CorrelationId` and `CausationId`. Persisted entities, `JobExecutionState`, and both execution-context forms carry contract version and Jobs-owned correlation, causation, and tenant metadata. `CronSeedDefinition` includes a version (default `"1"`), a `TimeZoneId`, and trailing `Retries` and `RetryIntervals` (the definition's flattened failure policy); consumers that deconstruct it must include every member. Seeding applies that version only to newly created definitions; existing name/version/request tuples require an explicit definition edit. Ordinary time-job and cron-definition edits preserve stored correlation and causation, including when update forms omit them.
+- **Jobs lineage**: `JobOptions` and `RecurringJobOptions` accept `CorrelationId` and `CausationId`. Persisted entities, `JobExecutionState`, and both execution-context forms carry contract version and Jobs-owned correlation, causation, and tenant metadata. `CronSeedDefinition` starts with the seeded row's `Id` and `Marker`, then the function, expression, and creation policies, a version (default `"1"`), a `TimeZoneId`, `Retries` and `RetryIntervals` (the definition's flattened failure policy), and trailing `Request`, `Description`, `OnNodeDeath`, `CorrelationId`, `CausationId`, and `RequestHash`; consumers that deconstruct it must include every member. An entry with a `RequestHash` (a `SeedRecurringJob` declaration) has its `Request` and `ContractVersion` rewritten together when they drift, so a contract-version bump reaches the existing definition on the next seed. An entry without one (a `[Job(Cron)]` cron) applies its version only to a newly created definition; its existing function/version/request tuple needs an explicit definition edit. Ordinary time-job and cron-definition edits preserve stored correlation and causation, including when update forms omit them.
+- **Seed reconcile SPI**: `IJobPersistenceProvider.MigrateDefinedCronJobsAsync(seedOwner, cronJobs, ct)` receives the owner's complete seed set, attribute crons and declarations together. Each `CronSeedDefinition` carries a deterministic `Id` and a `Marker` (`headless.jobs.seed:{owner}:cron:{function}` or `headless.jobs.seed:{owner}:decl:{key}`) that the provider stores in `InitIdentifier` on create. The seed validates the set before the call (`IInternalJobManager.MigrateDefinedCronJobs` throws `ArgumentException` for a blank owner, an owner containing `:`, an entry whose marker does not start with `headless.jobs.seed:{owner}:`, or duplicate ids), so a provider receives a checked set. A custom provider must: load only rows whose `InitIdentifier` starts with that prefix; match them by `Id`, never by function; delete `Idle` and `Queued` occurrences of owned rows whose id the set lacks; retire those rows while any occurrence is `InProgress` by setting `IsPaused = true`, refreshing `UpdatedAt`, and changing the marker to `headless.jobs.seed:{owner}:retired:{kind}:{name}` without changing the id; preserve their running occurrences and terminal history; delete the definition and all remaining occurrences once none is `InProgress`; insert missing entries with every creation value (policies, retries, `Request`, `Description`, `OnNodeDeath`, lineage) and treat a lost insert race on the id as benign; restore a drifted expression or zone; restore `Function`, `Request`, and `ContractVersion` together when the stored row names another job; and, for an entry whose `RequestHash` is set, rewrite `Request` and `ContractVersion` together when the stored version differs, the stored payload has no canonical form, or its canonical hash differs. A retired marker keeps the owner prefix, so subsequent seeds still select the row. Re-declaring its entry at the deterministic live-marker-derived id restores the live marker and unpauses the row, even without schedule or payload drift. Any restore bumps the revision, resets the schedule position, and retires pending occurrences. Existing policies and an operator's pause on a live seeded row are preserved.
 - **Occurrence snapshots**: every new cron occurrence owns `Function`, `ContractVersion`, and a copy of serialized `Request` bytes. Provider implementations must read the current persisted definition under their materialization transaction or lock, including `InsertCronJobOccurrencesAsync` with an already-populated caller tuple. Existing-row pickup, retry, and recovery retain the stored tuple.
 - **Routine scheduling facade**: `IJobScheduler` resolves generated `[Job]` metadata from the argument type or the job class, serializes typed arguments, schedules immediate, delayed, and recurring jobs without copied function strings or entity construction, and durably pauses or resumes cron definitions by ID.
 - **Generated descriptors**: immutable `JobFunctionDescriptor` values expose function identity, nullable request type, cron metadata, priority, and maximum concurrency without exposing execution delegates.
@@ -1125,7 +1194,7 @@ Core implementation of the Jobs scheduler: in-memory persistence provider, execu
 - **Storage-agnostic recovery planner**: `CronRecoveryPlanner` resolves the whole coalesce decision as a pure value (`CronRecoveryPlan`, `CronRecoveryWindow`, `CronRecoveryRunStep`, `CronRecoveryRunStepKind`, `CronRecoveryResolution`) that every provider — relational, in-memory, or third-party — applies with its own fenced writes. See [Applying a recovery pass](#applying-a-recovery-pass).
 - **`DisableBackgroundServices()`**: suppresses background execution; only the managers are registered (useful for enqueue-only nodes and test projects).
 - **`DisableStartupInitialization()`**: skips `JobsInitializationHostedService` (catalog checks, the provider's startup action) and the `JobsActivation` warm-up (the fingerprint activation drain) and, on the durable store, `JobsCoordinationStartupGate`. Seeding is not part of it. Requires `DisableBackgroundServices()`, because the scheduler dispatches only after the drain and a claim stamps the identity the gate registers.
-- **Seeding (opt-in)**: the `Jobs` [seeder](utilities.md#database-seeders) writes the code-declared cron jobs (skip them with `IgnoreSeedDefinedCronJobs()`), then runs the `UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task>)` and `UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>)` delegates. The host start does not run it: the deployment runs `dotnet MyApp.dll seed`, or a development or test host calls `AddDeployStepsOnStartup()`, whose seeding finishes before the scheduler's activation barrier opens. Without a seed:
+- **Seeding (opt-in)**: the `Jobs` [seeder](utilities.md#database-seeders) reconciles this owner's seeded cron rows against the `[Job(Cron)]` crons and the `SeedRecurringJob` declarations (see [Seeded recurring jobs](#seeded-recurring-jobs); `IgnoreSeedDefinedCronJobs()` drops only the attribute crons from that set), then runs the `UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task>)` and `UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>)` delegates. The host start does not run it: the deployment runs `dotnet MyApp.dll seed`, or a development or test host calls `AddDeployStepsOnStartup()`, whose seeding finishes before the scheduler's activation barrier opens. Without a seed:
   - a changed cron expression or time zone is not applied: the old schedule keeps firing, and its Idle and Queued occurrences are not retired;
   - a cron removed from code keeps its row and keeps firing occurrences that resolve no handler;
   - a cron added to code gets no row, so it never fires;
@@ -1365,8 +1434,9 @@ builder.Services.AddHeadlessJobs(options =>
     options.DisableBackgroundServices(); // test / enqueue-only nodes
     options.DisableStartupInitialization(); // test hosts: no store access at startup (requires the line above)
     options.UseGZipCompression(); // compress request payloads
-    options.IgnoreSeedDefinedCronJobs(); // the Jobs seeder skips attribute cron jobs
-    options.UseJobsSeeder(async manager => // runs in the Jobs seeder (seed verb or AddDeployStepsOnStartup)
+    options.SeedOwner("billing"); // default: "default"; distinct per app that shares the Jobs store
+    options.IgnoreSeedDefinedCronJobs(); // the seed drops attribute crons (and deletes their rows); declarations still seed
+    options.UseJobsSeeder(async manager => // runs on every seed (seed verb or AddDeployStepsOnStartup); not idempotent
     {
         await manager.AddAsync(new TimeJobEntity { Function = "Init", ExecutionTime = DateTime.UtcNow });
     });

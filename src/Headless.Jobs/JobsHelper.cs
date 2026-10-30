@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.IO.Compression;
+using System.Security.Cryptography;
 using Headless.Checks;
 
 namespace Headless.Jobs;
@@ -14,6 +16,12 @@ namespace Headless.Jobs;
 public static class JobsHelper
 {
     private static readonly byte[] _GZipSignature = [0x1f, 0x8b, 0x08, 0x00];
+
+    // Reads a sentinel-signed payload whatever this host's own compression setting, under the default expansion cap.
+    private static readonly JobsRequestSerializationOptions _CompressedPayloadReadOptions = new()
+    {
+        UseGZipCompression = true,
+    };
 
     /// <summary>
     /// Serializes <paramref name="data"/> to the byte array format used by the persistence layer,
@@ -202,6 +210,85 @@ public static class JobsHelper
         }
 
         return Encoding.UTF8.GetString(expandedStream.GetBuffer(), 0, checked((int)expandedStream.Length));
+    }
+
+    /// <summary>
+    /// Computes the canonical hash of a stored request payload without knowing its request type, so two payloads that
+    /// carry the same arguments compare equal however the writing host serialized them. A payload that ends in the GZip
+    /// sentinel is decompressed first, whatever the reading host's compression setting. The JSON is then rewritten with
+    /// object members in ordinal name order and no insignificant whitespace, and hashed.
+    /// </summary>
+    /// <param name="payload">The stored request bytes; empty for a job that takes no arguments.</param>
+    /// <returns>
+    /// The lowercase hexadecimal SHA-256 of the canonical JSON, of the empty sequence for an empty payload, or
+    /// <see langword="null"/> when the payload is neither valid JSON nor valid compressed JSON.
+    /// </returns>
+    internal static string? TryComputeCanonicalRequestHash(byte[] payload)
+    {
+        Argument.IsNotNull(payload);
+
+        if (payload.Length == 0)
+        {
+            return Convert.ToHexStringLower(SHA256.HashData([]));
+        }
+
+        try
+        {
+            using var document = _HasGZipSentinel(payload)
+                ? JsonDocument.Parse(ReadJobRequestAsString(payload, _CompressedPayloadReadOptions))
+                : JsonDocument.Parse(payload);
+            var canonical = new ArrayBufferWriter<byte>();
+
+            using (var writer = new Utf8JsonWriter(canonical))
+            {
+                _WriteCanonical(writer, document.RootElement);
+            }
+
+            return Convert.ToHexStringLower(SHA256.HashData(canonical.WrittenSpan));
+        }
+        // InvalidOperationException: a string escapes an unpaired surrogate, which has no UTF-16 value to rewrite.
+        catch (Exception e) when (e is JsonException or InvalidDataException or InvalidOperationException)
+        {
+            // A payload no reader can parse has no canonical form. The caller treats it as differing from every
+            // declared payload, so the seed overwrites it rather than failing.
+            return null;
+        }
+    }
+
+    private static void _WriteCanonical(Utf8JsonWriter writer, JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+
+                foreach (var property in element.EnumerateObject().OrderBy(x => x.Name, StringComparer.Ordinal))
+                {
+                    writer.WritePropertyName(property.Name);
+                    _WriteCanonical(writer, property.Value);
+                }
+
+                writer.WriteEndObject();
+                break;
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+
+                foreach (var item in element.EnumerateArray())
+                {
+                    _WriteCanonical(writer, item);
+                }
+
+                writer.WriteEndArray();
+                break;
+            case JsonValueKind.String:
+                writer.WriteStringValue(element.GetString());
+                break;
+            default:
+                // A number keeps its written text, so no precision is lost or invented; true, false and null have one
+                // spelling each.
+                writer.WriteRawValue(element.GetRawText(), skipInputValidation: true);
+                break;
+        }
     }
 
     private static MemoryStream _OpenCompressedPayload(byte[] gzipBytes)

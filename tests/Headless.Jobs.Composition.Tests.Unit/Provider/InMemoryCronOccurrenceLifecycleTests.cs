@@ -2,6 +2,7 @@
 
 using Headless.Hosting;
 using Headless.Jobs;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Provider;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,15 +26,16 @@ public sealed class InMemoryCronOccurrenceLifecycleTests : TestBase
     {
         using var fixture = new Fixture();
         var provider = fixture.Provider;
-        var seed = new CronSeedDefinition(
+        var seed = CronSeedDefinition.ForCronFunction(
+            JobsSeedId.DefaultOwner,
             "seeded.contract",
             "* * * * *",
             MissedRunPolicy.Skip,
             60,
             CronOverlapPolicy.Allow,
-            ContractVersion: "1"
+            contractVersion: "1"
         );
-        await provider.MigrateDefinedCronJobsAsync([seed], AbortToken);
+        await provider.MigrateDefinedCronJobsAsync(JobsSeedId.DefaultOwner, [seed], AbortToken);
         var definitionId = (await provider.GetAllCronJobExpressionsAsync(AbortToken)).Single().Id;
         var definition = (await provider.GetCronJobByIdAsync(definitionId, AbortToken))!;
         definition.Request = [1, 2, 3];
@@ -45,7 +47,19 @@ public sealed class InMemoryCronOccurrenceLifecycleTests : TestBase
             Expression = changeExpression ? "*/2 * * * *" : seed.Expression,
         };
         await provider.MigrateDefinedCronJobsAsync(
-            [upgradedSeed, upgradedSeed with { Function = "new.contract" }],
+            JobsSeedId.DefaultOwner,
+            [
+                upgradedSeed,
+                CronSeedDefinition.ForCronFunction(
+                    JobsSeedId.DefaultOwner,
+                    "new.contract",
+                    upgradedSeed.Expression,
+                    MissedRunPolicy.Skip,
+                    60,
+                    CronOverlapPolicy.Allow,
+                    contractVersion: "2"
+                ),
+            ],
             AbortToken
         );
 

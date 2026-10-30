@@ -88,7 +88,16 @@ internal interface IInternalJobManager
 
     Task<T?> GetRequestAsync<T>(Guid jobId, JobType type, CancellationToken cancellationToken = default);
     Task<JobExecutionState[]> RunTimedOutTickers(CancellationToken cancellationToken = default);
-    Task MigrateDefinedCronJobs(CronSeedDefinition[] cronExpressions, CancellationToken cancellationToken = default);
+
+    /// <summary>Validates one seed owner's set and reconciles it through the persistence provider.</summary>
+    /// <exception cref="ArgumentException">
+    /// The owner is blank or contains <c>:</c>, an entry's marker is not owned by it, or two entries share an id.
+    /// </exception>
+    Task MigrateDefinedCronJobs(
+        string seedOwner,
+        CronSeedDefinition[] cronExpressions,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Processes one bounded keyset page of cron definitions whose persisted evaluation fingerprint no longer matches

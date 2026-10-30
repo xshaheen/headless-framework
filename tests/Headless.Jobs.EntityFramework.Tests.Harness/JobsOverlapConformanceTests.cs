@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Jobs;
+using Headless.Jobs.Internal;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -192,7 +193,8 @@ public abstract class JobsOverlapConformanceTests<TFixture>(TFixture fixture) : 
         using var host = fixture.BuildHost("overlap-seed");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         var persistence = _Persistence(host);
-        var seed = new CronSeedDefinition(
+        var seed = CronSeedDefinition.ForCronFunction(
+            JobsSeedId.DefaultOwner,
             "overlap-seed",
             "0 0 * * * *",
             MissedRunPolicy.Coalesce,
@@ -200,7 +202,7 @@ public abstract class JobsOverlapConformanceTests<TFixture>(TFixture fixture) : 
             CronOverlapPolicy.Skip
         );
 
-        await persistence.MigrateDefinedCronJobsAsync([seed], ct);
+        await persistence.MigrateDefinedCronJobsAsync(JobsSeedId.DefaultOwner, [seed], ct);
         var created = (await persistence.GetCronJobsAsync(predicate: null, ct)).Single();
         created.OnOverlap.Should().Be(CronOverlapPolicy.Skip);
 
@@ -212,7 +214,7 @@ public abstract class JobsOverlapConformanceTests<TFixture>(TFixture fixture) : 
         );
         updated.Should().NotBeNull();
 
-        await persistence.MigrateDefinedCronJobsAsync([seed], ct);
+        await persistence.MigrateDefinedCronJobsAsync(JobsSeedId.DefaultOwner, [seed], ct);
 
         (await persistence.GetCronJobsAsync(predicate: null, ct))
             .Single()

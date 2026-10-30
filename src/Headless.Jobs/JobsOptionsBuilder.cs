@@ -2,6 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
+using Headless.Jobs.Internal;
 using Headless.Reliability;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +22,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
 {
     private readonly JobsExecutionContext _tickerExecutionContext;
     private readonly List<string> _runOnly = [];
+    private readonly List<RecurringJobDeclaration> _recurringJobDeclarations = [];
     private JobOptions _jobDefaults = new();
     private readonly Dictionary<Type, JobOptions> _jobOptionsByRequest = [];
     private FailurePolicyDefinition? _defaultFailurePolicy;
@@ -269,10 +271,13 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
         JobsRequestSerializationOptions.DefaultMaxDecompressedRequestBytes;
 
     /// <summary>
-    /// Controls whether code-defined cron jobs are seeded on startup.
-    /// Defaults to true.
+    /// Controls whether the seed writes the crons declared with <c>[Job(Cron)]</c>. Defaults to true. Declarations
+    /// always seed.
     /// </summary>
     internal bool SeedDefinedCronJobs { get; set; } = true;
+
+    /// <summary>The seed owner set by <see cref="SeedOwner"/>, else the shared default.</summary>
+    internal string SeedOwnerName { get; private set; } = JobsSeedId.DefaultOwner;
 
     /// <summary>
     /// Controls whether background services (job processors) should be registered.
@@ -313,6 +318,8 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
 
     // Explicit interface implementation for IJobsOptionsSeeding
     bool IJobsOptionsSeeding.SeedDefinedCronJobs => SeedDefinedCronJobs;
+    string IJobsOptionsSeeding.SeedOwner => SeedOwnerName;
+    IReadOnlyList<RecurringJobDeclaration> IJobsOptionsSeeding.RecurringJobDeclarations => _recurringJobDeclarations;
     Func<IServiceProvider, Task>? IJobsOptionsSeeding.TimeSeederAction => TimeSeederAction;
     Func<IServiceProvider, Task>? IJobsOptionsSeeding.CronSeederAction => CronSeederAction;
 
@@ -405,13 +412,114 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     }
 
     /// <summary>
-    /// Disables automatic seeding of code-defined cron jobs on startup. Use when cron job definitions
-    /// are managed entirely via <c>ICronJobManager</c> rather than seeded from code.
+    /// Stops the seed from writing the crons declared with <c>[Job(Cron)]</c>. Recurring jobs declared with
+    /// <c>SeedRecurringJob</c> still seed.
     /// </summary>
+    /// <remarks>
+    /// The seed still reconciles this owner's rows, so the attribute-cron rows it seeded before are deleted with their
+    /// occurrences on the next seed. Rows created at runtime through <c>ICronJobManager</c> or
+    /// <c>ScheduleRecurringAsync</c> are never touched.
+    /// </remarks>
     /// <returns>This builder for method chaining.</returns>
     public JobsOptionsBuilder<TTimeJob, TCronJob> IgnoreSeedDefinedCronJobs()
     {
         SeedDefinedCronJobs = false;
+        return this;
+    }
+
+    /// <summary>
+    /// Declares a recurring run of the job that accepts <typeparamref name="TArgs"/>, with <paramref name="request"/>
+    /// as its arguments. The seed writes it as its own cron definition, identified by <paramref name="key"/>.
+    /// </summary>
+    /// <remarks>
+    /// Declarations are seeded with the <c>[Job(Cron)]</c> crons as one set: each seed leaves exactly one definition
+    /// per declaration and deletes, with its occurrences, a definition this owner seeded for a declaration the app no
+    /// longer makes. Several declarations may run one job with different arguments, zones, or expressions. Changing a
+    /// key deletes the old definition and creates a new one.
+    /// <para>
+    /// Code wins on the expression, zone, and arguments: when any of them differs from the stored definition, including
+    /// after an operator edit, the next seed restores it, together with the job's current contract version, and resets
+    /// the definition's schedule position without replaying missed runs. The description, retries, node-death policy,
+    /// correlation and causation ids, and the job's missed-run and overlap policies are written only when the
+    /// definition is created, and the seed never writes pause state.
+    /// </para>
+    /// <para>
+    /// The request is serialized when the seed runs, with the host's request serialization settings, as
+    /// <c>IJobScheduler.ScheduleRecurringAsync</c> serializes it. Startup validation rejects two declarations with one
+    /// key and a declaration whose job is not registered, before any seed writes.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="TArgs">The argument type of the registered job to run.</typeparam>
+    /// <param name="key">The declaration's key, unique within the app. It is hashed into the seeded row's id.</param>
+    /// <param name="request">The arguments each occurrence runs with.</param>
+    /// <param name="cronExpression">
+    /// A six-field cron expression, or a <c>%name%</c> value that resolves from configuration as a <c>[Job(Cron)]</c>
+    /// value does.
+    /// </param>
+    /// <param name="options">The zone, description, retries, and other recurring options, or <see langword="null"/>.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="key"/> or <paramref name="cronExpression"/> is null.</exception>
+    /// <exception cref="ArgumentException"><paramref name="key"/> or <paramref name="cronExpression"/> is empty or whitespace.</exception>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> SeedRecurringJob<TArgs>(
+        string key,
+        TArgs request,
+        string cronExpression,
+        RecurringJobOptions? options = null
+    )
+    {
+        _recurringJobDeclarations.Add(RecurringJobDeclaration.WithArguments(key, request, cronExpression, options));
+        return this;
+    }
+
+    /// <summary>
+    /// Declares a recurring run of <typeparamref name="TJob"/>, a job that takes no arguments. The seed writes it as its
+    /// own cron definition, identified by <paramref name="key"/>.
+    /// </summary>
+    /// <remarks>
+    /// The reconcile rules are those of <see cref="SeedRecurringJob{TArgs}(string, TArgs, string, RecurringJobOptions)"/>.
+    /// A job may have both a <c>[Job(Cron)]</c> cron and declarations; each is its own definition.
+    /// </remarks>
+    /// <typeparam name="TJob">The <c>[Job]</c> class to run.</typeparam>
+    /// <param name="key">The declaration's key, unique within the app. It is hashed into the seeded row's id.</param>
+    /// <param name="cronExpression">
+    /// A six-field cron expression, or a <c>%name%</c> value that resolves from configuration as a <c>[Job(Cron)]</c>
+    /// value does.
+    /// </param>
+    /// <param name="options">The zone, description, retries, and other recurring options, or <see langword="null"/>.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="key"/> or <paramref name="cronExpression"/> is null.</exception>
+    /// <exception cref="ArgumentException"><paramref name="key"/> or <paramref name="cronExpression"/> is empty or whitespace.</exception>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> SeedRecurringJob<TJob>(
+        string key,
+        string cronExpression,
+        RecurringJobOptions? options = null
+    )
+        where TJob : IJob
+    {
+        _recurringJobDeclarations.Add(RecurringJobDeclaration.WithoutArguments<TJob>(key, cronExpression, options));
+        return this;
+    }
+
+    /// <summary>
+    /// Names the owner of the cron definitions this host seeds. The seed reconciles only rows seeded under this owner:
+    /// it never matches, rewrites, or deletes a row another owner seeded or a row created at runtime.
+    /// </summary>
+    /// <remarks>
+    /// Without this call the owner is <c>"default"</c>, one value shared by every host that sets none, so all hosts of
+    /// one app, including an app split across executables, converge on one row per seeded definition. Apps that share
+    /// one Jobs store must set distinct owners, and every host of one app must set the same owner. Changing the owner
+    /// orphans the rows seeded under the old one: the next seed creates new rows and never deletes the old ones.
+    /// </remarks>
+    /// <param name="owner">The owner name. It is stored in each seeded row's marker and hashed into its id.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="owner"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="owner"/> is empty or whitespace, or contains <c>:</c>, which would let one owner's marker prefix
+    /// match another owner's rows.
+    /// </exception>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> SeedOwner(string owner)
+    {
+        SeedOwnerName = JobsSeedId.ValidateOwner(owner);
         return this;
     }
 
@@ -447,9 +555,13 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     }
 
     /// <summary>
-    /// Registers a startup seeder delegate for time jobs. The delegate is invoked once during host
-    /// startup via <c>IHostedService</c> initialization, after the operational store is ready.
+    /// Registers a seeder delegate for time jobs. The Jobs seeder runs it on every seed (the <c>seed</c> verb, or
+    /// <c>AddDeployStepsOnStartup</c>), after it reconciles the seeded crons.
     /// </summary>
+    /// <remarks>
+    /// The delegate is imperative: the seed does not track what it wrote, so it runs again on every seed and must make
+    /// its own writes idempotent.
+    /// </remarks>
     /// <param name="timeSeeder">
     /// Async factory that receives <c>ITimeJobManager</c> and enqueues initial time jobs.
     /// </param>
@@ -471,11 +583,16 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     }
 
     /// <summary>
-    /// Registers a startup seeder delegate for cron jobs. The delegate is invoked once during host
-    /// startup via <c>IHostedService</c> initialization, after the operational store is ready.
+    /// Registers a seeder delegate for cron jobs. The Jobs seeder runs it on every seed (the <c>seed</c> verb, or
+    /// <c>AddDeployStepsOnStartup</c>), after it reconciles the seeded crons.
     /// </summary>
+    /// <remarks>
+    /// The delegate is imperative: the seed does not track what it wrote, so it runs again on every seed, and an
+    /// <c>ICronJobManager.AddAsync</c> call inside it inserts a new definition each time. Declare recurring jobs with
+    /// <c>SeedRecurringJob</c> instead to get one reconciled definition each.
+    /// </remarks>
     /// <param name="cronSeeder">
-    /// Async factory that receives <c>ICronJobManager</c> and inserts or upserts initial cron job definitions.
+    /// Async factory that receives <c>ICronJobManager</c> and writes cron job definitions.
     /// </param>
     /// <returns>This builder for method chaining.</returns>
     public JobsOptionsBuilder<TTimeJob, TCronJob> UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>? cronSeeder)
@@ -495,7 +612,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     }
 
     /// <summary>
-    /// Registers startup seeder delegates for both time and cron jobs in a single call.
+    /// Registers seeder delegates for both time and cron jobs in a single call. Both run on every seed.
     /// </summary>
     /// <param name="timeSeeder">Seeder for time jobs.</param>
     /// <param name="cronSeeder">Seeder for cron job definitions.</param>
