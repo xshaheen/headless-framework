@@ -472,14 +472,16 @@ public static partial class JobsCoordinationFixtureExtensions
             fixture.ConfigureCoordination(setup);
             setup.Configure(options =>
             {
+                // No enqueue scenario waits for a node to die, so these hosts run the steady profile: on the
+                // second-scale one, a heartbeat stalled past 1.2 s by a loaded run declares the live node Dead, the
+                // store rejects its identity, and the node self-fences and stops the host while it is still starting.
                 options.ClusterName = ClusterName;
-                options.HeartbeatInterval = HeartbeatInterval;
-                options.SuspicionThreshold = SuspicionThreshold;
-                options.DeadThreshold = DeadThreshold;
-                options.DeadRetentionWindow = DeadRetentionWindow;
-                // Fence at DeadThreshold, where these hosts fenced before the margin existed: their 200ms beats against
-                // a loaded database container can stall past the derived 1s fence and stop stamping mid-test, and
-                // these hosts exercise claims and stamping, not the margin.
+                options.HeartbeatInterval = _SteadyMembershipTimings.Heartbeat;
+                options.SuspicionThreshold = _SteadyMembershipTimings.Suspicion;
+                options.DeadThreshold = _SteadyMembershipTimings.Dead;
+                options.DeadRetentionWindow = _SteadyMembershipTimings.DeadRetention;
+                // Fence at DeadThreshold, where these hosts fenced before the margin existed: these hosts exercise
+                // claims and stamping, not the margin.
                 options.SelfFenceMargin = TimeSpan.Zero;
             });
         });
