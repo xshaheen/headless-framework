@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.UnitOfWork;
+
 namespace Headless.Features;
 
 /// <summary>
@@ -100,6 +102,57 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
         cancellationToken.ThrowIfCancellationRequested();
 
         return Task.FromResult(DisposableFactory.EmptyAsync);
+    }
+
+    /// <inheritdoc/>
+    public virtual Task<string?> GetOrDefaultEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        FeatureDefinition feature,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        return Store.GetOrDefaultEnlistedAsync(
+            unitOfWork,
+            feature.Name,
+            Name,
+            NormalizeProviderKey(providerKey),
+            cancellationToken
+        );
+    }
+
+    /// <inheritdoc/>
+    public virtual Task SetAllEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyList<KeyValuePair<FeatureDefinition, string?>> values,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        var valuesByName = new Dictionary<string, string?>(values.Count, StringComparer.Ordinal);
+
+        foreach (var (feature, value) in values)
+        {
+            valuesByName[feature.Name] = value;
+        }
+
+        return Store.SetAllEnlistedAsync(
+            unitOfWork,
+            valuesByName,
+            Name,
+            NormalizeProviderKey(providerKey),
+            cancellationToken
+        );
+    }
+
+    /// <inheritdoc/>
+    public virtual Task<IReadOnlyList<string>> DeleteAllEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        return Store.DeleteEnlistedAsync(unitOfWork, Name, NormalizeProviderKey(providerKey), cancellationToken);
     }
 
     /// <summary>Transforms the caller-supplied <paramref name="providerKey"/> before passing it to the store. Returns <paramref name="providerKey"/> unchanged by default.</summary>

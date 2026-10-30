@@ -5,6 +5,7 @@ using Headless.Context;
 using Headless.Features;
 using Headless.Features.Resources;
 using Headless.Messaging;
+using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using NSubstitute.ExceptionExtensions;
 
@@ -35,6 +36,7 @@ public sealed class FeatureManagerTests : TestBase
             _valueProviderManager,
             new DefaultFeatureErrorsDescriptor(),
             _hostIdentity,
+            Substitute.For<ICurrentTenant>(),
             _bus
         );
     }
@@ -272,6 +274,7 @@ public sealed class FeatureManagerTests : TestBase
             _valueProviderManager,
             new DefaultFeatureErrorsDescriptor(),
             _hostIdentity,
+            Substitute.For<ICurrentTenant>(),
             bus: null
         );
 

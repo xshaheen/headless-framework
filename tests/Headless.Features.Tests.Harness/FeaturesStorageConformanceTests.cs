@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
@@ -286,7 +287,8 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
             Substitute.For<IFeatureDefinitionManager>(),
             host.Services.GetRequiredService<IFeatureValueRecordRepository>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
-            host.Services.GetRequiredService<ICache>()
+            host.Services.GetRequiredService<ICache>(),
+            NullLogger<FeatureValueStore>.Instance
         );
         var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
 
@@ -320,7 +322,8 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
             Substitute.For<IFeatureDefinitionManager>(),
             repository,
             new SequentialGuidGenerator(SequentialGuidType.Version7),
-            host.Services.GetRequiredService<ICache>()
+            host.Services.GetRequiredService<ICache>(),
+            NullLogger<FeatureValueStore>.Instance
         );
         await repository.InsertAsync(
             new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "true", "Tenant", "acme"),

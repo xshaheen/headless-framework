@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Caching;
 using Headless.Features;
 using Headless.Hosting;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -46,6 +48,22 @@ public interface IFeaturesStorageFixture
     /// and every index, primary key included, as <c>table.index</c>.
     /// </summary>
     Task<FeaturesStoreObjects> ReadStoreObjectsAsync(string schema, CancellationToken cancellationToken);
+
+    /// <summary>A connection string to another database on the same server, for refusal tests.</summary>
+    string OtherDatabaseConnectionString { get; }
+
+    /// <summary>Creates an unopened provider connection.</summary>
+    DbConnection CreateConnection(string connectionString);
+
+    /// <summary>Begins an owned raw-ADO unit of work on <paramref name="connection"/>.</summary>
+    ValueTask<IUnitOfWork> BeginUnitOfWorkAsync(
+        IUnitOfWorkFactory factory,
+        DbConnection connection,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Enlists a caller-committed <paramref name="transaction"/> as an observed unit of work.</summary>
+    IUnitOfWork EnlistUnitOfWork(IUnitOfWorkFactory factory, DbConnection connection, DbTransaction transaction);
 }
 
 /// <summary>A schema's columns and indexes as <c>table.name</c> strings, compared between raw DDL and the EF model.</summary>
@@ -63,7 +81,8 @@ public static class FeaturesStorageFixtureExtensions
         this IFeaturesStorageFixture fixture,
         string schema,
         string? connectionString = null,
-        bool setupResources = true
+        bool setupResources = true,
+        Action<IServiceCollection>? configureServices = null
     )
     {
         var builder = Host.CreateApplicationBuilder();
@@ -75,6 +94,8 @@ public static class FeaturesStorageFixtureExtensions
             setup.ConfigureStorage(options => options.Schema = schema);
             fixture.UseStorage(setup, connectionString ?? fixture.ConnectionString);
         });
+
+        configureServices?.Invoke(builder.Services);
 
         if (setupResources)
         {
