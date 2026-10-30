@@ -6,9 +6,12 @@ using Headless.Context;
 using Headless.Features.Resources;
 using Headless.Hosting;
 using Headless.Messaging;
+using Headless.MultiTenancy;
+using Headless.UnitOfWork;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Features;
@@ -180,7 +183,8 @@ public static class SetupFeatures
                 sp.GetRequiredService<IFeatureDefinitionManager>(),
                 sp.GetRequiredService<IFeatureValueRecordRepository>(),
                 sp.GetRequiredService<IGuidGenerator>(),
-                cache
+                cache,
+                sp.GetRequiredService<ILogger<FeatureValueStore>>()
             );
         });
 
@@ -195,6 +199,18 @@ public static class SetupFeatures
 
         services.TryAddSingleton<IFeatureValueProviderManager, FeatureValueProviderManager>();
         services.TryAddTransient<IFeatureManager, FeatureManager>();
+
+        // unit.Features: the enlisted writes, resolved by the unit of work from this container. A unit-of-work feature
+        // must be a singleton, which FeatureManager can be (every dependency is one); a separate registration, so a
+        // host that replaces IFeatureManager keeps the framework's enlisted path.
+        services.AddUnitOfWork();
+        services.TryAddSingleton<IUnitOfWorkFeatures, FeatureManager>();
+
+        // The manager stamps an enlisted write's change announcement with the writing tenant. Same fallback as
+        // Permissions, Settings, Messaging, and Jobs: an AsyncLocal-backed tenant, replaced by any real tenancy
+        // registration.
+        services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
+        services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
         services.TryAddTransient<IClientVisibleFeaturesReader, ClientVisibleFeaturesReader>();
 
         services.AddSingleton<IMethodInvocationFeatureCheckerService, MethodInvocationFeatureCheckerService>();

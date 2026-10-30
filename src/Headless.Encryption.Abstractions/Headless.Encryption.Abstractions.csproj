@@ -1,0 +1,11 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Contracts for Headless field-level envelope encryption: the field encryptor, the self-describing ciphertext frame, data-key management, and the key-encryption-key and key-store provider interfaces.</Description>
+    <PackageTags>headless;encryption;envelope-encryption;pii;aes-gcm;dotnet</PackageTags>
+    <RootNamespace>Headless.Encryption</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+  </ItemGroup>
+</Project>

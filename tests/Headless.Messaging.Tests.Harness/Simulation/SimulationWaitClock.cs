@@ -97,13 +97,24 @@ public sealed class SimulationWaitClock : TimeProvider, IAsyncDisposable
                     }
                 }
 
-                var pending = _broker.Clock.PendingWaitsArmedSince(0);
-                var step = pending.Count == 0 || pending[0] < TimeSpan.Zero ? TimeSpan.Zero : pending[0];
-                _broker.Clock.Advance(step);
+                // Quiescence is read again under the broker's gate, in the same step as the advance. Between the wait
+                // above and here, a test can take a delivery, publish the next message, and arm the next receive's
+                // timeout; acting on the earlier reading would then step past a delivery already due.
+                lock (_broker.Gate)
+                {
+                    if (!_broker.IsQuiescentLocked())
+                    {
+                        continue;
+                    }
 
-                // A client woken by the advance looks parked until it polls again; counting the advance as a broker
-                // change makes quiescence wait for every client to look at the new time first.
-                _broker.Signal();
+                    var pending = _broker.Clock.PendingWaitsArmedSince(0);
+                    var step = pending.Count == 0 || pending[0] < TimeSpan.Zero ? TimeSpan.Zero : pending[0];
+                    _broker.Clock.Advance(step);
+
+                    // A client woken by the advance looks parked until it polls again; counting the advance as a broker
+                    // change makes quiescence wait for every client to look at the new time first.
+                    _broker.SignalLocked();
+                }
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)

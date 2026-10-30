@@ -200,7 +200,35 @@ public sealed class SqlServerAuditLogMissingTransactionTests(SqlServerAuditLogFi
             .Be(1);
     }
 
-    private async Task<IHost> _StartHostAsync(MissingTransactionStrategy strategy)
+    [Fact]
+    public async Task should_record_registered_client_info_on_log_and_writer_entries()
+    {
+        // given
+        var clientInfo = Substitute.For<IAuditClientInfoProvider>();
+        clientInfo.IpAddress.Returns("198.51.100.23");
+        clientInfo.UserAgent.Returns("agent/1.0");
+        using var host = await _StartHostAsync(MissingTransactionStrategy.Throw, clientInfo);
+        await using var scope = host.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<SqlServerStrictAuditDbContext>();
+        var auditLog = scope.ServiceProvider.GetRequiredService<IAuditLog<SqlServerStrictAuditDbContext>>();
+        var writer = scope.ServiceProvider.GetRequiredService<IAuditLogWriter<SqlServerStrictAuditDbContext>>();
+        await using var transaction = await db.Database.BeginTransactionAsync(AbortToken);
+
+        // when
+        await auditLog.LogAsync(new AuditLogWriteRequest { Action = "client.log" }, AbortToken);
+        await transaction.CommitAsync(AbortToken);
+        await writer.WriteAsync(new AuditLogWriteRequest { Action = "client.writer" }, AbortToken);
+
+        // then
+        (await _CountAuditRowsByClientAsync("198.51.100.23"))
+            .Should()
+            .Be(2);
+    }
+
+    private async Task<IHost> _StartHostAsync(
+        MissingTransactionStrategy strategy,
+        IAuditClientInfoProvider? clientInfo = null
+    )
     {
         await _ExecuteAsync(
             $"""
@@ -222,6 +250,11 @@ public sealed class SqlServerAuditLogMissingTransactionTests(SqlServerAuditLogFi
             setup.ConfigureStorage(options => options.Schema = _AuditSchema);
             setup.UseSqlServer(fixture.ConnectionString);
         });
+
+        if (clientInfo is not null)
+        {
+            builder.Services.AddSingleton(clientInfo);
+        }
 
         builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
         var host = builder.Build();
@@ -247,6 +280,14 @@ public sealed class SqlServerAuditLogMissingTransactionTests(SqlServerAuditLogFi
         return await _ScalarAsync(
             $"SELECT COUNT(*) FROM [{_AuditSchema}].[AuditLogEntries] WHERE [EntityId] = @value;",
             id.ToString()
+        );
+    }
+
+    private async Task<int> _CountAuditRowsByClientAsync(string ipAddress)
+    {
+        return await _ScalarAsync(
+            $"SELECT COUNT(*) FROM [{_AuditSchema}].[AuditLogEntries] WHERE [IpAddress] = @value AND [UserAgent] = 'agent/1.0';",
+            ipAddress
         );
     }
 

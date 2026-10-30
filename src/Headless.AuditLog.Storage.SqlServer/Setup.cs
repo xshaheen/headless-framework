@@ -161,6 +161,7 @@ public static class SetupAuditLogSqlServer
                     AuditLogJsonColumnType.NvarcharMax,
                     [AuditLogJsonColumnType.NvarcharMax],
                     $"{nameof(AuditLogStorageOptions.JsonColumnType)} must be NvarcharMax for the SqlServer audit-log provider.",
+                    SqlServerAuditLogSchemaContribution.PurgeStatements,
                     SqlServerAuditLogSchemaContribution.CreatedAtBinder
                 ),
                 SqlServerAuditLogSchemaContribution.Create

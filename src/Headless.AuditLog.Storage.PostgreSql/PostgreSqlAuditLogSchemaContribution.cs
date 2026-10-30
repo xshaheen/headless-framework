@@ -7,13 +7,15 @@ using Headless.Sql.PostgreSql;
 namespace Headless.AuditLog.PostgreSql;
 
 /// <summary>
-/// The AuditLog feature's schema contribution for PostgreSQL: the audit log table and its read indexes, as two
-/// idempotent steps the Headless schema runner applies.
+/// The AuditLog feature's schema contribution for PostgreSQL: the audit log table and its read indexes, plus the
+/// append-only trigger when <see cref="AuditLogStorageOptions.AppendOnly"/> is on, as idempotent steps the Headless
+/// schema runner applies.
 /// </summary>
 internal static class PostgreSqlAuditLogSchemaContribution
 {
     public const string TableStepVersion = "1";
     public const string IndexesStepVersion = "2";
+    public const string AppendOnlyStepVersion = "3";
 
     public static SchemaContribution Create(
         PostgreSqlAuditLogOptions providerOptions,
@@ -81,6 +83,23 @@ internal static class PostgreSqlAuditLogSchemaContribution
             )}" ON {table} ("correlation_id", "created_at", "id");
             """;
 
+        List<SchemaStep> steps =
+        [
+            new(TableStepVersion, "Create the audit log table.", tableSql),
+            new(IndexesStepVersion, "Create the audit log read indexes.", indexesSql),
+        ];
+
+        if (storageOptions.AppendOnly)
+        {
+            steps.Add(
+                new(
+                    AppendOnlyStepVersion,
+                    "Make the audit log table append-only.",
+                    _AppendOnlySql(auditLogTable.Schema, tableName, table)
+                )
+            );
+        }
+
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
                 "AuditLog",
@@ -92,13 +111,65 @@ internal static class PostgreSqlAuditLogSchemaContribution
             dialect: PostgreSqlSchemaDialect.Instance,
             createConnection: () => PostgreSqlDialect.Instance.CreateConnection(providerOptions.ConnectionString),
             schema: auditLogTable.Schema,
-            steps:
-            [
-                new SchemaStep(TableStepVersion, "Create the audit log table.", tableSql),
-                new SchemaStep(IndexesStepVersion, "Create the audit log read indexes.", indexesSql),
-            ],
+            steps: steps,
             objects: [SchemaObject.Table(tableName)]
         );
+    }
+
+    /// <summary>
+    /// The retention purge: a transaction-local purge setting the append-only trigger lets through, then a
+    /// <c>DELETE</c> of the oldest expired rows in key order that returns how many it removed.
+    /// </summary>
+    public static AuditLogPurgeStatements PurgeStatements(RelationalAuditLogTable table)
+    {
+        var qualified = table.Qualified;
+
+        return new AuditLogPurgeStatements(
+            Enable: $"SELECT pg_catalog.set_config('{AuditLogStorageNames.PurgeSetting}', 'on', true);",
+            Delete: $"""
+            WITH expired AS (
+                SELECT "created_at", "id" FROM {qualified}
+                WHERE "created_at" < @Cutoff
+                ORDER BY "created_at", "id"
+                LIMIT @Limit
+            ), deleted AS (
+                DELETE FROM {qualified} AS t
+                USING expired AS e
+                WHERE t."created_at" = e."created_at" AND t."id" = e."id"
+                RETURNING 1
+            )
+            SELECT COUNT(*)::integer FROM deleted;
+            """,
+            // set_config(..., true) ends with the transaction.
+            Disable: null
+        );
+    }
+
+    private static string _AppendOnlySql(string schema, string tableName, string table)
+    {
+        // A configured table name stays verbatim inside the derived name, like the index names.
+        var name =
+            $"{tableName}_{HeadlessStorageNaming.Apply(StorageNamingStyle.SnakeCase, AuditLogStorageNames.AppendOnlyTrigger)}";
+        var function = $"\"{schema}\".\"{name}\"";
+
+        // Row triggers cover UPDATE and DELETE; TRUNCATE skips them, so a statement trigger refuses it as well. Only a
+        // DELETE run with the purge setting on passes. The setting lives in the session, so this guards application
+        // code, not a principal that can run arbitrary SQL.
+        return $"""
+            CREATE OR REPLACE FUNCTION {function}() RETURNS trigger LANGUAGE plpgsql AS $headless$
+            BEGIN
+                IF TG_OP = 'DELETE' AND pg_catalog.current_setting('{AuditLogStorageNames.PurgeSetting}', true) = 'on' THEN
+                    RETURN OLD;
+                END IF;
+                RAISE EXCEPTION 'The audit log table %.% is append-only: % is not allowed.', TG_TABLE_SCHEMA, TG_TABLE_NAME, TG_OP
+                    USING ERRCODE = 'insufficient_privilege';
+            END;
+            $headless$;
+            DROP TRIGGER IF EXISTS "{name}" ON {table};
+            CREATE TRIGGER "{name}" BEFORE UPDATE OR DELETE ON {table} FOR EACH ROW EXECUTE FUNCTION {function}();
+            DROP TRIGGER IF EXISTS "{name}_truncate" ON {table};
+            CREATE TRIGGER "{name}_truncate" BEFORE TRUNCATE ON {table} FOR EACH STATEMENT EXECUTE FUNCTION {function}();
+            """;
     }
 
     private static string _IndexName(string tableName, string[] parts)

@@ -188,6 +188,19 @@ public sealed partial class EfAuditChangeCaptureTests : TestBase
     private const string _AccountId = "account-1";
     private const string _TenantId = "tenant-1";
     private const string _CorrelationId = "correlation-1";
+    private const string _IpAddress = "203.0.113.7";
+    private const string _UserAgent = "test-agent/1.0";
+
+    private static readonly AuditCaptureContext _CaptureContext = new()
+    {
+        UserId = _UserId,
+        AccountId = _AccountId,
+        TenantId = _TenantId,
+        CorrelationId = _CorrelationId,
+        IpAddress = _IpAddress,
+        UserAgent = _UserAgent,
+        Timestamp = _Timestamp,
+    };
 
     // Each test gets its own in-memory SQLite connection so databases are isolated
     private static (TestDbContext db, SqliteConnection conn) _CreateDb(
@@ -224,10 +237,43 @@ public sealed partial class EfAuditChangeCaptureTests : TestBase
     private static IReadOnlyList<AuditLogEntryData> _Capture(EfAuditChangeCapture sut, DbContext db)
     {
         var entries = db.ChangeTracker.Entries().Cast<object>();
-        return sut.CaptureChanges(entries, _UserId, _AccountId, _TenantId, _CorrelationId, _Timestamp);
+        return sut.CaptureChanges(entries, _CaptureContext);
     }
 
     // ---------------------------------------------------------------------------
+
+    [Fact]
+    public async Task captured_entry_carries_the_capture_context()
+    {
+        // given
+        var (db, conn) = _CreateDb();
+        await using (conn)
+        await using (db)
+        {
+            db.Orders.Add(new Order { Id = Guid.NewGuid(), CustomerName = "Alice" });
+
+            // when
+            var result = _Capture(_CreateSut(), db);
+
+            // then
+            var entry = result.Should().ContainSingle().Subject;
+            entry.UserId.Should().Be(_UserId);
+            entry.AccountId.Should().Be(_AccountId);
+            entry.TenantId.Should().Be(_TenantId);
+            entry.CorrelationId.Should().Be(_CorrelationId);
+            entry.IpAddress.Should().Be(_IpAddress);
+            entry.UserAgent.Should().Be(_UserAgent);
+            entry.CreatedAt.Should().Be(_Timestamp);
+        }
+    }
+
+    [Fact]
+    public void capture_rejects_a_null_context()
+    {
+        var act = () => _CreateSut().CaptureChanges([], null!);
+
+        act.Should().Throw<ArgumentNullException>();
+    }
 
     [Fact]
     public async Task created_entity_captures_new_values_only()
@@ -1111,7 +1157,7 @@ public sealed partial class EfAuditChangeCaptureTests : TestBase
             // inject non-EntityEntry objects alongside real entries
             var validEntries = db.ChangeTracker.Entries().Cast<object>();
             var mixedEntries = validEntries.Concat(["not-an-entity-entry", 42]);
-            var result = sut.CaptureChanges(mixedEntries, _UserId, _AccountId, _TenantId, _CorrelationId, _Timestamp);
+            var result = sut.CaptureChanges(mixedEntries, _CaptureContext);
 
             // then - non-EntityEntry objects are silently skipped; valid entry is captured
             result.Should().ContainSingle();

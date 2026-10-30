@@ -31,6 +31,20 @@ public sealed class AuditLogWriteRequest
     /// <summary>Gets the optional error code for an unsuccessful operation.</summary>
     public string? ErrorCode { get; init; }
 
+    /// <summary>
+    /// Gets the client IP address to record. <see langword="null"/> records the one
+    /// <see cref="IAuditClientInfoProvider"/> reports for the current request, if any. Longer values are truncated to
+    /// the column limit.
+    /// </summary>
+    public string? IpAddress { get; init; }
+
+    /// <summary>
+    /// Gets the client <c>User-Agent</c> to record. <see langword="null"/> records the one
+    /// <see cref="IAuditClientInfoProvider"/> reports for the current request, if any. Longer values are truncated to
+    /// the column limit.
+    /// </summary>
+    public string? UserAgent { get; init; }
+
     /// <inheritdoc/>
     public override string ToString()
     {

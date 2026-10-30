@@ -648,15 +648,20 @@ internal sealed class AzureBlobStorage(
     public PresignedUploadConstraintKinds SupportedUploadConstraints => PresignedUploadConstraintKinds.None;
 
     /// <inheritdoc />
+    /// <remarks>
+    /// The <paramref name="options"/> are signed into the SAS as its <c>rscd</c> and <c>rsct</c> fields, which Azure
+    /// returns as the response's <c>Content-Disposition</c> and <c>Content-Type</c>.
+    /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
     /// <exception cref="InvalidOperationException">Thrown when the <see cref="BlobServiceClient"/> cannot generate a SAS URI (no account key or user-delegation credentials).</exception>
     public ValueTask<Uri> GetPresignedDownloadUrlAsync(
         BlobLocation location,
         TimeSpan expiry,
+        PresignedDownloadOptions? options = null,
         CancellationToken cancellationToken = default
     )
     {
-        return _GetPresignedUrlAsync(location, expiry, BlobSasPermissions.Read, cancellationToken);
+        return _GetPresignedUrlAsync(location, expiry, BlobSasPermissions.Read, options, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -677,6 +682,7 @@ internal sealed class AzureBlobStorage(
             location,
             expiry,
             BlobSasPermissions.Create | BlobSasPermissions.Write,
+            downloadOptions: null,
             cancellationToken
         );
     }
@@ -690,6 +696,7 @@ internal sealed class AzureBlobStorage(
         BlobLocation location,
         TimeSpan expiry,
         BlobSasPermissions permissions,
+        PresignedDownloadOptions? downloadOptions,
         CancellationToken cancellationToken
     )
     {
@@ -718,6 +725,16 @@ internal sealed class AzureBlobStorage(
         };
 
         builder.SetPermissions(permissions);
+
+        if (downloadOptions?.FileName is { } fileName)
+        {
+            builder.ContentDisposition = BlobStorageHelpers.BuildAttachmentContentDisposition(fileName);
+        }
+
+        if (downloadOptions?.ContentType is { } contentType)
+        {
+            builder.ContentType = contentType;
+        }
 
         // Account-key (StorageSharedKeyCredential) clients can sign the SAS locally.
         if (blobClient.CanGenerateSasUri)

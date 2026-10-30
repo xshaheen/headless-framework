@@ -20,17 +20,15 @@ public sealed record AuditLogEntryData
 
     /// <summary>Client IP address (if available).</summary>
     /// <remarks>
-    /// Not populated by automatic change capture. Consumers must set this
-    /// via explicit <see cref="IAuditLog{TContext}.LogAsync"/> calls or a custom
-    /// <see cref="IAuditChangeCapture"/> implementation.
+    /// Filled from <see cref="IAuditClientInfoProvider"/> by automatic change capture, and by explicit writes whose
+    /// <see cref="AuditLogWriteRequest"/> leaves it <see langword="null"/>.
     /// </remarks>
     public string? IpAddress { get; init; }
 
     /// <summary>HTTP User-Agent string (if available).</summary>
     /// <remarks>
-    /// Not populated by automatic change capture. Consumers must set this
-    /// via explicit <see cref="IAuditLog{TContext}.LogAsync"/> calls or a custom
-    /// <see cref="IAuditChangeCapture"/> implementation.
+    /// Filled from <see cref="IAuditClientInfoProvider"/> by automatic change capture, and by explicit writes whose
+    /// <see cref="AuditLogWriteRequest"/> leaves it <see langword="null"/>.
     /// </remarks>
     public string? UserAgent { get; init; }
 

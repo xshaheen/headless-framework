@@ -50,6 +50,20 @@ public sealed class AuditLogStorageOptions
     /// </summary>
     public string? CreatedAtColumnType { get; set; }
 
+    /// <summary>
+    /// Makes the audit table append-only on the PostgreSQL and SQL Server providers: <c>resources provision</c> adds a
+    /// trigger that refuses every <c>UPDATE</c> and <c>DELETE</c> (and, on PostgreSQL, <c>TRUNCATE</c>) except the
+    /// retention purge of <see cref="IAuditLogRetention{TContext}"/>. Default: <see langword="false"/>.
+    /// </summary>
+    /// <remarks>
+    /// The trigger stops application code and accidental statements, not a database principal who can run arbitrary
+    /// SQL: the purge's bypass is a session setting any such principal can set too, and on SQL Server a principal
+    /// with <c>ALTER</c> on the table can still <c>TRUNCATE</c> it. Turning it on later adds the trigger at the next
+    /// <c>resources provision</c>; turning it off later leaves the trigger in place until it is dropped by hand. The
+    /// Entity Framework provider rejects it, because its table comes from the application's migrations.
+    /// </remarks>
+    public bool AppendOnly { get; set; }
+
     /// <summary>Returns the audit log table name to use on a database with <paramref name="style"/>.</summary>
     /// <param name="style">The naming style of the target database.</param>
     /// <returns>The configured name, or the conventional default for <paramref name="style"/>.</returns>
@@ -69,6 +83,7 @@ public sealed class AuditLogStorageOptions
         target.TableName = TableName;
         target.JsonColumnType = JsonColumnType;
         target.CreatedAtColumnType = CreatedAtColumnType;
+        target.AppendOnly = AppendOnly;
     }
 }
 

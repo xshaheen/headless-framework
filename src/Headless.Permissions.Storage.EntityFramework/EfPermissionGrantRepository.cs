@@ -1,7 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
+using Headless.MultiTenancy;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Permissions;
 
@@ -11,7 +14,9 @@ namespace Headless.Permissions;
 /// </summary>
 /// <remarks>
 /// Each operation creates a short-lived, non-tracking context from
-/// <c>IDbContextFactory&lt;<typeparamref name="TContext"/>&gt;</c> and disposes it immediately.
+/// <c>IDbContextFactory&lt;<typeparamref name="TContext"/>&gt;</c> and disposes it immediately. An enlisted operation's
+/// context runs on the caller's unit-of-work connection and transaction instead, and its cache removal waits for the
+/// unit to commit.
 /// </remarks>
 /// <typeparam name="TContext">The consumer's <see cref="DbContext"/> that maps the permissions entities.</typeparam>
 /// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
@@ -19,12 +24,19 @@ namespace Headless.Permissions;
 /// The permission-grant cache shared with <c>PermissionGrantStore</c>. A write here removes the affected cache
 /// key so a direct repository write (bypassing <c>IPermissionManager</c>) is reflected on the next read.
 /// </param>
+/// <param name="currentTenant">Restores the write's tenant for a cache removal that runs after the unit commits.</param>
+/// <param name="logger">Logs a cache removal that fails after the unit committed.</param>
 internal sealed class EfPermissionGrantRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
-    ICache<PermissionGrantCacheItem> cache
+    ICache<PermissionGrantCacheItem> cache,
+    ICurrentTenant currentTenant,
+    ILogger<EfPermissionGrantRepository<TContext>> logger
 ) : IPermissionGrantRepository
     where TContext : DbContext
 {
+    private const string _Owner = "the EF Core permissions storage";
+    private const string _Operation = "permission grant";
+
     /// <summary>
     /// Returns the first grant record matching <paramref name="name"/>, <paramref name="providerName"/>,
     /// and <paramref name="providerKey"/>, ordered by <c>Id</c>, or <see langword="null"/> if none exists.
@@ -150,6 +162,126 @@ internal sealed class EfPermissionGrantRepository<TContext>(
         db.Set<PermissionGrantRecord>().RemoveRange(permissionGrants);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await cache.RemoveAllAsync(permissionGrants.Select(_CacheKey), cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task<List<PermissionGrantRecord>> GetListEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        return EntityFrameworkEnlistment.RunAsync(
+            dbFactory,
+            unitOfWork,
+            _Owner,
+            _Operation,
+            (db, ct) =>
+                db.Set<PermissionGrantRecord>()
+                    .AsNoTracking()
+                    .Where(s => s.ProviderName == providerName && s.ProviderKey == providerKey)
+                    .ToListAsync(ct),
+            cancellationToken
+        );
+    }
+
+    public Task<List<PermissionGrantRecord>> GetListEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        return EntityFrameworkEnlistment.RunAsync(
+            dbFactory,
+            unitOfWork,
+            _Owner,
+            _Operation,
+            (db, ct) =>
+                db.Set<PermissionGrantRecord>()
+                    .AsNoTracking()
+                    .Where(s =>
+                        names.Contains(s.Name) && s.ProviderName == providerName && s.ProviderKey == providerKey
+                    )
+                    .ToListAsync(ct),
+            cancellationToken
+        );
+    }
+
+    public async Task InsertManyEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IEnumerable<PermissionGrantRecord> permissionGrants,
+        CancellationToken cancellationToken
+    )
+    {
+        var grants = permissionGrants as IReadOnlyCollection<PermissionGrantRecord> ?? [.. permissionGrants];
+
+        await EntityFrameworkEnlistment
+            .RunAsync(
+                dbFactory,
+                unitOfWork,
+                _Owner,
+                _Operation,
+                (db, ct) =>
+                {
+                    _PreventRetryWhenObserved(unitOfWork);
+                    db.Set<PermissionGrantRecord>().AddRange(grants);
+
+                    return db.SaveChangesAsync(ct);
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        _RemoveFromCacheAfterCommit(unitOfWork, grants);
+    }
+
+    public async Task DeleteManyEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyCollection<PermissionGrantRecord> permissionGrants,
+        CancellationToken cancellationToken
+    )
+    {
+        await EntityFrameworkEnlistment
+            .RunAsync(
+                dbFactory,
+                unitOfWork,
+                _Owner,
+                _Operation,
+                (db, ct) =>
+                {
+                    _PreventRetryWhenObserved(unitOfWork);
+                    db.Set<PermissionGrantRecord>().RemoveRange(permissionGrants);
+
+                    return db.SaveChangesAsync(ct);
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        _RemoveFromCacheAfterCommit(unitOfWork, permissionGrants);
+    }
+
+    // The enlisted context is not the owner's, so an observed unit's owner (the EF save pipeline) cannot restore this
+    // write on replay; only an owned unit re-runs the caller's block. Marked once the enlistment checks passed.
+    private static void _PreventRetryWhenObserved(IUnitOfWork unitOfWork)
+    {
+        if (unitOfWork.Resource is { IsOwned: false })
+        {
+            unitOfWork.PreventRetry();
+        }
+    }
+
+    private void _RemoveFromCacheAfterCommit(IUnitOfWork unitOfWork, IReadOnlyCollection<PermissionGrantRecord> grants)
+    {
+        PermissionGrantCacheInvalidation.RemoveAfterCommit(
+            unitOfWork,
+            cache,
+            currentTenant,
+            [.. grants.Select(_CacheKey)],
+            logger
+        );
     }
 
     private static string _CacheKey(PermissionGrantRecord permissionGrant)

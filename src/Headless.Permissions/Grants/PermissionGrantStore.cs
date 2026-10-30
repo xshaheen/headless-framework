@@ -3,6 +3,7 @@
 using Headless.Caching;
 using Headless.Checks;
 using Headless.MultiTenancy;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -315,63 +316,20 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(names);
-        Argument.IsNotNullOrEmpty(providerName);
-        Argument.IsNotNullOrEmpty(providerKey);
-        _EnsureKey(providerName, providerKey);
-        _EnsureNames(names);
-        Argument.IsPortableKey(tenantId);
+        var distinctNames = _EnsureBatch(names, providerName, providerKey, tenantId);
 
-        var distinctNames = names.ToHashSet(StringComparer.Ordinal);
-
-        var existGrantRecords = await repository
-            .GetListAsync(distinctNames, providerName, providerKey, cancellationToken)
+        await _SetCoreAsync(
+                unitOfWork: null,
+                distinctNames,
+                providerName,
+                providerKey,
+                isGranted: true,
+                tenantId,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
-        // A name that already has a record may still be an explicit denial, so the record count alone
-        // cannot decide whether there is work to do — every name has to be classified.
-        var deniedRecords = existGrantRecords.Where(x => !x.IsGranted).ToList();
-        if (deniedRecords.Count > 0)
-        {
-            await repository.DeleteManyAsync(deniedRecords, cancellationToken).ConfigureAwait(false);
-            var updatedRecords = deniedRecords.Select(x => new PermissionGrantRecord(
-                guidGenerator.Create(),
-                x.Name,
-                providerName,
-                providerKey,
-                isGranted: true,
-                tenantId
-            ));
-            await repository.InsertManyAsync(updatedRecords, cancellationToken).ConfigureAwait(false);
-        }
-
-        var newRecords = distinctNames
-            .Where(name => existGrantRecords.TrueForAll(x => !string.Equals(x.Name, name, StringComparison.Ordinal)))
-            .Select(name => new PermissionGrantRecord(
-                guidGenerator.Create(),
-                name,
-                providerName,
-                providerKey,
-                isGranted: true,
-                tenantId
-            ))
-            .AsArray();
-
-        if (newRecords.Length > 0)
-        {
-            await repository.InsertManyAsync(newRecords, cancellationToken).ConfigureAwait(false);
-        }
-
-        var cacheValues = new Dictionary<string, PermissionGrantCacheItem>(StringComparer.Ordinal);
-        var cacheItem = new PermissionGrantCacheItem(isGranted: true);
-
-        foreach (var name in distinctNames)
-        {
-            cacheValues[PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey)] = cacheItem;
-        }
-
-        await cache
-            .UpsertAllAsync(cacheValues, expiration: _cacheExpiration, cancellationToken: cancellationToken)
+        await _UpsertCacheAsync(distinctNames, providerName, providerKey, isGranted: true, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -449,57 +407,240 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken = default
     )
     {
+        var distinctNames = _EnsureBatch(names, providerName, providerKey, tenantId: null);
+
+        await _SetCoreAsync(
+                unitOfWork: null,
+                distinctNames,
+                providerName,
+                providerKey,
+                isGranted: false,
+                currentTenant.Id,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        await _UpsertCacheAsync(distinctNames, providerName, providerKey, isGranted: false, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<string>> DeleteAsync(
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _EnsureKey(providerName, providerKey);
+
+        var grants = await repository.GetListAsync(providerName, providerKey, cancellationToken).ConfigureAwait(false);
+
+        if (grants.Count == 0)
+        {
+            return [];
+        }
+
+        await repository.DeleteManyAsync(grants, cancellationToken).ConfigureAwait(false);
+
+        var names = grants.ConvertAll(x => x.Name);
+        await cache
+            .RemoveAllAsync(_CacheKeys(names, providerName, providerKey), cancellationToken)
+            .ConfigureAwait(false);
+
+        return names;
+    }
+
+    public async Task GrantEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey,
+        string? tenantId,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(unitOfWork);
+        var distinctNames = _EnsureBatch(names, providerName, providerKey, tenantId);
+
+        await _SetCoreAsync(
+                unitOfWork,
+                distinctNames,
+                providerName,
+                providerKey,
+                isGranted: true,
+                tenantId,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        _RemoveFromCacheAfterCommit(unitOfWork, distinctNames, providerName, providerKey);
+    }
+
+    public async Task RevokeEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(unitOfWork);
+        var distinctNames = _EnsureBatch(names, providerName, providerKey, tenantId: null);
+
+        await _SetCoreAsync(
+                unitOfWork,
+                distinctNames,
+                providerName,
+                providerKey,
+                isGranted: false,
+                currentTenant.Id,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        _RemoveFromCacheAfterCommit(unitOfWork, distinctNames, providerName, providerKey);
+    }
+
+    public async Task<IReadOnlyList<string>> DeleteEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(unitOfWork);
+        _EnsureKey(providerName, providerKey);
+
+        var grants = await repository
+            .GetListEnlistedAsync(unitOfWork, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (grants.Count == 0)
+        {
+            return [];
+        }
+
+        await repository.DeleteManyEnlistedAsync(unitOfWork, grants, cancellationToken).ConfigureAwait(false);
+
+        var names = grants.ConvertAll(x => x.Name);
+        _RemoveFromCacheAfterCommit(unitOfWork, names, providerName, providerKey);
+
+        return names;
+    }
+
+    #region Helpers
+
+    private static HashSet<string> _EnsureBatch(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey,
+        string? tenantId
+    )
+    {
         Argument.IsNotNullOrEmpty(names);
         Argument.IsNotNullOrEmpty(providerName);
         Argument.IsNotNullOrEmpty(providerKey);
         _EnsureKey(providerName, providerKey);
         _EnsureNames(names);
+        Argument.IsPortableKey(tenantId);
 
-        var distinctNames = names.ToHashSet(StringComparer.Ordinal);
+        return names.ToHashSet(StringComparer.Ordinal);
+    }
 
-        var existGrantRecords = await repository
-            .GetListAsync(distinctNames, providerName, providerKey, cancellationToken)
-            .ConfigureAwait(false);
+    /// <summary>
+    /// Writes <paramref name="isGranted" /> for every name: a record holding the opposite state is replaced (grants
+    /// are insert-only, so replacing is delete then insert), a name with no record gets one, and a name already in that
+    /// state is left alone. With a unit, every read and write runs inside its transaction.
+    /// </summary>
+    /// <param name="newTenantId">
+    /// The tenant stamped on new records. A grant also stamps it on a replaced denial; a revoke keeps the replaced
+    /// grant's own tenant.
+    /// </param>
+    private async Task _SetCoreAsync(
+        IUnitOfWork? unitOfWork,
+        HashSet<string> distinctNames,
+        string providerName,
+        string providerKey,
+        bool isGranted,
+        string? newTenantId,
+        CancellationToken cancellationToken
+    )
+    {
+        var existGrantRecords = unitOfWork is null
+            ? await repository
+                .GetListAsync(distinctNames, providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false)
+            : await repository
+                .GetListEnlistedAsync(unitOfWork, distinctNames, providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false);
 
-        // Update existing grants to denials
-        var grantedRecords = existGrantRecords.Where(x => x.IsGranted).ToList();
-        if (grantedRecords.Count > 0)
+        // A name that already has a record may hold the opposite state, so the record count alone cannot decide
+        // whether there is work to do — every name has to be classified.
+        var flippedRecords = existGrantRecords.Where(x => x.IsGranted != isGranted).ToList();
+
+        if (flippedRecords.Count > 0)
         {
-            await repository.DeleteManyAsync(grantedRecords, cancellationToken).ConfigureAwait(false);
-            var deniedRecords = grantedRecords.Select(x => new PermissionGrantRecord(
+            var replacements = flippedRecords.ConvertAll(x => new PermissionGrantRecord(
                 guidGenerator.Create(),
                 x.Name,
                 providerName,
                 providerKey,
-                isGranted: false,
-                x.TenantId
+                isGranted,
+                isGranted ? newTenantId : x.TenantId
             ));
-            await repository.InsertManyAsync(deniedRecords, cancellationToken).ConfigureAwait(false);
+
+            if (unitOfWork is null)
+            {
+                await repository.DeleteManyAsync(flippedRecords, cancellationToken).ConfigureAwait(false);
+                await repository.InsertManyAsync(replacements, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await repository
+                    .DeleteManyEnlistedAsync(unitOfWork, flippedRecords, cancellationToken)
+                    .ConfigureAwait(false);
+                await repository
+                    .InsertManyEnlistedAsync(unitOfWork, replacements, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
-        // Insert explicit denials for names that don't have records
-        var tenantId = currentTenant.Id;
-        var newDenials = distinctNames
+        var newRecords = distinctNames
             .Where(name => existGrantRecords.TrueForAll(x => !string.Equals(x.Name, name, StringComparison.Ordinal)))
             .Select(name => new PermissionGrantRecord(
                 guidGenerator.Create(),
                 name,
                 providerName,
                 providerKey,
-                isGranted: false,
-                tenantId
-            ));
+                isGranted,
+                newTenantId
+            ))
+            .AsArray();
 
-        var permissionGrantRecords = newDenials.AsArray();
-
-        if (permissionGrantRecords.Length > 0)
+        if (newRecords.Length == 0)
         {
-            await repository.InsertManyAsync(permissionGrantRecords, cancellationToken).ConfigureAwait(false);
+            return;
         }
 
-        // Update cache with denials
+        if (unitOfWork is null)
+        {
+            await repository.InsertManyAsync(newRecords, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await repository.InsertManyEnlistedAsync(unitOfWork, newRecords, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task _UpsertCacheAsync(
+        HashSet<string> distinctNames,
+        string providerName,
+        string providerKey,
+        bool isGranted,
+        CancellationToken cancellationToken
+    )
+    {
         var cacheValues = new Dictionary<string, PermissionGrantCacheItem>(StringComparer.Ordinal);
-        var cacheItem = new PermissionGrantCacheItem(isGranted: false);
+        var cacheItem = new PermissionGrantCacheItem(isGranted);
 
         foreach (var name in distinctNames)
         {
@@ -511,7 +652,26 @@ public sealed class PermissionGrantStore(
             .ConfigureAwait(false);
     }
 
-    #region Helpers
+    private void _RemoveFromCacheAfterCommit(
+        IUnitOfWork unitOfWork,
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey
+    )
+    {
+        PermissionGrantCacheInvalidation.RemoveAfterCommit(
+            unitOfWork,
+            cache,
+            currentTenant,
+            _CacheKeys(names, providerName, providerKey),
+            logger
+        );
+    }
+
+    private static string[] _CacheKeys(IEnumerable<string> names, string providerName, string providerKey)
+    {
+        return [.. names.Select(name => PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey))];
+    }
 
     private async Task<Dictionary<string, PermissionGrantStatus>> _GetCachedItemsAsync(
         IReadOnlyList<string> names,
@@ -724,6 +884,10 @@ public sealed class PermissionGrantStore(
 /// character (PostgreSQL cannot store it), or an unpaired UTF-16 surrogate (SqlClient rewrites it to U+FFFD, merging
 /// distinct keys). See <c>Argument.IsPortableKey</c>.
 /// </para>
+/// <para>
+/// New members arrive as default interface members. The enlisted members (<c>*EnlistedAsync</c>) default to throwing
+/// <see cref="NotSupportedException" />.
+/// </para>
 /// </summary>
 public interface IPermissionGrantStore
 {
@@ -831,6 +995,94 @@ public interface IPermissionGrantStore
     /// before <see cref="PermissionManagementOptions.GrantCacheExpiration"/> elapses.
     /// </summary>
     Task RefreshAsync(string providerName, string providerKey, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes every grant and denial of the provider target and removes their cache entries.
+    /// </summary>
+    /// <returns>The names whose records were deleted; empty when the target had none.</returns>
+    /// <exception cref="NotSupportedException">This store does not implement the member.</exception>
+    Task<IReadOnlyList<string>> DeleteAsync(
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new NotSupportedException($"{GetType().Name} does not implement deleting a provider target's grants.");
+    }
+
+    /// <summary>
+    /// Batch grant inside <paramref name="unitOfWork" />'s transaction: the same writes as
+    /// <see cref="GrantAsync(IReadOnlyCollection{string}, string, string, string?, CancellationToken)"/>, with the cache
+    /// cleared after the unit commits instead of updated at write time.
+    /// </summary>
+    /// <param name="unitOfWork">The unit whose transaction holds the writes.</param>
+    /// <param name="names">Must not be empty.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">The provider target.</param>
+    /// <param name="tenantId">The tenant stamped on written grants.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <exception cref="InvalidOperationException">The unit cannot host the writes.</exception>
+    /// <exception cref="NotSupportedException">This store or its repository cannot run inside a unit of work.</exception>
+    Task GrantEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey,
+        string? tenantId,
+        CancellationToken cancellationToken
+    )
+    {
+        throw _NotEnlistable();
+    }
+
+    /// <summary>
+    /// Batch revoke inside <paramref name="unitOfWork" />'s transaction: the same writes as
+    /// <see cref="RevokeAsync(IReadOnlyCollection{string}, string, string, CancellationToken)"/>, with the cache cleared
+    /// after the unit commits instead of updated at write time.
+    /// </summary>
+    /// <param name="unitOfWork">The unit whose transaction holds the writes.</param>
+    /// <param name="names">Must not be empty.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">The provider target.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <exception cref="InvalidOperationException">The unit cannot host the writes.</exception>
+    /// <exception cref="NotSupportedException">This store or its repository cannot run inside a unit of work.</exception>
+    Task RevokeEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        throw _NotEnlistable();
+    }
+
+    /// <summary>
+    /// Deletes every grant and denial of the provider target inside <paramref name="unitOfWork" />'s transaction, and
+    /// clears their cache entries after the unit commits.
+    /// </summary>
+    /// <param name="unitOfWork">The unit whose transaction holds the delete.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">The provider target.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The names whose records were deleted; empty when the target had none.</returns>
+    /// <exception cref="InvalidOperationException">The unit cannot host the delete.</exception>
+    /// <exception cref="NotSupportedException">This store or its repository cannot run inside a unit of work.</exception>
+    Task<IReadOnlyList<string>> DeleteEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        throw _NotEnlistable();
+    }
+
+    private static NotSupportedException _NotEnlistable()
+    {
+        return new NotSupportedException("The configured permission grant store cannot run inside a unit of work.");
+    }
 }
 
 internal static partial class PermissionGrantStoreLog

@@ -1,0 +1,14 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>PostgreSQL key store for Headless field-level encryption: wrapped data keys in one table, created by resources provision, with race-safe first-key creation.</Description>
+    <PackageTags>headless;encryption;envelope-encryption;postgresql;dotnet</PackageTags>
+    <RootNamespace>Headless.Encryption.PostgreSql</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Encryption\Headless.Encryption.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.Sql.PostgreSql\Headless.Sql.PostgreSql.csproj" />
+  </ItemGroup>
+</Project>

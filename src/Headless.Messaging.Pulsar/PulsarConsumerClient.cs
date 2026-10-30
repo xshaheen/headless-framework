@@ -763,24 +763,27 @@ internal sealed class PulsarConsumerClient(
     private async Task _CloseWithinAsync(IConsumer<byte[]> consumer, TimeSpan remaining)
     {
         var close = consumer.DisposeAsync().AsTask();
-        try
-        {
-            await close
-                .WaitAsync(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero, _timeProvider)
-                .ConfigureAwait(false);
-        }
-        catch (System.TimeoutException) when (!close.IsCompleted)
-        {
-            OnLogCallback?.Invoke(
-                new LogMessageEventArgs
-                {
-                    LogType = MqLogType.ConsumeError,
-                    Reason =
-                        "Pulsar consumer close did not finish within the shutdown budget; abandoned to finish in the background.",
-                }
-            );
+        await close
+            .WaitAsync(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero, _timeProvider)
+            .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
 
-            _ObserveAbandoned(close);
+        // The close is read once, after the wait: a close that finishes between the budget's timeout and this read
+        // counts as finished, so the timeout never escapes shutdown while the close itself succeeded.
+        if (close.IsCompleted)
+        {
+            await close.ConfigureAwait(false);
+            return;
         }
+
+        OnLogCallback?.Invoke(
+            new LogMessageEventArgs
+            {
+                LogType = MqLogType.ConsumeError,
+                Reason =
+                    "Pulsar consumer close did not finish within the shutdown budget; abandoned to finish in the background.",
+            }
+        );
+
+        _ObserveAbandoned(close);
     }
 }
