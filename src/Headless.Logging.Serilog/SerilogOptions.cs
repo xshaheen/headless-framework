@@ -6,12 +6,26 @@ using Serilog;
 namespace Headless.Logging;
 
 /// <summary>
-/// Configuration options for the Headless Serilog integration, controlling file sinks,
+/// Configuration options for the Headless Serilog integration, controlling the console format, file sinks,
 /// rolling behaviour, and buffering.
 /// </summary>
 [PublicAPI]
 public sealed class SerilogOptions
 {
+    /// <summary>
+    /// Gets the format the console sink writes. Defaults to <see langword="null"/>, which picks
+    /// <see cref="SerilogConsoleFormat.Text"/> in the <c>Development</c> environment and
+    /// <see cref="SerilogConsoleFormat.Json"/> in every other environment.
+    /// </summary>
+    /// <remarks>
+    /// Container platforms and log collectors read stdout line by line, so outside Development each event is one
+    /// JSON object they can index without a parsing rule. The bootstrap logger runs before the host exists and
+    /// reads the environment from the <c>ASPNETCORE_ENVIRONMENT</c> and <c>DOTNET_ENVIRONMENT</c> variables
+    /// instead; set this property to pin the format when the environment comes from somewhere else, such as a
+    /// command-line argument. File and Debug sinks always write text.
+    /// </remarks>
+    public SerilogConsoleFormat? ConsoleFormat { get; init; }
+
     /// <summary>
     /// Gets a value indicating whether log events should be written to rolling log files in addition
     /// to the console sink. Defaults to <see langword="true"/>.

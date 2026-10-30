@@ -1,0 +1,27 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Field-level envelope encryption for Headless: per-tenant data keys wrapped by a key-encryption key, AES-256-GCM under HKDF purpose subkeys, crypto-shredding, the local key-encryption key, and exactly-one-provider registration.</Description>
+    <PackageTags>headless;encryption;envelope-encryption;pii;aes-gcm;crypto-shredding;dotnet</PackageTags>
+    <RootNamespace>Headless.Encryption</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Encryption.PostgreSql" />
+    <InternalsVisibleTo Include="Headless.Encryption.SqlServer" />
+    <InternalsVisibleTo Include="Headless.Encryption.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Encryption.Abstractions\Headless.Encryption.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Sql.Abstractions\Headless.Sql.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Sql\Headless.Sql.csproj" />
+  </ItemGroup>
+</Project>

@@ -686,14 +686,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
     {
         public string[] CapturedNames { get; private set; } = [];
 
-        public IReadOnlyList<AuditLogEntryData> CaptureChanges(
-            IEnumerable<object> entries,
-            string? userId,
-            string? accountId,
-            string? tenantId,
-            string? correlationId,
-            DateTimeOffset timestamp
-        )
+        public IReadOnlyList<AuditLogEntryData> CaptureChanges(IEnumerable<object> entries, AuditCaptureContext context)
         {
             CapturedNames =
             [

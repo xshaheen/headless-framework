@@ -447,6 +447,16 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
+    public void should_accept_messaging_options_with_unset_dead_node_reconcile_interval()
+    {
+        var result = new MessagingOptionsValidator().Validate(
+            new MessagingOptions { DeadNodeReconcileInterval = null }
+        );
+
+        result.Errors.Should().NotContain(x => x.PropertyName == nameof(MessagingOptions.DeadNodeReconcileInterval));
+    }
+
+    [Fact]
     public void should_reject_messaging_options_with_non_positive_scheduler_batch_size()
     {
         var result = new MessagingOptionsValidator().Validate(new MessagingOptions { SchedulerBatchSize = 0 });

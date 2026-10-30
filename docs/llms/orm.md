@@ -183,7 +183,7 @@ Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses thi
 - Money and phone model configuration plus pagination, ordering, data-grid, date aggregation, entity lookup, and asynchronous lookup helpers.
 - `FirstByIdAsync(id, ct)` loads an `IEntity<TKey>` by key, and `FirstOrNotFoundAsync(entity, key, ct)` returns the first element of any query, typically a projection. Both throw `EntityNotFoundException` (404 through the API exception handler) naming the entity type and key when nothing matches. `FirstOrNotFoundAsync` requires a reference-type element, because a default value type cannot be told apart from a match.
 - Generic model/configuration helpers that do not require `HeadlessDbContext` or runtime policy.
-- The audit capture policy for the EF model: `IsAudited()`, `ExcludeFromAudit()`, and `IsAuditSensitive(...)` (`HeadlessAuditPolicyExtensions`, namespace `Microsoft.EntityFrameworkCore`). They only write model annotations; `Headless.EntityFramework`'s audit capture reads them. A storage package that maps its own tables, such as Jobs, uses them to keep its rows out of an application context's audit log.
+- The audit capture policy for the EF model: `IsAudited()`, `ExcludeFromAudit()`, and `IsAuditSensitive(...)` (`HeadlessAuditPolicyExtensions`, namespace `Microsoft.EntityFrameworkCore`). They only write model annotations; `Headless.EntityFramework`'s audit capture reads them. `model.GetAuditPolicies(options)` and `entityType.GetAuditPolicy(options)` (`HeadlessAuditModelPolicyExtensions`, same namespace) read the resolved policy back as `AuditEntityPolicy` and `AuditPropertyPolicy`, through the same rules capture uses. A storage package that maps its own tables, such as Jobs, uses them to keep its rows out of an application context's audit log.
 - `DateTimeKind.Unspecified` is treated as an already-UTC relational value and stamped without shifting its clock value.
 
 ### Design constraints
@@ -390,6 +390,18 @@ modelBuilder.Entity<InternalJob>().ExcludeFromAudit();
 Entity policy is tri-state: explicit `IsAudited()` or `ExcludeFromAudit()` wins, while an unconfigured entity follows `AuditLogOptions.AuditByDefault`. Owned entries inherit eligibility from their root owner. Derived types inherit the nearest configured base policy unless overridden.
 
 Property precedence is: framework default exclusions, explicit `ExcludeFromAudit()`, and `PropertyFilter` veto before sensitive handling. A strategy passed to `IsAuditSensitive(...)` overrides the global `SensitiveDataStrategy`. `IsEnabled` remains the master switch and `EntityFilter` remains the final entity veto.
+
+To assert coverage in an application test, read the resolved policy back from the built model with the options the host runs with:
+
+```csharp
+var options = host.Services.GetRequiredService<IOptions<AuditLogOptions>>().Value;
+var policies = db.Model.GetAuditPolicies(options);
+
+policies.Where(p => !p.EntityType.IsOwned() && !p.IsAudited).Should().BeEmpty();
+policies.SelectMany(p => p.Properties).Where(p => p.Property.Name.Contains("NationalId") && !p.IsSensitive).Should().BeEmpty();
+```
+
+`AuditEntityPolicy.IsAudited` is the effective answer; `ConfiguredIsAudited` is `null` for an entity no `IsAudited()` or `ExcludeFromAudit()` call covers, so a test can require an explicit decision for every entity. `AuditPropertyPolicy` reports `IsSensitive`, the effective `SensitiveDataStrategy`, and `IsCaptured`. An owned type reports the root owner its metadata names (`PolicyEntityType`); at save time an owned entry follows its runtime owner, so a derived owner's override of a base owner's policy shows only on the derived owner's own policy.
 
 The raw PostgreSQL and SQL Server audit packages are storage providers. They can receive entries from this EF capture pipeline, but they do not define a second audit policy system.
 

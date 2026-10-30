@@ -9,6 +9,7 @@ using FluentValidation;
 using FluentValidation.Resources;
 using Headless.Api;
 using Headless.Api.Security;
+using Headless.AuditLog;
 using Headless.Checks;
 using Headless.Context;
 using Headless.Hosting;
@@ -172,6 +173,8 @@ public static class SetupApi
             builder.Services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
             builder.Services.TryAddSingleton<IUserAgentParser>(NullUserAgentParser.Instance);
             builder.Services.TryAddSingleton<IWebClientInfoProvider, HttpWebClientInfoProvider>();
+            // Audit entries record the request's client IP and user agent when the writer leaves them unset.
+            builder.Services.TryAddSingleton<IAuditClientInfoProvider, WebClientAuditClientInfoProvider>();
 
             builder.Services.TryAddScoped<IRequestContext, HttpRequestContext>();
             builder.Services.TryAddScoped<IAbsoluteUrlFactory, HttpAbsoluteUrlFactory>();

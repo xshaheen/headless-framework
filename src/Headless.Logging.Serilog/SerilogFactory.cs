@@ -10,6 +10,7 @@ using Serilog.Configuration;
 using Serilog.Enrichers.Span;
 using Serilog.Events;
 using Serilog.Formatting;
+using Serilog.Formatting.Compact;
 using Serilog.Formatting.Display;
 using Serilog.Settings.Configuration;
 using Serilog.Sinks.SystemConsole.Themes;
@@ -98,7 +99,10 @@ public static class SerilogFactory
     /// The bootstrap profile is intentionally minimal, suitable for the pre-DI startup phase:
     /// <list type="bullet">
     ///   <item>Enrichers: environment name, thread ID, process ID, process name, machine name.</item>
-    ///   <item>Console sink (invariant culture, no theme).</item>
+    ///   <item>
+    ///   Console sink in <see cref="SerilogOptions.ConsoleFormat"/>; when unset, text in Development and compact JSON
+    ///   otherwise, with the environment read from <c>ASPNETCORE_ENVIRONMENT</c> or <c>DOTNET_ENVIRONMENT</c>.
+    ///   </item>
     ///   <item>Debug sink (DEBUG builds only).</item>
     ///   <item>Async file sink at <c>{LogDirectory}/bootstrap-.log</c> limited to Fatal, Error, and Warning levels.</item>
     /// </list>
@@ -123,8 +127,16 @@ public static class SerilogFactory
             .Enrich.WithThreadId()
             .Enrich.WithProcessId()
             .Enrich.WithProcessName()
-            .Enrich.WithMachineName()
-            .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture);
+            .Enrich.WithMachineName();
+
+        if (_ResolveConsoleFormat(options, _ReadEnvironmentName()) is SerilogConsoleFormat.Json)
+        {
+            loggerConfiguration.WriteTo.Console(new CompactJsonFormatter());
+        }
+        else
+        {
+            loggerConfiguration.WriteTo.Console(formatProvider: CultureInfo.InvariantCulture);
+        }
 
         loggerConfiguration.WriteTo.Async(sink =>
         {
@@ -182,7 +194,10 @@ public static class SerilogFactory
     ///   <item>When <paramref name="services"/> is not null, also reads DI-registered sink/enricher contributions.</item>
     ///   <item>Enrichers: log context, distributed tracing span, environment name, thread/process/machine IDs,
     ///   application name, version, and commit hash (from entry-assembly metadata).</item>
-    ///   <item>Console sink with ANSI theme in Development, no theme otherwise.</item>
+    ///   <item>
+    ///   Console sink in <see cref="SerilogOptions.ConsoleFormat"/>; when unset, ANSI-themed text in Development and
+    ///   compact JSON otherwise.
+    ///   </item>
     ///   <item>Debug sink (DEBUG builds only).</item>
     ///   <item>Per-severity rolling file sinks (Fatal, Error, Warning) when <see cref="SerilogOptions.WriteToFiles"/> is <see langword="true"/>.</item>
     /// </list>
@@ -237,10 +252,8 @@ public static class SerilogFactory
             loggerConfiguration.ReadFrom.Services(services);
         }
 
-        var isDev = environment.IsDevelopment();
-
         _WriteToDebug(loggerConfiguration);
-        loggerConfiguration._WriteToConsole(isDev ? AnsiConsoleTheme.Code : ConsoleTheme.None);
+        loggerConfiguration._WriteToConsole(_ResolveConsoleFormat(options, environment.EnvironmentName), environment);
 
         if (options.WriteToFiles)
         {
@@ -250,13 +263,46 @@ public static class SerilogFactory
         return loggerConfiguration;
     }
 
-    private static void _WriteToConsole(this LoggerConfiguration loggerConfiguration, ConsoleTheme theme)
+    private static void _WriteToConsole(
+        this LoggerConfiguration loggerConfiguration,
+        SerilogConsoleFormat format,
+        IHostEnvironment environment
+    )
     {
+        if (format is SerilogConsoleFormat.Json)
+        {
+            loggerConfiguration.WriteTo.Console(new CompactJsonFormatter());
+
+            return;
+        }
+
         loggerConfiguration.WriteTo.Console(
             outputTemplate: OutputTemplate,
             formatProvider: CultureInfo.InvariantCulture,
-            theme: theme
+            theme: environment.IsDevelopment() ? AnsiConsoleTheme.Code : ConsoleTheme.None
         );
+    }
+
+    private static SerilogConsoleFormat _ResolveConsoleFormat(SerilogOptions options, string? environmentName)
+    {
+        if (options.ConsoleFormat is { } format)
+        {
+            return format;
+        }
+
+        // Matches IHostEnvironment.IsDevelopment(): a host with no environment configured runs as Production.
+        return string.Equals(environmentName, Environments.Development, StringComparison.OrdinalIgnoreCase)
+            ? SerilogConsoleFormat.Text
+            : SerilogConsoleFormat.Json;
+    }
+
+    // The bootstrap logger is built before the host, so it reads the variables the host would read. The web host
+    // lets ASPNETCORE_ENVIRONMENT override DOTNET_ENVIRONMENT, so it is checked first.
+    private static string? _ReadEnvironmentName()
+    {
+        var name = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+
+        return string.IsNullOrWhiteSpace(name) ? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") : name;
     }
 
     [Conditional("DEBUG")]
