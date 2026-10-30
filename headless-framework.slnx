@@ -209,6 +209,12 @@
         <Project Path="tests/Headless.Emails.Mailkit.Tests.Unit/Headless.Emails.Mailkit.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Emails.Providers.Tests.Unit\Headless.Emails.Providers.Tests.Unit.csproj" />
     </Folder>
+    <Folder Name="/Encryption/">
+        <Project Path="src\Headless.Encryption.Abstractions\Headless.Encryption.Abstractions.csproj" />
+        <Project Path="src\Headless.Encryption\Headless.Encryption.csproj" />
+        <Project Path="src\Headless.Encryption.PostgreSql\Headless.Encryption.PostgreSql.csproj" />
+        <Project Path="src\Headless.Encryption.SqlServer\Headless.Encryption.SqlServer.csproj" />
+    </Folder>
     <Folder Name="/Features/">
         <Project Path="src\Headless.Features.Abstractions\Headless.Features.Abstractions.csproj" />
         <Project Path="src\Headless.Features\Headless.Features.csproj" />
