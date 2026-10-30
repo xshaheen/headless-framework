@@ -101,6 +101,8 @@ Decryption looks the key up by the id in the frame; it never tries keys in turn.
 
 **Backup limit.** A database backup taken before a shred still holds the wrapped keys, and restoring it while the shared KEK exists recovers the data. Shredding is immediate on live systems and complete once backup retention passes. A guarantee against backups needs a per-tenant KEK deleted in the key service; the stored KEK id per key leaves that possible without a schema change.
 
+A per-tenant KEK adds only that backup guarantee; it does not shred faster. Key services delay deletion on purpose: AWS KMS waits 7 to 30 days (30 by default) before deleting a key, and Azure Key Vault keeps a deleted key recoverable for 7 to 90 days (90 by default), with soft-delete that cannot be turned off and, under purge protection, no early purge. Deleting the data-key rows is faster: immediate on this host, and on every host within `KeyCacheDuration`.
+
 ### Deploy and startup
 
 | What | Created by | A starting host |
@@ -112,6 +114,17 @@ Decryption looks the key up by the id in the frame; it never tries keys in turn.
 | KEK reachability | — | the `KeyEncryptionKey` warm-up unwraps the host Data key once after start; readiness stays `Unhealthy` until it succeeds, and the start never waits on the key service |
 
 The `EncryptionKeys` resource refuses `resources purge` and `resources delete`: removing keys destroys data, so only `ShredAsync` deletes them.
+
+### Key service load
+
+A host calls the KEK about once per data key per `KeyCacheDuration`: an unwrap when a key is first used or its cache entry expires, and a wrap when a key is created. Concurrent misses for one key share a single unwrap. Expect a burst of roughly hosts × active tenants unwraps after a deployment, when every cache starts empty, then a steady trickle as entries expire.
+
+Size the key service for that burst. Azure Key Vault allows 2,000 RSA-2048 or 500 RSA-3072 operations per 10 seconds per vault for HSM-protected keys (twice that for software keys), but only 250 for RSA-4096, so prefer a 2048- or 3072-bit KEK. AWS KMS shares 10,000 to 100,000 symmetric-key requests per second per Region across operations. A longer `KeyCacheDuration` lowers the load, at the cost of slower shredding and rotation on other hosts.
+
+### Limits
+
+- **No key commitment.** AES-GCM is not key-committing: a ciphertext can be crafted to decrypt under two different keys an attacker knows. The scheme does not need it, because the frame names its key by an id inside the authenticated data, and data keys are random keys the host generates, never keys a caller chooses. Adding commitment would cost about 30 bytes per value for no gain under this threat model.
+- **Values per key.** Each value gets a random 96-bit nonce, and NIST SP 800-38D allows at most 2³² such encryptions under one key. The subkey is per scope, purpose, and data-key version, so the budget is 2³² values per tenant, column, and version. Rotate the scope's Data key with `RotateAsync` well before a column could approach that; rotation starts a fresh budget.
 
 ### Threat model
 
