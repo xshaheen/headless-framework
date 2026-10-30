@@ -293,6 +293,15 @@ AFFECTED_DASHBOARD_STAGE = $(DASHBOARD_CHECK_FN); $(CHANGED_DASHBOARDS_FN); \
 		[ -n "$$name" ] || continue; \
 		$(PROOF) run --dir "$$run" --name "dashboard-$$name" -- bash -c "$$(declare -f dashboard_check); dashboard_check \"\$$@\"" bash "$$name" "$$dir" < /dev/null || true; \
 	done <<< "$$(changed_dashboards)";
+# A gate whose inputs match an earlier passing bundle of its kind reuses that bundle instead of running again, so a
+# message-only amend or a rebase onto a main that touched nothing the selection builds costs seconds, not a gate run.
+# The key (scripts/project-graph.py input-key) hashes the build closure's files, the build-wide files, the branch's
+# patch, the selection, and the settings below; any change to one runs every stage. PROOF_REUSE=false always runs.
+PROOF_REUSE ?= true
+PROOF_KEY_SETTINGS = $(subst ",,$(subst ',,$(CONFIGURATION) $(TEST_ARGS) $(TEST_FILTER) $(TEST_TIMEOUT) $(MSBUILD_ARGS) $(COVERAGE_FLOOR_ARGS) $(VERIFY_COVERAGE) $(INTEGRATION_COVERAGE) $(QUALITY_SEVERITY) $(QUALITY_DIAGNOSTICS) $(AFFECTED_SCOPE_ARGS)))
+# Sets `key` for the bundle in `run`, then exits the recipe with the reused bundle's report when one matches.
+PROOF_REUSE_STAGE = key="$$($(GRAPH) input-key --dir "$$run" --salt "$${run\#\#*-} $(PROOF_KEY_SETTINGS)")" || key=""; \
+	if [ "$(PROOF_REUSE)" = true ] && $(PROOF) reuse --dir "$$run" --root "$${run%/*}" --key "$$key"; then $(PROOF_REPORT) "$$run"; exit 0; fi;
 PROOF_REPORT = report() { cat "$$1/summary.md"; printf '\033[36mProof bundle:\033[0m %s (summary.md for the PR body, summary.json for tools)\n' "$$1"; }; report
 DOTNET_OUTDATED_AUDIT_ARGS ?= --no-restore --idle-timeout $(DEPENDENCY_AUDIT_IDLE_TIMEOUT) --output "$(DEPENDENCY_AUDIT_DIR)/outdated.json" --output-format json
 DEPENDENCY_SECURITY_AUDIT_ARGS ?= --timeout-seconds "$(DEPENDENCY_SECURITY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/security" --project "$(PROJECT)" --scan vulnerable --include-transitive --scan deprecated
@@ -1110,26 +1119,28 @@ test-affected: ## Build the affected set, then run its *.Tests.Unit projects; wr
 test-affected-integration: ## Build the affected set, run its integration tests, and gate the changed lines of edited packages that own an integration project on merged unit + integration coverage (needs Docker; local only).
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-integration"; \
 	run="$(PROOF_RUN)-integration"; status=0; units=integration-unit; coverage="$(INTEGRATION_COVERAGE)"; \
+	$(PROOF_REUSE_STAGE) \
 	if [ ! -s "$$run/integration-packages.txt" ]; then coverage=false; fi; \
 	$(AFFECTED_BUILD_STAGES) \
 	$(AFFECTED_INTEGRATION_ANALYZER_STAGE) \
 	$(AFFECTED_UNIT_STAGE) \
 	$(AFFECTED_INTEGRATION_STAGE) \
 	$(AFFECTED_COVERAGE_MERGE_STAGE) \
-	$(PROOF) summarize --dir "$$run" $(if $(filter true,$(INTEGRATION_COVERAGE)),--coverage-gate integration $(COVERAGE_FLOOR_ARGS),) > /dev/null || status=1; \
+	$(PROOF) summarize --dir "$$run" --input-key "$$key" $(if $(filter true,$(INTEGRATION_COVERAGE)),--coverage-gate integration $(COVERAGE_FLOOR_ARGS),) > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status
 
 .PHONY: verify-affected
 verify-affected: ## Format-check the changed files, then build, unit-test (with coverage), gate unit coverage, and analyze the affected set, plus dashboard-<name>-test for a changed SPA; one proof bundle for the PR body.
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-verify"; \
 	run="$(PROOF_RUN)-verify"; status=0; coverage="$(VERIFY_COVERAGE)"; \
+	$(PROOF_REUSE_STAGE) \
 	$(AFFECTED_FORMAT_STAGE) \
 	$(AFFECTED_BUILD_STAGES) \
 	$(AFFECTED_UNIT_STAGE) \
 	$(AFFECTED_COVERAGE_MERGE_STAGE) \
 	$(AFFECTED_ANALYZER_STAGE) \
 	$(AFFECTED_DASHBOARD_STAGE) \
-	$(PROOF) summarize --dir "$$run" $(if $(filter true,$(VERIFY_COVERAGE)),--coverage-gate unit $(COVERAGE_FLOOR_ARGS),) > /dev/null || status=1; \
+	$(PROOF) summarize --dir "$$run" --input-key "$$key" $(if $(filter true,$(VERIFY_COVERAGE)),--coverage-gate unit $(COVERAGE_FLOOR_ARGS),) > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status
 
 # The CI gate (project CLI contract v1), over the affected scope. CI runs check-layering, format-check, a
