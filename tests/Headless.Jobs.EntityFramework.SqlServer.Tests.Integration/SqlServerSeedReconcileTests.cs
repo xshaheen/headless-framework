@@ -8,6 +8,24 @@ public sealed class SqlServerSeedReconcileTests(SqlServerJobsCoordinationFixture
     : JobsSeedReconcileConformanceTests<SqlServerJobsCoordinationFixture>(fixture)
 {
     [Fact]
+    public override Task removing_a_declaration_with_a_running_occurrence_retires_it_and_deletes_pending_occurrences()
+    {
+        return base.removing_a_declaration_with_a_running_occurrence_retires_it_and_deletes_pending_occurrences();
+    }
+
+    [Fact]
+    public override Task the_next_seed_deletes_a_retired_declaration_after_its_running_occurrence_completes()
+    {
+        return base.the_next_seed_deletes_a_retired_declaration_after_its_running_occurrence_completes();
+    }
+
+    [Fact]
+    public override Task redeclaring_a_retired_row_restores_and_unpauses_it_even_when_its_schedule_has_not_changed()
+    {
+        return base.redeclaring_a_retired_row_restores_and_unpauses_it_even_when_its_schedule_has_not_changed();
+    }
+
+    [Fact]
     public override Task seed_leaves_a_runtime_row_of_an_attributed_function_unchanged()
     {
         return base.seed_leaves_a_runtime_row_of_an_attributed_function_unchanged();

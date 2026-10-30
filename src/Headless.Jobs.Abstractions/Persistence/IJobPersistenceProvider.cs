@@ -561,8 +561,9 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// Reconciles the complete set of cron definitions one seed owner declares into durable storage: inserts a row for
     /// each new entry, restores the expression and zone of an existing entry's row when they differ, restores the
     /// payload and contract version of an entry that carries a <see cref="CronSeedDefinition.RequestHash"/> when they
-    /// drifted, and deletes the owner's previously seeded rows, together with their occurrences, that the set no longer
-    /// contains. Any restore bumps the row's revision and resets its schedule position.
+    /// drifted, and removes the owner's previously seeded rows that the set no longer contains. Removed rows with an
+    /// InProgress occurrence are retired until no occurrence is running. Any restore bumps the row's revision and
+    /// resets its schedule position.
     /// </summary>
     /// <param name="seedOwner">
     /// The seed owner. Only rows whose marker starts with this owner's prefix are matched or deleted, so apps sharing
@@ -577,8 +578,18 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// is never adopted. The relational provider treats a lost insert race as benign: the winner's row stands, so the
     /// redundant insert is discarded and logged at <c>Debug</c> rather than thrown. Cron definitions created by the
     /// application at runtime carry no seed marker and are never touched by this reconciliation. Policies are written
-    /// only when a row is created, and pause state is never written. An existing row that names another job than its
-    /// entry is restored to the entry's job, payload, and contract version.
+    /// only when a row is created. An operator's pause on a live seeded row is preserved. An existing row that names
+    /// another job than its entry is restored to the entry's job, payload, and contract version.
+    /// <para>
+    /// For each owned row missing from the set, delete Idle and Queued occurrences first. If an InProgress occurrence
+    /// remains, preserve the definition, running occurrences, and terminal history. Retire the definition by setting
+    /// IsPaused to true, refreshing UpdatedAt, and changing its marker to
+    /// <c>headless.jobs.seed:{owner}:retired:{kind}:{name}</c> without changing its id. Otherwise delete the definition
+    /// and all remaining occurrences. Retired markers retain the owner prefix, so a later seed deletes retired rows
+    /// once no occurrence is InProgress. Re-declaring an entry whose row carries that entry's retired marker restores
+    /// the live marker and unpauses it through the full restore path, even without schedule or payload drift. That
+    /// restore also retires pending occurrences. It does not unpause a normal live seeded row.
+    /// </para>
     /// <para>
     /// The seed validates the set before this call: the owner is not blank and has no <c>:</c>, every entry's marker
     /// starts with the owner's prefix, and no two entries share an id. An implementation can rely on those rules and

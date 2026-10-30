@@ -34,6 +34,110 @@ public sealed class InMemorySeedReconcileTests : TestBase
     private static readonly DateTimeOffset _Now = new(2026, 7, 26, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public async Task should_retire_a_removed_declaration_with_a_running_occurrence_and_delete_pending_occurrences()
+    {
+        var provider = _Create();
+        var declared = _Declaration("daily-us", [], _CanonicalHash(""));
+        await provider.MigrateDefinedCronJobsAsync(_Owner, [declared], AbortToken);
+        var occurrences = new[] { JobStatus.Idle, JobStatus.Queued, JobStatus.InProgress, JobStatus.Succeeded }
+            .Select(
+                (status, index) =>
+                    new CronJobOccurrenceEntity<FakeCronJob>
+                    {
+                        Id = Guid.NewGuid(),
+                        CronJobId = declared.Id,
+                        ExecutionTime = _Now.UtcDateTime.AddMinutes(index),
+                        Status = status,
+                        OwnerId = status == JobStatus.InProgress ? "node-a@incarnation" : null,
+                        CreatedAt = _Now,
+                        UpdatedAt = _Now,
+                    }
+            )
+            .ToArray();
+        await provider.InsertCronJobOccurrencesAsync(occurrences, AbortToken);
+        var edited = (await provider.GetCronJobByIdAsync(declared.Id, AbortToken))!;
+        edited.UpdatedAt = _Now.AddMinutes(-1);
+        (await provider.UpdateCronJobsAsync([edited], AbortToken)).Should().Be(1);
+
+        await provider.MigrateDefinedCronJobsAsync(_Owner, [], AbortToken);
+        await provider.MigrateDefinedCronJobsAsync(_Owner, [], AbortToken);
+
+        var retired = await provider.GetCronJobByIdAsync(declared.Id, AbortToken);
+        retired.Should().NotBeNull();
+        retired!.IsPaused.Should().BeTrue();
+        retired.InitIdentifier.Should().Be($"headless.jobs.seed:{_Owner}:retired:decl:daily-us");
+        retired.UpdatedAt.Should().Be(_Now);
+        var kept = await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == declared.Id, AbortToken);
+        kept.Select(x => x.Id).Should().BeEquivalentTo(occurrences.Skip(2).Select(x => x.Id));
+        kept.Select(x => x.Status).Should().BeEquivalentTo([JobStatus.InProgress, JobStatus.Succeeded]);
+    }
+
+    [Fact]
+    public async Task should_delete_a_retired_declaration_on_the_next_seed_after_its_running_occurrence_completes()
+    {
+        var provider = _Create();
+        var declared = _Declaration("daily-us", [], _CanonicalHash(""));
+        await provider.MigrateDefinedCronJobsAsync(_Owner, [declared], AbortToken);
+        var occurrenceId = Guid.NewGuid();
+        await provider.InsertCronJobOccurrencesAsync(
+            [
+                new CronJobOccurrenceEntity<FakeCronJob>
+                {
+                    Id = occurrenceId,
+                    CronJobId = declared.Id,
+                    ExecutionTime = _Now.UtcDateTime,
+                    Status = JobStatus.InProgress,
+                    OwnerId = "node-a@incarnation",
+                    CreatedAt = _Now,
+                    UpdatedAt = _Now,
+                },
+            ],
+            AbortToken
+        );
+        await provider.MigrateDefinedCronJobsAsync(_Owner, [], AbortToken);
+        var completed = new JobExecutionState
+        {
+            JobId = occurrenceId,
+            FunctionName = declared.Function,
+            ClaimOwner = "node-a@incarnation",
+        };
+        completed.SetProperty(x => x.Status, JobStatus.Succeeded);
+        (await provider.UpdateCronJobOccurrenceAsync(completed, AbortToken))
+            .Should()
+            .Be(1, "retirement must keep the occurrence writable by its running worker");
+
+        await provider.MigrateDefinedCronJobsAsync(_Owner, [], AbortToken);
+
+        (await provider.GetCronJobByIdAsync(declared.Id, AbortToken)).Should().BeNull();
+        (await provider.GetAllCronJobOccurrencesAsync(x => x.CronJobId == declared.Id, AbortToken)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_restore_and_unpause_a_redeclared_retired_row_even_when_its_schedule_has_not_changed()
+    {
+        var provider = _Create();
+        var declared = _Declaration("daily-us", [], _CanonicalHash(""));
+        await provider.MigrateDefinedCronJobsAsync(_Owner, [declared], AbortToken);
+        var retired = (await provider.GetCronJobByIdAsync(declared.Id, AbortToken))!;
+        retired.InitIdentifier = $"headless.jobs.seed:{_Owner}:retired:decl:daily-us";
+        retired.IsPaused = true;
+        retired.ReconciledThroughUtc = _Now.UtcDateTime;
+        retired.NextDueUtc = _Now.UtcDateTime.AddHours(1);
+        (await provider.UpdateCronJobsAsync([retired], AbortToken)).Should().Be(1);
+        var revisionBefore = (await provider.GetCronJobByIdAsync(declared.Id, AbortToken))!.ScheduleRevision;
+
+        await provider.MigrateDefinedCronJobsAsync(_Owner, [declared], AbortToken);
+
+        var restored = (await provider.GetCronJobByIdAsync(declared.Id, AbortToken))!;
+        restored.InitIdentifier.Should().Be(declared.Marker);
+        restored.IsPaused.Should().BeFalse();
+        restored.Expression.Should().Be(declared.Expression);
+        restored.ScheduleRevision.Should().Be(revisionBefore + 1);
+        restored.ReconciledThroughUtc.Should().Be(default);
+        restored.NextDueUtc.Should().Be(default);
+    }
+
+    [Fact]
     public async Task should_delete_a_seeded_row_and_its_occurrences_when_the_next_seed_no_longer_declares_it()
     {
         var provider = _Create();

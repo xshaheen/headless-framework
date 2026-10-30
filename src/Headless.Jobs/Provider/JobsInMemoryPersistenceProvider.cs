@@ -1792,6 +1792,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             if (
                 _cronJobs.TryGetValue(entry.Id, out var occupant)
                 && !string.Equals(occupant.InitIdentifier, entry.Marker, StringComparison.Ordinal)
+                && !JobsSeedId.IsRetiredMarkerOf(occupant.InitIdentifier, entry.Marker)
             )
             {
                 throw new InvalidOperationException(
@@ -1800,8 +1801,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             }
         }
 
-        // Delete this owner's seeded rows that the declared set no longer contains, with their occurrences. Runtime
-        // rows carry no marker and another owner's rows carry another prefix, so neither is selected.
+        // Remove this owner's undeclared rows, but keep a paused definition while an occurrence is running so the
+        // worker can still complete it. Runtime rows and another owner's rows are never selected.
         var removedIds = _cronJobs
             .Values.Where(x =>
                 x.InitIdentifier?.StartsWith(ownerPrefix, StringComparison.Ordinal) == true
@@ -1814,6 +1815,28 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         {
             lock (_GetCronDefinitionLock(removedId))
             {
+                foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == removedId).ToArray())
+                {
+                    if (pair.Value.Status is JobStatus.Idle or JobStatus.Queued)
+                    {
+                        _cronOccurrences.TryRemove(pair.Key, out _);
+                    }
+                }
+
+                if (_cronOccurrences.Values.Any(x => x.CronJobId == removedId && x.Status == JobStatus.InProgress))
+                {
+                    if (_cronJobs.TryGetValue(removedId, out var current))
+                    {
+                        var retired = _CloneCronJob(current);
+                        retired.IsPaused = true;
+                        retired.InitIdentifier = JobsSeedId.RetiredMarker(current.InitIdentifier!);
+                        retired.UpdatedAt = now;
+                        _SetCronJob(retired);
+                    }
+
+                    continue;
+                }
+
                 lock (_cronJobIdIndexLock)
                 {
                     if (_TryRemoveCronJob(removedId))
@@ -1851,6 +1874,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         var updated = _CloneCronJob(current);
                         updated.Expression = entry.Expression;
                         updated.TimeZoneId = entry.TimeZoneId;
+
+                        if (JobsSeedId.IsRetiredMarkerOf(current.InitIdentifier, entry.Marker))
+                        {
+                            updated.InitIdentifier = entry.Marker;
+                            updated.IsPaused = false;
+                        }
 
                         if (JobsSeedDrift.PayloadDiffers(current, entry))
                         {

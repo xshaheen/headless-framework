@@ -1504,12 +1504,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .Where(c => c.InitIdentifier!.StartsWith(ownerPrefix, StringComparison.Ordinal))
                         .ToList();
 
-                    // Delete this owner's seeded rows that the declared set no longer contains.
-                    var seededToDelete = ownedRows.Where(c => !declaredIds.Contains(c.Id)).Select(c => c.Id).ToArray();
+                    // Remove undeclared rows, retaining their parent while an occurrence is still running.
+                    var removedIds = ownedRows.Where(c => !declaredIds.Contains(c.Id)).Select(c => c.Id).ToArray();
 
-                    if (seededToDelete.Length > 0)
+                    if (removedIds.Length > 0)
                     {
-                        foreach (var definitionId in seededToDelete.Order())
+                        foreach (var definitionId in removedIds.Order())
                         {
                             await cronSet
                                 .Where(x => x.Id == definitionId)
@@ -1520,10 +1520,32 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                 .ConfigureAwait(false);
                         }
 
-                        // Parent rows are locked above in canonical order; delete children before parents for FK
-                        // safety.
-                        await dbContext
+                        // Parent locks serialize removal with materialization and claims. Delete only work that has
+                        // not started before deciding which parents must survive for their running workers.
+                        var removedOccurrences = dbContext
                             .Set<CronJobOccurrenceEntity<TCronJob>>()
+                            .Where(o => ((IEnumerable<Guid>)removedIds).Contains(o.CronJobId));
+                        await removedOccurrences
+                            .Where(o => o.Status == JobStatus.Idle || o.Status == JobStatus.Queued)
+                            .ExecuteDeleteAsync(cancellationToken)
+                            .ConfigureAwait(false);
+
+                        var runningIds = await removedOccurrences
+                            .Where(o => o.Status == JobStatus.InProgress)
+                            .Select(o => o.CronJobId)
+                            .Distinct()
+                            .ToListAsync(cancellationToken)
+                            .ConfigureAwait(false);
+
+                        foreach (var retired in ownedRows.Where(c => runningIds.Contains(c.Id)))
+                        {
+                            retired.IsPaused = true;
+                            retired.InitIdentifier = JobsSeedId.RetiredMarker(retired.InitIdentifier!);
+                            retired.UpdatedAt = now;
+                        }
+
+                        var seededToDelete = removedIds.Except(runningIds).ToArray();
+                        await removedOccurrences
                             .Where(o => ((IEnumerable<Guid>)seededToDelete).Contains(o.CronJobId))
                             .ExecuteDeleteAsync(cancellationToken)
                             .ConfigureAwait(false);
@@ -1560,12 +1582,19 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                     .ConfigureAwait(false);
                                 await dbContext.Entry(cron).ReloadAsync(cancellationToken).ConfigureAwait(false);
                                 // Re-decided on the locked row: a concurrent seed may already have restored it.
+                                var wasRetired = JobsSeedId.IsRetiredMarkerOf(cron.InitIdentifier, entry.Marker);
                                 var payloadDiffers = JobsSeedDrift.PayloadDiffers(cron, entry);
 
-                                if (JobsSeedDrift.ScheduleDiffers(cron, entry) || payloadDiffers)
+                                if (JobsSeedDrift.ScheduleDiffers(cron, entry) || payloadDiffers || wasRetired)
                                 {
                                     cron.Expression = entry.Expression;
                                     cron.TimeZoneId = entry.TimeZoneId;
+
+                                    if (wasRetired)
+                                    {
+                                        cron.InitIdentifier = entry.Marker;
+                                        cron.IsPaused = false;
+                                    }
 
                                     if (payloadDiffers)
                                     {

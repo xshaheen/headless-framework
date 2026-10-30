@@ -10,11 +10,13 @@ internal static class JobsSeedDrift
 {
     /// <summary>
     /// Whether the seed must restore <paramref name="stored"/> to <paramref name="entry"/>: its schedule differs (see
-    /// <see cref="ScheduleDiffers"/>) or its payload drifted (see <see cref="PayloadDiffers"/>).
+    /// <see cref="ScheduleDiffers"/>), its payload drifted (see <see cref="PayloadDiffers"/>), or it was retired.
     /// </summary>
     public static bool Differs(CronJobEntity stored, in CronSeedDefinition entry)
     {
-        return ScheduleDiffers(stored, entry) || PayloadDiffers(stored, entry);
+        return ScheduleDiffers(stored, entry)
+            || PayloadDiffers(stored, entry)
+            || JobsSeedId.IsRetiredMarkerOf(stored.InitIdentifier, entry.Marker);
     }
 
     /// <summary>

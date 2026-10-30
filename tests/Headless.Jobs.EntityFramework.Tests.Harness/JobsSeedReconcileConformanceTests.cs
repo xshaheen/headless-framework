@@ -180,6 +180,112 @@ public abstract class JobsSeedReconcileConformanceTests<TFixture>(TFixture fixtu
         us.OnNodeDeath.Should().Be(NodeDeathPolicy.Retry);
     }
 
+    public virtual async Task removing_a_declaration_with_a_running_occurrence_retires_it_and_deletes_pending_occurrences()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("seed-retire-running");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var declared = _Declaration(_Owner, "daily-us");
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [declared], ct);
+        var beforeSeed = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
+        var statuses = new[] { JobStatus.Idle, JobStatus.Queued, JobStatus.InProgress, JobStatus.Succeeded };
+        var ids = statuses.Select(_ => Guid.NewGuid()).ToArray();
+        var executionTime = DateTime.UtcNow;
+        for (var index = 0; index < statuses.Length; index++)
+        {
+            await fixture.SeedCronOccurrenceAsync(
+                ids[index],
+                declared.Id,
+                (int)statuses[index],
+                "seed-worker",
+                NodeDeathPolicy.Retry,
+                executionTime.AddMinutes(10),
+                executionTime.AddMinutes(index),
+                ct
+            );
+        }
+
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [], ct);
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [], ct);
+
+        var retired = await persistence.GetCronJobByIdAsync(declared.Id, ct);
+        retired.Should().NotBeNull();
+        retired!.IsPaused.Should().BeTrue();
+        retired.InitIdentifier.Should().Be("headless.jobs.seed:billing_app:retired:decl:daily-us");
+        retired.UpdatedAt.Should().BeOnOrAfter(beforeSeed.UpdatedAt);
+        var kept = await persistence.GetAllCronJobOccurrencesAsync(x => x.CronJobId == declared.Id, ct);
+        kept.Select(x => x.Id).Should().BeEquivalentTo(ids.Skip(2));
+        kept.Select(x => x.Status).Should().BeEquivalentTo([JobStatus.InProgress, JobStatus.Succeeded]);
+    }
+
+    public virtual async Task the_next_seed_deletes_a_retired_declaration_after_its_running_occurrence_completes()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("seed-retired-completed");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var declared = _Declaration(_Owner, "daily-us");
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [declared], ct);
+        var occurrenceId = Guid.NewGuid();
+        await fixture.SeedCronOccurrenceAsync(
+            occurrenceId,
+            declared.Id,
+            (int)JobStatus.InProgress,
+            "seed-worker",
+            NodeDeathPolicy.Retry,
+            DateTime.UtcNow.AddMinutes(10),
+            DateTime.UtcNow,
+            ct
+        );
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [], ct);
+        var completed = new JobExecutionState
+        {
+            JobId = occurrenceId,
+            FunctionName = declared.Function,
+            ClaimOwner = "seed-worker",
+        };
+        completed.SetProperty(x => x.Status, JobStatus.Succeeded);
+        (await persistence.UpdateCronJobOccurrenceAsync(completed, ct))
+            .Should()
+            .Be(1, "retirement must keep the occurrence writable by its running worker");
+
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [], ct);
+
+        (await persistence.GetCronJobByIdAsync(declared.Id, ct)).Should().BeNull();
+        (await persistence.GetAllCronJobOccurrencesAsync(x => x.CronJobId == declared.Id, ct)).Should().BeEmpty();
+    }
+
+    public virtual async Task redeclaring_a_retired_row_restores_and_unpauses_it_even_when_its_schedule_has_not_changed()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("seed-retired-redeclared");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        var persistence = _Persistence(host);
+        var declared = _Declaration(_Owner, "daily-us");
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [declared], ct);
+        var retired = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
+        retired.InitIdentifier = "headless.jobs.seed:billing_app:retired:decl:daily-us";
+        retired.IsPaused = true;
+        retired.ReconciledThroughUtc = DateTime.UtcNow;
+        retired.NextDueUtc = DateTime.UtcNow.AddHours(1);
+        (await persistence.UpdateCronJobsAsync([retired], ct)).Should().Be(1);
+        var revisionBefore = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!.ScheduleRevision;
+
+        await persistence.MigrateDefinedCronJobsAsync(_Owner, [declared], ct);
+
+        var restored = (await persistence.GetCronJobByIdAsync(declared.Id, ct))!;
+        restored.InitIdentifier.Should().Be(declared.Marker);
+        restored.IsPaused.Should().BeFalse();
+        restored.Expression.Should().Be(declared.Expression);
+        restored.ScheduleRevision.Should().Be(revisionBefore + 1);
+        restored.ReconciledThroughUtc.Should().Be(default);
+        restored.NextDueUtc.Should().Be(default);
+    }
+
     public virtual async Task removing_a_declaration_deletes_its_row_and_occurrences_and_nothing_else()
     {
         var ct = AbortToken;

@@ -77,6 +77,24 @@ internal static class JobsSeedId
     }
 
     /// <summary>
+    /// Returns the retired form of an owned seed marker without changing its owner prefix. Repeated seeds must not
+    /// nest the retired segment while a removed definition still has a running occurrence.
+    /// </summary>
+    public static string RetiredMarker(string marker)
+    {
+        var kindOffset = marker.IndexOf(':', _MarkerRoot.Length) + 1;
+        return marker.AsSpan(kindOffset).StartsWith("retired:", StringComparison.Ordinal)
+            ? marker
+            : marker.Insert(kindOffset, "retired:");
+    }
+
+    /// <summary>Whether a stored marker is the retired form of a declared entry's live marker.</summary>
+    public static bool IsRetiredMarkerOf(string? storedMarker, string liveMarker)
+    {
+        return string.Equals(storedMarker, RetiredMarker(liveMarker), StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Rejects a seed list that a reconcile for <paramref name="owner"/> could not keep consistent: an entry whose
     /// marker belongs to another owner would never be deleted by this owner and could be deleted by the other, and two
     /// entries with one id would collide on the primary key.
