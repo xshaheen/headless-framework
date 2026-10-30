@@ -201,6 +201,7 @@ The reconcile runs on every seed, even when the app declares nothing, so removin
 - Apps that share one Jobs store must set distinct owners. Two apps under one owner treat each other's seeded rows as their own and delete them.
 - Every host of one app must set the same owner. Hosts with different owners each create their own copy of every definition, and each copy fires.
 - Changing an owner orphans the rows seeded under the old one: the next seed creates new rows and never deletes the old ones. Delete the old rows through `ICronJobManager` or the dashboard.
+- Run the seed from one version of the app at a time. Each seed treats its own declared set as complete, so during a rolling deploy an older version's seed deletes the rows a newer version declared, with their occurrences, and the newer version's seed recreates them; the rows flip until every host runs one version. Run `seed` (or `deploy`) once from the new version as a deploy step, not from every replica at startup.
 
 **What stays imperative.** `UseJobsSeeder` delegates run after the reconcile on every seed, and the seed does not track what they write: an `AddAsync` call inside one inserts a new definition on each seed. A runtime `ScheduleRecurringAsync` call also inserts a new definition per call. Use declarations for recurring jobs the app knows at startup, and keep the runtime calls for definitions created by requests.
 
