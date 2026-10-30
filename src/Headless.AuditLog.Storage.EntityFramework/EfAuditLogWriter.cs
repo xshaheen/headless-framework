@@ -17,7 +17,8 @@ internal sealed class EfAuditLogWriter<TContext>(
     ICurrentTenant currentTenant,
     ICorrelationIdProvider correlationIdProvider,
     TimeProvider timeProvider,
-    IOptions<AuditLogOptions> options
+    IOptions<AuditLogOptions> options,
+    IAuditClientInfoProvider? clientInfo = null
 ) : IAuditLogWriter<TContext>
     where TContext : DbContext
 {
@@ -36,7 +37,8 @@ internal sealed class EfAuditLogWriter<TContext>(
             currentUser,
             currentTenant,
             correlationIdProvider,
-            timeProvider
+            timeProvider,
+            clientInfo
         );
 
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);

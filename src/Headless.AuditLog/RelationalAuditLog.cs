@@ -20,7 +20,8 @@ internal sealed class RelationalAuditLog<TContext>(
     ICurrentTenant currentTenant,
     ICorrelationIdProvider correlationIdProvider,
     TimeProvider timeProvider,
-    IOptions<AuditLogOptions> options
+    IOptions<AuditLogOptions> options,
+    IAuditClientInfoProvider? clientInfo = null
 ) : IAuditLog<TContext>
 {
     public Task LogAsync(AuditLogWriteRequest request, CancellationToken cancellationToken = default)
@@ -39,7 +40,8 @@ internal sealed class RelationalAuditLog<TContext>(
             currentUser,
             currentTenant,
             correlationIdProvider,
-            timeProvider
+            timeProvider,
+            clientInfo
         );
 
         return writer.WriteAsync([entry], connection, transaction, cancellationToken);
@@ -56,7 +58,8 @@ internal sealed class RelationalStandaloneAuditLog<TContext>(
     ICurrentTenant currentTenant,
     ICorrelationIdProvider correlationIdProvider,
     TimeProvider timeProvider,
-    IOptions<AuditLogOptions> options
+    IOptions<AuditLogOptions> options,
+    IAuditClientInfoProvider? clientInfo = null
 ) : IAuditLogWriter<TContext>
 {
     public Task WriteAsync(AuditLogWriteRequest request, CancellationToken cancellationToken = default)
@@ -73,14 +76,18 @@ internal sealed class RelationalStandaloneAuditLog<TContext>(
             currentUser,
             currentTenant,
             correlationIdProvider,
-            timeProvider
+            timeProvider,
+            clientInfo
         );
 
         return writer.WriteAsync([entry], cancellationToken: cancellationToken);
     }
 }
 
-/// <summary>Builds the stored entry for an explicit event, stamped with the ambient user, tenant, and correlation id.</summary>
+/// <summary>
+/// Builds the stored entry for an explicit event, stamped with the ambient user, tenant, and correlation id, and with
+/// the current request's client info where the request leaves it unset.
+/// </summary>
 internal static class RelationalExplicitAuditLogEntry
 {
     public static AuditLogEntryData Create(
@@ -88,7 +95,8 @@ internal static class RelationalExplicitAuditLogEntry
         ICurrentUser currentUser,
         ICurrentTenant currentTenant,
         ICorrelationIdProvider correlationIdProvider,
-        TimeProvider timeProvider
+        TimeProvider timeProvider,
+        IAuditClientInfoProvider? clientInfo
     )
     {
         return new AuditLogEntryData
@@ -100,6 +108,14 @@ internal static class RelationalExplicitAuditLogEntry
             CorrelationId = AuditLogFieldLimits.Truncate(
                 correlationIdProvider.CorrelationId,
                 AuditLogFieldLimits.CorrelationId
+            ),
+            IpAddress = AuditLogFieldLimits.Truncate(
+                request.IpAddress ?? clientInfo?.IpAddress,
+                AuditLogFieldLimits.IpAddress
+            ),
+            UserAgent = AuditLogFieldLimits.Truncate(
+                request.UserAgent ?? clientInfo?.UserAgent,
+                AuditLogFieldLimits.UserAgent
             ),
             Action = AuditLogFieldLimits.Truncate(request.Action, AuditLogFieldLimits.Action),
             EntityType = AuditLogFieldLimits.Truncate(request.EntityType, AuditLogFieldLimits.EntityType),

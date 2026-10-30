@@ -16,7 +16,8 @@ public sealed class EfAuditLogTests : TestBase
 
     private static EfAuditLog<AuditStoreDbContext> _CreateSut(
         AuditStoreDbContext db,
-        IOptions<AuditLogOptions>? options = null
+        IOptions<AuditLogOptions>? options = null,
+        IAuditClientInfoProvider? clientInfo = null
     )
     {
         var currentUser = Substitute.For<ICurrentUser>();
@@ -30,8 +31,84 @@ public sealed class EfAuditLogTests : TestBase
             currentTenant,
             correlationIdProvider,
             timeProvider,
-            options ?? Options.Create(new AuditLogOptions())
+            options ?? Options.Create(new AuditLogOptions()),
+            clientInfo
         );
+    }
+
+    [Fact]
+    public async Task should_fill_client_info_from_provider_when_request_leaves_it_null()
+    {
+        // given
+        var (db, conn) = AuditStoreDbContext.Create();
+        await using (conn)
+        await using (db)
+        {
+            var clientInfo = Substitute.For<IAuditClientInfoProvider>();
+            clientInfo.IpAddress.Returns("203.0.113.7");
+            clientInfo.UserAgent.Returns("agent/1.0");
+            var sut = _CreateSut(db, clientInfo: clientInfo);
+
+            // when
+            await sut.LogAsync(new() { Action = "pii.revealed" }, cancellationToken: AbortToken);
+
+            // then
+            var entry = db.ChangeTracker.Entries<AuditLogEntry>().Single().Entity;
+            entry.IpAddress.Should().Be("203.0.113.7");
+            entry.UserAgent.Should().Be("agent/1.0");
+        }
+    }
+
+    [Fact]
+    public async Task should_keep_request_client_info_and_truncate_it_to_column_limits()
+    {
+        // given
+        var (db, conn) = AuditStoreDbContext.Create();
+        await using (conn)
+        await using (db)
+        {
+            var clientInfo = Substitute.For<IAuditClientInfoProvider>();
+            clientInfo.IpAddress.Returns("203.0.113.7");
+            clientInfo.UserAgent.Returns("agent/1.0");
+            var sut = _CreateSut(db, clientInfo: clientInfo);
+            var longAgent = new string('a', 600);
+
+            // when
+            await sut.LogAsync(
+                new()
+                {
+                    Action = "pii.revealed",
+                    IpAddress = "2001:db8::1",
+                    UserAgent = longAgent,
+                },
+                cancellationToken: AbortToken
+            );
+
+            // then
+            var entry = db.ChangeTracker.Entries<AuditLogEntry>().Single().Entity;
+            entry.IpAddress.Should().Be("2001:db8::1");
+            entry.UserAgent.Should().Be(longAgent[..512]);
+        }
+    }
+
+    [Fact]
+    public async Task should_leave_client_info_null_without_provider_or_request_value()
+    {
+        // given
+        var (db, conn) = AuditStoreDbContext.Create();
+        await using (conn)
+        await using (db)
+        {
+            var sut = _CreateSut(db);
+
+            // when
+            await sut.LogAsync(new() { Action = "pii.revealed" }, cancellationToken: AbortToken);
+
+            // then
+            var entry = db.ChangeTracker.Entries<AuditLogEntry>().Single().Entity;
+            entry.IpAddress.Should().BeNull();
+            entry.UserAgent.Should().BeNull();
+        }
     }
 
     [Fact]
