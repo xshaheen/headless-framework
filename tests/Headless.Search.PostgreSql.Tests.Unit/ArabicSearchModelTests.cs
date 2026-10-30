@@ -91,7 +91,9 @@ public sealed class ArabicSearchModelTests : TestBase
                 entity.HasArabicSearchKey(p => p.Name, p => p.NameSearch);
             }
         );
+#pragma warning disable RCS1118 // Fix makes the code worse: a const is inlined as a SQL literal, and the test needs the term sent as a parameter.
         var term = "احمد";
+#pragma warning restore RCS1118
 
         var sql = context
             .People.Where(p => EF.Functions.Like(p.NameSearch, "%" + ArabicSearchFunctions.Key(term) + "%"))

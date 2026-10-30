@@ -29,19 +29,22 @@ public sealed class ArabicSearchRuleSet
 
     private readonly char[] _actions;
 
+    // The most output characters one input character can produce: its longest expansion, else one.
+    private readonly int _maxOutputPerInput;
+
     internal ArabicSearchRuleSet(
         ArabicSearchVersion version,
-        IReadOnlyList<char> outputAlphabet,
-        IReadOnlyDictionary<char, char> mappings,
-        IReadOnlyDictionary<char, string> expansions,
-        IReadOnlyList<char> deletions
+        SortedSet<char> outputAlphabet,
+        Dictionary<char, char> mappings,
+        Dictionary<char, string> expansions,
+        SortedSet<char> deletions
     )
     {
         Version = version;
-        OutputAlphabet = outputAlphabet;
-        Mappings = mappings;
-        Expansions = expansions;
-        Deletions = deletions;
+        OutputAlphabet = [.. outputAlphabet];
+        Mappings = mappings.ToFrozenDictionary();
+        Expansions = expansions.ToFrozenDictionary();
+        Deletions = [.. deletions];
 
         // One action per UTF-16 code unit: the output character itself, or a marker. The markers are control
         // characters, which are never in the output alphabet, so they cannot collide with an output.
@@ -66,6 +69,8 @@ public sealed class ArabicSearchRuleSet
         {
             _actions[source] = _DeleteAction;
         }
+
+        _maxOutputPerInput = Math.Max(1, expansions.Values.Select(static e => e.Length).DefaultIfEmpty(1).Max());
     }
 
     /// <summary>The first rule set.</summary>
@@ -101,8 +106,10 @@ public sealed class ArabicSearchRuleSet
 
     internal string Normalize(string value)
     {
-        // An expansion is at most four characters ("الله"), so four output characters per input bound the result.
-        Span<char> buffer = value.Length <= 256 ? stackalloc char[value.Length * 4] : new char[value.Length * 4];
+        // Each input character produces at most its longest expansion, and an inserted space always stands in for a
+        // separator character that produced nothing, so this bounds the key.
+        var capacity = value.Length * _maxOutputPerInput;
+        Span<char> buffer = capacity <= 1024 ? stackalloc char[capacity] : new char[capacity];
         var length = 0;
         var pendingSpace = false;
 
@@ -139,22 +146,5 @@ public sealed class ArabicSearchRuleSet
         }
 
         return new string(buffer[..length]);
-    }
-
-    internal static ArabicSearchRuleSet Create(
-        ArabicSearchVersion version,
-        SortedSet<char> outputAlphabet,
-        Dictionary<char, char> mappings,
-        Dictionary<char, string> expansions,
-        SortedSet<char> deletions
-    )
-    {
-        return new(
-            version,
-            [.. outputAlphabet],
-            mappings.ToFrozenDictionary(),
-            expansions.ToFrozenDictionary(),
-            [.. deletions]
-        );
     }
 }

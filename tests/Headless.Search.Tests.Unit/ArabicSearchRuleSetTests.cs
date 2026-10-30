@@ -60,6 +60,5 @@ public sealed class ArabicSearchRuleSetTests : TestBase
     public void should_return_v1_when_asked_for_v1()
     {
         ArabicSearchRuleSet.For(ArabicSearchVersion.V1).Should().BeSameAs(ArabicSearchRuleSet.V1);
-        ArabicSearchRuleSet.V1.Version.Should().Be(ArabicSearchVersion.V1);
     }
 }

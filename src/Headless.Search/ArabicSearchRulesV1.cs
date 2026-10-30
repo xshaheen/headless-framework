@@ -118,7 +118,6 @@ internal static class ArabicSearchRulesV1
         rules.MapRanges('y', (0x00DD, 0x00DD), (0x00FD, 0x00FD), (0x00FF, 0x00FF), (0x0176, 0x0178));
         rules.MapRanges('z', (0x0179, 0x017E));
 
-        // Expansions.
         rules.Expand("لا", 0xFEF5, 0xFEF6, 0xFEF7, 0xFEF8, 0xFEF9, 0xFEFA, 0xFEFB, 0xFEFC);
         rules.Expand("الله", 0xFDF2);
         rules.Expand("ae", 0x00C6, 0x00E6);
@@ -326,7 +325,7 @@ internal static class ArabicSearchRulesV1
                 }
             }
 
-            return ArabicSearchRuleSet.Create(ArabicSearchVersion.V1, _output, _mappings, _expansions, _deletions);
+            return new ArabicSearchRuleSet(ArabicSearchVersion.V1, _output, _mappings, _expansions, _deletions);
         }
 
         private void _EnsureOutput(char source, char target)

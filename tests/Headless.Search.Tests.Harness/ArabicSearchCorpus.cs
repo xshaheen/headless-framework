@@ -58,6 +58,24 @@ public static class ArabicSearchCorpus
     }
 
     /// <summary>
+    /// Inputs longer than the C# normalizer's stack buffer: repeated words with marks, a run of the longest expansion,
+    /// and seeded random strings of several hundred characters.
+    /// </summary>
+    public static IReadOnlyList<string> LongStrings()
+    {
+        string[] fixedInputs =
+        [
+            string.Join(' ', Enumerable.Repeat("أَحْمَد", 300)),
+            new string('\uFDF2', 300),
+            string.Concat(Enumerable.Repeat("عبد-الله\n", 120)),
+        ];
+        var random = Random(200, seed: 20261030);
+        var longRandom = random.Chunk(40).Select(static chunk => string.Concat(chunk));
+
+        return [.. fixedInputs, .. longRandom];
+    }
+
+    /// <summary>
     /// Seeded random strings mixing characters that carry a rule, separators, and arbitrary BMP characters, so
     /// interactions between rules (a deletion next to a separator, an expansion at a word edge) are exercised.
     /// </summary>

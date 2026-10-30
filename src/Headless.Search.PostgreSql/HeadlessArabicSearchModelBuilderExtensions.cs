@@ -1,12 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using System.Linq.Expressions;
 using Headless.Checks;
 using Headless.Hosting;
 using Headless.Search;
 using Headless.Search.PostgreSql;
-using Headless.Sql.PostgreSql;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -140,11 +138,8 @@ public static class HeadlessArabicSearchModelBuilderExtensions
         }
 
         var column = sourceColumn ?? builder.Property(source).Metadata.GetColumnName();
-        var dialect = PostgreSqlDialect.Instance;
-        var function = PostgreSqlArabicSearchFunction.Name((ArabicSearchVersion)version);
-
         key.HasComputedColumnSql(
-            string.Create(CultureInfo.InvariantCulture, $"{dialect.Quote(schema)}.{function}({dialect.Quote(column)})"),
+            PostgreSqlArabicSearchFunction.Call(schema, (ArabicSearchVersion)version, column),
             stored: true
         );
         builder.HasIndex(key.Metadata.Name).HasMethod("gin").HasOperators("gin_trgm_ops");

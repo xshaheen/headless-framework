@@ -9,10 +9,25 @@ namespace Headless.Search.PostgreSql;
 /// <summary>Renders the PostgreSQL function of one Arabic search rule version from its <see cref="ArabicSearchRuleSet" />.</summary>
 internal static class PostgreSqlArabicSearchFunction
 {
+    /// <summary>The schema-qualified function name: <c>"headless".ar_norm_v1</c>.</summary>
+    public static string QualifiedName(string schema, ArabicSearchVersion version)
+    {
+        return $"{PostgreSqlDialect.Instance.Quote(schema)}.{Name(version)}";
+    }
+
     /// <summary>The unqualified function name of <paramref name="version" />: <c>ar_norm_v1</c>.</summary>
     public static string Name(ArabicSearchVersion version)
     {
         return string.Create(CultureInfo.InvariantCulture, $"ar_norm_v{(int)ArabicSearchRuleSet.For(version).Version}");
+    }
+
+    /// <summary>
+    /// The call that builds a stored key from <paramref name="column" />: <c>"headless".ar_norm_v1("name")</c>. The
+    /// generated column and a later <c>SET EXPRESSION</c> must render it identically, or EF Core sees model drift.
+    /// </summary>
+    public static string Call(string schema, ArabicSearchVersion version, string column)
+    {
+        return $"{QualifiedName(schema, version)}({PostgreSqlDialect.Instance.Quote(column)})";
     }
 
     /// <summary>
@@ -24,7 +39,6 @@ internal static class PostgreSqlArabicSearchFunction
     {
         var rules = ArabicSearchRuleSet.For(version);
         var name = Name(version);
-        var dialect = PostgreSqlDialect.Instance;
 
         // translate() deletes each source character that has no counterpart in the target string, so the deletions
         // follow the mappings in the source string. Rows are sorted so the rendered SQL, and so the step checksum,
@@ -53,7 +67,7 @@ internal static class PostgreSqlArabicSearchFunction
                     JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
                     WHERE n.nspname = '{schema.Replace("'", "''", StringComparison.Ordinal)}' AND p.proname = '{name}'
                 ) THEN
-                    CREATE FUNCTION {dialect.Quote(schema)}.{name}(value text) RETURNS text
+                    CREATE FUNCTION {QualifiedName(schema, version)}(value text) RETURNS text
                         LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
                         RETURN btrim(
                             regexp_replace(
@@ -78,7 +92,7 @@ internal static class PostgreSqlArabicSearchFunction
     // reviewable and no character can end the literal or start an escape. Letters and digits stay readable.
     private static string _Literal(string value)
     {
-        var builder = new StringBuilder("U&'", value.Length * 5 + 4);
+        var builder = new StringBuilder("U&'", (value.Length * 5) + 4);
 
         foreach (var c in value)
         {

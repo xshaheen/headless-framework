@@ -75,22 +75,16 @@ public sealed class ArabicSearchProvisioningTests(PostgreSqlSearchFixture fixtur
         var connectionString = await fixture.CreateDatabaseAsync(AbortToken);
         var builder = Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder();
 
-        void addContext(IServiceCollection services)
-        {
-            services.AddDbContext<PeopleDbContext>(options => options.UseNpgsql(connectionString));
-            services.AddDbContextMigrations<PeopleDbContext>();
-        }
-
         if (migrationsFirst)
         {
-            addContext(builder.Services);
+            _AddPeopleContext(builder.Services, connectionString);
         }
 
         builder.Services.AddHeadlessSearch(setup => setup.UsePostgreSql(connectionString));
 
         if (!migrationsFirst)
         {
-            addContext(builder.Services);
+            _AddPeopleContext(builder.Services, connectionString);
         }
 
         using var host = builder.Build();
@@ -116,17 +110,50 @@ public sealed class ArabicSearchProvisioningTests(PostgreSqlSearchFixture fixtur
             .Equal("احمد علي", "فاطمه الزهراء", "محمدي", "منذر");
     }
 
+    // The version upgrade path: SET EXPRESSION rewrites every stored key and keeps the trigram index usable.
+    [Fact]
+    public async Task should_rebuild_stored_keys_and_keep_the_index_when_set_expression_runs()
+    {
+        var connectionString = await fixture.CreateDatabaseAsync(AbortToken);
+        using var host = PostgreSqlSearchFixture.CreateHost(
+            connectionString,
+            services => _AddPeopleContext(services, connectionString)
+        );
+        await host.Services.ProvisionResourcesAsync(AbortToken);
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(AbortToken);
+        await _ExecuteAsync(connection, "INSERT INTO people (name) VALUES ('أحمد علي'), ('فاطمة')");
+        var migration = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        migration.SetArabicSearchKeyExpression("people", "name_search", "name", ArabicSearchVersion.V1);
+        var sql = ((Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation)migration.Operations.Single()).Sql;
+
+        await _ExecuteAsync(connection, sql);
+
+        await using var keys = new NpgsqlCommand("SELECT name_search FROM people ORDER BY id", connection);
+        var rebuilt = new List<string>();
+        await using (var reader = await keys.ExecuteReaderAsync(AbortToken))
+        {
+            while (await reader.ReadAsync(AbortToken))
+            {
+                rebuilt.Add(reader.GetString(0));
+            }
+        }
+
+        rebuilt.Should().Equal("احمد علي", "فاطمه");
+        await using var index = new NpgsqlCommand(
+            "SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_people_name_search'",
+            connection
+        );
+        ((string)(await index.ExecuteScalarAsync(AbortToken))!).Should().Contain("gin").And.Contain("gin_trgm_ops");
+    }
+
     [Fact]
     public async Task should_serve_the_like_query_from_the_trigram_index()
     {
         var connectionString = await fixture.CreateDatabaseAsync(AbortToken);
         using var host = PostgreSqlSearchFixture.CreateHost(
             connectionString,
-            services =>
-            {
-                services.AddDbContext<PeopleDbContext>(options => options.UseNpgsql(connectionString));
-                services.AddDbContextMigrations<PeopleDbContext>();
-            }
+            services => _AddPeopleContext(services, connectionString)
         );
         await host.Services.ProvisionResourcesAsync(AbortToken);
 
@@ -208,6 +235,18 @@ public sealed class ArabicSearchProvisioningTests(PostgreSqlSearchFixture fixtur
         await using var command = new NpgsqlCommand("SELECT show_trgm(headless.ar_norm_v1('محمد علي'))", connection);
 
         return (string[])(await command.ExecuteScalarAsync(AbortToken))!;
+    }
+
+    private static void _AddPeopleContext(IServiceCollection services, string connectionString)
+    {
+        services.AddDbContext<PeopleDbContext>(options => options.UseNpgsql(connectionString));
+        services.AddDbContextMigrations<PeopleDbContext>();
+    }
+
+    private static async Task _ExecuteAsync(NpgsqlConnection connection, string sql)
+    {
+        await using var command = new NpgsqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private static Task<List<string>> _SearchAsync(PeopleDbContext db, string term)

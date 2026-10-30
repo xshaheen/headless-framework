@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using System.Text;
 using Headless.Search;
 using Headless.Testing.Tests;
@@ -31,6 +30,12 @@ public sealed class ArabicSearchParityTests(PostgreSqlSearchFixture fixture) : T
     public async Task should_match_the_csharp_normalizer_for_seeded_random_strings()
     {
         await _AssertParityAsync(ArabicSearchCorpus.Random(10_000, seed: 20261029));
+    }
+
+    [Fact]
+    public async Task should_match_the_csharp_normalizer_for_strings_longer_than_its_stack_buffer()
+    {
+        await _AssertParityAsync(ArabicSearchCorpus.LongStrings());
     }
 
     [Fact]
@@ -119,9 +124,7 @@ public sealed class ArabicSearchParityTests(PostgreSqlSearchFixture fixture) : T
 
         foreach (var c in value)
         {
-            builder.Append(
-                c is >= ' ' and <= '~' ? c.ToString() : string.Create(CultureInfo.InvariantCulture, $"\\u{(int)c:X4}")
-            );
+            builder.Append(c is >= ' ' and <= '~' ? c.ToString() : $"\\u{(int)c:X4}");
         }
 
         return builder.Append('"').ToString();

@@ -53,11 +53,10 @@ public static class HeadlessArabicSearchMigrationBuilderExtensions
 
         var dialect = PostgreSqlDialect.Instance;
         var qualifiedTable = schema is null ? dialect.Quote(table) : dialect.Qualify(schema, table);
-        var function = PostgreSqlArabicSearchFunction.Name(version);
+        var expression = PostgreSqlArabicSearchFunction.Call(functionSchema, version, sourceColumn);
 
         return migrationBuilder.Sql(
-            $"ALTER TABLE {qualifiedTable} ALTER COLUMN {dialect.Quote(column)} SET EXPRESSION AS "
-                + $"({dialect.Quote(functionSchema)}.{function}({dialect.Quote(sourceColumn)}));"
+            $"ALTER TABLE {qualifiedTable} ALTER COLUMN {dialect.Quote(column)} SET EXPRESSION AS ({expression});"
         );
     }
 }

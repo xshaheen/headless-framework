@@ -7,13 +7,42 @@ namespace Tests;
 
 public sealed class ArabicSearchNormalizerTests : TestBase
 {
-    public static TheoryData<ArabicSearchCorpusRow> CorpusV1 => [.. ArabicSearchCorpus.V1];
+    // Primitive columns keep each row serializable, so the runner lists every corpus row as its own test case.
+    public static TheoryData<int, string, string> CorpusV1 =>
+        [.. ArabicSearchCorpus.V1.Select(static r => (r.Line, r.Input, r.Expected))];
 
     [Theory]
     [MemberData(nameof(CorpusV1))]
-    public void should_build_the_hand_checked_key_when_normalizing_a_golden_corpus_row(ArabicSearchCorpusRow row)
+    public void should_build_the_hand_checked_key_when_normalizing_a_golden_corpus_row(
+        int line,
+        string input,
+        string expected
+    )
     {
-        ArabicSearchNormalizer.Normalize(row.Input, ArabicSearchVersion.V1).Should().Be(row.Expected);
+        ArabicSearchNormalizer.Normalize(input, ArabicSearchVersion.V1).Should().Be(expected, "corpus line {0}", line);
+    }
+
+    [Fact]
+    public void should_build_the_whole_key_when_value_is_longer_than_the_stack_buffer()
+    {
+        var text = string.Join(' ', Enumerable.Repeat("أَحْمَد", 300));
+
+        ArabicSearchNormalizer
+            .Normalize(text, ArabicSearchVersion.V1)
+            .Should()
+            .Be(string.Join(' ', Enumerable.Repeat("احمد", 300)));
+    }
+
+    // Every character expands to the longest expansion, so the key fills the whole output bound.
+    [Fact]
+    public void should_build_the_whole_key_when_every_character_takes_the_longest_expansion()
+    {
+        var text = new string('\uFDF2', 300);
+
+        ArabicSearchNormalizer
+            .Normalize(text, ArabicSearchVersion.V1)
+            .Should()
+            .Be(string.Concat(Enumerable.Repeat("الله", 300)));
     }
 
     [Fact]

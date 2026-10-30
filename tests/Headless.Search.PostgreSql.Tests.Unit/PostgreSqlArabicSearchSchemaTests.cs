@@ -2,8 +2,10 @@
 
 using Headless.Hosting.Schema;
 using Headless.Search;
+using Headless.Sql;
 using Headless.Sql.PostgreSql;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -65,7 +67,42 @@ public sealed class PostgreSqlArabicSearchSchemaTests : TestBase
         var act = () =>
             provider.GetRequiredService<IOptions<Headless.Search.PostgreSql.PostgreSqlSearchOptions>>().Value;
 
-        act.Should().Throw<OptionsValidationException>();
+        act.Should().Throw<OptionsValidationException>().WithMessage("*Schema*");
+    }
+
+    [Fact]
+    public async Task should_bind_connection_string_and_schema_from_configuration()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection([
+                new KeyValuePair<string, string?>("Search:ConnectionString", _ConnectionString),
+                new KeyValuePair<string, string?>("Search:Schema", "search"),
+            ])
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessSearch(setup => setup.UsePostgreSql(configuration.GetSection("Search")));
+        await using var provider = services.BuildServiceProvider();
+
+        var options = provider.GetRequiredService<IOptions<Headless.Search.PostgreSql.PostgreSqlSearchOptions>>().Value;
+
+        options.ConnectionString.Should().Be(_ConnectionString);
+        options.Schema.Should().Be("search");
+    }
+
+    [Fact]
+    public async Task should_use_the_shared_connection_when_use_postgresql_has_no_arguments()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddPostgreSqlSql(_ConnectionString);
+        services.AddHeadlessSearch(setup => setup.UsePostgreSql());
+        await using var provider = services.BuildServiceProvider();
+
+        var options = provider.GetRequiredService<IOptions<Headless.Search.PostgreSql.PostgreSqlSearchOptions>>().Value;
+
+        options.ConnectionString.Should().Be(_ConnectionString);
+        options.Schema.Should().Be("headless");
     }
 
     private static ServiceProvider _Provider(Action<Headless.Search.PostgreSql.PostgreSqlSearchOptions> configure)

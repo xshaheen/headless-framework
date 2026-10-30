@@ -7,6 +7,7 @@ namespace Headless.Search;
 /// its term with the same version; a rule change ships as a new version and never edits a released one.
 /// </summary>
 [PublicAPI]
+#pragma warning disable CA1008 // Fix makes the code worse: a zero "None" member would be accepted wherever a real rule version is required.
 public enum ArabicSearchVersion
 {
     /// <summary>
@@ -16,3 +17,4 @@ public enum ArabicSearchVersion
     /// </summary>
     V1 = 1,
 }
+#pragma warning restore CA1008
