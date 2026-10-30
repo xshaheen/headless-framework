@@ -1784,6 +1784,22 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var ownerPrefix = JobsSeedId.OwnerMarkerPrefix(seedOwner);
         var declaredIds = cronJobs.Select(x => x.Id).ToHashSet();
 
+        // A row at a declared id that does not carry that entry's marker is not this owner's seeded row, so it is
+        // refused rather than adopted, as the relational provider's insert collision is. Checked before any write,
+        // since this store has no transaction to roll back a partial reconcile.
+        foreach (var entry in cronJobs)
+        {
+            if (
+                _cronJobs.TryGetValue(entry.Id, out var occupant)
+                && !string.Equals(occupant.InitIdentifier, entry.Marker, StringComparison.Ordinal)
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Cron definition '{entry.Id}' occupies the id of seed entry '{entry.Marker}' without its marker, so the seed will not adopt it."
+                );
+            }
+        }
+
         // Delete this owner's seeded rows that the declared set no longer contains, with their occurrences. Runtime
         // rows carry no marker and another owner's rows carry another prefix, so neither is selected.
         var removedIds = _cronJobs

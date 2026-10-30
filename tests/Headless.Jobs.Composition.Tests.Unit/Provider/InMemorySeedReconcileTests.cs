@@ -100,6 +100,40 @@ public sealed class InMemorySeedReconcileTests : TestBase
         rows.Should().ContainSingle(x => x.Id != runtime.Id).Which.Expression.Should().Be(_SeededExpression);
     }
 
+    [Fact]
+    public async Task should_refuse_a_row_at_a_declared_id_without_the_seed_marker_and_write_nothing()
+    {
+        var provider = _Create();
+        var declaredId = CronSeedDefinition
+            .ForCronFunction(
+                _Owner,
+                _Function,
+                _SeededExpression,
+                MissedRunPolicy.Coalesce,
+                JobsRecoveryDefaults.MissedRunGraceSeconds,
+                CronOverlapPolicy.Allow
+            )
+            .Id;
+        var occupant = new FakeCronJob
+        {
+            Id = declaredId,
+            Function = _Function,
+            Expression = _RuntimeExpression,
+            CreatedAt = _Now,
+            UpdatedAt = _Now,
+            Request = [],
+        };
+        await provider.InsertCronJobsAsync([occupant], AbortToken);
+        await _SeedAsync(provider, _Owner, ["seed.removed"]);
+
+        var act = () => _SeedAsync(provider, _Owner, [_Function]);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*without its marker*");
+        var rows = await provider.GetCronJobsAsync(predicate: null, AbortToken);
+        rows.Should().ContainSingle(x => x.Id == declaredId).Which.Expression.Should().Be(_RuntimeExpression);
+        rows.Should().ContainSingle(x => x.Function == "seed.removed", "the refused seed deletes nothing either");
+    }
+
     // ----------------------------------------------------------------------------------------------------------------
     // Declared recurring jobs, seeded through the host's seeder
     // ----------------------------------------------------------------------------------------------------------------
