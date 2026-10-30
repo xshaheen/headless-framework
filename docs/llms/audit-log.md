@@ -26,6 +26,7 @@ Code against `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAudit
 - Configure automatic capture in the EF model: `modelBuilder.Entity<TEntity>().IsAudited()` opts in, `ExcludeFromAudit()` opts an entity or property out, and `IsAuditSensitive(...)` marks a property as sensitive. These methods live in `Headless.EntityFramework.Primitives` (which `Headless.EntityFramework` references); domain entities need no audit marker or attributes.
 - Treat entity policy as tri-state. Explicit inclusion or exclusion wins; an unconfigured entity follows `AuditLogOptions.AuditByDefault`. Owned entries inherit eligibility from their root owner, and derived types inherit the nearest configured base policy unless overridden.
 - Apply property policy in this order: framework default exclusions, explicit `ExcludeFromAudit()`, and `PropertyFilter` veto before sensitive handling. A strategy passed to `IsAuditSensitive(...)` overrides the global `AuditLogOptions.SensitiveDataStrategy`.
+- Test audit coverage with `db.Model.GetAuditPolicies(options)` (or `entityType.GetAuditPolicy(options)`), passing the `AuditLogOptions` the host resolves. It applies the same rules as capture, so assert on `IsAudited`, `ConfiguredIsAudited`, `IsSensitive`, and `IsCaptured` instead of reading model annotations. See [Testing audit coverage](#testing-audit-coverage).
 - Register the audit log with exactly one `services.AddHeadlessAuditLog(setup => setup.Use...)` call. Put global audit options in `setup.ConfigureOptions(...)` and storage-table options in `setup.ConfigureStorage(...)`.
 - For EF storage, call `setup.UseEntityFramework<TContext>()`, register the same context with EF Core, register a singleton `IDbContextFactory<TContext>` (`AddDbContextFactory<TContext>()` or `AddPooledDbContextFactory<TContext>()` for a plain `DbContext`, or `AddHeadlessDbContext<TContext>()` or `AddHeadlessDbContextPool<TContext>()` for a `HeadlessDbContext`; both Headless registrations add the factory) for read-back, and call `modelBuilder.ConfigureHeadlessAuditLog(this)` inside `OnModelCreating`, which reads the storage options from the context's services and names every object in the database's convention (snake_case on PostgreSQL, PascalCase elsewhere). A startup gate validates this at boot and throws if it is missing. The factory must be a singleton (the default lifetime of all four registrations): the EF reader and startup gate are singletons that would capture a scoped or transient factory for the life of the host, so startup refuses one with `InvalidServiceLifetimeException`.
 - For raw storage, call `setup.UsePostgreSql(connectionString)` or `setup.UseSqlServer(connectionString)`, or the parameterless `UsePostgreSql()` / `UseSqlServer()` to reuse the connection registered by `AddPostgreSqlSql` / `AddSqlServerSql`; `resources provision` creates the audit table, a host start only verifies it, and the provider writes over its own connection.
@@ -36,7 +37,7 @@ Code against `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAudit
 - Use `IAuditLogWriter<TContext>` for an explicit event that must persist even though no `SaveChanges` follows, such as a denied request. Use `IAuditLog<TContext>` when the entry must commit or roll back with the caller's entity changes. On EF storage the writer needs `IDbContextFactory<TContext>`.
 - Soft-delete transitions are detected automatically and emit `entity.soft_deleted` / `entity.restored` actions instead of `entity.updated`.
 - `EntityFilter` and `PropertyFilter` predicates are cached after first evaluation per `(Type, propertyName)`. Keep them pure and deterministic.
-- `IpAddress` and `UserAgent` are not auto-populated by EF change capture — set them explicitly through `IAuditLog<TContext>.LogAsync` when relevant.
+- `IpAddress` and `UserAgent` come from the registered `IAuditClientInfoProvider` whenever the writer leaves them `null`: on every EF change-capture entry, and on `IAuditLog<TContext>.LogAsync` and `IAuditLogWriter<TContext>.WriteAsync` when `AuditLogWriteRequest.IpAddress` / `UserAgent` are unset. `AddHeadless()` (`Headless.Api.ServiceDefaults`) registers one that reads the current request (`IRequestContext.WebClient`); a host without it, such as a worker, records `null` unless the request sets the values. Both are truncated to their column limits.
 - On SQLite, override the default composite primary key `(CreatedAt, Id)` with a single-column key on `Id` — SQLite cannot autoincrement composite keys.
 - When reading `OldValues` / `NewValues` after a provider round-trip, expect `JsonElement` values; use `GetDecimal()`, `GetBoolean()`, etc. for typed access.
 - Raw providers (PostgreSql, SqlServer) write automatic entries in the saving context's transaction when its connection uses the provider's driver. A `HeadlessDbContext` save that produces audit entries begins its own transaction when the caller has none, so those entries commit or roll back with the entity changes. `IAuditLog<TContext>.LogAsync` joins the transaction of the scope's `TContext` and has no transaction of its own to fall back on. See [Transaction enrollment on raw storage](#transaction-enrollment-on-raw-storage).
@@ -57,7 +58,7 @@ The pipeline produces two kinds of rows:
 
 Each entry carries:
 
-- **Actor** — `UserId`, `AccountId`, `TenantId` (resolved from `ICurrentUser` / `ICurrentTenant`), `CorrelationId` (from `ICorrelationIdProvider`; the default is the W3C trace ID), and optionally `IpAddress` / `UserAgent` (must be set explicitly — the pipeline does not auto-populate these).
+- **Actor** — `UserId`, `AccountId`, `TenantId` (resolved from `ICurrentUser` / `ICurrentTenant`), `CorrelationId` (from `ICorrelationIdProvider`; the default is the W3C trace ID), and `IpAddress` / `UserAgent` (from `AuditLogWriteRequest` when set, else from the registered `IAuditClientInfoProvider`, which `AddHeadless()` wires to the current request; `null` outside a request).
 - **Entity identity** — `EntityType` (full CLR type name) and `EntityId` (plain string for single-column keys; JSON array for composite keys).
 - **Change data** — `OldValues` and `NewValues` as `Dictionary<string, object?>` (serialized to JSON), and `ChangedFields` as `List<string>`. After a provider round-trip, non-string values deserialize as `JsonElement` — use `GetDecimal()`, `GetBoolean()`, etc.
 - **Outcome** — `Success` flag and optional `ErrorCode`.
@@ -72,6 +73,22 @@ Properties configured with `IsAuditSensitive()` are subject to a strategy applie
 - `Transform` — passes the value through `AuditLogOptions.SensitiveValueTransformer` (hash, mask, tokenize). The transformer receives a `SensitiveValueContext` carrying `EntityType`, `PropertyName`, `PropertyClrType`, and `Value`. Must be a pure, synchronous function.
 
 A strategy passed to `IsAuditSensitive(SensitiveDataStrategy.Exclude)` overrides the global default for that property. Explicit property exclusion and `PropertyFilter` vetoes run first, so an excluded property is never processed as sensitive.
+
+### Testing audit coverage
+
+`HeadlessAuditModelPolicyExtensions` (`Headless.EntityFramework.Primitives`, namespace `Microsoft.EntityFrameworkCore`) reads the resolved policy back from a built model: `model.GetAuditPolicies(options)` returns one `AuditEntityPolicy` per entity type, owned types included, and `entityType.GetAuditPolicy(options)` returns one. Capture resolves through the same rules, so a test asserts what a save records:
+
+```csharp
+var options = host.Services.GetRequiredService<IOptions<AuditLogOptions>>().Value;
+
+db.Model.GetAuditPolicies(options)
+    .Where(p => p.ConfiguredIsAudited is null)
+    .Should().BeEmpty("every entity needs an explicit IsAudited() or ExcludeFromAudit()");
+```
+
+- `AuditEntityPolicy.IsAudited` — the effective answer: the explicit configuration on the type or its nearest base, else `AuditByDefault`, unless `EntityFilter` vetoes it. `ConfiguredIsAudited` is the explicit part alone, `null` when unconfigured.
+- `AuditEntityPolicy.PolicyEntityType` — the type whose configuration decides: the entity itself, or for an owned type the root owner its metadata names. At save time an owned entry follows its runtime owner, so a derived owner's override shows on the derived owner's policy, not on the owned type's.
+- `AuditPropertyPolicy.IsSensitive`, `SensitiveDataStrategy` (the effective strategy, `null` when not sensitive), and `IsCaptured` (`false` for an explicit exclusion, a default excluded property, a `PropertyFilter` veto, or an unconfigured shadow property). A sensitive property with the `Exclude` strategy is captured but records no value.
 
 ### Scope and unit-of-work
 
@@ -199,7 +216,8 @@ Defines the property-level audit log contracts for tracking entity mutations and
 - `AuditLogOptions` — master enable/disable, `AuditByDefault` mode, per-entity/property filters, `CaptureErrorStrategy`, `MissingTransactionStrategy`, configurable default exclusions, sensitive-value transformer.
 - `MissingTransactionStrategy` — `Continue` (default; write on a separate connection and warn) or `Throw` (fail before writing) when a raw store cannot join the caller's transaction; see [Transaction enrollment on raw storage](#transaction-enrollment-on-raw-storage).
 - `IAuditLog<TContext>` — explicit logging of non-mutation events; `TContext` binds the logger to a specific persistence context for multi-context applications.
-- `AuditLogWriteRequest` — explicit event data with a required `Action` initializer and optional entity, payload, success, and error metadata.
+- `AuditLogWriteRequest` — explicit event data with a required `Action` initializer and optional entity, payload, success, error, `IpAddress`, and `UserAgent` metadata. A `null` `IpAddress` or `UserAgent` records the `IAuditClientInfoProvider` value.
+- `IAuditClientInfoProvider` — `IpAddress` and `UserAgent` of the current request, read when a writer or change capture leaves them unset. `Headless.Api.ServiceDefaults` registers the request-backed one; register your own to supply client info in another host.
 - `IAuditLogWriter<TContext>` — explicit logging that commits each entry immediately in its own transaction; see [Standalone writes](#standalone-writes).
 - `IReadAuditLog<TContext>` — keyset-paged query abstraction returning `ContinuationPage<AuditLogEntryData>`; see [Paging audit history](#paging-audit-history).
 - `AuditLogQuery` — implements `IContinuationPageRequest`: filters (`Action` or `ActionPrefix`, `EntityType`, `EntityId`, `UserId`, `AccountId`, `TenantId`, `CorrelationId`, `From`, `To`), `Direction`, `Size` (default 100), and `ContinuationToken`.
@@ -207,7 +225,7 @@ Defines the property-level audit log contracts for tracking entity mutations and
 - `AuditLogEntryData` — immutable record capturing all fields; `OldValues`/`NewValues` are `Dictionary<string, object?>`.
 - `IAuditLogStore` — storage abstraction called by the change-tracking pipeline; `Save`/`SaveAsync` take the saving `DbContext` and return `IAuditLogStoreEntry` handles. `AddsToSavingContext` (default `false`) must be `true` only for a store whose `Save` merely adds rows to the context without writing; only then may the pipeline call it before the entity save.
 - `IAuditLogStoreEntry` — provider handle; orchestrator calls `DiscardPendingChanges()` on failure and `ReleaseAfterCommit()` after success. Both must be idempotent.
-- `IAuditChangeCapture` — scans ChangeTracker entries and produces `AuditLogEntryData` records.
+- `IAuditChangeCapture` — scans ChangeTracker entries and produces `AuditLogEntryData` records, stamped from the `AuditCaptureContext` (actor, tenant, correlation, client IP and user agent, timestamp) the save pipeline passes.
 - `IAuditEntityIdResolver` — patches deferred entity IDs and temporary property values (store-generated keys, FKs to just-added principals) after `SaveChanges` assigns real keys. `RequiresDeferredResolution(entry)` (default `true`) lets a capture mark an entry complete so it can be saved with the entity change.
 - `IAmbientDbTransactionAccessor` — allows raw ADO.NET stores to enroll in the consumer's active `DbConnection`/`DbTransaction` without taking an EF dependency.
 

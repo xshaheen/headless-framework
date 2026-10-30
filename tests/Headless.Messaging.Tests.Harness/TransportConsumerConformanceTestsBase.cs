@@ -392,17 +392,39 @@ public sealed class TransportConsumerConformanceSession(
 
             public void Arm(TimeProvider clock, TimeSpan timeout, CancellationToken cancellationToken)
             {
-                // Either may end the wait before Arm returns: a short timer can fire inside CreateTimer, and a canceled
-                // token runs its callback inside Register. _Release then finds nothing to release, so it is done here.
-                var timer =
-                    timeout > TimeSpan.Zero
-                        ? clock.CreateTimer(
+                // A delivery can end the wait between TakeAsync registering it and this call. A timer created after
+                // that would be armed for a wait that is over, and a wait clock counts an armed timer as pending and
+                // may move time to it before the timer is disposed. Created under the gate, so End either finds the
+                // timer to release or ran first and keeps it from being created.
+                ITimer? timer = null;
+                lock (_gate)
+                {
+                    if (_ended)
+                    {
+                        return;
+                    }
+
+                    if (timeout > TimeSpan.Zero)
+                    {
+                        timer = clock.CreateTimer(
                             static self => ((Waiter)self!)._OnTimeout(),
                             this,
                             timeout,
                             Timeout.InfiniteTimeSpan
-                        )
-                        : null;
+                        );
+                    }
+
+                    // A short timer can fire inside CreateTimer and end the wait, leaving nothing for _Release.
+                    if (!_ended)
+                    {
+                        _timer = timer;
+                        timer = null;
+                    }
+                }
+
+                timer?.Dispose();
+
+                // A canceled token runs its callback inside Register, so the same check follows it.
                 var cancellation = cancellationToken.Register(
                     static (self, token) => ((Waiter)self!)._OnCanceled(token),
                     this
@@ -412,13 +434,11 @@ public sealed class TransportConsumerConformanceSession(
                 {
                     if (!_ended)
                     {
-                        _timer = timer;
                         _cancellation = cancellation;
                         return;
                     }
                 }
 
-                timer?.Dispose();
                 cancellation.Dispose();
             }
 

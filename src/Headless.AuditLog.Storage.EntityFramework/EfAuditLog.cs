@@ -15,7 +15,8 @@ internal sealed class EfAuditLog<TContext>(
     ICurrentTenant currentTenant,
     ICorrelationIdProvider correlationIdProvider,
     TimeProvider timeProvider,
-    IOptions<AuditLogOptions> options
+    IOptions<AuditLogOptions> options,
+    IAuditClientInfoProvider? clientInfo = null
 ) : IAuditLog<TContext>
     where TContext : DbContext
 {
@@ -33,7 +34,14 @@ internal sealed class EfAuditLog<TContext>(
         context
             .Set<AuditLogEntry>()
             .Add(
-                ExplicitAuditLogEntry.Create(request, currentUser, currentTenant, correlationIdProvider, timeProvider)
+                ExplicitAuditLogEntry.Create(
+                    request,
+                    currentUser,
+                    currentTenant,
+                    correlationIdProvider,
+                    timeProvider,
+                    clientInfo
+                )
             );
 
         return Task.CompletedTask;

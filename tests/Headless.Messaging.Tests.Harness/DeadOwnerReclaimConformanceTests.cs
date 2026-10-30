@@ -266,6 +266,46 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
             .Contain(node => node.Identity == doomedIdentity && node.State == NodeLivenessState.Dead);
     }
 
+    [Fact]
+    public async Task should_reclaim_a_killed_nodes_rows_through_the_derived_reconcile_interval()
+    {
+        if (CoordinationProvider is not { } coordinationProvider)
+        {
+            Assert.Skip("This store has no real coordination provider.");
+            return;
+        }
+
+        // given: no reconcile interval is configured, so it follows the coordination retention window; no host beats,
+        // so the doomed node's death reaches the survivor through the reconcile alone, never through a NodeLeft event
+        var cluster = $"reclaim-{Guid.NewGuid():N}";
+        var (doomedProvider, doomedStorage) = await _BuildCoordinatedStackAsync(
+            "doomed-node",
+            cluster,
+            coordinationProvider,
+            deriveReconcileInterval: true
+        );
+        var (survivorProvider, survivorStorage) = await _BuildCoordinatedStackAsync(
+            "survivor-node",
+            cluster,
+            coordinationProvider,
+            deriveReconcileInterval: true
+        );
+        await ResetStorageAsync(doomedStorage);
+        await doomedProvider.GetRequiredService<INodeMembership>().RegisterAsync(AbortToken);
+        var rows = await _SeedLeasedRowsAsync(doomedStorage, "doomed-node", _FutureLease());
+
+        // when
+        await _StartBridgeAsync(survivorProvider);
+
+        // then: a reconcile tick lands while the node is still observable as Dead, before its entry is pruned
+        (await _BecomesRetriableAsync(survivorStorage, rows.Published, published: true))
+            .Should()
+            .BeTrue("the derived reconcile must observe the dead node inside its retention window");
+        (await _BecomesRetriableAsync(survivorStorage, rows.Received, published: false))
+            .Should()
+            .BeTrue("the derived reconcile must observe the dead node inside its retention window");
+    }
+
     private async Task<(IServiceProvider Provider, IDataStorage Storage)> _StartPrimaryStackAsync()
     {
         var stack = await _BuildStackAsync(sharedStorage: null);
@@ -380,7 +420,8 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
     private async Task<(IServiceProvider Provider, IDataStorage Storage)> _BuildCoordinatedStackAsync(
         string nodeId,
         string cluster,
-        Action<HeadlessCoordinationSetupBuilder> coordinationProvider
+        Action<HeadlessCoordinationSetupBuilder> coordinationProvider,
+        bool deriveReconcileInterval = false
     )
     {
         var services = new ServiceCollection();
@@ -396,6 +437,12 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
                 options.HeartbeatInterval = TimeSpan.FromMilliseconds(200);
                 options.SuspicionThreshold = TimeSpan.FromMilliseconds(500);
                 options.DeadThreshold = TimeSpan.FromSeconds(1);
+
+                if (deriveReconcileInterval)
+                {
+                    // A dead identity stays observable for two seconds, so the derived reconcile runs every second.
+                    options.DeadRetentionWindow = TimeSpan.FromSeconds(2);
+                }
             });
             // Only the dead-owner bridge ever starts, and a killed node is one that stops beating, so no host beats.
             setup.DisableMembershipHeartbeat();
@@ -404,7 +451,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
         {
             setup.Options.Version = "v1";
             // The reconcile also bounds its snapshot read, which reaches the real store here.
-            setup.Options.DeadNodeReconcileInterval = TimeSpan.FromMilliseconds(250);
+            setup.Options.DeadNodeReconcileInterval = deriveReconcileInterval ? null : TimeSpan.FromMilliseconds(250);
             ConfigureStorage(setup);
         });
 
