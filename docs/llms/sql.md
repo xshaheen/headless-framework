@@ -107,7 +107,7 @@ The EF Core storage variants and Jobs take their connection from the `DbContext`
 
 ### Schema runner: apply, verify, and deploy-time scripts
 
-Every raw PostgreSQL, SQL Server, and SQLite storage feature contributes its DDL to one schema runner (`SchemaRunner`, namespace `Headless.Hosting.Schema`) instead of running its own initializer. Registering a feature adds its contribution and one `Schema` [resource provisioner](utilities.md#resource-provisioning) per contribution, whose startup check is `FailStart`. The runner:
+Every raw PostgreSQL, SQL Server, and SQLite storage feature contributes its DDL to one schema runner (`SchemaRunner`, namespace `Headless.Hosting.Schema`) instead of running its own initializer. Registering a feature adds its contribution and one `Schema` [resource provisioner](utilities.md#resource-provisioning) per contribution (kind `SchemaRunner.ResourceKind`), whose startup check is `FailStart`. A provisioner that must run after every schema step, as EF Core migrations do, selects that kind in its `DependsOn`. The runner:
 
 - Applies every missing step of every feature that reaches one database in a single pass, under one session lock per database (`pg_try_advisory_lock` or `sp_getapplock`, polled; on SQLite a leased row in `headless_schema_lock`), before any hosted service can use the tables.
 - Records each applied step, with a SHA-256 checksum of its SQL, in `headless_schema_history` in the feature's schema. A recorded step is never run again, so a warm start is one history read per schema and takes no lock.

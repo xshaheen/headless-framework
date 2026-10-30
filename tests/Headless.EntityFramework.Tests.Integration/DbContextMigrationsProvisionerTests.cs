@@ -2,6 +2,7 @@
 
 using Headless.EntityFramework;
 using Headless.Hosting;
+using Headless.Hosting.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -160,7 +161,7 @@ internal sealed class RecordingSchemaProvisioner(Func<bool> widgetsExist) : IRes
 {
     public bool? WidgetsExistedWhenProvisioned { get; private set; }
 
-    public string Kind => "Schema";
+    public string Kind => SchemaRunner.ResourceKind;
 
     public string Name => "Sqlite/main/Recording";
 

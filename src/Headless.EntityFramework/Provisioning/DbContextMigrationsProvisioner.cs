@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using Headless.Hosting;
+using Headless.Hosting.Schema;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -22,9 +23,6 @@ namespace Headless.EntityFramework;
 internal sealed class DbContextMigrationsProvisioner<TDbContext>(IServiceProvider services) : IResourceProvisioner
     where TDbContext : DbContext
 {
-    // The kind the schema runner gives each contribution's provisioner.
-    private const string _SchemaKind = "Schema";
-
     public string Kind => "EntityFramework";
 
     public string Name => typeof(TDbContext).Name;
@@ -40,7 +38,7 @@ internal sealed class DbContextMigrationsProvisioner<TDbContext>(IServiceProvide
     // key to a framework table, and fails when that object does not exist yet. No schema contribution depends on an
     // application's tables, so this cannot form a cycle.
     public IEnumerable<IResourceProvisioner> DependsOn(IReadOnlyList<IResourceProvisioner> provisioners) =>
-        provisioners.Where(static p => string.Equals(p.Kind, _SchemaKind, StringComparison.Ordinal));
+        provisioners.Where(static p => string.Equals(p.Kind, SchemaRunner.ResourceKind, StringComparison.Ordinal));
 
     public async Task ProvisionAsync(CancellationToken cancellationToken)
     {
