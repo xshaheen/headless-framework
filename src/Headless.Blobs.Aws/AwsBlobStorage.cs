@@ -1181,7 +1181,7 @@ internal sealed class AwsBlobStorage(
     /// <inheritdoc />
     /// <remarks>
     /// The <paramref name="options"/> are signed into the URL as the <c>response-content-disposition</c> and
-    /// <c>response-content-type</c> query parameters, which S3 returns as the response's
+    /// <c>response-content-type</c> query parameters, which S3 and Cloudflare R2 return as the response's
     /// <c>Content-Disposition</c> and <c>Content-Type</c>.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>

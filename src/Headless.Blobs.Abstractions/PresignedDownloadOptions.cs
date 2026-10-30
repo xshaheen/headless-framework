@@ -14,8 +14,8 @@ namespace Headless.Blobs;
 /// The values are part of the signed URL, so whoever holds the URL cannot change them. S3 honors both through the
 /// <c>response-content-disposition</c> and <c>response-content-type</c> query parameters, Azure through the SAS
 /// <c>rscd</c> and <c>rsct</c> fields, and the signed-URL endpoint in <c>Headless.Blobs.SignedUrlEndpoint</c> by
-/// writing the headers itself. Cloudflare R2 receives the same S3 query parameters, but its published S3
-/// compatibility table does not list them for <c>GetObject</c>, so confirm the response headers against R2.
+/// writing the headers itself. Cloudflare R2 honors the same S3 query parameters, although its published
+/// S3 compatibility table does not list them for <c>GetObject</c>.
 /// </para>
 /// <para>
 /// The setters validate, so an instance never carries a value that could split or inject a response header.
