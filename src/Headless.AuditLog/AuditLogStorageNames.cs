@@ -29,6 +29,18 @@ internal static class AuditLogStorageNames
 
     public static readonly string[] Correlation = ["Correlation"];
 
+    /// <summary>
+    /// The session setting the retention purge turns on so the append-only trigger lets its <c>DELETE</c> through: a
+    /// transaction-local <c>set_config</c> on PostgreSQL, a <c>SESSION_CONTEXT</c> key on SQL Server.
+    /// </summary>
+    public const string PurgeSetting = "headless.audit_log_purge";
+
+    /// <summary>
+    /// The PascalCase suffix of the append-only trigger (and, on PostgreSQL, its function). It is shorter than every
+    /// index suffix, so the validators' index-name check covers it.
+    /// </summary>
+    public const string AppendOnlyTrigger = "AppendOnly";
+
     public static readonly string[][] Indexes =
     [
         TenantTime,

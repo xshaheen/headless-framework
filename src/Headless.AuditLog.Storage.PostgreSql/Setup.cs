@@ -162,7 +162,8 @@ public static class SetupAuditLogPostgreSql
                     StorageProvider.PostgreSql,
                     AuditLogJsonColumnType.Jsonb,
                     [AuditLogJsonColumnType.Jsonb, AuditLogJsonColumnType.Json],
-                    $"{nameof(AuditLogStorageOptions.JsonColumnType)} must be Jsonb or Json for the PostgreSql audit-log provider."
+                    $"{nameof(AuditLogStorageOptions.JsonColumnType)} must be Jsonb or Json for the PostgreSql audit-log provider.",
+                    PostgreSqlAuditLogSchemaContribution.PurgeStatements
                 ),
                 PostgreSqlAuditLogSchemaContribution.Create
             );
