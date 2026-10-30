@@ -51,6 +51,26 @@ public sealed class SimulationWaitClockTests : TestBase
         await session.Consumer.CommitAsync(redelivery.SettlementValue, AbortToken);
     }
 
+    [Fact]
+    public async Task should_not_move_time_when_a_receive_meets_a_delivery_already_on_its_way()
+    {
+        // given
+        await using var simulation = await _StartAsync();
+        var session = simulation.Session;
+
+        // when: each receive starts while its delivery may be landing, the race in which a wait could arm a timeout
+        // for a receive that had already ended and let the clock step to it
+        for (var i = 0; i < 300; i++)
+        {
+            (await session.PublishAsync(_Message(session.Destination), AbortToken)).Succeeded.Should().BeTrue();
+            var delivery = await session.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+            await session.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
+        }
+
+        // then: every delivery was due at once, so no timeout was ever the nearest pending wait
+        simulation.Clock.GetUtcNow().Should().Be(simulation.StartedAt);
+    }
+
     private static async Task<Simulation> _StartAsync()
     {
         var broker = new SimulatedBroker(new SimulationClock());
