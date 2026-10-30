@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
@@ -220,7 +221,8 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
             Substitute.For<ISettingDefinitionManager>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             host.Services.GetRequiredService<ICache<SettingValueCacheItem>>(),
-            Options.Create(new SettingManagementOptions())
+            Options.Create(new SettingManagementOptions()),
+            NullLogger<SettingValueStore>.Instance
         );
         var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
 
@@ -255,7 +257,8 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
             Substitute.For<ISettingDefinitionManager>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             host.Services.GetRequiredService<ICache<SettingValueCacheItem>>(),
-            Options.Create(new SettingManagementOptions())
+            Options.Create(new SettingManagementOptions()),
+            NullLogger<SettingValueStore>.Instance
         );
         await repository.InsertAsync(
             new SettingValueRecord(Guid.NewGuid(), "Theme", "Dark", "Tenant", "acme"),
