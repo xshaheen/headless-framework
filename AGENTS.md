@@ -196,6 +196,6 @@ The "Change routing" table in [docs/authoring/AUTHORING.md](docs/authoring/AUTHO
 
 ## Pull requests
 
-- **Fill the template's Review guide.** In `.github/PULL_REQUEST_TEMPLATE.md` it follows the Solution, collapsed: the decisions the reviewer must make, each linked to its hunk, then what is safe to skim and where you are least sure. A reviewer reads that and the hunks it points to, not every line. Keep the visible text under ~400 words (~700 for a large PR); the Review guide, Verification, proof summaries, and branch history go in collapsed blocks.
+- **Fill the template's Review guide.** In `.github/PULL_REQUEST_TEMPLATE.md` it follows Decisions and Left out, collapsed: the decisions the reviewer must make, each linked to its hunk, then what is safe to skim and where you are least sure. A reviewer reads that and the hunks it points to, not every line. Keep the visible text under ~400 words (~700 for a large PR); the Review guide, Contract changes, Verification, proof summaries, and branch history go in collapsed blocks.
 - **Split by kind of change.** Package deletions, renames, lockfiles, and generated code go in their own PR, stacked under the behavior change, so the behavior change reads on its own.
 - **This repository is public.** A title, description, commit message, or comment never names a private repository, a client or consumer app, or a local path such as an agent's scratch folder. Write "a consumer app" and state the fact: the call, the input, and the wrong result.
