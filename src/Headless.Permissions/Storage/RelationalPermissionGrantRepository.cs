@@ -2,15 +2,18 @@
 
 using System.Collections.Concurrent;
 using System.Data.Common;
+using Headless.Checks;
 using Headless.MultiTenancy;
 using Headless.Sql;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Permissions;
 
 /// <summary>
 /// The relational <see cref="IPermissionGrantRepository"/>, written once over <see cref="ISqlDialect"/>. Reads and
-/// deletes are scoped to the current tenant; list filters bind the whole list as one parameter.
+/// deletes are scoped to the current tenant; list filters bind the whole list as one parameter. The enlisted members
+/// run the same statements on a caller's unit-of-work connection and transaction instead of their own.
 /// </summary>
 #pragma warning disable CA2100 // SQL text interpolates only validated schema and table identifiers; values are parameters.
 internal sealed class RelationalPermissionGrantRepository(
@@ -25,6 +28,9 @@ internal sealed class RelationalPermissionGrantRepository(
     /// SQL Server's 2,100-parameter ceiling.
     /// </summary>
     private const int _MaxRowsPerInsert = 100;
+
+    private const string _Owner = "the relational permissions storage";
+    private const string _Operation = "permission grant";
 
     /// <summary>
     /// Written text is unbounded: a parameter sized to the column would silently truncate an over-long value, where the
@@ -91,6 +97,24 @@ internal sealed class RelationalPermissionGrantRepository(
         );
     }
 
+    public Task<List<PermissionGrantRecord>> GetListEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        var (connection, transaction) = _Enlist(unitOfWork);
+
+        return _ReadAsync(
+            connection,
+            transaction,
+            $"{_select} WHERE {_byScope} AND {_byTenant};",
+            command => _AddScope(command, providerName, providerKey),
+            cancellationToken
+        );
+    }
+
     public Task<List<PermissionGrantRecord>> GetListAsync(
         IReadOnlyCollection<string> names,
         string providerName,
@@ -103,19 +127,29 @@ internal sealed class RelationalPermissionGrantRepository(
             return Task.FromResult(new List<PermissionGrantRecord>());
         }
 
-        var nameList = SqlColumnType.LookupText(PermissionGrantRecordConstants.NameMaxLength, names);
+        var (sql, bind) = _ByNames(names, providerName, providerKey);
 
-        var sql = $"{_select} WHERE {_dialect.InList(_name, "Names", nameList)} AND {_byScope} AND {_byTenant};";
+        return _ReadAsync(sql, bind, cancellationToken);
+    }
 
-        return _ReadAsync(
-            sql,
-            command =>
-            {
-                _dialect.AddListParameter(command, "Names", nameList, names);
-                _AddScope(command, providerName, providerKey);
-            },
-            cancellationToken
-        );
+    public Task<List<PermissionGrantRecord>> GetListEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        var (connection, transaction) = _Enlist(unitOfWork);
+
+        if (names.Count == 0)
+        {
+            return Task.FromResult(new List<PermissionGrantRecord>());
+        }
+
+        var (sql, bind) = _ByNames(names, providerName, providerKey);
+
+        return _ReadAsync(connection, transaction, sql, bind, cancellationToken);
     }
 
     public Task<List<PermissionGrantRecord>> GetListAsync(
@@ -173,7 +207,34 @@ internal sealed class RelationalPermissionGrantRepository(
         await using var connection = _dialect.CreateConnection(options.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await _InsertAsync(connection, transaction, records, cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
 
+    public async Task InsertManyEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IEnumerable<PermissionGrantRecord> permissionGrants,
+        CancellationToken cancellationToken
+    )
+    {
+        var (connection, transaction) = _EnlistWrite(unitOfWork);
+        var records = _Materialize(permissionGrants, cancellationToken);
+
+        if (records.Count == 0)
+        {
+            return;
+        }
+
+        await _InsertAsync(connection, transaction, records, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task _InsertAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        List<PermissionGrantRecord> records,
+        CancellationToken cancellationToken
+    )
+    {
         for (var offset = 0; offset < records.Count; offset += _MaxRowsPerInsert)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -191,8 +252,6 @@ internal sealed class RelationalPermissionGrantRepository(
 
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
-
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public Task DeleteAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken)
@@ -210,15 +269,72 @@ internal sealed class RelationalPermissionGrantRepository(
             return;
         }
 
+        await using var connection = _dialect.CreateConnection(options.ConnectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await _DeleteAsync(connection, transaction: null, permissionGrants, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task DeleteManyEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyCollection<PermissionGrantRecord> permissionGrants,
+        CancellationToken cancellationToken
+    )
+    {
+        var (connection, transaction) = _EnlistWrite(unitOfWork);
+
+        if (permissionGrants.Count == 0)
+        {
+            return;
+        }
+
+        await _DeleteAsync(connection, transaction, permissionGrants, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task _DeleteAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        IReadOnlyCollection<PermissionGrantRecord> permissionGrants,
+        CancellationToken cancellationToken
+    )
+    {
         var sql =
             $"DELETE FROM {tables.Grants} WHERE {_dialect.InList(_id, "Ids", SqlColumnType.Guid)} AND {_byTenant};";
 
-        await using var connection = _dialect.CreateConnection(options.ConnectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = _CreateCommand(connection, transaction: null, sql);
+        await using var command = _CreateCommand(connection, transaction, sql);
         _dialect.AddListParameter(command, "Ids", SqlColumnType.Guid, permissionGrants.Select(x => x.Id).ToList());
         _AddTenant(command);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private (DbConnection Connection, DbTransaction Transaction) _Enlist(IUnitOfWork unitOfWork)
+    {
+        var enlisted = RelationalEnlistment.RequireLive(
+            Argument.IsNotNull(unitOfWork),
+            _dialect.ConnectionType,
+            _dialect.TransactionType,
+            _Owner,
+            _Operation
+        );
+
+        using var configured = _dialect.CreateConnection(options.ConnectionString);
+        RelationalEnlistment.RequireSameDatabase(configured, enlisted.Connection, _Owner, _Operation);
+
+        return enlisted;
+    }
+
+    private (DbConnection Connection, DbTransaction Transaction) _EnlistWrite(IUnitOfWork unitOfWork)
+    {
+        var enlisted = _Enlist(unitOfWork);
+
+        // A raw write is not in the owner's change tracker, so an observed unit's owner (the EF save pipeline) cannot
+        // restore it on replay; only an owned unit re-runs the caller's block, which writes it again. Marked after the
+        // checks passed, so a refused call leaves the unit replayable.
+        if (unitOfWork.Resource is { IsOwned: false })
+        {
+            unitOfWork.PreventRetry();
+        }
+
+        return enlisted;
     }
 
     private void _AddScope(DbCommand command, string providerName, string providerKey)
@@ -266,16 +382,48 @@ internal sealed class RelationalPermissionGrantRepository(
         );
     }
 
+    private (string Sql, Action<DbCommand> Bind) _ByNames(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey
+    )
+    {
+        var nameList = SqlColumnType.LookupText(PermissionGrantRecordConstants.NameMaxLength, names);
+
+        var sql = $"{_select} WHERE {_dialect.InList(_name, "Names", nameList)} AND {_byScope} AND {_byTenant};";
+
+        return (
+            sql,
+            command =>
+            {
+                _dialect.AddListParameter(command, "Names", nameList, names);
+                _AddScope(command, providerName, providerKey);
+            }
+        );
+    }
+
     private async Task<List<PermissionGrantRecord>> _ReadAsync(
         string sql,
         Action<DbCommand> bind,
         CancellationToken cancellationToken
     )
     {
-        var result = new List<PermissionGrantRecord>();
         await using var connection = _dialect.CreateConnection(options.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = _CreateCommand(connection, transaction: null, sql);
+
+        return await _ReadAsync(connection, transaction: null, sql, bind, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<List<PermissionGrantRecord>> _ReadAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        string sql,
+        Action<DbCommand> bind,
+        CancellationToken cancellationToken
+    )
+    {
+        var result = new List<PermissionGrantRecord>();
+        await using var command = _CreateCommand(connection, transaction, sql);
         bind(command);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 

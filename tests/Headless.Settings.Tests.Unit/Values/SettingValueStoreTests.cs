@@ -4,6 +4,7 @@ using Headless;
 using Headless.Caching;
 using Headless.Settings;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
 
@@ -20,7 +21,14 @@ public sealed class SettingValueStoreTests : TestBase
     public SettingValueStoreTests()
     {
         var options = Options.Create(new SettingManagementOptions { ValueCacheExpiration = TimeSpan.FromHours(5) });
-        _sut = new SettingValueStore(_repository, _definitionManager, _guidGenerator, _cache, options);
+        _sut = new SettingValueStore(
+            _repository,
+            _definitionManager,
+            _guidGenerator,
+            _cache,
+            options,
+            NullLogger<SettingValueStore>.Instance
+        );
     }
 
     #region GetOrDefaultAsync

@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Hosting;
 using Headless.Settings;
 using Headless.Testing.Testcontainers;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Testcontainers.PostgreSql;
@@ -103,5 +105,27 @@ public sealed class PostgreSqlSettingsFixture
     protected override PostgreSqlBuilder Configure()
     {
         return base.Configure().WithDatabase("settings_storage_test").WithUsername("postgres").WithPassword("postgres");
+    }
+
+    public string OtherDatabaseConnectionString =>
+        new NpgsqlConnectionStringBuilder(ConnectionString) { Database = "postgres" }.ConnectionString;
+
+    public DbConnection CreateConnection(string connectionString)
+    {
+        return new NpgsqlConnection(connectionString);
+    }
+
+    public ValueTask<IUnitOfWork> BeginUnitOfWorkAsync(
+        IUnitOfWorkFactory factory,
+        DbConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        return factory.BeginAsync((NpgsqlConnection)connection, cancellationToken);
+    }
+
+    public IUnitOfWork EnlistUnitOfWork(IUnitOfWorkFactory factory, DbConnection connection, DbTransaction transaction)
+    {
+        return factory.Enlist((NpgsqlConnection)connection, (NpgsqlTransaction)transaction);
     }
 }

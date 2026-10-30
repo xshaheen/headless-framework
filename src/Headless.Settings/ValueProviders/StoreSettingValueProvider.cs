@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.UnitOfWork;
+
 namespace Headless.Settings;
 
 /// <summary>Base class for <see cref="ISettingValueProvider"/> implementations that delegate persistence to an <see cref="ISettingValueStore"/>.</summary>
@@ -84,6 +86,47 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
         await Store
             .SetAllAsync(valuesByName, Name, NormalizeProviderKey(providerKey), cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public Task<string?> GetOrDefaultEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        SettingDefinition setting,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        return Store.GetOrDefaultEnlistedAsync(
+            unitOfWork,
+            setting.Name,
+            Name,
+            NormalizeProviderKey(providerKey),
+            cancellationToken
+        );
+    }
+
+    /// <inheritdoc/>
+    public Task SetAllEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyList<KeyValuePair<SettingDefinition, string?>> values,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        var valuesByName = new Dictionary<string, string?>(values.Count, StringComparer.Ordinal);
+
+        foreach (var (setting, value) in values)
+        {
+            valuesByName[setting.Name] = value;
+        }
+
+        return Store.SetAllEnlistedAsync(
+            unitOfWork,
+            valuesByName,
+            Name,
+            NormalizeProviderKey(providerKey),
+            cancellationToken
+        );
     }
 
     /// <summary>Normalizes the provider key before it is forwarded to the store. Override to apply provider-specific scoping logic.</summary>
