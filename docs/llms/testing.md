@@ -442,6 +442,7 @@ Testcontainers fixtures for integration testing.
   - `HeadlessMinioFixture`
   - `HeadlessSqlServerFixture` (architecture-aware: SQL Server 2022 on x86_64, Azure SQL Edge on ARM64; set `HEADLESS_SQLSERVER_IMAGE` to override, see below)
 - `HeadlessRedisFixture.FlushAllAsync(ct)` and the `RedisContainer.FlushAllAsync(ct)` extension (`HeadlessRedisContainerExtensions`, namespace `Testcontainers.Redis`) — delete every key in every database by running `redis-cli FLUSHALL` inside the container, so a collection's next test starts clean without a client connection or `allowAdmin`
+- `RedisBuilder.WithHostPingWaitStrategy()` (same holder) — holds the container start until Redis answers `PING` from the test host through the mapped port. `HeadlessRedisFixture` applies it; call it on a `RedisBuilder` a test builds itself, so the first `ConnectionMultiplexer.ConnectAsync` after `StartAsync` is not refused (see [Readiness from the test host](#readiness-from-the-test-host))
 - `TestContextMessageSink` — xUnit v3 diagnostic-message forwarder
 - Automatic container lifecycle management via `Testcontainers.Xunit`
 - Every fixture has the same subclassing surface: xUnit calls `IAsyncLifetime` explicitly, and a subclass overrides `protected virtual ValueTask InitializeAsync()` (call `base.InitializeAsync()` first, then create its database) and `protected virtual ValueTask DisposeAsyncCore()`. The `ContainerFixture`-based fixtures also take `protected override TBuilder Configure()` for the database name, credentials, or labels; `HeadlessSqlServerFixture` builds its own architecture-aware container, so a subclass creates its database in `InitializeAsync` instead.
@@ -455,6 +456,10 @@ Floating tags such as `:latest` force Docker to hit the registry on every pull t
 #### Fresh containers
 
 Every fixture creates a fresh container for each test run, and Testcontainers' Ryuk sidecar removes it when the run ends, even after a crash. The fixtures never use Testcontainers reuse: Ryuk does not remove a reused container, so reuse leaves one stopped container (and its data volume) behind for every configuration change and every checkout, and carries one run's schema and rows into the next. The cost is a cold start once per collection per run, which matters most for SQL Server. In this repository `WithReuse(true)` fails the build with RS0030 (`eng/BannedSymbols.Testcontainers.txt`).
+
+#### Readiness from the test host
+
+Testcontainers' stock Redis check runs `redis-cli ping` inside the container. A runtime such as OrbStack or Docker Desktop can still be setting up the host port forward when it passes, so a client that connects straight after `StartAsync` has its connection refused or reset, and StackExchange.Redis's default `abortConnect=true` turns that one failure into a `RedisConnectionException`. A TCP-only check (`UntilExternalTcpPortIsAvailable`) is not enough: it passes as soon as the runtime's port proxy accepts, before the proxy can reach Redis. `WithHostPingWaitStrategy()` sends `PING` through the mapped port and waits for `+PONG`.
 
 #### SQL Server image override
 
