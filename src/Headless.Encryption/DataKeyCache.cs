@@ -7,8 +7,8 @@ namespace Headless.Encryption;
 
 /// <summary>
 /// The unwrapped data keys of this process, by key id, plus the active key id of each (scope, kind). Entries expire
-/// after <see cref="EncryptionOptions.KeyCacheDuration" />, so a key shredded or rotated on another host stops being
-/// used here within that time; the cache holds at most <see cref="EncryptionOptions.KeyCacheSize" /> keys.
+/// after <see cref="EncryptionOptions.KeyCacheDuration" />, so a key shredded, rotated, or retired on another host
+/// stops being used here within that time; the cache holds at most <see cref="EncryptionOptions.KeyCacheSize" /> keys.
 /// </summary>
 /// <remarks>
 /// Keys live only in process memory, never in a distributed cache. An evicted key is cleared once the last operation
@@ -137,6 +137,15 @@ internal sealed class DataKeyCache(TimeProvider timeProvider, EncryptionOptions 
         _active.TryRemove((scope, kind), out _);
     }
 
+    /// <summary>Evicts one key, such as a retired version.</summary>
+    public void Forget(Guid keyId)
+    {
+        if (_keys.TryGetValue(keyId, out var entry))
+        {
+            _Evict(keyId, entry);
+        }
+    }
+
     /// <summary>Forgets every key and active id of <paramref name="scope" />.</summary>
     public void ForgetScope(string scope)
     {
@@ -218,6 +227,8 @@ internal sealed class DataKeyEntry(StoredDataKey stored, byte[] key, DateTimeOff
 
     public DataKeyKind Kind { get; } = stored.Kind;
 
+    public int Version { get; } = stored.Version;
+
     public DateTimeOffset ExpiresAt { get; } = expiresAt;
 
     public ReadOnlySpan<byte> Key => key;
@@ -259,6 +270,8 @@ internal sealed class DataKeyLease(DataKeyEntry entry) : IDisposable
     public string Scope => entry.Scope;
 
     public DataKeyKind Kind => entry.Kind;
+
+    public int Version => entry.Version;
 
     public ReadOnlySpan<byte> Key => entry.Key;
 

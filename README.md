@@ -282,9 +282,9 @@ Foundational building blocks shared across the framework — domain primitives, 
 | [Headless.Extensions](src/Headless.Extensions/README.md) | Core primitives and utilities |
 | [Headless.Context.Abstractions](src/Headless.Context.Abstractions/README.md) | Ambient-context contracts: current user, principal, locale, time zone, correlation, cancellation, host identity |
 | [Headless.Context](src/Headless.Context/README.md) | Ambient-context implementations and `AddHeadlessHostIdentity()` setup |
-| [Headless.Security.Abstractions](src/Headless.Security.Abstractions/README.md) | Security contracts and options |
-| [Headless.Security](src/Headless.Security/README.md) | Lookup hashing and secret hashing (PBKDF2) services |
-| [Headless.Security.Argon2](src/Headless.Security.Argon2/README.md) | Argon2id secret hashing, the default `ISecretHasher` algorithm |
+| [Headless.Hashing.Abstractions](src/Headless.Hashing.Abstractions/README.md) | Secret-hashing contracts and options |
+| [Headless.Hashing](src/Headless.Hashing/README.md) | Secret hashing (PBKDF2) services |
+| [Headless.Hashing.Argon2](src/Headless.Hashing.Argon2/README.md) | Argon2id secret hashing, the default `ISecretHasher` algorithm |
 | [Headless.Checks](src/Headless.Checks/README.md) | Guard clauses and argument validation |
 | [Headless.Domain](src/Headless.Domain/README.md) | Domain entities and events |
 | [Headless.Domain.EventDispatcher](src/Headless.Domain.EventDispatcher/README.md) | DI-based `IDomainEventDispatcher` that runs in-process domain event handlers |

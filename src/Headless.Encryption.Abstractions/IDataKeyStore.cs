@@ -85,4 +85,20 @@ public interface IDataKeyStore
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>The number of keys deleted.</returns>
     Task<int> ShredScopeAsync(string scope, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Deletes version <paramref name="version" /> of a scope's key of <paramref name="kind" />, only while a newer
+    /// version of that scope and kind exists, so the active version is never deleted.
+    /// </summary>
+    /// <param name="scope">The scope, compared ordinally.</param>
+    /// <param name="kind">The kind of key.</param>
+    /// <param name="version">The version to delete.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns><see langword="true" /> when the version was deleted.</returns>
+    Task<bool> DeleteSupersededVersionAsync(
+        string scope,
+        DataKeyKind kind,
+        int version,
+        CancellationToken cancellationToken
+    );
 }

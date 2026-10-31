@@ -437,21 +437,6 @@
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.security": {
-        "type": "Project",
-        "dependencies": {
-          "FluentValidation": "[12.2.0, )",
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.Security.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.security.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
       "headless.serializer.abstractions": {
         "type": "Project"
       },

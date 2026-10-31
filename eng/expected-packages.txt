@@ -89,6 +89,9 @@ Headless.Fencing.Sqlite
 Headless.FluentValidation
 Headless.Generator.Primitives
 Headless.Generator.Primitives.Abstractions
+Headless.Hashing
+Headless.Hashing.Abstractions
+Headless.Hashing.Argon2
 Headless.Hosting
 Headless.Http.Resilience
 Headless.Idempotency
@@ -164,9 +167,6 @@ Headless.PushNotifications.Firebase
 Headless.RateLimiting
 Headless.Redis
 Headless.Reliability.Abstractions
-Headless.Security
-Headless.Security.Abstractions
-Headless.Security.Argon2
 Headless.Sequences
 Headless.Sequences.Abstractions
 Headless.Sequences.PostgreSql

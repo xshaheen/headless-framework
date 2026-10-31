@@ -54,7 +54,7 @@ Additional packages:
 - Use `PersistKeysToBlobStorage()` from `Headless.DataProtection.Blobs` to persist Data Protection keys in distributed/containerized environments.
 - For Serilog enrichment, call `AddHeadlessSerilogEnrichers()` on services and `UseHeadlessSerilogEnrichers()` on the app, after `UseAuthentication()` so the enrichers can read the user.
 - Inject `IRequestContext` (from Abstractions) for request-scoped user, tenant, locale, timezone, and correlation ID — never access `HttpContext` directly in service code.
-- `AddHeadless()` registers neither `IFieldEncryptor` nor `ILookupHasher` and reads no encryption or security configuration. An app that encrypts values (including encrypted `Headless.Settings` definitions) calls `AddHeadlessEncryption(...)`, see [Encryption](encryption.md); one that builds lookup digests calls `AddLookupHasher(...)` from `Headless.Security`, see [Security](security.md).
+- `AddHeadless()` registers neither `IFieldEncryptor` nor `IBlindIndexer` and reads no encryption configuration. An app that encrypts values (including encrypted `Headless.Settings` definitions) or builds blind indexes calls `AddHeadlessEncryption(...)`; see [Encryption](encryption.md).
 - Place `UseResponseCompression()` **before** `UseHeadlessHttpIdempotency()` in the pipeline. Compression middleware registered inside idempotency records compressed bytes in the cache; replaying those bytes without re-encoding them produces garbled or double-encoded responses.
 - `HeaderName` per-endpoint overrides via `.WithIdempotency()` are silently ignored — the middleware reads the request header before resolving endpoint metadata. Change the header name globally via `AddHeadlessHttpIdempotency(o => o.HeaderName = ...)` only.
 - `TenantRequirement` must be in `DefaultPolicy` or `FallbackPolicy` for framework-level enforcement; placing it in a named policy is not detected by the startup validator.
@@ -687,27 +687,10 @@ Surface filtering runs before schema generation and is independent of API Explor
 
 `MapHeadlessEndpoints()` maps the documents as ordinary endpoints, so authorization applies to them: under a fallback authorization policy they answer 401. To publish them anonymously, set `OpenApi.Enabled = false`, register the documents yourself, and map them with `app.MapOpenApi("/openapi/{documentName}.json").AllowAnonymous()`.
 
-#### Lookup Hashing
-
-`AddHeadless()` does not read this section. Bind with `builder.Services.AddLookupHasher(builder.Configuration.GetRequiredSection("Headless:LookupHasher"))` when the app needs lookup digests.
-
-```json
-{
-    "Headless": {
-        "LookupHasher": {
-            "Iterations": 600000,
-            "Size": 128,
-            "Algorithm": "SHA256",
-            "DefaultSalt": "DefaultSalt"
-        }
-    }
-}
-```
-
 ### Runtime behavior
 
 - Enables service-provider validation on startup (`ValidateOnBuild`, `ValidateScopes`).
-- Registers no field-encryption or lookup-hasher service and requires no `Headless:Encryption` or `Headless:LookupHasher` configuration.
+- Registers no field-encryption or blind-index service and requires no `Headless:Encryption` configuration.
 - Registers all core primitives from `Headless.Api` including problem details, response compression, status-code rewriting, and default API conventions.
 - Registers no JWT, Identity, or authentication-scheme services; add `Headless.Api.Jwt` or `Headless.Api.Identity` and call their registration methods.
 - Registers a fallback `IUserAgentParser` that identifies nothing (`TryAddSingleton`); `AddHeadlessUserAgentParser()` from `Headless.Api.UserAgent` replaces it in either call order.

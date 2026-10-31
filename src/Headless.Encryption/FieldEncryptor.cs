@@ -81,17 +81,12 @@ internal sealed class FieldEncryptor(DataKeyRing ring, ICurrentTenant currentTen
         return new FieldDecryption { Plaintext = plaintext, KeyIsCurrent = activeId == keyId };
     }
 
-    private string _ResolveScope(FieldContext context)
-    {
-        var scope =
-            context.Scope
-            ?? currentTenant.Id
-            ?? throw new MissingTenantContextException(
-                $"Encrypting or decrypting '{context.Purpose}' needs a tenant: no FieldContext.Scope was given and no "
-                    + "tenant is current. Wrap the call in ICurrentTenant.Change(tenantId), set FieldContext.Scope, or "
-                    + "use FieldContext.Host(purpose) for host-level data."
-            );
-
-        return DataKeyScope.Validate(scope, nameof(FieldContext.Scope));
-    }
+    private string _ResolveScope(FieldContext context) =>
+        DataKeyScope.Resolve(
+            context.Scope,
+            currentTenant,
+            $"Encrypting or decrypting '{context.Purpose}'",
+            "FieldContext.Host(purpose)",
+            nameof(FieldContext.Scope)
+        );
 }

@@ -159,6 +159,32 @@ public sealed class InMemoryDataKeyStore : IDataKeyStore
         }
     }
 
+    public Task<bool> DeleteSupersededVersionAsync(
+        string scope,
+        DataKeyKind kind,
+        int version,
+        CancellationToken cancellationToken
+    )
+    {
+        lock (_gate)
+        {
+            var sameKind = _keys.FindAll(k =>
+                string.Equals(k.Scope, scope, StringComparison.Ordinal) && k.Kind == kind
+            );
+
+            if (!sameKind.Exists(k => k.Version > version))
+            {
+                return Task.FromResult(false);
+            }
+
+            return Task.FromResult(
+                _keys.RemoveAll(k =>
+                    string.Equals(k.Scope, scope, StringComparison.Ordinal) && k.Kind == kind && k.Version == version
+                ) > 0
+            );
+        }
+    }
+
     /// <summary>Registers this instance as the key store of an encryption setup.</summary>
     public IEncryptionProviderOptionsExtension AsExtension() => new Extension(this);
 

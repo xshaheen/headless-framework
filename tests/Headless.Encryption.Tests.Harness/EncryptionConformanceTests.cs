@@ -218,6 +218,50 @@ public abstract class EncryptionConformanceTests<TFixture>(TFixture fixture) : T
         (await host.Store.GetAsync(Guid.CreateVersion7(), AbortToken)).Should().BeNull();
     }
 
+    public virtual async Task should_delete_a_version_only_while_a_newer_one_exists()
+    {
+        await using var host = await Fixture.CreateHostAsync(_SharedTable, cancellationToken: AbortToken);
+        var scope = _Scope("retire");
+        await host.Store.TryInsertAsync(_Key(scope, version: 1, DataKeyKind.Lookup), false, AbortToken);
+        await host.Store.TryInsertAsync(_Key(scope, version: 2, DataKeyKind.Lookup), false, AbortToken);
+        await host.Store.TryInsertAsync(_Key(scope, version: 1), false, AbortToken);
+
+        (await host.Store.DeleteSupersededVersionAsync(scope, DataKeyKind.Lookup, 2, AbortToken)).Should().BeFalse();
+        (await host.Store.DeleteSupersededVersionAsync(scope, DataKeyKind.Data, 1, AbortToken)).Should().BeFalse();
+        (await host.Store.DeleteSupersededVersionAsync(scope, DataKeyKind.Lookup, 1, AbortToken)).Should().BeTrue();
+        (await host.Store.DeleteSupersededVersionAsync(scope, DataKeyKind.Lookup, 1, AbortToken)).Should().BeFalse();
+
+        var remaining = await host.Store.ListScopeAsync(scope, AbortToken);
+        remaining
+            .Select(k => (k.Kind, k.Version))
+            .Should()
+            .BeEquivalentTo([(DataKeyKind.Lookup, 2), (DataKeyKind.Data, 1)]);
+    }
+
+    public virtual async Task should_match_a_blind_index_across_hosts_through_a_rotation_and_retirement()
+    {
+        await using var writer = await Fixture.CreateHostAsync(_SharedTable, cancellationToken: AbortToken);
+        await using var reader = await Fixture.CreateHostAsync(_SharedTable, cancellationToken: AbortToken);
+        var scope = _Scope("blind");
+        var context = new BlindIndexContext(_Purpose) { Scope = scope };
+
+        (await reader.BlindIndexer.ComputeCandidatesAsync(context, _NationalId, AbortToken)).Should().BeEmpty();
+        var first = await writer.BlindIndexer.ComputeAsync(context, _NationalId, AbortToken);
+
+        await writer.Manager.RotateAsync(scope, DataKeyKind.Lookup, AbortToken);
+        var second = await writer.BlindIndexer.ComputeAsync(context, _NationalId, AbortToken);
+        var both = await reader.BlindIndexer.ComputeCandidatesAsync(context, _NationalId, AbortToken);
+
+        both.Select(c => c.KeyVersion).Should().Equal(2, 1);
+        both[0].Hash.Should().Equal(second.Hash);
+        both[1].Hash.Should().Equal(first.Hash);
+
+        (await writer.Manager.RetireAsync(scope, DataKeyKind.Lookup, 1, AbortToken)).Should().BeTrue();
+        var remaining = await reader.BlindIndexer.ComputeCandidatesAsync(context, _NationalId, AbortToken);
+
+        remaining.Should().ContainSingle().Which.Hash.Should().Equal(second.Hash);
+    }
+
     public virtual async Task should_keep_scopes_that_differ_only_by_case_apart()
     {
         await using var host = await Fixture.CreateHostAsync(_SharedTable, cancellationToken: AbortToken);
@@ -330,12 +374,12 @@ public abstract class EncryptionConformanceTests<TFixture>(TFixture fixture) : T
 
     private static string _Scope(string name) => $"{name}-{Guid.NewGuid():N}"[..Math.Min(40, name.Length + 33)];
 
-    private static StoredDataKey _Key(string scope, int version) =>
+    private static StoredDataKey _Key(string scope, int version, DataKeyKind kind = DataKeyKind.Data) =>
         new()
         {
             KeyId = Guid.CreateVersion7(),
             Scope = scope,
-            Kind = DataKeyKind.Data,
+            Kind = kind,
             Version = version,
             KekProvider = "Local",
             WrappedKey = new WrappedDataKey { KekId = "kek-1", Ciphertext = [1, 2, 3] },

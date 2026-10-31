@@ -49,6 +49,18 @@ public sealed class SqlServerEncryptionConformanceTests(SqlServerEncryptionFixtu
     }
 
     [Fact]
+    public override Task should_delete_a_version_only_while_a_newer_one_exists()
+    {
+        return base.should_delete_a_version_only_while_a_newer_one_exists();
+    }
+
+    [Fact]
+    public override Task should_match_a_blind_index_across_hosts_through_a_rotation_and_retirement()
+    {
+        return base.should_match_a_blind_index_across_hosts_through_a_rotation_and_retirement();
+    }
+
+    [Fact]
     public override Task should_keep_scopes_that_differ_only_by_case_apart()
     {
         return base.should_keep_scopes_that_differ_only_by_case_apart();

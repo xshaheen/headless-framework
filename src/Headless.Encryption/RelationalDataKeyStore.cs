@@ -32,6 +32,7 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
     private readonly string _insertSql;
     private readonly string _replaceSql;
     private readonly string _deleteScopeSql;
+    private readonly string _deleteSupersededSql;
     private readonly string _scopeEnsureSql;
     private readonly string _scopeLockSql;
     private readonly string _scopeReopenSql;
@@ -71,6 +72,10 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
         _replaceSql =
             $"UPDATE {table} SET {c.KekProvider} = @KekProvider, {c.KekId} = @KekId, {c.WrappedKey} = @WrappedKey WHERE {c.KeyId} = @KeyId;";
         _deleteScopeSql = $"DELETE FROM {table} WHERE {c.Scope} = @Scope;";
+        _deleteSupersededSql =
+            $"DELETE FROM {table} WHERE {c.Scope} = @Scope AND {c.Kind} = @Kind AND {c.Version} = @Version "
+            + $"AND EXISTS (SELECT 1 FROM {table} newer WHERE newer.{c.Scope} = @Scope AND newer.{c.Kind} = @Kind "
+            + $"AND newer.{c.Version} > @Version);";
         _scopeEnsureSql = dialect.Render(
             new SqlInsertIfAbsent(scopes, [new(c.Scope, "Scope")], [c.CreatedAt], [SqlDialectTokens.Now], [c.Scope])
         );
@@ -254,6 +259,28 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
                 _AddScope(command, scope);
 
                 return await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            },
+            cancellationToken
+        );
+    }
+
+    public Task<bool> DeleteSupersededVersionAsync(
+        string scope,
+        DataKeyKind kind,
+        int version,
+        CancellationToken cancellationToken
+    )
+    {
+        return _RunAsync(
+            "encryption.retire",
+            async (connection, transaction, ct) =>
+            {
+                await using var command = _Command(connection, transaction, _deleteSupersededSql);
+                _AddScope(command, scope);
+                _dialect.AddParameter(command, "Kind", SqlColumnType.Int16, (short)kind);
+                _dialect.AddParameter(command, "Version", SqlColumnType.Int32, version);
+
+                return await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false) > 0;
             },
             cancellationToken
         );

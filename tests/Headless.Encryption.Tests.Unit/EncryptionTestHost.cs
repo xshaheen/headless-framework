@@ -3,6 +3,7 @@
 using Headless.Encryption;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
@@ -22,11 +23,18 @@ public sealed class EncryptionTestHost : IDisposable
         InMemoryDataKeyStore store,
         Action<LocalKeyEncryptionKeyOptions>? keys = null,
         Action<EncryptionOptions>? options = null,
-        Action<HeadlessEncryptionSetupBuilder>? keyEncryptionKeys = null
+        Action<HeadlessEncryptionSetupBuilder>? keyEncryptionKeys = null,
+        ILoggerProvider? logs = null
     )
     {
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddLogging(logging =>
+        {
+            if (logs is not null)
+            {
+                logging.AddProvider(logs);
+            }
+        });
         services.AddSingleton<TimeProvider>(Clock);
         services.AddHeadlessEncryption(setup =>
         {
@@ -61,6 +69,8 @@ public sealed class EncryptionTestHost : IDisposable
     public IServiceProvider Services => _services;
 
     public IFieldEncryptor Encryptor => _services.GetRequiredService<IFieldEncryptor>();
+
+    public IBlindIndexer BlindIndexer => _services.GetRequiredService<IBlindIndexer>();
 
     public IDataKeyManager Manager => _services.GetRequiredService<IDataKeyManager>();
 

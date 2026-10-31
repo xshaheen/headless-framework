@@ -94,6 +94,8 @@ public sealed class EncryptionHost(ServiceProvider services, FakeTimeProvider cl
 
     public IFieldEncryptor Encryptor { get; } = services.GetRequiredService<IFieldEncryptor>();
 
+    public IBlindIndexer BlindIndexer { get; } = services.GetRequiredService<IBlindIndexer>();
+
     public IDataKeyManager Manager { get; } = services.GetRequiredService<IDataKeyManager>();
 
     public IDataKeyStore Store { get; } = services.GetRequiredService<IDataKeyStore>();

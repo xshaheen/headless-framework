@@ -118,6 +118,49 @@ internal sealed class DataKeyManager(
         return rewrapped;
     }
 
+    public async Task<bool> RetireAsync(
+        string scope,
+        DataKeyKind kind,
+        int version,
+        CancellationToken cancellationToken = default
+    )
+    {
+        DataKeyScope.Validate(scope, nameof(scope));
+        Argument.IsTrue(
+            kind == DataKeyKind.Lookup,
+            "Only lookup keys retire: a data key is needed for as long as any value encrypted under it is.",
+            nameof(kind)
+        );
+        Argument.IsPositive(version);
+
+        var keys = await store.ListScopeAsync(scope, cancellationToken).ConfigureAwait(false);
+        var versions = keys.Where(k => k.Kind == kind).ToList();
+
+        if (versions.Find(k => k.Version == version) is not { } retired)
+        {
+            return false;
+        }
+
+        if (versions.TrueForAll(k => k.Version <= version))
+        {
+            throw new InvalidOperationException(
+                $"Version {version} is the active {kind} key of the scope; rotate it before retiring it."
+            );
+        }
+
+        // The store deletes only while a newer version exists, so a concurrent shred or retirement cannot leave the
+        // scope without its active key.
+        if (!await store.DeleteSupersededVersionAsync(scope, kind, version, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        cache.Forget(retired.KeyId);
+        logger.LogDataKeyRetired(kind, retired.KeyId, version, scope);
+
+        return true;
+    }
+
     public async Task<int> ShredAsync(string scope, CancellationToken cancellationToken = default)
     {
         DataKeyScope.Validate(scope, nameof(scope));

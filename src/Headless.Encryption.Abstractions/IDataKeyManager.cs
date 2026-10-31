@@ -62,6 +62,29 @@ public interface IDataKeyManager
     Task<int> RewrapAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Deletes an old version of the scope's lookup key once no stored blind index uses it, so queries stop hashing a
+    /// candidate for it. Only lookup keys retire: a data key is needed for as long as any value encrypted under it is.
+    /// </summary>
+    /// <remarks>
+    /// Retire only after the application's rehash job has rewritten every blind index of the version and
+    /// <c>EncryptionOptions.KeyCacheDuration</c> has passed since the rotation: until then, a host whose cached active key
+    /// is still the old version keeps writing hashes under it. A row still hashed under a retired version no longer
+    /// matches any query.
+    /// </remarks>
+    /// <param name="scope">The scope, such as a tenant id, or <see cref="FieldContext.HostScope" />.</param>
+    /// <param name="kind">The kind of key; only <see cref="DataKeyKind.Lookup" /> is accepted.</param>
+    /// <param name="version">The version to delete.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns><see langword="true" /> when the version was deleted; <see langword="false" /> when the scope has no such version.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="scope" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="scope" /> is too long or is not portable key text, <paramref name="kind" /> is not
+    /// <see cref="DataKeyKind.Lookup" />, or <paramref name="version" /> is not positive.
+    /// </exception>
+    /// <exception cref="InvalidOperationException"><paramref name="version" /> is the active version.</exception>
+    Task<bool> RetireAsync(string scope, DataKeyKind kind, int version, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Deletes every key of <paramref name="scope" /> and marks the scope shredded, so its encrypted values and blind
     /// indexes can no longer be read or linked (crypto-shredding).
     /// </summary>

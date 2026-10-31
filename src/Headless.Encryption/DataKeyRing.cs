@@ -111,6 +111,55 @@ internal sealed class DataKeyRing(
         return null;
     }
 
+    /// <summary>
+    /// Leases every stored version of a scope's key of <paramref name="kind" />, newest first; empty when the scope has
+    /// none. The version list is read from the store on every call, so a rotation, retirement, or shred on another host
+    /// shows at once; only the unwrapped keys are cached.
+    /// </summary>
+    public async ValueTask<IReadOnlyList<DataKeyLease>> LeaseVersionsAsync(
+        string scope,
+        DataKeyKind kind,
+        CancellationToken cancellationToken
+    )
+    {
+        var generation = cache.Generation;
+        var stored = await store.ListScopeAsync(scope, cancellationToken).ConfigureAwait(false);
+        var leases = new List<DataKeyLease>();
+
+        try
+        {
+            foreach (var key in stored.Where(k => k.Kind == kind).OrderByDescending(static k => k.Version))
+            {
+                for (var round = 0; round < _MaxAcquireRounds; round++)
+                {
+                    // Null means the key was evicted between caching and leasing, or shredded on this host since the
+                    // store read; a shredded key is skipped once the rounds run out.
+                    var lease =
+                        cache.TryAcquire(key.KeyId)
+                        ?? await _LoadAsync(key, generation, cancellationToken).ConfigureAwait(false);
+
+                    if (lease is not null)
+                    {
+                        leases.Add(lease);
+
+                        break;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            foreach (var lease in leases)
+            {
+                lease.Dispose();
+            }
+
+            throw;
+        }
+
+        return leases;
+    }
+
     /// <summary>Returns the id of the active key of a scope and kind, or <see langword="null" /> when it has none.</summary>
     public async ValueTask<Guid?> GetActiveIdAsync(string scope, DataKeyKind kind, CancellationToken cancellationToken)
     {

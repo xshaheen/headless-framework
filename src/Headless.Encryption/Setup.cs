@@ -80,6 +80,7 @@ public static class SetupEncryption
             ));
             services.TryAddSingleton<DataKeyRing>();
             services.TryAddSingleton<IFieldEncryptor, FieldEncryptor>();
+            services.TryAddSingleton<IBlindIndexer, BlindIndexer>();
             services.TryAddSingleton<IDataKeyManager, DataKeyManager>();
             services.AddResourceProvisioner(static sp => new EncryptionKeysProvisioner(
                 sp.GetRequiredService<IDataKeyManager>(),

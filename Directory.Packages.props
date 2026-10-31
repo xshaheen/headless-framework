@@ -118,7 +118,7 @@
     <PackageVersion Include="NJsonSchema" Version="11.6.1" />
     <PackageVersion Include="Npgsql" Version="10.0.3" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
-    <!-- Argon2id for Headless.Security.Argon2: libsodium's audited implementation (the BCL has no Argon2). NSec pins
+    <!-- Argon2id for Headless.Hashing.Argon2: libsodium's audited implementation (the BCL has no Argon2). NSec pins
          its native libsodium to a patch range, so that version follows this one. Transitive pinning also lifts
          Pulsar.Client's NSec 22.4.0 dependency here; Pulsar.Client calls only the span-based AES-256-GCM and
          Key.Import members, whose signatures are unchanged in 26.x. -->

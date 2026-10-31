@@ -35,4 +35,18 @@ internal static partial class EncryptionLoggerExtensions
         Message = "Re-wrapped {Count} data keys under key-encryption key {KekId}"
     )]
     internal static partial void LogDataKeysRewrapped(this ILogger logger, int count, string? kekId);
+
+    [LoggerMessage(
+        EventId = 4303,
+        EventName = "DataKeyRetired",
+        Level = LogLevel.Information,
+        Message = "Retired {Kind} data key {KeyId} version {Version} of scope {Scope}"
+    )]
+    internal static partial void LogDataKeyRetired(
+        this ILogger logger,
+        DataKeyKind kind,
+        Guid keyId,
+        int version,
+        string scope
+    );
 }

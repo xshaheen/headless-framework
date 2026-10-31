@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using AwesomeAssertions.Collections;
-using Headless.Security;
+using Headless.Hashing;
 
 namespace Tests.Assertions;
 
