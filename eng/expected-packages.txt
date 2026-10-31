@@ -64,6 +64,10 @@ Headless.Emails.Aws
 Headless.Emails.Azure
 Headless.Emails.Dev
 Headless.Emails.Mailkit
+Headless.Encryption
+Headless.Encryption.Abstractions
+Headless.Encryption.PostgreSql
+Headless.Encryption.SqlServer
 Headless.EntityFramework
 Headless.EntityFramework.Messaging
 Headless.EntityFramework.Primitives
