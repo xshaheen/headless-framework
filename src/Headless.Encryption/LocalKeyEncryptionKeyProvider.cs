@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Buffers.Binary;
 using System.Collections.Frozen;
 using System.Security.Cryptography;
-using System.Text;
 using Headless.Checks;
 
 namespace Headless.Encryption;
@@ -142,18 +140,6 @@ internal sealed class LocalKeyEncryptionKeyProvider : IKeyEncryptionKeyProvider
         return true;
     }
 
-    private static byte[] _AuthenticatedData(KeyWrapContext context)
-    {
-        var scopeLength = Encoding.UTF8.GetByteCount(context.Scope);
-        var aad = new byte[AadPrefix.Length + 16 + 1 + 4 + scopeLength];
-        var offset = AadPrefix.Length;
-
-        AadPrefix.CopyTo(aad);
-        context.KeyId.TryWriteBytes(aad.AsSpan(offset, 16), bigEndian: true, out _);
-        aad[offset + 16] = (byte)context.Kind;
-        BinaryPrimitives.WriteInt32BigEndian(aad.AsSpan(offset + 17), scopeLength);
-        Encoding.UTF8.GetBytes(context.Scope, aad.AsSpan(offset + 21));
-
-        return aad;
-    }
+    private static byte[] _AuthenticatedData(KeyWrapContext context) =>
+        KeyWrapContextEncoding.Encode(AadPrefix, context);
 }

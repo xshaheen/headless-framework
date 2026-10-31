@@ -14,7 +14,7 @@ namespace Headless.Encryption;
 #pragma warning disable CA2000 // False positive: every lease taken here is returned, so the caller owns and disposes it.
 internal sealed class DataKeyRing(
     IDataKeyStore store,
-    IKeyEncryptionKeyProvider kek,
+    KeyEncryptionKeyProviders providers,
     DataKeyCache cache,
     ILogger<DataKeyRing> logger
 )
@@ -159,16 +159,19 @@ internal sealed class DataKeyRing(
         return null;
     }
 
-    /// <summary>Unwraps a stored key with the configured key-encryption key. The caller owns and clears the result.</summary>
+    /// <summary>
+    /// Unwraps a stored key with the provider that wrapped it: the active one, or a previous one kept for migration.
+    /// The caller owns and clears the result.
+    /// </summary>
     public async ValueTask<byte[]> UnwrapAsync(StoredDataKey stored, CancellationToken cancellationToken)
     {
-        if (!string.Equals(stored.KekProvider, kek.Name, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                $"Data key {stored.KeyId} was wrapped by the '{stored.KekProvider}' key-encryption-key provider, but "
-                    + $"the configured provider is '{kek.Name}'."
+        var kek =
+            providers.Find(stored.KekProvider)
+            ?? throw new InvalidOperationException(
+                $"Data key {stored.KeyId} was wrapped by the '{stored.KekProvider}' key-encryption-key provider, which "
+                    + $"is not configured (the active provider is '{providers.Active.Name}'). Register it with "
+                    + "KeepPreviousKeyEncryptionKey until RewrapAsync has moved its keys."
             );
-        }
 
         var key = await kek.UnwrapAsync(stored.WrappedKey, Context(stored), cancellationToken).ConfigureAwait(false);
 
@@ -213,6 +216,7 @@ internal sealed class DataKeyRing(
                 KeyId = keyId,
                 Kind = kind,
             };
+            var kek = providers.Active;
             var wrapped = await kek.WrapAsync(key, context, cancellationToken).ConfigureAwait(false);
             var stored = new StoredDataKey
             {

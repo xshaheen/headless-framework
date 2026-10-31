@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-210 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+211 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -53,7 +53,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 أي service أو repository أو handler بياخد `ICache` مش هيتأثر بالتعديل دا. ونفس الكلام على `IBlobStorage` بين S3 و Azure و Cloudflare R2 و FileSystem و Redis و SFTP، وعلى `IEmailSender` بين SES و Azure Communication Services و SMTP، وعلى الـ messaging بين 8 transports.
 
-**هتركّب 3 packages، مش 210.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
+**هتركّب 3 packages، مش 211.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
 
 **الـ tests مش محتاجة Docker عشان تبقى سريعة.** الـ caching والـ distributed locks والـ messaging فيهم in-memory providers؛ والـ emails والـ SMS والـ push notifications فيهم dev providers مش بتبعت حاجة؛ والـ blob storage بيشتغل على الـ file system المحلي. يعني الـ unit tests بتجرّب نفس الـ contract الحقيقي من غير containers. ولما تحتاج الـ backend الحقيقي، `Headless.Testing.Testcontainers` بتجهّزلك الـ fixtures. الـ repo نفسه ماشي على التقسيمة دي: 122 مشروع unit tests و 63 مشروع integration tests.
 
@@ -195,7 +195,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Fencing (durable leases) | `AddHeadlessFencing` | `UsePostgreSql`، `UseSqlServer`، `UseInMemory` |
 | Idempotency | `AddHeadlessIdempotency` | `UsePostgreSql`، `UseSqlServer`، `UseInMemory`، `UseCache` |
 | Feature flags | `AddHeadlessFeatures` | `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
-| Field encryption | `AddHeadlessEncryption` | Key store: `UsePostgreSql`، `UseSqlServer`. Key-encryption key: `UseLocalKey` |
+| Field encryption | `AddHeadlessEncryption` | Key store: `UsePostgreSql`، `UseSqlServer`. Key-encryption key: `UseLocalKey`، `UseAzureKeyVault` |
 | Dynamic settings | `AddHeadlessSettings` | `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
 | Permissions | `AddHeadlessPermissions` | `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
 | Audit log | `AddHeadlessAuditLog` | `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
@@ -292,7 +292,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 210 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 211 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -408,6 +408,7 @@ Cache متعدد الـ tiers خلف abstraction واحدة: in-memory، وRedis
 |---------|-------|
 | [Headless.Encryption.Abstractions](src/Headless.Encryption.Abstractions/README.md) | `IFieldEncryptor` والـ frame بتاع `EncryptedValue` و`IDataKeyManager` والـ provider interfaces |
 | [Headless.Encryption](src/Headless.Encryption/README.md) | الـ registration، وAES-256-GCM تحت HKDF subkeys، والـ key cache، والـ local key-encryption key |
+| [Headless.Encryption.AzureKeyVault](src/Headless.Encryption.AzureKeyVault/README.md) | Key-encryption key في Azure Key Vault بـ RSA-OAEP-256 |
 | [Headless.Encryption.EntityFramework](src/Headless.Encryption.EntityFramework/README.md) | بيربط خصايص `EncryptedValue` بأعمدة binary في EF Core |
 | [Headless.Encryption.PostgreSql](src/Headless.Encryption.PostgreSql/README.md) | Store في PostgreSQL للـ wrapped data keys |
 | [Headless.Encryption.SqlServer](src/Headless.Encryption.SqlServer/README.md) | Store في SQL Server للـ wrapped data keys |

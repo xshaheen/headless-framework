@@ -212,12 +212,14 @@
     <Folder Name="/Encryption/">
         <Project Path="src\Headless.Encryption.Abstractions\Headless.Encryption.Abstractions.csproj" />
         <Project Path="src\Headless.Encryption\Headless.Encryption.csproj" />
+        <Project Path="src\Headless.Encryption.AzureKeyVault\Headless.Encryption.AzureKeyVault.csproj" />
         <Project Path="src\Headless.Encryption.EntityFramework\Headless.Encryption.EntityFramework.csproj" />
         <Project Path="src\Headless.Encryption.PostgreSql\Headless.Encryption.PostgreSql.csproj" />
         <Project Path="src\Headless.Encryption.SqlServer\Headless.Encryption.SqlServer.csproj" />
     </Folder>
     <Folder Name="/Encryption/Tests/">
         <Project Path="tests\Headless.Encryption.Tests.Unit\Headless.Encryption.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Encryption.AzureKeyVault.Tests.Integration\Headless.Encryption.AzureKeyVault.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Encryption.EntityFramework.Tests.Unit\Headless.Encryption.EntityFramework.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Encryption.PostgreSql.Tests.Integration\Headless.Encryption.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Encryption.SqlServer.Tests.Integration\Headless.Encryption.SqlServer.Tests.Integration.csproj" />
