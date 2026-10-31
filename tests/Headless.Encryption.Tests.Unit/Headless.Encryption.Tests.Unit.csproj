@@ -11,5 +11,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Encryption\Headless.Encryption.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\Headless.Encryption.Tests.Harness\Headless.Encryption.Tests.Harness.csproj" />
   </ItemGroup>
 </Project>

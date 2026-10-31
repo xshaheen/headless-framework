@@ -1,0 +1,17 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Azure Key Vault key-encryption key for Headless field-level encryption: wraps data keys with RSA-OAEP-256 under a vault key, bound to their scope, id, and kind.</Description>
+    <PackageTags>headless;encryption;envelope-encryption;azure;key-vault;dotnet</PackageTags>
+    <RootNamespace>Headless.Encryption.AzureKeyVault</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Azure.Security.KeyVault.Keys" />
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Encryption\Headless.Encryption.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+  </ItemGroup>
+</Project>

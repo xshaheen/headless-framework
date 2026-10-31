@@ -6,6 +6,7 @@
     <RootNamespace>Headless.Encryption</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Encryption.AzureKeyVault" />
     <InternalsVisibleTo Include="Headless.Encryption.PostgreSql" />
     <InternalsVisibleTo Include="Headless.Encryption.SqlServer" />
     <InternalsVisibleTo Include="Headless.Encryption.Tests.Unit" />
