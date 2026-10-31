@@ -1,0 +1,153 @@
+# Golden corpus for Arabic search rules V1: input<TAB>expected key, both checked by hand against the rule table.
+# Escapes: \uXXXX (UTF-16 code unit), \n, \t, \r, \\. Lines starting with # are comments; an empty expected is "".
+# Hamza seats and alef
+أحمد	احمد
+إبراهيم	ابراهيم
+آمنة	امنه
+ٱلله	الله
+مؤمن	مومن
+سؤال	سوال
+مسؤول	مسوول
+شاطئ	شاطي
+رئيس	رييس
+مسئول	مسيول
+هيئة	هييه
+قرآن	قران
+القرآن الكريم	القران الكريم
+الإمارات	الامارات
+أبو ظبي	ابو ظبي
+ء	ء
+جزء	جزء
+سماء	سماء
+# Teh marbuta and alef maksura fold in the key only
+فاطمة	فاطمه
+فاطمه	فاطمه
+مدرسة	مدرسه
+مكّة المكرّمة	مكه المكرمه
+مصطفى	مصطفي
+موسى	موسي
+عيسى	عيسي
+يحيى	يحيي
+على	علي
+# Thal stays distinct from dal
+ذكي	ذكي
+منذر	منذر
+# Tashkeel, tatweel, and Quranic marks are deleted inside words
+مُحَمَّد	محمد
+عَبْدُ الله	عبد الله
+بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ	بسم الله الرحمن الرحيم
+بِسْمِ اللَّـهِ الرَّحْمَـٰنِ الرَّحِيمِ	بسم الله الرحمن الرحيم
+ٱلْحَمْدُ لِلَّهِ	الحمد لله
+ذَٰلِكَ	ذلك
+الصَّلَوٰةَ	الصلوه
+قَالَۖ	قال
+محـــمد	محمد
+ـ
+# Persian, Urdu, Kurdish, and Maghrebi letters
+علی	علي
+کریم	كريم
+پاکستان	باكستان
+پاکستانی	باكستاني
+چای	جاي
+ژاله	زاله
+گل	كل
+ڳ	ك
+ڤيتامين	فيتامين
+اللہ	الله
+پھول	بهول
+ٹوپی	توبي
+ڈاکٹر	داكتر
+گاڑی	كاري
+کے	كي
+ۓ	ي
+میں	مين
+ڕۆژ	روز
+ئێوە	ييوه
+کوڵ	كول
+ڨاسم	قاسم
+ٮ	ب
+ٯ	ق
+ۻ	ض
+# Presentation forms, as copied out of PDFs
+\uFEE3\uFEA4\uFEE4\uFEAA	محمد
+\uFE83\uFEA3\uFEE4\uFEAA	احمد
+\uFED3\uFE8E\uFEC3\uFEE4\uFE94	فاطمه
+\uFB58	ب
+\uFB90	ك
+\uFBFE	ي
+م\uFE76	م
+\uFEFB	لا
+\uFEF7	لا
+\uFEF9	لا
+\uFEF5	لا
+\uFEFC	لا
+س\uFEFCم	سلام
+\uFDF2	الله
+عبد\uFDF2	عبدالله
+# Decomposed input folds like composed input
+ا\u0654حمد	احمد
+ا\u0655براهيم	ابراهيم
+ا\u0653منة	امنه
+و\u0654	و
+ي\u0654	ي
+e\u0301	e
+ه\u0654	ه
+# Digits
+١٢٣	123
+۱۲۳	123
+٠٩	09
+رقم ٤٥	رقم 45
+١٢٨	128
+This ١٢٨	this 128
+# Latin
+m	m
+Mahmoud	mahmoud
+ Mahmoud Shaheen	mahmoud shaheen
+ABC xyz	abc xyz
+crème brûlée	creme brulee
+Ærø	aero
+straße	strasse
+Œuvre	oeuvre
+Þór	thor
+Łódź	lodz
+Ñandú	nandu
+ÇAĞLAR	caglar
+İstanbul	istanbul
+# Mixed scripts
+Ahmed أحمد	ahmed احمد
+أحمد123	احمد123
+J. أحمد	j احمد
+Al-Ahly	al ahly
+# Separators: every non-alphabet character splits words, and runs collapse
+x\u00A0y	x y
+x\u2003y	x y
+a\nb	a b
+a\tb	a b
+a\r\nb	a b
+عبد-الله	عبد الله
+O'Brien	o brien
+ابن_سينا	ابن سينا
+محمد،علي	محمد علي
+س؟	س
+  محمد  	محمد
+محمد   علي	محمد علي
+﴾محمد﴿	محمد
+۞
+؛
+?
+محمد 😀	محمد
+😀
+Иван
+Иван Ahmed	ahmed
+# Invisible formatting characters are deleted without a space
+عبد\u200Cالله	عبدالله
+مح\u200Bمد	محمد
+\u202Bمحمد\u202C	محمد
+\uFEFFمحمد	محمد
+soft\u00ADware	software
+\u2067محمد\u2069	محمد
+م\u061Cحمد	محمد
+# Empty and whitespace-only input
+ \n\n\r\n	
+\t	
+\u00A0	

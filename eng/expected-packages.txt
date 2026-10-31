@@ -158,6 +158,9 @@ Headless.PushNotifications.Firebase
 Headless.RateLimiting
 Headless.Redis
 Headless.Reliability.Abstractions
+Headless.Search
+Headless.Search.PostgreSql
+Headless.Search.PostgreSql.EntityFramework
 Headless.Security
 Headless.Security.Abstractions
 Headless.Security.Argon2

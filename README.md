@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-205 packages &bull; One setup grammar &bull; Swap any provider in one line
+208 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -44,7 +44,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 Every service, repository, and handler that injects `ICache` is untouched by that edit. The same holds for `IBlobStorage` across S3, Azure, Cloudflare R2, the file system, Redis, and SFTP; for `IEmailSender` across SES, Azure Communication Services, and SMTP; and for messaging across eight transports.
 
-**You install three packages, not 205.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
+**You install three packages, not 208.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
 
 **Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 122 unit-test projects and 63 integration-test projects on that split.
 
@@ -163,6 +163,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Distributed locks | `AddHeadlessDistributedLocks` | `UseInMemory`, `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
 | Node membership | `AddHeadlessCoordination` | `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
 | Sequences | `AddHeadlessSequences` | `UsePostgreSql`, `UseSqlServer` |
+| Arabic search | `AddHeadlessSearch` | `UsePostgreSql` |
 | Fencing (durable leases) | `AddHeadlessFencing` | `UsePostgreSql`, `UseSqlServer`, `UseInMemory` |
 | Idempotency | `AddHeadlessIdempotency` | `UsePostgreSql`, `UseSqlServer`, `UseInMemory`, `UseCache` |
 | Feature flags | `AddHeadlessFeatures` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
@@ -252,7 +253,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 205 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 208 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -673,6 +674,16 @@ Connection factories for raw SQL access when you need to drop below the ORM.
 | [Headless.Sql.PostgreSql](src/Headless.Sql.PostgreSql/README.md) | PostgreSQL connection factory and raw-ADO `NpgsqlConnection` unit-of-work helpers |
 | [Headless.Sql.SqlServer](src/Headless.Sql.SqlServer/README.md) | SQL Server connection factory and raw-ADO `SqlConnection` unit-of-work helpers |
 | [Headless.Sql.Sqlite](src/Headless.Sql.Sqlite/README.md) | SQLite connection factory and raw-ADO `SqliteConnection` unit-of-work helpers |
+
+### Search
+
+Arabic search keys that ignore hamza seats, tashkeel, tatweel, teh marbuta and alef maksura, and Persian or Urdu letter variants, built by one versioned rule table in both the database and C#.
+
+| Package | Description |
+|---------|-------------|
+| [Headless.Search](src/Headless.Search/README.md) | The versioned Arabic search rules, `ArabicSearchNormalizer`, and `AddHeadlessSearch` |
+| [Headless.Search.PostgreSql](src/Headless.Search.PostgreSql/README.md) | The immutable `ar_norm_v1` function as a schema-runner step, with no EF Core dependency |
+| [Headless.Search.PostgreSql.EntityFramework](src/Headless.Search.PostgreSql.EntityFramework/README.md) | EF Core helpers for stored, trigram-indexed search keys and the query function |
 
 ### Testing
 
