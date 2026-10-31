@@ -1,12 +1,12 @@
 # Headless.Security.Abstractions
 
-Security contracts and option models for string encryption and hashing — no implementation, no DI coupling.
+Security contracts and option models for lookup hashing, secret hashing, and password generation — no implementation, no DI coupling.
 
 All public contracts and options use the `Headless.Security` namespace.
 
 ## Why use this package
 
-Allows downstream packages and application layers to depend on encryption and hashing abstractions without referencing a concrete implementation. `Headless.Settings` depends on `IStringEncryptionService` from this package; consuming code can swap the implementation independently.
+Allows downstream packages and application layers to depend on hashing abstractions without referencing a concrete implementation. For values that must be read back, use `Headless.Encryption`.
 
 ## Install
 

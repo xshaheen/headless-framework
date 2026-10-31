@@ -33,7 +33,6 @@
     <ProjectReference Include="..\..\src\Headless.Messaging.Storage.SqlServer\Headless.Messaging.Storage.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Headless.Permissions.Storage.PostgreSql\Headless.Permissions.Storage.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Permissions.Storage.SqlServer\Headless.Permissions.Storage.SqlServer.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Security\Headless.Security.csproj" />
     <ProjectReference Include="..\..\src\Headless.Sequences.PostgreSql\Headless.Sequences.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Sequences.SqlServer\Headless.Sequences.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Headless.Settings.Storage.PostgreSql\Headless.Settings.Storage.PostgreSql.csproj" />

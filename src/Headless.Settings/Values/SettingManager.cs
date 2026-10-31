@@ -93,7 +93,15 @@ public sealed class SettingManager(
                 // (defaults, configuration) would throw on decrypt — same rule as _CoreGetOrDefaultAsync.
                 var value =
                     settingDefinition.IsEncrypted && provider.StoresEncryptedValues
-                        ? encryptionService.Decrypt(settingDefinition, settingValue.Value)
+                        ? await encryptionService
+                            .DecryptAsync(
+                                settingDefinition,
+                                settingValue.Value,
+                                provider.Name,
+                                providerKey: null,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false)
                         : settingValue.Value;
 
                 // Providers are ordered highest priority first, so the first non-null value wins.
@@ -227,7 +235,8 @@ public sealed class SettingManager(
             {
                 if (resolved.TryGetValue(setting.Name, out var value))
                 {
-                    _AddSettingValue(settingValues, setting, value, provider, providerKey);
+                    await _AddSettingValueAsync(settingValues, setting, value, provider, providerKey, cancellationToken)
+                        .ConfigureAwait(false);
                 }
             }
         }
@@ -256,7 +265,8 @@ public sealed class SettingManager(
             {
                 if (resolved.TryGetValue(setting.Name, out var value))
                 {
-                    _AddSettingValue(settingValues, setting, value, provider, pk);
+                    await _AddSettingValueAsync(settingValues, setting, value, provider, pk, cancellationToken)
+                        .ConfigureAwait(false);
                 }
                 else
                 {
@@ -300,17 +310,20 @@ public sealed class SettingManager(
     }
 
     /// <summary>Decrypts when required and records the resolved value against the provider that supplied it.</summary>
-    private void _AddSettingValue(
+    private async ValueTask _AddSettingValueAsync(
         Dictionary<string, SettingValue> settingValues,
         SettingDefinition setting,
         string? value,
         ISettingValueReadProvider resolvedProvider,
-        string? resolvedProviderKey
+        string? resolvedProviderKey,
+        CancellationToken cancellationToken
     )
     {
         if (setting.IsEncrypted && resolvedProvider.StoresEncryptedValues)
         {
-            value = encryptionService.Decrypt(setting, value);
+            value = await encryptionService
+                .DecryptAsync(setting, value, resolvedProvider.Name, resolvedProviderKey, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         if (value is not null)
@@ -437,6 +450,8 @@ public sealed class SettingManager(
             var storedValue = await _ResolveStoredValueAsync(
                     setting,
                     value,
+                    providerName,
+                    providerKey,
                     providers,
                     forceToSet,
                     unitOfWork,
@@ -479,17 +494,14 @@ public sealed class SettingManager(
     private async Task<string?> _ResolveStoredValueAsync(
         SettingDefinition setting,
         string? value,
+        string providerName,
+        string? providerKey,
         List<ISettingValueReadProvider> providers,
         bool forceToSet,
         IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
     )
     {
-        if (setting.IsEncrypted)
-        {
-            value = encryptionService.Encrypt(setting, value);
-        }
-
         if (providers.Count > 1 && !forceToSet && setting.IsInherited && value is not null)
         {
             var fallbackValue = await _CoreGetOrDefaultAsync(
@@ -507,6 +519,15 @@ public sealed class SettingManager(
                 // Clear the value if it is same as it's fallback value
                 return null;
             }
+        }
+
+        // Encrypted after the fallback check: the fallback read returns plaintext, and each encryption draws a
+        // fresh nonce, so comparing ciphertext would never match.
+        if (setting.IsEncrypted)
+        {
+            value = await encryptionService
+                .EncryptAsync(setting, value, providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         return value;
@@ -719,7 +740,9 @@ public sealed class SettingManager(
 
             if (definition.IsEncrypted && provider.StoresEncryptedValues)
             {
-                value = encryptionService.Decrypt(definition, value);
+                value = await encryptionService
+                    .DecryptAsync(definition, value, provider.Name, pk, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             return new SettingValue(settingName, value, new SettingValueProvider(provider.Name, pk));

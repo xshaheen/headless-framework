@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Security;
 using Headless.Settings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,23 +9,11 @@ namespace Tests.Setup;
 
 public sealed class ConfigureManagementTests
 {
-    // AddHeadlessSettings auto-registers the management core, which requires IStringEncryptionService.
-    private static ServiceCollection _CreateServicesWithEncryption()
-    {
-        var services = new ServiceCollection();
-        services.AddStringEncryptionService(options =>
-        {
-            options.DefaultPassPhrase = "TestPassPhrase123456";
-            options.DefaultSalt = [.. "TestSalt"u8];
-        });
-        return services;
-    }
-
     [Fact]
     public void should_apply_management_options_set_via_configure_management()
     {
         // given
-        var services = _CreateServicesWithEncryption();
+        var services = new ServiceCollection();
         services.AddHeadlessSettings(setup =>
         {
             setup.ConfigureManagement(options => options.CrossApplicationsCommonLockKey = "custom:settings_lock");
@@ -45,7 +32,7 @@ public sealed class ConfigureManagementTests
     public void should_apply_management_options_set_via_configure_management_with_service_provider()
     {
         // given
-        var services = _CreateServicesWithEncryption();
+        var services = new ServiceCollection();
         services.AddHeadlessSettings(setup =>
         {
             setup.ConfigureManagement(
@@ -66,7 +53,7 @@ public sealed class ConfigureManagementTests
     public void should_still_validate_management_options_when_configured_invalid()
     {
         // given
-        var services = _CreateServicesWithEncryption();
+        var services = new ServiceCollection();
         services.AddHeadlessSettings(setup =>
         {
             setup.ConfigureManagement(options => options.CrossApplicationsCommonLockKey = ""); // NotEmpty rule

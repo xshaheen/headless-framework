@@ -40,6 +40,8 @@ string plaintext = decryption.GetString();
 - **`Headless.Encryption`**: `AddHeadlessEncryption`, the cipher, the in-process key cache, `IDataKeyManager`, the host-keys resource, the KEK warm-up, and the local KEK (`UseLocalKey`).
 - **`Headless.Encryption.PostgreSql`**, **`Headless.Encryption.SqlServer`**: the wrapped-key table.
 
+`Headless.Settings` stores the values of encrypted setting definitions through `IFieldEncryptor`: a tenant's values under that tenant's key, everything else under the host key. See [Encrypted settings](settings.md#encrypted-settings).
+
 ## Agent Rules
 
 - Encrypt and decrypt explicitly through `IFieldEncryptor`; there is no transparent EF Core value converter. A decrypting converter would run synchronously while a KMS unwrap is async, would see only the ambient tenant (so cross-tenant admin queries fail), would put plaintext in the change tracker and audit capture, and would make equality queries on the column silently match nothing.

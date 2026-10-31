@@ -1,12 +1,12 @@
 # Headless.Security
 
-Default implementations of `IStringEncryptionService`, `ILookupHasher`, and `ISecretHasher`, plus idempotent DI registration helpers.
+Default implementations of `ILookupHasher` and `ISecretHasher`, plus DI registration helpers.
 
 Contracts, options, implementations, and registration extensions all use the `Headless.Security` namespace.
 
 ## Why use this package
 
-Ships the concrete AES-GCM encryption, PBKDF2 lookup hashing, and verify-capable secret hashing (PBKDF2-SHA256 built in, Argon2id through `Headless.Security.Argon2`) so application code depends only on the `Headless.Security.Abstractions` contracts. Keeps security concerns separate from the ambient-context and API families.
+Ships the concrete PBKDF2 lookup hashing and verify-capable secret hashing (PBKDF2-SHA256 built in, Argon2id through `Headless.Security.Argon2`) so application code depends only on the `Headless.Security.Abstractions` contracts. Keeps security concerns separate from the ambient-context and API families.
 
 ## Install
 

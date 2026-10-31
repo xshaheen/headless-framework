@@ -54,7 +54,7 @@ Additional packages:
 - Use `PersistKeysToBlobStorage()` from `Headless.DataProtection.Blobs` to persist Data Protection keys in distributed/containerized environments.
 - For Serilog enrichment, call `AddHeadlessSerilogEnrichers()` on services and `UseHeadlessSerilogEnrichers()` on the app, after `UseAuthentication()` so the enrichers can read the user.
 - Inject `IRequestContext` (from Abstractions) for request-scoped user, tenant, locale, timezone, and correlation ID — never access `HttpContext` directly in service code.
-- `AddHeadless()` registers neither `IStringEncryptionService` nor `ILookupHasher` and reads no security configuration. An app that encrypts values (including any app using `Headless.Settings`) or builds lookup digests calls `AddStringEncryptionService(...)` and `AddLookupHasher(...)` from `Headless.Security` itself; see [Security](security.md).
+- `AddHeadless()` registers neither `IFieldEncryptor` nor `ILookupHasher` and reads no encryption or security configuration. An app that encrypts values (including encrypted `Headless.Settings` definitions) calls `AddHeadlessEncryption(...)`, see [Encryption](encryption.md); one that builds lookup digests calls `AddLookupHasher(...)` from `Headless.Security`, see [Security](security.md).
 - Place `UseResponseCompression()` **before** `UseHeadlessHttpIdempotency()` in the pipeline. Compression middleware registered inside idempotency records compressed bytes in the cache; replaying those bytes without re-encoding them produces garbled or double-encoded responses.
 - `HeaderName` per-endpoint overrides via `.WithIdempotency()` are silently ignored — the middleware reads the request header before resolving endpoint metadata. Change the header name globally via `AddHeadlessHttpIdempotency(o => o.HeaderName = ...)` only.
 - `TenantRequirement` must be in `DefaultPolicy` or `FallbackPolicy` for framework-level enforcement; placing it in a named policy is not detected by the startup validator.
@@ -687,26 +687,9 @@ Surface filtering runs before schema generation and is independent of API Explor
 
 `MapHeadlessEndpoints()` maps the documents as ordinary endpoints, so authorization applies to them: under a fallback authorization policy they answer 401. To publish them anonymously, set `OpenApi.Enabled = false`, register the documents yourself, and map them with `app.MapOpenApi("/openapi/{documentName}.json").AllowAnonymous()`.
 
-#### String Encryption
-
-`AddHeadless()` does not read these sections. Bind them yourself when the app uses the service: `builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"))`.
-
-```json
-{
-    "Headless": {
-        "StringEncryption": {
-            "DefaultPassPhrase": "YourPassPhrase123",
-            "DefaultSalt": "WW91clNhbHQxMjM0NTY3OA=="
-        }
-    }
-}
-```
-
-`DefaultPassPhrase` and `DefaultSalt` (base64, at least 16 random bytes) are required. `KeySize` (default 256) and `Iterations` (default 600,000) are optional. Encryption is AES-GCM with a random nonce per value, so there is no initialization-vector setting.
-
 #### Lookup Hashing
 
-Bind with `builder.Services.AddLookupHasher(builder.Configuration.GetRequiredSection("Headless:LookupHasher"))` when the app needs lookup digests.
+`AddHeadless()` does not read this section. Bind with `builder.Services.AddLookupHasher(builder.Configuration.GetRequiredSection("Headless:LookupHasher"))` when the app needs lookup digests.
 
 ```json
 {
@@ -724,7 +707,7 @@ Bind with `builder.Services.AddLookupHasher(builder.Configuration.GetRequiredSec
 ### Runtime behavior
 
 - Enables service-provider validation on startup (`ValidateOnBuild`, `ValidateScopes`).
-- Registers no string-encryption or lookup-hasher service and requires no `Headless:StringEncryption` or `Headless:LookupHasher` configuration.
+- Registers no field-encryption or lookup-hasher service and requires no `Headless:Encryption` or `Headless:LookupHasher` configuration.
 - Registers all core primitives from `Headless.Api` including problem details, response compression, status-code rewriting, and default API conventions.
 - Registers no JWT, Identity, or authentication-scheme services; add `Headless.Api.Jwt` or `Headless.Api.Identity` and call their registration methods.
 - Registers a fallback `IUserAgentParser` that identifies nothing (`TryAddSingleton`); `AddHeadlessUserAgentParser()` from `Headless.Api.UserAgent` replaces it in either call order.

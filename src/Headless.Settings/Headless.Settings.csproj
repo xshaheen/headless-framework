@@ -14,7 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Context\Headless.Context.csproj" />
-    <ProjectReference Include="..\Headless.Security.Abstractions\Headless.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Encryption.Abstractions\Headless.Encryption.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Domain\Headless.Domain.csproj" />
     <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />
