@@ -1,6 +1,6 @@
 ---
 domain: Encryption
-packages: Encryption.Abstractions, Encryption, Encryption.PostgreSql, Encryption.SqlServer
+packages: Encryption.Abstractions, Encryption, Encryption.EntityFramework, Encryption.PostgreSql, Encryption.SqlServer
 ---
 
 # Encryption
@@ -26,18 +26,19 @@ Then call `IFieldEncryptor` at the service boundary. The entity stores the ciphe
 public sealed class Beneficiary
 {
     public Guid Id { get; init; }
-    public byte[] NationalId { get; set; } = []; // bytea / varbinary(max): the EncryptedValue frame
+    public EncryptedValue NationalId { get; set; } // bytea / varbinary(max), mapped by Headless.Encryption.EntityFramework
 }
 
 var context = new FieldContext("Beneficiary.NationalId"); // scope = the current tenant
-beneficiary.NationalId = (await encryptor.EncryptAsync(nationalId, context, ct)).ToArray();
+beneficiary.NationalId = await encryptor.EncryptAsync(nationalId, context, ct);
 
-var decryption = await encryptor.DecryptAsync(EncryptedValue.FromBytes(beneficiary.NationalId), context, ct);
+var decryption = await encryptor.DecryptAsync(beneficiary.NationalId, context, ct);
 string plaintext = decryption.GetString();
 ```
 
 - **`Headless.Encryption.Abstractions`**: `IFieldEncryptor`, `FieldContext`, `EncryptedValue`, `FieldDecryption`, `FieldDecryptionException`, `IDataKeyManager`, and the provider interfaces `IKeyEncryptionKeyProvider` and `IDataKeyStore`.
 - **`Headless.Encryption`**: `AddHeadlessEncryption`, the cipher, the in-process key cache, `IDataKeyManager`, the host-keys resource, the KEK warm-up, and the local KEK (`UseLocalKey`).
+- **`Headless.Encryption.EntityFramework`**: maps `EncryptedValue` properties to binary columns (`configurationBuilder.AddEncryptedValueConversions()`), without decrypting.
 - **`Headless.Encryption.PostgreSql`**, **`Headless.Encryption.SqlServer`**: the wrapped-key table.
 
 ## Agent Rules
@@ -48,7 +49,7 @@ string plaintext = decryption.GetString();
 - Keep `Purpose` stable. It selects the column's subkey, so renaming it makes every stored value unreadable. Use the entity and property name (`Beneficiary.NationalId`).
 - A `FieldContext` with no `Scope` uses `ICurrentTenant.Id`. With no current tenant it throws `MissingTenantContextException`; it never falls back to the host key, because a value written under the host key would survive the tenant's shredding. Host-level data uses `FieldContext.Host(purpose)`.
 - Scopes are tenant ids or per-subject scopes (`{tenant}/{beneficiaryId}`) of at most 200 characters, compared ordinally; leading or trailing white space and NUL characters are refused.
-- Store `EncryptedValue.ToArray()` in a `bytea` / `varbinary(max)` column, or `ToBase64Url()` in a text column. Read it back with `EncryptedValue.FromBytes` / `EncryptedValue.Parse`; both throw `FormatException` for bytes that are not a frame.
+- With EF Core, declare the column as `EncryptedValue` (or `EncryptedValue?` when optional) and call `configurationBuilder.AddEncryptedValueConversions()` in `ConfigureConventions`. Without EF Core, store `EncryptedValue.ToArray()` in a `bytea` / `varbinary(max)` column, or `ToBase64Url()` in a text column, and read it back with `EncryptedValue.FromBytes` / `EncryptedValue.Parse`; both throw `FormatException` for bytes that are not a frame.
 - Treat `FieldDecryptionException` with `Failure = KeyNotFound` as "this tenant's data was shredded", not as corruption.
 - A shred is final. Encrypting for a shredded scope throws `DataKeyScopeShreddedException` instead of creating a key; reopen the scope deliberately with `IDataKeyManager.EnsureAsync`, which creates new keys and leaves the shredded values unreadable.
 - Keep one key-encryption-key provider for the life of the key table. Switching providers (for example from `UseLocalKey` to a key service) is not supported yet: data keys wrapped by the old provider can no longer be unwrapped, and `RewrapAsync` cannot move them.
@@ -224,6 +225,42 @@ builder.Services.AddHeadlessEncryption(setup =>
 - The local KEK wraps with AES-256-GCM under the active key, with the data key's scope, id, and kind as authenticated data; a wrapped key is 60 bytes. Its provider name is `Local`.
 - A data key wrapped by another provider (the stored `KekProvider` differs from the configured one) fails with `InvalidOperationException` naming both. Moving keys between providers is not supported yet.
 - Log events 4300 (`DataKeyCreated`), 4301 (`DataKeysShredded`, warning), and 4302 (`DataKeysRewrapped`).
+
+---
+
+## Headless.Encryption.EntityFramework
+
+Maps `EncryptedValue` properties to binary columns in EF Core. It stores the frame and never decrypts.
+
+### Setup
+
+```bash
+dotnet add package Headless.Encryption.EntityFramework
+```
+
+```csharp
+public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+{
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        configurationBuilder.AddEncryptedValueConversions();
+    }
+}
+
+public sealed class Beneficiary
+{
+    public Guid Id { get; init; }
+    public EncryptedValue NationalId { get; set; } // required column
+    public EncryptedValue? Phone { get; set; } // optional column
+}
+```
+
+### Design and runtime behavior
+
+- `AddEncryptedValueConversions()` applies `EncryptedValueConverter` to every `EncryptedValue` and `EncryptedValue?` property: `bytea` on PostgreSQL, `varbinary(max)` on SQL Server. A single property can use it directly with `HasConversion<EncryptedValueConverter>()`.
+- Saving the default `EncryptedValue` throws `InvalidOperationException`: it holds no frame, and the empty bytes it would store could not be read back. Encrypt before saving, or map the column as `EncryptedValue?`, which stores null.
+- Reading bytes that are not a frame throws `FormatException` when the entity is materialized.
+- There is no decrypting converter by design: decryption is async and needs the row's tenant, and plaintext in the change tracker would reach audit capture. Equality on the column compares ciphertext, so never query it for a value; search through a blind index.
 
 ---
 
