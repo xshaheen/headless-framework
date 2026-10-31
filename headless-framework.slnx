@@ -212,6 +212,7 @@
     <Folder Name="/Encryption/">
         <Project Path="src\Headless.Encryption.Abstractions\Headless.Encryption.Abstractions.csproj" />
         <Project Path="src\Headless.Encryption\Headless.Encryption.csproj" />
+        <Project Path="src\Headless.Encryption.EntityFramework\Headless.Encryption.EntityFramework.csproj" />
         <Project Path="src\Headless.Encryption.PostgreSql\Headless.Encryption.PostgreSql.csproj" />
         <Project Path="src\Headless.Encryption.SqlServer\Headless.Encryption.SqlServer.csproj" />
     </Folder>
