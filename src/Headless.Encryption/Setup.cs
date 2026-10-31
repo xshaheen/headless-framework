@@ -74,6 +74,10 @@ public static class SetupEncryption
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<IOptions<EncryptionOptions>>().Value
             ));
+            services.TryAddSingleton(static sp => new KeyEncryptionKeyProviders(
+                sp.GetRequiredService<IKeyEncryptionKeyProvider>(),
+                sp.GetServices<PreviousKeyEncryptionKeyProvider>()
+            ));
             services.TryAddSingleton<DataKeyRing>();
             services.TryAddSingleton<IFieldEncryptor, FieldEncryptor>();
             services.TryAddSingleton<IDataKeyManager, DataKeyManager>();
@@ -86,9 +90,59 @@ public static class SetupEncryption
             setup.KeyStores[0].AddServices(services);
             setup.KeyEncryptionKeyProviders[0].AddServices(services);
 
+            foreach (var previous in setup.PreviousKeyEncryptionKeyProviders)
+            {
+                _AddPrevious(services, previous);
+            }
+
             return services;
         }
     }
+
+    /// <summary>
+    /// Registers a previous provider's services as its <c>Use…</c> member would, except that its
+    /// <see cref="IKeyEncryptionKeyProvider" /> becomes a decrypt-only <see cref="PreviousKeyEncryptionKeyProvider" />, so
+    /// providers need no separate registration path for this role.
+    /// </summary>
+    private static void _AddPrevious(IServiceCollection services, IEncryptionProviderOptionsExtension previous)
+    {
+        var captured = new ServiceCollection();
+        previous.AddServices(captured);
+
+        foreach (var descriptor in captured)
+        {
+            if (descriptor.ServiceType == typeof(IKeyEncryptionKeyProvider) && !descriptor.IsKeyedService)
+            {
+                services.AddSingleton(sp => new PreviousKeyEncryptionKeyProvider(
+                    (IKeyEncryptionKeyProvider)_Create(descriptor, sp)
+                ));
+            }
+            else if (descriptor.IsKeyedService || _IsOptionsPipeline(descriptor.ServiceType))
+            {
+                // Options configuration and validation compose; the previous provider's own options type keeps them.
+                services.Add(descriptor);
+            }
+            else
+            {
+                services.TryAdd(descriptor);
+            }
+        }
+    }
+
+    private static bool _IsOptionsPipeline(Type serviceType) =>
+        serviceType.IsGenericType
+        && serviceType.GetGenericTypeDefinition() is var definition
+        && (
+            definition == typeof(IConfigureOptions<>)
+            || definition == typeof(IPostConfigureOptions<>)
+            || definition == typeof(IValidateOptions<>)
+            || definition == typeof(IOptionsChangeTokenSource<>)
+        );
+
+    private static object _Create(ServiceDescriptor descriptor, IServiceProvider services) =>
+        descriptor.ImplementationInstance
+        ?? descriptor.ImplementationFactory?.Invoke(services)
+        ?? ActivatorUtilities.CreateInstance(services, descriptor.ImplementationType!);
 
     private sealed record EncryptionKeyStoreRegistration(string Provider);
 }
