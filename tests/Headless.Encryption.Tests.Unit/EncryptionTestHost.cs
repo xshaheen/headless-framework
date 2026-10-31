@@ -21,7 +21,8 @@ public sealed class EncryptionTestHost : IDisposable
     public EncryptionTestHost(
         InMemoryDataKeyStore store,
         Action<LocalKeyEncryptionKeyOptions>? keys = null,
-        Action<EncryptionOptions>? options = null
+        Action<EncryptionOptions>? options = null,
+        Action<HeadlessEncryptionSetupBuilder>? keyEncryptionKeys = null
     )
     {
         var services = new ServiceCollection();
@@ -30,16 +31,14 @@ public sealed class EncryptionTestHost : IDisposable
         services.AddHeadlessEncryption(setup =>
         {
             setup.RegisterKeyStore(store.AsExtension());
-            setup.UseLocalKey(
-                keys
-                    ?? (
-                        o =>
-                        {
-                            o.Keys[KeyOne] = KeyOneValue;
-                            o.ActiveKeyId = KeyOne;
-                        }
-                    )
-            );
+            if (keyEncryptionKeys is not null)
+            {
+                keyEncryptionKeys(setup);
+            }
+            else
+            {
+                setup.UseLocalKey(keys ?? UseKeyOne);
+            }
 
             if (options is not null)
             {
@@ -48,6 +47,12 @@ public sealed class EncryptionTestHost : IDisposable
         });
 
         _services = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+    }
+
+    public static void UseKeyOne(LocalKeyEncryptionKeyOptions options)
+    {
+        options.Keys[KeyOne] = KeyOneValue;
+        options.ActiveKeyId = KeyOne;
     }
 
     public FakeTimeProvider Clock { get; } =

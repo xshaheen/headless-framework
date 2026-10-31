@@ -1,6 +1,6 @@
 ---
 domain: Encryption
-packages: Encryption.Abstractions, Encryption, Encryption.PostgreSql, Encryption.SqlServer
+packages: Encryption.Abstractions, Encryption, Encryption.AzureKeyVault, Encryption.PostgreSql, Encryption.SqlServer
 ---
 
 # Encryption
@@ -51,7 +51,7 @@ string plaintext = decryption.GetString();
 - Store `EncryptedValue.ToArray()` in a `bytea` / `varbinary(max)` column, or `ToBase64Url()` in a text column. Read it back with `EncryptedValue.FromBytes` / `EncryptedValue.Parse`; both throw `FormatException` for bytes that are not a frame.
 - Treat `FieldDecryptionException` with `Failure = KeyNotFound` as "this tenant's data was shredded", not as corruption.
 - A shred is final. Encrypting for a shredded scope throws `DataKeyScopeShreddedException` instead of creating a key; reopen the scope deliberately with `IDataKeyManager.EnsureAsync`, which creates new keys and leaves the shredded values unreadable.
-- Keep one key-encryption-key provider for the life of the key table. Switching providers (for example from `UseLocalKey` to a key service) is not supported yet: data keys wrapped by the old provider can no longer be unwrapped, and `RewrapAsync` cannot move them.
+- To switch key-encryption-key providers (for example from `UseLocalKey` to `UseAzureKeyVault`), keep the old one registered with `KeepPreviousKeyEncryptionKey` until `RewrapAsync` returns 0. Removing it earlier leaves every key it wrapped unreadable.
 - Keep KEK material out of the database and out of source control. With `UseLocalKey`, whoever reads the configured key reads every value; prefer a key service in production when one is available.
 - Run `resources provision` (or `deploy`) on every release: it creates the key table and the host-scope keys. A host start only verifies them.
 
@@ -99,6 +99,7 @@ Decryption looks the key up by the id in the frame; it never tries keys in turn.
 - **Creation.** The first encryption for a scope with no data key creates version 1: one KEK wrap per tenant, ever. Two hosts racing on a new tenant agree on one key through the store's unique (scope, kind, version) key. `IDataKeyManager.EnsureAsync(tenantId)` creates the tenant's Data and Lookup keys up front, so onboarding fails early when the KEK is unreachable.
 - **Rotation.** `RotateAsync(scope, DataKeyKind.Data)` adds the next version, which encrypts every new value. Older versions keep decrypting. `FieldDecryption.KeyIsCurrent` is `false` for a value under an older version: a re-encryption job decrypts and encrypts it again. Other hosts switch to the new version when their cached active key expires.
 - **KEK rotation.** Make a new KEK version current (for the local key: add a key and point `ActiveKeyId` at it), then run `RewrapAsync()`. It re-wraps every data key the current KEK version did not wrap and returns how many it changed; no encrypted value changes. Keep the old KEK version enabled until a run returns 0.
+- **Switching providers.** Register the new provider with its `Use…` member and keep the old one with `setup.KeepPreviousKeyEncryptionKey(previous => previous.UseLocalKey(...))`. New data keys are wrapped by the new provider; old ones are unwrapped by the provider named in their row. `RewrapAsync()` moves every old key to the new provider; once it returns 0, remove the previous provider. A previous provider must have a different name from the active one: to rotate keys within one provider, use its own key versions.
 - **Shredding.** `ShredAsync(scope)` deletes every key of the scope, marks the scope shredded, and returns how many keys it deleted. This host forgets them at once; another host forgets them when its cached copy expires (`EncryptionOptions.KeyCacheDuration`, 1 hour by default). Then every value of the scope fails with `KeyNotFound`.
 - **A shred is final.** A later encryption for the scope throws `DataKeyScopeShreddedException`, and so does `RotateAsync`; nothing creates a key for it implicitly. An encryption racing the shred on any host either commits its key first, which the shred then deletes, or is refused. `EnsureAsync(scope)` is the only way back: it clears the marker and creates new keys, and the values from before the shred stay unreadable.
 
@@ -143,6 +144,7 @@ It protects against a leaked database dump or backup while the KEK stays outside
 | Key-encryption key | Use when | Trade-off |
 | --- | --- | --- |
 | `UseLocalKey` (in `Headless.Encryption`) | Development, tests, or a host whose secret store holds the key | The host process and its configuration hold the KEK itself |
+| `UseAzureKeyVault` (`Headless.Encryption.AzureKeyVault`) | Production on Azure | One Key Vault call per data key per host per cache duration; the KEK never leaves the vault |
 
 Keep the key table in the application's database (the default) so tenant creation and backups stay consistent; a separate connection string is allowed.
 
@@ -222,8 +224,45 @@ builder.Services.AddHeadlessEncryption(setup =>
 - Unwrapped data keys live only in process memory, by key id, never in a distributed cache. An evicted key is cleared with `CryptographicOperations.ZeroMemory` once no running operation uses it. Concurrent misses for one key share one unwrap.
 - Cached keys expire on the registered `TimeProvider`, so a test can advance it to see another host's shred take effect.
 - The local KEK wraps with AES-256-GCM under the active key, with the data key's scope, id, and kind as authenticated data; a wrapped key is 60 bytes. Its provider name is `Local`.
-- A data key wrapped by another provider (the stored `KekProvider` differs from the configured one) fails with `InvalidOperationException` naming both. Moving keys between providers is not supported yet.
+- A data key wrapped by another provider (the stored `KekProvider` differs from the configured one) fails with `InvalidOperationException` naming it, unless that provider is kept with `KeepPreviousKeyEncryptionKey`.
 - Log events 4300 (`DataKeyCreated`), 4301 (`DataKeysShredded`, warning), and 4302 (`DataKeysRewrapped`).
+
+---
+
+## Headless.Encryption.AzureKeyVault
+
+Wraps data keys with an RSA key held in Azure Key Vault.
+
+### Setup
+
+```bash
+dotnet add package Headless.Encryption.AzureKeyVault
+```
+
+```csharp
+builder.Services.AddSingleton(new KeyClient(new Uri("https://pii-kv.vault.azure.net/"), new DefaultAzureCredential()));
+builder.Services.AddHeadlessEncryption(setup =>
+{
+    setup.UsePostgreSql();
+    setup.UseAzureKeyVault(builder.Configuration.GetSection("Headless:Encryption:AzureKeyVault")); // { "KeyName": "pii-kek" }
+});
+```
+
+`UseAzureKeyVault` has the usual three overloads, each with an optional `clientFactory` (`Func<IServiceProvider, KeyClient>`); without one, the `KeyClient` registered in DI is used.
+
+### Configuration
+
+| Option | Default | Notes |
+| --- | --- | --- |
+| `AzureKeyVaultKeyEncryptionKeyOptions.KeyName` | required | An RSA key (2048 or 3072 bits) in the vault the `KeyClient` reaches, with the wrapKey and unwrapKey operations |
+
+### Design and runtime behavior
+
+- New data keys are wrapped with RSA-OAEP-256 under the key's current version. The stored `KekId` is the versioned key identifier the vault returned, and unwrap uses exactly that version, so rotating the key in Key Vault (a new version) never breaks old keys. Keep old versions enabled until `RewrapAsync` returns 0.
+- RSA-OAEP takes no associated data, so the wrapped payload is the data key followed by a SHA-256 of its scope, id, and kind, checked on unwrap: a wrapped key moved to another row fails with `CryptographicException`. Wrapping needs only the public key, so anyone who holds it can still wrap a key they chose; a symmetric key wrap (Managed HSM) would close that, and is not supported yet.
+- Unwrapping a key wrapped in another vault than the `KeyClient` reaches, or under an identifier without a version, throws `CryptographicException` naming the vault.
+- The identity needs only wrapKey and unwrapKey on the key (the "Key Vault Crypto User" role); Headless never creates or deletes vault keys. The provider name stored with each key is `AzureKeyVault`.
+- Size the vault for the unwraps described in [Key service load](#key-service-load).
 
 ---
 
