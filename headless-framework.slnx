@@ -218,6 +218,7 @@
     </Folder>
     <Folder Name="/Encryption/Tests/">
         <Project Path="tests\Headless.Encryption.Tests.Unit\Headless.Encryption.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Encryption.EntityFramework.Tests.Unit\Headless.Encryption.EntityFramework.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Encryption.PostgreSql.Tests.Integration\Headless.Encryption.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Encryption.SqlServer.Tests.Integration\Headless.Encryption.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Encryption.Tests.Harness\Headless.Encryption.Tests.Harness.csproj" />
