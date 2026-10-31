@@ -232,14 +232,16 @@ public sealed class CronExpressionCacheTests : TestBase
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         var conflicting = _Cron("different-function", "0 6 * * *");
-        conflicting.Id = JobsSeedId.ForCronSeed("new-seed");
+        conflicting.Id = JobsSeedId.ForCronSeed(JobsSeedId.DefaultOwner, "new-seed");
         await fixture.SeedCronJobsAsync(conflicting);
         var sut = fixture.CreateProvider();
 
         var act = () =>
             sut.MigrateDefinedCronJobsAsync(
+                JobsSeedId.DefaultOwner,
                 [
-                    new CronSeedDefinition(
+                    CronSeedDefinition.ForCronFunction(
+                        JobsSeedId.DefaultOwner,
                         "new-seed",
                         "0 7 * * *",
                         MissedRunPolicy.Coalesce,

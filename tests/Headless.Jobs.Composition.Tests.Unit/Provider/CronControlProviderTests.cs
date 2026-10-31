@@ -158,9 +158,9 @@ public sealed class CronControlProviderTests : TestBase
         // A seeded definition whose position was already initialized under a yearly expression: the projection
         // points at next January.
         var seeded = _Definition(isPaused: false, revision: 0, expression: "0 0 3 1 1 *");
-        seeded.Id = JobsSeedId.ForCronSeed("seeded");
+        seeded.Id = JobsSeedId.ForCronSeed(JobsSeedId.DefaultOwner, "seeded");
         seeded.Function = "seeded";
-        seeded.InitIdentifier = "MemoryTicker_Seeded_seeded";
+        seeded.InitIdentifier = JobsSeedId.CronSeedMarker(JobsSeedId.DefaultOwner, "seeded");
         seeded.ReconciledThroughUtc = _Now.UtcDateTime.AddMinutes(-5);
         seeded.NextDueUtc = new DateTime(_Now.Year + 1, 1, 1, 3, 0, 0, DateTimeKind.Utc);
         seeded.FingerprintFailureCount = 2;
@@ -168,8 +168,10 @@ public sealed class CronControlProviderTests : TestBase
         await provider.InsertCronJobsAsync([seeded], AbortToken);
 
         await provider.MigrateDefinedCronJobsAsync(
+            JobsSeedId.DefaultOwner,
             [
-                new CronSeedDefinition(
+                CronSeedDefinition.ForCronFunction(
+                    JobsSeedId.DefaultOwner,
                     "seeded",
                     "0 */5 * * * *",
                     MissedRunPolicy.Coalesce,
@@ -196,8 +198,10 @@ public sealed class CronControlProviderTests : TestBase
     {
         var provider = _Create();
         await provider.MigrateDefinedCronJobsAsync(
+            JobsSeedId.DefaultOwner,
             [
-                new CronSeedDefinition(
+                CronSeedDefinition.ForCronFunction(
+                    JobsSeedId.DefaultOwner,
                     "seeded",
                     "0 */5 * * * *",
                     MissedRunPolicy.Coalesce,
@@ -212,8 +216,10 @@ public sealed class CronControlProviderTests : TestBase
         await provider.InsertCronJobOccurrencesAsync([pending], AbortToken);
 
         await provider.MigrateDefinedCronJobsAsync(
+            JobsSeedId.DefaultOwner,
             [
-                new CronSeedDefinition(
+                CronSeedDefinition.ForCronFunction(
+                    JobsSeedId.DefaultOwner,
                     "seeded",
                     "0 */10 * * * *",
                     MissedRunPolicy.Coalesce,

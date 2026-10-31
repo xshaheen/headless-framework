@@ -2,6 +2,7 @@
 
 using Headless.EntityFramework;
 using Headless.Hosting;
+using Headless.Hosting.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -91,6 +92,29 @@ public sealed class DbContextMigrationsProvisionerTests : TestBase, IDisposable
     }
 
     [Fact]
+    public async Task should_apply_migrations_after_every_schema_resource_when_the_schema_resource_is_registered_later()
+    {
+        // given: registration order alone would run the migrations first
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddDbContext<MigratedDbContext>(options =>
+            options
+                .UseSqlite(_connection)
+                .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
+        );
+        builder.Services.AddDbContextMigrations<MigratedDbContext>();
+        var schema = new RecordingSchemaProvisioner(() => _TableExists("widgets"));
+        builder.Services.AddResourceProvisioner(_ => schema);
+        using var host = builder.Build();
+
+        // when
+        await host.Services.ProvisionResourcesAsync(AbortToken);
+
+        // then
+        schema.WidgetsExistedWhenProvisioned.Should().BeFalse("schema DDL lands before any app migration");
+        _TableExists("widgets").Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_fail_naming_the_context_and_its_factory_when_neither_is_registered()
     {
         // given
@@ -130,6 +154,32 @@ public sealed class DbContextMigrationsProvisionerTests : TestBase, IDisposable
 
         return Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) == 1;
     }
+}
+
+// Stands in for a schema-runner contribution: records what the database held when it ran.
+internal sealed class RecordingSchemaProvisioner(Func<bool> widgetsExist) : IResourceProvisioner
+{
+    public bool? WidgetsExistedWhenProvisioned { get; private set; }
+
+    public string Kind => SchemaRunner.ResourceKind;
+
+    public string Name => "Sqlite/main/Recording";
+
+    public Task ProvisionAsync(CancellationToken cancellationToken)
+    {
+        WidgetsExistedWhenProvisioned = widgetsExist();
+
+        return Task.CompletedTask;
+    }
+
+    public Task VerifyAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task PurgeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task DeleteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task<IReadOnlyList<KeyValuePair<string, string>>> GetStatusAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<KeyValuePair<string, string>>>([]);
 }
 
 internal sealed class MigratedDbContext(DbContextOptions<MigratedDbContext> options) : DbContext(options);

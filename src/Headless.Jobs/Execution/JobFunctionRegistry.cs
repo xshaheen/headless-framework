@@ -178,6 +178,15 @@ internal static class JobFunctionRegistryBuilder
             : descriptor.With(cronExpression: cronExpression);
     }
 
+    /// <summary>
+    /// Resolves a <c>%name%</c> cron expression from <paramref name="configuration"/> the way a <c>[Job(Cron)]</c>
+    /// value resolves; any other expression, or a key with no configured value, is returned unchanged.
+    /// </summary>
+    internal static string ResolveCronExpression(string cronExpression, IConfiguration? configuration)
+    {
+        return configuration is null ? cronExpression : _ResolveCronExpression(cronExpression, configuration);
+    }
+
     private static string _ResolveCronExpression(string cronExpression, IConfiguration configuration)
     {
         if (!_IsConfigurationToken(cronExpression))

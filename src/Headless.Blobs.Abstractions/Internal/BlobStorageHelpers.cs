@@ -1,7 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
+using Headless.Checks;
 using Headless.Primitives;
 
 namespace Headless.Blobs.Internal;
@@ -446,5 +449,48 @@ public static class BlobStorageHelpers
         }
 
         return results.Count(static result => result.Result is { IsSuccess: true, Value: true });
+    }
+
+    /// <summary>
+    /// Builds an <c>attachment</c> <c>Content-Disposition</c> value (RFC 6266) naming <paramref name="fileName"/>:
+    /// <c>attachment; filename="&lt;ASCII fallback&gt;"; filename*=UTF-8''&lt;percent-encoded name&gt;</c>.
+    /// </summary>
+    /// <remarks>
+    /// Clients that understand <c>filename*</c> (RFC 5987) use the exact name, including non-ASCII text such as
+    /// Arabic. The quoted <c>filename</c> is for the rest: every character outside printable ASCII, and the quote,
+    /// backslash, and percent sign, become <c>_</c>, so the fallback needs no escaping and no client percent-decodes
+    /// it into a different name.
+    /// </remarks>
+    /// <param name="fileName">The file name; validated by <see cref="PresignedDownloadOptions.FileName"/>.</param>
+    public static string BuildAttachmentContentDisposition(string fileName)
+    {
+        Argument.IsNotNullOrWhiteSpace(fileName);
+
+        var builder = new StringBuilder((fileName.Length * 4) + 40);
+        builder.Append("attachment; filename=\"");
+
+        foreach (var rune in fileName.EnumerateRunes())
+        {
+            builder.Append(
+                rune.Value is >= 0x20 and < 0x7F and not '"' and not '\\' and not '%' ? (char)rune.Value : '_'
+            );
+        }
+
+        builder.Append("\"; filename*=UTF-8''");
+
+        // RFC 5987 attr-char: everything else, including every byte of a multi-byte UTF-8 sequence, is percent-encoded.
+        foreach (var b in Encoding.UTF8.GetBytes(fileName))
+        {
+            if (char.IsAsciiLetterOrDigit((char)b) || "!#$&+-.^_`|~".Contains((char)b, StringComparison.Ordinal))
+            {
+                builder.Append((char)b);
+            }
+            else
+            {
+                builder.Append('%').Append(b.ToString("X2", CultureInfo.InvariantCulture));
+            }
+        }
+
+        return builder.ToString();
     }
 }

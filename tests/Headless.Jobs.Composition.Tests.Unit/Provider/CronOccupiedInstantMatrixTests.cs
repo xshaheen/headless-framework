@@ -2,6 +2,7 @@
 
 using Headless.Hosting;
 using Headless.Jobs;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Provider;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -317,8 +318,10 @@ public sealed class CronOccupiedInstantMatrixTests : TestBase
         // Producer 1 — startup seeding migration. It retires the old-expression row and creates NOTHING to take its
         // place, so the fire is still owed.
         await provider.MigrateDefinedCronJobsAsync(
+            JobsSeedId.DefaultOwner,
             [
-                new CronSeedDefinition(
+                CronSeedDefinition.ForCronFunction(
+                    JobsSeedId.DefaultOwner,
                     "seeded-cron",
                     "0 * * * * *",
                     MissedRunPolicy.Coalesce,
@@ -333,8 +336,10 @@ public sealed class CronOccupiedInstantMatrixTests : TestBase
         await provider.InsertCronJobOccurrencesAsync([migratedOccurrence], AbortToken);
 
         await provider.MigrateDefinedCronJobsAsync(
+            JobsSeedId.DefaultOwner,
             [
-                new CronSeedDefinition(
+                CronSeedDefinition.ForCronFunction(
+                    JobsSeedId.DefaultOwner,
                     "seeded-cron",
                     "*/5 * * * * *",
                     MissedRunPolicy.Coalesce,

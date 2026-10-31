@@ -2,6 +2,7 @@
 
 using Headless.Hosting;
 using Headless.Jobs;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Provider;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,7 +29,17 @@ public sealed class CronRecoveryConfigurationTests : TestBase
         var provider = _Create();
 
         await provider.MigrateDefinedCronJobsAsync(
-            [new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Skip, 300, CronOverlapPolicy.Allow)],
+            JobsSeedId.DefaultOwner,
+            [
+                CronSeedDefinition.ForCronFunction(
+                    JobsSeedId.DefaultOwner,
+                    "seeded",
+                    "0 * * * * *",
+                    MissedRunPolicy.Skip,
+                    300,
+                    CronOverlapPolicy.Allow
+                ),
+            ],
             AbortToken
         );
 
@@ -42,13 +53,13 @@ public sealed class CronRecoveryConfigurationTests : TestBase
     {
         var provider = _Create();
 
-        await provider.MigrateDefinedCronJobsAsync([_ZonedSeed("Africa/Cairo")], AbortToken);
+        await provider.MigrateDefinedCronJobsAsync(JobsSeedId.DefaultOwner, [_ZonedSeed("Africa/Cairo")], AbortToken);
         var created = (await provider.GetCronJobsAsync(predicate: null, AbortToken)).Single();
 
-        await provider.MigrateDefinedCronJobsAsync([_ZonedSeed("Africa/Cairo")], AbortToken);
+        await provider.MigrateDefinedCronJobsAsync(JobsSeedId.DefaultOwner, [_ZonedSeed("Africa/Cairo")], AbortToken);
         var unchanged = (await provider.GetCronJobsAsync(predicate: null, AbortToken)).Single();
 
-        await provider.MigrateDefinedCronJobsAsync([_ZonedSeed("Europe/London")], AbortToken);
+        await provider.MigrateDefinedCronJobsAsync(JobsSeedId.DefaultOwner, [_ZonedSeed("Europe/London")], AbortToken);
         var moved = (await provider.GetCronJobsAsync(predicate: null, AbortToken)).Single();
 
         created.TimeZoneId.Should().Be("Africa/Cairo");
@@ -59,13 +70,14 @@ public sealed class CronRecoveryConfigurationTests : TestBase
     }
 
     private static CronSeedDefinition _ZonedSeed(string timeZoneId) =>
-        new(
+        CronSeedDefinition.ForCronFunction(
+            JobsSeedId.DefaultOwner,
             "billing.close-day",
             "0 0 0 * * *",
             MissedRunPolicy.Coalesce,
             60,
             CronOverlapPolicy.Allow,
-            TimeZoneId: timeZoneId
+            timeZoneId: timeZoneId
         );
 
     /// <summary>
@@ -83,7 +95,17 @@ public sealed class CronRecoveryConfigurationTests : TestBase
 
         // Boot 1: the attribute seeds Coalesce/60.
         await provider.MigrateDefinedCronJobsAsync(
-            [new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Coalesce, 60, CronOverlapPolicy.Allow)],
+            JobsSeedId.DefaultOwner,
+            [
+                CronSeedDefinition.ForCronFunction(
+                    JobsSeedId.DefaultOwner,
+                    "seeded",
+                    "0 * * * * *",
+                    MissedRunPolicy.Coalesce,
+                    60,
+                    CronOverlapPolicy.Allow
+                ),
+            ],
             AbortToken
         );
         var created = (await provider.GetCronJobsAsync(predicate: null, AbortToken)).Single();
@@ -101,7 +123,17 @@ public sealed class CronRecoveryConfigurationTests : TestBase
 
         // Boot 2: the application restarts and reconciles the same declared function, attribute values unchanged.
         await provider.MigrateDefinedCronJobsAsync(
-            [new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Coalesce, 60, CronOverlapPolicy.Allow)],
+            JobsSeedId.DefaultOwner,
+            [
+                CronSeedDefinition.ForCronFunction(
+                    JobsSeedId.DefaultOwner,
+                    "seeded",
+                    "0 * * * * *",
+                    MissedRunPolicy.Coalesce,
+                    60,
+                    CronOverlapPolicy.Allow
+                ),
+            ],
             AbortToken
         );
 
@@ -117,7 +149,17 @@ public sealed class CronRecoveryConfigurationTests : TestBase
     {
         var provider = _Create();
         await provider.MigrateDefinedCronJobsAsync(
-            [new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Coalesce, 60, CronOverlapPolicy.Allow)],
+            JobsSeedId.DefaultOwner,
+            [
+                CronSeedDefinition.ForCronFunction(
+                    JobsSeedId.DefaultOwner,
+                    "seeded",
+                    "0 * * * * *",
+                    MissedRunPolicy.Coalesce,
+                    60,
+                    CronOverlapPolicy.Allow
+                ),
+            ],
             AbortToken
         );
         var created = (await provider.GetCronJobsAsync(predicate: null, AbortToken)).Single();
@@ -132,7 +174,17 @@ public sealed class CronRecoveryConfigurationTests : TestBase
 
         // A code change alters the declared expression — the reconciliation path that DOES mutate the row.
         await provider.MigrateDefinedCronJobsAsync(
-            [new CronSeedDefinition("seeded", "0 */5 * * * *", MissedRunPolicy.Coalesce, 60, CronOverlapPolicy.Allow)],
+            JobsSeedId.DefaultOwner,
+            [
+                CronSeedDefinition.ForCronFunction(
+                    JobsSeedId.DefaultOwner,
+                    "seeded",
+                    "0 */5 * * * *",
+                    MissedRunPolicy.Coalesce,
+                    60,
+                    CronOverlapPolicy.Allow
+                ),
+            ],
             AbortToken
         );
 

@@ -2,13 +2,16 @@
 
 using System.Data;
 using System.Data.Common;
+using Headless.Checks;
 using Headless.Sql;
+using Headless.UnitOfWork;
 
 namespace Headless.Features;
 
 /// <summary>
 /// The relational <see cref="IFeatureValueRecordRepository"/>, written once over <see cref="ISqlDialect"/>. Batched
-/// operations bind the whole list as one parameter, so the statement text does not grow with the list.
+/// operations bind the whole list as one parameter, so the statement text does not grow with the list. The enlisted
+/// members run the same statements on a caller's unit-of-work connection and transaction instead of their own.
 /// </summary>
 #pragma warning disable CA2100 // SQL text interpolates only validated schema and table identifiers; values are parameters.
 internal sealed class RelationalFeatureValueRecordRepository(
@@ -20,6 +23,9 @@ internal sealed class RelationalFeatureValueRecordRepository(
     // Written text is unbounded: a parameter sized to the column would silently truncate an over-long value, where the
     // column must reject it.
     private static readonly SqlColumnType _Written = SqlColumnType.Text(-1);
+
+    private const string _Owner = "the relational features storage";
+    private const string _Operation = "feature value";
 
     private readonly ISqlDialect _dialect = tables.Dialect;
     private readonly string _select = _BuildSelect(tables);
@@ -126,17 +132,47 @@ internal sealed class RelationalFeatureValueRecordRepository(
             return Task.FromResult(new List<FeatureValueRecord>());
         }
 
-        var nameList = SqlColumnType.LookupText(FeatureValueRecordConstants.NameMaxLength, names);
+        var (sql, bind) = _ByNames(names, providerName, providerKey);
 
-        var sql = $"{_select} WHERE {_dialect.InList(_name, "Names", nameList)} AND {_byScope};";
+        return _ReadAsync(sql, bind, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<List<FeatureValueRecord>> GetListEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        HashSet<string> names,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        var (connection, transaction) = _Enlist(unitOfWork);
+
+        if (names.Count == 0)
+        {
+            return Task.FromResult(new List<FeatureValueRecord>());
+        }
+
+        var (sql, bind) = _ByNames(names, providerName, providerKey);
+
+        return _ReadAsync(connection, transaction, sql, bind, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<List<FeatureValueRecord>> GetListEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        var (connection, transaction) = _Enlist(unitOfWork);
 
         return _ReadAsync(
-            sql,
-            command =>
-            {
-                _dialect.AddListParameter(command, "Names", nameList, names);
-                _AddScope(command, providerName, providerKey);
-            },
+            connection,
+            transaction,
+            $"{_select} WHERE {_byScope};",
+            command => _AddScope(command, providerName, providerKey),
             cancellationToken
         );
     }
@@ -187,6 +223,42 @@ internal sealed class RelationalFeatureValueRecordRepository(
         return _SaveAsync(inserted, updated, deleted, cancellationToken);
     }
 
+    /// <inheritdoc/>
+    public async Task SaveEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyCollection<FeatureValueRecord> inserted,
+        IReadOnlyCollection<FeatureValueRecord> updated,
+        IReadOnlyCollection<FeatureValueRecord> deleted,
+        CancellationToken cancellationToken
+    )
+    {
+        var (connection, transaction) = _Enlist(unitOfWork);
+
+        if (inserted.Count == 0 && updated.Count == 0 && deleted.Count == 0)
+        {
+            return;
+        }
+
+        // A raw write is not in the owner's change tracker, so an observed unit's owner (the EF save pipeline) cannot
+        // restore it on replay; only an owned unit re-runs the caller's block, which writes it again. Marked after the
+        // checks passed, so a refused call leaves the unit replayable.
+        if (unitOfWork.Resource is { IsOwned: false })
+        {
+            unitOfWork.PreventRetry();
+        }
+
+        await _WriteAsync(
+                connection,
+                transaction,
+                inserted,
+                updated,
+                deleted,
+                requireUpdatedRows: true,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
     private async Task _SaveAsync(
         IReadOnlyCollection<FeatureValueRecord> inserted,
         IReadOnlyCollection<FeatureValueRecord> updated,
@@ -203,7 +275,24 @@ internal sealed class RelationalFeatureValueRecordRepository(
         await using var connection = _dialect.CreateConnection(options.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await _WriteAsync(connection, transaction, inserted, updated, deleted, requireUpdatedRows, cancellationToken)
+            .ConfigureAwait(false);
 
+        // Disposing an uncommitted transaction rolls it back, so a statement that throws above undoes every earlier
+        // one in the batch.
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task _WriteAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        IReadOnlyCollection<FeatureValueRecord> inserted,
+        IReadOnlyCollection<FeatureValueRecord> updated,
+        IReadOnlyCollection<FeatureValueRecord> deleted,
+        bool requireUpdatedRows,
+        CancellationToken cancellationToken
+    )
+    {
         foreach (var feature in inserted)
         {
             await using var command = _CreateCommand(connection, transaction, _insert);
@@ -250,10 +339,41 @@ internal sealed class RelationalFeatureValueRecordRepository(
             _dialect.AddListParameter(command, "Ids", SqlColumnType.Guid, deleted.Select(x => x.Id).ToList());
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
+    }
 
-        // Disposing an uncommitted transaction rolls it back, so a statement that throws above undoes every earlier
-        // one in the batch.
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    private (DbConnection Connection, DbTransaction Transaction) _Enlist(IUnitOfWork unitOfWork)
+    {
+        var enlisted = RelationalEnlistment.RequireLive(
+            Argument.IsNotNull(unitOfWork),
+            _dialect.ConnectionType,
+            _dialect.TransactionType,
+            _Owner,
+            _Operation
+        );
+
+        using var configured = _dialect.CreateConnection(options.ConnectionString);
+        RelationalEnlistment.RequireSameDatabase(configured, enlisted.Connection, _Owner, _Operation);
+
+        return enlisted;
+    }
+
+    private (string Sql, Action<DbCommand> Bind) _ByNames(
+        HashSet<string> names,
+        string providerName,
+        string? providerKey
+    )
+    {
+        var nameList = SqlColumnType.LookupText(FeatureValueRecordConstants.NameMaxLength, names);
+        var sql = $"{_select} WHERE {_dialect.InList(_name, "Names", nameList)} AND {_byScope};";
+
+        return (
+            sql,
+            command =>
+            {
+                _dialect.AddListParameter(command, "Names", nameList, names);
+                _AddScope(command, providerName, providerKey);
+            }
+        );
     }
 
     private void _AddScope(DbCommand command, string providerName, string? providerKey)
@@ -268,10 +388,22 @@ internal sealed class RelationalFeatureValueRecordRepository(
         CancellationToken cancellationToken
     )
     {
-        var result = new List<FeatureValueRecord>();
         await using var connection = _dialect.CreateConnection(options.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = _CreateCommand(connection, transaction: null, sql);
+
+        return await _ReadAsync(connection, transaction: null, sql, bind, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<List<FeatureValueRecord>> _ReadAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        string sql,
+        Action<DbCommand> bind,
+        CancellationToken cancellationToken
+    )
+    {
+        var result = new List<FeatureValueRecord>();
+        await using var command = _CreateCommand(connection, transaction, sql);
         bind(command);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 

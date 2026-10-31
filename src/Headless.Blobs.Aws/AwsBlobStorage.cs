@@ -1179,14 +1179,20 @@ internal sealed class AwsBlobStorage(
     public PresignedUploadConstraintKinds SupportedUploadConstraints => PresignedUploadConstraintKinds.ContentType;
 
     /// <inheritdoc />
+    /// <remarks>
+    /// The <paramref name="options"/> are signed into the URL as the <c>response-content-disposition</c> and
+    /// <c>response-content-type</c> query parameters, which S3 and Cloudflare R2 return as the response's
+    /// <c>Content-Disposition</c> and <c>Content-Type</c>.
+    /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
     public ValueTask<Uri> GetPresignedDownloadUrlAsync(
         BlobLocation location,
         TimeSpan expiry,
+        PresignedDownloadOptions? options = null,
         CancellationToken cancellationToken = default
     )
     {
-        return _GetPresignedUrlAsync(location, expiry, HttpVerb.GET, contentType: null, cancellationToken);
+        return _GetPresignedUrlAsync(location, expiry, HttpVerb.GET, contentType: null, options, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -1203,7 +1209,14 @@ internal sealed class AwsBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return _GetPresignedUrlAsync(location, expiry, HttpVerb.PUT, constraints?.ContentType, cancellationToken);
+        return _GetPresignedUrlAsync(
+            location,
+            expiry,
+            HttpVerb.PUT,
+            constraints?.ContentType,
+            downloadOptions: null,
+            cancellationToken
+        );
     }
 
     private async ValueTask<Uri> _GetPresignedUrlAsync(
@@ -1211,6 +1224,7 @@ internal sealed class AwsBlobStorage(
         TimeSpan expiry,
         HttpVerb verb,
         string? contentType,
+        PresignedDownloadOptions? downloadOptions,
         CancellationToken cancellationToken
     )
     {
@@ -1233,6 +1247,18 @@ internal sealed class AwsBlobStorage(
         if (contentType is not null)
         {
             request.ContentType = contentType;
+        }
+
+        if (downloadOptions?.FileName is { } fileName)
+        {
+            request.ResponseHeaderOverrides.ContentDisposition = BlobStorageHelpers.BuildAttachmentContentDisposition(
+                fileName
+            );
+        }
+
+        if (downloadOptions?.ContentType is { } responseContentType)
+        {
+            request.ResponseHeaderOverrides.ContentType = responseContentType;
         }
 
         // Honor the configured endpoint scheme. When the client targets a plaintext http:// endpoint (an

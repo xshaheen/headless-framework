@@ -16,7 +16,8 @@ internal static class ExplicitAuditLogEntry
         ICurrentUser currentUser,
         ICurrentTenant currentTenant,
         ICorrelationIdProvider correlationIdProvider,
-        TimeProvider timeProvider
+        TimeProvider timeProvider,
+        IAuditClientInfoProvider? clientInfo
     )
     {
         return new AuditLogEntry
@@ -28,6 +29,14 @@ internal static class ExplicitAuditLogEntry
             CorrelationId = AuditLogFieldLimits.Truncate(
                 correlationIdProvider.CorrelationId,
                 AuditLogFieldLimits.CorrelationId
+            ),
+            IpAddress = AuditLogFieldLimits.Truncate(
+                request.IpAddress ?? clientInfo?.IpAddress,
+                AuditLogFieldLimits.IpAddress
+            ),
+            UserAgent = AuditLogFieldLimits.Truncate(
+                request.UserAgent ?? clientInfo?.UserAgent,
+                AuditLogFieldLimits.UserAgent
             ),
             Action = AuditLogFieldLimits.Truncate(request.Action, AuditLogFieldLimits.Action),
             ChangeType = null,

@@ -4,6 +4,7 @@ using Headless;
 using Headless.Caching;
 using Headless.Features;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute.ExceptionExtensions;
 
 namespace Tests.Values;
@@ -18,7 +19,13 @@ public sealed class FeatureValueStoreTests : TestBase
 
     public FeatureValueStoreTests()
     {
-        _sut = new FeatureValueStore(_definitionManager, _repository, _guidGenerator, _cache);
+        _sut = new FeatureValueStore(
+            _definitionManager,
+            _repository,
+            _guidGenerator,
+            _cache,
+            NullLogger<FeatureValueStore>.Instance
+        );
     }
 
     #region GetOrDefaultAsync

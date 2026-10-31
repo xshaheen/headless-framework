@@ -558,22 +558,50 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     #region Cron_Ticker_Core_Methods
 
     /// <summary>
-    /// Seeds and reconciles the cron definitions declared in code (via <c>[Job]</c>) into durable storage
-    /// at startup: inserts rows for newly declared functions, updates the expression in place when it changed, and
-    /// deletes previously seeded rows — together with their occurrences — whose function no longer exists in code.
+    /// Reconciles the complete set of cron definitions one seed owner declares into durable storage: inserts a row for
+    /// each new entry, restores the expression and zone of an existing entry's row when they differ, restores the
+    /// payload and contract version of an entry that carries a <see cref="CronSeedDefinition.RequestHash"/> when they
+    /// drifted, and removes the owner's previously seeded rows that the set no longer contains. Removed rows with an
+    /// InProgress occurrence are retired until no occurrence is running. Any restore bumps the row's revision and
+    /// resets its schedule position.
     /// </summary>
-    /// <param name="cronJobs">The function name and cron expression of every cron function discovered in code.</param>
+    /// <param name="seedOwner">
+    /// The seed owner. Only rows whose marker starts with this owner's prefix are matched or deleted, so apps sharing
+    /// one store with distinct owners never touch each other's rows.
+    /// </param>
+    /// <param name="cronJobs">Every entry the owner declares, each with its deterministic id and owned marker.</param>
     /// <param name="cancellationToken">Token that aborts the migration.</param>
     /// <returns>A task that completes when the seed reconciliation has been persisted.</returns>
     /// <remarks>
-    /// Rows are keyed by an identifier derived deterministically from the function name, so a re-seed updates the
-    /// same row rather than inserting a duplicate, and concurrent seeding by several nodes converges on one row.
-    /// The relational provider treats a lost insert race as benign — the winner's row stands, so the redundant
-    /// insert is discarded and logged at <c>Debug</c> rather than thrown. Cron definitions created by the
-    /// application at runtime are not seeded rows and are never touched by this reconciliation.
+    /// Rows are matched by the entry's id, never by function, so a re-seed updates the same row rather than inserting
+    /// a duplicate, concurrent seeding by several nodes converges on one row, and a runtime row of the same function
+    /// is never adopted. The relational provider treats a lost insert race as benign: the winner's row stands, so the
+    /// redundant insert is discarded and logged at <c>Debug</c> rather than thrown. Cron definitions created by the
+    /// application at runtime carry no seed marker and are never touched by this reconciliation. Policies are written
+    /// only when a row is created. An operator's pause on a live seeded row is preserved. An existing row that names
+    /// another job than its entry is restored to the entry's job, payload, and contract version.
+    /// <para>
+    /// For each owned row missing from the set, delete Idle and Queued occurrences first. If an InProgress occurrence
+    /// remains, preserve the definition, running occurrences, and terminal history. Retire the definition by setting
+    /// IsPaused to true, refreshing UpdatedAt, and changing its marker to
+    /// <c>headless.jobs.seed:{owner}:retired:{kind}:{name}</c> without changing its id. Otherwise delete the definition
+    /// and all remaining occurrences. Retired markers retain the owner prefix, so a later seed deletes retired rows
+    /// once no occurrence is InProgress. Re-declaring an entry whose row carries that entry's retired marker restores
+    /// the live marker and unpauses it through the full restore path, even without schedule or payload drift. That
+    /// restore also retires pending occurrences. It does not unpause a normal live seeded row.
+    /// </para>
+    /// <para>
+    /// The seed validates the set before this call: the owner is not blank and has no <c>:</c>, every entry's marker
+    /// starts with the owner's prefix, and no two entries share an id. An implementation can rely on those rules and
+    /// need not check them again.
+    /// </para>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
-    Task MigrateDefinedCronJobsAsync(CronSeedDefinition[] cronJobs, CancellationToken cancellationToken = default);
+    Task MigrateDefinedCronJobsAsync(
+        string seedOwner,
+        CronSeedDefinition[] cronJobs,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Loads every cron definition so the scheduler can compute the next occurrence for each expression. This is

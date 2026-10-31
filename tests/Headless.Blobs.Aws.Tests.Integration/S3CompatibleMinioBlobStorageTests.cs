@@ -93,7 +93,7 @@ public sealed class S3CompatibleMinioBlobStorageTests(MinioFixture fixture) : Bl
         var url = await ((IPresignedUrlBlobStorage)storage).GetPresignedDownloadUrlAsync(
             location,
             TimeSpan.FromMinutes(5),
-            AbortToken
+            cancellationToken: AbortToken
         );
 
         using var http = new HttpClient();

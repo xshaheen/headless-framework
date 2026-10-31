@@ -90,7 +90,12 @@ public sealed class BlobsTenancySetupTests : TestBase
         // given
         var namedStore = Substitute.For<IBlobStorage, IPresignedUrlBlobStorage>();
         ((IPresignedUrlBlobStorage)namedStore)
-            .GetPresignedDownloadUrlAsync(Arg.Any<BlobLocation>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .GetPresignedDownloadUrlAsync(
+                Arg.Any<BlobLocation>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<PresignedDownloadOptions?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(new Uri("https://signed"));
         var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
         builder.Services.AddHeadlessBlobs(blobs =>
@@ -117,7 +122,11 @@ public sealed class BlobsTenancySetupTests : TestBase
         // when
         using (provider.GetRequiredService<ICurrentTenant>().Change("acme"))
         {
-            await presigned.GetPresignedDownloadUrlAsync(_Avatar, TimeSpan.FromMinutes(1), AbortToken);
+            await presigned.GetPresignedDownloadUrlAsync(
+                _Avatar,
+                TimeSpan.FromMinutes(1),
+                cancellationToken: AbortToken
+            );
         }
 
         // then
@@ -126,7 +135,7 @@ public sealed class BlobsTenancySetupTests : TestBase
             .GetPresignedDownloadUrlAsync(
                 new BlobLocation("avatars", "acme/1.png"),
                 TimeSpan.FromMinutes(1),
-                AbortToken
+                cancellationToken: AbortToken
             );
     }
 

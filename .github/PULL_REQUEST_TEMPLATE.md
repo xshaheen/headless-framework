@@ -26,6 +26,14 @@ Fixes #
 
 > **Rollout risk:** <!-- what can go wrong when this deploys, and how to back out of it. Write "none" if nothing can. -->
 
+## Decisions
+
+<!-- Delete if none. One line each: the choice, and the alternative you rejected with the reason. -->
+
+## Left out
+
+<!-- Delete if none. Related problems you saw and deliberately left, so a reviewer doesn't ask. -->
+
 <details><summary><h2>Review guide</h2></summary>
 
 <!-- The questions you want the reviewer to answer, most consequential first, each linked to the hunk that carries
@@ -43,23 +51,19 @@ follow a signature change, generated code, lockfiles. Delete if nothing. -->
 
 </details>
 
-## Decisions
+<details><summary><h2>Contract changes</h2></summary>
 
-<!-- Delete if none. One line each: the choice, and the alternative you rejected with the reason. -->
-
-## Contract changes
-
-<!-- Delete if none. One row per surface a consumer depends on: public or protected API, default, config key,
-     schema, metric or span name, package ID. -->
+<!-- Delete the whole block if none. One row per surface a consumer depends on: public or protected API, default,
+     config key, schema, metric or span name, package ID. -->
 
 | Surface | Change | Who breaks, and the migration |
 | --- | --- | --- |
 
-<!-- Then, collapsed: each added, changed, or removed member as a bare declaration marked // Added, // Removed, or
-     // Changed (with a before and an after line), and the registration and call a consumer writes, copied from a
-     test or docs sample that compiles. -->
+<!-- Then each added, changed, or removed member as a bare declaration marked // Added, // Removed, or // Changed
+     (with a before and an after line), and the registration and call a consumer writes, copied from a test or docs
+     sample that compiles. Keep it expanded: this block is already collapsed. -->
 
-<details><summary><strong>Full public API</strong></summary>
+**Full public API**
 
 ```csharp
 ```
@@ -68,19 +72,34 @@ follow a signature change, generated code, lockfiles. Delete if nothing. -->
 
 <details><summary><h2>Verification</h2></summary>
 
-<!-- The state on the head commit only. How the branch got there (checks run on earlier commits, reruns, merges
-     from main) goes in the collapsed Branch history block, never in these lines. -->
+<!-- Every line here describes the head commit. Run both gates on it, against the same base: a result from an
+     earlier commit is not a result, and a gate whose inputs did not change reuses its earlier pass in seconds. How
+     the branch got there goes in the collapsed Branch history block, never in these lines. -->
 
-| Check | Result on `<head commit>` |
+| Check | Result on `<head commit>` against `<base: origin/main, or the parent branch of a stack>` |
 | --- | --- |
-| `make verify-affected` | |
-| `make test-affected-integration` | <!-- or why it was not run; CI runs none --> |
+| `make verify-affected` | <!-- PASS or FAIL: N passed, N failed, N skipped; N analyzer findings; changed lines N% line, N% branch --> |
+| `make test-affected-integration` | <!-- the same shape, naming the databases or brokers it ran on; or why it did not run (CI runs none) --> |
 
-- **Regression:** <!-- one line: the behavior the new tests hold that fails on main -->
-- **Not verified:** <!-- each claim no check covers, and why. Delete if none. -->
-- **Coverage below floor:** <!-- each warning the proof's coverage gate lists, with its reason (glue code,
-  integration-only behavior, unreachable branch, cost above risk; see AGENTS.md). Delete if none. -->
-- **Unrelated failures:** <!-- each test that failed, with the evidence it also fails on main. Delete if none. -->
+<!-- A FAIL row stays FAIL: add a `make test-failed` row under it with the rerun's result. When a skipped count
+     falls in a suite this PR changes, say why in the row. -->
+
+- **Regression:** <!-- one sentence: the behavior the new tests hold that fails or does not compile on the base. For
+  new behavior with no base to fail, the one behavior that matters most. Not a list of tests: the diff has them. -->
+- **Also checked:** <!-- evidence no gate shows, one line each, at most three: a parity corpus, an EXPLAIN plan, a
+  run against a real service. Delete if none. -->
+- **Not verified:** <!-- each claim in Solution or Contract changes that no check exercised (a database version the
+  test image lacks, a provider that needs credentials, a race no test forces), and what would show it. Delete if
+  none. -->
+- **Coverage below floor:** <!-- only the warnings the proof's coverage gate prints; delete if it printed none, and
+  don't explain uncovered lines that are above the floor. One sub-bullet per warning: the package, the files and
+  lines, the figure against the floor, the reason in bold (**Glue code**, **Integration-only behavior**,
+  **Unreachable branch**, **Cost above risk**; see AGENTS.md), and one sentence why. For integration-only behavior,
+  name the integration test that covers it. For a whole-assembly unit warning on code this PR does not change,
+  give this PR's changed-line figure and say the shortfall predates it. -->
+- **Unrelated failures:** <!-- one sub-bullet per failed test: its first error line, why this PR cannot reach it, and
+  the issue that tracks it as a flake (open one if none exists). A rerun that passes shows the test is flaky, not
+  that this PR is innocent. Delete if none. -->
 
 <!-- Paste each proof's artifacts/proof/<run>/summary.md here as it is. Each one is already its own collapsed
      <details> block with the verdict in its summary line, so do not wrap it again. -->
@@ -92,7 +111,3 @@ follow a signature change, generated code, lockfiles. Delete if nothing. -->
 </details>
 
 </details>
-
-## Left out
-
-<!-- Delete if none. Related problems you saw and deliberately left, so a reviewer doesn't ask. -->

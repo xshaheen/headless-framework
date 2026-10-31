@@ -24,6 +24,7 @@ internal sealed class HeadlessAuditPersistence(
     private readonly ICorrelationIdProvider? _correlationIdProvider =
         serviceProvider.GetService<ICorrelationIdProvider>();
 
+    private readonly IAuditClientInfoProvider? _clientInfo = serviceProvider.GetService<IAuditClientInfoProvider>();
     private readonly TimeProvider _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
     private readonly IOptions<AuditLogOptions>? _auditOptions = serviceProvider.GetService<IOptions<AuditLogOptions>>();
 
@@ -59,11 +60,16 @@ internal sealed class HeadlessAuditPersistence(
 
             return _auditCapture.CaptureChanges(
                 entries,
-                userId?.ToString(),
-                accountId?.ToString(),
-                _currentTenant?.Id,
-                _correlationIdProvider?.CorrelationId,
-                timestamp
+                new AuditCaptureContext
+                {
+                    UserId = userId?.ToString(),
+                    AccountId = accountId?.ToString(),
+                    TenantId = _currentTenant?.Id,
+                    CorrelationId = _correlationIdProvider?.CorrelationId,
+                    IpAddress = _clientInfo?.IpAddress,
+                    UserAgent = _clientInfo?.UserAgent,
+                    Timestamp = timestamp,
+                }
             );
         }
         catch (Exception ex)

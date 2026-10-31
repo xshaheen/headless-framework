@@ -553,4 +553,17 @@ public sealed class JobsOptionsBuilderTests
 
         flag.Should().BeOfType<bool>().Which.Should().BeFalse();
     }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    [InlineData("billing:eu")]
+    public void seed_owner_rejects_a_blank_owner_or_one_containing_a_colon_at_registration(string owner)
+    {
+        var services = new ServiceCollection();
+
+        var act = () => services.AddHeadlessJobs(jobs => jobs.SeedOwner(owner));
+
+        act.Should().Throw<ArgumentException>();
+    }
 }

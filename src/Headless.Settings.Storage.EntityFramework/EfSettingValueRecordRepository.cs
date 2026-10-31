@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Settings;
 
@@ -17,10 +19,14 @@ namespace Headless.Settings;
 /// </param>
 internal sealed class EfSettingValueRecordRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
-    ICache<SettingValueCacheItem> cache
+    ICache<SettingValueCacheItem> cache,
+    ILogger<EfSettingValueRecordRepository<TContext>> logger
 ) : ISettingValueRecordRepository
     where TContext : DbContext
 {
+    private const string _Owner = "the EF Core settings storage";
+    private const string _Operation = "setting value";
+
     /// <inheritdoc/>
     public async Task<SettingValueRecord?> FindAsync(
         string name,
@@ -157,6 +163,98 @@ internal sealed class EfSettingValueRecordRepository<TContext>(
         await cache
             .RemoveAllAsync(inserted.Concat(updated).Concat(deleted).Select(_CacheKey), cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    public Task<List<SettingValueRecord>> GetListEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        HashSet<string> names,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        return EntityFrameworkEnlistment.RunAsync(
+            dbFactory,
+            unitOfWork,
+            _Owner,
+            _Operation,
+            (db, ct) =>
+                db.Set<SettingValueRecord>()
+                    .AsNoTracking()
+                    .Where(s =>
+                        names.Contains(s.Name) && s.ProviderName == providerName && s.ProviderKey == providerKey
+                    )
+                    .ToListAsync(ct),
+            cancellationToken
+        );
+    }
+
+    public Task<List<SettingValueRecord>> GetListEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        return EntityFrameworkEnlistment.RunAsync(
+            dbFactory,
+            unitOfWork,
+            _Owner,
+            _Operation,
+            (db, ct) =>
+                db.Set<SettingValueRecord>()
+                    .AsNoTracking()
+                    .Where(s => s.ProviderName == providerName && s.ProviderKey == providerKey)
+                    .ToListAsync(ct),
+            cancellationToken
+        );
+    }
+
+    public async Task SaveEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyCollection<SettingValueRecord> inserted,
+        IReadOnlyCollection<SettingValueRecord> updated,
+        IReadOnlyCollection<SettingValueRecord> deleted,
+        CancellationToken cancellationToken
+    )
+    {
+        if (inserted.Count == 0 && updated.Count == 0 && deleted.Count == 0)
+        {
+            return;
+        }
+
+        await EntityFrameworkEnlistment
+            .RunAsync(
+                dbFactory,
+                unitOfWork,
+                _Owner,
+                _Operation,
+                (db, ct) =>
+                {
+                    // The enlisted context is not the owner's, so an observed unit's owner (the EF save pipeline)
+                    // cannot restore this write on replay; only an owned unit re-runs the caller's block.
+                    if (unitOfWork.Resource is { IsOwned: false })
+                    {
+                        unitOfWork.PreventRetry();
+                    }
+
+                    var set = db.Set<SettingValueRecord>();
+                    set.AddRange(inserted);
+                    set.UpdateRange(updated);
+                    set.RemoveRange(deleted);
+
+                    return db.SaveChangesAsync(ct);
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        SettingValueCacheInvalidation.RemoveAfterCommit(
+            unitOfWork,
+            cache,
+            [.. inserted.Concat(updated).Concat(deleted).Select(_CacheKey)],
+            logger
+        );
     }
 
     private static string _CacheKey(SettingValueRecord setting)

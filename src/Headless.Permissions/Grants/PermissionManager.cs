@@ -3,7 +3,9 @@
 using Headless.Checks;
 using Headless.Context;
 using Headless.Messaging;
+using Headless.MultiTenancy;
 using Headless.Permissions.Resources;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -12,17 +14,19 @@ namespace Headless.Permissions;
 /// <summary>
 /// Default <see cref="IPermissionManager"/> implementation. Delegates resolution to the registered
 /// <see cref="IPermissionGrantProvider"/> chain using AWS IAM-style rules: an explicit <c>Prohibited</c>
-/// from any provider overrides all grants; the default is deny.
+/// from any provider overrides all grants; the default is deny. Also backs <c>unit.Permissions</c>
+/// (<see cref="IUnitOfWorkPermissions"/>), whose writes run inside the caller's unit of work.
 /// </summary>
 public sealed class PermissionManager(
     IPermissionDefinitionManager definitionManager,
     IPermissionGrantProviderManager grantProviderManager,
-    IPermissionGrantRepository repository,
+    IPermissionGrantStore grantStore,
     IPermissionErrorsDescriptor errorsDescriptor,
     IHostIdentityAccessor hostIdentity,
+    ICurrentTenant currentTenant,
     IBus? bus = null,
     ILogger<PermissionManager>? logger = null
-) : IPermissionManager
+) : IPermissionManager, IUnitOfWorkPermissions
 {
     private readonly ILogger _logger = logger ?? NullLogger<PermissionManager>.Instance;
 
@@ -112,6 +116,119 @@ public sealed class PermissionManager(
         CancellationToken cancellationToken = default
     )
     {
+        var (provider, permission) = await _ResolveAsync(permissionName, providerName, cancellationToken)
+            .ConfigureAwait(false);
+
+        await provider.SetAsync(permission, providerKey, isGranted, cancellationToken).ConfigureAwait(false);
+        await _PublishChangedAsync([permissionName], providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task SetAsync(
+        IReadOnlyCollection<string> permissionNames,
+        string providerName,
+        string providerKey,
+        bool isGranted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var (provider, definedPermissions) = await _ResolveAsync(permissionNames, providerName, cancellationToken)
+            .ConfigureAwait(false);
+
+        await provider.SetAsync(definedPermissions, providerKey, isGranted, cancellationToken).ConfigureAwait(false);
+
+        var changedNames = definedPermissions.Select(x => x.Name).ToArray();
+        await _PublishChangedAsync(changedNames, providerName, providerKey, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task DeleteAsync(
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsPortableKey(providerName);
+        Argument.IsPortableKey(providerKey);
+
+        var removedNames = await grantStore
+            .DeleteAsync(providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Every removed name rather than a wildcard: a receiver should be able to match on the names it holds without
+        // knowing what else this provider scope contained.
+        await _PublishChangedAsync([.. removedNames], providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task SetAsync(
+        IUnitOfWork unitOfWork,
+        string permissionName,
+        string providerName,
+        string providerKey,
+        bool isGranted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(unitOfWork);
+
+        var (provider, permission) = await _ResolveAsync(permissionName, providerName, cancellationToken)
+            .ConfigureAwait(false);
+
+        await provider
+            .SetEnlistedAsync(unitOfWork, [permission], providerKey, isGranted, cancellationToken)
+            .ConfigureAwait(false);
+
+        _PublishChangedAfterCommit(unitOfWork, [permissionName], providerName, providerKey);
+    }
+
+    /// <inheritdoc/>
+    public async Task SetAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyCollection<string> permissionNames,
+        string providerName,
+        string providerKey,
+        bool isGranted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(unitOfWork);
+
+        var (provider, definedPermissions) = await _ResolveAsync(permissionNames, providerName, cancellationToken)
+            .ConfigureAwait(false);
+
+        await provider
+            .SetEnlistedAsync(unitOfWork, definedPermissions, providerKey, isGranted, cancellationToken)
+            .ConfigureAwait(false);
+
+        _PublishChangedAfterCommit(unitOfWork, [.. definedPermissions.Select(x => x.Name)], providerName, providerKey);
+    }
+
+    /// <inheritdoc/>
+    public async Task DeleteAsync(
+        IUnitOfWork unitOfWork,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(unitOfWork);
+        Argument.IsPortableKey(providerName);
+        Argument.IsPortableKey(providerKey);
+
+        var removedNames = await grantStore
+            .DeleteEnlistedAsync(unitOfWork, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        _PublishChangedAfterCommit(unitOfWork, [.. removedNames], providerName, providerKey);
+    }
+
+    private async Task<(IPermissionGrantProvider Provider, PermissionDefinition Permission)> _ResolveAsync(
+        string permissionName,
+        string providerName,
+        CancellationToken cancellationToken
+    )
+    {
         var permission =
             await definitionManager.FindAsync(permissionName, cancellationToken).ConfigureAwait(false)
             ?? throw new ConflictException(errorsDescriptor.PermissionIsNotDefined(permissionName));
@@ -126,22 +243,13 @@ public sealed class PermissionManager(
             throw new ConflictException(errorsDescriptor.PermissionProviderNotDefined(permission.Name, providerName));
         }
 
-        var provider =
-            grantProviderManager.ValueProviders.FirstOrDefault(m =>
-                string.Equals(m.Name, providerName, StringComparison.Ordinal)
-            ) ?? throw new ConflictException(errorsDescriptor.PermissionsProviderNotFound(providerName));
-
-        await provider.SetAsync(permission, providerKey, isGranted, cancellationToken).ConfigureAwait(false);
-        await _PublishChangedAsync([permissionName], providerName, providerKey, cancellationToken)
-            .ConfigureAwait(false);
+        return (_FindProvider(providerName), permission);
     }
 
-    public async Task SetAsync(
+    private async Task<(IPermissionGrantProvider Provider, List<PermissionDefinition> Permissions)> _ResolveAsync(
         IReadOnlyCollection<string> permissionNames,
         string providerName,
-        string providerKey,
-        bool isGranted,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken
     )
     {
         var allDefinitions = await definitionManager.GetPermissionsAsync(cancellationToken).ConfigureAwait(false);
@@ -180,41 +288,44 @@ public sealed class PermissionManager(
             );
         }
 
-        var provider =
-            grantProviderManager.ValueProviders.FirstOrDefault(m =>
-                string.Equals(m.Name, providerName, StringComparison.Ordinal)
-            ) ?? throw new ConflictException(errorsDescriptor.PermissionsProviderNotFound(providerName));
-
-        await provider.SetAsync(definedPermissions, providerKey, isGranted, cancellationToken).ConfigureAwait(false);
-
-        var changedNames = definedPermissions.Select(x => x.Name).ToArray();
-        await _PublishChangedAsync(changedNames, providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        return (_FindProvider(providerName), definedPermissions);
     }
 
-    public async Task DeleteAsync(
+    private IPermissionGrantProvider _FindProvider(string providerName)
+    {
+        return grantProviderManager.ValueProviders.FirstOrDefault(m =>
+                string.Equals(m.Name, providerName, StringComparison.Ordinal)
+            ) ?? throw new ConflictException(errorsDescriptor.PermissionsProviderNotFound(providerName));
+    }
+
+    /// <summary>
+    /// Announces an enlisted write once its unit commits, so a peer that re-reads on the announcement loads the
+    /// committed grant; a rolled-back unit announces nothing. The callback restores the write's tenant, which the
+    /// announcement carries and the code completing the unit may no longer hold.
+    /// </summary>
+    private void _PublishChangedAfterCommit(
+        IUnitOfWork unitOfWork,
+        string[] permissionNames,
         string providerName,
-        string providerKey,
-        CancellationToken cancellationToken = default
+        string providerKey
     )
     {
-        Argument.IsPortableKey(providerName);
-        Argument.IsPortableKey(providerKey);
-
-        var permissionGrants = await repository
-            .GetListAsync(providerName, providerKey, cancellationToken)
-            .ConfigureAwait(false);
-
-        await repository.DeleteManyAsync(permissionGrants, cancellationToken).ConfigureAwait(false);
-
-        if (permissionGrants.Count != 0)
+        if (bus is null || permissionNames.Length == 0)
         {
-            // Every removed name rather than a wildcard: a receiver should be able to match on the names it
-            // holds without knowing what else this provider scope contained.
-            var removedNames = permissionGrants.Select(x => x.Name).ToArray();
-
-            await _PublishChangedAsync(removedNames, providerName, providerKey, cancellationToken)
-                .ConfigureAwait(false);
+            return;
         }
+
+        var tenantId = currentTenant.Id;
+        var tenantName = currentTenant.Name;
+
+        unitOfWork.OnCompleted(async () =>
+        {
+            using (currentTenant.Change(tenantId, tenantName))
+            {
+                await _PublishChangedAsync(permissionNames, providerName, providerKey, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+        });
     }
 
     /// <summary>
@@ -222,11 +333,9 @@ public sealed class PermissionManager(
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Published after the write, never before: a receiver that re-read on an announcement of a write that then
-    /// failed would cache the old grant and believe it fresh. The write has already committed when this runs: the
-    /// stores save through their own context or connection and never join a unit of work the caller has open, so a peer
-    /// that re-reads on the announcement loads the new grant. A <c>SetAsync</c> inside a unit that later rolls back
-    /// therefore leaves the grant changed; the consumer contract in <c>docs/llms/permissions.md</c> states this.
+    /// Published after the write commits, never before: a receiver that re-read on an announcement of a write that
+    /// then failed would cache the old grant and believe it fresh. An autonomous write has committed in the store's own
+    /// context or connection when this runs; an enlisted write publishes from the unit's post-commit callback.
     /// </para>
     /// <para>
     /// Best-effort by design — messaging is optional, and a failed announcement must not fail the write that

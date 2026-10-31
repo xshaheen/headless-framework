@@ -2,6 +2,7 @@
 
 using Headless.Context;
 using Headless.MultiTenancy;
+using Headless.UnitOfWork;
 
 namespace Headless.Permissions;
 
@@ -62,5 +63,21 @@ public abstract class StorePermissionGrantProvider(IPermissionGrantStore grantSt
         return isGranted
             ? grantStore.GrantAsync(names, Name, providerKey, currentTenant.Id, cancellationToken)
             : grantStore.RevokeAsync(names, Name, providerKey, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task SetEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        IReadOnlyCollection<PermissionDefinition> permissions,
+        string providerKey,
+        bool isGranted,
+        CancellationToken cancellationToken
+    )
+    {
+        var names = permissions.Select(x => x.Name).ToArray();
+
+        return isGranted
+            ? grantStore.GrantEnlistedAsync(unitOfWork, names, Name, providerKey, currentTenant.Id, cancellationToken)
+            : grantStore.RevokeEnlistedAsync(unitOfWork, names, Name, providerKey, cancellationToken);
     }
 }
