@@ -96,6 +96,9 @@ public sealed class PermissionsTestFixture : ICollectionFixture<PermissionsTestF
 
     private static RedisContainer _CreateRedisContainer()
     {
-        return new RedisBuilder(TestImages.Redis).WithLabel("type", "permissions-redis").Build();
+        return new RedisBuilder(TestImages.Redis)
+            .WithHostPingWaitStrategy()
+            .WithLabel("type", "permissions-redis")
+            .Build();
     }
 }

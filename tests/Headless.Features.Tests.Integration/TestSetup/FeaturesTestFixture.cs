@@ -87,6 +87,9 @@ public sealed class FeaturesTestFixture : ICollectionFixture<FeaturesTestFixture
 
     private static RedisContainer _CreateRedisContainer()
     {
-        return new RedisBuilder(TestImages.Redis).WithLabel("type", "features-redis").Build();
+        return new RedisBuilder(TestImages.Redis)
+            .WithHostPingWaitStrategy()
+            .WithLabel("type", "features-redis")
+            .Build();
     }
 }
