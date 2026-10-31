@@ -6,7 +6,6 @@ using Headless.Context;
 using Headless.Hosting;
 using Headless.Messaging;
 using Headless.MultiTenancy;
-using Headless.Security;
 using Headless.Settings.Resources;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,7 +25,7 @@ public static class SetupSettings
         /// <param name="configure">Delegate that configures the storage provider and management options via <see cref="HeadlessSettingsSetupBuilder"/>.</param>
         /// <returns>A <see cref="HeadlessSettingsBuilder"/> for further optional configuration.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
-        /// <exception cref="InvalidOperationException"><see cref="Headless.Security.IStringEncryptionService"/> has not been registered, or more than one storage provider extension is registered.</exception>
+        /// <exception cref="InvalidOperationException">More than one storage provider extension is registered.</exception>
         public HeadlessSettingsBuilder AddHeadlessSettings(Action<HeadlessSettingsSetupBuilder> configure)
         {
             Argument.IsNotNull(configure);
@@ -163,7 +162,7 @@ public static class SetupSettings
         // Register the management core as part of storage setup so AddHeadlessSettings is the
         // single entry point. Guarded on ISettingManager so a repeated AddHeadlessSettings stays
         // safe (no duplicate value providers from the non-idempotent TypeList registrations in
-        // _AddCore). The IStringEncryptionService guard inside _AddCore still fires when it is absent.
+        // _AddCore).
         if (!serviceCollection.Any(static s => s.ServiceType == typeof(ISettingManager)))
         {
             serviceCollection.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(_ => { });
@@ -188,19 +187,13 @@ public static class SetupSettings
         return new HeadlessSettingsBuilder(serviceCollection);
     }
 
-    /// <summary>Registers all core settings services. Guards against missing <c>IStringEncryptionService</c> and is idempotent when called multiple times via the <c>ISettingManager</c> guard in the caller.</summary>
-    /// <exception cref="InvalidOperationException"><see cref="Headless.Security.IStringEncryptionService"/> is not registered in <paramref name="services"/>.</exception>
+    /// <summary>
+    /// Registers all core settings services; idempotent when called multiple times via the <c>ISettingManager</c>
+    /// guard in the caller. Encrypted settings resolve <c>IFieldEncryptor</c> only when one is read or written, so a
+    /// host without them needs no encryption setup.
+    /// </summary>
     private static IServiceCollection _AddCore(IServiceCollection services)
     {
-        if (!services.Any(s => s.ServiceType == typeof(IStringEncryptionService)))
-        {
-            throw new InvalidOperationException(
-                $"{nameof(IStringEncryptionService)} must be registered before calling "
-                    + $"{nameof(AddHeadlessSettings)}. "
-                    + "Register it via AddStringEncryptionService(...) on IServiceCollection."
-            );
-        }
-
         services._AddCoreValueProvider();
 
         // The seeder's retry back-off runs on the system clock, never on a faked app TimeProvider that a test host

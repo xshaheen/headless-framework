@@ -322,7 +322,7 @@ Building blocks مشتركة عبر الـ framework: domain primitives، وbase
 | [Headless.Context.Abstractions](src/Headless.Context.Abstractions/README.md) | الـ contracts بتاعة الـ ambient context: الـ current user والـ principal والـ locale والـ time zone والـ correlation والـ cancellation والـ host identity |
 | [Headless.Context](src/Headless.Context/README.md) | تطبيقات الـ ambient context وتسجيل `AddHeadlessHostIdentity()` |
 | [Headless.Security.Abstractions](src/Headless.Security.Abstractions/README.md) | الـ contracts والـ options بتاعة الـ security |
-| [Headless.Security](src/Headless.Security/README.md) | تشفير الـ strings، وlookup hashing، وsecret hashing (PBKDF2) |
+| [Headless.Security](src/Headless.Security/README.md) | الـ lookup hashing والـ secret hashing (PBKDF2) |
 | [Headless.Security.Argon2](src/Headless.Security.Argon2/README.md) | Secret hashing بـ Argon2id، وهو الـ algorithm الافتراضي لـ `ISecretHasher` |
 | [Headless.Checks](src/Headless.Checks/README.md) | Guard clauses وvalidation للـ arguments |
 | [Headless.Domain](src/Headless.Domain/README.md) | Entities وevents بتاعة الـ domain |

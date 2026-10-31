@@ -195,14 +195,30 @@ public sealed class SettingManagerTests : TestBase
 
         _definitionManager.FindAsync(settingName, AbortToken).Returns(definition);
         _valueProviderManager.Providers.Returns([provider]);
-        _encryptionService.Decrypt(definition, encryptedValue).Returns(decryptedValue);
+        _encryptionService
+            .DecryptAsync(
+                definition,
+                encryptedValue,
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(decryptedValue);
 
         // when
         var result = await _sut.GetAsync(settingName, cancellationToken: AbortToken);
 
         // then
         result.Value.Should().Be(decryptedValue);
-        _encryptionService.Received(1).Decrypt(definition, encryptedValue);
+        _ = _encryptionService
+            .Received(1)
+            .DecryptAsync(
+                definition,
+                encryptedValue,
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -355,7 +371,15 @@ public sealed class SettingManagerTests : TestBase
 
         // then
         result["Smtp.Password"].Value.Should().Be("changeme");
-        _encryptionService.DidNotReceive().Decrypt(Arg.Any<SettingDefinition>(), Arg.Any<string?>());
+        _ = _encryptionService
+            .DidNotReceive()
+            .DecryptAsync(
+                Arg.Any<SettingDefinition>(),
+                Arg.Any<string?>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -373,14 +397,30 @@ public sealed class SettingManagerTests : TestBase
 
         _definitionManager.GetAllAsync(AbortToken).Returns([definition]);
         _valueProviderManager.Providers.Returns([storeProvider]);
-        _encryptionService.Decrypt(definition, "encrypted-data").Returns("plain-data");
+        _encryptionService
+            .DecryptAsync(
+                definition,
+                "encrypted-data",
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns("plain-data");
 
         // when
         var result = await _sut.GetAllAsync(settings, AbortToken);
 
         // then
         result["Smtp.Password"].Value.Should().Be("plain-data");
-        _encryptionService.Received(1).Decrypt(definition, "encrypted-data");
+        _ = _encryptionService
+            .Received(1)
+            .DecryptAsync(
+                definition,
+                "encrypted-data",
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -396,14 +436,30 @@ public sealed class SettingManagerTests : TestBase
 
         _definitionManager.GetAllAsync(AbortToken).Returns([definition]);
         _valueProviderManager.Providers.Returns([customProvider]);
-        _encryptionService.Decrypt(definition, "encrypted-data").Returns("plain-data");
+        _encryptionService
+            .DecryptAsync(
+                definition,
+                "encrypted-data",
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns("plain-data");
 
         // when
         var result = await _sut.GetAllAsync(settings, AbortToken);
 
         // then
         result["Smtp.Password"].Value.Should().Be("plain-data");
-        _encryptionService.Received(1).Decrypt(definition, "encrypted-data");
+        _ = _encryptionService
+            .Received(1)
+            .DecryptAsync(
+                definition,
+                "encrypted-data",
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     #endregion
@@ -599,7 +655,15 @@ public sealed class SettingManagerTests : TestBase
         var resolved = result.Should().ContainSingle().Which;
         resolved.Value.Should().Be("changeme");
         resolved.Provider!.Name.Should().Be("Default");
-        _encryptionService.DidNotReceive().Decrypt(Arg.Any<SettingDefinition>(), Arg.Any<string?>());
+        _ = _encryptionService
+            .DidNotReceive()
+            .DecryptAsync(
+                Arg.Any<SettingDefinition>(),
+                Arg.Any<string?>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -616,14 +680,30 @@ public sealed class SettingManagerTests : TestBase
 
         _definitionManager.GetAllAsync(AbortToken).Returns([definition]);
         _valueProviderManager.Providers.Returns([storeProvider]);
-        _encryptionService.Decrypt(definition, "encrypted-data").Returns("plain-data");
+        _encryptionService
+            .DecryptAsync(
+                definition,
+                "encrypted-data",
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns("plain-data");
 
         // when
         var result = await _sut.GetAllAsync("Store", cancellationToken: AbortToken);
 
         // then
         result.Should().ContainSingle().Which.Value.Should().Be("plain-data");
-        _encryptionService.Received(1).Decrypt(definition, "encrypted-data");
+        _ = _encryptionService
+            .Received(1)
+            .DecryptAsync(
+                definition,
+                "encrypted-data",
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -678,7 +758,9 @@ public sealed class SettingManagerTests : TestBase
 
         _definitionManager.FindAsync(settingName, AbortToken).Returns(definition);
         _valueProviderManager.Providers.Returns([provider]);
-        _encryptionService.Encrypt(definition, "plaintext").Returns("ciphertext");
+        _encryptionService
+            .EncryptAsync(definition, "plaintext", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns("ciphertext");
 
         // when
         await _sut.SetAsync(settingName, "plaintext", "Provider1", providerKey: null, cancellationToken: AbortToken);
@@ -850,13 +932,17 @@ public sealed class SettingManagerTests : TestBase
 
         _definitionManager.FindAsync(settingName, AbortToken).Returns(definition);
         _valueProviderManager.Providers.Returns([provider]);
-        _encryptionService.Encrypt(definition, plainValue).Returns(encryptedValue);
+        _encryptionService
+            .EncryptAsync(definition, plainValue, Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(encryptedValue);
 
         // when
         await _sut.SetAsync(settingName, plainValue, providerName, null, cancellationToken: AbortToken);
 
         // then
-        _encryptionService.Received(1).Encrypt(definition, plainValue);
+        _ = _encryptionService
+            .Received(1)
+            .EncryptAsync(definition, plainValue, providerName, null, Arg.Any<CancellationToken>());
         var result = await provider.GetOrDefaultAsync(definition, cancellationToken: AbortToken);
         result.Should().Be(encryptedValue);
     }
@@ -888,6 +974,42 @@ public sealed class SettingManagerTests : TestBase
         // then - value should be cleared
         var result = await provider1.GetOrDefaultAsync(definition, cancellationToken: AbortToken);
         result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_clear_an_encrypted_value_that_matches_the_decrypted_fallback()
+    {
+        // given
+        const string settingName = "SecretSetting";
+        const string fallbackValue = "fallback-value";
+
+        var definition = new SettingDefinition(settingName, isInherited: true, isEncrypted: true);
+        var provider1 = new FakeSettingValueProvider { Name = "Provider1" };
+        var provider2 = new FakeSettingValueProvider { Name = "Provider2" };
+        provider1.SetValue(settingName, "old-cipher");
+        provider2.SetValue(settingName, "fallback-cipher");
+
+        _definitionManager.FindAsync(settingName, AbortToken).Returns(definition);
+        _valueProviderManager.Providers.Returns([provider1, provider2]);
+        _encryptionService
+            .DecryptAsync(definition, "fallback-cipher", "Provider2", null, Arg.Any<CancellationToken>())
+            .Returns(fallbackValue);
+
+        // when - each encryption draws a fresh nonce, so only the plaintext can match the fallback
+        await _sut.SetAsync(settingName, fallbackValue, "Provider1", null, cancellationToken: AbortToken);
+
+        // then
+        var result = await provider1.GetOrDefaultAsync(definition, cancellationToken: AbortToken);
+        result.Should().BeNull();
+        _ = _encryptionService
+            .DidNotReceive()
+            .EncryptAsync(
+                Arg.Any<SettingDefinition>(),
+                Arg.Any<string?>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]

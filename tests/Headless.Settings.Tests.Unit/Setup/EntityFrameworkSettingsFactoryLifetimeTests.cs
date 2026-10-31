@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting;
-using Headless.Security;
 using Headless.Settings;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -79,12 +78,6 @@ public sealed class EntityFrameworkSettingsFactoryLifetimeTests : TestBase
     private static ServiceCollection _CreateServices()
     {
         var services = new ServiceCollection();
-        // AddHeadlessSettings auto-registers the management core, which requires IStringEncryptionService.
-        services.AddStringEncryptionService(options =>
-        {
-            options.DefaultPassPhrase = "TestPassPhrase123456";
-            options.DefaultSalt = [.. "TestSalt"u8];
-        });
         services.AddHeadlessSettings(setup => setup.UseEntityFramework<SettingsDbContext>());
 
         return services;

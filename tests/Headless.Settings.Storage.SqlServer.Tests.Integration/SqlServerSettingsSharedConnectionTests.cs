@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Security;
 using Headless.Settings;
 using Headless.Settings.SqlServer;
 using Headless.Sql;
@@ -22,7 +21,6 @@ public sealed class SqlServerSettingsSharedConnectionTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
         // AddHeadlessSettings refuses to register without an encryption service; these tests never resolve it.
-        services.AddStringEncryptionService(_ => { });
         services.AddSqlServerSql("Server=localhost;Database=shared");
         services.AddHeadlessSettings(setup => setup.UseSqlServer());
 
@@ -42,7 +40,6 @@ public sealed class SqlServerSettingsSharedConnectionTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
         // AddHeadlessSettings refuses to register without an encryption service; these tests never resolve it.
-        services.AddStringEncryptionService(_ => { });
         services.AddSqlServerSql("Server=localhost;Database=shared");
         services.AddHeadlessSettings(setup => setup.UseSqlServer("Server=localhost;Database=own"));
 
@@ -62,7 +59,6 @@ public sealed class SqlServerSettingsSharedConnectionTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
         // AddHeadlessSettings refuses to register without an encryption service; these tests never resolve it.
-        services.AddStringEncryptionService(_ => { });
         services.AddHeadlessSettings(setup => setup.UseSqlServer());
 
         await using var provider = services.BuildServiceProvider();

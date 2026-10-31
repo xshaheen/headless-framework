@@ -9,71 +9,17 @@ using Microsoft.Extensions.Hosting;
 
 namespace Headless.Security;
 
-/// <summary>Registration helpers for the string encryption, lookup hashing, and secret hashing services.</summary>
+/// <summary>Registration helpers for the lookup hashing and secret hashing services.</summary>
 /// <remarks>
-/// <c>AddStringEncryptionService</c> and <c>AddLookupHasher</c> are idempotent: the first registration wins, and a
-/// later call with different options is silently ignored. <c>AddHeadlessSecretHasher</c> instead refuses a second
-/// call, because two calls could select two different algorithms for new hashes.
+/// <c>AddLookupHasher</c> is idempotent: the first registration wins, and a later call with different options is
+/// silently ignored. <c>AddHeadlessSecretHasher</c> instead refuses a second call, because two calls could select
+/// two different algorithms for new hashes.
 /// </remarks>
 [PublicAPI]
 public static class SetupSecurity
 {
     extension(IServiceCollection services)
     {
-        /// <summary>
-        /// Registers <see cref="IStringEncryptionService" /> as a singleton, binding
-        /// <see cref="StringEncryptionOptions" /> from the supplied configuration section.
-        /// </summary>
-        /// <param name="config">The configuration section that binds <see cref="StringEncryptionOptions" />.</param>
-        /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
-        /// <exception cref="ArgumentNullException"><paramref name="config" /> is <see langword="null" />.</exception>
-        public IServiceCollection AddStringEncryptionService(IConfiguration config)
-        {
-            Argument.IsNotNull(config);
-
-            return _AddEncryptionCore(
-                services,
-                s => s.Configure<StringEncryptionOptions, StringEncryptionOptionsValidator>(config)
-            );
-        }
-
-        /// <summary>
-        /// Registers <see cref="IStringEncryptionService" /> as a singleton, configuring
-        /// <see cref="StringEncryptionOptions" /> with the supplied delegate.
-        /// </summary>
-        /// <param name="configure">Configures <see cref="StringEncryptionOptions" />.</param>
-        /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
-        /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
-        public IServiceCollection AddStringEncryptionService(Action<StringEncryptionOptions> configure)
-        {
-            Argument.IsNotNull(configure);
-
-            return _AddEncryptionCore(
-                services,
-                s => s.Configure<StringEncryptionOptions, StringEncryptionOptionsValidator>(configure)
-            );
-        }
-
-        /// <summary>
-        /// Registers <see cref="IStringEncryptionService" /> as a singleton, configuring
-        /// <see cref="StringEncryptionOptions" /> with the supplied delegate that can resolve services from the
-        /// <see cref="IServiceProvider" />.
-        /// </summary>
-        /// <param name="configure">Configures <see cref="StringEncryptionOptions" /> using resolved services.</param>
-        /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
-        /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
-        public IServiceCollection AddStringEncryptionService(
-            Action<StringEncryptionOptions, IServiceProvider> configure
-        )
-        {
-            Argument.IsNotNull(configure);
-
-            return _AddEncryptionCore(
-                services,
-                s => s.Configure<StringEncryptionOptions, StringEncryptionOptionsValidator>(configure)
-            );
-        }
-
         /// <summary>
         /// Registers <see cref="ILookupHasher" /> as a singleton, binding <see cref="LookupHasherOptions" /> from
         /// the supplied configuration section.
@@ -188,20 +134,6 @@ public static class SetupSecurity
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ISecretHashAlgorithm, Pbkdf2Sha256SecretHashAlgorithm>());
 
         extension.AddServices(services);
-
-        return services;
-    }
-
-    private static IServiceCollection _AddEncryptionCore(IServiceCollection services, Action<IServiceCollection> bind)
-    {
-        if (_IsRegistered<IStringEncryptionService>(services))
-        {
-            return services;
-        }
-
-        bind(services);
-        services.AddSingletonOptionValue<StringEncryptionOptions>();
-        services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
 
         return services;
     }

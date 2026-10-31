@@ -1,4 +1,5 @@
 using Headless;
+using Headless.Encryption;
 using Headless.Settings;
 using Headless.Settings.Resources;
 using Microsoft.Extensions.DependencyInjection;
@@ -178,6 +179,42 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
         dbRecord.Should().NotBeNull();
         dbRecord.Name.Should().Be(settingName);
         dbRecord.Value.Should().NotBe("NewValue");
+    }
+
+    [Fact]
+    public async Task should_encrypt_tenant_value_under_the_tenant_key_and_refuse_it_after_the_tenant_is_shredded()
+    {
+        // given
+        await Fixture.ResetAsync();
+        using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
+        await using var scope = host.Services.CreateAsyncScope();
+        var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
+        var keyStore = scope.ServiceProvider.GetRequiredService<IDataKeyStore>();
+        var keyManager = scope.ServiceProvider.GetRequiredService<IDataKeyManager>();
+        var errorsDescriptor = scope.ServiceProvider.GetRequiredService<ISettingErrorsDescriptor>();
+        var tenantId = Guid.NewGuid().ToString();
+        const string settingName = "Setting4";
+
+        await settingManager.SetForTenantAsync(tenantId, settingName, "TenantSecret", cancellationToken: AbortToken);
+
+        // when
+        var settingValue = await settingManager.GetForTenantAsync(tenantId, settingName, cancellationToken: AbortToken);
+        var tenantKeys = await keyStore.ListScopeAsync(tenantId, AbortToken);
+        var hostKeys = await keyStore.ListScopeAsync(FieldContext.HostScope, AbortToken);
+
+        await keyManager.ShredAsync(tenantId, AbortToken);
+        var afterShred = () => settingManager.GetForTenantAsync(tenantId, settingName, cancellationToken: AbortToken);
+
+        // then
+        settingValue.Should().Be("TenantSecret");
+        tenantKeys.Should().ContainSingle(k => k.Kind == DataKeyKind.Data);
+        hostKeys.Should().BeEmpty();
+        var assertions = await afterShred.Should().ThrowAsync<ConflictException>();
+        assertions
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeEquivalentTo(errorsDescriptor.DecryptionFailed(settingName));
     }
 
     [Fact]
