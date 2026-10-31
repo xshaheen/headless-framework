@@ -1,6 +1,6 @@
 ---
 domain: Search
-packages: Search, Search.PostgreSql
+packages: Search, Search.PostgreSql, Search.PostgreSql.EntityFramework
 ---
 
 # Search
@@ -8,6 +8,8 @@ packages: Search, Search.PostgreSql
 > Arabic search keys. A versioned, closed rule table folds hamza seats, alef, teh marbuta, alef maksura, and Persian, Urdu, and Kurdish letter variants; deletes tashkeel, tatweel, and Quranic marks; folds Arabic presentation forms and accented Latin letters; and turns everything else into a word separator. PostgreSQL stores the key in a generated column with a trigram index and normalizes the query term with the same function, so `احمد` finds `أحمد`, `فاطمه` finds `فاطمة`, and `محمدى` finds `محمدي` through an index. The same rules run in C# for highlighting and in-memory work.
 
 ## Orientation
+
+`Headless.Search.PostgreSql` ships the database function and needs no EF Core; `Headless.Search.PostgreSql.EntityFramework` adds the EF Core model helpers on top of it.
 
 ```csharp
 // Ship the database function: resources provision creates it before any EF Core migration runs.
@@ -109,7 +111,7 @@ var key = ArabicSearchNormalizer.Normalize("أَحْمَد  عبد-الله", Ar
 
 ## Headless.Search.PostgreSql
 
-The `ar_norm_v1` function as a schema-runner step, the EF Core model helpers, and the version migration helper.
+The `ar_norm_v1` function as a schema-runner step. It references no EF Core package, so SQL and Dapper code can call the function directly; EF Core models add [Headless.Search.PostgreSql.EntityFramework](#headlesssearchpostgresqlentityframework).
 
 ### Setup
 
@@ -126,6 +128,35 @@ builder.Services.AddHeadlessSearch(setup => setup.UsePostgreSql(connectionString
 
 The parameterless overload and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
+### Configuration
+
+| Option | Default | Notes |
+| --- | --- | --- |
+| `ConnectionString` | required | The database that receives the function |
+| `Schema` | `headless` | Validated as a PostgreSQL identifier. An EF Core model passes the same schema to `HasHeadlessArabicSearch` |
+
+### Design and runtime behavior
+
+- The function is `LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE` with a `RETURN` body built from `replace`, `translate`, `regexp_replace`, and `btrim`, all rendered from `ArabicSearchRuleSet` with Unicode-escape literals. The input is cast `COLLATE "C"`, so no database locale or nondeterministic collation affects it.
+- `resources provision` creates it through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) and records `ArabicSearch/1` in `headless_schema_history`; a host start only verifies the history and fails fast when the step is missing. The step creates the function only when `pg_proc` lacks it, and never replaces one.
+- `resources purge` and `resources delete` report this feature as unsupported: dropping the function would cascade into the application's key columns.
+- `pg_trgm` takes word characters from the database's `LC_CTYPE`. Create the database with a UTF-8 aware locale: a libc `*.UTF-8` locale such as `en_US.UTF-8` (the official Docker image's default), an ICU locale, or the builtin `C.UTF-8`. Under libc `LC_CTYPE = 'C'` no Arabic letter is a word character: `show_trgm` returns nothing, `similarity` and `%` never match, and `LIKE` stays correct but the trigram index cannot narrow it, so every query rechecks every row. Check with `SELECT show_trgm('محمد')`, which must not be empty.
+- Without EF Core, query with the function in SQL: `WHERE name_search LIKE '%' || headless.ar_norm_v1(@term) || '%'`, against a column declared `GENERATED ALWAYS AS (headless.ar_norm_v1(name)) STORED` with a GIN `gin_trgm_ops` index. The key columns, their indexes, and the `pg_trgm` extension belong to the application's own migrations; `CREATE EXTENSION pg_trgm` needs a role allowed to create it, and managed PostgreSQL services list `pg_trgm` among their trusted extensions.
+
+---
+
+## Headless.Search.PostgreSql.EntityFramework
+
+EF Core model helpers for the PostgreSQL function: the stored key column and its index, the query function mapping, and the version migration helper.
+
+### Setup
+
+```bash
+dotnet add package Headless.Search.PostgreSql.EntityFramework
+```
+
+Register the function with `AddHeadlessSearch(setup => setup.UsePostgreSql(...))` as [Headless.Search.PostgreSql](#headlesssearchpostgresql) shows, then configure the model as in [Orientation](#orientation).
+
 | Member | Effect |
 | --- | --- |
 | `modelBuilder.HasHeadlessArabicSearch(version, schema = "headless")` | Maps `ArabicSearchFunctions.Key` to `"schema".ar_norm_v{n}`, declares `pg_trgm`, and fixes the version and schema for the model's keys |
@@ -134,18 +165,8 @@ The parameterless overload and the shared `headless` schema are described in [sq
 | `ArabicSearchFunctions.Key(term)` | Translates to the mapped function in a query; throws `InvalidOperationException` when called outside one |
 | `migrationBuilder.SetArabicSearchKeyExpression(table, column, sourceColumn, version, schema = null, functionSchema = "headless")` | Rebuilds a key with another version's function through `SET EXPRESSION` |
 
-### Configuration
-
-| Option | Default | Notes |
-| --- | --- | --- |
-| `ConnectionString` | required | The database that receives the function |
-| `Schema` | `headless` | Validated as a PostgreSQL identifier. EF Core models pass the same schema to `HasHeadlessArabicSearch` |
-
 ### Design and runtime behavior
 
-- The function is `LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE` with a `RETURN` body built from `replace`, `translate`, `regexp_replace`, and `btrim`, all rendered from `ArabicSearchRuleSet` with Unicode-escape literals. The input is cast `COLLATE "C"`, so no database locale or nondeterministic collation affects it.
-- `resources provision` creates it through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) and records `ArabicSearch/1` in `headless_schema_history`; a host start only verifies the history and fails fast when the step is missing. The step creates the function only when `pg_proc` lacks it, and never replaces one.
+- `HasArabicSearchKey` reads the source's column name when it is called and writes `HasComputedColumnSql(..., stored: true)` plus an index with `HasMethod("gin")` and `HasOperators("gin_trgm_ops")`. Configure `HasColumnName` on the source first, or pass `sourceColumn`.
 - EF Core migrations (`AddDbContextMigrations<TContext>()`) run after every schema step in the same `resources provision`, whatever the registration order, so a migration that adds a key column finds the function. A script-based deploy applies the exported Headless schema script before the EF Core migration script or bundle.
-- `resources purge` and `resources delete` report this feature as unsupported: dropping the function would cascade into the application's key columns.
-- `pg_trgm` takes word characters from the database's `LC_CTYPE`. Create the database with a UTF-8 aware locale: a libc `*.UTF-8` locale such as `en_US.UTF-8` (the official Docker image's default), an ICU locale, or the builtin `C.UTF-8`. Under libc `LC_CTYPE = 'C'` no Arabic letter is a word character: `show_trgm` returns nothing, `similarity` and `%` never match, and `LIKE` stays correct but the trigram index cannot narrow it, so every query rechecks every row. Check with `SELECT show_trgm('محمد')`, which must not be empty.
-- The key columns, their indexes, and the `pg_trgm` extension belong to the application's migrations. `CREATE EXTENSION pg_trgm` needs a role allowed to create it; managed PostgreSQL services list `pg_trgm` among their trusted extensions.
+- EF Core emits `key LIKE '%' || COALESCE(headless.ar_norm_v1(@term), '') || '%' ESCAPE ''` for the `EF.Functions.Like` pattern, which the GIN trigram index serves.

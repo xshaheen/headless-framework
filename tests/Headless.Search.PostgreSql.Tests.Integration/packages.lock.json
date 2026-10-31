@@ -886,6 +886,16 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Search": "[1.0.0, )",
+          "Headless.Sql.PostgreSql": "[1.0.0, )"
+        }
+      },
+      "headless.search.postgresql.entityframework": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Search": "[1.0.0, )",
+          "Headless.Search.PostgreSql": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.13, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )"

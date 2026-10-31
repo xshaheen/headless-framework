@@ -13,7 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.EntityFramework\Headless.EntityFramework.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Search.PostgreSql\Headless.Search.PostgreSql.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Search.PostgreSql.EntityFramework\Headless.Search.PostgreSql.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
     <ProjectReference Include="..\Headless.Search.Tests.Harness\Headless.Search.Tests.Harness.csproj" />
   </ItemGroup>

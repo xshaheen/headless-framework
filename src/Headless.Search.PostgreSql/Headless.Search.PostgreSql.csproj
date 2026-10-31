@@ -1,13 +1,12 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>PostgreSQL provider for Headless Arabic search: the immutable ar_norm function as a schema contribution, and EF Core helpers for stored, trigram-indexed search keys.</Description>
-    <PackageTags>headless;search;arabic;postgresql;trigram;efcore;dotnet</PackageTags>
+    <Description>PostgreSQL provider for Headless Arabic search: the immutable ar_norm function as a schema contribution, with no EF Core dependency.</Description>
+    <PackageTags>headless;search;arabic;postgresql;dotnet</PackageTags>
     <RootNamespace>Headless.Search.PostgreSql</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <InternalsVisibleTo Include="Headless.Search.PostgreSql.EntityFramework" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
