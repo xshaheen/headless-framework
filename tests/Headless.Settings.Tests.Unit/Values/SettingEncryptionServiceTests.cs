@@ -167,6 +167,24 @@ public sealed class SettingEncryptionServiceTests : TestBase
             .BeEquivalentTo(_errors.DecryptionFailed(_Definition.Name));
     }
 
+    [Fact]
+    public async Task should_rethrow_when_the_encryptor_fails()
+    {
+        // given
+        var encryptor = Substitute.For<IFieldEncryptor>();
+        encryptor
+            .EncryptAsync(Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<FieldContext>(), Arg.Any<CancellationToken>())
+            .Returns<EncryptedValue>(_ => throw new DataKeyScopeShreddedException("tenant-1"));
+        var sut = _CreateService(encryptor);
+
+        // when
+        var act = async () =>
+            await sut.EncryptAsync(_Definition, "s3cret", SettingValueProviderNames.Tenant, "tenant-1", AbortToken);
+
+        // then - a shredded tenant is not a decryption conflict, so the caller sees the encryptor's own error
+        await act.Should().ThrowAsync<DataKeyScopeShreddedException>();
+    }
+
     private SettingEncryptionService _CreateService(IFieldEncryptor? fieldEncryptor)
     {
         return new SettingEncryptionService(_errors, NullLogger<SettingEncryptionService>.Instance, fieldEncryptor);

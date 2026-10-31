@@ -707,6 +707,33 @@ public sealed class SettingManagerTests : TestBase
     }
 
     [Fact]
+    public async Task should_decrypt_a_non_inherited_value_with_the_requested_provider_key()
+    {
+        // given
+        var definition = new SettingDefinition("Smtp.Password", isInherited: false, isEncrypted: true);
+
+        var store = Substitute.For<ISettingValueStore>();
+        store
+            .GetAllAsync(Arg.Any<HashSet<string>>(), "Store", "tenant-1", AbortToken)
+            .Returns([new SettingValue("Smtp.Password", "encrypted-data")]);
+        var storeProvider = new FakeStoreSettingValueProvider(store);
+
+        _definitionManager.GetAllAsync(AbortToken).Returns([definition]);
+        _valueProviderManager.Providers.Returns([storeProvider]);
+        _encryptionService
+            .DecryptAsync(definition, "encrypted-data", "Store", "tenant-1", Arg.Any<CancellationToken>())
+            .Returns("plain-data");
+
+        // when
+        var result = await _sut.GetAllAsync("Store", "tenant-1", cancellationToken: AbortToken);
+
+        // then - the key that decides the encryption scope is the one the value was read under
+        var resolved = result.Should().ContainSingle().Which;
+        resolved.Value.Should().Be("plain-data");
+        resolved.Provider.Should().Be(new SettingValueProvider("Store", "tenant-1"));
+    }
+
+    [Fact]
     public async Task should_throw_when_provider_name_null()
     {
         // when
