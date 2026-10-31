@@ -36,8 +36,11 @@ public class BaseJobEntity
     public virtual string? Description { get; set; }
 
     /// <summary>
-    /// Optional identifier set at seeding time to correlate this row with its code-defined seed entry.
-    /// Used by the startup seeder to detect and update existing seed rows instead of inserting duplicates.
+    /// The seed marker of a cron definition the seed step created, or <see langword="null"/> for a row created at
+    /// runtime. The marker names the seed owner and the seeded function or declaration key
+    /// (<c>headless.jobs.seed:{owner}:cron:{function}</c> or <c>headless.jobs.seed:{owner}:decl:{key}</c>), and the
+    /// seed reconciles only rows whose marker starts with its own owner's prefix, so it never rewrites or deletes a
+    /// runtime row or another owner's row.
     /// </summary>
     public virtual string? InitIdentifier { get; internal set; }
 

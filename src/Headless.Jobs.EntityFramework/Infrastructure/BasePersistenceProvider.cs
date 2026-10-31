@@ -1470,10 +1470,15 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     #region Core_Cron_Ticker_Methods
 
     public async Task MigrateDefinedCronJobsAsync(
+        string seedOwner,
         CronSeedDefinition[] cronJobs,
         CancellationToken cancellationToken = default
     )
     {
+        JobsSeedId.ValidateEntries(seedOwner, cronJobs);
+        var ownerPrefix = JobsSeedId.OwnerMarkerPrefix(seedOwner);
+        var declaredIds = cronJobs.Select(x => x.Id).ToHashSet();
+
         await JobsStoreTransaction
             .ExecuteAsync<TDbContext>(
                 DbContextFactory,
@@ -1481,29 +1486,30 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 {
                     var dbContext = attempt.DbContext;
                     var now = TimeProvider.GetUtcNow();
-
-                    var functions = cronJobs.Select(x => x.Function).ToArray();
                     var cronSet = dbContext.Set<TCronJob>();
 
-                    // Identify seeded cron jobs (created from in-memory definitions)
-                    const string seedPrefix = "MemoryTicker_Seeded_";
+                    // Only this owner's seeded rows take part. A runtime row carries no marker and another owner's
+                    // rows carry another prefix, so neither is ever matched, rewritten, or deleted here. A row that
+                    // occupies a declared id without this owner's marker is not ours either: the insert below then
+                    // collides with it and the conflict verification refuses to treat it as a benign race.
+                    // The server-side prefix match follows the column's collation, so on a case-insensitive SQL Server
+                    // database it also returns an owner that differs only by case. The ordinal re-filter keeps that
+                    // owner's rows out of the delete below.
+                    var ownedRows = (
+                        await cronSet
+                            .Where(c => c.InitIdentifier != null && c.InitIdentifier.StartsWith(ownerPrefix))
+                            .ToListAsync(cancellationToken)
+                            .ConfigureAwait(false)
+                    )
+                        .Where(c => c.InitIdentifier!.StartsWith(ownerPrefix, StringComparison.Ordinal))
+                        .ToList();
 
-                    var seededCron = await cronSet
-                        .Where(c => c.InitIdentifier != null && c.InitIdentifier.StartsWith(seedPrefix))
-                        .ToListAsync(cancellationToken)
-                        .ConfigureAwait(false);
+                    // Remove undeclared rows, retaining their parent while an occurrence is still running.
+                    var removedIds = ownedRows.Where(c => !declaredIds.Contains(c.Id)).Select(c => c.Id).ToArray();
 
-                    var newFunctionSet = functions.ToHashSet(StringComparer.Ordinal);
-
-                    // Delete seeded cron jobs whose function no longer exists in the code definitions
-                    var seededToDelete = seededCron
-                        .Where(c => !newFunctionSet.Contains(c.Function))
-                        .Select(c => c.Id)
-                        .ToArray();
-
-                    if (seededToDelete.Length > 0)
+                    if (removedIds.Length > 0)
                     {
-                        foreach (var definitionId in seededToDelete.Order())
+                        foreach (var definitionId in removedIds.Order())
                         {
                             await cronSet
                                 .Where(x => x.Id == definitionId)
@@ -1514,10 +1520,32 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                 .ConfigureAwait(false);
                         }
 
-                        // Parent rows are locked above in canonical order; delete children before parents for FK
-                        // safety.
-                        await dbContext
+                        // Parent locks serialize removal with materialization and claims. Delete only work that has
+                        // not started before deciding which parents must survive for their running workers.
+                        var removedOccurrences = dbContext
                             .Set<CronJobOccurrenceEntity<TCronJob>>()
+                            .Where(o => ((IEnumerable<Guid>)removedIds).Contains(o.CronJobId));
+                        await removedOccurrences
+                            .Where(o => o.Status == JobStatus.Idle || o.Status == JobStatus.Queued)
+                            .ExecuteDeleteAsync(cancellationToken)
+                            .ConfigureAwait(false);
+
+                        var runningIds = await removedOccurrences
+                            .Where(o => o.Status == JobStatus.InProgress)
+                            .Select(o => o.CronJobId)
+                            .Distinct()
+                            .ToListAsync(cancellationToken)
+                            .ConfigureAwait(false);
+
+                        foreach (var retired in ownedRows.Where(c => runningIds.Contains(c.Id)))
+                        {
+                            retired.IsPaused = true;
+                            retired.InitIdentifier = JobsSeedId.RetiredMarker(retired.InitIdentifier!);
+                            retired.UpdatedAt = now;
+                        }
+
+                        var seededToDelete = removedIds.Except(runningIds).ToArray();
+                        await removedOccurrences
                             .Where(o => ((IEnumerable<Guid>)seededToDelete).Contains(o.CronJobId))
                             .ExecuteDeleteAsync(cancellationToken)
                             .ConfigureAwait(false);
@@ -1528,65 +1556,22 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                             .ConfigureAwait(false);
                     }
 
-                    // Load existing (remaining) cron jobs for the current function set
-                    var existing = await cronSet
-                        .Where(c => ((IEnumerable<string>)functions).Contains(c.Function))
-                        .ToListAsync(cancellationToken)
-                        .ConfigureAwait(false);
-
-                    var existingByFunction = existing
-                        .GroupBy(c => c.Function, StringComparer.Ordinal)
-                        .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+                    var existingById = ownedRows.Where(c => declaredIds.Contains(c.Id)).ToDictionary(c => c.Id);
                     var changedDefinitionIds = new List<Guid>();
-                    var orderedCronJobs = cronJobs
-                        .Select(x =>
-                            (
-                                x.Function,
-                                x.Expression,
-                                x.OnMissedRun,
-                                x.MissedRunGraceSeconds,
-                                x.OnOverlap,
-                                x.EvaluationFingerprint,
-                                x.ContractVersion,
-                                x.TimeZoneId,
-                                x.Retries,
-                                x.RetryIntervals,
-                                Id: existingByFunction.TryGetValue(x.Function, out var existingDefinition)
-                                    ? existingDefinition.Id
-                                    : JobsSeedId.ForCronSeed(x.Function)
-                            )
-                        )
-                        .OrderBy(x => x.Id)
-                        .ToArray();
+                    // Canonical id order, so concurrent seeds take the row locks below in the same order.
+                    var orderedCronJobs = cronJobs.OrderBy(x => x.Id).ToArray();
                     var insertedSeeds = orderedCronJobs
-                        .Where(x => !existingByFunction.ContainsKey(x.Function))
-                        .ToDictionary(x => x.Id, x => x.Function);
+                        .Where(x => !existingById.ContainsKey(x.Id))
+                        .ToDictionary(x => x.Id, x => (x.Function, x.Marker));
 
-                    foreach (
-                        var (
-                            function,
-                            expression,
-                            onMissedRun,
-                            missedRunGraceSeconds,
-                            onOverlap,
-                            evaluationFingerprint,
-                            contractVersion,
-                            timeZoneId,
-                            retries,
-                            retryIntervals,
-                            _
-                        ) in orderedCronJobs
-                    )
+                    foreach (var entry in orderedCronJobs)
                     {
-                        if (existingByFunction.TryGetValue(function, out var cron))
+                        if (existingById.TryGetValue(entry.Id, out var cron))
                         {
-                            // Reseeding cannot upgrade the schema label of bytes already stored by an older writer.
-                            // Existing function/version/request tuples change only through an explicit definition edit.
-                            // Update the schedule if its expression or zone changed
-                            if (
-                                !string.Equals(cron.Expression, expression, StringComparison.Ordinal)
-                                || !string.Equals(cron.TimeZoneId, timeZoneId, StringComparison.Ordinal)
-                            )
+                            // Code wins on the job, the expression, the zone, and a declaration's arguments. An entry
+                            // without a request hash (an attribute cron) rewrites the payload only when the row names
+                            // another job: a new registration version cannot relabel bytes an older writer stored.
+                            if (JobsSeedDrift.Differs(cron, entry))
                             {
                                 await cronSet
                                     .Where(x => x.Id == cron.Id)
@@ -1596,14 +1581,31 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                     )
                                     .ConfigureAwait(false);
                                 await dbContext.Entry(cron).ReloadAsync(cancellationToken).ConfigureAwait(false);
+                                // Re-decided on the locked row: a concurrent seed may already have restored it.
+                                var wasRetired = JobsSeedId.IsRetiredMarkerOf(cron.InitIdentifier, entry.Marker);
+                                var payloadDiffers = JobsSeedDrift.PayloadDiffers(cron, entry);
 
-                                if (
-                                    !string.Equals(cron.Expression, expression, StringComparison.Ordinal)
-                                    || !string.Equals(cron.TimeZoneId, timeZoneId, StringComparison.Ordinal)
-                                )
+                                if (JobsSeedDrift.ScheduleDiffers(cron, entry) || payloadDiffers || wasRetired)
                                 {
-                                    cron.Expression = expression;
-                                    cron.TimeZoneId = timeZoneId;
+                                    cron.Expression = entry.Expression;
+                                    cron.TimeZoneId = entry.TimeZoneId;
+
+                                    if (wasRetired)
+                                    {
+                                        cron.InitIdentifier = entry.Marker;
+                                        cron.IsPaused = false;
+                                    }
+
+                                    if (payloadDiffers)
+                                    {
+                                        // The payload and its version are rewritten together, in the same update that
+                                        // bumps the revision, so stored bytes are never labelled with a version they
+                                        // were not written under.
+                                        cron.Function = entry.Function;
+                                        cron.Request = entry.Request ?? [];
+                                        cron.ContractVersion = entry.ContractVersion;
+                                    }
+
                                     cron.ScheduleRevision++;
                                     cron.UpdatedAt = now;
 
@@ -1616,7 +1618,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                                     // contract.
                                     cron.ReconciledThroughUtc = default;
                                     cron.NextDueUtc = default;
-                                    cron.EvaluationFingerprint = evaluationFingerprint;
+                                    cron.EvaluationFingerprint = entry.EvaluationFingerprint;
                                     cron.FingerprintFailureCount = 0;
                                     cron.FingerprintRetryAfterUtc = null;
                                     changedDefinitionIds.Add(cron.Id);
@@ -1625,31 +1627,35 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         }
                         else
                         {
-                            // Insert new seeded cron job. The id is DETERMINISTIC (derived from the function) so two
-                            // nodes seeding the same new function concurrently target the same primary key — the DB
+                            // Insert new seeded cron job. The id is DETERMINISTIC (derived from the owner's marker) so
+                            // two nodes seeding the same new entry concurrently target the same primary key — the DB
                             // dedups to a single row instead of inserting two distinct-id rows and double-scheduling
                             // the function.
                             var entity = new TCronJob
                             {
-                                Id = JobsSeedId.ForCronSeed(function),
-                                Function = function,
-                                ContractVersion = contractVersion,
-                                Expression = expression,
-                                TimeZoneId = timeZoneId,
-                                InitIdentifier = $"MemoryTicker_Seeded_{function}",
+                                Id = entry.Id,
+                                Function = entry.Function,
+                                ContractVersion = entry.ContractVersion,
+                                Expression = entry.Expression,
+                                TimeZoneId = entry.TimeZoneId,
+                                InitIdentifier = entry.Marker,
                                 CreatedAt = now,
                                 UpdatedAt = now,
-                                Request = [],
+                                Request = entry.Request ?? [],
+                                CorrelationId = entry.CorrelationId,
+                                CausationId = entry.CausationId,
                                 // Seeded at CREATION only. The expression-changed branch above deliberately leaves
                                 // these alone, so a value set later through ICronJobManager survives every redeploy and
                                 // is an operator override by construction — which is why no provenance marker is
                                 // persisted.
-                                OnMissedRun = onMissedRun,
-                                MissedRunGraceSeconds = missedRunGraceSeconds,
-                                OnOverlap = onOverlap,
-                                Retries = retries,
-                                RetryIntervals = retryIntervals?.ToArray(),
-                                EvaluationFingerprint = evaluationFingerprint,
+                                OnMissedRun = entry.OnMissedRun,
+                                MissedRunGraceSeconds = entry.MissedRunGraceSeconds,
+                                OnOverlap = entry.OnOverlap,
+                                Retries = entry.Retries,
+                                RetryIntervals = entry.RetryIntervals?.ToArray(),
+                                OnNodeDeath = entry.OnNodeDeath,
+                                Description = entry.Description,
+                                EvaluationFingerprint = entry.EvaluationFingerprint,
                             };
                             await cronSet.AddAsync(entity, cancellationToken).ConfigureAwait(false);
                         }
@@ -1705,14 +1711,24 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         var winningSeeds = await verificationContext
                             .Set<TCronJob>()
                             .Where(x => ((IEnumerable<Guid>)insertedSeeds.Keys).Contains(x.Id))
-                            .Select(x => new { x.Id, x.Function })
-                            .ToDictionaryAsync(x => x.Id, x => x.Function, CancellationToken.None)
+                            .Select(x => new
+                            {
+                                x.Id,
+                                x.Function,
+                                x.InitIdentifier,
+                            })
+                            .ToDictionaryAsync(x => x.Id, x => (x.Function, x.InitIdentifier), CancellationToken.None)
                             .ConfigureAwait(false);
 
                         if (
                             insertedSeeds.Any(expected =>
-                                !winningSeeds.TryGetValue(expected.Key, out var function)
-                                || !string.Equals(function, expected.Value, StringComparison.Ordinal)
+                                !winningSeeds.TryGetValue(expected.Key, out var winner)
+                                || !string.Equals(winner.Function, expected.Value.Function, StringComparison.Ordinal)
+                                || !string.Equals(
+                                    winner.InitIdentifier,
+                                    expected.Value.Marker,
+                                    StringComparison.Ordinal
+                                )
                             )
                         )
                         {

@@ -1440,11 +1440,14 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
         dbContext.Set<TCronJob>().UpdateRange(cronJobs);
 
-        // Dashboard forms omit lineage; preserve the original scheduling cause for future occurrences.
+        // Dashboard forms omit lineage; preserve the original scheduling cause for future occurrences. They omit the
+        // seed marker too, which belongs to the seed: writing it would strip a seeded row's ownership, and the next
+        // seed would then refuse the row at its own id.
         foreach (var entry in dbContext.ChangeTracker.Entries<TCronJob>())
         {
             entry.Property(nameof(BaseJobEntity.CorrelationId)).IsModified = false;
             entry.Property(nameof(BaseJobEntity.CausationId)).IsModified = false;
+            entry.Property(nameof(BaseJobEntity.InitIdentifier)).IsModified = false;
         }
 
         var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);

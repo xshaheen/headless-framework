@@ -1774,51 +1774,122 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     #region Cron Job Methods
 
     public Task MigrateDefinedCronJobsAsync(
+        string seedOwner,
         CronSeedDefinition[] cronJobs,
         CancellationToken cancellationToken = default
     )
     {
+        JobsSeedId.ValidateEntries(seedOwner, cronJobs);
         var now = _timeProvider.GetUtcNow();
+        var ownerPrefix = JobsSeedId.OwnerMarkerPrefix(seedOwner);
+        var declaredIds = cronJobs.Select(x => x.Id).ToHashSet();
 
-        foreach (
-            var (
-                function,
-                expression,
-                onMissedRun,
-                missedRunGraceSeconds,
-                onOverlap,
-                evaluationFingerprint,
-                contractVersion,
-                timeZoneId,
-                retries,
-                retryIntervals
-            ) in cronJobs
-        )
+        // A row at a declared id that does not carry that entry's marker is not this owner's seeded row, so it is
+        // refused rather than adopted, as the relational provider's insert collision is. Checked before any write,
+        // since this store has no transaction to roll back a partial reconcile.
+        foreach (var entry in cronJobs)
         {
-            // Deterministic id keyed by function (matches the durable provider's seed identity): a re-seed — including
-            // a changed expression — updates the same row in place rather than inserting a duplicate. Single-process
-            // provider, so there is no cross-node race here.
-            var id = JobsSeedId.ForCronSeed(function);
-
-            if (_cronJobs.TryGetValue(id, out var existing))
+            if (
+                _cronJobs.TryGetValue(entry.Id, out var occupant)
+                && !string.Equals(occupant.InitIdentifier, entry.Marker, StringComparison.Ordinal)
+                && !JobsSeedId.IsRetiredMarkerOf(occupant.InitIdentifier, entry.Marker)
+            )
             {
-                // Reseeding cannot upgrade the schema label of bytes already stored by an older writer.
-                // Existing function/version/request tuples change only through an explicit definition edit.
-                if (
-                    !string.Equals(existing.Expression, expression, StringComparison.Ordinal)
-                    || !string.Equals(existing.TimeZoneId, timeZoneId, StringComparison.Ordinal)
-                )
+                throw new InvalidOperationException(
+                    $"Cron definition '{entry.Id}' occupies the id of seed entry '{entry.Marker}' without its marker, so the seed will not adopt it."
+                );
+            }
+        }
+
+        // Remove this owner's undeclared rows, but keep a paused definition while an occurrence is running so the
+        // worker can still complete it. Runtime rows and another owner's rows are never selected.
+        var removedIds = _cronJobs
+            .Values.Where(x =>
+                x.InitIdentifier?.StartsWith(ownerPrefix, StringComparison.Ordinal) == true
+                && !declaredIds.Contains(x.Id)
+            )
+            .Select(x => x.Id)
+            .ToArray();
+
+        foreach (var removedId in removedIds)
+        {
+            lock (_GetCronDefinitionLock(removedId))
+            {
+                foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == removedId).ToArray())
                 {
-                    lock (_GetCronDefinitionLock(id))
+                    if (pair.Value.Status is JobStatus.Idle or JobStatus.Queued)
                     {
-                        if (!_cronJobs.TryGetValue(id, out var current))
+                        _cronOccurrences.TryRemove(pair.Key, out _);
+                    }
+                }
+
+                if (_cronOccurrences.Values.Any(x => x.CronJobId == removedId && x.Status == JobStatus.InProgress))
+                {
+                    if (_cronJobs.TryGetValue(removedId, out var current))
+                    {
+                        var retired = _CloneCronJob(current);
+                        retired.IsPaused = true;
+                        retired.InitIdentifier = JobsSeedId.RetiredMarker(current.InitIdentifier!);
+                        retired.UpdatedAt = now;
+                        _SetCronJob(retired);
+                    }
+
+                    continue;
+                }
+
+                lock (_cronJobIdIndexLock)
+                {
+                    if (_TryRemoveCronJob(removedId))
+                    {
+                        _cronJobIds.Remove(removedId);
+                    }
+                }
+
+                foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == removedId).ToArray())
+                {
+                    _cronOccurrences.TryRemove(pair.Key, out _);
+                }
+            }
+        }
+
+        foreach (var entry in cronJobs)
+        {
+            if (_cronJobs.TryGetValue(entry.Id, out var existing))
+            {
+                // Code wins on the job, the expression, the zone, and a declaration's arguments. An entry without a
+                // request hash (an attribute cron) rewrites the payload only when the row names another job: a new
+                // registration version cannot relabel bytes an older writer stored.
+                if (JobsSeedDrift.Differs(existing, entry))
+                {
+                    lock (_GetCronDefinitionLock(entry.Id))
+                    {
+                        // Re-decided on the locked row, as the relational provider does after its row lock: a
+                        // concurrent seed may already have restored it, and restoring again would bump the revision
+                        // and reset the schedule position a second time.
+                        if (!_cronJobs.TryGetValue(entry.Id, out var current) || !JobsSeedDrift.Differs(current, entry))
                         {
                             continue;
                         }
 
                         var updated = _CloneCronJob(current);
-                        updated.Expression = expression;
-                        updated.TimeZoneId = timeZoneId;
+                        updated.Expression = entry.Expression;
+                        updated.TimeZoneId = entry.TimeZoneId;
+
+                        if (JobsSeedId.IsRetiredMarkerOf(current.InitIdentifier, entry.Marker))
+                        {
+                            updated.InitIdentifier = entry.Marker;
+                            updated.IsPaused = false;
+                        }
+
+                        if (JobsSeedDrift.PayloadDiffers(current, entry))
+                        {
+                            // The payload and its version are rewritten together, so the stored bytes are never
+                            // labelled with a version they were not written under.
+                            updated.Function = entry.Function;
+                            updated.Request = entry.Request?.ToArray() ?? [];
+                            updated.ContractVersion = entry.ContractVersion;
+                        }
+
                         updated.ScheduleRevision++;
                         updated.UpdatedAt = now;
 
@@ -1827,11 +1898,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         // the new expression — matching the relational provider's migrate path.
                         updated.ReconciledThroughUtc = default;
                         updated.NextDueUtc = default;
-                        updated.EvaluationFingerprint = evaluationFingerprint;
+                        updated.EvaluationFingerprint = entry.EvaluationFingerprint;
                         updated.FingerprintFailureCount = 0;
                         updated.FingerprintRetryAfterUtc = null;
 
-                        foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == id).ToArray())
+                        foreach (var pair in _cronOccurrences.Where(x => x.Value.CronJobId == entry.Id).ToArray())
                         {
                             if (pair.Value.Status is not (JobStatus.Idle or JobStatus.Queued))
                             {
@@ -1863,31 +1934,36 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
             var cronJob = new TCronJob
             {
-                Id = id,
-                Function = function,
-                ContractVersion = contractVersion,
-                Expression = expression,
-                TimeZoneId = timeZoneId,
-                InitIdentifier = $"MemoryTicker_Seeded_{function}",
+                Id = entry.Id,
+                Function = entry.Function,
+                ContractVersion = entry.ContractVersion,
+                Expression = entry.Expression,
+                TimeZoneId = entry.TimeZoneId,
+                InitIdentifier = entry.Marker,
                 CreatedAt = now,
                 UpdatedAt = now,
-                Request = [],
+                // A copy, so the stored row never aliases the caller's buffer.
+                Request = entry.Request?.ToArray() ?? [],
+                CorrelationId = entry.CorrelationId,
+                CausationId = entry.CausationId,
                 // Seeded at CREATION only. The update branch above deliberately leaves these alone, so a value
                 // set later through ICronJobManager survives every redeploy and is an operator override by
                 // construction — which is why no provenance marker is persisted.
-                OnMissedRun = onMissedRun,
-                MissedRunGraceSeconds = missedRunGraceSeconds,
-                OnOverlap = onOverlap,
-                Retries = retries,
-                RetryIntervals = retryIntervals?.ToArray(),
-                EvaluationFingerprint = evaluationFingerprint,
+                OnMissedRun = entry.OnMissedRun,
+                MissedRunGraceSeconds = entry.MissedRunGraceSeconds,
+                OnOverlap = entry.OnOverlap,
+                Retries = entry.Retries,
+                RetryIntervals = entry.RetryIntervals?.ToArray(),
+                OnNodeDeath = entry.OnNodeDeath,
+                Description = entry.Description,
+                EvaluationFingerprint = entry.EvaluationFingerprint,
             };
 
             lock (_cronJobIdIndexLock)
             {
                 if (_TryAddCronJob(cronJob))
                 {
-                    _cronJobIds.Add(id);
+                    _cronJobIds.Add(entry.Id);
                 }
             }
         }
@@ -2720,6 +2796,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 JobContract.ValidateVersion(definition.ContractVersion);
                 definition.CorrelationId = current.CorrelationId;
                 definition.CausationId = current.CausationId;
+                // The seed marker belongs to the seed: a runtime edit built from an entity that lacks it must not
+                // strip the row's seed ownership.
+                definition.InitIdentifier = current.InitIdentifier;
                 definition.IsPaused = current.IsPaused;
                 definition.ScheduleRevision = revisionChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision;
                 definition.CreatedAt = current.CreatedAt;
@@ -2962,6 +3041,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 job.CorrelationId = existing.CorrelationId;
                 job.CausationId = existing.CausationId;
+                // The seed marker belongs to the seed: a runtime edit built from an entity that lacks it must not
+                // strip the row's seed ownership.
+                job.InitIdentifier = existing.InitIdentifier;
                 if (_TryUpdateCronJob(job, existing))
                 {
                     count++;

@@ -2,6 +2,7 @@
 
 using Headless.Hosting;
 using Headless.Jobs;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Provider;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -173,7 +174,17 @@ public sealed class CronOverlapPolicyProviderTests : TestBase
         var provider = _Create();
 
         await provider.MigrateDefinedCronJobsAsync(
-            [new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Coalesce, 60, CronOverlapPolicy.Skip)],
+            JobsSeedId.DefaultOwner,
+            [
+                CronSeedDefinition.ForCronFunction(
+                    JobsSeedId.DefaultOwner,
+                    "seeded",
+                    "0 * * * * *",
+                    MissedRunPolicy.Coalesce,
+                    60,
+                    CronOverlapPolicy.Skip
+                ),
+            ],
             AbortToken
         );
         var created = (await provider.GetCronJobsAsync(predicate: null, AbortToken)).Single();
@@ -193,7 +204,17 @@ public sealed class CronOverlapPolicyProviderTests : TestBase
             .Be(created.ScheduleRevision, "materialization reads the policy fresh, so no stale copy needs fencing");
 
         await provider.MigrateDefinedCronJobsAsync(
-            [new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Coalesce, 60, CronOverlapPolicy.Skip)],
+            JobsSeedId.DefaultOwner,
+            [
+                CronSeedDefinition.ForCronFunction(
+                    JobsSeedId.DefaultOwner,
+                    "seeded",
+                    "0 * * * * *",
+                    MissedRunPolicy.Coalesce,
+                    60,
+                    CronOverlapPolicy.Skip
+                ),
+            ],
             AbortToken
         );
 

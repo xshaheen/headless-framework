@@ -1832,11 +1832,18 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     }
 
     public async Task MigrateDefinedCronJobs(
+        string seedOwner,
         CronSeedDefinition[] cronExpressions,
         CancellationToken cancellationToken = default
     )
     {
-        await persistenceProvider.MigrateDefinedCronJobsAsync(cronExpressions, cancellationToken).ConfigureAwait(false);
+        // Validated here, before the store, so a custom persistence provider receives a checked set and does not
+        // reimplement the owner and id rules.
+        JobsSeedId.ValidateEntries(seedOwner, cronExpressions);
+
+        await persistenceProvider
+            .MigrateDefinedCronJobsAsync(seedOwner, cronExpressions, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task DeleteJob(Guid jobId, JobType type, CancellationToken cancellationToken = default)
