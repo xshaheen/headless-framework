@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using System.Security.Cryptography;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
@@ -144,7 +145,10 @@ internal sealed class DataKeyManager(
         if (versions.TrueForAll(k => k.Version <= version))
         {
             throw new InvalidOperationException(
-                $"Version {version} is the active {kind} key of the scope; rotate it before retiring it."
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Version {version} is the active {kind} key of the scope; rotate it before retiring it."
+                )
             );
         }
 

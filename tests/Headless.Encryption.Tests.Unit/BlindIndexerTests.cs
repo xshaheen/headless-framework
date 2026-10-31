@@ -235,7 +235,7 @@ public sealed class BlindIndexerTests : TestBase
     [Fact]
     public async Task should_keep_the_value_and_key_material_out_of_logs_and_exceptions()
     {
-        var logs = new CapturingLoggerProvider();
+        using var logs = new CapturingLoggerProvider();
         using var host = new EncryptionTestHost(_store, logs: logs);
         await host.BlindIndexer.ComputeAsync(_Tenant("charity-a"), _NationalId, AbortToken);
         await host.Manager.RotateAsync("charity-a", DataKeyKind.Lookup, AbortToken);
@@ -253,6 +253,23 @@ public sealed class BlindIndexerTests : TestBase
         logs.Messages.Should().NotContain(m => m.Contains(EncryptionTestHost.KeyOneValue, StringComparison.Ordinal));
         shredded.Which.Message.Should().NotContain(_NationalId);
         missing.Which.Message.Should().NotContain(_NationalId);
+    }
+
+    [Fact]
+    public void should_compare_blind_indexes_by_version_and_hash_bytes()
+    {
+        var index = new BlindIndex(1, [1, 2, 3]);
+        var same = new BlindIndex(1, [1, 2, 3]);
+        var otherVersion = new BlindIndex(2, [1, 2, 3]);
+        var otherHash = new BlindIndex(1, [1, 2, 4]);
+
+        (index == same).Should().BeTrue();
+        index.Equals((object)same).Should().BeTrue();
+        index.GetHashCode().Should().Be(same.GetHashCode());
+        (index != otherVersion).Should().BeTrue();
+        (index != otherHash).Should().BeTrue();
+        index.Equals("not an index").Should().BeFalse();
+        default(BlindIndex).Should().Be(default(BlindIndex));
     }
 
     private static BlindIndexContext _Tenant(string tenantId) => new(_Purpose) { Scope = tenantId };
