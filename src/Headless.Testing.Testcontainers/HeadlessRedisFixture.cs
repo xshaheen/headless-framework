@@ -14,7 +14,7 @@ public class HeadlessRedisFixture() : ContainerFixture<RedisBuilder, RedisContai
 {
     protected override RedisBuilder Configure()
     {
-        return base.Configure().WithImage(TestImages.Redis);
+        return base.Configure().WithImage(TestImages.Redis).WithHostPingWaitStrategy();
     }
 
     /// <summary>Deletes every key in every database of the shared container.</summary>

@@ -20,7 +20,7 @@ public sealed class RedisDistributedLockScriptLoadingTests : TestBase
 {
     private static readonly DistributedLockAcquireOptions _NoWait = new() { AcquireTimeout = TimeSpan.Zero };
 
-    private readonly RedisContainer _container = new RedisBuilder(TestImages.Redis).Build();
+    private readonly RedisContainer _container = new RedisBuilder(TestImages.Redis).WithHostPingWaitStrategy().Build();
     private ConnectionMultiplexer _multiplexer = null!;
 
     public override async ValueTask InitializeAsync()
