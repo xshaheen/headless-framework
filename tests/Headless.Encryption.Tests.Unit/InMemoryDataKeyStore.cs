@@ -10,6 +10,7 @@ public sealed class InMemoryDataKeyStore : IDataKeyStore
 {
     private readonly Lock _gate = new();
     private readonly List<StoredDataKey> _keys = [];
+    private readonly HashSet<string> _shredded = new(StringComparer.Ordinal);
 
     public int InsertAttempts { get; private set; }
 
@@ -68,11 +69,25 @@ public sealed class InMemoryDataKeyStore : IDataKeyStore
         }
     }
 
-    public Task<bool> TryInsertAsync(StoredDataKey key, CancellationToken cancellationToken)
+    public Task<DataKeyInsertResult> TryInsertAsync(
+        StoredDataKey key,
+        bool reopenShreddedScope,
+        CancellationToken cancellationToken
+    )
     {
         lock (_gate)
         {
             InsertAttempts++;
+
+            if (_shredded.Contains(key.Scope))
+            {
+                if (!reopenShreddedScope)
+                {
+                    return Task.FromResult(DataKeyInsertResult.ScopeShredded);
+                }
+
+                _shredded.Remove(key.Scope);
+            }
 
             if (
                 _keys.Exists(k =>
@@ -82,7 +97,7 @@ public sealed class InMemoryDataKeyStore : IDataKeyStore
                 )
             )
             {
-                return Task.FromResult(false);
+                return Task.FromResult(DataKeyInsertResult.VersionTaken);
             }
 
             _keys.Add(
@@ -98,7 +113,7 @@ public sealed class InMemoryDataKeyStore : IDataKeyStore
                 }
             );
 
-            return Task.FromResult(true);
+            return Task.FromResult(DataKeyInsertResult.Inserted);
         }
     }
 
@@ -134,10 +149,12 @@ public sealed class InMemoryDataKeyStore : IDataKeyStore
         }
     }
 
-    public Task<int> DeleteScopeAsync(string scope, CancellationToken cancellationToken)
+    public Task<int> ShredScopeAsync(string scope, CancellationToken cancellationToken)
     {
         lock (_gate)
         {
+            _shredded.Add(scope);
+
             return Task.FromResult(_keys.RemoveAll(k => string.Equals(k.Scope, scope, StringComparison.Ordinal)));
         }
     }

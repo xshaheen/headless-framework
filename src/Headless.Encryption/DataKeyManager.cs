@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using System.Security.Cryptography;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
@@ -21,9 +20,14 @@ internal sealed class DataKeyManager(
     {
         DataKeyScope.Validate(scope, nameof(scope));
 
+        // The explicit call is the one place a shredded scope is reopened. It asks the store rather than the cache, which
+        // can still name a key that another host shredded within the cache duration.
         foreach (var kind in Enum.GetValues<DataKeyKind>())
         {
-            using var _ = await ring.GetOrCreateActiveAsync(scope, kind, cancellationToken).ConfigureAwait(false);
+            cache.ForgetActive(scope, kind);
+
+            using var _ = await ring.GetOrCreateActiveAsync(scope, kind, reopenShreddedScope: true, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 
@@ -37,25 +41,22 @@ internal sealed class DataKeyManager(
 
         cache.ForgetActive(scope, kind);
 
-        using (var created = await ring.TryCreateAsync(scope, kind, next, cancellationToken).ConfigureAwait(false))
+        using (
+            var created = await ring.TryCreateAsync(scope, kind, next, reopenShreddedScope: false, cancellationToken)
+                .ConfigureAwait(false)
+        )
         {
             if (created is not null)
             {
-                cache.SetActive(scope, kind, created.KeyId);
-
                 return created.KeyId;
             }
         }
 
-        // A concurrent rotation took the version first; it is the new active key, so this rotation is done too.
+        // A concurrent rotation took the version first, or a shred on this host removed the new key; either way the
+        // store now says what is active.
         var active =
             await store.GetActiveAsync(scope, kind, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException(
-                string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"Scope '{scope}' has no {kind} data key right after another writer added version {next}; the scope was shredded during the rotation."
-                )
-            );
+            ?? throw new DataKeyScopeShreddedException(scope);
 
         return active.KeyId;
     }
@@ -121,7 +122,7 @@ internal sealed class DataKeyManager(
     {
         DataKeyScope.Validate(scope, nameof(scope));
 
-        var deleted = await store.DeleteScopeAsync(scope, cancellationToken).ConfigureAwait(false);
+        var deleted = await store.ShredScopeAsync(scope, cancellationToken).ConfigureAwait(false);
         cache.ForgetScope(scope);
         logger.LogDataKeysShredded(scope, deleted);
 

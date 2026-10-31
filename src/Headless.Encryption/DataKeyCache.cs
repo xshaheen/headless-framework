@@ -19,7 +19,16 @@ internal sealed class DataKeyCache(TimeProvider timeProvider, EncryptionOptions 
     private readonly ConcurrentDictionary<Guid, DataKeyEntry> _keys = new();
     private readonly ConcurrentDictionary<(string Scope, DataKeyKind Kind), ActiveKey> _active = new();
 
+    // Each shred on this host takes the next generation and records it for its scope. A key read from the store before
+    // a shred carries an older generation, so caching it afterwards is refused: an in-flight load cannot put a shredded
+    // key back. The map holds only scopes shredded on this host.
+    private readonly ConcurrentDictionary<string, long> _shreddedAt = new(StringComparer.Ordinal);
+    private long _generation;
+
     public int Count => _keys.Count;
+
+    /// <summary>Gets the shred generation; read it before the store read whose result will be cached.</summary>
+    public long Generation => Volatile.Read(ref _generation);
 
     /// <summary>Takes a lease on a cached, unexpired key.</summary>
     public DataKeyLease? TryAcquire(Guid keyId)
@@ -40,10 +49,19 @@ internal sealed class DataKeyCache(TimeProvider timeProvider, EncryptionOptions 
     }
 
     /// <summary>
-    /// Caches <paramref name="key" />, which the cache now owns and clears on eviction, and returns a lease on it.
+    /// Caches <paramref name="key" />, which the cache now owns and clears on eviction, and returns a lease on it; or
+    /// clears it and returns <see langword="null" /> when its scope was shredded on this host after
+    /// <paramref name="generation" /> was read.
     /// </summary>
-    public DataKeyLease Add(StoredDataKey stored, byte[] key)
+    public DataKeyLease? Add(StoredDataKey stored, byte[] key, long generation)
     {
+        if (_ShreddedSince(stored.Scope, generation))
+        {
+            CryptographicOperations.ZeroMemory(key);
+
+            return null;
+        }
+
         var entry = new DataKeyEntry(stored, key, timeProvider.GetUtcNow() + options.KeyCacheDuration);
 
         // Taken before publishing, so the entry cannot be cleared by an eviction racing this call.
@@ -73,6 +91,16 @@ internal sealed class DataKeyCache(TimeProvider timeProvider, EncryptionOptions 
             }
         }
 
+        // A shred that began after the first check either recorded its generation before this read, or its eviction
+        // pass runs after the entry was published and removes it.
+        if (_ShreddedSince(stored.Scope, generation))
+        {
+            _Evict(stored.KeyId, entry);
+            lease.Dispose();
+
+            return null;
+        }
+
         return lease;
     }
 
@@ -93,9 +121,15 @@ internal sealed class DataKeyCache(TimeProvider timeProvider, EncryptionOptions 
         return active.KeyId;
     }
 
-    public void SetActive(string scope, DataKeyKind kind, Guid keyId)
+    public void SetActive(string scope, DataKeyKind kind, Guid keyId, long generation)
     {
-        _active[(scope, kind)] = new ActiveKey(keyId, timeProvider.GetUtcNow() + options.KeyCacheDuration);
+        var active = new ActiveKey(keyId, timeProvider.GetUtcNow() + options.KeyCacheDuration);
+        _active[(scope, kind)] = active;
+
+        if (_ShreddedSince(scope, generation))
+        {
+            _active.TryRemove(KeyValuePair.Create((scope, kind), active));
+        }
     }
 
     public void ForgetActive(string scope, DataKeyKind kind)
@@ -106,6 +140,9 @@ internal sealed class DataKeyCache(TimeProvider timeProvider, EncryptionOptions 
     /// <summary>Forgets every key and active id of <paramref name="scope" />.</summary>
     public void ForgetScope(string scope)
     {
+        // Recorded before the eviction pass, so an entry published concurrently is either refused by Add or evicted here.
+        _shreddedAt[scope] = Interlocked.Increment(ref _generation);
+
         foreach (var (keyId, entry) in _keys)
         {
             if (string.Equals(entry.Scope, scope, StringComparison.Ordinal))
@@ -129,6 +166,9 @@ internal sealed class DataKeyCache(TimeProvider timeProvider, EncryptionOptions 
 
         _active.Clear();
     }
+
+    private bool _ShreddedSince(string scope, long generation) =>
+        _shreddedAt.TryGetValue(scope, out var shreddedAt) && shreddedAt > generation;
 
     private void _Evict(Guid keyId, DataKeyEntry entry)
     {

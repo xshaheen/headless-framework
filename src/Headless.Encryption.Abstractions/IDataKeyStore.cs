@@ -46,13 +46,23 @@ public interface IDataKeyStore
     Task<IReadOnlyList<StoredDataKey>> ListAsync(Guid? afterKeyId, int limit, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Inserts <paramref name="key" /> unless its scope already has a key of the same kind and version, without
-    /// raising a duplicate-key error. Two hosts racing on one version agree on the one that was inserted.
+    /// Inserts <paramref name="key" /> unless its scope already has a key of the same kind and version, or the scope was
+    /// shredded, without raising a duplicate-key error. Two hosts racing on one version agree on the one that was
+    /// inserted, and an insert racing <see cref="ShredScopeAsync" /> either lands before the shred (which then deletes
+    /// it) or sees the shred and is refused.
     /// </summary>
     /// <param name="key">The key to insert; <see cref="StoredDataKey.CreatedAt" /> is set by the store.</param>
+    /// <param name="reopenShreddedScope">
+    /// <see langword="true" /> to clear the scope's shredded marker and insert anyway, the explicit reopen
+    /// <see cref="IDataKeyManager.EnsureAsync" /> performs; <see langword="false" /> to refuse a shredded scope.
+    /// </param>
     /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns><see langword="true" /> when the key was inserted; <see langword="false" /> when the version was taken.</returns>
-    Task<bool> TryInsertAsync(StoredDataKey key, CancellationToken cancellationToken);
+    /// <returns>Whether the key was inserted, its version was taken, or its scope is shredded.</returns>
+    Task<DataKeyInsertResult> TryInsertAsync(
+        StoredDataKey key,
+        bool reopenShreddedScope,
+        CancellationToken cancellationToken
+    );
 
     /// <summary>Replaces the wrapped form of one key, after its key-encryption key was rotated.</summary>
     /// <param name="keyId">The key's id.</param>
@@ -67,9 +77,12 @@ public interface IDataKeyStore
         CancellationToken cancellationToken
     );
 
-    /// <summary>Deletes every key of a scope.</summary>
+    /// <summary>
+    /// Deletes every key of a scope and marks the scope shredded, in one transaction, so no key can be created for it
+    /// again until an insert reopens it.
+    /// </summary>
     /// <param name="scope">The scope, compared ordinally.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>The number of keys deleted.</returns>
-    Task<int> DeleteScopeAsync(string scope, CancellationToken cancellationToken);
+    Task<int> ShredScopeAsync(string scope, CancellationToken cancellationToken);
 }

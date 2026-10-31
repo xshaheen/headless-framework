@@ -26,10 +26,15 @@ internal sealed class DataKeyRing(
     // Concurrent misses for one key share one unwrap, so a burst of requests for a cold tenant costs one KMS call.
     private readonly ConcurrentDictionary<Guid, Lazy<Task<StoredDataKey>>> _loading = new();
 
-    /// <summary>Leases the active key of a scope and kind, creating version 1 when the scope has none.</summary>
+    /// <summary>
+    /// Leases the active key of a scope and kind, creating version 1 when the scope has none. A shredded scope is
+    /// reopened only when <paramref name="reopenShreddedScope" /> is set; otherwise it throws
+    /// <see cref="DataKeyScopeShreddedException" />.
+    /// </summary>
     public async ValueTask<DataKeyLease> GetOrCreateActiveAsync(
         string scope,
         DataKeyKind kind,
+        bool reopenShreddedScope,
         CancellationToken cancellationToken
     )
     {
@@ -40,26 +45,27 @@ internal sealed class DataKeyRing(
                 return cached;
             }
 
+            // Read before the store, so a shred on this host after this point keeps what is read out of the cache.
+            var generation = cache.Generation;
             var stored = await store.GetActiveAsync(scope, kind, cancellationToken).ConfigureAwait(false);
 
             if (stored is null)
             {
-                var created = await TryCreateAsync(scope, kind, version: 1, cancellationToken).ConfigureAwait(false);
+                var created = await TryCreateAsync(scope, kind, version: 1, reopenShreddedScope, cancellationToken)
+                    .ConfigureAwait(false);
 
                 if (created is not null)
                 {
-                    cache.SetActive(scope, kind, created.KeyId);
-
                     return created;
                 }
 
-                // Another host inserted version 1 first; read the key it stored.
+                // Another host inserted version 1 first, or a shred removed the new key; read the store again.
                 continue;
             }
 
-            if (await _LoadAsync(stored, cancellationToken).ConfigureAwait(false) is { } loaded)
+            if (await _LoadAsync(stored, generation, cancellationToken).ConfigureAwait(false) is { } loaded)
             {
-                cache.SetActive(scope, kind, stored.KeyId);
+                cache.SetActive(scope, kind, stored.KeyId, generation);
 
                 return loaded;
             }
@@ -78,26 +84,31 @@ internal sealed class DataKeyRing(
         CancellationToken cancellationToken
     )
     {
-        if (cache.GetActive(scope, kind) is { } cachedId && cache.TryAcquire(cachedId) is { } cached)
+        for (var round = 0; round < _MaxAcquireRounds; round++)
         {
-            return cached;
+            if (cache.GetActive(scope, kind) is { } cachedId && cache.TryAcquire(cachedId) is { } cached)
+            {
+                return cached;
+            }
+
+            var generation = cache.Generation;
+            var stored = await store.GetActiveAsync(scope, kind, cancellationToken).ConfigureAwait(false);
+
+            if (stored is null)
+            {
+                return null;
+            }
+
+            // Null here means the entry was evicted between caching and leasing, not that the key is missing.
+            if (await _LoadAsync(stored, generation, cancellationToken).ConfigureAwait(false) is { } loaded)
+            {
+                cache.SetActive(scope, kind, stored.KeyId, generation);
+
+                return loaded;
+            }
         }
 
-        var stored = await store.GetActiveAsync(scope, kind, cancellationToken).ConfigureAwait(false);
-
-        if (stored is null)
-        {
-            return null;
-        }
-
-        var lease = await _LoadAsync(stored, cancellationToken).ConfigureAwait(false);
-
-        if (lease is not null)
-        {
-            cache.SetActive(scope, kind, stored.KeyId);
-        }
-
-        return lease;
+        return null;
     }
 
     /// <summary>Returns the id of the active key of a scope and kind, or <see langword="null" /> when it has none.</summary>
@@ -108,6 +119,7 @@ internal sealed class DataKeyRing(
             return cachedId;
         }
 
+        var generation = cache.Generation;
         var stored = await store.GetActiveAsync(scope, kind, cancellationToken).ConfigureAwait(false);
 
         if (stored is null)
@@ -115,7 +127,7 @@ internal sealed class DataKeyRing(
             return null;
         }
 
-        cache.SetActive(scope, kind, stored.KeyId);
+        cache.SetActive(scope, kind, stored.KeyId, generation);
 
         return stored.KeyId;
     }
@@ -130,6 +142,7 @@ internal sealed class DataKeyRing(
                 return cached;
             }
 
+            var generation = cache.Generation;
             var stored = await store.GetAsync(keyId, cancellationToken).ConfigureAwait(false);
 
             if (stored is null)
@@ -137,7 +150,7 @@ internal sealed class DataKeyRing(
                 return null;
             }
 
-            if (await _LoadAsync(stored, cancellationToken).ConfigureAwait(false) is { } loaded)
+            if (await _LoadAsync(stored, generation, cancellationToken).ConfigureAwait(false) is { } loaded)
             {
                 return loaded;
             }
@@ -173,16 +186,22 @@ internal sealed class DataKeyRing(
     }
 
     /// <summary>
-    /// Generates, wraps, and inserts the key <paramref name="version" /> of a scope and kind, caching it. Returns a lease
-    /// on it, or <see langword="null" /> when another writer took that version first.
+    /// Generates, wraps, and inserts the key <paramref name="version" /> of a scope and kind, caching it as the active
+    /// key. Returns a lease on it, or <see langword="null" /> when another writer took that version first or a shred on
+    /// this host removed it meanwhile.
     /// </summary>
+    /// <exception cref="DataKeyScopeShreddedException">
+    /// The scope is shredded and <paramref name="reopenShreddedScope" /> is <see langword="false" />.
+    /// </exception>
     public async ValueTask<DataKeyLease?> TryCreateAsync(
         string scope,
         DataKeyKind kind,
         int version,
+        bool reopenShreddedScope,
         CancellationToken cancellationToken
     )
     {
+        var generation = cache.Generation;
         var key = RandomNumberGenerator.GetBytes(FieldCipher.KeyLength);
 
         try
@@ -205,17 +224,30 @@ internal sealed class DataKeyRing(
                 WrappedKey = wrapped,
             };
 
-            if (!await store.TryInsertAsync(stored, cancellationToken).ConfigureAwait(false))
+            var result = await store
+                .TryInsertAsync(stored, reopenShreddedScope, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (result != DataKeyInsertResult.Inserted)
             {
                 CryptographicOperations.ZeroMemory(key);
 
-                return null;
+                return result == DataKeyInsertResult.ScopeShredded
+                    ? throw new DataKeyScopeShreddedException(scope)
+                    : null;
             }
 
             logger.LogDataKeyCreated(kind, keyId, version, scope);
 
-            // The cache now owns the array and clears it on eviction.
-            return cache.Add(stored, key);
+            // The cache now owns the array and clears it on eviction, or at once when a shred on this host began after the generation was read.
+            var lease = cache.Add(stored, key, generation);
+
+            if (lease is not null)
+            {
+                cache.SetActive(scope, kind, keyId, generation);
+            }
+
+            return lease;
         }
         catch
         {
@@ -225,14 +257,19 @@ internal sealed class DataKeyRing(
         }
     }
 
-    private async ValueTask<DataKeyLease?> _LoadAsync(StoredDataKey stored, CancellationToken cancellationToken)
+    private async ValueTask<DataKeyLease?> _LoadAsync(
+        StoredDataKey stored,
+        long generation,
+        CancellationToken cancellationToken
+    )
     {
         // The shared unwrap runs uncancelled: one caller giving up must not fail the others waiting on it, so a
         // canceled caller only stops waiting.
         var loading = _loading.GetOrAdd(
             stored.KeyId,
-            static (_, state) => new Lazy<Task<StoredDataKey>>(() => state.Ring._UnwrapIntoCacheAsync(state.Stored)),
-            (Ring: this, Stored: stored)
+            static (_, state) =>
+                new Lazy<Task<StoredDataKey>>(() => state.Ring._UnwrapIntoCacheAsync(state.Stored, state.Generation)),
+            (Ring: this, Stored: stored, Generation: generation)
         );
 
         try
@@ -247,12 +284,13 @@ internal sealed class DataKeyRing(
         }
     }
 
-    private async Task<StoredDataKey> _UnwrapIntoCacheAsync(StoredDataKey stored)
+    private async Task<StoredDataKey> _UnwrapIntoCacheAsync(StoredDataKey stored, long generation)
     {
         var key = await UnwrapAsync(stored, CancellationToken.None).ConfigureAwait(false);
 
-        // The cache owns the array from here; the lease is only needed to publish the entry.
-        using var lease = cache.Add(stored, key);
+        // The cache owns the array from here, and refuses it when a shred on this host began after the store read;
+        // the lease is only needed to publish the entry.
+        using var lease = cache.Add(stored, key, generation);
 
         return stored;
     }

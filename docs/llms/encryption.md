@@ -50,6 +50,8 @@ string plaintext = decryption.GetString();
 - Scopes are tenant ids or per-subject scopes (`{tenant}/{beneficiaryId}`) of at most 200 characters, compared ordinally; leading or trailing white space and NUL characters are refused.
 - Store `EncryptedValue.ToArray()` in a `bytea` / `varbinary(max)` column, or `ToBase64Url()` in a text column. Read it back with `EncryptedValue.FromBytes` / `EncryptedValue.Parse`; both throw `FormatException` for bytes that are not a frame.
 - Treat `FieldDecryptionException` with `Failure = KeyNotFound` as "this tenant's data was shredded", not as corruption.
+- A shred is final. Encrypting for a shredded scope throws `DataKeyScopeShreddedException` instead of creating a key; reopen the scope deliberately with `IDataKeyManager.EnsureAsync`, which creates new keys and leaves the shredded values unreadable.
+- Keep one key-encryption-key provider for the life of the key table. Switching providers (for example from `UseLocalKey` to a key service) is not supported yet: data keys wrapped by the old provider can no longer be unwrapped, and `RewrapAsync` cannot move them.
 - Keep KEK material out of the database and out of source control. With `UseLocalKey`, whoever reads the configured key reads every value; prefer a key service in production when one is available.
 - Run `resources provision` (or `deploy`) on every release: it creates the key table and the host-scope keys. A host start only verifies them.
 
@@ -97,7 +99,8 @@ Decryption looks the key up by the id in the frame; it never tries keys in turn.
 - **Creation.** The first encryption for a scope with no data key creates version 1: one KEK wrap per tenant, ever. Two hosts racing on a new tenant agree on one key through the store's unique (scope, kind, version) key. `IDataKeyManager.EnsureAsync(tenantId)` creates the tenant's Data and Lookup keys up front, so onboarding fails early when the KEK is unreachable.
 - **Rotation.** `RotateAsync(scope, DataKeyKind.Data)` adds the next version, which encrypts every new value. Older versions keep decrypting. `FieldDecryption.KeyIsCurrent` is `false` for a value under an older version: a re-encryption job decrypts and encrypts it again. Other hosts switch to the new version when their cached active key expires.
 - **KEK rotation.** Make a new KEK version current (for the local key: add a key and point `ActiveKeyId` at it), then run `RewrapAsync()`. It re-wraps every data key the current KEK version did not wrap and returns how many it changed; no encrypted value changes. Keep the old KEK version enabled until a run returns 0.
-- **Shredding.** `ShredAsync(scope)` deletes every key of the scope and returns how many. This host forgets them at once; another host forgets them when its cached copy expires (`EncryptionOptions.KeyCacheDuration`, 1 hour by default). Then every value of the scope fails with `KeyNotFound`. A later encryption for the scope creates a new key.
+- **Shredding.** `ShredAsync(scope)` deletes every key of the scope, marks the scope shredded, and returns how many keys it deleted. This host forgets them at once; another host forgets them when its cached copy expires (`EncryptionOptions.KeyCacheDuration`, 1 hour by default). Then every value of the scope fails with `KeyNotFound`.
+- **A shred is final.** A later encryption for the scope throws `DataKeyScopeShreddedException`, and so does `RotateAsync`; nothing creates a key for it implicitly. An encryption racing the shred on any host either commits its key first, which the shred then deletes, or is refused. `EnsureAsync(scope)` is the only way back: it clears the marker and creates new keys, and the values from before the shred stay unreadable.
 
 **Backup limit.** A database backup taken before a shred still holds the wrapped keys, and restoring it while the shared KEK exists recovers the data. Shredding is immediate on live systems and complete once backup retention passes. A guarantee against backups needs a per-tenant KEK deleted in the key service; the stored KEK id per key leaves that possible without a schema change.
 
@@ -161,7 +164,7 @@ dotnet add package Headless.Encryption.Abstractions
 - `FieldDecryptionException.Failure` is `KeyNotFound` (the scope was shredded, or the frame names a key from another store), `AuthenticationFailed` (a different context, or a changed frame), or `UnsupportedAlgorithm`. No path returns partial plaintext.
 - `EncryptedValue` equality compares frame bytes. `default(EncryptedValue)` holds no frame (`IsDefault`); decrypting it throws `ArgumentException`.
 - `IDataKeyManager`: `EnsureAsync(scope)`, `RotateAsync(scope, kind)` (returns the active key id), `RewrapAsync()` (returns the count re-wrapped), `ShredAsync(scope)` (returns the count deleted).
-- **Writing a provider.** `IKeyEncryptionKeyProvider` (`Name`, `WrapAsync`, `UnwrapAsync`) and `IDataKeyStore` are public and need no internal member. A provider package registers through `HeadlessEncryptionSetupBuilder.RegisterKeyEncryptionKeyProvider` or `RegisterKeyStore` with an `IEncryptionProviderOptionsExtension`, from a `Use…` extension member. A KEK provider binds the wrapped key to `KeyWrapContext` (scope, key id, kind) where its key service supports it, and returns a `WrappedDataKey.KekId` that names the exact KEK version, so `UnwrapAsync` never depends on which version is current. New members on both interfaces arrive as default interface members.
+- **Writing a provider.** `IKeyEncryptionKeyProvider` (`Name`, `WrapAsync`, `UnwrapAsync`) and `IDataKeyStore` are public and need no internal member. A provider package registers through `HeadlessEncryptionSetupBuilder.RegisterKeyEncryptionKeyProvider` or `RegisterKeyStore` with an `IEncryptionProviderOptionsExtension`, from a `Use…` extension member. A KEK provider binds the wrapped key to `KeyWrapContext` (scope, key id, kind) where its key service supports it, and returns a `WrappedDataKey.KekId` that names the exact KEK version, so `UnwrapAsync` never depends on which version is current. A key store makes `TryInsertAsync` and `ShredScopeAsync` serialize per scope: an insert racing a shred either commits before it or returns `DataKeyInsertResult.ScopeShredded`, and only an insert with `reopenShreddedScope: true` clears the shredded marker. New members on both interfaces arrive as default interface members.
 
 ---
 
@@ -219,7 +222,7 @@ builder.Services.AddHeadlessEncryption(setup =>
 - Unwrapped data keys live only in process memory, by key id, never in a distributed cache. An evicted key is cleared with `CryptographicOperations.ZeroMemory` once no running operation uses it. Concurrent misses for one key share one unwrap.
 - Cached keys expire on the registered `TimeProvider`, so a test can advance it to see another host's shred take effect.
 - The local KEK wraps with AES-256-GCM under the active key, with the data key's scope, id, and kind as authenticated data; a wrapped key is 60 bytes. Its provider name is `Local`.
-- A data key wrapped by another provider (the stored `KekProvider` differs from the configured one) fails with `InvalidOperationException` naming both.
+- A data key wrapped by another provider (the stored `KekProvider` differs from the configured one) fails with `InvalidOperationException` naming both. Moving keys between providers is not supported yet.
 - Log events 4300 (`DataKeyCreated`), 4301 (`DataKeysShredded`, warning), and 4302 (`DataKeysRewrapped`).
 
 ---
@@ -250,13 +253,13 @@ builder.Services.AddHeadlessEncryption(setup =>
 | --- | --- | --- |
 | `ConnectionString` | required | The application's database by default; a separate database is allowed |
 | `CommandTimeout` | 30 seconds | |
-| `Schema` / `TableName` | `headless` / `encryption_keys` | Validated as PostgreSQL identifiers |
+| `Schema` / `TableName` / `ScopesTableName` | `headless` / `encryption_keys` / `encryption_scopes` | Validated as PostgreSQL identifiers; the two table names must differ |
 
 ### Design and runtime behavior
 
-- One table: `key_id uuid` primary key, `scope varchar(200) COLLATE "C"`, `kind smallint`, `version integer`, `kek_provider varchar(64)`, `kek_id varchar(1000)`, `wrapped_key bytea`, `created_at timestamptz`, and a unique (`scope`, `kind`, `version`) constraint.
-- A first key is inserted with `INSERT … ON CONFLICT (scope, kind, version) DO NOTHING`, so racing creators agree on one row. Every call opens its own connection and short READ COMMITTED transaction and retries a transient fault raised before the commit.
-- The table is a step `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), recorded in `headless_schema_history` as `Encryption/1` (`Encryption:<table>/1` for a configured table name).
+- Two tables. The key table: `key_id uuid` primary key, `scope varchar(200) COLLATE "C"`, `kind smallint`, `version integer`, `kek_provider varchar(64)`, `kek_id varchar(1000)`, `wrapped_key bytea`, `created_at timestamptz`, and a unique (`scope`, `kind`, `version`) constraint. The scopes table: `scope` primary key, `shredded_at timestamptz` (null unless shredded), `created_at timestamptz`.
+- A key insert and a shred of one scope both create the scope's row if absent and lock it (`FOR NO KEY UPDATE`) before touching keys, so they serialize. The key itself is inserted with `INSERT … ON CONFLICT (scope, kind, version) DO NOTHING`, so racing creators agree on one row. Every call opens its own connection and short READ COMMITTED transaction and retries a transient fault raised before the commit.
+- The tables are one step `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), recorded in `headless_schema_history` as `Encryption/1` (with each configured table name appended, `Encryption:<table>:<scopes table>/1`).
 
 ---
 
@@ -284,10 +287,10 @@ builder.Services.AddHeadlessEncryption(setup =>
 | --- | --- | --- |
 | `ConnectionString` | required | The application's database by default; a separate database is allowed |
 | `CommandTimeout` | 30 seconds | |
-| `Schema` / `TableName` | `headless` / `EncryptionKeys` | Validated as SQL Server identifiers |
+| `Schema` / `TableName` / `ScopesTableName` | `headless` / `EncryptionKeys` / `EncryptionScopes` | Validated as SQL Server identifiers; the two table names must differ |
 
 ### Design and runtime behavior
 
-- One table: `KeyId uniqueidentifier` (nonclustered primary key), `Scope nvarchar(200) COLLATE Latin1_General_100_BIN2`, `Kind smallint`, `Version int`, `KekProvider nvarchar(64)`, `KekId nvarchar(1000)`, `WrappedKey varbinary(max)`, `CreatedAt datetimeoffset(7)`, and a clustered unique (`Scope`, `Kind`, `Version`) index.
-- A first key is inserted with an `INSERT … WHERE NOT EXISTS (… WITH (UPDLOCK, HOLDLOCK))`, whose key-range lock on the unique index serializes racing creators. Every call opens its own connection and short transaction and retries a transient fault raised before the commit.
-- The table is a schema-runner step recorded as `Encryption/1`, like PostgreSQL.
+- Two tables. The key table: `KeyId uniqueidentifier` (nonclustered primary key), `Scope nvarchar(200) COLLATE Latin1_General_100_BIN2`, `Kind smallint`, `Version int`, `KekProvider nvarchar(64)`, `KekId nvarchar(1000)`, `WrappedKey varbinary(max)`, `CreatedAt datetimeoffset(7)`, and a clustered unique (`Scope`, `Kind`, `Version`) index. The scopes table: `Scope` clustered primary key, `ShreddedAt datetimeoffset(7)` (null unless shredded), `CreatedAt datetimeoffset(7)`.
+- A key insert and a shred of one scope both create the scope's row if absent and take its update lock before touching keys, so they serialize. The key itself is inserted with an `INSERT … WHERE NOT EXISTS (… WITH (UPDLOCK, HOLDLOCK))`, whose key-range lock on the unique index serializes racing creators. Every call opens its own connection and short transaction and retries a transient fault raised before the commit.
+- The tables are one schema-runner step recorded as `Encryption/1`, like PostgreSQL.

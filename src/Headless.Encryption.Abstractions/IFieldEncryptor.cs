@@ -28,6 +28,9 @@ public interface IFieldEncryptor
     /// <returns>The self-describing ciphertext frame.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="context" /> is <see langword="null" />.</exception>
     /// <exception cref="ArgumentException">The context's scope is too long or is not portable key text.</exception>
+    /// <exception cref="DataKeyScopeShreddedException">
+    /// The scope was shredded; <see cref="IDataKeyManager.EnsureAsync" /> reopens it with a new key.
+    /// </exception>
     ValueTask<EncryptedValue> EncryptAsync(
         ReadOnlyMemory<byte> plaintext,
         FieldContext context,

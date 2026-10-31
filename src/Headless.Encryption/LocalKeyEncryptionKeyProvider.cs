@@ -97,14 +97,23 @@ internal sealed class LocalKeyEncryptionKeyProvider : IKeyEncryptionKeyProvider
         var keyLength = ciphertext.Length - _NonceLength - _TagLength;
         var key = new byte[keyLength];
 
-        using var aes = new AesGcm(kek, _TagLength);
-        aes.Decrypt(
-            ciphertext.AsSpan(0, _NonceLength),
-            ciphertext.AsSpan(_NonceLength, keyLength),
-            ciphertext.AsSpan(_NonceLength + keyLength),
-            key,
-            _AuthenticatedData(context)
-        );
+        try
+        {
+            using var aes = new AesGcm(kek, _TagLength);
+            aes.Decrypt(
+                ciphertext.AsSpan(0, _NonceLength),
+                ciphertext.AsSpan(_NonceLength, keyLength),
+                ciphertext.AsSpan(_NonceLength + keyLength),
+                key,
+                _AuthenticatedData(context)
+            );
+        }
+        catch
+        {
+            CryptographicOperations.ZeroMemory(key);
+
+            throw;
+        }
 
         return ValueTask.FromResult(key);
     }

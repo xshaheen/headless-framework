@@ -235,6 +235,32 @@ public sealed class FieldEncryptorTests : TestBase
     }
 
     [Fact]
+    public async Task should_refuse_new_keys_for_a_shredded_scope_until_it_is_reopened()
+    {
+        using var host = new EncryptionTestHost(_store);
+        var context = new FieldContext(_Purpose) { Scope = "charity-closed" };
+        var before = await host.Encryptor.EncryptAsync(_NationalId, context, AbortToken);
+        await host.Manager.ShredAsync("charity-closed", AbortToken);
+
+        var encrypt = () => host.Encryptor.EncryptAsync(_NationalId, context, AbortToken).AsTask();
+        var rotate = () => host.Manager.RotateAsync("charity-closed", DataKeyKind.Data, AbortToken);
+
+        (await encrypt.Should().ThrowAsync<DataKeyScopeShreddedException>()).Which.Scope.Should().Be("charity-closed");
+        await rotate.Should().ThrowAsync<DataKeyScopeShreddedException>();
+        _store.Snapshot().Should().NotContain(k => k.Scope == "charity-closed");
+
+        await host.Manager.EnsureAsync("charity-closed", AbortToken);
+        var after = await host.Encryptor.EncryptAsync(_NationalId, context, AbortToken);
+
+        after.KeyId.Should().NotBe(before.KeyId);
+        (await host.Encryptor.DecryptStringAsync(after, context, AbortToken)).Should().Be(_NationalId);
+        var old = () => host.Encryptor.DecryptAsync(before, context, AbortToken).AsTask();
+        (await old.Should().ThrowAsync<FieldDecryptionException>())
+            .Which.Failure.Should()
+            .Be(FieldDecryptionFailure.KeyNotFound);
+    }
+
+    [Fact]
     public async Task should_stop_decrypting_on_another_host_once_its_cached_key_expires_after_a_shred()
     {
         using var hostA = new EncryptionTestHost(_store, options: o => o.KeyCacheDuration = TimeSpan.FromMinutes(5));

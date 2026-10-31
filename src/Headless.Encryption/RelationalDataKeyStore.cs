@@ -9,8 +9,15 @@ namespace Headless.Encryption;
 /// <summary>
 /// The one relational data-key store, written once against <see cref="ISqlDialect" />: plain reads, an
 /// insert-if-absent keyed by (scope, kind, version) so racing creators agree on one key, a keyed update for re-wrap,
-/// and a scope delete for shredding. Every call is autonomous: its own connection and short transaction.
+/// and a shred that deletes a scope's keys and marks the scope. Every call is autonomous: its own connection and short
+/// transaction.
 /// </summary>
+/// <remarks>
+/// An insert and a shred of one scope serialize on the scope's row in the scopes table: each first creates the row if
+/// absent, then takes its update lock, and only then reads or changes the scope's keys. An insert that queues behind a
+/// shred sees the shredded marker and is refused; one that went first commits a key the shred then deletes. Both take
+/// the scope row before any key row, so the two never deadlock on each other.
+/// </remarks>
 #pragma warning disable CA2100 // SQL text comes from the dialect over validated schema and table names; values are parameters.
 internal sealed class RelationalDataKeyStore : IDataKeyStore
 {
@@ -25,6 +32,10 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
     private readonly string _insertSql;
     private readonly string _replaceSql;
     private readonly string _deleteScopeSql;
+    private readonly string _scopeEnsureSql;
+    private readonly string _scopeLockSql;
+    private readonly string _scopeReopenSql;
+    private readonly string _scopeShredSql;
 
     public RelationalDataKeyStore(
         ISqlDialect dialect,
@@ -37,6 +48,7 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
         _timeProvider = Argument.IsNotNull(timeProvider);
 
         var table = dialect.Qualify(options.Schema, options.TableName);
+        var scopes = dialect.Qualify(options.Schema, options.ScopesTableName);
         var c = new DataKeyColumns(dialect);
         var select =
             $"SELECT {c.KeyId}, {c.Scope}, {c.Kind}, {c.Version}, {c.KekProvider}, {c.KekId}, {c.WrappedKey}, {c.CreatedAt} FROM {table}";
@@ -59,6 +71,16 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
         _replaceSql =
             $"UPDATE {table} SET {c.KekProvider} = @KekProvider, {c.KekId} = @KekId, {c.WrappedKey} = @WrappedKey WHERE {c.KeyId} = @KeyId;";
         _deleteScopeSql = $"DELETE FROM {table} WHERE {c.Scope} = @Scope;";
+        _scopeEnsureSql = dialect.Render(
+            new SqlInsertIfAbsent(scopes, [new(c.Scope, "Scope")], [c.CreatedAt], [SqlDialectTokens.Now], [c.Scope])
+        );
+        _scopeLockSql = dialect.Render(new SqlLockedRead(scopes, [new(c.Scope, "Scope")], [c.ShreddedAt]));
+        _scopeReopenSql = $"UPDATE {scopes} SET {c.ShreddedAt} = NULL WHERE {c.Scope} = @Scope;";
+        _scopeShredSql = dialect.Render(
+            new SqlClockedStatement(
+                $"UPDATE {scopes} SET {c.ShreddedAt} = {SqlDialectTokens.Now} WHERE {c.Scope} = @Scope;"
+            )
+        );
     }
 
     public Task<StoredDataKey?> GetAsync(Guid keyId, CancellationToken cancellationToken)
@@ -139,7 +161,11 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
         );
     }
 
-    public Task<bool> TryInsertAsync(StoredDataKey key, CancellationToken cancellationToken)
+    public Task<DataKeyInsertResult> TryInsertAsync(
+        StoredDataKey key,
+        bool reopenShreddedScope,
+        CancellationToken cancellationToken
+    )
     {
         Argument.IsNotNull(key);
         Argument.IsPositive(key.Version);
@@ -150,6 +176,18 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
             "encryption.insert",
             async (connection, transaction, ct) =>
             {
+                if (await _LockScopeAsync(connection, transaction, key.Scope, ct).ConfigureAwait(false))
+                {
+                    if (!reopenShreddedScope)
+                    {
+                        return DataKeyInsertResult.ScopeShredded;
+                    }
+
+                    await using var reopen = _Command(connection, transaction, _scopeReopenSql);
+                    _AddScope(reopen, key.Scope);
+                    await reopen.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
                 await using var command = _Command(connection, transaction, _insertSql);
                 _AddScope(command, key.Scope);
                 _dialect.AddParameter(command, "Kind", SqlColumnType.Int16, (short)key.Kind);
@@ -167,7 +205,7 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
                     )
                     .ConfigureAwait(false);
 
-                return inserted.IsAccepted;
+                return inserted.IsAccepted ? DataKeyInsertResult.Inserted : DataKeyInsertResult.VersionTaken;
             },
             cancellationToken
         );
@@ -198,12 +236,20 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
         );
     }
 
-    public Task<int> DeleteScopeAsync(string scope, CancellationToken cancellationToken)
+    public Task<int> ShredScopeAsync(string scope, CancellationToken cancellationToken)
     {
         return _RunAsync(
             "encryption.shred",
             async (connection, transaction, ct) =>
             {
+                await _LockScopeAsync(connection, transaction, scope, ct).ConfigureAwait(false);
+
+                await using (var mark = _Command(connection, transaction, _scopeShredSql))
+                {
+                    _AddScope(mark, scope);
+                    await mark.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
                 await using var command = _Command(connection, transaction, _deleteScopeSql);
                 _AddScope(command, scope);
 
@@ -211,6 +257,31 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
             },
             cancellationToken
         );
+    }
+
+    /// <summary>
+    /// Creates the scope's row if absent and takes its update lock until the transaction ends.
+    /// </summary>
+    /// <returns><see langword="true" /> when the scope is marked shredded.</returns>
+    private async Task<bool> _LockScopeAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        string scope,
+        CancellationToken cancellationToken
+    )
+    {
+        await using (var ensure = _Command(connection, transaction, _scopeEnsureSql))
+        {
+            _AddScope(ensure, scope);
+            await ensure.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using var command = _Command(connection, transaction, _scopeLockSql);
+        _AddScope(command, scope);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            && !await reader.IsDBNullAsync(0, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<T> _RunAsync<T>(
@@ -320,7 +391,7 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
 }
 #pragma warning restore CA2100
 
-/// <summary>The key table's columns, in each dialect's naming convention and quoted.</summary>
+/// <summary>The key and scope tables' columns, in each dialect's naming convention and quoted.</summary>
 internal sealed class DataKeyColumns(ISqlDialect dialect)
 {
     public string KeyId { get; } = _Column(dialect, "KeyId");
@@ -338,6 +409,8 @@ internal sealed class DataKeyColumns(ISqlDialect dialect)
     public string WrappedKey { get; } = _Column(dialect, "WrappedKey");
 
     public string CreatedAt { get; } = _Column(dialect, "CreatedAt");
+
+    public string ShreddedAt { get; } = _Column(dialect, "ShreddedAt");
 
     private static string _Column(ISqlDialect dialect, string pascalName) => dialect.Quote(dialect.Name(pascalName));
 }

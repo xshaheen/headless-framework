@@ -18,6 +18,10 @@ public interface IDataKeyManager
     /// Creates version 1 of each key kind the scope lacks, so a tenant's onboarding fails early when the key-encryption
     /// key is unreachable. Safe to call concurrently from several hosts: they agree on one key per kind.
     /// </summary>
+    /// <remarks>
+    /// This is the only call that reopens a shredded scope: it clears the scope's shredded marker and creates new keys.
+    /// Values encrypted before the shred stay unreadable.
+    /// </remarks>
     /// <param name="scope">The scope, such as a tenant id.</param>
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>A task that completes when the scope has its keys.</returns>
@@ -42,6 +46,7 @@ public interface IDataKeyManager
     /// <exception cref="ArgumentException">
     /// <paramref name="scope" /> is too long or is not portable key text, or <paramref name="kind" /> is undefined.
     /// </exception>
+    /// <exception cref="DataKeyScopeShreddedException">The scope was shredded.</exception>
     Task<Guid> RotateAsync(string scope, DataKeyKind kind, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -57,13 +62,16 @@ public interface IDataKeyManager
     Task<int> RewrapAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Deletes every key of <paramref name="scope" />, so its encrypted values and blind indexes can no longer be read
-    /// or linked (crypto-shredding).
+    /// Deletes every key of <paramref name="scope" /> and marks the scope shredded, so its encrypted values and blind
+    /// indexes can no longer be read or linked (crypto-shredding).
     /// </summary>
     /// <remarks>
     /// <para>
     /// This host forgets the keys at once; another host forgets them when its cached copy expires
-    /// (<c>EncryptionOptions.KeyCacheDuration</c>). A later encryption for the scope creates a new key.
+    /// (<c>EncryptionOptions.KeyCacheDuration</c>). The shred is final: a later encryption for the scope throws
+    /// <see cref="DataKeyScopeShreddedException" /> instead of creating a key, and an encryption racing the shred
+    /// either finishes before it (and its value is shredded too) or is refused. Only <see cref="EnsureAsync" /> reopens
+    /// the scope.
     /// </para>
     /// <para>
     /// A database backup taken before the shred still holds the wrapped keys, and restoring it while the

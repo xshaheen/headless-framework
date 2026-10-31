@@ -16,7 +16,12 @@ internal sealed class FieldEncryptor(DataKeyRing ring, ICurrentTenant currentTen
         Argument.IsNotNull(context);
         var scope = _ResolveScope(context);
 
-        using var key = await ring.GetOrCreateActiveAsync(scope, DataKeyKind.Data, cancellationToken)
+        using var key = await ring.GetOrCreateActiveAsync(
+                scope,
+                DataKeyKind.Data,
+                reopenShreddedScope: false,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         var frame = FieldCipher.Seal(key.Key, key.KeyId, scope, context.Purpose, context.Binding.Span, plaintext.Span);

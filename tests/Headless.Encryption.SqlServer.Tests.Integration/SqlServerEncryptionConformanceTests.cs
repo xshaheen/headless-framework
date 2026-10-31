@@ -31,6 +31,12 @@ public sealed class SqlServerEncryptionConformanceTests(SqlServerEncryptionFixtu
     }
 
     [Fact]
+    public override Task should_leave_no_key_when_a_shred_races_first_encryptions_and_refuse_new_ones()
+    {
+        return base.should_leave_no_key_when_a_shred_races_first_encryptions_and_refuse_new_ones();
+    }
+
+    [Fact]
     public override Task should_rewrap_every_key_so_old_values_decrypt_under_the_new_key_encryption_key()
     {
         return base.should_rewrap_every_key_so_old_values_decrypt_under_the_new_key_encryption_key();

@@ -116,6 +116,49 @@ public abstract class EncryptionConformanceTests<TFixture>(TFixture fixture) : T
         (await hostB.Encryptor.DecryptStringAsync(stays, keptContext, AbortToken)).Should().Be(_NationalId);
     }
 
+    public virtual async Task should_leave_no_key_when_a_shred_races_first_encryptions_and_refuse_new_ones()
+    {
+        await using var hostA = await Fixture.CreateHostAsync(_SharedTable, cancellationToken: AbortToken);
+        await using var hostB = await Fixture.CreateHostAsync(_SharedTable, cancellationToken: AbortToken);
+        var scope = _Scope("shred-race");
+        var context = new FieldContext(_Purpose) { Scope = scope };
+
+        var encryptions = Enumerable
+            .Range(0, 20)
+            .Select(i =>
+                Task.Run(
+                    async () =>
+                    {
+                        try
+                        {
+                            await (i % 2 == 0 ? hostA : hostB).Encryptor.EncryptAsync(_NationalId, context, AbortToken);
+                        }
+                        catch (DataKeyScopeShreddedException)
+                        {
+                            // Queued behind the shred: refused, as a final shred must be.
+                        }
+                    },
+                    AbortToken
+                )
+            )
+            .ToList();
+        var shred = Task.Run(() => hostB.Manager.ShredAsync(scope, AbortToken), AbortToken);
+        await Task.WhenAll([.. encryptions, shred]);
+
+        // Every insert either landed before the shred, which deleted it, or saw the shred and was refused.
+        (await hostA.Store.ListScopeAsync(scope, AbortToken))
+            .Should()
+            .BeEmpty();
+
+        var encrypt = () => hostB.Encryptor.EncryptAsync(_NationalId, context, AbortToken).AsTask();
+        await encrypt.Should().ThrowAsync<DataKeyScopeShreddedException>();
+
+        await hostA.Manager.EnsureAsync(scope, AbortToken);
+        (await hostA.Store.ListScopeAsync(scope, AbortToken)).Should().HaveCount(2);
+        var encrypted = await hostA.Encryptor.EncryptAsync(_NationalId, context, AbortToken);
+        (await hostB.Encryptor.DecryptStringAsync(encrypted, context, AbortToken)).Should().Be(_NationalId);
+    }
+
     public virtual async Task should_rewrap_every_key_so_old_values_decrypt_under_the_new_key_encryption_key()
     {
         var table = EncryptionFixtureExtensions.UniqueTable();
@@ -158,9 +201,15 @@ public abstract class EncryptionConformanceTests<TFixture>(TFixture fixture) : T
         await using var host = await Fixture.CreateHostAsync(_SharedTable, cancellationToken: AbortToken);
         var scope = _Scope("insert");
 
-        (await host.Store.TryInsertAsync(_Key(scope, version: 1), AbortToken)).Should().BeTrue();
-        (await host.Store.TryInsertAsync(_Key(scope, version: 1), AbortToken)).Should().BeFalse();
-        (await host.Store.TryInsertAsync(_Key(scope, version: 2), AbortToken)).Should().BeTrue();
+        (await host.Store.TryInsertAsync(_Key(scope, version: 1), false, AbortToken))
+            .Should()
+            .Be(DataKeyInsertResult.Inserted);
+        (await host.Store.TryInsertAsync(_Key(scope, version: 1), false, AbortToken))
+            .Should()
+            .Be(DataKeyInsertResult.VersionTaken);
+        (await host.Store.TryInsertAsync(_Key(scope, version: 2), false, AbortToken))
+            .Should()
+            .Be(DataKeyInsertResult.Inserted);
 
         var active = await host.Store.GetActiveAsync(scope, DataKeyKind.Data, AbortToken);
         active!.Version.Should().Be(2);
@@ -217,7 +266,7 @@ public abstract class EncryptionConformanceTests<TFixture>(TFixture fixture) : T
     {
         await using var host = await Fixture.CreateHostAsync(_SharedTable, cancellationToken: AbortToken);
         var key = _Key(_Scope("replace"), version: 1);
-        await host.Store.TryInsertAsync(key, AbortToken);
+        await host.Store.TryInsertAsync(key, false, AbortToken);
 
         var replaced = await host.Store.ReplaceWrappedKeyAsync(
             key.KeyId,
