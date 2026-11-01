@@ -1,11 +1,11 @@
 ---
 domain: API & Web
-packages: Api.Abstractions, Api, Api.ServiceDefaults, DataProtection.Blobs, Api.FluentValidation, Api.Identity, Api.Jwt, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc, Api.UserAgent
+packages: Api.Abstractions, Api, Api.ServiceDefaults, DataProtection.Blobs, Api.FluentValidation, Api.Identity, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc, Api.UserAgent
 ---
 
 # API & Web
 
-> ASP.NET Core API infrastructure: service registration, JWT, middleware, validation, logging, and endpoint integration for Minimal API and MVC.
+> ASP.NET Core API infrastructure: service registration, middleware, validation, logging, and endpoint integration for Minimal API and MVC.
 
 ## Orientation
 
@@ -25,7 +25,6 @@ Additional packages:
 
 - `Headless.Api.FluentValidation` — the `Headless.FluentValidation` file rules (size, content type, magic bytes) for `IFormFile` uploads, plus API request contracts (`PhoneNumberRequest`, `GeoCoordinateRequest`, `PageMetadataRequest`).
 - `Headless.DataProtection.Blobs` — persist ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
-- `Headless.Api.Jwt` — issue and parse JWTs with `IJwtTokenFactory`, and validate them with the matching `AddHeadlessJwtBearer()` scheme.
 - `Headless.Api.Identity` — ASP.NET Core Identity helpers: token providers, localized `auth:`/`user:` errors, `HeadlessLookupNormalizer`, and the Identity-backed `AddBasicSchema()` and `AddApiKey()` schemes.
 - `Headless.Api.UserAgent` — the DeviceDetector.NET-backed `IUserAgentParser`. Without it, `IWebClientInfoProvider.DeviceInfo` is `null`.
 - `Headless.Api.Logging.Serilog` — enrich Serilog logs with per-request context (IP, user agent, user ID, tenant ID, correlation ID).
@@ -231,7 +230,7 @@ None. This is an abstractions-only package.
 
 ## Headless.Api
 
-Building blocks for ASP.NET Core APIs — primitives only. Provides service registration helpers, middleware, problem details, tenancy, and request-context abstractions. JWT, ASP.NET Core Identity, and user-agent parsing ship in `Headless.Api.Jwt`, `Headless.Api.Identity`, and `Headless.Api.UserAgent`. `Headless.Api.ServiceDefaults` is the orchestrator that composes these into a single `AddHeadless()` call.
+Building blocks for ASP.NET Core APIs — primitives only. Provides service registration helpers, middleware, problem details, tenancy, and request-context abstractions. ASP.NET Core Identity and user-agent parsing ship in `Headless.Api.Identity` and `Headless.Api.UserAgent`. The framework issues no JWTs; a host that needs them registers ASP.NET Core's `AddJwtBearer` itself. `Headless.Api.ServiceDefaults` is the orchestrator that composes these into a single `AddHeadless()` call.
 
 ### API and behavior
 
@@ -726,7 +725,7 @@ Bind with `builder.Services.AddLookupHasher(builder.Configuration.GetRequiredSec
 - Enables service-provider validation on startup (`ValidateOnBuild`, `ValidateScopes`).
 - Registers no string-encryption or lookup-hasher service and requires no `Headless:StringEncryption` or `Headless:LookupHasher` configuration.
 - Registers all core primitives from `Headless.Api` including problem details, response compression, status-code rewriting, and default API conventions.
-- Registers no JWT, Identity, or authentication-scheme services; add `Headless.Api.Jwt` or `Headless.Api.Identity` and call their registration methods.
+- Registers no JWT, Identity, or authentication-scheme services; add `Headless.Api.Identity` or ASP.NET Core's own schemes and call their registration methods.
 - Registers a fallback `IUserAgentParser` that identifies nothing (`TryAddSingleton`); `AddHeadlessUserAgentParser()` from `Headless.Api.UserAgent` replaces it in either call order.
 - Registers antiforgery services only when `options.Antiforgery.Enabled` is `true`.
 - Configures MVC and Minimal API JSON serializer defaults.
@@ -929,87 +928,6 @@ builder.Services
 
 - `AddHeadless()` registers none of these services. `AddHeadlessLookupNormalizer()` removes any earlier `ILookupNormalizer` registration, so it wins whether it runs before or after `AddIdentityCore`.
 - `AddApiKey()` and `AddBasicSchema()` replace `IAuthenticationSchemeProvider` with `DynamicAuthenticationSchemeProvider` and register `IHttpContextAccessor`, which it reads. A host that uses only a bearer scheme keeps ASP.NET Core's provider and selects the scheme through `AddAuthentication(defaultScheme)`.
-
----
-
-## Headless.Api.Jwt
-
-JWT issuing, parsing, and bearer authentication for Headless APIs.
-
-### API and behavior
-
-- `IJwtTokenFactory` / `JwtTokenFactory` — creates HMAC-SHA256 tokens, optionally encrypted, and parses them back into a `ClaimsPrincipal`
-- `AuthenticationBuilder.AddHeadlessJwtBearer(IConfiguration | Action<HeadlessJwtBearerOptions> | Action<HeadlessJwtBearerOptions, IServiceProvider>, authenticationScheme = "Bearer", configureBearer = null)` — adds a JWT bearer scheme that validates the tokens `IJwtTokenFactory` issues with the factory's own rules. `HeadlessJwtBearerOptions` carries `SigningKey`, `EncryptingKey`, `Issuer`, `Audience`, `ValidateIssuer`, and `ValidateAudience`, validated at startup
-- JWT request contracts — `JwtTokenRequest` groups token creation values, while `JwtTokenValidationRequest` uses required initializers for the token, signing key, issuer, and audience and groups the validation switches for `IJwtTokenFactory.ParseJwtTokenAsync(...)`
-
-### Install
-
-```bash
-dotnet add package Headless.Api.Jwt
-```
-
-### Setup and use
-
-Validate bearer tokens the factory issued with `AddHeadlessJwtBearer`, configured with the same keys, issuer, and audience the host passes in `JwtTokenRequest`:
-
-```csharp
-builder.Services
-    .AddAuthentication(AuthenticationConstants.Schemas.Bearer)
-    .AddHeadlessJwtBearer(
-        builder.Configuration.GetSection("Jwt"), // SigningKey, EncryptingKey, Issuer, Audience
-        configureBearer: bearer =>
-            bearer.Events = new JwtBearerEvents
-            {
-                // WebSocket clients cannot send headers; read the token from the query string on the hub path only.
-                OnMessageReceived = context =>
-                {
-                    if (context.HttpContext.Request.Path.StartsWithSegments("/hubs"))
-                    {
-                        context.Token = context.Request.Query["access_token"];
-                    }
-
-                    return Task.CompletedTask;
-                },
-            }
-    );
-```
-
-The scheme and `IJwtTokenFactory.ParseJwtTokenAsync` share one rule set: HMAC-SHA256 signature from the UTF-8 signing key (at least 32 bytes), optional decryption with `EncryptingKey`, a required `exp` with zero clock skew, `UserClaimTypes.UserName` and `UserClaimTypes.Roles` as the name and role claim types, and no inbound claim mapping. `configureBearer` runs after those rules; use it for events, and leave `TokenValidationParameters` alone, or the scheme stops accepting exactly what the factory issues. The options are named by scheme, so two `AddHeadlessJwtBearer` calls with different scheme names keep separate keys.
-
-JWT validation outside the authentication middleware uses a request object instead of positional token, key, issuer, audience, and validation arguments:
-
-```csharp
-using System.Security.Claims;
-using Headless.Api.Security;
-
-public sealed class TokenValidator(IJwtTokenFactory tokens)
-{
-    public Task<ClaimsPrincipal?> ValidateAsync(
-        string token,
-        string signingKey,
-        string issuer,
-        string audience,
-        CancellationToken cancellationToken
-    ) =>
-        tokens.ParseJwtTokenAsync(
-            new JwtTokenValidationRequest
-            {
-                Token = token,
-                SigningKey = signingKey,
-                Issuer = issuer,
-                Audience = audience,
-                ValidateIssuer = true,
-                ValidateAudience = true,
-            },
-            cancellationToken
-        );
-}
-```
-
-### Runtime behavior
-
-- `AddHeadlessJwtBearer(...)` registers `IJwtTokenFactory` (`TryAddSingleton`), so the scheme and the factory share one rule set. A host that only issues tokens and validates none registers `JwtTokenFactory` itself.
-- `AddHeadless()` registers no JWT services and leaves the `JsonWebTokenHandler` statics alone.
 
 ---
 
