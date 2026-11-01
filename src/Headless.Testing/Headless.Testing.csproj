@@ -18,6 +18,6 @@
     <ProjectReference Include="..\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />
-    <ProjectReference Include="..\Headless.Security.Abstractions\Headless.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Hashing.Abstractions\Headless.Hashing.Abstractions.csproj" />
   </ItemGroup>
 </Project>

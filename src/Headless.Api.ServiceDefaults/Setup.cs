@@ -89,8 +89,8 @@ public static class SetupApi
     {
         /// <summary>
         /// Registers all Headless service defaults (OpenTelemetry, OpenAPI, HttpClient, service discovery,
-        /// problem details, multi-tenancy stubs, etc.). String encryption and the lookup hasher are opt-in: call
-        /// <c>AddStringEncryptionService(...)</c> and <c>AddLookupHasher(...)</c> when the app uses them.
+        /// problem details, multi-tenancy stubs, etc.). Field encryption and blind indexes are opt-in: call
+        /// <c>AddHeadlessEncryption(...)</c> when the app uses them.
         /// </summary>
         /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/> before registration.</param>
         /// <returns><paramref name="builder"/> for chaining.</returns>

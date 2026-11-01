@@ -790,6 +790,12 @@
       "headless.generator.primitives.abstractions": {
         "type": "Project"
       },
+      "headless.hashing.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
@@ -865,12 +871,6 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Testing": "[1.0.0, )",
           "NSubstitute": "[6.2.0, )"
-        }
-      },
-      "headless.security.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
         }
       },
       "headless.sequences": {
@@ -950,8 +950,8 @@
           "Bogus": "[35.6.5, )",
           "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hashing.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Headless.Security.Abstractions": "[1.0.0, )",
           "Meziantou.Extensions.Logging.Xunit.v3": "[3.0.8, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
           "Microsoft.Extensions.Logging": "[10.0.13, )",

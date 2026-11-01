@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting;
-using Headless.Security;
 using Headless.Settings;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -101,11 +100,6 @@ public sealed class SettingDefinitionsWarmupTests : TestBase
     {
         var builder = Host.CreateApplicationBuilder();
         var services = builder.Services;
-        services.AddStringEncryptionService(options =>
-        {
-            options.DefaultPassPhrase = "WarmupPassPhrase123";
-            options.DefaultSalt = [.. "WarmupSalt"u8];
-        });
         services.AddHeadlessSettings(setup =>
         {
             setup.ConfigureManagement(options => options.IsDynamicSettingStoreEnabled = dynamicStore);

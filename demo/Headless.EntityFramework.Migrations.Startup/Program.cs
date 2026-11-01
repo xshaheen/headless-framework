@@ -8,7 +8,6 @@ using Headless.Features;
 using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Permissions;
-using Headless.Security;
 using Headless.Settings;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
@@ -33,13 +32,6 @@ builder.Host.UseDefaultServiceProvider(
 );
 
 builder.AddHeadless();
-
-// Settings encrypts stored values, so it needs the string-encryption service.
-builder.Services.AddStringEncryptionService(encryption =>
-{
-    encryption.DefaultPassPhrase = "DemoPassPhrase123456";
-    encryption.DefaultSalt = "DemoSalt"u8.ToArray();
-});
 
 // Redis connection (required by Headless.DistributedLocks.Redis)
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));

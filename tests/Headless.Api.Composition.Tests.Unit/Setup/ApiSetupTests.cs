@@ -98,22 +98,6 @@ public sealed class SetupApiTests
     }
 
     [Fact]
-    public void should_register_no_string_encryption_or_lookup_hasher_when_add_headless_without_security_configuration()
-    {
-        // given
-        var builder = WebApplication.CreateBuilder();
-
-        // when
-        builder.AddHeadless();
-
-        using var serviceProvider = builder.Services.BuildServiceProvider();
-
-        // then
-        serviceProvider.GetService<IStringEncryptionService>().Should().BeNull();
-        serviceProvider.GetService<ILookupHasher>().Should().BeNull();
-    }
-
-    [Fact]
     public async Task should_register_convention_defaults_when_add_headless()
     {
         // given

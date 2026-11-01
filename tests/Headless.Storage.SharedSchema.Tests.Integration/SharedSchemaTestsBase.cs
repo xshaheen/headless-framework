@@ -9,7 +9,6 @@ using Headless.Hosting.Schema;
 using Headless.Jobs;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
-using Headless.Security;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -438,15 +437,7 @@ public abstract class SharedSchemaTestsBase : TestBase
         builder.Services.Configure<HostOptions>(options => options.ServicesStartConcurrently = true);
         builder.Services.AddSingleton(TimeProvider.System);
 
-        // Settings encrypts values, and the Features and Settings value stores cache reads.
-        builder.Configuration.AddInMemoryCollection([
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
-        ]);
-        builder.Services.AddStringEncryptionService(
-            builder.Configuration.GetRequiredSection("Headless:StringEncryption")
-        );
+        // The Features and Settings value stores cache reads.
         builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 
         // Several nodes share this process, so each names its own coordination member.

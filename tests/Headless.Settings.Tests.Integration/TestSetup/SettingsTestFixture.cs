@@ -1,7 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Encryption;
+using Headless.Hosting;
 using Headless.Testing.Testcontainers;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Npgsql;
 using Respawn;
 using Respawn.Graph;
@@ -55,6 +59,7 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
         SqlConnection = new NpgsqlConnection(SqlConnectionString);
         await SqlConnection.OpenAsync();
         await _RunMigrationAsync();
+        await _ProvisionEncryptionAsync();
         Respawner = await Respawner.CreateAsync(
             SqlConnection,
             new RespawnerOptions
@@ -82,6 +87,26 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
         var migrationScript = await File.ReadAllTextAsync("TestSetup/postgre-init.sql");
         await using var command = new NpgsqlCommand(migrationScript, SqlConnection);
         await command.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// Creates the encryption key tables once, as a deploy step would. Resets empty them, and the keys come back
+    /// lazily on the next encrypted write.
+    /// </summary>
+    private async Task _ProvisionEncryptionAsync()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(TimeProvider.System);
+        services.AddHeadlessEncryption(setup => SettingsTestBase.ConfigureEncryption(setup, SqlConnectionString));
+        services.AddDeployStepsOnStartup(o => o.Seed = false);
+
+        await using var provider = services.BuildServiceProvider();
+
+        foreach (var initializer in provider.GetServices<IHostedService>().OfType<IHostedLifecycleService>())
+        {
+            await initializer.StartingAsync(CancellationToken.None);
+        }
     }
 
     private static PostgreSqlContainer _CreatePostgreSqlContainer()

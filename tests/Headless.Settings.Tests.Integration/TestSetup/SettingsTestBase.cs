@@ -3,15 +3,14 @@ using Headless.Caching;
 using Headless.Context;
 using Headless.DistributedLocks;
 using Headless.Domain;
+using Headless.Encryption;
 using Headless.Hosting;
 using Headless.Messaging;
 using Headless.MultiTenancy;
-using Headless.Security;
 using Headless.Settings;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -42,8 +41,6 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
     protected void ConfigureSettingsServices(IHostApplicationBuilder builder)
     {
         var services = builder.Services;
-        _AddDefaultStringEncryptionConfiguration(builder.Configuration);
-
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
         services.AddSingleton<ICancellationTokenProvider>(DefaultCancellationTokenProvider.Instance);
@@ -67,7 +64,7 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
-        services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
+        services.AddHeadlessEncryption(setup => ConfigureEncryption(setup, Fixture.SqlConnectionString));
 
         AddSettingsDbContextFactory(services);
 
@@ -90,13 +87,15 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         setup.UseEntityFramework<SettingsTestDbContext>();
     }
 
-    private static void _AddDefaultStringEncryptionConfiguration(IConfigurationBuilder configuration)
+    /// <summary>The key store and key-encryption key every settings host and the fixture's provisioning share.</summary>
+    internal static void ConfigureEncryption(HeadlessEncryptionSetupBuilder setup, string connectionString)
     {
-        configuration.AddInMemoryCollection([
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
-        ]);
+        setup.UsePostgreSql(connectionString);
+        setup.UseLocalKey(options =>
+        {
+            options.Keys["test"] = Convert.ToBase64String(Enumerable.Repeat((byte)0x11, 32).ToArray());
+            options.ActiveKeyId = "test";
+        });
     }
 
     protected sealed class SettingsTestDbContext(
