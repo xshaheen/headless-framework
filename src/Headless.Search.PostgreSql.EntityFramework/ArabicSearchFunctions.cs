@@ -17,7 +17,9 @@ public static class ArabicSearchFunctions
     /// <param name="value">The text to normalize.</param>
     /// <returns>The search key, as the database computes it.</returns>
     /// <example>
-    /// <c>db.People.Where(p => EF.Functions.Like(p.NameSearch, "%" + ArabicSearchFunctions.Key(term) + "%"))</c>
+    /// <c>db.People.Where(p => EF.Functions.Like(p.NameSearch, "%" + ArabicSearchFunctions.Key(term) + "%"))</c>, after
+    /// skipping the filter for a term whose <see cref="ArabicSearchNormalizer.Normalize" /> key is empty: such a term
+    /// (<c>"!!!"</c>, only tashkeel) makes the pattern <c>%%</c>, which matches every row.
     /// </example>
     /// <exception cref="InvalidOperationException">
     /// Always, when called outside a query: evaluating it in .NET would let a different implementation stand in for the

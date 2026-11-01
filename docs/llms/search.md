@@ -23,6 +23,12 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 }
 
 // Query: the database normalizes the term with the function that built the stored keys.
+// A term with no searchable character ("!!!", only tashkeel) has an empty key, and LIKE '%%' matches every row.
+if (ArabicSearchNormalizer.Normalize(term, ArabicSearchVersion.V1).Length == 0)
+{
+    return [];
+}
+
 var people = await db.People
     .Where(p => EF.Functions.Like(p.NameSearch, "%" + ArabicSearchFunctions.Key(term) + "%"))
     .ToListAsync(ct);
