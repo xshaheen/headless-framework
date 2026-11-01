@@ -4,7 +4,7 @@ Maps Arabic search keys into an EF Core model on PostgreSQL.
 
 ## Why use this package
 
-Declares a stored, trigram-indexed search key beside each searchable name, maps the query function so EF Core normalizes search terms in SQL with the same rules, and moves stored keys to a later rule version in a migration.
+Declares a stored, trigram-indexed search key beside each searchable name, filters a query by a search term that the database normalizes with the same rules, and moves stored keys to a later rule version in a migration.
 
 ## Install
 

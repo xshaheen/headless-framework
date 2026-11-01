@@ -113,6 +113,86 @@ straße	strasse
 Ñandú	nandu
 ÇAĞLAR	caglar
 İstanbul	istanbul
+# Real names: hamza seats, teh marbuta, and alef maksura together
+عائشة	عايشه
+عايشة	عايشه
+أسامة	اسامه
+إسماعيل	اسماعيل
+آدم	ادم
+مأمون	مامون
+رؤوف	رووف
+لؤي	لوي
+هناء	هناء
+وفاء	وفاء
+شيماء	شيماء
+زكريا	زكريا
+زكرياء	زكرياء
+مرتضى	مرتضي
+ليلى	ليلي
+سلمى	سلمي
+هدى	هدي
+جميلة	جميله
+حمزة	حمزه
+طه	طه
+سعيد	سعيد
+# Real names: compound names keep their spacing, so the spaced and joined spellings differ
+عبد الرحمن	عبد الرحمن
+عبدالرحمن	عبدالرحمن
+أبو بكر الصديق	ابو بكر الصديق
+ابن تيمية	ابن تيميه
+نور الهدى	نور الهدي
+أنس بن مالك	انس بن مالك
+خديجة بنت خويلد	خديجه بنت خويلد
+# Real names with full tashkeel
+فَاطِمَةُ	فاطمه
+عَلِيٌّ	علي
+إِبْرَاهِيمُ	ابراهيم
+يُوسُفَ	يوسف
+مَرْيَمَ	مريم
+عُثْمَانُ	عثمان
+# Persian names
+محمدرضا	محمدرضا
+فاطمه زهرا	فاطمه زهرا
+مهدی	مهدي
+زینب	زينب
+کوثر	كوثر
+نرگس	نركس
+پریسا	بريسا
+ژیلا	زيلا
+چنگیز	جنكيز
+شیرین	شيرين
+مصطفی	مصطفي
+حسین\u200Cعلی	حسينعلي
+# Urdu names
+عمران خان	عمران خان
+نواز شریف	نواز شريف
+بھٹو	بهتو
+چودھری	جودهري
+ثناء اللہ	ثناء الله
+شاہد	شاهد
+پرویز	برويز
+گیلانی	كيلاني
+رضوانہ	رضوانه
+ملک	ملك
+# Kurdish names
+شێرکۆ	شيركو
+هەڵەبجە	ههلهبجه
+ڕێبوار	ريبوار
+کوردستان	كوردستان
+# Maghrebi letters and Latin transliterations
+ڭناوة	كناوه
+Mohamed Ben Ali	mohamed ben ali
+Abdelkader	abdelkader
+Aïcha	aicha
+Hélène	helene
+Zoë	zoe
+Müller	muller
+Ahmed El-Sayed	ahmed el sayed
+# Scholarly transliteration: letters outside Latin Extended-A split words, so ʿ and ḥ become separators
+ʿAbd al-Raḥmān	abd al ra man
+# Names beside digits and brackets
+محمد ٢	محمد 2
+فاطمة (Fatima)	فاطمه fatima
 # Mixed scripts
 Ahmed أحمد	ahmed احمد
 أحمد123	احمد123

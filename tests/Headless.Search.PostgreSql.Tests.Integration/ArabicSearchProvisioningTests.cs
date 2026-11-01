@@ -105,6 +105,14 @@ public sealed class ArabicSearchProvisioningTests(PostgreSqlSearchFixture fixtur
         (await _SearchAsync(db, "فاطمه")).Should().Equal("فاطمة الزهراء");
         (await _SearchAsync(db, "محمدى")).Should().Equal("محمدي");
         (await _SearchAsync(db, "مندر")).Should().BeEmpty("thal and dal stay distinct");
+
+        // A term with no searchable character has an empty key; LIKE '%%' alone would return every row.
+        (await _SearchAsync(db, "!!!"))
+            .Should()
+            .BeEmpty();
+        (await _SearchAsync(db, "\u064E\u0651")).Should().BeEmpty("a term of only tashkeel has an empty key");
+        (await _SearchAsync(db, "")).Should().BeEmpty();
+        (await _SearchAsync(db, null)).Should().BeEmpty();
         (await db.People.Select(p => p.NameSearch).OrderBy(k => k).ToListAsync(AbortToken))
             .Should()
             .Equal("احمد علي", "فاطمه الزهراء", "محمدي", "منذر");
@@ -175,8 +183,9 @@ public sealed class ArabicSearchProvisioningTests(PostgreSqlSearchFixture fixtur
         }
 
         await using var explain = new NpgsqlCommand(
-            // The predicate EF Core emits for EF.Functions.Like(key, "%" + ArabicSearchFunctions.Key(term) + "%").
-            "EXPLAIN SELECT id FROM people WHERE name_search LIKE '%' || COALESCE(headless.ar_norm_v1($1), '') || '%' ESCAPE ''",
+            // The predicate EF Core emits for WhereArabicSearchMatches(p => p.NameSearch, term).
+            "EXPLAIN SELECT id FROM people WHERE name_search LIKE '%' || COALESCE(headless.ar_norm_v1($1), '') || '%' ESCAPE '' "
+                + "AND length(headless.ar_norm_v1($1))::int > 0",
             connection
         );
         explain.Parameters.Add(new NpgsqlParameter { Value = "أحمد" });
@@ -249,12 +258,9 @@ public sealed class ArabicSearchProvisioningTests(PostgreSqlSearchFixture fixtur
         await command.ExecuteNonQueryAsync(AbortToken);
     }
 
-    private static Task<List<string>> _SearchAsync(PeopleDbContext db, string term)
+    private static Task<List<string>> _SearchAsync(PeopleDbContext db, string? term)
     {
-        return db
-            .People.Where(p => EF.Functions.Like(p.NameSearch, "%" + ArabicSearchFunctions.Key(term) + "%"))
-            .Select(p => p.Name)
-            .ToListAsync(AbortToken);
+        return db.People.WhereArabicSearchMatches(p => p.NameSearch, term).Select(p => p.Name).ToListAsync(AbortToken);
     }
 }
 

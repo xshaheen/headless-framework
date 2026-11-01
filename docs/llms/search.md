@@ -23,14 +23,9 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 }
 
 // Query: the database normalizes the term with the function that built the stored keys.
-// A term with no searchable character ("!!!", only tashkeel) has an empty key, and LIKE '%%' matches every row.
-if (ArabicSearchNormalizer.Normalize(term, ArabicSearchVersion.V1).Length == 0)
-{
-    return [];
-}
-
+// A term with no searchable character ("!!!", only tashkeel, null) matches no rows.
 var people = await db.People
-    .Where(p => EF.Functions.Like(p.NameSearch, "%" + ArabicSearchFunctions.Key(term) + "%"))
+    .WhereArabicSearchMatches(p => p.NameSearch, term)
     .ToListAsync(ct);
 ```
 
@@ -38,9 +33,9 @@ var people = await db.People
 
 ## Agent Rules
 
-- Match in the database, never in C#. Query with `ArabicSearchFunctions.Key(term)` so the stored key and the query term come from one function. `ArabicSearchNormalizer` is for highlighting, in-memory filtering, and guards; using it to build the query term would let two implementations disagree silently.
-- Use `EF.Functions.Like(key, "%" + ArabicSearchFunctions.Key(term) + "%")`, not `string.Contains`: Npgsql translates `Contains` with a parameter to `strpos`, which the trigram index cannot serve. A normalized term holds only alphabet characters and single spaces, never `%`, `_`, or `\`, so it needs no LIKE escaping.
-- Skip the filter for a term that normalizes to `""`: `LIKE '%%'` matches every row. Check with `ArabicSearchNormalizer.Normalize(term, version).Length`; that is a guard, not matching. A term under three characters gives the trigram index nothing to look up, so expect a scan; require a minimum length where the table is large.
+- Match in the database, never in C#. Query with `WhereArabicSearchMatches(p => p.Key, term)`, which normalizes the term with the same database function that built the stored keys. `ArabicSearchNormalizer` is for highlighting and in-memory filtering; using it to build the query term would let two implementations disagree silently.
+- Prefer `WhereArabicSearchMatches` over a hand-written `EF.Functions.Like(key, "%" + ArabicSearchFunctions.Key(term) + "%")`. The hand-written form matches every row for a term whose key is empty (`"!!!"`, only tashkeel, `null`), because EF Core turns it into `LIKE '%%'`; the helper adds the guard. Never use `string.Contains`: Npgsql translates it with a parameter to `strpos`, which the trigram index cannot serve. A normalized term holds only alphabet characters and single spaces, never `%`, `_`, or `\`, so it needs no LIKE escaping.
+- A term under three characters gives the trigram index nothing to look up, so expect a scan; require a minimum length where the table is large. The helper does not enforce one, because the right length depends on the table.
 - Pass the same version everywhere. `HasHeadlessArabicSearch(version)` fixes it for the whole model, and `ArabicSearchNormalizer.Normalize` takes it with no default, so moving to a new version cannot leave a caller on the old one.
 - Call `HasHeadlessArabicSearch` before configuring any entity that calls `HasArabicSearchKey`; the key reads the version and schema from the model and throws `InvalidOperationException` without them.
 - `HasArabicSearchKey` reads the source's column name when it is called. Configure `HasColumnName` on the source first, or pass `sourceColumn` when a convention renames the column later.
@@ -168,6 +163,7 @@ Register the function with `AddHeadlessSearch(setup => setup.UsePostgreSql(...))
 | `modelBuilder.HasHeadlessArabicSearch(version, schema = "headless")` | Maps `ArabicSearchFunctions.Key` to `"schema".ar_norm_v{n}`, declares `pg_trgm`, and fixes the version and schema for the model's keys |
 | `entity.HasArabicSearchKey(p => p.Source, p => p.Key, sourceColumn = null)` | A stored generated key column computed from the source column, with a GIN `gin_trgm_ops` index |
 | `entity.HasArabicSearchKey(p => p.Source, "KeyProperty", sourceColumn = null)` | The same, as a shadow `string` property; query it with `EF.Property<string>(entity, "KeyProperty")` |
+| `query.WhereArabicSearchMatches(p => p.Key, term)` | Keeps the rows whose stored key contains the term's key, computed by the mapped function; a term with an empty key, `null` included, matches no rows |
 | `ArabicSearchFunctions.Key(term)` | Translates to the mapped function in a query; throws `InvalidOperationException` when called outside one |
 | `migrationBuilder.SetArabicSearchKeyExpression(table, column, sourceColumn, version, schema = null, functionSchema = "headless")` | Rebuilds a key with another version's function through `SET EXPRESSION` |
 
@@ -175,4 +171,4 @@ Register the function with `AddHeadlessSearch(setup => setup.UsePostgreSql(...))
 
 - `HasArabicSearchKey` reads the source's column name when it is called and writes `HasComputedColumnSql(..., stored: true)` plus an index with `HasMethod("gin")` and `HasOperators("gin_trgm_ops")`. Configure `HasColumnName` on the source first, or pass `sourceColumn`.
 - EF Core migrations (`AddDbContextMigrations<TContext>()`) run after every schema step in the same `resources provision`, whatever the registration order, so a migration that adds a key column finds the function. A script-based deploy applies the exported Headless schema script before the EF Core migration script or bundle.
-- EF Core emits `key LIKE '%' || COALESCE(headless.ar_norm_v1(@term), '') || '%' ESCAPE ''` for the `EF.Functions.Like` pattern, which the GIN trigram index serves.
+- `WhereArabicSearchMatches` emits `key LIKE '%' || COALESCE(headless.ar_norm_v1(@term), '') || '%' ESCAPE '' AND length(headless.ar_norm_v1(@term))::int > 0`, with the term as a parameter. The GIN trigram index serves the `LIKE`; the second condition is false for an empty key and unknown for `null`, so neither returns a row. The helper lives in namespace `System.Linq`, holder `HeadlessArabicSearchQueryableExtensions`.

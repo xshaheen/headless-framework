@@ -103,6 +103,44 @@ public sealed class ArabicSearchModelTests : TestBase
     }
 
     [Fact]
+    public void should_match_the_term_key_and_require_it_to_be_non_empty_when_filtering_by_search_key()
+    {
+        using var context = new SearchDbContext(
+            static (model, entity) =>
+            {
+                model.HasHeadlessArabicSearch(ArabicSearchVersion.V1);
+                entity.HasArabicSearchKey(p => p.Name, p => p.NameSearch);
+            }
+        );
+
+        var sql = context.People.WhereArabicSearchMatches(p => p.NameSearch, "احمد").ToQueryString();
+
+        // The term is a parameter, not an inlined literal, and the empty-key guard runs in the database too.
+        sql.Should().Contain("-- @term='احمد'");
+        sql.Should().Contain("\"NameSearch\" LIKE '%' || COALESCE(headless.ar_norm_v1(@term), '') || '%'");
+        sql.Should().Contain("length(headless.ar_norm_v1(@term))::int > 0");
+    }
+
+    [Fact]
+    public void should_throw_when_filtering_by_search_key_without_a_query_or_key()
+    {
+        using var context = new SearchDbContext(
+            static (model, entity) =>
+            {
+                model.HasHeadlessArabicSearch(ArabicSearchVersion.V1);
+                entity.HasArabicSearchKey(p => p.Name, p => p.NameSearch);
+            }
+        );
+
+        var withoutQuery = () =>
+            HeadlessArabicSearchQueryableExtensions.WhereArabicSearchMatches<Person>(null!, p => p.NameSearch, "احمد");
+        var withoutKey = () => context.People.WhereArabicSearchMatches(null!, "احمد");
+
+        withoutQuery.Should().Throw<ArgumentNullException>().WithParameterName("query");
+        withoutKey.Should().Throw<ArgumentNullException>().WithParameterName("searchKey");
+    }
+
+    [Fact]
     public void should_throw_when_the_query_function_is_called_outside_a_query()
     {
         var act = () => ArabicSearchFunctions.Key("احمد");
