@@ -1,0 +1,11 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Contracts for Headless secret hashing: ISecretHasher, PHC strings, and verification results.</Description>
+    <PackageTags>headless;hashing;password-hashing;dotnet</PackageTags>
+    <RootNamespace>Headless.Hashing</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+  </ItemGroup>
+</Project>

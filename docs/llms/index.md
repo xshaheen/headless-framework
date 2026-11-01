@@ -90,7 +90,8 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | --- | --- |
 | Use guards, DDD entities, or local domain events | [Core](core.md) |
 | Use current-user, locale, time-zone, correlation, cancellation, or host-identity services | [Context](context.md) |
-| Encrypt strings, build a blind index, or hash and verify secrets (PINs, API-key secrets, recovery codes, passwords outside Identity) | [Security](security.md) |
+| Encrypt personal data per field under per-tenant keys, find rows by an encrypted value through a blind index, rotate data or key-encryption keys, or crypto-shred a tenant | [Encryption](encryption.md) |
+| Hash and verify secrets (PINs, API-key secrets, recovery codes, passwords outside Identity) | [Hashing](hashing.md) |
 | Find a primitive, result type, collection helper, concurrency helper, IO helper, or URL builder | [Extensions and Primitives](extensions.md) |
 | Serialize JSON or MessagePack behind `ISerializer` | [Serialization](serialization.md) |
 | Configure Serilog defaults | [Logging](logging.md) |

@@ -211,7 +211,10 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         // then: the job is cancelled as soon as the scheduler stops, not a further release-window wait later
         var cancelledAfter = TimeProvider.System.GetElapsedTime(stopStarted, probe.CancelledAt!.Value);
         cancelledAfter.Should().BeGreaterThan(laterServiceStop - TimeSpan.FromMilliseconds(250));
-        cancelledAfter.Should().BeLessThan(laterServiceStop + TimeSpan.FromMilliseconds(750));
+        // Counting the budget from the scheduler's own stop would cancel near five seconds (the later service's three,
+        // plus the two left before the release window); one second of slack separates the two and absorbs a loaded
+        // runner, where 750 ms was overrun.
+        cancelledAfter.Should().BeLessThan(laterServiceStop + TimeSpan.FromSeconds(1));
         stopElapsed.Should().BeLessThan(budget, "the budget counts from the host's stop, not the scheduler's");
 
         // and its uncharged release had committed when the stop returned

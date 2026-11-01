@@ -58,7 +58,7 @@ Core testing utilities and base classes for xUnit tests.
 - `TelemetryRecorder(sourceName, spans, metrics)` - Records the stopped activities and the meter measurements (instrument, unit, value, tags) of one named source, through `Activities`, `Measurements`, and `Of(instrument)`. Use it instead of a hand-written listener that appends to a `List`: listeners are process-wide, so other tests running in parallel fire the callback on their own threads, and the recorder's queues are safe for that. It still receives those tests' telemetry for the same source name, so filter assertions by a tag unique to the test, or run the class in a non-parallel collection
 - `AddTestTimeProvider()` - Replaces the container's `TimeProvider` with a `FakeTimeProvider` and returns it
 - Assertion extensions for async operations
-- `AllBeSecretHashes(algorithmId)` - Asserts a string collection (for example a queried hash column) holds only PHC-encoded secret hashes of one algorithm; failures name the offending index and reason, never the value (see [security.md](security.md))
+- `AllBeSecretHashes(algorithmId)` - Asserts a string collection (for example a queried hash column) holds only PHC-encoded secret hashes of one algorithm; failures name the offending index and reason, never the value (see [hashing.md](hashing.md))
 
 ### Install
 

@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Testing;
-using Headless.Security;
 using Headless.Settings;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -25,11 +24,6 @@ public sealed class SettingChangedMessageContractTests : TestBase
         await using var harness = await MessagingTestHarness.CreateAsync(
             services =>
             {
-                services.AddStringEncryptionService(options =>
-                {
-                    options.DefaultPassPhrase = "TestPassPhrase123456";
-                    options.DefaultSalt = [.. "TestSalt"u8];
-                });
                 services.AddHeadlessSettings(setup => setup.UseEntityFramework<ContractTestDbContext>());
                 services.AddHeadlessMessaging(setup =>
                 {

@@ -876,6 +876,36 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )"
         }
       },
+      "headless.encryption": {
+        "type": "Project",
+        "dependencies": {
+          "FluentValidation": "[12.2.0, )",
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Encryption.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.13, )",
+          "Microsoft.Extensions.Options": "[10.0.13, )"
+        }
+      },
+      "headless.encryption.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
+      "headless.encryption.postgresql": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Encryption": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql.PostgreSql": "[1.0.0, )"
+        }
+      },
       "headless.entityframework": {
         "type": "Project",
         "dependencies": {
@@ -926,6 +956,12 @@
       },
       "headless.generator.primitives.abstractions": {
         "type": "Project"
+      },
+      "headless.hashing.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
       },
       "headless.hosting": {
         "type": "Project",
@@ -1029,21 +1065,6 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
-      "headless.security": {
-        "type": "Project",
-        "dependencies": {
-          "FluentValidation": "[12.2.0, )",
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.Security.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.security.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
       "headless.serializer.abstractions": {
         "type": "Project"
       },
@@ -1062,11 +1083,11 @@
           "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
           "Headless.Domain": "[1.0.0, )",
+          "Headless.Encryption.Abstractions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Headless.Security.Abstractions": "[1.0.0, )",
           "Headless.Settings.Abstractions": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )"
@@ -1102,6 +1123,19 @@
       "headless.sql.abstractions": {
         "type": "Project"
       },
+      "headless.sql.postgresql": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.13, )",
+          "Npgsql": "[10.0.3, )"
+        }
+      },
       "headless.testing": {
         "type": "Project",
         "dependencies": {
@@ -1109,8 +1143,8 @@
           "Bogus": "[35.6.5, )",
           "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hashing.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Headless.Security.Abstractions": "[1.0.0, )",
           "Meziantou.Extensions.Logging.Xunit.v3": "[3.0.8, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
           "Microsoft.Extensions.Logging": "[10.0.13, )",

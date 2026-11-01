@@ -21,7 +21,6 @@ Minimal wiring:
 builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
-builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
 // AddHeadlessSettings registers the management core automatically.
 builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<AppDbContext>());
@@ -38,13 +37,13 @@ Define settings via `ISettingDefinitionProvider.Define()`. Read via `ISettingMan
 - To write several settings at once, call `SetAsync(values, providerName, providerKey)` with an `IReadOnlyDictionary<string, string?>` keyed by setting name; a `null` value clears that setting. It checks every name, the provider, and its writability before writing anything, so an undefined name or a read-only provider rejects the whole batch with `ConflictException` and changes nothing. The built-in stores (EF, PostgreSQL, SQL Server) then write the batch in one transaction, so a failed write leaves every value as it was, and a successful one publishes a single `SettingChangedMessage` listing every name. An empty dictionary writes and announces nothing. The single-name `SetAsync` is the one-entry case of this call. For Global values, `SetAllGlobalAsync(values)` is the same call with the Global provider filled in; use it instead of consecutive `SetGlobalAsync` calls whenever the values form one policy (a limit and its window), so readers never see a new limit with an old window and peers reload once. A value stored through `SetGlobalAsync<T>` is JSON; to batch one, serialize it with `JsonSerializer.Serialize(value, JsonConstants.DefaultInternalJsonOptions)`. Clearing a value removes only the row stored under the exact provider key the provider resolves, not that setting under every key of the provider. Atomicity holds per provider: when several registered providers share `providerName`, each writes the batch in its own transaction. The store-backed providers open their own connection and transaction, so an `ISettingManager` write does not join a unit of work the caller has open, and rolling that unit back does not undo it. To write inside the unit, call the same write on the unit: `unit.Settings.SetAsync(...)`; see [Writing settings inside a unit of work](#writing-settings-inside-a-unit-of-work). When a concurrent writer inserts or deletes one of the batch's rows between the store's read and its save, the store reads again and retries (up to three attempts); the last writer's value wins.
 - Provider names are constants on `SettingValueProviderNames`: `DefaultValue`, `Configuration`, `Global`, `Tenant`, `User`. Note: the default-value constant is `DefaultValue`, not `Default`.
 - Scoped extension members are available for each provider scope: `GetForTenantAsync` / `SetForTenantAsync`, `GetForUserAsync` / `SetForUserAsync`, `GetGlobalAsync` / `SetGlobalAsync`, `GetDefaultAsync`, `GetInConfigurationAsync`. The raw (non-generic) `Get*` scoped helpers return the unwrapped `string?` value; the generic `Get*<T>` helpers deserialize the JSON value to `T`. Use `IsTrueAsync` / `IsFalseAsync` / `GetAsync<T>` / `SetAsync<T>` on `ISettingManager` for typed or boolean reads.
-- For sensitive settings, set `isEncrypted: true` on `SettingDefinition` — Core handles encryption/decryption via `IStringEncryptionService` automatically. Only values persisted by a store-backed provider (`Global`, `Tenant`, `User`) are decrypted on read; a plaintext `DefaultValue` or `IConfiguration` value resolved through fallback is returned as-is, on every read path (`GetAsync`, both `GetAllAsync` overloads).
+- For sensitive settings, set `isEncrypted: true` on `SettingDefinition`; the manager encrypts and decrypts through `IFieldEncryptor`, so the host must call `AddHeadlessEncryption(...)` ([Encryption](encryption.md)). A value stored by the `Tenant` provider is encrypted under that tenant's key, and every other provider uses the host key, so shredding a tenant's keys also makes its encrypted settings unreadable. See [Encrypted settings](#encrypted-settings). Only values persisted by a store-backed provider (`Global`, `Tenant`, `User`) are decrypted on read; a plaintext `DefaultValue` or `IConfiguration` value resolved through fallback is returned as-is, on every read path (`GetAsync`, both `GetAllAsync` overloads).
 - The `SettingDefinitions` seeder writes static definitions to the database, and only when the host seeds — do NOT call `IDynamicSettingDefinitionStore.SaveAsync` directly. Seeding is opt-in: see [Definition Seeding](#definition-seeding).
 - `AddHeadlessSettings(...)` is the single entry point — it registers the management core automatically alongside the storage provider. Only one storage provider (EF / PostgreSQL / SqlServer) may be registered; a second registration throws at startup.
 - To tune management options, call `setup.ConfigureManagement(options => ...)` inside the `AddHeadlessSettings` block. An `(options, IServiceProvider)` overload is available for late-bound configuration. `services.Configure<SettingManagementOptions>(...)` also works and composes regardless of call order.
 - To tune schema and table names, call `setup.ConfigureStorage(o => ...)` inside the same block. The `IConfiguration` overload binds the `Headless:Settings:Storage` section instead.
 - For EF storage: register a singleton `IDbContextFactory<TContext>` (`AddDbContextFactory<TContext>()` or `AddPooledDbContextFactory<TContext>()` for a plain `DbContext`, or `AddHeadlessDbContext<TContext>()` or `AddHeadlessDbContextPool<TContext>()` for a `HeadlessDbContext`; both Headless registrations add the factory) and call `modelBuilder.ConfigureHeadlessSettings(this)` in `OnModelCreating` before calling `setup.UseEntityFramework<TContext>()`. The factory must be a singleton (the default lifetime of all four registrations): the EF repositories are singletons that would capture a scoped or transient factory for the life of the host, so startup refuses one with `InvalidServiceLifetimeException`. The `(SettingsStorageOptions)` overload exists when you already hold the options object.
-- Required services before `AddHeadlessSettings(...)`: `TimeProvider`, caching (`ICache`), distributed lock (`IDistributedLock`), and `IStringEncryptionService`. The core throws `InvalidOperationException` on startup if encryption is missing.
+- Required services before `AddHeadlessSettings(...)`: `TimeProvider`, caching (`ICache`), and distributed lock (`IDistributedLock`). Encryption is required only when a definition sets `isEncrypted: true`: reading or writing such a setting without `AddHeadlessEncryption(...)` throws `InvalidOperationException` naming it.
 - To keep an application-wide policy built from Global settings in memory, such as a rate limit an operator tunes at runtime, register `services.AddSettingsSnapshot<T>(...)` and inject `ISettingsSnapshot<T>`. Do not hand-write a cache, a `SettingChangedMessage` consumer, a poller, and a revision for it; see [Settings snapshot](#settings-snapshot).
 - `DeleteAsync(providerName, providerKey)` removes all setting values for a given provider and key — use it when cleaning up a deleted tenant or user.
 - Both `ISettingManager` and direct `ISettingValueRecordRepository` writes invalidate cached values (the repository removes the affected key after `SaveChangesAsync`). Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
@@ -319,13 +318,23 @@ Core implementation of dynamic settings management with hierarchical value provi
 
 Value providers are registered with the last-added provider having the highest resolution priority. The built-in order (from setup) is `DefaultValue → Configuration → Global → Tenant → User` — User wins. Custom providers added via `AddSettingValueProvider<T>()` are appended after `User` and therefore have the highest priority of all. This matters when writing custom providers that must override built-in resolution. `ISettingValueProviderManager.Providers` exposes the reversed (highest priority first) list, which every read path — `GetAsync`, `GetAllAsync(settingNames)`, and `GetAllAsync(providerName)` — walks forward, taking the first non-null value.
 
-Encrypted settings (`isEncrypted: true`) are decrypted only when the resolving provider is store-backed (`Global`, `Tenant`, `User`). A plaintext `DefaultValue` or `IConfiguration` value resolved through fallback is returned as-is rather than fed to the decryptor.
-
 **Keys must be text every provider keeps unchanged.** Every `ISettingValueStore` entry point throws `ArgumentException` before touching storage when a setting name, provider name, or provider key starts or ends with white space, on reads as well as writes. SQL Server ignores trailing spaces when it compares keys, so `"acme "` would read and overwrite the `"acme"` row there while PostgreSQL keeps the two apart. Every provider must keep a key unchanged, so the store also refuses a NUL character (PostgreSQL cannot store it) and an unpaired UTF-16 surrogate (SqlClient sends it as U+FFFD, so SQL Server would merge keys that differ only in which lone surrogate they carry). The rule is `Argument.IsPortableKey`. Normalize keys at your own boundary; the store refuses rather than trims.
 
 `AddHeadlessSettings` is guarded on `ISettingManager` so it is safe to call more than once (only the first call registers the core). However, only one storage provider extension may be registered — a second call with a different provider throws at startup.
 
 Nothing writes definitions at startup unless the host opts in to seeding; see [Definition Seeding](#definition-seeding). A failed `SettingDefinitions` seed fails the `seed` verb, or the host start under `AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`.
+
+### Encrypted settings
+
+A definition with `isEncrypted: true` stores its value through `IFieldEncryptor` from [Encryption](encryption.md), so the host registers `AddHeadlessEncryption(...)` with a key store and a key-encryption key. A host without encrypted settings needs no encryption setup; the first read or write of an encrypted setting without it throws `InvalidOperationException` naming `AddHeadlessEncryption`.
+
+- **Purpose.** Each value is bound to `settings:{name}`, so a value copied to another setting's row fails to decrypt.
+- **Key scope.** A value stored by the `Tenant` provider uses that tenant's key: the explicit tenant id passed to `SetForTenantAsync` / `GetForTenantAsync`, else the current tenant. `Global`, `User`, and custom providers use the host key. `IDataKeyManager.ShredAsync(tenantId)` therefore also destroys the tenant's encrypted settings: reading one afterwards throws `ConflictException` with the `DecryptionFailed` error, the same error a corrupt or foreign value gets, and writing one throws `DataKeyScopeShreddedException` until `IDataKeyManager.EnsureAsync(tenantId)` reopens the scope. With no explicit tenant id and no current tenant, the encryptor throws `MissingTenantContextException` rather than fall back to the host key.
+- **Stored form.** The value column holds the `EncryptedValue` text frame (`ToBase64Url()`), 46 bytes plus the UTF-8 value before base64url encoding, so an encrypted value fits the 2,000-character value column only up to 1,454 UTF-8 bytes. Each write draws a fresh nonce, so the ciphertext changes on every write of the same value.
+- **Fallback clearing.** When an inherited value equals what the next provider supplies, the manager stores nothing; for an encrypted setting it compares the plaintext before encrypting.
+- **Only stored values are decrypted.** Decryption runs only when the resolving provider is store-backed (`Global`, `Tenant`, `User`). A plaintext `DefaultValue` or `IConfiguration` value resolved through fallback is returned as-is rather than fed to the decryptor.
+
+`ISettingEncryptionService` is the seam: `EncryptAsync` and `DecryptAsync` take the definition, the value, and the provider name and key that decide the scope. Replace it only to change how values are protected.
 
 ### Install
 
@@ -335,7 +344,7 @@ dotnet add package Headless.Settings
 
 ### Setup and use
 
-Register the required services (`TimeProvider`, `ICache`, `IDistributedLock`, `IStringEncryptionService`) first, then call `AddHeadlessSettings`:
+Register the required services (`TimeProvider`, `ICache`, `IDistributedLock`) first, then call `AddHeadlessSettings`. Add `AddHeadlessEncryption(...)` when a definition is encrypted; see [Encrypted settings](#encrypted-settings):
 
 > A caching provider is a hard prerequisite. This package references `Headless.Caching.Abstractions` only, so the `ICache<SettingValueCacheItem>` that `SettingValueStore` reads through comes from `AddHeadlessCaching(...)` with a provider (`UseInMemory` / `UseRedis` / `UseHybrid`). `AddHeadlessSettings` declares it via `Headless.Hosting`'s `RequireRegisteredService<T>`, so a host without one is refused at startup with a `MissingRequiredServiceException` rather than failing on the first setting read. Registration order does not matter — the check runs at host start.
 
@@ -346,7 +355,6 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
-builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
 // Register management core + storage in one call
 builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<AppDbContext>());
@@ -427,20 +435,7 @@ builder.Services.AddSettingValueProvider<MyCustomSettingValueProvider>();
 
 ### Configuration
 
-Pre-requisite: configure and register string encryption before settings management:
-
-```json
-{
-  "Headless": {
-    "StringEncryption": {
-      "DefaultPassPhrase": "YourPassPhrase123",
-      "DefaultSalt": "WW91clNhbHQxMjM0NTY3OA=="
-    }
-  }
-}
-```
-
-`StringEncryptionOptions` has four settings: `DefaultPassPhrase` and `DefaultSalt` (base64, at least 16 random bytes) are required, and `KeySize` (default 256) and `Iterations` (default 600,000) are optional. The service encrypts with AES-GCM and a random nonce per value, so there is no initialization-vector setting.
+Encrypted settings take their configuration from [Encryption](encryption.md) (`AddHeadlessEncryption`, its key store, and its key-encryption key); Settings itself reads no encryption section.
 
 #### SettingManagementOptions
 
@@ -549,9 +544,6 @@ builder.Services.AddDbContextFactory<AppDbContext>(options =>
 builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
-builder.Services.AddStringEncryptionService(
-    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
-);
 
 // AddHeadlessSettings registers the management core automatically.
 builder.Services.AddHeadlessSettings(setup =>
@@ -607,13 +599,12 @@ dotnet add package Headless.Settings.Storage.PostgreSql
 
 ### Setup and use
 
-Register the required services first — `TimeProvider`, caching, distributed lock, and `IStringEncryptionService`. `AddHeadlessSettings` then registers the management core automatically.
+Register the required services first — `TimeProvider`, caching, and distributed lock, plus `AddHeadlessEncryption(...)` when a definition is encrypted. `AddHeadlessSettings` then registers the management core automatically.
 
 ```csharp
 builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
-builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
 builder.Services.AddPostgreSqlSql(connectionString);
 builder.Services.AddHeadlessSettings(setup => setup.UsePostgreSql());
@@ -683,13 +674,12 @@ dotnet add package Headless.Settings.Storage.SqlServer
 
 ### Setup and use
 
-Register the required services first — `TimeProvider`, caching, distributed lock, and `IStringEncryptionService`. `AddHeadlessSettings` then registers the management core automatically.
+Register the required services first — `TimeProvider`, caching, and distributed lock, plus `AddHeadlessEncryption(...)` when a definition is encrypted. `AddHeadlessSettings` then registers the management core automatically.
 
 ```csharp
 builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
-builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
 builder.Services.AddSqlServerSql(connectionString);
 builder.Services.AddHeadlessSettings(setup => setup.UseSqlServer());

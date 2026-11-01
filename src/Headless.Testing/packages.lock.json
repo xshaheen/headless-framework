@@ -280,6 +280,12 @@
       "headless.generator.primitives.abstractions": {
         "type": "Project"
       },
+      "headless.hashing.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
       "headless.multitenancy.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -294,12 +300,6 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.security.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
         }
       },
       "Microsoft.Extensions.Configuration.Abstractions": {
