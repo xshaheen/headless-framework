@@ -40,6 +40,29 @@ public interface IBlindIndexer
     );
 
     /// <summary>
+    /// Hashes <paramref name="value" /> again under the scope's active lookup key when its stored hash used an older
+    /// version, for a rehash job after <c>IDataKeyManager.RotateAsync</c>.
+    /// </summary>
+    /// <remarks>
+    /// A stored version at or above the active one returns <see langword="null" />: the row is current, or another host
+    /// already rehashed it under a version this host's cached active key has not reached yet, and rewriting it would
+    /// move it backwards.
+    /// </remarks>
+    /// <param name="context">The purpose, scope, and hash length the stored hash was computed with.</param>
+    /// <param name="value">The normalized value, decrypted from the row.</param>
+    /// <param name="storedKeyVersion">The <see cref="BlindIndex.KeyVersion" /> stored with the row's hash.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The hash to store under the active version, or <see langword="null" /> when the stored one is current.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="context" /> or <paramref name="value" /> is <see langword="null" />.</exception>
+    /// <exception cref="DataKeyScopeShreddedException">The scope was shredded.</exception>
+    ValueTask<BlindIndex?> RehashAsync(
+        BlindIndexContext context,
+        string value,
+        int storedKeyVersion,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Hashes <paramref name="value" /> under every stored lookup-key version of the scope, newest first, for querying
     /// (<c>WHERE hash = ANY(@candidates)</c>). Never creates a key.
     /// </summary>

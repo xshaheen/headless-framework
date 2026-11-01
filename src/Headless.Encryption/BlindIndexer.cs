@@ -38,6 +38,28 @@ internal sealed class BlindIndexer(DataKeyRing ring, ICurrentTenant currentTenan
         return new BlindIndex(key.Version, _Hash(key.Key, context, value));
     }
 
+    public async ValueTask<BlindIndex?> RehashAsync(
+        BlindIndexContext context,
+        string value,
+        int storedKeyVersion,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(context);
+        Argument.IsNotNull(value);
+        var scope = _ResolveScope(context);
+
+        using var key = await ring.GetOrCreateActiveAsync(
+                scope,
+                DataKeyKind.Lookup,
+                reopenShreddedScope: false,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return storedKeyVersion >= key.Version ? null : new BlindIndex(key.Version, _Hash(key.Key, context, value));
+    }
+
     public async ValueTask<IReadOnlyList<BlindIndex>> ComputeCandidatesAsync(
         BlindIndexContext context,
         string value,

@@ -255,6 +255,7 @@ public abstract class EncryptionConformanceTests<TFixture>(TFixture fixture) : T
         both.Select(c => c.KeyVersion).Should().Equal(2, 1);
         both[0].Hash.Should().Equal(second.Hash);
         both[1].Hash.Should().Equal(first.Hash);
+        (await reader.BlindIndexer.RehashAsync(context, _NationalId, first.KeyVersion, AbortToken)).Should().Be(second);
 
         (await writer.Manager.RetireAsync(scope, DataKeyKind.Lookup, 1, AbortToken)).Should().BeTrue();
         var remaining = await reader.BlindIndexer.ComputeCandidatesAsync(context, _NationalId, AbortToken);

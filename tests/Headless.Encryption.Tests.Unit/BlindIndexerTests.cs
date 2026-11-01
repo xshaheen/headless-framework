@@ -158,6 +158,52 @@ public sealed class BlindIndexerTests : TestBase
     }
 
     [Fact]
+    public async Task should_rehash_a_row_stored_under_an_older_version_and_leave_a_current_one()
+    {
+        using var host = new EncryptionTestHost(_store);
+        var context = _Tenant("charity-a");
+        var stored = await host.BlindIndexer.ComputeAsync(context, _NationalId, AbortToken);
+        (await host.BlindIndexer.RehashAsync(context, _NationalId, stored.KeyVersion, AbortToken)).Should().BeNull();
+
+        await host.Manager.RotateAsync("charity-a", DataKeyKind.Lookup, AbortToken);
+        var rehashed = await host.BlindIndexer.RehashAsync(context, _NationalId, stored.KeyVersion, AbortToken);
+        var current = await host.BlindIndexer.ComputeAsync(context, _NationalId, AbortToken);
+
+        rehashed.Should().Be(current);
+        rehashed!.Value.KeyVersion.Should().Be(2);
+        (await host.BlindIndexer.RehashAsync(context, _NationalId, 2, AbortToken)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_not_move_a_row_back_to_the_version_a_stale_host_still_caches()
+    {
+        using var hostA = new EncryptionTestHost(_store);
+        using var hostB = new EncryptionTestHost(_store);
+        var context = _Tenant("charity-a");
+        await hostB.BlindIndexer.ComputeAsync(context, _NationalId, AbortToken);
+
+        // host A rotates and rehashes the row; host B's cached active key is still version 1
+        await hostA.Manager.RotateAsync("charity-a", DataKeyKind.Lookup, AbortToken);
+        var onA = await hostA.BlindIndexer.ComputeAsync(context, _NationalId, AbortToken);
+
+        var onB = await hostB.BlindIndexer.RehashAsync(context, _NationalId, onA.KeyVersion, AbortToken);
+
+        onB.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_refuse_to_rehash_for_a_shredded_tenant()
+    {
+        using var host = new EncryptionTestHost(_store);
+        await host.BlindIndexer.ComputeAsync(_Tenant("charity-a"), _NationalId, AbortToken);
+        await host.Manager.ShredAsync("charity-a", AbortToken);
+
+        var act = () => host.BlindIndexer.RehashAsync(_Tenant("charity-a"), _NationalId, 1, AbortToken).AsTask();
+
+        await act.Should().ThrowAsync<DataKeyScopeShreddedException>();
+    }
+
+    [Fact]
     public async Task should_show_another_hosts_rotation_to_queries_at_once()
     {
         using var hostA = new EncryptionTestHost(_store);
