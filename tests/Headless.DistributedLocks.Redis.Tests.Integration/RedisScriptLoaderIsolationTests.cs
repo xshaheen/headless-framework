@@ -17,8 +17,13 @@ namespace Tests;
 /// </summary>
 public sealed class RedisScriptLoaderIsolationTests : TestBase
 {
-    private readonly RedisContainer _cacheContainer = new RedisBuilder(TestImages.Redis).Build();
-    private readonly RedisContainer _lockContainer = new RedisBuilder(TestImages.Redis).Build();
+    private readonly RedisContainer _cacheContainer = new RedisBuilder(TestImages.Redis)
+        .WithHostPingWaitStrategy()
+        .Build();
+
+    private readonly RedisContainer _lockContainer = new RedisBuilder(TestImages.Redis)
+        .WithHostPingWaitStrategy()
+        .Build();
 
     private ConnectionMultiplexer _cacheMultiplexer = null!;
     private ConnectionMultiplexer _lockMultiplexer = null!;
