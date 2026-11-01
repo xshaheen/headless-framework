@@ -19,7 +19,7 @@ namespace Tests;
 /// </summary>
 public sealed class RedisMembershipScriptLoadingTests : TestBase
 {
-    private readonly RedisContainer _container = new RedisBuilder(TestImages.Redis).Build();
+    private readonly RedisContainer _container = new RedisBuilder(TestImages.Redis).WithHostPingWaitStrategy().Build();
     private ConnectionMultiplexer _multiplexer = null!;
 
     public override async ValueTask InitializeAsync()

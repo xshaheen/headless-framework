@@ -121,6 +121,9 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
 
     private static RedisContainer _CreateRedisContainer()
     {
-        return new RedisBuilder(TestImages.Redis).WithLabel("type", "settings-redis").Build();
+        return new RedisBuilder(TestImages.Redis)
+            .WithHostPingWaitStrategy()
+            .WithLabel("type", "settings-redis")
+            .Build();
     }
 }
