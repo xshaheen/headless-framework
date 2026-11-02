@@ -43,10 +43,84 @@ internal sealed partial class RelationalDataStorage
         var retentionSeconds = _ValidateInboxRetention(inboxRetention);
         var keyHash = _CreateInboxKeyHash(key, lifecycleId: null);
 
+        var (inserted, stored) = await SqlAutonomousTransaction
+            .RunAsync(
+                "messaging.admit_received_message",
+                _CreateConnection,
+                async (connection, transaction, ct) =>
+                {
+                    var admitted = await RelationalCommand
+                        .ExecuteReaderAsync(
+                            connection,
+                            transaction,
+                            _admitInboxSql,
+                            CommandTimeoutSeconds,
+                            command =>
+                            {
+                                _BindInboxRootKey(command, key, keyHash);
+                                _dialect.AddParameter(command, "Id", SqlColumnType.Guid, storageId);
+                                _BindVersion(command);
+                                _dialect.AddParameter(command, "Name", _NameType, name);
+                                _dialect.AddParameter(command, "Content", _ContentType, content);
+                                _dialect.AddDuration(command, "Grace", Options.RetryPolicy.InitialDispatchGrace);
+                                _dialect.AddParameter(command, "StatusName", _StatusType, nameof(StatusName.Scheduled));
+                                _dialect.AddParameter(
+                                    command,
+                                    "GenerationIncarnationId",
+                                    SqlColumnType.Guid,
+                                    incarnationId
+                                );
+                                _dialect.AddParameter(
+                                    command,
+                                    "InboxRetentionSeconds",
+                                    SqlColumnType.Int64,
+                                    retentionSeconds
+                                );
+                            },
+                            _ReadAppliedAsync,
+                            ct
+                        )
+                        .ConfigureAwait(false);
+
+                    var row = await _ReadInboxGenerationAsync(
+                            connection,
+                            transaction,
+                            key,
+                            keyHash,
+                            message.Origin,
+                            admitted ? content : null,
+                            ct
+                        )
+                        .ConfigureAwait(false);
+
+                    return (admitted, row);
+                },
+                _timeProvider,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var disposition = inserted
+            ? InboxAdmissionDisposition.Winner
+            : stored.Status switch
+            {
+                StatusName.Succeeded when stored.Message.NextRetryAt is null =>
+                    InboxAdmissionDisposition.SucceededDuplicate,
+                StatusName.Failed when stored.Message.NextRetryAt is null =>
+                    InboxAdmissionDisposition.TerminalFailedDuplicate,
+                _ => InboxAdmissionDisposition.InFlightDuplicate,
+            };
+
+        return new InboxAdmissionResult(disposition, stored.Message);
+    }
+
+    /// <summary>Renders the inbox root admission: an insert that leaves an existing root generation untouched.</summary>
+    private string _RenderAdmitInbox()
+    {
         // The root key is unique over inbox root generations only (a replay child carries its own lineage), so the
         // insert's conflict target is that partial index, and the insert waits out a concurrent admission of the same
         // key instead of failing on it. The database clock stamps the row and the grace before its first dispatch.
-        var insertSql = _dialect.Render(
+        return _dialect.Render(
             new SqlInsertIfAbsent(
                 _receivedTable,
                 [new SqlKeyColumn(_t.InboxKeyHash, "InboxKeyHash")],
@@ -114,68 +188,6 @@ internal sealed partial class RelationalDataStorage
                 InboxRootPredicate
             )
         );
-
-        var (inserted, stored) = await SqlAutonomousTransaction
-            .RunAsync(
-                "messaging.admit_received_message",
-                _CreateConnection,
-                async (connection, transaction, ct) =>
-                {
-                    var admitted = await RelationalCommand
-                        .ExecuteReaderAsync(
-                            connection,
-                            transaction,
-                            insertSql,
-                            CommandTimeoutSeconds,
-                            command =>
-                            {
-                                _BindInboxRootKey(command, key, keyHash);
-                                _dialect.AddParameter(command, "Id", SqlColumnType.Guid, storageId);
-                                _BindVersion(command);
-                                _dialect.AddParameter(command, "Name", _NameType, name);
-                                _dialect.AddParameter(command, "Content", _ContentType, content);
-                                _dialect.AddDuration(command, "Grace", Options.RetryPolicy.InitialDispatchGrace);
-                                _dialect.AddParameter(command, "StatusName", _StatusType, nameof(StatusName.Scheduled));
-                                _dialect.AddParameter(
-                                    command,
-                                    "GenerationIncarnationId",
-                                    SqlColumnType.Guid,
-                                    incarnationId
-                                );
-                                _dialect.AddParameter(
-                                    command,
-                                    "InboxRetentionSeconds",
-                                    SqlColumnType.Int64,
-                                    retentionSeconds
-                                );
-                            },
-                            _ReadAppliedAsync,
-                            ct
-                        )
-                        .ConfigureAwait(false);
-
-                    var row = await _ReadInboxGenerationAsync(connection, transaction, key, keyHash, message.Origin, ct)
-                        .ConfigureAwait(false);
-
-                    return (admitted, row);
-                },
-                _timeProvider,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        var disposition = inserted
-            ? InboxAdmissionDisposition.Winner
-            : stored.Status switch
-            {
-                StatusName.Succeeded when stored.Message.NextRetryAt is null =>
-                    InboxAdmissionDisposition.SucceededDuplicate,
-                StatusName.Failed when stored.Message.NextRetryAt is null =>
-                    InboxAdmissionDisposition.TerminalFailedDuplicate,
-                _ => InboxAdmissionDisposition.InFlightDuplicate,
-            };
-
-        return new InboxAdmissionResult(disposition, stored.Message);
     }
 
     /// <summary>The filter of the root-key unique index: inbox root generations, never replay children.</summary>
@@ -346,26 +358,15 @@ internal sealed partial class RelationalDataStorage
         InboxRootKey key,
         byte[] keyHash,
         Message redelivery,
+        string? admittedContent,
         CancellationToken cancellationToken
     )
     {
-        // The hash seeks the root-key index; the column comparisons make the match exact whatever the hash.
-        var sql = $"""
-            SELECT {_t.Id},{_t.Content},{_t.IntentType},{_t.Retries},{_t.InlineAttempts},{_t.Added},{_t.ExpiresAt},{_t.NextRetryAt},{_t.LockedUntil},{_t.Owner},{_t.StatusName},{_t.ExceptionInfo},{_t.TenantPresent},{_t.TenantId},{_t.MessageId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},{_t.Generation},{_t.GenerationIncarnationId},{_t.AttemptId},{_t.IsInboxOrphaned}
-            FROM {_receivedTable}
-            WHERE {_t.InboxKeyHash}=@InboxKeyHash
-              AND {_t.TenantPresent}=@TenantPresent AND {_t.TenantId}=@TenantId AND {_t.MessageId}=@MessageId
-              AND {_t.IntentType}=@IntentType AND {_t.ContractIdentity}=@ContractIdentity
-              AND {_t.ContractVersion}=@ContractVersion AND {_t.ConsumerIdentity}=@ConsumerIdentity
-              AND {_t.Generation}=@Generation
-              AND {InboxRootPredicate};
-            """;
-
         return await RelationalCommand
             .ExecuteReaderAsync(
                 connection,
                 transaction,
-                sql,
+                _readInboxGenerationSql[admittedContent is null ? 1 : 0],
                 CommandTimeoutSeconds,
                 command => _BindInboxRootKey(command, key, keyHash),
                 async (reader, token) =>
@@ -377,45 +378,50 @@ internal sealed partial class RelationalDataStorage
                         );
                     }
 
-                    var lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2));
-                    var storedTenantPresent = reader.GetBoolean(12);
-                    var storedTenant = reader.GetString(13);
-                    var storedGeneration = reader.GetInt64(18);
-                    var incarnationId = reader.GetGuid(19);
-                    var lockedUntil = reader.IsDBNull(8)
+                    var lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(1));
+                    var storedTenantPresent = reader.GetBoolean(11);
+                    var storedTenant = reader.GetString(12);
+                    var storedGeneration = reader.GetInt64(17);
+                    var incarnationId = reader.GetGuid(18);
+                    var lockedUntil = reader.IsDBNull(7)
                         ? (DateTimeOffset?)null
-                        : reader.GetFieldValue<DateTimeOffset>(8);
-                    var owner = reader.IsDBNull(9) ? null : reader.GetString(9);
-                    var attemptId = reader.IsDBNull(20) ? (Guid?)null : reader.GetGuid(20);
-                    var status = Enum.Parse<StatusName>(reader.GetString(10), ignoreCase: false);
-                    var isTerminal = status is StatusName.Succeeded or StatusName.Failed && reader.IsDBNull(7);
+                        : reader.GetFieldValue<DateTimeOffset>(7);
+                    var owner = reader.IsDBNull(8) ? null : reader.GetString(8);
+                    var attemptId = reader.IsDBNull(19) ? (Guid?)null : reader.GetGuid(19);
+                    var status = Enum.Parse<StatusName>(reader.GetString(9), ignoreCase: false);
+                    var isTerminal = status is StatusName.Succeeded or StatusName.Failed && reader.IsDBNull(6);
+                    // The winner's row holds exactly the content this admission just wrote in this transaction, so
+                    // its envelope is this delivery's. A duplicate's row may hold another delivery's payload, so it is
+                    // read back as stored.
+                    var content = admittedContent ?? reader.GetString(21);
                     // Terminal duplicates never execute. Their retained payload may be the poison that
                     // ended the generation; use this delivery's envelope without rewriting stored evidence.
                     var medium = new MediumMessage
                     {
                         StorageId = reader.GetGuid(0),
-                        Origin = isTerminal ? redelivery : _serializer.Deserialize(reader.GetString(1))!,
-                        Content = reader.GetString(1),
+                        Origin =
+                            admittedContent is not null || isTerminal ? redelivery : _serializer.Deserialize(content)!,
+                        Content = content,
                         Lane = lane,
-                        Retries = reader.GetInt32(3),
-                        InlineAttempts = reader.GetInt32(4),
-                        Added = reader.GetFieldValue<DateTimeOffset>(5),
-                        ExpiresAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
-                        NextRetryAt = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
+                        Retries = reader.GetInt32(2),
+                        InlineAttempts = reader.GetInt32(3),
+                        Added = reader.GetFieldValue<DateTimeOffset>(4),
+                        ExpiresAt = reader.IsDBNull(5) ? null : reader.GetFieldValue<DateTimeOffset>(5),
+                        NextRetryAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
                         LockedUntil = lockedUntil,
                         Owner = owner,
-                        ExceptionInfo = reader.IsDBNull(11) ? null : reader.GetString(11),
+                        ExceptionInfo = reader.IsDBNull(10) ? null : reader.GetString(10),
                         InboxKey = new InboxKey(
                             storedTenantPresent ? storedTenant : null,
-                            reader.GetString(14),
+                            reader.GetString(13),
                             lane,
+                            reader.GetString(14),
                             reader.GetString(15),
                             reader.GetString(16),
-                            reader.GetString(17),
                             storedGeneration
                         ),
                         InboxGeneration = new InboxGeneration(storedGeneration, incarnationId),
-                        IsInboxOrphaned = reader.GetBoolean(21),
+                        IsInboxOrphaned = reader.GetBoolean(20),
                     };
                     if (attemptId is { } persistedAttempt && lockedUntil is { } persistedLockedUntil)
                     {
@@ -435,6 +441,27 @@ internal sealed partial class RelationalDataStorage
                 cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Renders the read-back of an inbox root generation by its key. The winner already holds the content it wrote, so
+    /// its read leaves the payload column out; a duplicate's read appends it as the last column.
+    /// </summary>
+    private string _RenderReadInboxGeneration(bool withContent)
+    {
+        var content = withContent ? $",{_t.Content}" : "";
+
+        // The hash seeks the root-key index; the column comparisons make the match exact whatever the hash.
+        return $"""
+            SELECT {_t.Id},{_t.IntentType},{_t.Retries},{_t.InlineAttempts},{_t.Added},{_t.ExpiresAt},{_t.NextRetryAt},{_t.LockedUntil},{_t.Owner},{_t.StatusName},{_t.ExceptionInfo},{_t.TenantPresent},{_t.TenantId},{_t.MessageId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},{_t.Generation},{_t.GenerationIncarnationId},{_t.AttemptId},{_t.IsInboxOrphaned}{content}
+            FROM {_receivedTable}
+            WHERE {_t.InboxKeyHash}=@InboxKeyHash
+              AND {_t.TenantPresent}=@TenantPresent AND {_t.TenantId}=@TenantId AND {_t.MessageId}=@MessageId
+              AND {_t.IntentType}=@IntentType AND {_t.ContractIdentity}=@ContractIdentity
+              AND {_t.ContractVersion}=@ContractVersion AND {_t.ConsumerIdentity}=@ConsumerIdentity
+              AND {_t.Generation}=@Generation
+              AND {InboxRootPredicate};
+            """;
     }
 }
 

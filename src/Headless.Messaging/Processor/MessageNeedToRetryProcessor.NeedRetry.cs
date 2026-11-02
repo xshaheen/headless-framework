@@ -552,19 +552,19 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                         continue;
                     }
 
-                    // Confirm accepts unchanged rows and clears the flag on the message, so capture the
-                    // pickup-projected state first: only a real orphan-to-routable transition is a recovery.
-                    var wasOrphaned = message.IsInboxOrphaned;
-                    var routable = await connection
-                        .ConfirmReceivedInboxRoutableAsync(message, CancellationToken.None)
-                        .ConfigureAwait(false);
-                    if (!routable)
+                    // Only an orphaned row has a flag to clear. A routable row skips the confirm: the attempt
+                    // reservation its dispatch makes checks the same lease and inbox attempt fence, so a stale claim
+                    // still never runs, and a recovery batch does not pay one locked write per row before dispatch.
+                    if (message.IsInboxOrphaned)
                     {
-                        continue;
-                    }
+                        var routable = await connection
+                            .ConfirmReceivedInboxRoutableAsync(message, CancellationToken.None)
+                            .ConfigureAwait(false);
+                        if (!routable)
+                        {
+                            continue;
+                        }
 
-                    if (wasOrphaned)
-                    {
                         _RecordInboxRecovery(message, InboxMetricOutcome.Routable);
                     }
 
