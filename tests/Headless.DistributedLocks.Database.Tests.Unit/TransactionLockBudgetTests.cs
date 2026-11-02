@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Headless.DistributedLocks;
 using Headless.Testing.Tests;
 
@@ -34,12 +35,17 @@ public sealed class TransactionLockBudgetTests : TestBase
         var total = TimeSpan.FromSeconds(30);
         var budget = TransactionLockBudget.Start(total);
 
+        // Measured inside the budget's own window, so it can only be shorter than what the budget counts. Task.Delay
+        // can return a fraction of a millisecond before 100 ms have passed on the Stopwatch clock the budget uses.
+        var startedAt = Stopwatch.GetTimestamp();
+
         // when
         await Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
+        var spent = Stopwatch.GetElapsedTime(startedAt);
 
         // then
         budget.TryGetRemaining(out var wait).Should().BeTrue();
-        wait.Should().BeLessThanOrEqualTo(total - TimeSpan.FromMilliseconds(100));
+        wait.Should().BeLessThanOrEqualTo(total - spent);
         wait.Should().BePositive();
     }
 
