@@ -236,7 +236,7 @@ public sealed class KafkaOffsetCommitTrackerTests : TestBase
     }
 
     [Fact]
-    public void should_ignore_completion_from_before_reject_when_generation_changed()
+    public void should_ignore_completion_of_rejected_delivery_when_the_seek_replays_it()
     {
         // given
         var tracker = new KafkaConsumerClient.KafkaOffsetCommitTracker();
@@ -248,6 +248,85 @@ public sealed class KafkaOffsetCommitTrackerTests : TestBase
         // then
         tracker.MarkCommitted(delivery).Should().BeEmpty();
         tracker.MarkRejected(delivery).Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_seek_back_to_lower_offset_when_it_is_rejected_after_a_higher_offset()
+    {
+        // given — both deliveries fail, and the higher one's back-off happens to end first
+        var tracker = new KafkaConsumerClient.KafkaOffsetCommitTracker();
+        var lower = tracker.Track(_Record(4));
+        var higher = tracker.Track(_Record(5));
+        tracker.MarkRejected(higher).Should().BeTrue();
+
+        // when
+        var lowerRejected = tracker.MarkRejected(lower);
+
+        // then — the replay from 5 never returns 4, so only a seek to 4 can hand it out again
+        lowerRejected.Should().BeTrue("offset 4 sits below the earlier seek and is not replayed by it");
+        tracker
+            .MarkCommitted(tracker.Track(_Record(5)))
+            .Should()
+            .BeEmpty("the stale replay of 5 predates the seek to 4");
+        var replayedLower = tracker.Track(_Record(4));
+        var replayedHigher = tracker.Track(_Record(5));
+        _OffsetsOf(tracker.MarkCommitted(replayedLower)).Should().Equal([5], "the replayed 5 is still in flight");
+        _OffsetsOf(tracker.MarkCommitted(replayedHigher)).Should().Equal([6]);
+    }
+
+    [Fact]
+    public void should_not_commit_past_lower_in_flight_offset_when_a_higher_offset_is_rejected_and_replayed()
+    {
+        // given
+        var tracker = new KafkaConsumerClient.KafkaOffsetCommitTracker();
+        var lower = tracker.Track(_Record(4));
+        var higher = tracker.Track(_Record(5));
+        tracker.MarkRejected(higher).Should().BeTrue();
+
+        // when — the replay of 5 succeeds while 4 is still being handled
+        var afterReplay = tracker.MarkCommitted(tracker.Track(_Record(5)));
+        var afterLower = tracker.MarkCommitted(lower);
+
+        // then
+        afterReplay.Should().BeEmpty("offset 4 is still in flight");
+        _OffsetsOf(afterLower).Should().Equal([6]);
+    }
+
+    [Fact]
+    public void should_ignore_completion_of_delivery_superseded_by_a_replay_of_the_same_offset()
+    {
+        // given — the poll loop handed out 6 before the reject of 5 seeked back
+        var tracker = new KafkaConsumerClient.KafkaOffsetCommitTracker();
+        var rejected = tracker.Track(_Record(5));
+        tracker.MarkRejected(rejected);
+        var prefetched = tracker.Track(_Record(6));
+        tracker.MarkCommitted(tracker.Track(_Record(5)));
+
+        // when — the replay hands out 6 again while the prefetched copy is still running
+        var replayed = tracker.Track(_Record(6));
+        var afterPrefetched = tracker.MarkCommitted(prefetched);
+        var afterReplayed = tracker.MarkCommitted(replayed);
+
+        // then
+        afterPrefetched.Should().BeEmpty("the replayed copy of 6 is still in flight");
+        tracker.MarkRejected(prefetched).Should().BeFalse("the replayed copy owns offset 6 now");
+        _OffsetsOf(afterReplayed).Should().Equal([7]);
+    }
+
+    [Fact]
+    public void should_not_seek_forward_past_a_pending_replay_when_a_prefetched_delivery_is_rejected()
+    {
+        // given — the reject of 50 seeked back, but the poll loop was already holding 55 and hands it out
+        var tracker = new KafkaConsumerClient.KafkaOffsetCommitTracker();
+        tracker.MarkRejected(tracker.Track(_Record(50))).Should().BeTrue();
+        var prefetched = tracker.Track(_Record(55));
+
+        // when
+        var seeks = tracker.MarkRejected(prefetched);
+
+        // then — a seek to 55 would cancel the replay of 50..54; the replay hands 55 out again anyway
+        seeks.Should().BeFalse();
+        _OffsetsOf(tracker.MarkCommitted(tracker.Track(_Record(50)))).Should().Equal([51]);
     }
 
     [Fact]

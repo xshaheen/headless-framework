@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Frozen;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
@@ -631,7 +632,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     {
         if (_offsetCommitTracker is null)
         {
-            return new KafkaDelivery(consumerResult, KafkaDelivery.UntrackedGeneration);
+            return new KafkaDelivery(consumerResult, KafkaDelivery.UntrackedId);
         }
 
         lock (_lock)
@@ -1072,7 +1073,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 return true;
 
             case ConsumeResult<string, byte[]> consumerResult:
-                delivery = new KafkaDelivery(consumerResult, KafkaDelivery.UntrackedGeneration);
+                delivery = new KafkaDelivery(consumerResult, KafkaDelivery.UntrackedId);
 
                 return true;
 
@@ -1083,15 +1084,19 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         }
     }
 
-    internal sealed class KafkaDelivery(ConsumeResult<string, byte[]> consumerResult, long generation)
+    internal sealed class KafkaDelivery(ConsumeResult<string, byte[]> consumerResult, long trackingId)
     {
-        public const long UntrackedGeneration = -1;
+        public const long UntrackedId = -1;
 
         public ConsumeResult<string, byte[]> ConsumerResult { get; } = consumerResult;
 
-        public long Generation { get; } = generation;
+        /// <summary>
+        /// Identifies this hand-out of the offset. The same offset can be handed out twice — once from a
+        /// prefetch and once from the replay after a seek — and only the copy the tracker holds may settle it.
+        /// </summary>
+        public long TrackingId { get; } = trackingId;
 
-        public bool IsTracked => Generation != UntrackedGeneration;
+        public bool IsTracked => TrackingId != UntrackedId;
     }
 
     /// <summary>
@@ -1101,6 +1106,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     internal sealed class KafkaOffsetCommitTracker
     {
         private readonly Dictionary<TopicPartition, PartitionCommitState> _partitions = [];
+        private long _nextTrackingId;
 
         public KafkaDelivery Track(ConsumeResult<string, byte[]> consumerResult)
         {
@@ -1108,7 +1114,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
             if (offset < 0)
             {
-                return new KafkaDelivery(consumerResult, KafkaDelivery.UntrackedGeneration);
+                return new KafkaDelivery(consumerResult, KafkaDelivery.UntrackedId);
             }
 
             var state = _GetOrAddState(consumerResult.TopicPartition);
@@ -1118,10 +1124,14 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 state.NextCommitOffset = offset;
             }
 
-            state.PendingOffsets.Add(offset);
+            var trackingId = _nextTrackingId++;
+
+            // A replay of an offset that is still in flight supersedes the earlier copy: the replayed copy is
+            // the one that must finish before the watermark may pass the offset.
+            state.PendingOffsets[offset] = trackingId;
             _Observe(state, offset, offset + 1);
 
-            return new KafkaDelivery(consumerResult, state.Generation);
+            return new KafkaDelivery(consumerResult, trackingId);
         }
 
         /// <summary>
@@ -1152,7 +1162,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
             var candidate =
                 state.PendingOffsets.Count > 0
-                    ? Math.Min(state.PendingOffsets.Min, state.NextObservedOffset)
+                    ? Math.Min(state.PendingOffsets.Keys[0], state.NextObservedOffset)
                     : state.NextObservedOffset;
             var nextCommitOffset = state.NextCommitOffset.Value;
 
@@ -1175,7 +1185,6 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 return;
             }
 
-            state.Generation++;
             state.NextCommitOffset = null;
             state.NextObservedOffset = 0;
             state.IsReplaying = false;
@@ -1187,12 +1196,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             var consumerResult = delivery.ConsumerResult;
             var offset = consumerResult.TopicPartitionOffset.Offset.Value;
 
-            if (
-                offset < 0
-                || !_partitions.TryGetValue(consumerResult.TopicPartition, out var state)
-                || state.Generation != delivery.Generation
-                || state.NextCommitOffset is not { } nextCommitOffset
-            )
+            if (!_TryGetPendingState(delivery, out var state) || state.NextCommitOffset is not { } nextCommitOffset)
             {
                 return [];
             }
@@ -1205,7 +1209,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             // read_committed, and compaction holes — instead of stalling on them forever.
             var candidate =
                 state.PendingOffsets.Count > 0
-                    ? Math.Min(state.PendingOffsets.Min, state.NextObservedOffset)
+                    ? Math.Min(state.PendingOffsets.Keys[0], state.NextObservedOffset)
                     : state.NextObservedOffset;
 
             if (candidate <= nextCommitOffset)
@@ -1218,38 +1222,73 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             return [new TopicPartitionOffset(consumerResult.TopicPartition, new Offset(candidate))];
         }
 
+        /// <summary>
+        /// Records a reject the caller is about to seek back for, and returns whether it should seek. A
+        /// delivery the tracker no longer holds needs no seek: an earlier seek to a lower offset already
+        /// replays it, or a replayed copy of the same offset is in flight and settles it. Nor does a delivery
+        /// above a replay that has not arrived yet, because that replay hands it out again.
+        /// </summary>
         public bool MarkRejected(KafkaDelivery delivery)
         {
-            var consumerResult = delivery.ConsumerResult;
-
-            if (
-                !_partitions.TryGetValue(consumerResult.TopicPartition, out var state)
-                || state.Generation != delivery.Generation
-            )
+            if (!_TryGetPendingState(delivery, out var state))
             {
                 return false;
             }
 
-            var offset = consumerResult.TopicPartitionOffset.Offset.Value;
-            state.Generation++;
-            state.PendingOffsets.Clear();
+            var offset = delivery.ConsumerResult.TopicPartitionOffset.Offset.Value;
 
-            if (offset < 0)
+            if (state.IsReplaying && offset > state.NextObservedOffset)
             {
-                state.NextCommitOffset = null;
-                state.NextObservedOffset = 0;
-                state.IsReplaying = false;
+                // Handed out before an earlier seek back to a lower offset: the pending replay delivers it again,
+                // and seeking forward to it would cancel the replay of the range below.
+                state.PendingOffsets.Remove(offset);
 
-                return true;
+                return false;
             }
 
-            // The caller seeks back to this offset, so the range above it is about to be replayed and
-            // must not count as seen until the replay actually delivers it.
-            state.NextCommitOffset = offset;
+            // The seek replays this offset and everything above it, so those deliveries no longer hold the
+            // watermark: their replays do. Lower deliveries are not replayed and stay in flight, which keeps
+            // the watermark from passing them while the replay commits.
+            while (
+                state.PendingOffsets.Count > 0 && state.PendingOffsets.Keys[state.PendingOffsets.Count - 1] >= offset
+            )
+            {
+                state.PendingOffsets.RemoveAt(state.PendingOffsets.Count - 1);
+            }
+
+            // The range from this offset up is about to be replayed and must not count as seen until the
+            // replay actually delivers it.
             state.NextObservedOffset = offset;
             state.IsReplaying = true;
 
+            if (state.NextCommitOffset is null || offset < state.NextCommitOffset.Value)
+            {
+                state.NextCommitOffset = offset;
+            }
+
             return true;
+        }
+
+        private bool _TryGetPendingState(KafkaDelivery delivery, [NotNullWhen(true)] out PartitionCommitState? state)
+        {
+            var consumerResult = delivery.ConsumerResult;
+
+            if (
+                delivery.IsTracked
+                && _partitions.TryGetValue(consumerResult.TopicPartition, out state)
+                && state.PendingOffsets.TryGetValue(
+                    consumerResult.TopicPartitionOffset.Offset.Value,
+                    out var trackingId
+                )
+                && trackingId == delivery.TrackingId
+            )
+            {
+                return true;
+            }
+
+            state = null;
+
+            return false;
         }
 
         private PartitionCommitState _GetOrAddState(TopicPartition topicPartition)
@@ -1286,8 +1325,6 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
         private sealed class PartitionCommitState
         {
-            public long Generation { get; set; }
-
             /// <summary>The offset to commit, meaning the next offset this consumer would read.</summary>
             public long? NextCommitOffset { get; set; }
 
@@ -1300,8 +1337,11 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             /// <summary>Whether a reject seeked back and the replay has not reached that offset yet.</summary>
             public bool IsReplaying { get; set; }
 
-            /// <summary>Tracked deliveries that have not been committed yet, bounded by the group concurrency.</summary>
-            public SortedSet<long> PendingOffsets { get; } = [];
+            /// <summary>
+            /// Tracked deliveries that have not been committed yet, by offset, with the tracking id of the copy
+            /// that settles each one. Bounded by the group concurrency.
+            /// </summary>
+            public SortedList<long, long> PendingOffsets { get; } = [];
         }
     }
 }
