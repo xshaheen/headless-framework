@@ -247,6 +247,27 @@ public sealed class BlobStorageHelpersTests : TestBase
 
     #endregion
 
+    #region GetPrefixDirectory Tests
+
+    [Theory]
+    [InlineData(null, "")]
+    [InlineData("", "")]
+    [InlineData("reports", "")]
+    [InlineData("/reports", "")]
+    [InlineData("reports/", "reports/")]
+    [InlineData("reports/2026", "reports/")]
+    [InlineData("reports/2026/summary.txt", "reports/2026/")]
+    public void should_return_the_prefix_directory_when_the_prefix_names_one(string? prefix, string expected)
+    {
+        // when
+        var directory = BlobStorageHelpers.GetPrefixDirectory(prefix);
+
+        // then
+        directory.Should().Be(expected);
+    }
+
+    #endregion
+
     #region BuildAttachmentContentDisposition Tests
 
     [Fact]

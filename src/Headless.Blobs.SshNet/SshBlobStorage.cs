@@ -542,26 +542,11 @@ internal sealed partial class SshBlobStorage(
 
     internal static (string Directory, string RelativePrefix) GetEnumerationScope(string container, string? prefix)
     {
-        if (string.IsNullOrEmpty(prefix))
-        {
-            return (container, "");
-        }
+        var prefixDirectory = BlobStorageHelpers.GetPrefixDirectory(prefix);
 
-        var lastSlash = prefix.LastIndexOf('/');
-
-        if (lastSlash < 0)
-        {
-            return (container, "");
-        }
-
-        var directoryPrefix = prefix[..lastSlash];
-
-        if (directoryPrefix.Length == 0)
-        {
-            return (container, "");
-        }
-
-        return ($"{container}/{directoryPrefix}", prefix[..(lastSlash + 1)]);
+        return prefixDirectory.Length == 0
+            ? (container, "")
+            : ($"{container}/{prefixDirectory[..^1]}", prefixDirectory);
     }
 
     private async Task _WriteSidecarAsync(
