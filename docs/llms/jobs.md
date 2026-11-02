@@ -1512,8 +1512,8 @@ The dashboard exposes operational endpoints that can create, update, delete, run
 Cron-occurrence graph selection remains history-derived: it first chooses the same inclusive UTC date window from
 distinct occurrence dates, then zero-fills gaps. `IJobPersistenceProvider.GetCronOccurrenceGraphStatusCountsAsync`,
 `GetTimeJobStatusCountsAsync`, `GetTimeJobDailyStatusCountsAsync`, `GetTimeJobLockedOwnerCountsAsync`,
-`GetCronOccurrenceStatusCountsAsync`, `GetCronOccurrenceDailyStatusCountsAsync`, and
-`GetCronOccurrenceLockedOwnerCountsAsync` are additive and have default interface implementations for third-party
+`GetCronOccurrenceStatusCountsAsync`, both `GetCronOccurrenceDailyStatusCountsAsync` overloads (all definitions, and
+one definition by `cronJobId` for its per-definition graph), and `GetCronOccurrenceLockedOwnerCountsAsync` are additive and have default interface implementations for third-party
 providers. A custom durable provider should override them so status counts, owner counts, and date/status
 aggregations happen in storage; otherwise the default implementations preserve behavior by projecting through the
 existing list APIs.

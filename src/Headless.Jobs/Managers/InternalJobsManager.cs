@@ -70,6 +70,12 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     // presence of membership cannot decide it.
     private readonly Lazy<CronFleetAgreement?> _fleetAgreement = new(serviceProvider.GetService<CronFleetAgreement>);
 
+    // Resolved once rather than per payload read. Optional, like the fleet agreement above: a manager built without
+    // the registry skips the contract check.
+    private readonly Lazy<JobFunctionRegistry?> _functionRegistry = new(
+        serviceProvider.GetService<JobFunctionRegistry>
+    );
+
     private async Task<CronFingerprintSweepDeferralReason> _CheckFleetAgreementAsync(
         CancellationToken cancellationToken
     )
@@ -1428,28 +1434,15 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         return [.. resources.Where(resource => stampedIds.Contains((resource.Type, resource.JobId)))];
     }
 
-    public async Task<T?> GetRequestAsync<T>(Guid jobId, JobType type, CancellationToken cancellationToken = default)
+    public async Task<T?> GetRequestAsync<T>(JobContext context, CancellationToken cancellationToken = default)
     {
-        string? function;
-        string? version;
-        if (type == JobType.CronJobOccurrence)
-        {
-            var occurrence = (
-                await persistenceProvider
-                    .GetAllCronJobOccurrencesAsync(x => x.Id == jobId, cancellationToken)
-                    .ConfigureAwait(false)
-            ).SingleOrDefault();
-            function = occurrence?.Function;
-            version = occurrence?.ContractVersion;
-        }
-        else
-        {
-            var job = await persistenceProvider.GetTimeJobByIdAsync(jobId, cancellationToken).ConfigureAwait(false);
-            function = job?.Function;
-            version = job?.ContractVersion;
-        }
+        // The executing context carries the claimed row's function and contract version. Edits are refused once a
+        // row is claimed for execution, so they still describe the stored payload, and the check needs no row read.
+        var function = context.FunctionName;
+        var jobId = context.Id;
+        var type = context.Type;
 
-        if (function is not null && serviceProvider.GetService<JobFunctionRegistry>() is { } registry)
+        if (_functionRegistry.Value is { } registry)
         {
             if (!registry.Descriptors.TryGetValue(function, out var descriptor))
             {
@@ -1458,10 +1451,10 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 );
             }
 
-            if (!string.Equals(version, descriptor.ContractVersion, StringComparison.Ordinal))
+            if (!string.Equals(context.ContractVersion, descriptor.ContractVersion, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
-                    $"Unsupported stored Jobs contract '{function}' version '{version}'; this node registers '{descriptor.ContractVersion}'. Request was not deserialized."
+                    $"Unsupported stored Jobs contract '{function}' version '{context.ContractVersion}'; this node registers '{descriptor.ContractVersion}'. Request was not deserialized."
                 );
             }
         }

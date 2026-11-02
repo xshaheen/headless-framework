@@ -449,6 +449,12 @@ public abstract class PostgreSqlClaimConformanceTestsBase<TFixture>(TFixture fix
     }
 
     [Fact]
+    public override Task cron_daily_status_counts_aggregate_in_storage_with_and_without_a_definition_filter()
+    {
+        return base.cron_daily_status_counts_aggregate_in_storage_with_and_without_a_definition_filter();
+    }
+
+    [Fact]
     public override Task concurrent_missing_cron_occurrence_creation_is_deduplicated()
     {
         return base.concurrent_missing_cron_occurrence_creation_is_deduplicated();

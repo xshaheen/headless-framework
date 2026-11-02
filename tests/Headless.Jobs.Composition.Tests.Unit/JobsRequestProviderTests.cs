@@ -51,7 +51,7 @@ public sealed class JobsRequestProviderTests : TestBase
     public async Task get_request_async_returns_the_stored_payload()
     {
         var stored = new TestRequest(7);
-        _manager.GetRequestAsync<TestRequest>(_context.Id, _context.Type, AbortToken).Returns(stored);
+        _manager.GetRequestAsync<TestRequest>(_context, AbortToken).Returns(stored);
 
         (await JobsRequestProvider.GetRequestAsync<TestRequest>(_context, AbortToken)).Should().Be(stored);
 
@@ -64,9 +64,7 @@ public sealed class JobsRequestProviderTests : TestBase
     public async Task get_request_async_propagates_read_failures_instead_of_yielding_a_default_payload()
     {
         var failure = new InvalidOperationException("payload store unavailable");
-        _manager
-            .GetRequestAsync<TestRequest>(_context.Id, _context.Type, AbortToken)
-            .Returns<TestRequest?>(_ => throw failure);
+        _manager.GetRequestAsync<TestRequest>(_context, AbortToken).Returns<TestRequest?>(_ => throw failure);
 
         var act = () => JobsRequestProvider.GetRequestAsync<TestRequest>(_context, AbortToken);
 
@@ -91,7 +89,7 @@ public sealed class JobsRequestProviderTests : TestBase
         await cancellation.CancelAsync();
         var token = cancellation.Token;
         _manager
-            .GetRequestAsync<TestRequest>(_context.Id, _context.Type, token)
+            .GetRequestAsync<TestRequest>(_context, token)
             .Returns<TestRequest?>(_ => throw new OperationCanceledException(token));
 
         var act = () => JobsRequestProvider.GetRequestAsync<TestRequest>(_context, token);

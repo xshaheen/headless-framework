@@ -326,9 +326,7 @@ public static class JobsRequestProvider
 
         try
         {
-            return await internalJobsManager
-                .GetRequestAsync<T>(context.Id, context.Type, cancellationToken)
-                .ConfigureAwait(false);
+            return await internalJobsManager.GetRequestAsync<T>(context, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {

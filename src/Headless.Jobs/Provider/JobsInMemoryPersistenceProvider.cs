@@ -536,8 +536,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             )
             .ToArray();
 
-        // Get minimum execution time
-        var minExecutionTime = baseQuery.OrderBy(x => x.ExecutionTime).Select(x => x.ExecutionTime).FirstOrDefault();
+        // Get minimum execution time: a single pass, not a sort of every peekable row
+        var minExecutionTime = baseQuery.Min(x => x.ExecutionTime);
 
         if (minExecutionTime == null)
         {
@@ -3096,8 +3096,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var occurrence = query
             // Only recent/upcoming tasks (not heavily overdue)
             .Where(x => _CanPeekCronOccurrence(x, now.UtcDateTime) && x.ExecutionTime >= mainSchedulerThreshold)
-            .OrderBy(x => x.ExecutionTime)
-            .FirstOrDefault();
+            // MinBy keeps the first of equal instants, as the stable sort it replaces did, without sorting every row.
+            .MinBy(x => x.ExecutionTime);
 
         return Task.FromResult(occurrence is null ? null! : _CloneCronOccurrence(occurrence));
     }
@@ -3842,10 +3842,34 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         CancellationToken cancellationToken = default
     )
     {
+        return _GetCronOccurrenceDailyStatusCountsAsync(cronJobId: null, startDate, endDate, cancellationToken);
+    }
+
+    public Task<IList<(DateTime Date, JobStatus Status, int Count)>> GetCronOccurrenceDailyStatusCountsAsync(
+        Guid cronJobId,
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _GetCronOccurrenceDailyStatusCountsAsync(cronJobId, startDate, endDate, cancellationToken);
+    }
+
+    private Task<IList<(DateTime Date, JobStatus Status, int Count)>> _GetCronOccurrenceDailyStatusCountsAsync(
+        Guid? cronJobId,
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken
+    )
+    {
         cancellationToken.ThrowIfCancellationRequested();
 
         var counts = _cronOccurrences
-            .Values.Where(x => x.ExecutionTime.Date >= startDate && x.ExecutionTime.Date <= endDate)
+            .Values.Where(x =>
+                (cronJobId is null || x.CronJobId == cronJobId)
+                && x.ExecutionTime.Date >= startDate
+                && x.ExecutionTime.Date <= endDate
+            )
             .GroupBy(x => new { x.ExecutionTime.Date, x.Status })
             .Select(group => (group.Key.Date, group.Key.Status, group.Count()))
             .ToList();
