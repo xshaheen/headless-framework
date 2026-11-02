@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Threading;
-using Headless.UnitOfWork;
 
-namespace Headless.Fencing.InMemory;
+namespace Headless.UnitOfWork.Internal;
 
 /// <summary>
 /// The in-memory stand-in for a database transaction, kept as unit-local state on one unit of work. It holds every key
@@ -21,6 +20,7 @@ internal sealed class UnitRowTransaction<TKey, TRow> : IDisposable
     private readonly Lock _gate = new();
     private readonly Dictionary<TKey, KeyedAsyncLock.Releaser> _held = [];
     private readonly Dictionary<TKey, TRow?> _staged = [];
+    private DateTimeOffset _lastReading = DateTimeOffset.MinValue;
     private bool _ended;
 
     public UnitRowTransaction(IUnitOfWork unitOfWork, InMemoryRowTable<TKey, TRow> table)
@@ -97,6 +97,30 @@ internal sealed class UnitRowTransaction<TKey, TRow> : IDisposable
             {
                 releaser.Dispose();
             }
+        }
+    }
+
+    /// <summary>
+    /// Reads <paramref name="clock" /> for this unit, never earlier than a reading the unit already took. One unit can
+    /// make several store calls that build on each other (an admission inserts a record and then admits it; a grant is
+    /// renewed, or a fence is followed by a settlement), and a wall clock can step back between them. Without this, a
+    /// later call would decide on an instant before one the unit already acted on, as a database transaction's clock
+    /// never does.
+    /// </summary>
+    public DateTimeOffset Now(TimeProvider clock)
+    {
+        var now = clock.GetUtcNow();
+
+        lock (_gate)
+        {
+            if (now < _lastReading)
+            {
+                now = _lastReading;
+            }
+
+            _lastReading = now;
+
+            return now;
         }
     }
 
