@@ -1,81 +1,103 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Pulsar.Client.Api;
-
 namespace Headless.Messaging.Pulsar;
 
 /// <summary>
-/// Watches a Pulsar consumer for connections it lost and recovered on its own, which Pulsar.Client does without telling
-/// its caller.
+/// Watches a receiver for connections it lost and recovered on its own, which DotPulsar does without telling its caller
+/// except through the receiver's state.
 /// </summary>
 /// <remarks>
-/// Pulsar.Client reconnects a consumer internally and exposes no reconnect event, only the time of the last lost
-/// connection and whether the consumer is connected now. A non-durable subscription keeps no cursor on the broker while
-/// the consumer is away, so messages published during the gap can be lost; the monitor reports each recovery so the
-/// messaging core can tell the consumer.
+/// DotPulsar reconnects a consumer or reader internally while a receive waits quietly, so the state is how the host
+/// learns that the broker went away. A non-durable subscription keeps no cursor on the broker while the reader is away,
+/// so messages published during the gap can be lost; the monitor reports each recovery so the messaging core can tell
+/// the consumer.
 /// </remarks>
 internal static class PulsarReconnectMonitor
 {
-    /// <summary>How often the monitor reads the consumer's connection state.</summary>
-    public static readonly TimeSpan ProbeInterval = TimeSpan.FromSeconds(1);
+    /// <summary>
+    /// How often a receiver still reconnecting is reported unreachable again. The host counts several failures in a row
+    /// before it calls the broker unreachable, so one report per outage would never reach that count.
+    /// </summary>
+    public static readonly TimeSpan DisconnectedReportInterval = TimeSpan.FromSeconds(1);
 
     /// <summary>
-    /// Reports whether <paramref name="consumer"/> is connected on every probe, and invokes
-    /// <paramref name="onReestablished"/> once each time it is connected again after it lost its connection, until
+    /// Reports each change of <paramref name="receiver"/>'s connection, and invokes <paramref name="onReestablished"/>
+    /// once each time it is connected again after it lost its connection, until the receiver ends or
     /// <paramref name="cancellationToken"/> is canceled.
     /// </summary>
-    /// <param name="consumer">The consumer whose subscription to watch.</param>
+    /// <param name="receiver">The receiver to watch, already connected.</param>
     /// <param name="onReestablished">
     /// The callback to invoke after a recovery, or <see langword="null"/> for a subscription that loses nothing while
     /// away.
     /// </param>
-    /// <param name="onConnectionState">
-    /// Receives the consumer's connection state on each probe. A receive waits quietly through an outage, so this is
-    /// how the host learns that the broker went away.
-    /// </param>
-    /// <param name="onError">Receives a failure to read the consumer state or of the callback; the monitor keeps running.</param>
-    /// <param name="timeProvider">The clock that paces the probes.</param>
+    /// <param name="onConnectionState">Receives whether the receiver is connected, on each change.</param>
+    /// <param name="onError">Receives a failure of the callback or of the state watch; the monitor keeps running.</param>
     /// <param name="cancellationToken">Stops the monitor.</param>
-    /// <returns>A task that completes once <paramref name="cancellationToken"/> is canceled.</returns>
+    /// <param name="disconnectedReportInterval">
+    /// How often a disconnected receiver is reported again; <see cref="DisconnectedReportInterval"/> unless a test sets
+    /// it. The interval waits real time, as a reconnect does.
+    /// </param>
+    /// <returns>A task that completes once the receiver ended or <paramref name="cancellationToken"/> is canceled.</returns>
     public static async Task RunAsync(
-        IConsumer<byte[]> consumer,
+        IPulsarReceiver receiver,
         Func<CancellationToken, Task>? onReestablished,
         Action<bool> onConnectionState,
         Action<Exception> onError,
-        TimeProvider timeProvider,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        TimeSpan? disconnectedReportInterval = null
     )
     {
-        long? handled = null;
+        var reportInterval = disconnectedReportInterval ?? DisconnectedReportInterval;
+        var state = PulsarLinkState.Connected;
 
         while (!cancellationToken.IsCancellationRequested)
         {
+            PulsarLinkState next;
+            using var wait = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            if (state is PulsarLinkState.Disconnected)
+            {
+                wait.CancelAfter(reportInterval);
+            }
+
             try
             {
-                // Each probe goes through the consumer's mailbox, which can stall after a broker restart, so a stop
-                // abandons a probe still waiting instead of holding the receive loop that awaits this monitor.
-                var lastDisconnected = await consumer
-                    .LastDisconnectedTimestamp()
-                    .WaitAsync(cancellationToken)
-                    .ConfigureAwait(false);
-                var connected = await consumer.IsConnected().WaitAsync(cancellationToken).ConfigureAwait(false);
-                onConnectionState(connected);
+                next = await receiver.WaitForLinkChangeAsync(state, wait.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (OperationCanceledException) when (wait.IsCancellationRequested)
+            {
+                // Still reconnecting: report it again, so the host sees a run of failures rather than a single blip.
+                onConnectionState(false);
+                continue;
+            }
+            catch (Exception e)
+            {
+                // A state watch that fails would fail again at once; the receive loop still sees an ended receiver.
+                onError(e);
+                return;
+            }
 
-                // The first read sets the baseline: a disconnect before the monitor started preceded the subscription
-                // the core already announced. A consumer still reconnecting is checked again on the next probe, so the
-                // callback runs only once the recovered subscription can receive.
-                if (handled is null)
-                {
-                    handled = lastDisconnected;
-                }
-                else if (lastDisconnected != handled && connected)
-                {
-                    handled = lastDisconnected;
-                    if (onReestablished is not null)
-                    {
-                        await onReestablished(cancellationToken).ConfigureAwait(false);
-                    }
-                }
+            var recovered = state is PulsarLinkState.Disconnected && next is PulsarLinkState.Connected;
+            state = next;
+            onConnectionState(next is PulsarLinkState.Connected);
+
+            if (next is PulsarLinkState.Ended)
+            {
+                // The receive loop sees the ended receiver too, and fails the listener so the core rebuilds it.
+                return;
+            }
+
+            if (!recovered || onReestablished is null)
+            {
+                continue;
+            }
+
+            try
+            {
+                await onReestablished(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -84,15 +106,6 @@ internal static class PulsarReconnectMonitor
             catch (Exception e)
             {
                 onError(e);
-            }
-
-            try
-            {
-                await timeProvider.Delay(ProbeInterval, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
             }
         }
     }

@@ -81,7 +81,7 @@ public sealed class PulsarEveryInstanceTests(PulsarFixture fixture) : TestBase
         });
         await session.StartAsync(cancellationToken: AbortToken);
 
-        // when: unloading the topic closes every consumer on it, and Pulsar.Client reconnects on its own
+        // when: unloading the topic closes every consumer on it, and DotPulsar reconnects on its own
         using var unload = await admin.PutAsync(
             _TopicPath(endpoint.LogicalName) + "/unload",
             content: null,

@@ -135,7 +135,6 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
                     ? (ITransport)serviceProvider.GetRequiredService<IBusTransport>()
                     : serviceProvider.GetRequiredService<IQueueTransport>();
             var connectionFactory = serviceProvider.GetRequiredService<IConnectionFactory>();
-            var client = await connectionFactory.RentClientAsync(cancellationToken);
             var options = serviceProvider.GetRequiredService<IOptions<PulsarMessagingOptions>>();
             Func<IReadOnlyDictionary<string, string?>, byte[], TransportMessage>? transportMessageFactory = null;
             if (failEnvelopeBuild)
@@ -151,7 +150,7 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
 #pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.
             var consumer = new PulsarConsumerClient(
                 options,
-                client,
+                connectionFactory,
                 request,
                 consumerConfig,
                 transportMessageFactory: transportMessageFactory,

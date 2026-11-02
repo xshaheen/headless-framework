@@ -1,9 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using DotPulsar;
+using DotPulsar.Extensions;
 using Headless.Messaging;
 using Headless.Messaging.Pulsar;
 using Microsoft.Extensions.DependencyInjection;
-using Pulsar.Client.Common;
 using Tests.Capabilities;
 
 namespace Tests;
@@ -38,13 +39,14 @@ internal sealed class PulsarProviderConformanceDriver(PulsarFixture fixture) : T
         services.AddLogging();
         services.AddHeadlessMessaging(ConfigureRoutingAffinityTransport);
         await using var provider = services.BuildServiceProvider();
-        var client = await provider.GetRequiredService<IConnectionFactory>().RentClientAsync(cancellationToken);
-        await using var consumer = await client
+        var client = provider.GetRequiredService<IConnectionFactory>().RentClient();
+        await using var consumer = client
             .NewConsumer()
             .Topic(PulsarPhysicalAddress.Topic(lane, destination))
             .SubscriptionName($"native-{Guid.NewGuid():N}")
-            .SubscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .SubscribeAsync();
+            .InitialPosition(SubscriptionInitialPosition.Earliest)
+            .Create();
+        await consumer.OnStateChangeTo(ConsumerState.Active, TimeSpan.FromSeconds(30), cancellationToken);
 
         await TransportRoutingAffinityConformance.AssertPublisherPathsAsync(
             ConfigureRoutingAffinityTransport,
@@ -53,11 +55,11 @@ internal sealed class PulsarProviderConformanceDriver(PulsarFixture fixture) : T
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
                 timeout.CancelAfter(TimeSpan.FromSeconds(30));
-                var native = await consumer.ReceiveAsync(timeout.Token);
+                var native = await consumer.Receive(timeout.Token);
                 native.Key.Should().Be("order-42");
                 native.Properties[Headers.MessageId].Should().Be(expectedId);
                 native.Properties[Headers.RoutingAffinityKey].Should().Be("order-42");
-                await consumer.AcknowledgeAsync(native.MessageId);
+                await consumer.Acknowledge(native.MessageId, token);
             },
             cancellationToken,
             lane

@@ -91,9 +91,13 @@ public sealed class PulsarTransportTests(PulsarFixture fixture) : TestBase
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task should_round_trip_a_compressed_payload_with_producer_settings(bool batching)
+    [InlineData(DotPulsar.CompressionType.Lz4)]
+    [InlineData(DotPulsar.CompressionType.Zstd)]
+    [InlineData(DotPulsar.CompressionType.Snappy)]
+    [InlineData(DotPulsar.CompressionType.Zlib)]
+    public async Task should_round_trip_a_compressed_payload_with_producer_settings(
+        DotPulsar.CompressionType compression
+    )
     {
         var destination = $"persistent://public/default/conf-{Guid.NewGuid():N}";
         await using var session = await PulsarFixture.CreateSessionAsync(
@@ -104,9 +108,7 @@ public sealed class PulsarTransportTests(PulsarFixture fixture) : TestBase
             createReplacement: false,
             configureOptions: options =>
             {
-                options.Producer.EnableBatching = batching;
-                options.Producer.BatchingMaxPublishDelay = TimeSpan.FromMilliseconds(5);
-                options.Producer.CompressionType = Pulsar.Client.Common.CompressionType.LZ4;
+                options.Producer.CompressionType = compression;
                 options.Producer.SendTimeout = TimeSpan.FromSeconds(10);
             }
         );

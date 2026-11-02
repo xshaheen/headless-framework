@@ -1,11 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
+using DotPulsar.Abstractions;
 using Headless.Messaging.Pulsar;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Pulsar.Client.Api;
 
 namespace Tests;
 
@@ -46,14 +47,32 @@ public sealed class ConnectionFactoryTests : TestBase
     }
 
     [Fact]
-    public async Task should_create_client_with_service_url()
+    public async Task should_build_one_client_and_hand_it_to_every_caller()
     {
         // given
         await using var factory = new ConnectionFactory(_logger, _options);
 
-        // when, then - RentClient creates PulsarClient with the service URL
-        // Since we can't mock PulsarClientBuilder easily, we verify the ServersAddress
-        factory.ServersAddress.Should().Be("pulsar://localhost:6650");
+        // when: building the client opens no connection
+        var first = factory.RentClient();
+        var second = factory.RentClient();
+
+        // then
+        first.Should().BeSameAs(second);
+        first.ServiceUrl.Should().Be(new Uri("pulsar://localhost:6650"));
+    }
+
+    [Fact]
+    public async Task should_refuse_a_client_after_dispose()
+    {
+        // given
+        var factory = new ConnectionFactory(_logger, _options);
+        await factory.DisposeAsync();
+
+        // when
+        var act = () => factory.RentClient();
+
+        // then
+        act.Should().Throw<ObjectDisposedException>();
     }
 
     [Fact]
@@ -70,67 +89,69 @@ public sealed class ConnectionFactoryTests : TestBase
     }
 
     [Fact]
-    public async Task should_retry_producer_creation_after_transient_failure()
+    public async Task should_reuse_the_producer_of_a_topic_while_it_is_live()
     {
         // given
-        var producer = Substitute.For<IProducer<byte[]>>();
-        var callCount = 0;
+        var created = 0;
         await using var factory = new ConnectionFactory(
             _logger,
             _options,
             _ =>
             {
-                if (Interlocked.Increment(ref callCount) == 1)
-                {
-                    return Task.FromException<IProducer<byte[]>>(new InvalidOperationException("transient"));
-                }
-
-                return Task.FromResult(producer);
+                Interlocked.Increment(ref created);
+                return _Producer(final: false);
             }
         );
 
         // when
-        var firstAttempt = async () => await factory.CreateProducerAsync("orders.created");
+        var first = factory.GetProducer("orders.created");
+        var second = factory.GetProducer("orders.created");
 
         // then
-        await firstAttempt.Should().ThrowAsync<InvalidOperationException>();
-        var recoveredProducer = await factory.CreateProducerAsync("orders.created");
-        recoveredProducer.Should().BeSameAs(producer);
-        callCount.Should().Be(2);
+        first.Should().BeSameAs(second);
+        created.Should().Be(1);
     }
 
     [Fact]
-    public async Task should_apply_producer_settings_to_every_producer_it_builds()
+    public async Task should_replace_a_producer_that_faulted()
+    {
+        // given: a faulted DotPulsar producer never recovers on its own
+        var faulted = _Producer(final: true);
+        var replacement = _Producer(final: false);
+        var producers = new Queue<IProducer<ReadOnlySequence<byte>>>([faulted, replacement]);
+        await using var factory = new ConnectionFactory(_logger, _options, _ => producers.Dequeue());
+
+        // when
+        var producer = factory.GetProducer("orders.created");
+
+        // then
+        producer.Should().BeSameAs(replacement);
+        await faulted.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task should_expose_the_configured_send_timeout()
     {
         // given
-        var settings = new PulsarProducerOptions
-        {
-            CompressionType = Pulsar.Client.Common.CompressionType.ZStd,
-            EnableBatching = false,
-            BatchingMaxPublishDelay = TimeSpan.FromMilliseconds(20),
-            SendTimeout = TimeSpan.FromSeconds(5),
-        };
+        var options = Options.Create(
+            new PulsarMessagingOptions
+            {
+                ServiceUrl = "pulsar://localhost:6650",
+                Producer = { SendTimeout = TimeSpan.FromSeconds(5) },
+            }
+        );
 
-        // Building the client opens no connection; only creating a producer would.
-        var client = await new PulsarClientBuilder().ServiceUrl("pulsar://localhost:6650").BuildAsync();
+        // when
+        await using var factory = new ConnectionFactory(_logger, options);
 
-        try
-        {
-            // when
-            var configuration = ConnectionFactory
-                .Configure(client.NewProducer().Topic("orders"), settings)
-                .Configuration;
+        // then
+        factory.SendTimeout.Should().Be(TimeSpan.FromSeconds(5));
+    }
 
-            // then
-            configuration.CompressionType.Should().Be(Pulsar.Client.Common.CompressionType.ZStd);
-            configuration.BatchingEnabled.Should().BeFalse();
-            configuration.BatchingMaxPublishDelay.Should().Be(TimeSpan.FromMilliseconds(20));
-            configuration.SendTimeout.Should().Be(TimeSpan.FromSeconds(5));
-            configuration.BatchBuilder.Should().Be(Pulsar.Client.Common.BatchBuilder.KeyBased);
-        }
-        finally
-        {
-            await client.CloseAsync();
-        }
+    private static IProducer<ReadOnlySequence<byte>> _Producer(bool final)
+    {
+        var producer = Substitute.For<IProducer<ReadOnlySequence<byte>>>();
+        producer.State.IsFinalState().Returns(final);
+        return producer;
     }
 }

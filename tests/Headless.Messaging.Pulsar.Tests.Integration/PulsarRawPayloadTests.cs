@@ -3,12 +3,13 @@
 using System.Collections.Concurrent;
 using System.Net.Http.Json;
 using System.Text.Json;
+using DotPulsar;
+using DotPulsar.Extensions;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Pulsar;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
-using Pulsar.Client.Api;
 using Tests.Helpers;
 
 namespace Tests;
@@ -34,26 +35,21 @@ public sealed class PulsarRawPayloadTests(PulsarFixture fixture) : TestBase
         await firstBootstrapper.BootstrapAsync(AbortToken);
         await _WaitUntilAsync(async () => await _BacklogAsync(topic) is not null, "the queue subscription");
 
-        var client = await new PulsarClientBuilder().ServiceUrl(fixture.ConnectionString).BuildAsync();
-        global::Pulsar.Client.Common.MessageId valid;
+        var client = PulsarClient.Builder().ServiceUrl(new Uri(fixture.ConnectionString)).Build();
+        MessageId valid;
 
         try
         {
-            // Batching off, so the broker stores each message as its own entry and the expected position is exact.
-            await using var producer = await client
-                .NewProducer()
-                .Topic(topic)
-                .EnableBatching(false)
-                .CreateAsync()
-                .WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+            // DotPulsar never batches, so the broker stores each message as its own entry and the position is exact.
+            await using var producer = client.NewProducer().Topic(topic).Create();
 
             // when: a non-.NET producer publishes with the native client, sending no Headless properties
-            valid = await producer.SendAsync("""{"RunId":"run-1","Score":7}"""u8.ToArray());
-            await producer.SendAsync("{not json"u8.ToArray());
+            valid = await producer.Send("""{"RunId":"run-1","Score":7}"""u8.ToArray(), AbortToken);
+            await producer.Send("{not json"u8.ToArray(), AbortToken);
         }
         finally
         {
-            await client.CloseAsync();
+            await client.DisposeAsync();
         }
 
         // then: the handler sees the message under its broker position, and the malformed body becomes one poison row

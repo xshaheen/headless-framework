@@ -2,8 +2,6 @@
 
 using Headless.Messaging.Pulsar;
 using Headless.Testing.Tests;
-using Pulsar.Client.Api;
-using Pulsar.Client.Common;
 
 namespace Tests;
 
@@ -65,14 +63,11 @@ public sealed class PulsarMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_default_producer_settings_to_pulsar_client_defaults()
+    public void should_default_producer_settings()
     {
         var producer = new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" }.Producer;
-        var clientDefault = ProducerConfiguration.Default;
 
-        producer.CompressionType.Should().Be(CompressionType.None).And.Be(clientDefault.CompressionType);
-        producer.EnableBatching.Should().BeTrue().And.Be(clientDefault.BatchingEnabled);
-        producer.BatchingMaxPublishDelay.Should().Be(TimeSpan.FromMilliseconds(1));
+        producer.CompressionType.Should().Be(DotPulsar.CompressionType.None);
         producer.SendTimeout.Should().Be(TimeSpan.FromSeconds(30));
     }
 
@@ -81,36 +76,49 @@ public sealed class PulsarMessagingOptionsTests : TestBase
     {
         var options = new PulsarMessagingOptions
         {
-            ServiceUrl = "pulsar://localhost:6650",
-            Producer =
-            {
-                EnableBatching = false,
-                BatchingMaxPublishDelay = TimeSpan.FromMilliseconds(10),
-                CompressionType = CompressionType.LZ4,
-                SendTimeout = TimeSpan.Zero,
-            },
+            ServiceUrl = "pulsar+ssl://broker:6651",
+            Producer = { CompressionType = DotPulsar.CompressionType.Lz4, SendTimeout = TimeSpan.Zero },
         };
 
         new PulsarMessagingOptionsValidator().Validate(options).IsValid.Should().BeTrue();
     }
 
-    [Theory]
-    [InlineData(0, 1000)]
-    [InlineData(-1, 1000)]
-    [InlineData(1, -1)]
-    public void should_reject_non_positive_batching_delay_or_negative_send_timeout(int delayMs, int sendTimeoutMs)
+    [Fact]
+    public void should_reject_a_negative_send_timeout()
     {
         var options = new PulsarMessagingOptions
         {
             ServiceUrl = "pulsar://localhost:6650",
-            Producer =
-            {
-                BatchingMaxPublishDelay = TimeSpan.FromMilliseconds(delayMs),
-                SendTimeout = TimeSpan.FromMilliseconds(sendTimeoutMs),
-            },
+            Producer = { SendTimeout = TimeSpan.FromMilliseconds(-1) },
         };
 
         new PulsarMessagingOptionsValidator().Validate(options).IsValid.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("localhost:6650")]
+    [InlineData("http://localhost:6650")]
+    [InlineData("pulsar://")]
+    public void should_reject_a_service_url_that_is_not_an_absolute_pulsar_url(string serviceUrl)
+    {
+        var options = new PulsarMessagingOptions { ServiceUrl = serviceUrl };
+
+        var result = new PulsarMessagingOptionsValidator().Validate(options);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error => error.PropertyName == nameof(PulsarMessagingOptions.ServiceUrl));
+    }
+
+    [Fact]
+    public void should_default_tls_settings_to_verify_the_certificate_authority_only()
+    {
+        var tls = new PulsarTlsOptions();
+
+        tls.VerifyCertificateAuthority.Should().BeTrue();
+        tls.VerifyCertificateName.Should().BeFalse();
+        tls.CheckCertificateRevocation.Should().BeTrue();
+        tls.TrustedCertificateAuthority.Should().BeNull();
+        tls.ClientCertificate.Should().BeNull();
     }
 
     [Fact]

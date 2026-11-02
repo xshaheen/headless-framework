@@ -568,6 +568,15 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
     protected virtual int MaximumBodySize =>
         throw new NotSupportedException($"{GetType().Name} does not declare a maximum body size.");
 
+    /// <summary>
+    /// How many bytes the largest accepted body can vary by between runs, for a transport whose framing around the body
+    /// varies by up to that many bytes, such as broker-assigned names or varint-encoded counters. A body of
+    /// <see cref="MaximumBodySize"/> bytes must always succeed, and a body past the band, of
+    /// <see cref="MaximumBodySize"/> plus this slack plus one byte, must always fail. The default of zero keeps the
+    /// exact-boundary check: one byte over <see cref="MaximumBodySize"/> must fail.
+    /// </summary>
+    protected virtual int MaximumBodySizeSlack => 0;
+
     public virtual async Task should_match_production_runtime_capabilities()
     {
         var services = new ServiceCollection();
@@ -1188,7 +1197,11 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
         delivery.Message.Body.Span.SequenceEqual(atLimit.Body.Span).Should().BeTrue("the body must arrive intact");
         await session.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
 
-        var overLimit = _CreateMessage(session.Destination, Guid.NewGuid().ToString("N"), _PatternBody(limit + 1));
+        var overLimit = _CreateMessage(
+            session.Destination,
+            Guid.NewGuid().ToString("N"),
+            _PatternBody(limit + MaximumBodySizeSlack + 1)
+        );
         bool refused;
         try
         {
@@ -1201,7 +1214,7 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
             refused = true;
         }
 
-        refused.Should().BeTrue("a body one byte over the limit must fail at publish");
+        refused.Should().BeTrue("a body one byte past the limit and its slack must fail at publish");
 
         // A publish reported as failed must also have left nothing behind: an oversized message the broker kept anyway
         // would reach the consumer, or break it, instead of the next message.

@@ -3,13 +3,13 @@
 using System.Collections.Concurrent;
 using System.Net.Http.Json;
 using System.Text.Json;
+using DotPulsar;
+using DotPulsar.Extensions;
 using Headless.Messaging;
 using Headless.Messaging.Pulsar;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
-using Pulsar.Client.Api;
-using Pulsar.Client.Common;
 using Tests.Helpers;
 using MessagingHeaders = Headless.Messaging.Headers;
 
@@ -56,7 +56,7 @@ public sealed class PulsarConsumerHatchTests(PulsarFixture fixture) : TestBase
     }
 
     [Fact]
-    public async Task should_route_each_key_to_one_key_shared_replica_when_mixed_key_messages_share_a_batch()
+    public async Task should_route_each_key_to_one_key_shared_replica_when_mixed_key_messages_are_sent_concurrently()
     {
         // given
         var destination = $"hatch-{Guid.NewGuid():N}";
@@ -85,7 +85,7 @@ public sealed class PulsarConsumerHatchTests(PulsarFixture fixture) : TestBase
         await first.StartAsync(recordInto(1, first), cancellationToken: AbortToken);
         await second.StartAsync(recordInto(2, second), cancellationToken: AbortToken);
 
-        // when: concurrent sends land in shared producer batches, so a batch carries several keys
+        // when: concurrent sends with mixed keys
         var sends = Enumerable
             .Range(0, total)
             .Select(i => first.PublishAsync(_Message(destination, key: $"key-{i % keyCount}"), AbortToken));
@@ -123,17 +123,17 @@ public sealed class PulsarConsumerHatchTests(PulsarFixture fixture) : TestBase
         // The default dead-letter topic is named after the fully qualified physical topic and the subscription.
         var deadLetterTopic =
             $"persistent://public/default/{PulsarPhysicalAddress.Topic(MessageLane.Queue, destination)}-{_QueueSubscription}-DLQ";
-        var client = await new PulsarClientBuilder().ServiceUrl(fixture.ConnectionString).BuildAsync();
+        var client = PulsarClient.Builder().ServiceUrl(new Uri(fixture.ConnectionString)).Build();
 
         try
         {
-            await using var deadLetters = await client
+            await using var deadLetters = client
                 .NewConsumer()
                 .Topic(deadLetterTopic)
                 .SubscriptionName("probe")
-                .SubscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-                .SubscribeAsync()
-                .WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+                .InitialPosition(SubscriptionInitialPosition.Earliest)
+                .Create();
+            await deadLetters.OnStateChangeTo(ConsumerState.Active, TimeSpan.FromSeconds(30), AbortToken);
 
             (await session.PublishAsync(message, AbortToken)).Succeeded.Should().BeTrue();
 
@@ -146,16 +146,23 @@ public sealed class PulsarConsumerHatchTests(PulsarFixture fixture) : TestBase
             }
 
             // then
-            var deadLetter = await deadLetters.ReceiveAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+            var deadLetter = await deadLetters
+                .Receive(AbortToken)
+                .AsTask()
+                .WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
             deadLetter.Properties[MessagingHeaders.MessageId].Should().Be(message.Id);
-            await deadLetters.AcknowledgeAsync(deadLetter.MessageId);
+            deadLetter
+                .Properties["REAL_TOPIC"]
+                .Should()
+                .Be($"persistent://public/default/{PulsarPhysicalAddress.Topic(MessageLane.Queue, destination)}");
+            await deadLetters.Acknowledge(deadLetter.MessageId, AbortToken);
             (await session.RemainsEmptyAsync(TimeSpan.FromSeconds(3), AbortToken))
                 .Should()
                 .BeTrue("a dead-lettered message is not redelivered to the subscription");
         }
         finally
         {
-            await client.CloseAsync();
+            await client.DisposeAsync();
         }
     }
 

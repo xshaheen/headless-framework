@@ -10,7 +10,12 @@
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Pulsar.Client" />
+    <PackageReference Include="DotPulsar" />
+    <!-- DotPulsar finds its LZ4, Snappy, and Zstandard codecs by reflection, so the compiler never sees them used. Each is
+         needed to decode a message compressed with that codec, by any producer, and to publish with it. -->
+    <PackageReference Include="IronSnappy" TreatAsUsed="true" />
+    <PackageReference Include="K4os.Compression.LZ4" TreatAsUsed="true" />
+    <PackageReference Include="ZstdSharp.Port" TreatAsUsed="true" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Pulsar.Client.Api;
-using Pulsar.Client.Common;
 
 namespace Headless.Messaging;
 
@@ -49,7 +47,7 @@ public static class PulsarMessageBuilderExtensions
 [PublicAPI]
 public sealed class PulsarConsumerConfigBuilder
 {
-    /// <summary>The shortest ack timeout Pulsar.Client accepts.</summary>
+    /// <summary>The shortest ack timeout the consumer accepts, as the Apache Pulsar clients bound it.</summary>
     internal static readonly TimeSpan MinAckTimeout = TimeSpan.FromSeconds(1);
 
     private bool _keyShared;
@@ -81,7 +79,8 @@ public sealed class PulsarConsumerConfigBuilder
     /// The consumer rejects a message only when the messaging core cannot admit it, for example while storage is down
     /// or the consumer's circuit breaker is open. A handler failure retries from storage and never reaches the limit.
     /// A dead-lettered message was never stored, and nothing in the framework consumes the dead-letter topic. Without
-    /// <see cref="AckTimeout"/>, Pulsar.Client applies a 30-second ack timeout whenever a dead-letter policy is set.
+    /// <see cref="AckTimeout"/>, a 30-second ack timeout applies whenever a dead-letter policy is set, as in the Apache
+    /// Pulsar clients, so a message whose settlement never arrives still reaches the limit.
     /// </remarks>
     /// <param name="maxRedeliveryCount">The most redeliveries before the message moves to the dead-letter topic.</param>
     /// <param name="deadLetterTopic">
@@ -98,7 +97,7 @@ public sealed class PulsarConsumerConfigBuilder
     }
 
     /// <summary>
-    /// Sets how long a received message may stay unacknowledged before Pulsar.Client asks the broker to redeliver it.
+    /// Sets how long a received message may stay unacknowledged before the consumer asks the broker to redeliver it.
     /// Off by default, unless <see cref="DeadLetter"/> is set.
     /// </summary>
     /// <remarks>
@@ -127,28 +126,9 @@ internal sealed record PulsarConsumerConfig(
     TimeSpan? AckTimeout = null
 )
 {
-    /// <summary>Writes the options this consumer sets onto <paramref name="builder"/>, leaving the rest as they are.</summary>
-    public ConsumerBuilder<byte[]> ApplyTo(ConsumerBuilder<byte[]> builder)
-    {
-        if (KeyShared)
-        {
-            // Auto-split hands each attached consumer a share of the key hash range and rebalances as consumers come
-            // and go, so replicas need no sticky range configuration.
-            builder = builder
-                .SubscriptionType(SubscriptionType.KeyShared)
-                .KeySharedPolicy(KeySharedPolicy.KeySharedPolicyAutoSplit());
-        }
+    /// <summary>The ack timeout a dead-letter policy implies when none is set, as in the Apache Pulsar clients.</summary>
+    internal static readonly TimeSpan DeadLetterAckTimeout = TimeSpan.FromSeconds(30);
 
-        if (MaxRedeliveryCount is { } maxRedeliveryCount)
-        {
-            builder = builder.DeadLetterPolicy(new DeadLetterPolicy(maxRedeliveryCount, DeadLetterTopic));
-        }
-
-        if (AckTimeout is { } ackTimeout)
-        {
-            builder = builder.AckTimeout(ackTimeout);
-        }
-
-        return builder;
-    }
+    /// <summary>Gets the ack timeout the consumer applies: the configured one, else the dead-letter default.</summary>
+    public TimeSpan? EffectiveAckTimeout => AckTimeout ?? (MaxRedeliveryCount is null ? null : DeadLetterAckTimeout);
 }

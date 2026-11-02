@@ -4,22 +4,11 @@ using Headless.Messaging;
 using Headless.Messaging.Pulsar;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-/// <summary>
-/// Unit tests for PulsarConsumerClient.
-/// Note: The Pulsar.Client types (PulsarClient, ConsumerBuilder, etc.) cannot be mocked with NSubstitute
-/// as they don't have parameterless constructors. These tests focus on behavior that can be tested
-/// without mocking the Pulsar client internals.
-/// </summary>
 public sealed class PulsarConsumerClientTests : TestBase
 {
-    private readonly IOptions<PulsarMessagingOptions> _options = Options.Create(
-        new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" }
-    );
-
     [Fact]
     public void should_use_consumer_identity_for_bus_intent_when_get_subscription_name()
     {
@@ -90,23 +79,33 @@ public sealed class PulsarConsumerClientTests : TestBase
         new(identity, 1, MessageLane.Bus, ConsumerSubscriptionKind.EveryInstance, instanceId);
 
     [Fact]
-    public void should_have_correct_broker_address()
+    public async Task should_report_the_service_url_as_broker_address()
     {
-        // Note: Cannot create PulsarConsumerClient without a real PulsarClient
-        // This test documents the expected behavior
-        var options = _options.Value;
+        // given
+        await using var client = PulsarConsumerClients.Create(
+            new ConsumerClientRequest("address-test", 1, MessageLane.Bus),
+            options: new PulsarMessagingOptions { ServiceUrl = "pulsar://custom-host:6650" }
+        );
 
-        // then
-        options.ServiceUrl.Should().Be("pulsar://localhost:6650");
+        // when, then
+        client.BrokerAddress.Name.Should().Be("pulsar");
+        client.BrokerAddress.Endpoint.Should().Be("pulsar://custom-host:6650");
+    }
+
+    [Theory]
+    [InlineData(false, DotPulsar.SubscriptionType.Shared)]
+    [InlineData(true, DotPulsar.SubscriptionType.KeyShared)]
+    public void should_open_a_shared_or_key_shared_competing_subscription(
+        bool keyShared,
+        DotPulsar.SubscriptionType expected
+    )
+    {
+        PulsarConsumerClient.SubscriptionTypeFor(new PulsarConsumerConfig(keyShared)).Should().Be(expected);
     }
 
     [Fact]
-    public void should_be_used_for_broker_address_when_options_service_url()
+    public void should_open_a_shared_competing_subscription_when_no_consumer_options_are_set()
     {
-        // given
-        var customOptions = Options.Create(new PulsarMessagingOptions { ServiceUrl = "pulsar://custom-host:6650" });
-
-        // then - when a client is created with these options, the broker address should match
-        customOptions.Value.ServiceUrl.Should().Be("pulsar://custom-host:6650");
+        PulsarConsumerClient.SubscriptionTypeFor(config: null).Should().Be(DotPulsar.SubscriptionType.Shared);
     }
 }

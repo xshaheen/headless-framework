@@ -11,11 +11,6 @@ using NSubstitute.ExceptionExtensions;
 
 namespace Tests;
 
-/// <summary>
-/// Unit tests for PulsarConsumerClientFactory.
-/// Note: The Pulsar.Client types cannot be fully mocked. These tests focus on
-/// behavior that can be tested through the IConnectionFactory abstraction.
-/// </summary>
 public sealed class PulsarConsumerClientFactoryTests : TestBase
 {
     private readonly IConnectionFactory _connectionFactory = Substitute.For<IConnectionFactory>();
@@ -29,9 +24,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
     public async Task should_throw_broker_connection_exception_on_connection_failure()
     {
         // given
-        _connectionFactory
-            .RentClientAsync(Arg.Any<CancellationToken>())
-            .ThrowsAsync(new InvalidOperationException("Connection failed"));
+        _connectionFactory.RentClient().Throws(new InvalidOperationException("Connection failed"));
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
 
         // when
@@ -46,7 +39,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
     {
         // given
         var innerException = new InvalidOperationException("Connection failed");
-        _connectionFactory.RentClientAsync(Arg.Any<CancellationToken>()).ThrowsAsync(innerException);
+        _connectionFactory.RentClient().Throws(innerException);
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
 
         // when
@@ -93,10 +86,8 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
     [Fact]
     public async Task should_call_rent_client_when_creating_consumer()
     {
-        // given - RentClient will throw since we can't mock PulsarClient
-        _connectionFactory
-            .RentClientAsync(Arg.Any<CancellationToken>())
-            .ThrowsAsync(new InvalidOperationException("Cannot mock PulsarClient"));
+        // given
+        _connectionFactory.RentClient().Throws(new InvalidOperationException("Connection failed"));
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
 
         // when
@@ -110,23 +101,15 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
         }
 
         // then
-        await _connectionFactory.Received(1).RentClientAsync(Arg.Any<CancellationToken>());
+        _connectionFactory.Received(1).RentClient();
     }
 
     [Fact]
-    public async Task should_propagate_exact_token_without_wrapping_cancellation()
+    public async Task should_not_reach_the_broker_when_the_caller_already_canceled()
     {
-        // given - a live token the rent cancels itself: the factory must pass that exact token down and surface
-        // its cancellation unwrapped. (An already-cancelled token no longer reaches the rent at all: the
-        // factory observes it before it builds the client.)
+        // given
         using var cts = new CancellationTokenSource();
-        _connectionFactory
-            .RentClientAsync(Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                cts.Cancel();
-                return Task.FromCanceled<Pulsar.Client.Api.PulsarClient>(call.Arg<CancellationToken>());
-            });
+        await cts.CancelAsync();
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
 
         // when
@@ -136,23 +119,21 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
         // then
         var exception = await act.Should().ThrowAsync<OperationCanceledException>();
         exception.Which.CancellationToken.Should().Be(cts.Token);
-        await _connectionFactory.Received(1).RentClientAsync(cts.Token);
+        _connectionFactory.DidNotReceive().RentClient();
     }
 
     [Fact]
     public async Task should_preserve_factory_cancellation_when_failure_precedes_token_observation()
     {
         // given - the caller cancels while the client rent is in flight, and the rent then fails with its own
-        // exception before any await observes the token: the failure must not outrank the cancellation.
+        // exception: the failure must not outrank the cancellation.
         using var cts = new CancellationTokenSource();
         _connectionFactory
-            .RentClientAsync(Arg.Any<CancellationToken>())
-            .Returns(call =>
+            .RentClient()
+            .Returns(_ =>
             {
                 cts.Cancel();
-                return Task.FromException<Pulsar.Client.Api.PulsarClient>(
-                    new InvalidOperationException("connect failed")
-                );
+                throw new InvalidOperationException("connect failed");
             });
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
 
@@ -163,6 +144,24 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
         // then
         var exception = await act.Should().ThrowAsync<OperationCanceledException>();
         exception.Which.CancellationToken.Should().Be(cts.Token);
+    }
+
+    [Fact]
+    public async Task should_create_a_client_without_opening_a_subscription()
+    {
+        // given
+        _connectionFactory.RentClient().Returns(Substitute.For<DotPulsar.Abstractions.IPulsarClient>());
+        var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
+
+        // when
+        await using var client = await factory.CreateAsync(
+            new ConsumerClientRequest("test-group", 1, MessageLane.Queue),
+            AbortToken
+        );
+
+        // then
+        client.Should().BeOfType<PulsarConsumerClient>();
+        _connectionFactory.DidNotReceive().GetProducer(Arg.Any<string>());
     }
 
     [Fact]
@@ -184,7 +183,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*every-instance*Key_Shared*");
-        await _connectionFactory.DidNotReceive().RentClientAsync(Arg.Any<CancellationToken>());
+        _connectionFactory.DidNotReceive().RentClient();
     }
 
     [Fact]
@@ -205,7 +204,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*conflicting*");
-        await _connectionFactory.DidNotReceive().RentClientAsync(Arg.Any<CancellationToken>());
+        _connectionFactory.DidNotReceive().RentClient();
     }
 
     [Fact]
@@ -213,9 +212,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
     {
         // given
         var registry = _Registry(MessageLane.Queue, "orders.placed", new PulsarConsumerConfig(KeyShared: true));
-        _connectionFactory
-            .RentClientAsync(Arg.Any<CancellationToken>())
-            .ThrowsAsync(new InvalidOperationException("Cannot mock PulsarClient"));
+        _connectionFactory.RentClient().Throws(new InvalidOperationException("Connection failed"));
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options, registry);
 
         // when
@@ -224,7 +221,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
 
         // then
         await act.Should().ThrowAsync<BrokerConnectionException>();
-        await _connectionFactory.Received(1).RentClientAsync(Arg.Any<CancellationToken>());
+        _connectionFactory.Received(1).RentClient();
     }
 
     private static IConsumerRegistry _Registry(MessageLane lane, string name, params PulsarConsumerConfig[] configs)

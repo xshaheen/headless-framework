@@ -1,62 +1,112 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.Collections.Frozen;
 using System.Reflection;
+using DotPulsar;
+using DotPulsar.Abstractions;
+using DotPulsar.Extensions;
 using Headless.Checks;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Pulsar.Client.Api;
-using Pulsar.Client.Common;
 
 namespace Headless.Messaging.Pulsar;
 
-internal sealed class PulsarConsumerClient(
-    IOptions<PulsarMessagingOptions> options,
-    PulsarClient client,
-    ConsumerClientRequest request,
-    PulsarConsumerConfig? config = null,
-    TimeProvider? timeProvider = null,
-    Func<IReadOnlyDictionary<string, string?>, byte[], TransportMessage>? transportMessageFactory = null,
-    IServiceProvider? serviceProvider = null
-) : IConsumerClient
+internal sealed class PulsarConsumerClient : IConsumerClient
 {
     private const string _TransportDisplayName = "Pulsar";
-    private const string _PartitionSuffix = "-partition-";
 
     // Bounded drain budget on shutdown, matching the other transports. A handler still running past it never
     // acknowledges, so the broker redelivers its message once this consumer disconnects (at-least-once).
     private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
 
-    private readonly ConsumerClientRequest _request = Argument.IsNotNull(request);
-    private readonly byte _groupConcurrent = request.Concurrency;
-    private readonly bool _everyInstance = request.Kind is ConsumerSubscriptionKind.EveryInstance;
-    private readonly SemaphoreSlim _semaphore = new(request.Concurrency);
+    // How long a subscription may take to start receiving before SubscribeAsync gives up on it.
+    private static readonly TimeSpan _SubscribeTimeout = TimeSpan.FromSeconds(30);
+
+    private readonly IConnectionFactory _connection;
+    private readonly ConsumerClientRequest _request;
+    private readonly PulsarConsumerConfig? _config;
+    private readonly Func<IReadOnlyDictionary<string, string?>, byte[], TransportMessage>? _transportMessageFactory;
+    private readonly IServiceProvider? _serviceProvider;
+    private readonly Func<string, IPulsarReceiver> _receiverFactory;
+    private readonly ILogger? _clientLogger;
+    private readonly string _subscription;
+    private readonly byte _groupConcurrent;
+    private readonly bool _everyInstance;
+    private readonly SemaphoreSlim _semaphore;
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly BrokerReachabilityReporter _reachability = new();
 #pragma warning disable CA2213 // Disposing a transition gate can race queued pause/resume callers during shutdown.
     private readonly SemaphoreSlim _pauseResumeLock = new(1, 1);
 #pragma warning restore CA2213
     private readonly Lock _receiveLock = new();
+    private readonly Lock _connectionStateLock = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly TimeProvider _timeProvider;
 
-    // Tracks in-flight handler tasks so shutdown can let them settle before it closes the consumer.
+    // Tracks in-flight handler tasks so shutdown can let them settle before it closes the receivers.
     private readonly InFlightHandlerTracker _inFlightHandlers = new();
     private int _disposed;
     private CancellationTokenSource? _receiveCts = new();
-    private readonly PulsarMessagingOptions _pulsarOptions = _RequireServiceProviderForHeadersBuilder(
-        options.Value,
-        serviceProvider
-    );
-
-    private readonly TransportEnvelopeGate _envelopeGate =
-        serviceProvider?.GetService<TransportEnvelopeGate>() ?? TransportEnvelopeGate.Strict;
+    private readonly PulsarMessagingOptions _pulsarOptions;
+    private readonly TransportEnvelopeGate _envelopeGate;
 
     // Keyed by the subscribed topic's complete, partition-free name, the form a delivery's topic normalizes to.
     private volatile FrozenDictionary<string, string> _arrivalNames = FrozenDictionary<string, string>.Empty;
-    private IConsumer<byte[]>? _consumerClient;
+    private List<IPulsarReceiver> _receivers = [];
+    private bool[] _disconnected = [];
     private Func<CancellationToken, Task>? _onReestablished;
+
+    /// <summary>Creates a consumer client for one subscription.</summary>
+    /// <param name="options">The transport options.</param>
+    /// <param name="connection">The shared client and producer cache; a dead-letter policy publishes through it.</param>
+    /// <param name="request">The subscription this client consumes.</param>
+    /// <param name="config">The consumer's tuned Pulsar options, if any.</param>
+    /// <param name="timeProvider">
+    /// The clock of the receive back-off and redelivery delays. Both wait real time, so production passes none and gets
+    /// the system clock; tests pass a fake one.
+    /// </param>
+    /// <param name="transportMessageFactory">Builds the transport message; tests use it to fail the envelope.</param>
+    /// <param name="serviceProvider">The provider a custom headers builder receives.</param>
+    /// <param name="receiverFactory">Opens the receiver of one topic; tests replace the broker with it.</param>
+    /// <param name="clientLogger">Logs each receiver state change when client logging is on.</param>
+    public PulsarConsumerClient(
+        IOptions<PulsarMessagingOptions> options,
+        IConnectionFactory connection,
+        ConsumerClientRequest request,
+        PulsarConsumerConfig? config = null,
+        TimeProvider? timeProvider = null,
+        Func<IReadOnlyDictionary<string, string?>, byte[], TransportMessage>? transportMessageFactory = null,
+        IServiceProvider? serviceProvider = null,
+        Func<string, IPulsarReceiver>? receiverFactory = null,
+        ILogger? clientLogger = null
+    )
+    {
+        _request = Argument.IsNotNull(request);
+        _connection = connection;
+        _config = config;
+        _transportMessageFactory = transportMessageFactory;
+        _serviceProvider = serviceProvider;
+        _clientLogger = clientLogger;
+        _pulsarOptions = _RequireServiceProviderForHeadersBuilder(options.Value, serviceProvider);
+        _envelopeGate = serviceProvider?.GetService<TransportEnvelopeGate>() ?? TransportEnvelopeGate.Strict;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _subscription = PulsarPhysicalAddress.Subscription(request);
+        _groupConcurrent = request.Concurrency;
+        _everyInstance = request.Kind is ConsumerSubscriptionKind.EveryInstance;
+        _semaphore = new SemaphoreSlim(request.Concurrency);
+        _receiverFactory = receiverFactory ?? _CreateReceiver;
+        Redelivery = new PulsarRedeliveryTracker(
+            _pulsarOptions.NegativeAckRedeliveryDelay,
+            config?.EffectiveAckTimeout,
+            config?.MaxRedeliveryCount,
+            _DeadLetterAsync,
+            e => _LogConsumeError($"Pulsar redelivery request failed; the broker redelivers on close: {e.Message}"),
+            _timeProvider
+        );
+    }
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
@@ -75,89 +125,145 @@ internal sealed class PulsarConsumerClient(
 
     public BrokerAddress BrokerAddress => new("pulsar", BrokerAddressDisplay.Format(_pulsarOptions.ServiceUrl));
 
+    /// <summary>Gets the tracker of rejected and unacknowledged messages.</summary>
+    internal PulsarRedeliveryTracker Redelivery { get; }
+
     public async ValueTask SubscribeAsync(IEnumerable<string> topics, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(topics);
 
-        var serviceName = Assembly.GetEntryAssembly()?.GetName().Name!.ToLowerInvariant();
-
         var names = topics.ToList();
         IndexArrivalNames(names);
 
-        // Pulsar.Client's SubscribeAsync lacks CancellationToken — use WaitAsync as a
-        // timeout guard. Plan to migrate to DotPulsar (apache/pulsar-dotnet) when producer
-        // batching ships: https://github.com/apache/pulsar-dotpulsar/issues/7
-        var cts = TimeSpan.FromSeconds(30).ToCancellationTokenSource(cancellationToken);
-        var builder = ConfigureSubscription(
-            client
-                .NewConsumer()
-                .Topics(names.Select(topic => PulsarPhysicalAddress.Topic(_request.Lane, topic)))
-                .SubscriptionName(PulsarPhysicalAddress.Subscription(_request))
-                .ConsumerName(serviceName)
-                .NegativeAckRedeliveryDelay(_pulsarOptions.NegativeAckRedeliveryDelay),
-            _everyInstance,
-            config
-        );
+        var physicalTopics = names
+            .Select(name => PulsarPhysicalAddress.Topic(_request.Lane, name))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
 
-        var subscribeTask = builder.SubscribeAsync();
+        using var timeout = _SubscribeTimeout.ToCancellationTokenSource(cancellationToken);
+        var receivers = new List<IPulsarReceiver>(physicalTopics.Count);
 
         try
         {
-            _consumerClient = await subscribeTask.WaitAsync(cts.Token).ConfigureAwait(false);
-            cts.Dispose();
+            foreach (var topic in physicalTopics)
+            {
+                receivers.Add(_receiverFactory(topic));
+            }
+
+            // Creating a consumer or reader only starts it: DotPulsar subscribes in the background and retries a broker
+            // rejection such as a subscription-type mismatch, so readiness waits until every receiver receives.
+            foreach (var receiver in receivers)
+            {
+                await _WaitUntilConnectedAsync(receiver, timeout.Token, cancellationToken).ConfigureAwait(false);
+            }
         }
         catch
         {
-#pragma warning disable CA2025 // The cleanup task owns both the SDK task and linked CTS until completion.
-            _DisposeWhenCompletedAsync(subscribeTask, cts).Forget();
-#pragma warning restore CA2025
+            foreach (var receiver in receivers)
+            {
+                await _DisposeQuietlyAsync(receiver).ConfigureAwait(false);
+            }
+
             throw;
         }
 
+        _receivers = receivers;
+        _disconnected = new bool[receivers.Count];
         _ready.TrySetResult();
     }
 
-    /// <summary>Applies the subscription type and the tuned consumer options to <paramref name="builder"/>.</summary>
-    internal static ConsumerBuilder<byte[]> ConfigureSubscription(
-        ConsumerBuilder<byte[]> builder,
-        bool everyInstance,
-        PulsarConsumerConfig? config
+    private static async Task _WaitUntilConnectedAsync(
+        IPulsarReceiver receiver,
+        CancellationToken timeoutToken,
+        CancellationToken callerToken
     )
     {
-        // An every-instance subscription belongs to this process alone: exclusive, so no other consumer can attach to
-        // it, and non-durable, so the broker keeps no cursor for it once the consumer disconnects or the process dies.
-        // With no backlog to replay, it starts at the latest message.
-        builder = everyInstance
-            ? builder
-                .SubscriptionType(SubscriptionType.Exclusive)
-                .SubscriptionMode(SubscriptionMode.NonDurable)
-                .SubscriptionInitialPosition(SubscriptionInitialPosition.Latest)
-            : builder.SubscriptionType(SubscriptionType.Shared);
+        var state = PulsarLinkState.Disconnected;
 
-        return config?.ApplyTo(builder) ?? builder;
-    }
-
-    private static async Task _DisposeWhenCompletedAsync(
-        Task<IConsumer<byte[]>> consumerTask,
-        CancellationTokenSource cancellationTokenSource
-    )
-    {
         try
         {
-            var consumer = await consumerTask.ConfigureAwait(false);
-            await consumer.DisposeAsync().ConfigureAwait(false);
+            while (state is not PulsarLinkState.Connected)
+            {
+                state = await receiver.WaitForLinkChangeAsync(state, timeoutToken).ConfigureAwait(false);
+
+                if (state is PulsarLinkState.Ended)
+                {
+                    throw new BrokerConnectionException(
+                        new InvalidOperationException(
+                            $"The Pulsar subscription on '{receiver.Topic}' faulted before it started receiving."
+                        )
+                    );
+                }
+            }
         }
-#pragma warning disable ERP022 // Best-effort cleanup for an SDK operation abandoned by caller cancellation.
-        catch
+        catch (OperationCanceledException) when (!callerToken.IsCancellationRequested)
         {
-            // ignored
-        }
-#pragma warning restore ERP022
-        finally
-        {
-            cancellationTokenSource.Dispose();
+            throw new BrokerConnectionException(
+                new TimeoutException(
+                    $"The Pulsar subscription on '{receiver.Topic}' did not start receiving within {_SubscribeTimeout}."
+                )
+            );
         }
     }
+
+    private IPulsarReceiver _CreateReceiver(string topic)
+    {
+        var client = _connection.RentClient();
+        var consumerName = Assembly.GetEntryAssembly()?.GetName().Name?.ToLowerInvariant();
+
+        if (_everyInstance)
+        {
+            // An every-instance subscription belongs to this process alone: exclusive, so no other consumer can attach
+            // to it, and non-durable, so the broker keeps no cursor for it once the reader disconnects or the process
+            // dies. With no backlog to replay, it starts at the latest message.
+            var readerBuilder = client
+                .NewReader()
+                .Topic(topic)
+                .SubscriptionName(_subscription)
+                .StartMessageId(MessageId.Latest);
+
+            if (consumerName is not null)
+            {
+                readerBuilder.ReaderName(consumerName);
+            }
+
+            if (_clientLogger is { } readerLogger)
+            {
+                readerBuilder.StateChangedHandler(changed =>
+                    readerLogger.LogPulsarReaderState(topic, changed.ReaderState)
+                );
+            }
+
+            return new PulsarReaderReceiver(readerBuilder.Create(), topic);
+        }
+
+        var builder = client
+            .NewConsumer()
+            .Topic(topic)
+            .SubscriptionName(_subscription)
+            .SubscriptionType(SubscriptionTypeFor(_config))
+            .InitialPosition(SubscriptionInitialPosition.Latest);
+
+        if (consumerName is not null)
+        {
+            builder.ConsumerName(consumerName);
+        }
+
+        if (_clientLogger is { } logger)
+        {
+            builder.StateChangedHandler(changed => logger.LogPulsarConsumerState(topic, changed.ConsumerState));
+        }
+
+        return new PulsarConsumerReceiver(builder.Create(), topic);
+    }
+
+    /// <summary>Returns the subscription type a competing consumer with <paramref name="config"/> opens.</summary>
+    /// <remarks>
+    /// A Key_Shared subscription without key-shared metadata gets the broker's auto-split policy: each attached consumer
+    /// owns a share of the key hash range, rebalanced as consumers come and go, so replicas need no sticky ranges.
+    /// </remarks>
+    internal static SubscriptionType SubscriptionTypeFor(PulsarConsumerConfig? config) =>
+        config is { KeyShared: true } ? SubscriptionType.KeyShared : SubscriptionType.Shared;
 
     internal static string GetSubscriptionName(string subscriptionName, MessageLane lane)
     {
@@ -171,7 +277,7 @@ internal sealed class PulsarConsumerClient(
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        // The receive loop is drained with the handlers, so shutdown closes the consumer only after the loop stopped
+        // The receive loop is drained with the handlers, so shutdown closes the receivers only after the loop stopped
         // dispatching: a message the loop already received past its shutdown check still gets its handler tracked and
         // waited for.
         var listening = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -192,22 +298,31 @@ internal sealed class PulsarConsumerClient(
 
     private async Task _ReceiveLoopAsync(CancellationToken cancellationToken)
     {
+        var receivers = _receivers;
+        if (receivers.Count == 0)
+        {
+            return;
+        }
+
         var retryDelay = TimeSpan.FromMilliseconds(200);
         CancellationTokenSource? linkedReceiveCts = null;
         var receiveToken = CancellationToken.None;
 
-        // The listener's cancellation ends the loop without waiting on the SDK: Pulsar.Client cancels a receive and
-        // answers the monitor's probes through the consumer's one mailbox, which can stall after a broker restart, so a
-        // stop that waits for the SDK to honor it can outlive the shutdown budget.
-        using var monitorCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var reconnectMonitor = _StartReconnectMonitor(monitorCts.Token);
+        // One receive is outstanding per receiver; a message that arrives while a pause cancels the others waits here
+        // and is dispatched first once the consumer resumes.
+        var pending = new Task<IMessage<ReadOnlySequence<byte>>>?[receivers.Count];
+        var ready = new Queue<PulsarDelivery>();
+
+        // The listener's cancellation ends the loop and the background work without waiting on the SDK, so a stop that
+        // waits for the SDK to honor it cannot outlive the shutdown budget.
+        using var backgroundCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var background = _StartBackgroundWork(receivers, backgroundCts.Token);
 
         try
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                Message<byte[]> consumerResult;
-                Task<Message<byte[]>>? receive = null;
+                PulsarDelivery delivery;
                 try
                 {
                     await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
@@ -232,8 +347,29 @@ internal sealed class PulsarConsumerClient(
                         receiveToken = currentReceiveToken;
                     }
 
-                    receive = _consumerClient!.ReceiveAsync(linkedReceiveCts!.Token);
-                    consumerResult = await receive.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    if (ready.TryDequeue(out var queued))
+                    {
+                        delivery = queued;
+                    }
+                    else
+                    {
+                        delivery = await _ReceiveAnyAsync(
+                                receivers,
+                                pending,
+                                linkedReceiveCts!.Token,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+
+                        // A receive can complete after a pause began; its message waits for the resume like the rest.
+                        // Shutdown instead dispatches it, and waits for its handler, as the broker already sent it.
+                        if (receiveToken.IsCancellationRequested && Volatile.Read(ref _disposed) == 0)
+                        {
+                            ready.Enqueue(delivery);
+                            throw new OperationCanceledException(receiveToken);
+                        }
+                    }
+
                     retryDelay = TimeSpan.FromMilliseconds(200);
                     _reachability.ReportSuccess(OnLogCallback);
                 }
@@ -241,11 +377,13 @@ internal sealed class PulsarConsumerClient(
                 {
                     // A message an abandoned receive still hands over stays unacknowledged, and the broker redelivers
                     // it once this consumer closes.
-                    _ObserveAbandoned(receive);
+                    _ObserveAbandoned(pending);
                     break;
                 }
                 catch (OperationCanceledException) when (receiveToken.IsCancellationRequested)
                 {
+                    await _CollectCanceledAsync(receivers, pending, ready, cancellationToken).ConfigureAwait(false);
+
                     if (Volatile.Read(ref _disposed) != 0)
                     {
                         break;
@@ -255,11 +393,21 @@ internal sealed class PulsarConsumerClient(
                 }
                 catch (Exception e)
                 {
+                    if (receivers.Exists(static receiver => receiver.HasEnded))
+                    {
+                        // DotPulsar recovers a lost connection on its own; an ended receiver never delivers again, so
+                        // the listener fails and the core rebuilds the client.
+                        _ObserveAbandoned(pending);
+                        throw new BrokerConnectionException(e);
+                    }
+
                     _reachability.ReportFailure(OnLogCallback, e);
                     retryDelay = _NextBackoff(retryDelay);
                     await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
                     continue;
                 }
+
+                Redelivery.OnReceived(delivery);
 
                 if (_groupConcurrent > 0)
                 {
@@ -269,11 +417,8 @@ internal sealed class PulsarConsumerClient(
                     }
                     catch (Exception e) when (e is ObjectDisposedException or OperationCanceledException)
                     {
-                        // Shutdown raced the concurrency-gate wait: settle the in-flight message
-                        // best-effort so it is redelivered promptly, then stop. Mirrors the
-                        // must-complete nack for malformed messages below and the ObjectDisposedException
-                        // guard already on _semaphore.Release() in _ReleaseSemaphore.
-                        await _SafeShutdownRejectAsync(consumerResult.MessageId).ConfigureAwait(false);
+                        // Shutdown raced the concurrency-gate wait: the message stays unacknowledged, and the broker
+                        // redelivers it once this consumer closes.
                         break;
                     }
 
@@ -282,7 +427,7 @@ internal sealed class PulsarConsumerClient(
                         {
                             try
                             {
-                                await consumeAsync(consumerResult).ConfigureAwait(false);
+                                await _ConsumeAsync(delivery).ConfigureAwait(false);
                             }
                             finally
                             {
@@ -297,114 +442,182 @@ internal sealed class PulsarConsumerClient(
                 }
                 else
                 {
-                    var inlineTask = consumeAsync(consumerResult);
+                    var inlineTask = _ConsumeAsync(delivery);
                     _inFlightHandlers.Track(inlineTask);
                     await inlineTask.ConfigureAwait(false);
-                }
-
-                async Task consumeAsync(Message<byte[]> currentMessage)
-                {
-                    var headers = new Dictionary<string, string?>(
-                        currentMessage.Properties.Count,
-                        StringComparer.Ordinal
-                    );
-                    foreach (var header in currentMessage.Properties)
-                    {
-                        headers.Add(header.Key, header.Value);
-                    }
-
-                    if (_pulsarOptions.CustomHeadersBuilder is { } customHeadersBuilder)
-                    {
-                        try
-                        {
-                            foreach (var customHeader in customHeadersBuilder(currentMessage, serviceProvider!))
-                            {
-                                headers[customHeader.Key] = customHeader.Value;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            // A builder is user code that may depend on a service that is briefly down, so its failure says
-                            // nothing about the message: the broker redelivers it, and a dead-letter policy bounds the retries.
-                            OnLogCallback!(
-                                new LogMessageEventArgs
-                                {
-                                    LogType = MqLogType.ConsumeError,
-                                    Reason =
-                                        $"Pulsar custom headers builder failed; message negatively acknowledged for redelivery: {ex.GetType().Name}",
-                                }
-                            );
-
-                            await _consumerClient!.NegativeAcknowledge(currentMessage.MessageId).ConfigureAwait(false);
-                            return;
-                        }
-                    }
-
-                    TransportMessage message;
-                    try
-                    {
-                        // Stamped after the custom headers builder so neither the wire nor the builder can choose the
-                        // address.
-                        headers[Headers.TransportAddress] = currentMessage.MessageId.TopicName;
-
-                        message = transportMessageFactory is null
-                            ? new TransportMessage(headers, currentMessage.Data)
-                            : transportMessageFactory(headers, currentMessage.Data);
-
-                        _envelopeGate.Admit(
-                            message.Headers,
-                            new EnvelopeArrival(
-                                _TransportDisplayName,
-                                _request.Lane,
-                                ArrivalName(currentMessage.MessageId.TopicName)
-                            ),
-                            currentMessage,
-                            static delivery => NativeFacts(delivery)
-                        );
-                    }
-                    catch (Exception ex)
-                    {
-                        OnLogCallback!(
-                            new LogMessageEventArgs
-                            {
-                                LogType = MqLogType.ConsumeError,
-                                Reason =
-                                    $"Malformed Pulsar transport envelope terminally acknowledged: {ex.GetType().Name}",
-                            }
-                        );
-
-                        // Settlement is must-complete: acknowledge malformed broker data so it cannot redeliver forever.
-                        await _consumerClient!.AcknowledgeAsync(currentMessage.MessageId).ConfigureAwait(false);
-                        return;
-                    }
-
-                    try
-                    {
-                        await OnMessageCallback!(message, currentMessage.MessageId).ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        // The core settles every handler outcome itself, so its callback throws only when that settlement
-                        // failed or the core broke. Nothing else settles the message then, and with no ack timeout the
-                        // live subscription never redelivers an unsettled one, so it is released for redelivery here.
-                        OnLogCallback?.Invoke(
-                            new LogMessageEventArgs
-                            {
-                                LogType = MqLogType.ConsumeError,
-                                Reason = $"Error consuming message; negatively acknowledged for redelivery: {ex}",
-                            }
-                        );
-
-                        await _consumerClient!.NegativeAcknowledge(currentMessage.MessageId).ConfigureAwait(false);
-                    }
                 }
             }
         }
         finally
         {
             linkedReceiveCts?.Dispose();
-            await monitorCts.CancelAsync().ConfigureAwait(false);
-            await reconnectMonitor.ConfigureAwait(false);
+            await backgroundCts.CancelAsync().ConfigureAwait(false);
+            await background.ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<PulsarDelivery> _ReceiveAnyAsync(
+        List<IPulsarReceiver> receivers,
+        Task<IMessage<ReadOnlySequence<byte>>>?[] pending,
+        CancellationToken receiveToken,
+        CancellationToken cancellationToken
+    )
+    {
+        for (var i = 0; i < receivers.Count; i++)
+        {
+            pending[i] ??= receivers[i].ReceiveAsync(receiveToken).AsTask();
+        }
+
+        var completed =
+            pending.Length == 1
+                ? pending[0]!
+                : await Task.WhenAny(pending!).WaitAsync(cancellationToken).ConfigureAwait(false);
+        await ((Task)completed).WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+
+        if (!completed.IsCompleted)
+        {
+            // Only the listener's cancellation leaves the receive running, and the caller abandons it.
+            throw new OperationCanceledException(cancellationToken);
+        }
+
+        var index = Array.IndexOf(pending, completed);
+        pending[index] = null;
+
+        return new PulsarDelivery(receivers[index], await completed.ConfigureAwait(false));
+    }
+
+    // A pause cancels every outstanding receive; one that completed with a message before it saw the cancellation keeps
+    // its message for the resumed loop rather than losing it until the consumer closes.
+    private static async Task _CollectCanceledAsync(
+        List<IPulsarReceiver> receivers,
+        Task<IMessage<ReadOnlySequence<byte>>>?[] pending,
+        Queue<PulsarDelivery> ready,
+        CancellationToken cancellationToken
+    )
+    {
+        var outstanding = pending.OfType<Task>().ToArray();
+        if (outstanding.Length > 0)
+        {
+            await Task.WhenAll(outstanding)
+                .WaitAsync(cancellationToken)
+                .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
+
+        for (var i = 0; i < pending.Length; i++)
+        {
+            var task = pending[i];
+            if (task?.IsCompleted != true)
+            {
+                continue;
+            }
+
+            pending[i] = null;
+            if (task.IsCompletedSuccessfully)
+            {
+                ready.Enqueue(new PulsarDelivery(receivers[i], await task.ConfigureAwait(false)));
+            }
+            else
+            {
+                _ = task.Exception;
+            }
+        }
+    }
+
+    private async Task _ConsumeAsync(PulsarDelivery delivery)
+    {
+        var currentMessage = delivery.Message;
+        var headers = new Dictionary<string, string?>(currentMessage.Properties.Count, StringComparer.Ordinal);
+        foreach (var header in currentMessage.Properties)
+        {
+            headers.Add(header.Key, header.Value);
+        }
+
+        if (_pulsarOptions.CustomHeadersBuilder is { } customHeadersBuilder)
+        {
+            try
+            {
+                foreach (var customHeader in customHeadersBuilder(currentMessage, _serviceProvider!))
+                {
+                    headers[customHeader.Key] = customHeader.Value;
+                }
+            }
+            catch (Exception ex)
+            {
+                // A builder is user code that may depend on a service that is briefly down, so its failure says nothing
+                // about the message: the broker redelivers it, and a dead-letter policy bounds the retries.
+                OnLogCallback!(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ConsumeError,
+                        Reason =
+                            $"Pulsar custom headers builder failed; message negatively acknowledged for redelivery: {ex.GetType().Name}",
+                    }
+                );
+
+                Redelivery.OnRejected(delivery);
+                return;
+            }
+        }
+
+        TransportMessage message;
+        try
+        {
+            // Stamped after the custom headers builder so neither the wire nor the builder can choose the address.
+            headers[Headers.TransportAddress] = PulsarTopicName.Complete(delivery.DeliveryTopic);
+
+            var body = currentMessage.Data.ToArray();
+            message = _transportMessageFactory is null
+                ? new TransportMessage(headers, body)
+                : _transportMessageFactory(headers, body);
+
+            _envelopeGate.Admit(
+                message.Headers,
+                new EnvelopeArrival(_TransportDisplayName, _request.Lane, ArrivalName(delivery.DeliveryTopic)),
+                delivery,
+                static current => NativeFacts(current)
+            );
+        }
+        catch (Exception ex)
+        {
+            OnLogCallback!(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason = $"Malformed Pulsar transport envelope terminally acknowledged: {ex.GetType().Name}",
+                }
+            );
+
+            // Settlement is must-complete: acknowledge malformed broker data so it cannot redeliver forever.
+            await _AcknowledgeAsync(delivery).ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            await OnMessageCallback!(message, delivery).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // The core settles every handler outcome itself, so its callback throws only when that settlement failed or
+            // the core broke. Nothing else settles the message then, and with no ack timeout the live subscription never
+            // redelivers an unsettled one, so it is released for redelivery here.
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason = $"Error consuming message; negatively acknowledged for redelivery: {ex}",
+                }
+            );
+
+            Redelivery.OnRejected(delivery);
+        }
+    }
+
+    private static void _ObserveAbandoned(Task?[] tasks)
+    {
+        foreach (var task in tasks)
+        {
+            _ObserveAbandoned(task);
         }
     }
 
@@ -418,51 +631,63 @@ internal sealed class PulsarConsumerClient(
         );
     }
 
-    // Pulsar.Client recovers a lost connection on its own and resubscribes, and a receive waits quietly meanwhile, so
-    // the monitor's connection state is how the host learns of an outage. A non-durable subscription also keeps nothing
-    // for the time it was away, so the core must learn about each recovery to tell the every-instance consumer.
-    private Task _StartReconnectMonitor(CancellationToken cancellationToken)
+    // DotPulsar recovers a lost connection on its own and resubscribes while a receive waits quietly, so each
+    // receiver's state is how the host learns of an outage. A non-durable subscription also keeps nothing for the time
+    // it was away, so the core must learn about each recovery to tell the every-instance consumer.
+    private Task _StartBackgroundWork(List<IPulsarReceiver> receivers, CancellationToken cancellationToken)
     {
-        if (_consumerClient is null)
+        var work = new List<Task>(receivers.Count + 1) { Redelivery.RunAsync(cancellationToken) };
+
+        for (var i = 0; i < receivers.Count; i++)
         {
-            return Task.CompletedTask;
+            var index = i;
+            work.Add(
+                PulsarReconnectMonitor.RunAsync(
+                    receivers[i],
+                    _everyInstance
+                        ? token => Volatile.Read(ref _onReestablished)?.Invoke(token) ?? Task.CompletedTask
+                        : null,
+                    connected => _ReportConnectionState(index, connected),
+                    e => _LogConsumeError($"Pulsar reconnect monitor failed: {e.Message}"),
+                    cancellationToken
+                )
+            );
         }
 
-        return PulsarReconnectMonitor.RunAsync(
-            _consumerClient,
-            _everyInstance ? token => Volatile.Read(ref _onReestablished)?.Invoke(token) ?? Task.CompletedTask : null,
-            _ReportConnectionState,
-            e =>
-                OnLogCallback?.Invoke(
-                    new LogMessageEventArgs
-                    {
-                        LogType = MqLogType.ConsumeError,
-                        Reason = $"Pulsar reconnect monitor failed: {e.Message}",
-                    }
-                ),
-            _timeProvider,
-            cancellationToken
-        );
+        return Task.WhenAll(work);
     }
 
-    private void _ReportConnectionState(bool connected)
+    private void _ReportConnectionState(int index, bool connected)
     {
-        if (connected)
+        bool allConnected;
+        lock (_connectionStateLock)
         {
-            _reachability.ReportSuccess(OnLogCallback);
+            _disconnected[index] = !connected;
+            allConnected = !_disconnected.Contains(true);
         }
-        else
+
+        if (!connected)
         {
             _reachability.ReportFailure(
                 OnLogCallback,
                 "The Pulsar consumer lost its broker connection and is reconnecting."
             );
         }
+        else if (allConnected)
+        {
+            _reachability.ReportSuccess(OnLogCallback);
+        }
     }
 
     public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
-        await _consumerClient!.AcknowledgeAsync((MessageId)sender!).ConfigureAwait(false);
+        await _AcknowledgeAsync((PulsarDelivery)sender!).ConfigureAwait(false);
+    }
+
+    private async Task _AcknowledgeAsync(PulsarDelivery delivery)
+    {
+        Redelivery.OnAcknowledged(delivery);
+        await delivery.Receiver.AcknowledgeAsync(delivery.MessageId, CancellationToken.None).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -482,7 +707,10 @@ internal sealed class PulsarConsumerClient(
 
         _arrivalNames = names
             .Distinct(StringComparer.Ordinal)
-            .GroupBy(name => NormalizeTopic(PulsarPhysicalAddress.Topic(_request.Lane, name)), StringComparer.Ordinal)
+            .GroupBy(
+                name => PulsarTopicName.Normalize(PulsarPhysicalAddress.Topic(_request.Lane, name)),
+                StringComparer.Ordinal
+            )
             .Where(static group => group.Take(2).Count() == 1)
             .ToFrozenDictionary(static group => group.Key, static group => group.First(), StringComparer.Ordinal);
     }
@@ -495,27 +723,9 @@ internal sealed class PulsarConsumerClient(
     {
         var arrivalNames = _arrivalNames;
 
-        return arrivalNames.Count > 0 && arrivalNames.TryGetValue(NormalizeTopic(topic), out var name) ? name : null;
-    }
-
-    /// <summary>
-    /// Returns the complete name of <paramref name="topic"/> without a partition suffix. Pulsar reports a delivery's
-    /// topic fully qualified (<c>persistent://tenant/namespace/topic</c>) and, on a partitioned topic, with a
-    /// <c>-partition-N</c> suffix, while the subscription names the short form.
-    /// </summary>
-    internal static string NormalizeTopic(string topic)
-    {
-        var topicName = new TopicName(topic);
-        var complete = topicName.CompleteTopicName;
-
-        if (topicName.PartitionIndex < 0)
-        {
-            return complete;
-        }
-
-        var suffix = _PartitionSuffix + topicName.PartitionIndex.ToString(CultureInfo.InvariantCulture);
-
-        return complete.EndsWith(suffix, StringComparison.Ordinal) ? complete[..^suffix.Length] : complete;
+        return arrivalNames.Count > 0 && arrivalNames.TryGetValue(PulsarTopicName.Normalize(topic), out var name)
+            ? name
+            : null;
     }
 
     /// <summary>
@@ -524,22 +734,21 @@ internal sealed class PulsarConsumerClient(
     /// across the cluster and never reused, so the position stays the same on every redelivery and differs after the
     /// topic is recreated.
     /// </summary>
-    internal static NativeEnvelopeFacts NativeFacts(Message<byte[]> message)
+    internal static NativeEnvelopeFacts NativeFacts(PulsarDelivery delivery)
     {
-        var id = message.MessageId;
-        var batchIndex = id.Type.IsBatch ? id.Type.Item.Item1 : -1;
+        var id = delivery.MessageId;
 
         var position = NativeEnvelopeFacts.Position(
             "pulsar",
-            NormalizeTopic(id.TopicName),
+            PulsarTopicName.Normalize(delivery.DeliveryTopic),
             id.LedgerId.ToString(CultureInfo.InvariantCulture),
             id.EntryId.ToString(CultureInfo.InvariantCulture),
             id.Partition.ToString(CultureInfo.InvariantCulture),
-            batchIndex.ToString(CultureInfo.InvariantCulture)
+            id.BatchIndex.ToString(CultureInfo.InvariantCulture)
         );
 
-        DateTimeOffset? storedAt =
-            message.PublishTime > 0 ? DateTimeOffset.FromUnixTimeMilliseconds(message.PublishTime) : null;
+        var publishTime = delivery.Message.PublishTime;
+        DateTimeOffset? storedAt = publishTime > 0 ? DateTimeOffset.FromUnixTimeMilliseconds((long)publishTime) : null;
 
         return new NativeEnvelopeFacts(ProducerMessageId: null, position, storedAt);
     }
@@ -559,38 +768,79 @@ internal sealed class PulsarConsumerClient(
         return options;
     }
 
-    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+    // The consumer holds a rejected message back for NegativeAckRedeliveryDelay itself, so the delivery is released at
+    // once rather than held for the core's delay as well.
+    public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
-        if (sender is MessageId id)
+        if (sender is PulsarDelivery delivery)
         {
-            await _consumerClient!.NegativeAcknowledge(id).ConfigureAwait(false);
+            Redelivery.OnRejected(delivery);
         }
+
+        return ValueTask.CompletedTask;
     }
 
-    // Pulsar holds a negatively acknowledged message back for NegativeAckRedeliveryDelay itself, so the delivery is
-    // released at once rather than held for the core's delay as well.
     public ValueTask RejectAsync(object? sender, TimeSpan redeliveryDelay, CancellationToken cancellationToken)
     {
         return RejectAsync(sender, CancellationToken.None);
     }
 
-    private async Task _SafeShutdownRejectAsync(MessageId messageId)
+    // Publishes the message to its dead-letter topic, then acknowledges it. A failure leaves it for redelivery, so the
+    // message is never lost between the two topics; a publish whose acknowledgement then fails is dead-lettered again.
+    private async Task<bool> _DeadLetterAsync(PulsarDelivery delivery, CancellationToken cancellationToken)
     {
+        var topic =
+            _config?.DeadLetterTopic ?? $"{PulsarTopicName.Normalize(delivery.Receiver.Topic)}-{_subscription}-DLQ";
+
         try
         {
-            await RejectAsync(messageId, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception e) when (e is ObjectDisposedException or OperationCanceledException)
-        {
-            // Consumer already disposed during shutdown; Pulsar redelivers the unacknowledged message.
-            OnLogCallback?.Invoke(
-                new LogMessageEventArgs
-                {
-                    LogType = MqLogType.ConsumeError,
-                    Reason = $"Best-effort shutdown nack skipped (consumer disposed): {e.Message}",
-                }
+            var original = delivery.Message;
+            var metadata = new MessageMetadata();
+            if (original.HasKey)
+            {
+                metadata.Key = original.Key;
+            }
+
+            foreach (var property in original.Properties)
+            {
+                metadata[property.Key] = property.Value;
+            }
+
+            // The property names the Apache Pulsar clients write on a dead-lettered message.
+            metadata["REAL_TOPIC"] = PulsarTopicName.Complete(delivery.DeliveryTopic);
+            metadata["ORIGIN_MESSAGE_ID"] = string.Create(
+                CultureInfo.InvariantCulture,
+                $"{delivery.MessageId.LedgerId}:{delivery.MessageId.EntryId}:{delivery.MessageId.Partition}:{delivery.MessageId.BatchIndex}"
             );
+
+            await PulsarTransport
+                .SendAsync(
+                    _connection.GetProducer(topic),
+                    _connection.SizeRefusals,
+                    metadata,
+                    original.Data,
+                    _connection.SendTimeout,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            await _AcknowledgeAsync(delivery).ConfigureAwait(false);
+
+            return true;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (Exception e)
+        {
+            _LogConsumeError($"Pulsar dead-letter publish to '{topic}' failed; message redelivered instead: {e}");
+            return false;
+        }
+    }
+
+    private void _LogConsumeError(string reason)
+    {
+        OnLogCallback?.Invoke(new LogMessageEventArgs { LogType = MqLogType.ConsumeError, Reason = reason });
     }
 
     private static TimeSpan _NextBackoff(TimeSpan current)
@@ -729,9 +979,9 @@ internal sealed class PulsarConsumerClient(
 
         receiveCts?.Dispose();
 
-        // Drain in-flight handlers while the consumer is still open, so each one can acknowledge or negatively
-        // acknowledge its message. Bounded so a stuck handler cannot block shutdown; a message whose handler is still
-        // running past the budget stays unacknowledged, and the broker redelivers it (at-least-once).
+        // Drain in-flight handlers while the receivers are still open, so each one can acknowledge or reject its
+        // message. Bounded so a stuck handler cannot block shutdown; a message whose handler is still running past the
+        // budget stays unacknowledged, and the broker redelivers it (at-least-once).
         try
         {
             await _inFlightHandlers.DrainAsync(timeout, _timeProvider).ConfigureAwait(false);
@@ -740,29 +990,24 @@ internal sealed class PulsarConsumerClient(
         {
             // Handler faults are already surfaced by _ObserveBackgroundHandler; on a drain timeout or fault,
             // log and proceed, because disposal must never block or throw.
-            OnLogCallback?.Invoke(
-                new LogMessageEventArgs
-                {
-                    LogType = MqLogType.ConsumeError,
-                    Reason = $"Timed out or faulted draining in-flight Pulsar handlers during shutdown: {ex}",
-                }
-            );
+            _LogConsumeError($"Timed out or faulted draining in-flight Pulsar handlers during shutdown: {ex}");
         }
 
         _semaphore.Dispose();
-        if (_consumerClient is not null)
+        if (_receivers.Count > 0)
         {
-            await _CloseWithinAsync(_consumerClient, timeout - _timeProvider.GetElapsedTime(startedAt))
+            await _CloseWithinAsync(_receivers, timeout - _timeProvider.GetElapsedTime(startedAt))
                 .ConfigureAwait(false);
         }
     }
 
-    // Closing sends a close command and waits for the broker's answer, which a consumer that just reconnected after a
+    // Closing sends a close command and waits for the broker's answer, which a receiver that just reconnected after a
     // broker restart can wait on past the caller's budget. The close is bounded by what the drain left of the budget;
     // an abandoned close finishes in the background, and the broker reclaims the subscription when the connection drops.
-    private async Task _CloseWithinAsync(IConsumer<byte[]> consumer, TimeSpan remaining)
+    // Every message still unacknowledged, rejected ones waiting for their delay included, is redelivered by the broker.
+    private async Task _CloseWithinAsync(List<IPulsarReceiver> receivers, TimeSpan remaining)
     {
-        var close = consumer.DisposeAsync().AsTask();
+        var close = Task.WhenAll(receivers.Select(static receiver => receiver.DisposeAsync().AsTask()));
         await close
             .WaitAsync(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero, _timeProvider)
             .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
@@ -775,15 +1020,43 @@ internal sealed class PulsarConsumerClient(
             return;
         }
 
-        OnLogCallback?.Invoke(
-            new LogMessageEventArgs
-            {
-                LogType = MqLogType.ConsumeError,
-                Reason =
-                    "Pulsar consumer close did not finish within the shutdown budget; abandoned to finish in the background.",
-            }
+        _LogConsumeError(
+            "Pulsar consumer close did not finish within the shutdown budget; abandoned to finish in the background."
         );
 
         _ObserveAbandoned(close);
     }
+
+    private static async Task _DisposeQuietlyAsync(IPulsarReceiver receiver)
+    {
+        try
+        {
+            await receiver.DisposeAsync().ConfigureAwait(false);
+        }
+#pragma warning disable ERP022 // Best-effort cleanup of a subscription that failed to start; the failure is rethrown.
+        catch
+        {
+            // ignored
+        }
+#pragma warning restore ERP022
+    }
+}
+
+internal static partial class PulsarConsumerClientLog
+{
+    [LoggerMessage(
+        EventId = 3101,
+        EventName = "PulsarConsumerState",
+        Level = LogLevel.Information,
+        Message = "Pulsar consumer on topic {Topic} is now {State}"
+    )]
+    internal static partial void LogPulsarConsumerState(this ILogger logger, string topic, ConsumerState state);
+
+    [LoggerMessage(
+        EventId = 3102,
+        EventName = "PulsarReaderState",
+        Level = LogLevel.Information,
+        Message = "Pulsar every-instance reader on topic {Topic} is now {State}"
+    )]
+    internal static partial void LogPulsarReaderState(this ILogger logger, string topic, ReaderState state);
 }

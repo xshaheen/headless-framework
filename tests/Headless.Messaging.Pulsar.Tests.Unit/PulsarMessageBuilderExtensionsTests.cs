@@ -3,8 +3,6 @@
 using Headless.Messaging;
 using Headless.Messaging.Pulsar;
 using Headless.Testing.Tests;
-using Pulsar.Client.Api;
-using Pulsar.Client.Common;
 
 namespace Tests;
 
@@ -63,114 +61,24 @@ public sealed class PulsarMessageBuilderExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task should_match_the_shortest_ack_timeout_pulsar_client_accepts()
+    public void should_apply_no_ack_timeout_when_neither_ack_timeout_nor_dead_letter_is_set()
     {
-        // Building the client opens no connection; only subscribing would.
-        var client = await new PulsarClientBuilder().ServiceUrl("pulsar://localhost:6650").BuildAsync();
-
-        try
-        {
-            var shortest = () => client.NewConsumer().AckTimeout(PulsarConsumerConfigBuilder.MinAckTimeout);
-            var shorter = () =>
-                client
-                    .NewConsumer()
-                    .AckTimeout(PulsarConsumerConfigBuilder.MinAckTimeout - TimeSpan.FromMilliseconds(1));
-
-            shortest.Should().NotThrow();
-            shorter.Should().Throw<ArgumentException>();
-        }
-        finally
-        {
-            await client.CloseAsync();
-        }
+        new PulsarConsumerConfig(KeyShared: false).EffectiveAckTimeout.Should().BeNull();
     }
 
     [Fact]
-    public async Task should_subscribe_shared_when_no_consumer_options_are_set()
+    public void should_apply_the_dead_letter_ack_timeout_when_a_dead_letter_policy_sets_none()
     {
-        await _WithConsumerBuilderAsync(builder =>
-        {
-            var configuration = PulsarConsumerClient
-                .ConfigureSubscription(builder, everyInstance: false, config: null)
-                .Configuration;
-
-            configuration.SubscriptionType.Should().Be(SubscriptionType.Shared);
-            configuration.KeySharedPolicy.Should().BeNull();
-            configuration.DeadLetterPolicy.Should().BeNull();
-            configuration.AckTimeout.Should().Be(TimeSpan.Zero);
-        });
+        new PulsarConsumerConfig(KeyShared: false, MaxRedeliveryCount: 2)
+            .EffectiveAckTimeout.Should()
+            .Be(TimeSpan.FromSeconds(30));
     }
 
     [Fact]
-    public async Task should_apply_key_shared_dead_letter_and_ack_timeout_to_a_competing_subscription()
+    public void should_apply_the_configured_ack_timeout_over_the_dead_letter_default()
     {
-        await _WithConsumerBuilderAsync(builder =>
-        {
-            var config = new PulsarConsumerConfig(
-                KeyShared: true,
-                MaxRedeliveryCount: 4,
-                DeadLetterTopic: "orders-dlq",
-                AckTimeout: TimeSpan.FromSeconds(45)
-            );
-
-            var configuration = PulsarConsumerClient
-                .ConfigureSubscription(builder, everyInstance: false, config)
-                .Configuration;
-
-            configuration.SubscriptionType.Should().Be(SubscriptionType.KeyShared);
-            configuration.KeySharedPolicy.Value.Should().BeOfType<KeySharedPolicyAutoSplit>();
-            configuration.DeadLetterPolicy.Value.MaxRedeliveryCount.Should().Be(4);
-            configuration.DeadLetterPolicy.Value.DeadLetterTopic.Should().Be("orders-dlq");
-            configuration.AckTimeout.Should().Be(TimeSpan.FromSeconds(45));
-        });
-    }
-
-    [Fact]
-    public async Task should_leave_the_default_dead_letter_topic_to_pulsar_client_when_none_is_set()
-    {
-        await _WithConsumerBuilderAsync(builder =>
-        {
-            var configuration = PulsarConsumerClient
-                .ConfigureSubscription(builder, everyInstance: false, new PulsarConsumerConfig(false, 2))
-                .Configuration;
-
-            configuration.SubscriptionType.Should().Be(SubscriptionType.Shared);
-            configuration.DeadLetterPolicy.Value.DeadLetterTopic.Should().BeNull();
-            configuration.AckTimeout.Should().Be(TimeSpan.Zero);
-        });
-    }
-
-    [Fact]
-    public async Task should_keep_an_every_instance_subscription_exclusive_and_non_durable()
-    {
-        await _WithConsumerBuilderAsync(builder =>
-        {
-            var configuration = PulsarConsumerClient
-                .ConfigureSubscription(
-                    builder,
-                    everyInstance: true,
-                    new PulsarConsumerConfig(false, AckTimeout: TimeSpan.FromSeconds(5))
-                )
-                .Configuration;
-
-            configuration.SubscriptionType.Should().Be(SubscriptionType.Exclusive);
-            configuration.SubscriptionMode.Should().Be(SubscriptionMode.NonDurable);
-            configuration.AckTimeout.Should().Be(TimeSpan.FromSeconds(5));
-        });
-    }
-
-    private static async Task _WithConsumerBuilderAsync(Action<ConsumerBuilder<byte[]>> assert)
-    {
-        // Building the client opens no connection; only subscribing would.
-        var client = await new PulsarClientBuilder().ServiceUrl("pulsar://localhost:6650").BuildAsync();
-
-        try
-        {
-            assert(client.NewConsumer());
-        }
-        finally
-        {
-            await client.CloseAsync();
-        }
+        new PulsarConsumerConfig(KeyShared: false, MaxRedeliveryCount: 2, AckTimeout: TimeSpan.FromSeconds(45))
+            .EffectiveAckTimeout.Should()
+            .Be(TimeSpan.FromSeconds(45));
     }
 }

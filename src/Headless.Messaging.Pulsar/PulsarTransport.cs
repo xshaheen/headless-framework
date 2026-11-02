@@ -1,5 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
+using DotPulsar;
+using DotPulsar.Abstractions;
+using DotPulsar.Exceptions;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 
@@ -30,24 +34,38 @@ internal sealed class PulsarTransport(
             cancellationToken.ThrowIfCancellationRequested();
 
             var key = PulsarRoutingAffinity.Mapping.ResolveKey(message);
-            var producer = await connectionFactory
-                .CreateProducerAsync(PulsarPhysicalAddress.Topic(lane, message.Name))
-                .ConfigureAwait(false);
-            var headerDic = new Dictionary<string, string?>(message.Headers, StringComparer.Ordinal);
-            var pulsarMessage = producer.NewMessage(TransportBody.ToArray(message.Body), key, headerDic);
-            var messageId = await producer.SendAsync(pulsarMessage).ConfigureAwait(false);
-
-            if (messageId != null)
+            var producer = connectionFactory.GetProducer(PulsarPhysicalAddress.Topic(lane, message.Name));
+            var metadata = new MessageMetadata();
+            if (key is not null)
             {
-                var messageName = message.Name;
-                _logger.MessagePublished(messageName);
-
-                return OperateResult.Success;
+                metadata.Key = key;
             }
 
-            throw new PublisherSentFailedException("pulsar message persisted failed!");
+            foreach (var header in message.Headers)
+            {
+                // A Pulsar property always has a value, so a header without one is left off, as a reader treats both
+                // the same way.
+                if (header.Value is not null)
+                {
+                    metadata[header.Key] = header.Value;
+                }
+            }
+
+            await SendAsync(
+                    producer,
+                    connectionFactory.SizeRefusals,
+                    metadata,
+                    new ReadOnlySequence<byte>(message.Body),
+                    connectionFactory.SendTimeout,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            _logger.MessagePublished(message.Name);
+
+            return OperateResult.Success;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
@@ -61,16 +79,88 @@ internal sealed class PulsarTransport(
         }
     }
 
-    // A lost connection or a broker that does not answer counts; a closed producer or a failed topic lookup can be this
-    // message's own problem, so it does not.
+    /// <summary>
+    /// Sends one message and waits for the broker to store it, failing with <see cref="TimeoutException"/> once
+    /// <paramref name="sendTimeout"/> passes; <see cref="TimeSpan.Zero"/> waits indefinitely.
+    /// </summary>
+    /// <remarks>
+    /// DotPulsar keeps a send pending through a lost connection and retries it after reconnecting, so the timeout is what
+    /// bounds a publish while the broker is away.
+    /// </remarks>
+    internal static async Task SendAsync(
+        IProducer<ReadOnlySequence<byte>> producer,
+        PulsarSizeRefusals? sizeRefusals,
+        MessageMetadata metadata,
+        ReadOnlySequence<byte> payload,
+        TimeSpan sendTimeout,
+        CancellationToken cancellationToken
+    )
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (sendTimeout > TimeSpan.Zero)
+        {
+            timeout.CancelAfter(sendTimeout);
+        }
+
+        // DotPulsar faults the producer on a send it cannot make, such as a message larger than the broker accepts,
+        // and leaves that send waiting; watching the state fails it at once instead of after the timeout. Only a
+        // refusal of this message's size is the message's own problem; any other fault counts as the broker being
+        // unreachable, as the timeout it replaces did, so a real outage still shows.
+        var send = producer.Send(metadata, payload, timeout.Token).AsTask();
+        var faulted = producer.State.OnStateChangeTo(ProducerState.Faulted, timeout.Token).AsTask();
+
+        try
+        {
+            if (
+                await Task.WhenAny(send, faulted).ConfigureAwait(false) == faulted
+                && faulted.IsCompletedSuccessfully
+                && await faulted.ConfigureAwait(false) == ProducerState.Faulted
+            )
+            {
+                _ObserveAbandoned(send);
+
+                throw sizeRefusals?.TryTake(payload.Length, out var refusal) == true
+                    ? new ProducerFaultedException(refusal)
+                    : new ProducerFaultedException(
+                        new InvalidOperationException(
+                            $"The producer for '{producer.Topic}' faulted during the send; the client log names the cause."
+                        )
+                    );
+            }
+
+            await send.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"The broker did not acknowledge the send to '{producer.Topic}' within {sendTimeout}.",
+                e
+            );
+        }
+        finally
+        {
+            // Stops the state watch of a send that completed; it never outlives this call.
+            await timeout.CancelAsync().ConfigureAwait(false);
+            _ObserveAbandoned(faulted);
+        }
+    }
+
+    private static void _ObserveAbandoned(Task task)
+    {
+        _ = task.ContinueWith(
+            static completed => _ = completed.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
+    }
+
+    // A send that timed out (the client waits through a lost connection), a socket or I/O failure, or a faulted producer
+    // counts. A producer faulted by this message's size, or a message the broker rejected, is the message's own
+    // problem, so it does not.
     internal static bool IsBrokerUnreachable(Exception exception) =>
-        exception
-            is global::Pulsar.Client.Api.ConnectException
-                or global::Pulsar.Client.Api.NotConnectedException
-                or global::Pulsar.Client.Api.ConnectionFailedOnSend
-                or global::Pulsar.Client.Api.TimeoutException
-                or global::Pulsar.Client.Api.RequestTimeoutException
-        || BrokerFailures.IsConnectivity(exception);
+        BrokerFailures.IsConnectivity(exception)
+        || exception is ProducerFaultedException { InnerException: not TooLargeMessageException };
 
     public ValueTask DisposeAsync()
     {

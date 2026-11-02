@@ -1,12 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.Collections.Concurrent;
+using DotPulsar;
+using DotPulsar.Abstractions;
+using DotPulsar.Exceptions;
+using DotPulsar.Extensions;
 using Headless.Checks;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Pulsar.Client.Api;
-using Pulsar.Client.Common;
 
 namespace Headless.Messaging.Pulsar;
 
@@ -14,50 +17,54 @@ namespace Headless.Messaging.Pulsar;
 /// Manages the shared Pulsar client and per-topic producer cache for the Pulsar transport.
 /// </summary>
 /// <remarks>
-/// The <c>PulsarClient</c> is created lazily on the first call to <see cref="RentClientAsync"/> or
-/// <see cref="CreateProducerAsync"/>. Producers are cached per topic; a failed producer task is
-/// evicted from the cache so the next call creates a fresh producer.
+/// The client is created on first use and connects lazily, so creating it touches no broker. Producers are cached per
+/// topic; a producer that reached a final state (faulted, closed, or fenced) is replaced on the next call, so a
+/// publish after such a failure gets a fresh producer.
 /// </remarks>
 internal interface IConnectionFactory
 {
     /// <summary>Gets the formatted Pulsar service URL used by this factory.</summary>
     string ServersAddress { get; }
 
-    /// <summary>
-    /// Returns a cached producer for <paramref name="topic"/>, creating one on first call.
-    /// A failed producer is evicted from the cache so the next call can retry.
-    /// </summary>
-    /// <param name="topic">The fully-qualified Pulsar topic name.</param>
-    Task<IProducer<byte[]>> CreateProducerAsync(string topic);
+    /// <summary>Gets how long a send may wait for the broker; <see cref="TimeSpan.Zero"/> waits indefinitely.</summary>
+    TimeSpan SendTimeout { get; }
+
+    /// <summary>Gets the messages the client refused as too large, which tell a size refusal from other faults.</summary>
+    PulsarSizeRefusals SizeRefusals { get; }
 
     /// <summary>
-    /// Returns the shared <c>PulsarClient</c>, creating it if it has not been opened yet.
-    /// The client is long-lived; do not dispose it directly.
+    /// Returns a cached producer for <paramref name="topic"/>, creating one on the first call and after the cached one
+    /// reached a final state.
     /// </summary>
-    /// <param name="cancellationToken">Token to cancel client acquisition or creation.</param>
-    Task<PulsarClient> RentClientAsync(CancellationToken cancellationToken = default);
+    /// <param name="topic">The Pulsar topic name.</param>
+    IProducer<ReadOnlySequence<byte>> GetProducer(string topic);
+
+    /// <summary>Returns the shared Pulsar client, creating it on first use. The client is long-lived; do not dispose it.</summary>
+    /// <exception cref="ObjectDisposedException">The factory was disposed.</exception>
+    IPulsarClient RentClient();
 }
 
 /// <summary>Default implementation of <see cref="IConnectionFactory"/>.</summary>
 internal sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
 {
-    private readonly SemaphoreSlim _clientLock = new(1, 1);
-    private PulsarClient? _client;
-    private Task<PulsarClient>? _clientBuildTask;
-    private int _disposed;
+    private readonly Lock _clientLock = new();
+    private readonly ILogger _logger;
     private readonly PulsarMessagingOptions _options;
-    private readonly Func<string, Task<IProducer<byte[]>>>? _producerFactoryOverride;
-    private readonly ConcurrentDictionary<string, Task<IProducer<byte[]>>> _topicProducers;
+    private readonly Func<string, IProducer<ReadOnlySequence<byte>>>? _producerFactoryOverride;
+    private readonly ConcurrentDictionary<string, IProducer<ReadOnlySequence<byte>>> _topicProducers;
+    private IPulsarClient? _client;
+    private int _disposed;
 
     public ConnectionFactory(
         ILogger<ConnectionFactory> logger,
         IOptions<PulsarMessagingOptions> options,
-        Func<string, Task<IProducer<byte[]>>>? producerFactoryOverride = null
+        Func<string, IProducer<ReadOnlySequence<byte>>>? producerFactoryOverride = null
     )
     {
+        _logger = logger;
         _options = options.Value;
         _producerFactoryOverride = producerFactoryOverride;
-        _topicProducers = new ConcurrentDictionary<string, Task<IProducer<byte[]>>>(StringComparer.Ordinal);
+        _topicProducers = new ConcurrentDictionary<string, IProducer<ReadOnlySequence<byte>>>(StringComparer.Ordinal);
 
         if (logger.IsEnabled(LogLevel.Debug))
         {
@@ -69,6 +76,44 @@ internal sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
         }
     }
 
+    public string ServersAddress => BrokerAddressDisplay.Format(_options.ServiceUrl);
+
+    public TimeSpan SendTimeout => _options.Producer.SendTimeout;
+
+    public PulsarSizeRefusals SizeRefusals { get; } = new(TimeProvider.System);
+
+    public IProducer<ReadOnlySequence<byte>> GetProducer(string topic)
+    {
+        Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
+
+        while (true)
+        {
+            var producer = _topicProducers.GetOrAdd(topic, static (top, state) => state._CreateProducer(top), this);
+
+            if (!producer.State.IsFinalState())
+            {
+                return producer;
+            }
+
+            // A faulted producer never recovers on its own; replace it so this publish, and every later one, retries.
+            if (_topicProducers.TryRemove(new KeyValuePair<string, IProducer<ReadOnlySequence<byte>>>(topic, producer)))
+            {
+                _DisposeInBackgroundAsync(producer).Forget();
+            }
+        }
+    }
+
+    public IPulsarClient RentClient()
+    {
+        Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
+
+        lock (_clientLock)
+        {
+            Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
+            return _client ??= _BuildClient();
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -76,173 +121,102 @@ internal sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
             return;
         }
 
-        foreach (var value in _topicProducers.Values)
+        foreach (var producer in _topicProducers.Values)
         {
-            await (await value.ConfigureAwait(false)).DisposeAsync().ConfigureAwait(false);
+            await producer.DisposeAsync().ConfigureAwait(false);
         }
 
-        PulsarClient? client;
-        Task<PulsarClient>? clientBuildTask;
+        _topicProducers.Clear();
 
-        await _clientLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
-        try
+        IPulsarClient? client;
+        lock (_clientLock)
         {
             client = _client;
-            clientBuildTask = _clientBuildTask;
-        }
-        finally
-        {
-            _clientLock.Release();
+            _client = null;
         }
 
         if (client is not null)
         {
-            await client.CloseAsync().ConfigureAwait(false);
-        }
-        else if (clientBuildTask is not null)
-        {
-            _CloseWhenCompletedAsync(clientBuildTask).Forget();
-        }
-
-        _clientLock.Dispose();
-    }
-
-    public string ServersAddress => BrokerAddressDisplay.Format(_options.ServiceUrl);
-
-    public async Task<IProducer<byte[]>> CreateProducerAsync(string topic)
-    {
-        if (_producerFactoryOverride is null)
-        {
-            _client ??= await RentClientAsync().ConfigureAwait(false);
-        }
-
-        var producerTask = _topicProducers.GetOrAdd(
-            topic,
-            static (top, state) => state._CreateProducerAsync(top),
-            this
-        );
-
-        try
-        {
-            return await producerTask.ConfigureAwait(false);
-        }
-        catch
-        {
-            _topicProducers.TryRemove(new KeyValuePair<string, Task<IProducer<byte[]>>>(topic, producerTask));
-            throw;
+            await client.DisposeAsync().ConfigureAwait(false);
         }
     }
 
-    public async Task<PulsarClient> RentClientAsync(CancellationToken cancellationToken = default)
+    private IPulsarClient _BuildClient()
     {
-        Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
+        var builder = PulsarClient.Builder().ServiceUrl(new Uri(_options.ServiceUrl, UriKind.Absolute));
 
-        Task<PulsarClient> clientBuildTask;
-
-        await _clientLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
+        if (_options.Authentication is { } authentication)
         {
-            Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
+            builder.Authentication(authentication);
+        }
 
-            if (_client is not null)
+        if (_options.TlsOptions is { } tls)
+        {
+            builder
+                .VerifyCertificateAuthority(tls.VerifyCertificateAuthority)
+                .VerifyCertificateName(tls.VerifyCertificateName)
+                .CheckCertificateRevocation(tls.CheckCertificateRevocation);
+
+            if (tls.TrustedCertificateAuthority is { } authority)
             {
-                return _client;
+                builder.TrustedCertificateAuthority(authority);
             }
 
-            _clientBuildTask ??= _BuildClientAsync();
-            clientBuildTask = _clientBuildTask;
-        }
-        finally
-        {
-            _clientLock.Release();
+            if (tls.ClientCertificate is { } certificate)
+            {
+                builder.AuthenticateUsingClientCertificate(certificate);
+            }
         }
 
-        PulsarClient client;
-        try
+        // The handler only observes: it leaves the exception unhandled, so the client's default policy still decides
+        // whether to retry or fault. It is the only place DotPulsar reports why it faulted a producer on a large message.
+        builder.ExceptionHandler(context =>
         {
-            client = await clientBuildTask.WaitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch when (clientBuildTask.IsFaulted || clientBuildTask.IsCanceled)
-        {
-            await _clientLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
-            try
+            if (context.Exception is TooLargeMessageException tooLarge)
             {
-                if (ReferenceEquals(_clientBuildTask, clientBuildTask))
-                {
-                    _clientBuildTask = null;
-                }
-            }
-            finally
-            {
-                _clientLock.Release();
+                SizeRefusals.Record(tooLarge);
             }
 
-            throw;
-        }
+            if (_options.EnableClientLog)
+            {
+                _logger.LogPulsarClientException(context.Exception);
+            }
+        });
 
-        await _clientLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
-            return _client ??= client;
-        }
-        finally
-        {
-            _clientLock.Release();
-        }
+        return builder.Build();
     }
 
-    private async Task<PulsarClient> _BuildClientAsync()
-    {
-        var builder = new PulsarClientBuilder().ServiceUrl(_options.ServiceUrl);
-        if (_options.TlsOptions != null)
-        {
-            builder.EnableTlsHostnameVerification(_options.TlsOptions.TlsHostnameVerificationEnable);
-            builder.AllowTlsInsecureConnection(_options.TlsOptions.TlsAllowInsecureConnection);
-            builder.TlsTrustCertificate(_options.TlsOptions.TlsTrustCertificate);
-            builder.Authentication(_options.TlsOptions.Authentication);
-            builder.TlsProtocols(_options.TlsOptions.TlsProtocols);
-        }
-
-        return await builder.BuildAsync().ConfigureAwait(false);
-    }
-
-    private static async Task _CloseWhenCompletedAsync(Task<PulsarClient> clientTask)
-    {
-        try
-        {
-            var client = await clientTask.ConfigureAwait(false);
-            await client.CloseAsync().ConfigureAwait(false);
-        }
-#pragma warning disable ERP022 // Best-effort cleanup for an SDK operation abandoned by caller cancellation.
-        catch
-        {
-            // ignored
-        }
-#pragma warning restore ERP022
-    }
-
-    private Task<IProducer<byte[]>> _CreateProducerAsync(string topic)
+    private IProducer<ReadOnlySequence<byte>> _CreateProducer(string topic)
     {
         if (_producerFactoryOverride is not null)
         {
             return _producerFactoryOverride(topic);
         }
 
-        return Configure(_client!.NewProducer().Topic(topic), _options.Producer).CreateAsync();
+        var builder = RentClient().NewProducer().Topic(topic).CompressionType(_options.Producer.CompressionType);
+
+        if (_options.EnableClientLog)
+        {
+            builder.StateChangedHandler(changed =>
+                _logger.LogPulsarProducerState(changed.Producer.Topic, changed.ProducerState)
+            );
+        }
+
+        return builder.Create();
     }
 
-    /// <summary>Applies the transport's producer settings to <paramref name="builder"/>.</summary>
-    internal static ProducerBuilder<byte[]> Configure(ProducerBuilder<byte[]> builder, PulsarProducerOptions options)
+    private static async Task _DisposeInBackgroundAsync(IAsyncDisposable producer)
     {
-        // The broker dispatches a batch whole, by its first message's key. Key-based batching keeps one key per batch,
-        // so a Key_Shared subscription still sends every message to the consumer that owns its key.
-        return builder
-            .CompressionType(options.CompressionType)
-            .EnableBatching(options.EnableBatching)
-            .BatchBuilder(BatchBuilder.KeyBased)
-            .BatchingMaxPublishDelay(options.BatchingMaxPublishDelay)
-            .SendTimeout(options.SendTimeout);
+        try
+        {
+            await producer.DisposeAsync().ConfigureAwait(false);
+        }
+#pragma warning disable ERP022 // Best-effort cleanup of a producer that already faulted; nothing else owns it.
+        catch
+        {
+            // ignored
+        }
+#pragma warning restore ERP022
     }
 }
 
@@ -260,4 +234,20 @@ internal static partial class ConnectionFactoryLog
         bool enableClientLog,
         bool hasTlsOptions
     );
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "PulsarClientException",
+        Level = LogLevel.Information,
+        Message = "Pulsar client handled an exception; the client retries or faults per its policy"
+    )]
+    internal static partial void LogPulsarClientException(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "PulsarProducerState",
+        Level = LogLevel.Information,
+        Message = "Pulsar producer for topic {Topic} is now {State}"
+    )]
+    internal static partial void LogPulsarProducerState(this ILogger logger, string topic, ProducerState state);
 }

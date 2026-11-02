@@ -5,7 +5,6 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Pulsar.Client.Api;
 
 namespace Headless.Messaging.Pulsar;
 
@@ -15,6 +14,7 @@ internal sealed class PulsarConsumerClientFactory : IConsumerClientFactory
     private readonly IOptions<PulsarMessagingOptions> _pulsarOptions;
     private readonly IConsumerRegistry? _consumerRegistry;
     private readonly IServiceProvider? _serviceProvider;
+    private readonly ILogger? _clientLogger;
 
     public PulsarConsumerClientFactory(
         IConnectionFactory connection,
@@ -29,13 +29,12 @@ internal sealed class PulsarConsumerClientFactory : IConsumerClientFactory
         _pulsarOptions = pulsarOptions;
         _consumerRegistry = consumerRegistry;
 
-        if (_pulsarOptions.Value.EnableClientLog)
-        {
-            PulsarClient.Logger = loggerFactory.CreateLogger<PulsarClient>();
-        }
+        _clientLogger = _pulsarOptions.Value.EnableClientLog
+            ? loggerFactory.CreateLogger<PulsarConsumerClient>()
+            : null;
     }
 
-    public async Task<IConsumerClient> CreateAsync(
+    public Task<IConsumerClient> CreateAsync(
         ConsumerClientRequest request,
         CancellationToken cancellationToken = default
     )
@@ -58,16 +57,26 @@ internal sealed class PulsarConsumerClientFactory : IConsumerClientFactory
             );
         }
 
-        // An already-cancelled caller must never reach the broker: the client rent below would only observe the
-        // token after it started building the Pulsar client.
+        // An already-cancelled caller must never reach the broker.
         cancellationToken.ThrowIfCancellationRequested();
 
         try
         {
             // Creating the client touches no broker object: the subscription, every-instance or competing, is opened by
-            // SubscribeAsync, so the topology-only client the core creates and disposes leaves nothing behind.
-            var client = await _connection.RentClientAsync(cancellationToken).ConfigureAwait(false);
-            return new PulsarConsumerClient(_pulsarOptions, client, request, config, serviceProvider: _serviceProvider);
+            // SubscribeAsync, so the topology-only client the core creates and disposes leaves nothing behind. The
+            // shared Pulsar client is rented here so a disposed or misconfigured connection fails the creation.
+            _ = _connection.RentClient();
+
+            return Task.FromResult<IConsumerClient>(
+                new PulsarConsumerClient(
+                    _pulsarOptions,
+                    _connection,
+                    request,
+                    config,
+                    serviceProvider: _serviceProvider,
+                    clientLogger: _clientLogger
+                )
+            );
         }
         catch (Exception e)
         {

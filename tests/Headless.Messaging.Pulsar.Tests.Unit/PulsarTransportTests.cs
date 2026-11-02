@@ -1,5 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
+using DotPulsar;
+using DotPulsar.Abstractions;
+using DotPulsar.Exceptions;
 using Headless.Messaging;
 using Headless.Messaging.Pulsar;
 using Headless.Testing.Tests;
@@ -32,14 +36,14 @@ public sealed class PulsarTransportTests : TestBase
 
         result.Succeeded.Should().BeFalse();
         result.Exception.Should().BeOfType<ObjectDisposedException>();
-        await _connectionFactory.DidNotReceive().CreateProducerAsync(Arg.Any<string>());
+        _connectionFactory.DidNotReceive().GetProducer(Arg.Any<string>());
     }
 
     [Fact]
     public async Task should_pass_affinity_to_native_producer_message_builder()
     {
-        var producer = Substitute.For<Pulsar.Client.Api.IProducer<byte[]>>();
-        _connectionFactory.CreateProducerAsync("headless-bus-orders").Returns(producer);
+        var producer = Substitute.For<IProducer<ReadOnlySequence<byte>>>();
+        _connectionFactory.GetProducer("headless-bus-orders").Returns(producer);
         await using var transport = new PulsarTransport(_logger, _connectionFactory);
         var message = new TransportMessage(
             new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -53,7 +57,13 @@ public sealed class PulsarTransportTests : TestBase
 
         await transport.SendAsync(message, AbortToken);
 
-        producer.Received(1).NewMessage(Arg.Any<byte[]>(), "order-42", Arg.Any<IReadOnlyDictionary<string, string>>());
+        await producer
+            .Received(1)
+            .Send(
+                Arg.Is<MessageMetadata>(metadata => metadata.Key == "order-42"),
+                Arg.Any<ReadOnlySequence<byte>>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -74,7 +84,7 @@ public sealed class PulsarTransportTests : TestBase
         var result = await transport.SendAsync(message, AbortToken);
 
         result.Succeeded.Should().BeFalse();
-        await _connectionFactory.DidNotReceive().CreateProducerAsync(Arg.Any<string>());
+        _connectionFactory.DidNotReceive().GetProducer(Arg.Any<string>());
     }
 
     [Theory]
@@ -112,7 +122,7 @@ public sealed class PulsarTransportTests : TestBase
         await using var transport = new PulsarTransport(_logger, _connectionFactory);
         var message = _CreateTransportMessage("msg-123", "TestTopic");
 
-        _connectionFactory.CreateProducerAsync("TestTopic").ThrowsAsync(new InvalidOperationException("Expected"));
+        _connectionFactory.GetProducer(Arg.Any<string>()).Throws(new InvalidOperationException("Expected"));
 
         // when
         var result = await transport.SendAsync(message, AbortToken);
@@ -120,7 +130,7 @@ public sealed class PulsarTransportTests : TestBase
         // then
         result.Succeeded.Should().BeFalse();
         result.Exception.Should().BeOfType<PublisherSentFailedException>();
-        await _connectionFactory.Received(1).CreateProducerAsync("headless-bus-TestTopic");
+        _connectionFactory.Received(1).GetProducer("headless-bus-TestTopic");
     }
 
     [Fact]
@@ -130,9 +140,7 @@ public sealed class PulsarTransportTests : TestBase
         await using var transport = new PulsarTransport(_logger, _connectionFactory);
         var message = _CreateTransportMessage("msg-123", "TestTopic");
 
-        _connectionFactory
-            .CreateProducerAsync(Arg.Any<string>())
-            .ThrowsAsync(new InvalidOperationException("Connection failed"));
+        _connectionFactory.GetProducer(Arg.Any<string>()).Throws(new InvalidOperationException("Connection failed"));
 
         // when
         var result = await transport.SendAsync(message, AbortToken);
@@ -163,15 +171,13 @@ public sealed class PulsarTransportTests : TestBase
         await using var transport = new PulsarTransport(_logger, _connectionFactory);
         var message = _CreateTransportMessage("msg-123", "orders.created");
 
-        _connectionFactory
-            .CreateProducerAsync(Arg.Any<string>())
-            .ThrowsAsync(new InvalidOperationException("Expected"));
+        _connectionFactory.GetProducer(Arg.Any<string>()).Throws(new InvalidOperationException("Expected"));
 
         // when
         await transport.SendAsync(message, AbortToken);
 
         // then
-        await _connectionFactory.Received(1).CreateProducerAsync("headless-bus-orders.created");
+        _connectionFactory.Received(1).GetProducer("headless-bus-orders.created");
     }
 
     [Theory]
@@ -217,53 +223,25 @@ public sealed class PulsarTransportTests : TestBase
         _connectionFactory
             .ReceivedCalls()
             .Should()
-            .NotContain(call => call.GetMethodInfo().Name == nameof(IConnectionFactory.CreateProducerAsync));
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IConnectionFactory.GetProducer));
     }
 
     [Fact]
-    public async Task should_pass_whole_array_body_by_reference_when_publishing()
+    public async Task should_send_the_body_without_copying_it()
     {
         // given
-        var producer = Substitute.For<Pulsar.Client.Api.IProducer<byte[]>>();
-        _connectionFactory.CreateProducerAsync(Arg.Any<string>()).Returns(producer);
-        await using var transport = new PulsarTransport(_logger, _connectionFactory);
-        var body = "test-body"u8.ToArray();
-        byte[]? sentBody = null;
-        producer.NewMessage(
-            Arg.Do<byte[]>(b => sentBody = b),
-            Arg.Any<string>(),
-            Arg.Any<IReadOnlyDictionary<string, string>>()
-        );
-        var message = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                [MessagingHeaders.MessageId] = "msg-123",
-                [MessagingHeaders.MessageName] = "orders",
-            },
-            body
-        );
-
-        // when
-        await transport.SendAsync(message, AbortToken);
-
-        // then
-        sentBody.Should().BeSameAs(body);
-    }
-
-    [Fact]
-    public async Task should_copy_sliced_body_when_publishing()
-    {
-        // given
-        var producer = Substitute.For<Pulsar.Client.Api.IProducer<byte[]>>();
-        _connectionFactory.CreateProducerAsync(Arg.Any<string>()).Returns(producer);
+        var producer = Substitute.For<IProducer<ReadOnlySequence<byte>>>();
+        _connectionFactory.GetProducer(Arg.Any<string>()).Returns(producer);
+        ReadOnlySequence<byte> sent = default;
+        producer
+            .Send(
+                Arg.Any<MessageMetadata>(),
+                Arg.Do<ReadOnlySequence<byte>>(body => sent = body),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(new MessageId(1, 2, -1, -1)));
         await using var transport = new PulsarTransport(_logger, _connectionFactory);
         var source = "xxbodyyy"u8.ToArray();
-        byte[]? sentBody = null;
-        producer.NewMessage(
-            Arg.Do<byte[]>(b => sentBody = b),
-            Arg.Any<string>(),
-            Arg.Any<IReadOnlyDictionary<string, string>>()
-        );
         var message = new TransportMessage(
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
@@ -274,11 +252,153 @@ public sealed class PulsarTransportTests : TestBase
         );
 
         // when
-        await transport.SendAsync(message, AbortToken);
+        var result = await transport.SendAsync(message, AbortToken);
 
         // then
-        sentBody.Should().Equal("body"u8.ToArray());
-        sentBody.Should().NotBeSameAs(source);
+        result.Succeeded.Should().BeTrue();
+        sent.ToArray().Should().Equal("body"u8.ToArray());
+        System.Runtime.InteropServices.MemoryMarshal.TryGetArray(sent.First, out var segment).Should().BeTrue();
+        segment.Array.Should().BeSameAs(source);
+    }
+
+    [Fact]
+    public async Task should_send_every_header_with_a_value_as_a_property()
+    {
+        // given
+        var producer = Substitute.For<IProducer<ReadOnlySequence<byte>>>();
+        _connectionFactory.GetProducer(Arg.Any<string>()).Returns(producer);
+        MessageMetadata? sent = null;
+        producer
+            .Send(
+                Arg.Do<MessageMetadata>(metadata => sent = metadata),
+                Arg.Any<ReadOnlySequence<byte>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(new MessageId(1, 2, -1, -1)));
+        await using var transport = new PulsarTransport(_logger, _connectionFactory);
+        var message = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [MessagingHeaders.MessageId] = "msg-123",
+                [MessagingHeaders.MessageName] = "orders",
+                ["custom"] = null,
+            },
+            "body"u8.ToArray()
+        );
+
+        // when
+        await transport.SendAsync(message, AbortToken);
+
+        // then: a Pulsar property always has a value
+        sent!["headless-msg-id"].Should().Be("msg-123");
+        sent[MessagingHeaders.MessageName].Should().Be("orders");
+        sent["custom"].Should().BeNull();
+        sent.Key.Should().BeNullOrEmpty("a message without an affinity key goes out without one");
+    }
+
+    [Fact]
+    public async Task should_report_the_broker_unreachable_when_a_send_times_out()
+    {
+        // given: the client keeps a send pending while it reconnects
+        var producer = Substitute.For<IProducer<ReadOnlySequence<byte>>>();
+        _connectionFactory.GetProducer(Arg.Any<string>()).Returns(producer);
+        _connectionFactory.SendTimeout.Returns(TimeSpan.FromMilliseconds(50));
+        producer
+            .Send(Arg.Any<MessageMetadata>(), Arg.Any<ReadOnlySequence<byte>>(), Arg.Any<CancellationToken>())
+            .Returns(call => new ValueTask<MessageId>(_NeverAsync(call.Arg<CancellationToken>())));
+        await using var transport = new PulsarTransport(_logger, _connectionFactory);
+
+        // when
+        var result = await transport.SendAsync(_CreateTransportMessage("msg-123", "orders"), AbortToken);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        result.IsBrokerUnreachable.Should().BeTrue();
+        result.Exception!.InnerException.Should().BeOfType<TimeoutException>();
+    }
+
+    [Fact]
+    public async Task should_report_the_broker_unreachable_when_the_producer_is_faulted()
+    {
+        // given: a producer DotPulsar faulted earlier, for example on an unresolvable host
+        var producer = Substitute.For<IProducer<ReadOnlySequence<byte>>>();
+        _connectionFactory.GetProducer(Arg.Any<string>()).Returns(producer);
+        producer
+            .Send(Arg.Any<MessageMetadata>(), Arg.Any<ReadOnlySequence<byte>>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromException<MessageId>(new ProducerFaultedException()));
+        await using var transport = new PulsarTransport(_logger, _connectionFactory);
+
+        // when
+        var result = await transport.SendAsync(_CreateTransportMessage("msg-123", "orders"), AbortToken);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        result.IsBrokerUnreachable.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_fail_at_once_without_counting_the_broker_unreachable_when_the_message_is_too_large()
+    {
+        // given: DotPulsar faults the producer on a message larger than the broker accepts, and the send never returns
+        var refusals = new PulsarSizeRefusals(TimeProvider.System);
+        _FaultingProducer(onSend: () => refusals.Record(new TooLargeMessageException(9 + 120, 100)));
+        _connectionFactory.SizeRefusals.Returns(refusals);
+        await using var transport = new PulsarTransport(_logger, _connectionFactory);
+
+        // when
+        var result = await transport
+            .SendAsync(_CreateTransportMessage("msg-123", "orders"), AbortToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        result.IsBrokerUnreachable.Should().BeFalse("a message the broker cannot take is this message's problem");
+        result
+            .Exception!.InnerException.Should()
+            .BeOfType<ProducerFaultedException>()
+            .Which.InnerException.Should()
+            .BeOfType<TooLargeMessageException>();
+    }
+
+    [Fact]
+    public async Task should_fail_at_once_and_count_the_broker_unreachable_when_the_producer_faults_for_another_reason()
+    {
+        // given: a fault with no size refusal behind it, such as an authentication failure or an unresolvable host
+        _FaultingProducer(onSend: static () => { });
+        _connectionFactory.SizeRefusals.Returns(new PulsarSizeRefusals(TimeProvider.System));
+        await using var transport = new PulsarTransport(_logger, _connectionFactory);
+
+        // when
+        var result = await transport
+            .SendAsync(_CreateTransportMessage("msg-123", "orders"), AbortToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        result.IsBrokerUnreachable.Should().BeTrue("a fault not caused by the message may be an outage");
+    }
+
+    private void _FaultingProducer(Action onSend)
+    {
+        var producer = Substitute.For<IProducer<ReadOnlySequence<byte>>>();
+        _connectionFactory.GetProducer(Arg.Any<string>()).Returns(producer);
+        _connectionFactory.SendTimeout.Returns(TimeSpan.FromMinutes(5));
+        producer
+            .Send(Arg.Any<MessageMetadata>(), Arg.Any<ReadOnlySequence<byte>>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                onSend();
+                return new ValueTask<MessageId>(_NeverAsync(call.Arg<CancellationToken>()));
+            });
+        producer
+            .State.OnStateChangeTo(ProducerState.Faulted, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(ProducerState.Faulted));
+    }
+
+    private static async Task<MessageId> _NeverAsync(CancellationToken cancellationToken)
+    {
+        await Task.Delay(Timeout.Infinite, cancellationToken);
+        throw new InvalidOperationException("unreachable");
     }
 
     private static TransportMessage _CreateTransportMessage(string messageId, string messageName)

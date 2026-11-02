@@ -4,7 +4,6 @@ using Headless.Messaging;
 using Headless.Messaging.Pulsar;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
-using Pulsar.Client.Common;
 using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
@@ -59,10 +58,22 @@ public sealed class PulsarConsumerClientHarnessTests(PulsarFixture fixture) : Tr
     }
 
     /// <summary>
-    /// The broker's default <c>maxMessageSize</c> of 5 MiB, which counts the message metadata too: the conformance
-    /// envelope's properties take 218 bytes of it, and the client refuses a larger message before sending it.
+    /// The broker's default <c>maxMessageSize</c> of 5 MiB, which DotPulsar compares with the whole serialized frame and
+    /// refuses a larger one before sending it. For the conformance envelope the frame adds 258 or 259 bytes to the body
+    /// (measured against the test broker on two runs), and the protocol bounds how far that moves: 18 bytes are fixed
+    /// (two 4-byte size prefixes, the 2-byte magic, the 4-byte CRC32C, and the 4-byte metadata size); the send command's
+    /// producer id and sequence id and the metadata's sequence id are varints of 1 to 2 bytes each; the publish time is a
+    /// 6-byte varint until 2109; and the broker-assigned producer name (<c>standalone-0-N</c>) grows by up to 3
+    /// characters as the test broker creates producers. So the overhead lies within about 6 bytes of the measured
+    /// minimum, at most 264 bytes; 266 leaves 2 bytes spare, so a body of this size always fits.
     /// </summary>
-    protected override int MaximumBodySize => (5 * 1024 * 1024) - 218;
+    protected override int MaximumBodySize => (5 * 1024 * 1024) - 266;
+
+    /// <summary>
+    /// The band the overhead's variable fields cover: a body 16 bytes past <see cref="MaximumBodySize"/> needs an
+    /// overhead of at most 249 bytes to fit, below the protocol's minimum of 252, so it is always refused.
+    /// </summary>
+    protected override int MaximumBodySizeSlack => 16;
 
     [Fact]
     public override Task should_round_trip_queue_message_body_and_headers()

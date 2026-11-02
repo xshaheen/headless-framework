@@ -1,7 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.Collections.Concurrent;
-using System.Reflection;
+using DotPulsar.Abstractions;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Pulsar;
@@ -9,9 +10,6 @@ using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using Pulsar.Client.Api;
-using Pulsar.Client.Common;
-using Pulsar.Client.Internal;
 using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
@@ -20,7 +18,7 @@ public sealed class PulsarConsumerClientRawPayloadTests : TestBase
 {
     private const string _RawName = "runs.result";
     private const string _StrictName = "orders.placed";
-    private const long _PublishTimeMs = 1_791_547_200_000;
+    private const ulong _PublishTimeMs = PulsarMessages.PublishTimeMs;
 
     private static readonly string _RawTopic =
         $"persistent://public/default/{PulsarPhysicalAddress.Topic(MessageLane.Queue, _RawName)}";
@@ -81,7 +79,7 @@ public sealed class PulsarConsumerClientRawPayloadTests : TestBase
     public void should_normalize_a_topic_to_its_complete_partition_free_name(string topic, string expected)
     {
         // when
-        var normalized = PulsarConsumerClient.NormalizeTopic(topic);
+        var normalized = PulsarTopicName.Normalize(topic);
 
         // then
         normalized.Should().Be(expected);
@@ -94,12 +92,12 @@ public sealed class PulsarConsumerClientRawPayloadTests : TestBase
         var message = _Message(_RawTopic, new Dictionary<string, string>(StringComparer.Ordinal));
 
         // when
-        var facts = PulsarConsumerClient.NativeFacts(message);
+        var facts = PulsarConsumerClient.NativeFacts(_Delivery(message));
 
         // then
         facts.ProducerMessageId.Should().BeNull();
         facts.PositionId.Should().Be($"pulsar:{_RawTopic}:11:22:-1:-1");
-        facts.StoredAt.Should().Be(DateTimeOffset.FromUnixTimeMilliseconds(_PublishTimeMs));
+        facts.StoredAt.Should().Be(DateTimeOffset.FromUnixTimeMilliseconds((long)_PublishTimeMs));
     }
 
     [Fact]
@@ -114,7 +112,7 @@ public sealed class PulsarConsumerClientRawPayloadTests : TestBase
         );
 
         // when
-        var facts = PulsarConsumerClient.NativeFacts(message);
+        var facts = PulsarConsumerClient.NativeFacts(_Delivery(message));
 
         // then
         facts.PositionId.Should().Be($"pulsar:{_RawTopic}:11:22:2:4");
@@ -127,7 +125,7 @@ public sealed class PulsarConsumerClientRawPayloadTests : TestBase
         var message = _Message(_RawTopic, new Dictionary<string, string>(StringComparer.Ordinal), publishTime: 0);
 
         // when
-        var facts = PulsarConsumerClient.NativeFacts(message);
+        var facts = PulsarConsumerClient.NativeFacts(_Delivery(message));
 
         // then
         facts.StoredAt.Should().BeNull();
@@ -152,7 +150,11 @@ public sealed class PulsarConsumerClientRawPayloadTests : TestBase
         headers[MessagingHeaders.CorrelationId].Should().Be(expectedId);
         headers[MessagingHeaders.SentTime]
             .Should()
-            .Be(DateTimeOffset.FromUnixTimeMilliseconds(_PublishTimeMs).ToString("O", CultureInfo.InvariantCulture));
+            .Be(
+                DateTimeOffset
+                    .FromUnixTimeMilliseconds((long)_PublishTimeMs)
+                    .ToString("O", CultureInfo.InvariantCulture)
+            );
         headers[MessagingHeaders.TransportAddress].Should().Be($"{_RawTopic}-partition-0");
         outcome.Delivered.Value.Body.ToArray().Should().Equal("{}"u8.ToArray());
     }
@@ -263,7 +265,7 @@ public sealed class PulsarConsumerClientRawPayloadTests : TestBase
         var act = () =>
             new PulsarConsumerClient(
                 options,
-                client: null!,
+                Substitute.For<IConnectionFactory>(),
                 new ConsumerClientRequest("raw-test", concurrency: 0, MessageLane.Queue)
             );
 
@@ -273,7 +275,12 @@ public sealed class PulsarConsumerClientRawPayloadTests : TestBase
 
     private static PulsarConsumerClient _CreateClient(
         MessageLane lane = MessageLane.Queue,
-        Func<Message<byte[]>, IServiceProvider, List<KeyValuePair<string, string>>>? customHeadersBuilder = null
+        Func<
+            IMessage<ReadOnlySequence<byte>>,
+            IServiceProvider,
+            List<KeyValuePair<string, string>>
+        >? customHeadersBuilder = null,
+        FakePulsarReceiver? receiver = null
     )
     {
         var services = new ServiceCollection();
@@ -282,73 +289,37 @@ public sealed class PulsarConsumerClientRawPayloadTests : TestBase
         var serviceProvider = services.BuildServiceProvider();
 #pragma warning restore CA2000
 
-        return new PulsarConsumerClient(
-            Options.Create(
-                new PulsarMessagingOptions
-                {
-                    ServiceUrl = "pulsar://localhost:6650",
-                    CustomHeadersBuilder = customHeadersBuilder,
-                }
-            ),
-            client: null!,
+        return PulsarConsumerClients.Create(
             new ConsumerClientRequest("raw-test", concurrency: 0, lane),
+            receiver is null ? null : _ => receiver,
+            new PulsarMessagingOptions
+            {
+                ServiceUrl = PulsarConsumerClients.ServiceUrl,
+                CustomHeadersBuilder = customHeadersBuilder,
+            },
             serviceProvider: serviceProvider
         );
     }
 
     private async Task<ConsumeOutcome> _ConsumeOneAsync(
-        Message<byte[]> delivery,
-        Func<Message<byte[]>, IServiceProvider, List<KeyValuePair<string, string>>>? customHeadersBuilder = null
+        IMessage<ReadOnlySequence<byte>> delivery,
+        Func<
+            IMessage<ReadOnlySequence<byte>>,
+            IServiceProvider,
+            List<KeyValuePair<string, string>>
+        >? customHeadersBuilder = null
     )
     {
-        await using var client = _CreateClient(customHeadersBuilder: customHeadersBuilder);
-        client.IndexArrivalNames([_RawName, _StrictName]);
+        await using var receiver = FakePulsarReceiver.Delivering(_RawTopic, delivery);
+        await using var client = _CreateClient(customHeadersBuilder: customHeadersBuilder, receiver: receiver);
+        await client.SubscribeAsync([_RawName, _StrictName], AbortToken);
 
-        var settled = new TaskCompletionSource<TransportMessage?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var acknowledged = false;
-        var consumer = Substitute.For<IConsumer<byte[]>>();
-        var receiveCount = 0;
-        consumer
-            .ReceiveAsync(Arg.Any<CancellationToken>())
-            .Returns(async call =>
-            {
-                if (Interlocked.Increment(ref receiveCount) == 1)
-                {
-                    return delivery;
-                }
-
-                // Park the loop until the test cancels listening.
-                await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>());
-                return delivery;
-            });
-        consumer
-            .AcknowledgeAsync(Arg.Any<MessageId>())
-            .Returns(_ =>
-            {
-                acknowledged = true;
-                settled.TrySetResult(null);
-
-                // Pulsar.Client is F#: its acknowledgement task carries F#'s unit, which has no value.
-                return Task.FromResult<Microsoft.FSharp.Core.Unit>(null!);
-            });
-        var negativelyAcknowledged = false;
-        consumer
-            .NegativeAcknowledge(Arg.Any<MessageId>())
-            .Returns(_ =>
-            {
-                negativelyAcknowledged = true;
-                settled.TrySetResult(null);
-                return Task.FromResult<Microsoft.FSharp.Core.Unit>(null!);
-            });
-        typeof(PulsarConsumerClient)
-            .GetField("_consumerClient", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
-            .SetValue(client, consumer);
-
+        var delivered = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
         var logs = new ConcurrentQueue<LogMessageEventArgs>();
         client.AttachCallbacks(
             (message, _) =>
             {
-                settled.TrySetResult(message);
+                delivered.TrySetResult(message);
                 return Task.CompletedTask;
             },
             logs.Enqueue
@@ -357,50 +328,44 @@ public sealed class PulsarConsumerClientRawPayloadTests : TestBase
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
 
-        var delivered = await settled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        SpinWait
+            .SpinUntil(
+                () => delivered.Task.IsCompleted || !receiver.Acknowledged.IsEmpty || client.Redelivery.Count > 0,
+                TimeSpan.FromSeconds(5)
+            )
+            .Should()
+            .BeTrue("the delivery is settled or handed to the core");
         await cts.CancelAsync();
         await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-        return new ConsumeOutcome(delivered, acknowledged, negativelyAcknowledged, [.. logs]);
+        return new ConsumeOutcome(
+            delivered.Task.IsCompleted ? await delivered.Task : null,
+            !receiver.Acknowledged.IsEmpty,
+            client.Redelivery.Count > 0,
+            [.. logs]
+        );
     }
 
-    // Pulsar.Client builds Message<T> only on receipt and exposes no public constructor or factory for it.
-    private static Message<byte[]> _Message(
+    private static IMessage<ReadOnlySequence<byte>> _Message(
         string topic,
         IReadOnlyDictionary<string, string> properties,
         int partition = -1,
         int batchIndex = -1,
-        long publishTime = _PublishTimeMs
-    )
-    {
-        var type =
-            batchIndex < 0 ? MessageIdType.Single : MessageIdType.NewBatch((batchIndex, BatchMessageAcker.NullAcker));
-        var messageId = new MessageId(11, 22, type, partition, topic, chunkMessageIds: null);
-        var constructor = typeof(Message<byte[]>)
-            .GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic)
-            .Single(candidate => candidate.GetParameters().Length == 17);
+        ulong publishTime = _PublishTimeMs
+    ) =>
+        PulsarMessages.Create(
+            topic,
+            properties,
+            partition: partition,
+            batchIndex: batchIndex,
+            publishTime: publishTime
+        );
 
-        return (Message<byte[]>)
-            constructor.Invoke([
-                messageId,
-                "{}"u8.ToArray(),
-                null,
-                false,
-                properties,
-                null,
-                null,
-                0L,
-                null,
-                publishTime,
-                null,
-                0,
-                null,
-                null,
-                null,
-                null,
-                null,
-            ]);
-    }
+    // A delivery's native facts read only its message, so every one shares a receiver that is never subscribed.
+    private static readonly FakePulsarReceiver _UnsubscribedReceiver = new(_RawTopic);
+
+    private static PulsarDelivery _Delivery(IMessage<ReadOnlySequence<byte>> message) =>
+        new(_UnsubscribedReceiver, message);
 
     private static MessageMetadata _Route(string name, string version, bool raw = false) =>
         new(

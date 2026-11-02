@@ -16,8 +16,8 @@ namespace Headless.Messaging;
 /// </summary>
 /// <remarks>
 /// Both a bus (topic fan-out) and a queue (point-to-point) transport are registered. A single
-/// shared <c>PulsarClient</c> is created lazily on first use. Producers are cached per topic and
-/// created once; the cache is flushed on failure to allow recovery on the next publish attempt.
+/// shared DotPulsar client is created lazily on first use. Producers are cached per topic; a producer
+/// the client faulted is replaced on the next publish attempt.
 /// </remarks>
 [PublicAPI]
 public static class SetupMessagingPulsar
