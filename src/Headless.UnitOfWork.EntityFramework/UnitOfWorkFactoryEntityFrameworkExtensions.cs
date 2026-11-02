@@ -295,6 +295,9 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
     {
         Argument.IsNotNull(db);
 
+        var strategy = db.Database.CreateExecutionStrategy();
+        var replayGuard = new DbContextReplayGuard(db, strategy.RetriesOnFailure);
+
         return UnitOfWorkRunner.RunAsync(
             async () =>
             {
@@ -315,9 +318,14 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
             },
             // Retries are legal here: this begin runs inside the strategy, so the retrying check is suppressed and
             // a transient failure replays with a fresh unit and transaction.
-            ct => _BeginAsync(factory, db, isolation, rejectRetryingStrategy: false, ct),
-            operation,
-            new EfUnitOfWorkExecutionStrategy(db.Database.CreateExecutionStrategy()),
+            ct =>
+            {
+                replayGuard.BeforeAttempt();
+
+                return _BeginAsync(factory, db, isolation, rejectRetryingStrategy: false, ct);
+            },
+            (unitOfWork, ct) => replayGuard.RunAsync(unitOfWork, operation, ct),
+            new EfUnitOfWorkExecutionStrategy(strategy),
             UnitOfWorkRunner.LoggerFor(factory),
             cancellationToken
         );

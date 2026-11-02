@@ -169,6 +169,27 @@ public sealed class UnitOfWorkFactoryTests : TestBase
     }
 
     [Fact]
+    public async Task should_finish_the_rollback_and_the_failure_drain_before_a_synchronous_dispose_returns()
+    {
+        var (factory, _) = Create();
+        var resource = new YieldingRollbackResource();
+        var unitOfWork = await factory.BeginAsync(_ => ValueTask.FromResult<IUnitOfWorkResource>(resource), AbortToken);
+        var drained = false;
+        unitOfWork.OnFailed(_ =>
+        {
+            drained = true;
+
+            return ValueTask.CompletedTask;
+        });
+
+        unitOfWork.Dispose();
+
+        // The caller keeps using the connection right after the dispose, so the rollback must already be over.
+        resource.RollbackFinished.Should().BeTrue();
+        drained.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_not_throw_from_an_implicit_dispose_when_the_rollback_faults_and_still_drain_on_failed()
     {
         var (factory, logger) = Create();
@@ -351,4 +372,24 @@ public sealed class UnitOfWorkFactoryTests : TestBase
     private sealed record FactoryArg(string Value, Func<int> Next);
 
     private sealed record StatefulEntry(string State, int CallsAtCreation);
+
+    /// <summary>An owned resource whose rollback completes asynchronously, as a real driver's does.</summary>
+    private sealed class YieldingRollbackResource : IUnitOfWorkResource
+    {
+        private volatile bool _rollbackFinished;
+
+        public bool RollbackFinished => _rollbackFinished;
+
+        public bool IsOwned => true;
+
+        public bool IsTransactionCompleted => _rollbackFinished;
+
+        public ValueTask CommitAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+        public async ValueTask RollbackAsync(CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            _rollbackFinished = true;
+        }
+    }
 }

@@ -64,12 +64,9 @@ internal sealed class HeadlessEntityModelConvention : IEntityTypeAddedConvention
     {
         foreach (var type in modelBuilder.Metadata.GetEntityTypes().ToArray())
         {
-            if (type.IsOwned())
-            {
-                continue;
-            }
-
-            if (type.ClrType.IsAssignableTo<IEntity>())
+            // An owned type is a value the owner stores, not an entity: it gets no entity mapping, but its DateTime
+            // values are persisted like the owner's and need the same normalization.
+            if (!type.IsOwned() && type.ClrType.IsAssignableTo<IEntity>())
             {
                 _ConfigureConcurrencyStamp(type.Builder);
                 _ConfigureExtraProperties(type.Builder);
