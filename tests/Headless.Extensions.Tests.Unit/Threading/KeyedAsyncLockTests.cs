@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Reflection;
 using Headless.Testing.Tests;
 using Headless.Threading;
@@ -45,7 +47,7 @@ public sealed class KeyedAsyncLockTests : TestBase
         first.Should().NotBeNull();
 
         // when
-        first!.Dispose();
+        first!.Value.Dispose();
         using var second = keyedLock.TryLock("key1");
 
         // then
@@ -919,10 +921,270 @@ public sealed class KeyedAsyncLockTests : TestBase
         // when
         var releaser = keyedLock.TryLock("try-leak-check-key");
         releaser.Should().NotBeNull();
-        releaser!.Dispose();
+        releaser!.Value.Dispose();
 
         // then
         _SemaphoreCount(keyedLock).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_pool_entry_on_release_and_reuse_it_on_next_acquire()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+
+        // when
+        using (await keyedLock.LockAsync("pooled-key", AbortToken)) { }
+
+        // then - the entry leaves the live map but stays pooled for the next acquire
+        _SemaphoreCount(keyedLock).Should().Be(0);
+        _PooledSemaphores(keyedLock).Should().ContainSingle();
+
+        using (await keyedLock.LockAsync("pooled-key", AbortToken))
+        {
+            _PooledSemaphores(keyedLock).Should().BeEmpty();
+            _SemaphoreCount(keyedLock).Should().Be(1);
+        }
+
+        _SemaphoreCount(keyedLock).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_exclude_concurrent_holders_when_pooled_entry_is_reused()
+    {
+        // given - a released key leaves its entry in the pool
+        using var keyedLock = new KeyedAsyncLock();
+
+        using (await keyedLock.LockAsync("reused-key", AbortToken)) { }
+
+        _PooledSemaphores(keyedLock).Should().ContainSingle();
+
+        // when - the pooled entry is taken by a new holder
+        var holder = await keyedLock.LockAsync("reused-key", AbortToken);
+        var waiter = keyedLock.LockAsync("reused-key", AbortToken);
+
+        // then - the reused semaphore still excludes other callers until the holder releases
+        using (var attempt = keyedLock.TryLock("reused-key"))
+        {
+            attempt.Should().BeNull();
+        }
+
+        waiter.IsCompleted.Should().BeFalse();
+
+        holder.Dispose();
+        using (await waiter) { }
+
+        _SemaphoreCount(keyedLock).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_not_release_new_holder_when_stale_releaser_is_disposed_again()
+    {
+        // given - the first holder releases, and the key's pooled entry goes to a second holder
+        using var keyedLock = new KeyedAsyncLock();
+        var first = await keyedLock.LockAsync("stale-releaser-key", AbortToken);
+        first.Dispose();
+        using var second = await keyedLock.LockAsync("stale-releaser-key", AbortToken);
+
+        // when - the first releaser is disposed a second time
+        first.Dispose();
+
+        // then - the second holder still owns the lock
+        using var attempt = keyedLock.TryLock("stale-releaser-key");
+        attempt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_dispose_pooled_entries_when_lock_is_disposed()
+    {
+        // given
+        var keyedLock = new KeyedAsyncLock();
+
+        using (await keyedLock.LockAsync("dispose-pooled-key", AbortToken)) { }
+
+        var pooled = _PooledSemaphores(keyedLock).Should().ContainSingle().Subject;
+
+        // when
+        keyedLock.Dispose();
+
+        // then
+        _PooledSemaphores(keyedLock).Should().BeEmpty();
+        var act = () => pooled.Wait(0);
+        act.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public async Task should_bound_pooled_entries_per_shard()
+    {
+        // given - far more keys held at once than the pool keeps
+        using var keyedLock = new KeyedAsyncLock();
+        var releasers = new List<KeyedAsyncLock.Releaser>();
+
+        for (var i = 0; i < 2_000; i++)
+        {
+            releasers.Add(await keyedLock.LockAsync($"bounded-pool-key-{i}", AbortToken));
+        }
+
+        // when
+        foreach (var releaser in releasers)
+        {
+            releaser.Dispose();
+        }
+
+        // then - every key left the live map and no shard pools more than its cap
+        _SemaphoreCount(keyedLock).Should().Be(0);
+        _PoolCounts(keyedLock).Should().OnlyContain(count => count > 0 && count <= 16);
+    }
+
+    [Fact]
+    public void should_do_nothing_when_default_releaser_is_disposed()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        var releaser = default(KeyedAsyncLock.Releaser);
+
+        // when
+        var act = releaser.Dispose;
+
+        // then
+        act.Should().NotThrow();
+        _SemaphoreCount(keyedLock).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_not_release_new_holder_when_stale_copy_of_releaser_is_disposed()
+    {
+        // given - a copy of the first releaser outlives its release, and the key goes to a second holder
+        using var keyedLock = new KeyedAsyncLock();
+        var first = await keyedLock.LockAsync("stale-copy-key", AbortToken);
+        var copy = first;
+        first.Dispose();
+        using var second = await keyedLock.LockAsync("stale-copy-key", AbortToken);
+
+        // when
+        copy.Dispose();
+
+        // then - the second holder still owns the lock
+        using var attempt = keyedLock.TryLock("stale-copy-key");
+        attempt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_complete_synchronously_when_key_is_free()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+
+        // when
+        var pending = keyedLock.LockAsync("sync-free-key", AbortToken);
+        var pendingWithTimeout = keyedLock.LockAsync(
+            "sync-free-timeout-key",
+            TimeSpan.FromSeconds(5),
+            TimeProvider.System,
+            AbortToken
+        );
+        var completedSynchronously = pending.IsCompletedSuccessfully;
+        var timeoutCompletedSynchronously = pendingWithTimeout.IsCompletedSuccessfully;
+
+        using (await pending) { }
+
+        using (await pendingWithTimeout) { }
+
+        // then
+        completedSynchronously.Should().BeTrue();
+        timeoutCompletedSynchronously.Should().BeTrue();
+        _SemaphoreCount(keyedLock).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_report_invalid_key_through_returned_task_instead_of_throwing()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+
+        // when - the call itself must not throw
+        var pending = keyedLock.LockAsync(null!, AbortToken);
+        var pendingWithTimeout = keyedLock.LockAsync("", TimeSpan.FromSeconds(5), TimeProvider.System, AbortToken);
+
+        // then
+        pending.IsFaulted.Should().BeTrue();
+        pendingWithTimeout.IsFaulted.Should().BeTrue();
+        var awaitPending = async () => await pending;
+        await awaitPending.Should().ThrowAsync<ArgumentException>();
+        var awaitPendingWithTimeout = async () => await pendingWithTimeout;
+        await awaitPendingWithTimeout.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task should_report_invalid_timeout_arguments_through_returned_task_instead_of_throwing()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+
+        // when
+        var negative = keyedLock.LockAsync(
+            "bad-timeout-key",
+            TimeSpan.FromSeconds(-1),
+            TimeProvider.System,
+            AbortToken
+        );
+        var noClock = keyedLock.LockAsync("bad-clock-key", TimeSpan.FromSeconds(5), null!, AbortToken);
+
+        // then
+        var awaitNegative = async () => await negative;
+        await awaitNegative.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        var awaitNoClock = async () => await noClock;
+        await awaitNoClock.Should().ThrowAsync<ArgumentNullException>();
+        _SemaphoreCount(keyedLock).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_report_disposed_lock_through_returned_task_instead_of_throwing()
+    {
+        // given
+        var keyedLock = new KeyedAsyncLock();
+        keyedLock.Dispose();
+
+        // when
+        var pending = keyedLock.LockAsync("disposed-key", AbortToken);
+
+        // then
+        pending.IsFaulted.Should().BeTrue();
+        var awaitPending = async () => await pending;
+        await awaitPending.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public async Task should_report_cancellation_and_not_leak_entry_when_token_already_cancelled_on_free_key()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when
+        var pending = keyedLock.LockAsync("pre-cancelled-unbounded-key", cts.Token);
+
+        // then
+        pending.IsCanceled.Should().BeTrue();
+        var awaitPending = async () => await pending;
+        await awaitPending.Should().ThrowAsync<OperationCanceledException>();
+        _SemaphoreCount(keyedLock).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_not_throw_when_holder_disposes_after_lock_is_disposed()
+    {
+        // given - a holder still owns a key when the lock is disposed
+        var keyedLock = new KeyedAsyncLock();
+        var holder = await keyedLock.LockAsync("disposed-while-held-key", AbortToken);
+
+        // when
+        keyedLock.Dispose();
+        var act = holder.Dispose;
+
+        // then - releasing after disposal is a no-op, not an ObjectDisposedException from the semaphore
+        act.Should().NotThrow();
     }
 
     private static int _SemaphoreCount(KeyedAsyncLock keyedLock)
@@ -943,6 +1205,52 @@ public sealed class KeyedAsyncLockTests : TestBase
         }
 
         return total;
+    }
+
+    private static Array _Shards(KeyedAsyncLock keyedLock)
+    {
+        var shardsField = typeof(KeyedAsyncLock).GetField(
+            "_shards",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        );
+
+        return (Array)shardsField!.GetValue(keyedLock)!;
+    }
+
+    private static List<int> _PoolCounts(KeyedAsyncLock keyedLock)
+    {
+        var counts = new List<int>();
+
+        foreach (var shard in _Shards(keyedLock))
+        {
+            var countField = shard!.GetType().GetField("_poolCount", BindingFlags.Instance | BindingFlags.NonPublic);
+            counts.Add((int)countField!.GetValue(shard)!);
+        }
+
+        return counts;
+    }
+
+    private static List<SemaphoreSlim> _PooledSemaphores(KeyedAsyncLock keyedLock)
+    {
+        var semaphores = new List<SemaphoreSlim>();
+
+        foreach (var shard in _Shards(keyedLock))
+        {
+            var shardType = shard!.GetType();
+            var pool = (Array?)
+                shardType.GetField("_pool", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(shard);
+            var count = (int)
+                shardType.GetField("_poolCount", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(shard)!;
+
+            for (var i = 0; i < count; i++)
+            {
+                var entry = pool!.GetValue(i)!;
+                var semaphore = entry.GetType().GetProperty("Semaphore")!.GetValue(entry);
+                semaphores.Add((SemaphoreSlim)semaphore!);
+            }
+        }
+
+        return semaphores;
     }
 
     private sealed class TimerCountingTimeProvider : TimeProvider
