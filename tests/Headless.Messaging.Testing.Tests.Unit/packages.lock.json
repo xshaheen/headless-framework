@@ -472,8 +472,8 @@
       },
       "NATS.Client.Abstractions": {
         "type": "Transitive",
-        "resolved": "3.3.1",
-        "contentHash": "uyMgyvDiLTWrJ78K0mU2U/f/2iLH0DciGRWoVizwJMc0dfJlPl20Cy1hPjmIigRZOqDj3/brRn7LU+joZ7KU5Q==",
+        "resolved": "3.3.2",
+        "contentHash": "6VAmrvgN9116SAfRXK/gfR7Fxu02lOUtN2ZejwI/C2iMw9dsofLRZBSrutWH+iH+06FjAidKtpGiLt5ui6/xlQ==",
         "dependencies": {
           "Microsoft.Extensions.Primitives": "6.0.0"
         }
@@ -735,8 +735,8 @@
           "Headless.Messaging": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
-          "NATS.Client.Core": "[3.3.1, )",
-          "NATS.Client.JetStream": "[3.3.1, )"
+          "NATS.Client.Core": "[3.3.2, )",
+          "NATS.Client.JetStream": "[3.3.2, )"
         }
       },
       "headless.messaging.queue.abstractions": {
@@ -1005,23 +1005,23 @@
       },
       "NATS.Client.Core": {
         "type": "CentralTransitive",
-        "requested": "[3.3.1, )",
-        "resolved": "3.3.1",
-        "contentHash": "AgMWqf0YqmZsC/1F2g6nfYm/eNJ98G0xp1R0Qm5pbphzuuPSH6KosOxpBIqZcU4swB3qjt5Ef8L85mCFoJVcSA==",
+        "requested": "[3.3.2, )",
+        "resolved": "3.3.2",
+        "contentHash": "qs79vr6A2Le6sQxY5FFpQayRVSLOXJZkSvSx1lb8A8FK9bmvNcJRW1FE5pdoEEW+WV92TDFoc38MRqe4w0Lnjg==",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "6.0.1",
           "Microsoft.Extensions.Primitives": "6.0.0",
-          "NATS.Client.Abstractions": "3.3.1",
+          "NATS.Client.Abstractions": "3.3.2",
           "NATS.NKeys": "1.0.1"
         }
       },
       "NATS.Client.JetStream": {
         "type": "CentralTransitive",
-        "requested": "[3.3.1, )",
-        "resolved": "3.3.1",
-        "contentHash": "rtygTQ+4Mglm843+Ijz/96aXAS6KL514E0QwusMxefaKGEkRvh6i5ONoXlGE5uI2p4EgYZGHZqQCfkvZUW/QVg==",
+        "requested": "[3.3.2, )",
+        "resolved": "3.3.2",
+        "contentHash": "JF2xH52Fjj/KTpiCqLgOvFGoJl92eKlgT62X02oEkff/TphWjoXG1s26I7ySIwiScHgToW/fAuM0HW/76k7J4Q==",
         "dependencies": {
-          "NATS.Client.Core": "3.3.1"
+          "NATS.Client.Core": "3.3.2"
         }
       },
       "Newtonsoft.Json": {

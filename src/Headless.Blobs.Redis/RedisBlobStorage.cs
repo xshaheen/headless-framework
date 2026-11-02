@@ -189,7 +189,7 @@ internal sealed class RedisBlobStorage : IBlobStorage
                 content.Seek(0, SeekOrigin.Begin);
             }
 
-            byte[] blobData;
+            ReadOnlyMemory<byte> blobData;
             long fileSize;
 
             if (content.CanSeek && content.Length <= int.MaxValue)
@@ -197,14 +197,14 @@ internal sealed class RedisBlobStorage : IBlobStorage
                 // Right-size from Length (already validated against the cap above): a single exact-size read
                 // instead of MemoryStream growth copies plus a final exact-size copy.
                 var length = (int)content.Length;
-                blobData = new byte[length];
+                var buffer = new byte[length];
 
                 var filled = 0;
 
                 while (filled < length)
                 {
                     var read = await content
-                        .ReadAsync(blobData.AsMemory(filled), cancellationToken)
+                        .ReadAsync(buffer.AsMemory(filled), cancellationToken)
                         .ConfigureAwait(false);
 
                     if (read == 0)
@@ -215,13 +215,9 @@ internal sealed class RedisBlobStorage : IBlobStorage
                     filled += read;
                 }
 
-                if (filled < length)
-                {
-                    // The stream ended before Length bytes: store what it actually yielded (the buffered
-                    // path below has the same tolerance for streams whose Length over-reports).
-                    Array.Resize(ref blobData, filled);
-                }
-
+                // A stream that ends before Length bytes stores what it actually yielded (the buffered path
+                // below has the same tolerance for streams whose Length over-reports).
+                blobData = buffer.AsMemory(0, filled);
                 fileSize = filled;
             }
             else
@@ -235,8 +231,9 @@ internal sealed class RedisBlobStorage : IBlobStorage
                     throw new InvalidOperationException("Failed to get buffer from MemoryStream");
                 }
 
-                blobData = new byte[blobSegment.Count];
-                Buffer.BlockCopy(blobSegment.Array!, blobSegment.Offset, blobData, 0, blobSegment.Count);
+                // Pass the stream's own buffer through instead of an exact-size copy, which doubled peak memory per
+                // upload. Disposing a MemoryStream leaves its array intact, so the segment stays readable below.
+                blobData = blobSegment.AsMemory();
             }
 
             var now = _timeProvider.GetUtcNow();

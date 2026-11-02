@@ -960,16 +960,20 @@ public sealed class KafkaConsumerClientTests : TestBase
     {
         // given
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
-        var consumeCallCount = 0;
+        var handedOut = 0;
+        var seeks = 0;
         consumer
             .Consume(Arg.Any<TimeSpan>())
             .Returns(_ =>
-                // The seek back makes the broker hand out the same record again.
-                Interlocked.Increment(ref consumeCallCount) <= 2
+            {
+                // A broker hands the record out once, and again only after the seek back: never two copies at once.
+                var allowed = Volatile.Read(ref seeks) == 0 ? 1 : 2;
+                var current = Volatile.Read(ref handedOut);
+
+                return current < allowed && Interlocked.CompareExchange(ref handedOut, current + 1, current) == current
                     ? _CreateConsumeResult(5)
-                    : null
-            );
-        var seeks = 0;
+                    : null;
+            });
         consumer
             .When(instance => instance.Seek(Arg.Any<TopicPartitionOffset>()))
             .Do(_ => Interlocked.Increment(ref seeks));
@@ -994,8 +998,7 @@ public sealed class KafkaConsumerClientTests : TestBase
             AbortToken
         );
 
-        // when: with two handlers the redelivered record can reach its callback before the failed one seeks back, so
-        // the wait covers both
+        // when
         await _WaitUntilAsync(() => Volatile.Read(ref attempts) >= 2 && Volatile.Read(ref seeks) >= 1, AbortToken);
 
         // then

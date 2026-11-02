@@ -18,7 +18,6 @@
         <Project Path="src\Headless.Api\Headless.Api.csproj" />
         <Project Path="src\Headless.Idempotency.ResponseReplay\Headless.Idempotency.ResponseReplay.csproj" />
         <Project Path="src\Headless.Api.Identity\Headless.Api.Identity.csproj" />
-        <Project Path="src\Headless.Api.Jwt\Headless.Api.Jwt.csproj" />
         <Project Path="src\Headless.Api.ServiceDefaults\Headless.Api.ServiceDefaults.csproj" />
         <Project Path="src\Headless.Api.UserAgent\Headless.Api.UserAgent.csproj" />
     </Folder>

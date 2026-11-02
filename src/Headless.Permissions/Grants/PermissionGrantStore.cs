@@ -245,12 +245,12 @@ public sealed class PermissionGrantStore(
         string name,
         string providerName,
         string providerKey,
-        string? tenantId = null,
         CancellationToken cancellationToken = default
     )
     {
         _EnsureKey(providerName, providerKey, name);
-        Argument.IsPortableKey(tenantId);
+
+        var tenantId = _GrantTenantId();
 
         var permissionGrant = await repository
             .FindAsync(name, providerName, providerKey, cancellationToken)
@@ -312,11 +312,10 @@ public sealed class PermissionGrantStore(
         IReadOnlyCollection<string> names,
         string providerName,
         string providerKey,
-        string? tenantId = null,
         CancellationToken cancellationToken = default
     )
     {
-        var distinctNames = _EnsureBatch(names, providerName, providerKey, tenantId);
+        var distinctNames = _EnsureBatch(names, providerName, providerKey);
 
         await _SetCoreAsync(
                 unitOfWork: null,
@@ -324,7 +323,7 @@ public sealed class PermissionGrantStore(
                 providerName,
                 providerKey,
                 isGranted: true,
-                tenantId,
+                _GrantTenantId(),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -407,7 +406,7 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken = default
     )
     {
-        var distinctNames = _EnsureBatch(names, providerName, providerKey, tenantId: null);
+        var distinctNames = _EnsureBatch(names, providerName, providerKey);
 
         await _SetCoreAsync(
                 unitOfWork: null,
@@ -454,12 +453,11 @@ public sealed class PermissionGrantStore(
         IReadOnlyCollection<string> names,
         string providerName,
         string providerKey,
-        string? tenantId,
         CancellationToken cancellationToken
     )
     {
         Argument.IsNotNull(unitOfWork);
-        var distinctNames = _EnsureBatch(names, providerName, providerKey, tenantId);
+        var distinctNames = _EnsureBatch(names, providerName, providerKey);
 
         await _SetCoreAsync(
                 unitOfWork,
@@ -467,7 +465,7 @@ public sealed class PermissionGrantStore(
                 providerName,
                 providerKey,
                 isGranted: true,
-                tenantId,
+                _GrantTenantId(),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -484,7 +482,7 @@ public sealed class PermissionGrantStore(
     )
     {
         Argument.IsNotNull(unitOfWork);
-        var distinctNames = _EnsureBatch(names, providerName, providerKey, tenantId: null);
+        var distinctNames = _EnsureBatch(names, providerName, providerKey);
 
         await _SetCoreAsync(
                 unitOfWork,
@@ -529,11 +527,21 @@ public sealed class PermissionGrantStore(
 
     #region Helpers
 
+    /// <summary>
+    /// The tenant stamped on written grants. The repository lookup and the cache are both scoped to the current
+    /// tenant, so the record must carry that same tenant: any other value writes a row the lookup never sees and leaves
+    /// a cache entry that misreports it.
+    /// </summary>
+    private string? _GrantTenantId()
+    {
+        // SQL Server ignores trailing spaces when comparing keys, so a padded tenant id would share a tenant's rows.
+        return Argument.IsPortableKey(currentTenant.Id, paramName: "tenantId");
+    }
+
     private static HashSet<string> _EnsureBatch(
         IReadOnlyCollection<string> names,
         string providerName,
-        string providerKey,
-        string? tenantId
+        string providerKey
     )
     {
         Argument.IsNotNullOrEmpty(names);
@@ -541,7 +549,6 @@ public sealed class PermissionGrantStore(
         Argument.IsNotNullOrEmpty(providerKey);
         _EnsureKey(providerName, providerKey);
         _EnsureNames(names);
-        Argument.IsPortableKey(tenantId);
 
         return names.ToHashSet(StringComparer.Ordinal);
     }
@@ -942,19 +949,23 @@ public interface IPermissionGrantStore
     );
 
     /// <summary>
-    /// Grants a permission for the provider target. If a denial record already exists it is replaced with
-    /// a grant; if the record is already granted the call is a no-op. Updates the cache on success.
+    /// Grants a permission for the provider target in the current tenant. If a denial record already exists it is
+    /// replaced with a grant; if the record is already granted the call is a no-op. Updates the cache on success.
     /// </summary>
+    /// <remarks>
+    /// Like <see cref="RevokeAsync(string, string, string, CancellationToken)"/>, the lookup, the written record, and
+    /// the cache entry all use <see cref="ICurrentTenant.Id"/>. To grant for another tenant, switch the current tenant
+    /// first with <c>currentTenant.Change(tenantId)</c>.
+    /// </remarks>
     Task GrantAsync(
         string name,
         string providerName,
         string providerKey,
-        string? tenantId = null,
         CancellationToken cancellationToken = default
     );
 
     /// <summary>
-    /// Batch overload of <see cref="GrantAsync(string, string, string, string?, CancellationToken)"/>.
+    /// Batch overload of <see cref="GrantAsync(string, string, string, CancellationToken)"/>, in the current tenant.
     /// Skips names that already have an active grant record. Converts denial records to grants.
     /// </summary>
     /// <param name="names">Must not be empty.</param>
@@ -962,7 +973,6 @@ public interface IPermissionGrantStore
         IReadOnlyCollection<string> names,
         string providerName,
         string providerKey,
-        string? tenantId = null,
         CancellationToken cancellationToken = default
     );
 
@@ -1012,14 +1022,13 @@ public interface IPermissionGrantStore
 
     /// <summary>
     /// Batch grant inside <paramref name="unitOfWork" />'s transaction: the same writes as
-    /// <see cref="GrantAsync(IReadOnlyCollection{string}, string, string, string?, CancellationToken)"/>, with the cache
+    /// <see cref="GrantAsync(IReadOnlyCollection{string}, string, string, CancellationToken)"/>, with the cache
     /// cleared after the unit commits instead of updated at write time.
     /// </summary>
     /// <param name="unitOfWork">The unit whose transaction holds the writes.</param>
     /// <param name="names">Must not be empty.</param>
     /// <param name="providerName">The provider name.</param>
     /// <param name="providerKey">The provider target.</param>
-    /// <param name="tenantId">The tenant stamped on written grants.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <exception cref="InvalidOperationException">The unit cannot host the writes.</exception>
     /// <exception cref="NotSupportedException">This store or its repository cannot run inside a unit of work.</exception>
@@ -1028,7 +1037,6 @@ public interface IPermissionGrantStore
         IReadOnlyCollection<string> names,
         string providerName,
         string providerKey,
-        string? tenantId,
         CancellationToken cancellationToken
     )
     {

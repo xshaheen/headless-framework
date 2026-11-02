@@ -409,6 +409,58 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
     }
 
     [Fact]
+    public async Task should_scope_list_and_delete_all_to_the_prefix_directory_when_the_prefix_names_one()
+    {
+        // given
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+        await storage.UploadContentAsync(new BlobLocation(ContainerName, "reports", "2026", "a.txt"), "a", AbortToken);
+        await storage.UploadContentAsync(new BlobLocation(ContainerName, "reports", "2025", "b.txt"), "b", AbortToken);
+        await storage.UploadContentAsync(new BlobLocation(ContainerName, "other", "c.txt"), "c", AbortToken);
+
+        // when
+        var partialSegment = await storage.GetBlobsListAsync(
+            new BlobQuery(ContainerName, "reports/202"),
+            cancellationToken: AbortToken
+        );
+        var missingDirectory = await storage.GetBlobsListAsync(
+            new BlobQuery(ContainerName, "missing/"),
+            cancellationToken: AbortToken
+        );
+        var deleted = await storage.DeleteAllAsync(new BlobQuery(ContainerName, "reports/2026/"), AbortToken);
+
+        // then
+        partialSegment.Select(x => x.BlobKey).Should().Equal("reports/2025/b.txt", "reports/2026/a.txt");
+        missingDirectory.Should().BeEmpty();
+        deleted.Should().Be(1);
+        (await storage.GetBlobsListAsync(Container, cancellationToken: AbortToken))
+            .Select(x => x.BlobKey)
+            .Should()
+            .Equal("other/c.txt", "reports/2025/b.txt");
+    }
+
+    [Fact]
+    public async Task should_match_the_prefix_directory_ordinally_when_the_file_system_ignores_case()
+    {
+        // given - on a case-insensitive file system "Reports/" would open "reports"; keys still compare ordinally
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+        await storage.UploadContentAsync(new BlobLocation(ContainerName, "reports", "a.txt"), "a", AbortToken);
+
+        // when
+        var listed = await storage.GetBlobsListAsync(
+            new BlobQuery(ContainerName, "Reports/"),
+            cancellationToken: AbortToken
+        );
+        var deleted = await storage.DeleteAllAsync(new BlobQuery(ContainerName, "Reports/"), AbortToken);
+
+        // then
+        listed.Should().BeEmpty();
+        deleted.Should().Be(0);
+        (await storage.GetBlobsListAsync(Container, cancellationToken: AbortToken)).Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task delete_all_preserves_container_directory()
     {
         await using var storage = GetStorage();

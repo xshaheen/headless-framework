@@ -138,6 +138,23 @@ public static class HeadlessJobsQueryExtensions
     }
 
     /// <summary>
+    /// The stored cron-occurrence peek's predicate: the acquire predicate without its owner arm, on the database clock.
+    /// An occurrence this node already holds was dispatched by an earlier wake and is waiting for a worker or a
+    /// concurrency slot, so peeking it again would re-claim it and admit it to the pool once per scheduler poll. The
+    /// claim keeps the owner arm so a node still re-claims its own rows.
+    /// </summary>
+    internal static IQueryable<CronJobOccurrenceEntity<TCronJob>> WhereCanPeekUsingDatabaseClock<TCronJob>(
+        this IQueryable<CronJobOccurrenceEntity<TCronJob>> q
+    )
+        where TCronJob : CronJobEntity
+    {
+        return q.Where(e =>
+            (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
+            && (e.LockedUntil == null || e.LockedUntil <= DateTime.UtcNow)
+        );
+    }
+
+    /// <summary>
     /// Selects the rows the fallback sweep may claim: <c>Idle</c>, or <c>Queued</c> with a lapsed or absent lease
     /// (<c>LockedUntil == null || LockedUntil &lt;= now</c>). Unlike <c>WhereCanAcquire</c> this is the owner-agnostic
     /// fallback predicate — <paramref name="now"/> is supplied by the caller.

@@ -204,9 +204,11 @@ internal sealed class MessageSender : IMessageSender
             return await _EndDeliverByExceededAsync(message, executionState).ConfigureAwait(false);
         }
 
-        var transportMsg = await _serializer
-            .SerializeToTransportMessageAsync(message.Origin, cancellationToken)
-            .ConfigureAwait(false);
+        var transportMsg =
+            _TryReusePreparedTransport(message)
+            ?? await _serializer
+                .SerializeToTransportMessageAsync(message.Origin, cancellationToken)
+                .ConfigureAwait(false);
         var selected = await _ResolveTransportAsync(message, executionState).ConfigureAwait(false);
         if (selected.Result is { } failure)
         {
@@ -352,6 +354,19 @@ internal sealed class MessageSender : IMessageSender
         {
             _connectivity.ReportBrokerFailure();
         }
+    }
+
+    // The publish already serialized this envelope once to build the stored row. Its result is still exact while the
+    // envelope is the same instance and the transport carries that envelope's live header dictionary: the body depends
+    // only on the immutable value, and header changes since then show through the shared dictionary.
+    private static TransportMessage? _TryReusePreparedTransport(MediumMessage message)
+    {
+        return
+            message.PreparedTransport is { } prepared
+            && ReferenceEquals(prepared.Origin, message.Origin)
+            && ReferenceEquals(prepared.Transport.Headers, message.Origin.Headers)
+            ? prepared.Transport
+            : null;
     }
 
     // Returns the source that bounds the send, cancelled by the publish timeout or host shutdown, and the back-off

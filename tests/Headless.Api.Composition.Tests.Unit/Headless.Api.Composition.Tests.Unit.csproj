@@ -10,7 +10,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Api.Identity\Headless.Api.Identity.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Api.Jwt\Headless.Api.Jwt.csproj" />
     <ProjectReference Include="..\..\src\Headless.Api.ServiceDefaults\Headless.Api.ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\src\Headless.Api.UserAgent\Headless.Api.UserAgent.csproj" />
     <ProjectReference Include="..\..\src\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />

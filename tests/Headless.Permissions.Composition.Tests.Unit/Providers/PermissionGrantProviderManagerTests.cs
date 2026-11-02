@@ -90,8 +90,8 @@ public sealed class PermissionGrantProviderManagerTests : TestBase
     }
 
     /// <summary>A provider with duplicate name for testing.</summary>
-    private sealed class DuplicateRoleProvider(IPermissionGrantStore grantStore, ICurrentTenant currentTenant)
-        : StorePermissionGrantProvider(grantStore, currentTenant)
+    private sealed class DuplicateRoleProvider(IPermissionGrantStore grantStore)
+        : StorePermissionGrantProvider(grantStore)
     {
         public override string Name => PermissionGrantProviderNames.Role;
 

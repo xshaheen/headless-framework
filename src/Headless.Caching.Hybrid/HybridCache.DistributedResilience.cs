@@ -79,15 +79,16 @@ public sealed partial class HybridCache
 
             var operationTask = operation(operationCts.Token).AsTask();
 
-            using var delayCts = new CancellationTokenSource();
-            var delayTask = Task.Delay(timeout, _timeProvider, delayCts.Token);
+            // WaitAsync rather than a Task.Delay raced through Task.WhenAny: one timer and no extra cancellation
+            // source or WhenAny task per read, and no timer at all when the read already finished. The wait never
+            // throws here; the read's own outcome is surfaced and classified by awaiting it below. Caller
+            // cancellation reaches the read through operationCts, so the wait itself takes no token.
+            await ((Task)operationTask.WaitAsync(timeout, _timeProvider, CancellationToken.None)).ConfigureAwait(
+                ConfigureAwaitOptions.SuppressThrowing
+            );
 
-            var winner = await Task.WhenAny(operationTask, delayTask).ConfigureAwait(false);
-
-            if (winner == operationTask)
+            if (operationTask.IsCompleted)
             {
-                await delayCts.CancelAsync().ConfigureAwait(false);
-
                 try
                 {
                     var value = await operationTask.ConfigureAwait(false);

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Context;
-using Headless.MultiTenancy;
 using Headless.Permissions;
 using Headless.Testing.Tests;
 
@@ -15,8 +14,7 @@ public sealed class RolePermissionGrantProviderTests : TestBase
     public RolePermissionGrantProviderTests()
     {
         _grantStore = Substitute.For<IPermissionGrantStore>();
-        var currentTenant = Substitute.For<ICurrentTenant>();
-        _sut = new RolePermissionGrantProvider(_grantStore, currentTenant);
+        _sut = new RolePermissionGrantProvider(_grantStore);
     }
 
     [Fact]

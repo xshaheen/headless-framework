@@ -6,6 +6,7 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.RequestReply;
 using Headless.Messaging.Retry;
 using Headless.Messaging.Transport;
+using Headless.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -474,10 +475,22 @@ internal sealed partial class ConsumerRegister(
         );
     }
 
+    /// <summary>
+    /// Shuts the register down and returns only once its teardown finished or ran out of
+    /// <see cref="MessagingOptions.ShutdownTimeout"/>, so a container disposed synchronously does not dispose the
+    /// transport, storage, or clock while consumer clients are still being torn down against them.
+    /// </summary>
     public void Dispose()
     {
-        // Forward to DisposeAsync so synchronous callers still get real cleanup.
-        _OnCancellationRequested();
+        try
+        {
+            Async.RunSync(() => DisposeAsync().AsTask());
+        }
+        catch (Exception ex)
+        {
+            // Dispose must not throw; the async path surfaces the same failure to an awaiting caller.
+            _logger.ProcessorStopFailed(ex, nameof(ConsumerRegister));
+        }
     }
 
     /// <summary>

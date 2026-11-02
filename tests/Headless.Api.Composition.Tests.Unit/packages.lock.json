@@ -1468,14 +1468,6 @@
           "Humanizer.Core.ar": "[3.0.10, )"
         }
       },
-      "headless.api.jwt": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Api": "[1.0.0, )",
-          "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.13, )",
-          "Microsoft.IdentityModel.JsonWebTokens": "[8.23.0, )"
-        }
-      },
       "headless.api.servicedefaults": {
         "type": "Project",
         "dependencies": {
@@ -1838,15 +1830,6 @@
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "10.0.12",
           "xunit.v3.extensibility.core": "4.0.1"
-        }
-      },
-      "Microsoft.AspNetCore.Authentication.JwtBearer": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.13, )",
-        "resolved": "10.0.13",
-        "contentHash": "cEPhQWsaUKymSdQ+NB2rF4GnWtjofAcRrzr2aGPzbjSFyeDtIlBzrbX1Qeh/OAHjvdwBe05SbsukoSbz27AD6g==",
-        "dependencies": {
-          "Microsoft.IdentityModel.Protocols.OpenIdConnect": "8.19.2"
         }
       },
       "Microsoft.AspNetCore.MiddlewareAnalysis": {

@@ -25,6 +25,15 @@ public sealed partial class FactoryCacheCoordinator(
 {
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
     private readonly KeyedAsyncLock _keyedLock = new();
+
+    // One signal per key while a holder of the per-key lock runs the factory. Callers that miss during the run wait
+    // on it instead of queueing on the mutex, then read the store concurrently: without it they drain the mutex one
+    // at a time, each paying a full store read under the lock after the value is already written. The signal
+    // carries only "a value was written", never the value, so every caller still materializes its own copy.
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _inFlightFactories = new(
+        StringComparer.Ordinal
+    );
+
     private readonly ILogger _logger = logger ?? NullLogger<FactoryCacheCoordinator>.Instance;
 
     // The owning cache's event hub. Constructed here (rather than by the provider) so a provider using a primary
@@ -259,9 +268,69 @@ public sealed partial class FactoryCacheCoordinator(
 
         var staleCandidate = _IsStaleCandidate(entry, now) ? entry : CacheStoreEntry<T>.NotFound;
         var lockTimeout = _SelectLockTimeout(options, staleCandidate, now);
-        var releaser = await _keyedLock
-            .LockAsync(key, lockTimeout, _timeProvider, cancellationToken)
-            .ConfigureAwait(false);
+        var remainingLockTimeout = lockTimeout;
+
+        // A force-refresh caller must run its own factory, so it never joins another caller's run.
+        if (!options.SkipCacheRead && _inFlightFactories.TryGetValue(key, out var inFlight))
+        {
+            var waitStart = _timeProvider.GetTimestamp();
+            bool? wroteValue;
+
+            try
+            {
+                wroteValue =
+                    lockTimeout == Timeout.InfiniteTimeSpan
+                        ? await inFlight.Task.WaitAsync(cancellationToken).ConfigureAwait(false)
+                        : await inFlight
+                            .Task.WaitAsync(lockTimeout, _timeProvider, cancellationToken)
+                            .ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                // The wait shares the lock budget, so running out of it here is the lock-timeout outcome below.
+                wroteValue = null;
+            }
+
+            if (wroteValue == true)
+            {
+                // Same double-check the caller would run under the lock, minus the lock: a fresh entry is served
+                // as a hit; anything else (removed or overwritten since the write) falls through to the lock path.
+                entry = await _TryGetEntryAsync<T>(store, key, readOptions, cancellationToken).ConfigureAwait(false);
+                now = _GetUtcNow();
+
+                if (entry.IsFresh(now))
+                {
+                    await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
+                    return (_ToCacheValue(entry, isStale: false), reachedFactory);
+                }
+
+                if (_ShouldServeStaleImmediately(options, entry, now))
+                {
+                    return (_ToCacheValue(entry, isStale: true), reachedFactory);
+                }
+
+                if (_IsStaleCandidate(entry, now))
+                {
+                    staleCandidate = entry;
+                }
+            }
+
+            if (wroteValue is null)
+            {
+                remainingLockTimeout = TimeSpan.Zero;
+            }
+            else if (lockTimeout != Timeout.InfiniteTimeSpan)
+            {
+                remainingLockTimeout = lockTimeout - _timeProvider.GetElapsedTime(waitStart);
+            }
+        }
+
+        var releaser =
+            remainingLockTimeout == Timeout.InfiniteTimeSpan || remainingLockTimeout > TimeSpan.Zero
+                ? await _keyedLock
+                    .LockAsync(key, remainingLockTimeout, _timeProvider, cancellationToken)
+                    .ConfigureAwait(false)
+                : null;
 
         if (releaser is null)
         {
@@ -273,6 +342,11 @@ public sealed partial class FactoryCacheCoordinator(
 
         var ownsReleaser = true;
         IAsyncDisposable? distributedLease = null;
+
+        // The per-key lock is exclusive and every holder removes its own signal before releasing it, so no other
+        // signal can be registered for this key here.
+        var inFlightSignal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _inFlightFactories[key] = inFlightSignal;
 
         try
         {
@@ -286,6 +360,7 @@ public sealed partial class FactoryCacheCoordinator(
                 if (entry.IsFresh(now))
                 {
                     await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
+                    inFlightSignal.TrySetResult(true);
                     return (_ToCacheValue(entry, isStale: false), reachedFactory);
                 }
 
@@ -370,6 +445,7 @@ public sealed partial class FactoryCacheCoordinator(
                     if (entry.IsFresh(now))
                     {
                         await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
+                        inFlightSignal.TrySetResult(true);
                         return (_ToCacheValue(entry, isStale: false), reachedFactory);
                     }
 
@@ -506,10 +582,16 @@ public sealed partial class FactoryCacheCoordinator(
                 )
                 .ConfigureAwait(false);
 
+            inFlightSignal.TrySetResult(true);
             return (written, reachedFactory);
         }
         finally
         {
+            // Every other exit (fail-safe, timeout, exception, soft-timeout hand-off) wrote no fresh value, so
+            // joined callers fall back to the per-key lock exactly as if they had queued on it from the start.
+            _inFlightFactories.TryRemove(new KeyValuePair<string, TaskCompletionSource<bool>>(key, inFlightSignal));
+            inFlightSignal.TrySetResult(false);
+
             if (ownsReleaser)
             {
                 // Release in reverse acquisition order: free the distributed lease (so other nodes can proceed)
