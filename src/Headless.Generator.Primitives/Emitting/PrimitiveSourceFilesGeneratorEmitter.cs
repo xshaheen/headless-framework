@@ -58,7 +58,6 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
         if (options.GenerateJsonConverters)
         {
             usings.Add("System.Text.Json.Serialization");
-            usings.Add($"{data.Namespace}.Converters");
         }
 
         if (options.GenerateTypeConverters)
@@ -90,13 +89,13 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 
         if (options.GenerateJsonConverters)
         {
-            builder.AppendJsonConverterAttribute(data.ClassName + "JsonConverter");
+            builder.AppendJsonConverterAttribute($"global::{data.ConvertersNamespace}.{data.ClassName}JsonConverter");
         }
 
         if (options.GenerateTypeConverters)
         {
             builder.AppendTypeConverterAttribute(
-                TypeConverterSourceFilesGeneratorEmitter.CreateClassName(data.ClassName)
+                $"global::{data.ConvertersNamespace}.{TypeConverterSourceFilesGeneratorEmitter.CreateClassName(data.ClassName)}"
             );
         }
 
@@ -292,7 +291,7 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 
         builder.CloseBracket();
 
-        context.AddSource(data.ClassName + ".g", builder.ToString());
+        context.AddSource(GeneratorData.HintName(data.FullyQualifiedName), builder.ToString());
 
         return;
 
@@ -428,10 +427,12 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
             AbstractionConstants.Namespace,
         ]);
 
-        var converterName = data.UnderlyingType.ToString();
+        // JsonInternalConverters names the float converter after the C# keyword, not the CLR type.
+        var converterName =
+            data.UnderlyingType == PrimitiveUnderlyingType.Single ? "Float" : data.UnderlyingType.ToString();
         var primitiveTypeIsValueType = data.PrimitiveTypeIsValueType;
 
-        builder.AppendNamespace(data.Namespace + ".Converters");
+        builder.AppendNamespace(data.ConvertersNamespace);
         builder.AppendSummary($"JsonConverter for <see cref = \"{data.ClassName}\"/>");
 
         builder.AppendClass(
@@ -572,6 +573,9 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 
         builder.CloseBracket();
 
-        context.AddSource($"{data.ClassName}JsonConverter.g.cs", builder.ToString());
+        context.AddSource(
+            GeneratorData.HintName($"{data.ConvertersNamespace}.{data.ClassName}JsonConverter"),
+            builder.ToString()
+        );
     }
 }

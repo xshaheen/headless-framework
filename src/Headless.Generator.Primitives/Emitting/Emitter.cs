@@ -36,11 +36,19 @@ internal static class Emitter
         var efValueConverterTypes = new List<GeneratorData>(typesToGenerate.Length);
         var dapperConverterTypes = new List<GeneratorData>(typesToGenerate.Length);
 
+        // A partial primitive whose parts each carry a base list is discovered once per part; generate it once.
+        var generated = new HashSet<string>(StringComparer.Ordinal);
+
         try
         {
             foreach (var info in typesToGenerate)
             {
                 context.CancellationToken.ThrowIfCancellationRequested();
+
+                if (!generated.Add(info.FullyQualifiedName))
+                {
+                    continue;
+                }
 
                 var generatorData = GeneratorData.FromTypeInfo(info, globalOptions);
 

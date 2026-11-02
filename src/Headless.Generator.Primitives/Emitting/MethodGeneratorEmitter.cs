@@ -457,7 +457,10 @@ internal static class MethodGeneratorEmitter
         }
         else if (isChar)
         {
-            builder.AppendLine("char.Parse(s);");
+            // char has no span overload of Parse or TryParse; a char is exactly one UTF-16 code unit.
+            builder.AppendLine(
+                "s.Length == 1 ? s[0] : throw new global::System.FormatException(\"String must be exactly one character long.\");"
+            );
         }
         else if (isBool)
         {
@@ -507,7 +510,8 @@ internal static class MethodGeneratorEmitter
         }
         else if (isChar)
         {
-            builder.AppendLine("if (!char.TryParse(s, out var value))");
+            builder.AppendLine("var value = s.Length == 1 ? s[0] : default;");
+            builder.AppendLine("if (s.Length != 1)");
         }
         else if (isBool)
         {
