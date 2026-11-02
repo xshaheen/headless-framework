@@ -109,6 +109,62 @@ public sealed class ScopedCacheTests : TestBase
     }
 
     [Fact]
+    public async Task should_read_the_scope_once_per_multi_key_call_and_keep_the_key_layout()
+    {
+        // given
+        var inner = Substitute.For<ICache>();
+        inner
+            .GetAllAsync<string>(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, CacheValue<string>>(StringComparer.Ordinal));
+        var scopeReads = 0;
+        var sut = new ScopedCache<string>(
+            inner,
+            () =>
+            {
+                scopeReads++;
+                return "t:tenant-1";
+            }
+        );
+
+        // when
+        await sut.GetAllAsync(["key1", "key2", "key3"], AbortToken);
+        await sut.UpsertAllAsync(
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["key1"] = "v1", ["key2"] = "v2" },
+            _DefaultExpiration,
+            AbortToken
+        );
+        await sut.RemoveAllAsync(["key1", "key2"], AbortToken);
+
+        // then
+        scopeReads.Should().Be(3);
+        await inner
+            .Received(1)
+            .GetAllAsync<string>(
+                Arg.Is<IEnumerable<string>>(keys =>
+                    keys.SequenceEqual(new[] { "t:tenant-1:key1", "t:tenant-1:key2", "t:tenant-1:key3" })
+                ),
+                AbortToken
+            );
+        await inner
+            .Received(1)
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, string>>(values =>
+                    values
+                        .Keys.Order(StringComparer.Ordinal)
+                        .SequenceEqual(new[] { "t:tenant-1:key1", "t:tenant-1:key2" })
+                ),
+                _DefaultExpiration,
+                AbortToken
+            );
+        await inner
+            .Received(1)
+            .RemoveAllAsync(
+                Arg.Is<IEnumerable<string>>(keys => keys.SequenceEqual(new[] { "t:tenant-1:key1", "t:tenant-1:key2" })),
+                AbortToken
+            );
+    }
+
+    [Fact]
     public async Task should_scope_upsert_all()
     {
         // given
