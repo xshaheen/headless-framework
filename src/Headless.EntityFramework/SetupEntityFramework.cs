@@ -342,6 +342,9 @@ public static class SetupEntityFramework
             // EF change-capture lives alongside the SaveChanges pipeline so any HeadlessDbContext-based
             // consumer gets it wired regardless of which IAuditLogStore (EF/PG/SqlServer) they pick.
             services.TryAddScoped<IAuditChangeCapture, EfAuditChangeCapture>();
+            // The save pipeline always resolves the bypass, and an EF host need not call AddHeadlessTenancy, so EF
+            // registers it too. TryAdd keeps a single instance whichever path runs first: the bypass state lives on
+            // the instance, and a second instance would not see scopes begun on the first.
             services.TryAddSingleton<ITenantWriteGuardBypass, TenantWriteGuardBypass>();
 
             services.TryAddSingleton(TimeProvider.System);

@@ -1,12 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Security.Claims;
 using Headless;
+using Headless.Caching;
 using Headless.Context;
 using Headless.Features;
 using Headless.Features.Resources;
 using Headless.Messaging;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute.ExceptionExtensions;
 
 namespace Tests.Values;
@@ -623,5 +626,62 @@ public sealed class FeatureManagerTests : TestBase
 
             return Task.CompletedTask;
         }
+    }
+
+    [Fact]
+    public async Task should_read_every_store_provider_in_one_cache_call_when_batch_read_is_cached()
+    {
+        // given
+        var cache = Substitute.For<ICache>();
+        var store = new FeatureValueStore(
+            _definitionManager,
+            Substitute.For<IFeatureValueRecordRepository>(),
+            Substitute.For<IGuidGenerator>(),
+            cache,
+            NullLogger<FeatureValueStore>.Instance
+        );
+        var tenant = Substitute.For<ICurrentTenant>();
+        tenant.Id.Returns("tenant-1");
+        var principal = Substitute.For<ICurrentPrincipalAccessor>();
+        principal.Principal.Returns(new ClaimsPrincipal());
+        _valueProviderManager.ValueProviders.Returns([
+            new TenantFeatureValueProvider(store, tenant),
+            new EditionFeatureValueProvider(store, principal),
+        ]);
+
+        var fromTenant = new FeatureDefinition("FromTenant");
+        var fromEdition = new FeatureDefinition("FromEdition");
+        _definitionManager.GetFeaturesAsync(AbortToken).Returns([fromTenant, fromEdition]);
+
+        string tenantKey(string name) =>
+            FeatureValueCacheItem.CalculateCacheKey(name, TenantFeatureValueProvider.ProviderName, "tenant-1");
+        string editionKey(string name) =>
+            FeatureValueCacheItem.CalculateCacheKey(name, EditionFeatureValueProvider.ProviderName, null);
+
+        cache
+            .GetAllAsync<FeatureValueCacheItem>(Arg.Any<IEnumerable<string>>(), AbortToken)
+            .Returns(
+                new Dictionary<string, CacheValue<FeatureValueCacheItem>>(StringComparer.Ordinal)
+                {
+                    [tenantKey("FromTenant")] = new(new FeatureValueCacheItem("tenant-value"), hasValue: true),
+                    [tenantKey("FromEdition")] = new(new FeatureValueCacheItem(null), hasValue: true),
+                    [editionKey("FromTenant")] = new(new FeatureValueCacheItem(null), hasValue: true),
+                    [editionKey("FromEdition")] = new(new FeatureValueCacheItem("edition-value"), hasValue: true),
+                }
+            );
+
+        // when
+        var result = await _sut.GetAllAsync(
+            new HashSet<string>(StringComparer.Ordinal) { "FromTenant", "FromEdition" },
+            AbortToken
+        );
+
+        // then
+        result["FromTenant"].Value.Should().Be("tenant-value");
+        result["FromTenant"].Provider!.Name.Should().Be(TenantFeatureValueProvider.ProviderName);
+        result["FromEdition"].Value.Should().Be("edition-value");
+        result["FromEdition"].Provider!.Name.Should().Be(EditionFeatureValueProvider.ProviderName);
+        await cache.ReceivedWithAnyArgs(1).GetAllAsync<FeatureValueCacheItem>(default!, AbortToken);
+        await cache.DidNotReceiveWithAnyArgs().GetAsync<FeatureValueCacheItem>(default!, AbortToken);
     }
 }

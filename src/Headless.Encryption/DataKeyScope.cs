@@ -26,15 +26,17 @@ internal static class DataKeyScope
         string? scope,
         ICurrentTenant currentTenant,
         string operation,
+        string purpose,
         string hostScopeFactory,
         string paramName
     )
     {
+        // The message is built only when it is thrown: the scope resolves on every encrypt, decrypt, and blind index.
         var resolved =
             scope
             ?? currentTenant.Id
             ?? throw new MissingTenantContextException(
-                $"{operation} needs a tenant: no scope was given and no tenant is current. Wrap the call in "
+                $"{operation} '{purpose}' needs a tenant: no scope was given and no tenant is current. Wrap the call in "
                     + $"ICurrentTenant.Change(tenantId), set the scope, or use {hostScopeFactory} for host-level data."
             );
 

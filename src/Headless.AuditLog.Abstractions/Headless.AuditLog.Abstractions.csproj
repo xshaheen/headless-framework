@@ -10,7 +10,6 @@
     <InternalsVisibleTo Include="Headless.AuditLog.Storage.EntityFramework" />
     <InternalsVisibleTo Include="Headless.AuditLog.Storage.PostgreSql" />
     <InternalsVisibleTo Include="Headless.AuditLog.Storage.SqlServer" />
-    <InternalsVisibleTo Include="Headless.EntityFramework" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
