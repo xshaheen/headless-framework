@@ -2,6 +2,7 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Text.Json.Serialization;
 using Headless;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
@@ -50,7 +51,12 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             });
 
         await using var dispatcher = new RecordingCommittedDispatcher();
-        var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
+        var writer = new OutboxMessageWriter(
+            storage,
+            dispatcher,
+            new JsonUtf8Serializer(Options.Create(new MessagingOptions())),
+            TimeProvider.System
+        );
         var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
@@ -88,7 +94,12 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             .Returns(call => ValueTask.FromResult(call.ArgAt<MediumMessage>(1)));
         var primary = Substitute.For<IDataStorage>();
         await using var dispatcher = new RecordingCommittedDispatcher();
-        var writer = new OutboxMessageWriter(primary, dispatcher, TimeProvider.System);
+        var writer = new OutboxMessageWriter(
+            primary,
+            dispatcher,
+            new JsonUtf8Serializer(Options.Create(new MessagingOptions())),
+            TimeProvider.System
+        );
         var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
@@ -134,7 +145,12 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         var shipping = AdditionalOutboxDoubles.CreateOutbox("shipping", initialized: false);
         shipping.Initializer.InitializeAsync(Arg.Any<CancellationToken>()).Returns(Task.FromException(failure));
         await using var dispatcher = new RecordingCommittedDispatcher();
-        var writer = new OutboxMessageWriter(Substitute.For<IDataStorage>(), dispatcher, TimeProvider.System);
+        var writer = new OutboxMessageWriter(
+            Substitute.For<IDataStorage>(),
+            dispatcher,
+            new JsonUtf8Serializer(Options.Create(new MessagingOptions())),
+            TimeProvider.System
+        );
         var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
@@ -186,7 +202,12 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             });
 
         await using var dispatcher = new RecordingCommittedDispatcher();
-        var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
+        var writer = new OutboxMessageWriter(
+            storage,
+            dispatcher,
+            new JsonUtf8Serializer(Options.Create(new MessagingOptions())),
+            TimeProvider.System
+        );
         var factory = _CreatePublishRequestFactory();
 
         foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
@@ -239,7 +260,12 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         await using var unitOfWork = new FakeUnitOfWork();
         var storage = Substitute.For<IDataStorage>();
         await using var dispatcher = new RecordingCommittedDispatcher();
-        var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
+        var writer = new OutboxMessageWriter(
+            storage,
+            dispatcher,
+            new JsonUtf8Serializer(Options.Create(new MessagingOptions())),
+            TimeProvider.System
+        );
         var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
@@ -306,7 +332,12 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             )
             .Returns(stored);
         await using var dispatcher = new RecordingCommittedDispatcher();
-        var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
+        var writer = new OutboxMessageWriter(
+            storage,
+            dispatcher,
+            new JsonUtf8Serializer(Options.Create(new MessagingOptions())),
+            TimeProvider.System
+        );
         var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
@@ -345,7 +376,12 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             )
             .Returns(stored);
         await using var dispatcher = new RecordingCommittedDispatcher();
-        var writer = new OutboxMessageWriter(storage, dispatcher, TimeProvider.System);
+        var writer = new OutboxMessageWriter(
+            storage,
+            dispatcher,
+            new JsonUtf8Serializer(Options.Create(new MessagingOptions())),
+            TimeProvider.System
+        );
         var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
         var decision = DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
@@ -376,6 +412,91 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             Lane = MessageLane.Bus,
             Added = DateTimeOffset.UtcNow,
         };
+    }
+
+    [Fact]
+    public async Task should_serialize_the_payload_once_for_the_stored_row_and_the_send()
+    {
+        // given
+        await using var transaction = new TestDbTransaction();
+        await using var unitOfWork = new FakeUnitOfWork();
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .StoreMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call => ValueTask.FromResult(call.ArgAt<MediumMessage>(1)));
+        var counter = new CountingCoordinatorMessageConverter();
+        var options = new MessagingOptions();
+        options.JsonSerializerOptions.Converters.Add(counter);
+        var serializer = new JsonUtf8Serializer(Options.Create(options));
+        await using var dispatcher = new RecordingCommittedDispatcher();
+        var writer = new OutboxMessageWriter(storage, dispatcher, serializer, TimeProvider.System);
+        var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
+        var decision = DeliveryDecisionResolver.Resolve(
+            MessageLane.Bus,
+            DeliveryMode.Durable,
+            requireCoordination: false,
+            delay: null,
+            DeliveryCoordination.Compatible(unitOfWork, transaction),
+            TimeProvider.System.GetUtcNow()
+        );
+
+        // when
+        await writer.WriteAsync(request, decision, AbortToken);
+
+        // then
+        counter.Writes.Should().Be(1);
+        var stored = (MediumMessage)
+            storage
+                .ReceivedCalls()
+                .Single(call =>
+                    string.Equals(
+                        call.GetMethodInfo().Name,
+                        nameof(IDataStorage.StoreMessageAsync),
+                        StringComparison.Ordinal
+                    )
+                )
+                .GetArguments()[1]!;
+        stored.PreparedTransport.Should().NotBeNull();
+        var prepared = stored.PreparedTransport!.Value;
+        prepared.Origin.Should().BeSameAs(stored.Origin);
+        prepared.Transport.Headers.Should().BeSameAs(stored.Origin.Headers);
+        Encoding.UTF8.GetString(prepared.Transport.Body.Span).Should().Be("""{"Value":"value"}""");
+
+        stored.Content.Should().Be(serializer.Serialize(stored.Origin));
+        var readBack = serializer.Deserialize(stored.Content)!;
+        readBack.Id.Should().Be(stored.Origin.Id);
+        serializer
+            .Deserialize(readBack.Value!, typeof(CoordinatorMessage))
+            .Should()
+            .Be(new CoordinatorMessage("value"));
+    }
+
+    private sealed class CountingCoordinatorMessageConverter : JsonConverter<CoordinatorMessage>
+    {
+        public int Writes { get; private set; }
+
+        public override CoordinatorMessage Read(
+            ref Utf8JsonReader reader,
+            Type typeToConvert,
+            JsonSerializerOptions options
+        )
+        {
+            using var document = JsonDocument.ParseValue(ref reader);
+            return new CoordinatorMessage(document.RootElement.GetProperty("Value").GetString()!);
+        }
+
+        public override void Write(Utf8JsonWriter writer, CoordinatorMessage value, JsonSerializerOptions options)
+        {
+            Writes++;
+            writer.WriteStartObject();
+            writer.WriteString("Value", value.Value);
+            writer.WriteEndObject();
+        }
     }
 
     private static MessagePublishRequestFactory _CreatePublishRequestFactory()

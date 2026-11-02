@@ -125,7 +125,7 @@ internal sealed partial class RelationalDataStorage
         {
             StorageId = _guidGenerator.Create(),
             Origin = message.Origin,
-            Content = _serializer.Serialize(message.Origin),
+            Content = _ContentOf(message),
             Lane = message.Lane,
             ExpiresAt = publishAt,
             LockedUntil = null,
@@ -236,7 +236,7 @@ internal sealed partial class RelationalDataStorage
             _guidGenerator.Create(),
             name,
             consumerIdentity,
-            string.IsNullOrEmpty(message.Content) ? _serializer.Serialize(message.Origin) : message.Content,
+            _ContentOf(message),
             message.Lane,
             message.Origin.Id,
             Retries: 0,
@@ -273,7 +273,7 @@ internal sealed partial class RelationalDataStorage
         {
             StorageId = _guidGenerator.Create(),
             Origin = message.Origin,
-            Content = _serializer.Serialize(message.Origin),
+            Content = _ContentOf(message),
             Lane = message.Lane,
             Added = added,
             ExpiresAt = null,

@@ -1461,7 +1461,12 @@ public sealed class MessagePublisherDeliveryTests : TestBase
 
         var services = collection.BuildServiceProvider();
         var pipeline = new PublishMiddlewarePipeline(services);
-        var writer = new OutboxMessageWriter(storage, dispatcher, timeProvider);
+        var writer = new OutboxMessageWriter(
+            storage,
+            dispatcher,
+            new JsonUtf8Serializer(Options.Create(new MessagingOptions())),
+            timeProvider
+        );
 
         var transportLanes = new List<MessageLane>();
         var transportMessages = new List<TransportMessage>();

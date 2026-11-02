@@ -137,7 +137,8 @@ internal sealed partial class ConsumerRegister
                         executor,
                         hostShutdownToken
                     )
-                    .ConfigureAwait(false)
+                    .ConfigureAwait(false),
+                Body: transportMessage.Body
             );
         }
 
@@ -157,6 +158,7 @@ internal sealed partial class ConsumerRegister
         // the accept path can detect a post-success throw from any ring member.
         var innerCompleted = new StrongBox<bool>(value: false);
         Message? innerMessage = null;
+        ReadOnlyMemory<byte> innerBody = default;
 
         Func<ValueTask> next = async () =>
         {
@@ -176,7 +178,8 @@ internal sealed partial class ConsumerRegister
                 ? transportMessage.Headers
                 : _AsWritableHeaders(context.Headers);
 
-            innerMessage = await innerReceive(currentHeaders, context.Body, executor, context.CancellationToken)
+            innerBody = context.Body;
+            innerMessage = await innerReceive(currentHeaders, innerBody, executor, context.CancellationToken)
                 .ConfigureAwait(false);
 
             context.MarkCompleted();
@@ -240,7 +243,8 @@ internal sealed partial class ConsumerRegister
                         executor,
                         hostShutdownToken
                     )
-                    .ConfigureAwait(false)
+                    .ConfigureAwait(false),
+                Body: transportMessage.Body
             );
         }
 
@@ -290,6 +294,7 @@ internal sealed partial class ConsumerRegister
             return new ReceiveRingOutcome(
                 ReceiveRingResult.Accepted,
                 Message: innerMessage,
+                Body: innerBody,
                 Context: context,
                 MiddlewareType: outermostType.FullName ?? outermostType.Name
             );
@@ -386,9 +391,15 @@ internal sealed partial class ConsumerRegister
         Cancelled = 3,
     }
 
+    /// <summary>What the receive stage decided for one delivery.</summary>
+    /// <param name="Body">
+    /// The body <see cref="Message"/> was deserialized from, after any receive-middleware rewrite, so the stored
+    /// envelope can embed it instead of serializing the payload again.
+    /// </param>
     private sealed record ReceiveRingOutcome(
         ReceiveRingResult Result,
         Message? Message = null,
+        ReadOnlyMemory<byte> Body = default,
         Exception? Exception = null,
         ReceiveContext? Context = null,
         string? MiddlewareType = null,

@@ -134,6 +134,14 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
     internal async Task WaitForQuadrantIdleForTestAsync(MessageType direction, MessageLane lane, int outbox = 0)
     {
         var state = _GetState(direction, lane, outbox);
+
+        // The cycle the caller just triggered may finish and clear ActiveTask before this runs; awaiting the last
+        // started cycle first still surfaces its exception instead of returning as if it had succeeded.
+        if (state.LastStartedTask is { } last)
+        {
+            await last.ConfigureAwait(false);
+        }
+
         while (state.ActiveTask is { } task)
         {
             await task.ConfigureAwait(false);
@@ -989,6 +997,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
     {
         private long _nextPollUtcTicks;
         private Task? _activeTask;
+        private Task? _lastStartedTask;
 
         internal long _currentIntervalTicks = baseInterval.Ticks;
         internal int _consecutiveHealthyCycles;
@@ -1010,8 +1019,21 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         public Task? ActiveTask
         {
             get => Volatile.Read(ref _activeTask);
-            set => Volatile.Write(ref _activeTask, value);
+            set
+            {
+                Volatile.Write(ref _activeTask, value);
+                if (value is not null)
+                {
+                    Volatile.Write(ref _lastStartedTask, value);
+                }
+            }
         }
+
+        /// <summary>
+        /// The most recently started cycle, kept after it completes. <see cref="ActiveTask" /> is cleared the moment a
+        /// cycle ends, so a waiter that reads it late would miss that cycle's outcome.
+        /// </summary>
+        public Task? LastStartedTask => Volatile.Read(ref _lastStartedTask);
 
         public void ClearActiveTask(Task completed)
         {

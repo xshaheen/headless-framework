@@ -608,6 +608,15 @@ public sealed class IngestRunResult : IConsume<RawJson>
 - **Publishing a `RawJson` sends its bytes unchanged.** `new RawJson(utf8Json)` copies the bytes and throws `ArgumentException` unless they hold exactly one complete JSON value.
 - **The serializer reaches the type through its `[JsonConverter]`.** A replacement `IMessageSerializer` built on `System.Text.Json` keeps the behavior. One built on another library must handle `RawJson` itself.
 
+### Serializing a payload once
+
+A durable message's payload is serialized once. On publish, the runtime calls `SerializeToTransportMessageAsync` before the outbox write, builds the stored envelope from that body with `Serialize(Message, ReadOnlyMemory<byte>)`, and the send that follows the commit reuses the same `TransportMessage`. On consume, the inbox row stores the body that was deserialized, after any receive-middleware rewrite, instead of serializing the bound payload again.
+
+- **The stored envelope keeps its shape.** It is the `{ "Headers": ..., "Value": ... }` JSON that `Serialize(Message)` writes, under the same naming and encoder settings, so retries from storage and the dashboard read it as before. An inbox row's `Value` is now the producer's JSON as received, members the consumer type does not bind included.
+- **The default serializer falls back to a full serialization** when there is no value or body, when the body is not one strict JSON value (comments or trailing commas that `JsonSerializerOptions` tolerated on read), or when a configured `TypeInfoResolver` cannot describe the embedded body.
+- **A replacement `IMessageSerializer` keeps working unchanged.** `Serialize(Message, ReadOnlyMemory<byte>)` defaults to `Serialize(Message)`; override it to embed the body. The send reuses the publish-time `TransportMessage` only when its `Headers` is the envelope's own dictionary, so headers stamped after the store still reach the broker, and a body produced that way must depend only on `Message.Value`. A serializer that returns a copied header dictionary is called again for every send.
+- **The broker receives the payload as it was at publish.** A message object the application mutates after publishing no longer changes what the first send carries; the stored row and the broker body now agree.
+
 ### Message identity
 
 The message id keys inbox deduplication, so a raw message's id must be the same every time the broker delivers it. First match wins:

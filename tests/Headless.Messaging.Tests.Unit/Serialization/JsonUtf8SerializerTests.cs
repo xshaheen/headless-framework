@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json.Serialization.Metadata;
 using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
@@ -314,6 +315,135 @@ public sealed class JsonUtf8SerializerTests : TestBase
         message.Should().NotBeNull();
         message!.Headers["headless-msg-id"].Should().Be("envelope-compat");
         message.Value.Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_store_the_same_envelope_as_a_full_serialization_when_reusing_the_transport_body(
+        bool camelCase
+    )
+    {
+        // given
+        var options = new MessagingOptions();
+        if (camelCase)
+        {
+            options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+            options.JsonSerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.CamelCase;
+        }
+
+        var serializer = new JsonUtf8Serializer(Options.Create(options));
+        var message = new Message(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["headless-msg-id"] = "reuse",
+                ["Optional"] = null,
+            },
+            new TestPayload { Name = "Reused", Value = 7 }
+        );
+        var transport = await serializer.SerializeToTransportMessageAsync(message, AbortToken);
+
+        // when
+        var content = serializer.Serialize(message, transport.Body);
+
+        // then
+        content.Should().Be(serializer.Serialize(message));
+        var stored = serializer.Deserialize(content)!;
+        stored.Headers["headless-msg-id"].Should().Be("reuse");
+        var payload = serializer.Deserialize(stored.Value!, typeof(TestPayload)).Should().BeOfType<TestPayload>().Which;
+        payload.Name.Should().Be("Reused");
+        payload.Value.Should().Be(7);
+    }
+
+    [Fact]
+    public async Task should_embed_the_received_body_as_it_is_when_the_value_was_deserialized_from_it()
+    {
+        // given - the producer wrote a member the consumer's type does not bind
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["headless-msg-id"] = "received" };
+        var body = """{ "Name": "Wire", "Value": 3, "Extra": [1, 2] }"""u8.ToArray();
+        var received = await _serializer.DeserializeAsync(
+            new TransportMessage(headers, body),
+            typeof(TestPayload),
+            AbortToken
+        );
+
+        // when
+        var content = _serializer.Serialize(received, body);
+
+        // then
+        var stored = _serializer.Deserialize(content)!;
+        stored.Headers["headless-msg-id"].Should().Be("received");
+        stored.Value.Should().BeOfType<JsonElement>().Which.GetRawText().Should().Be(Encoding.UTF8.GetString(body));
+        var payload = _serializer
+            .Deserialize(stored.Value!, typeof(TestPayload))
+            .Should()
+            .BeOfType<TestPayload>()
+            .Which;
+        payload.Name.Should().Be("Wire");
+        payload.Value.Should().Be(3);
+    }
+
+    [Fact]
+    public void should_serialize_the_value_when_the_body_is_not_one_strict_json_value()
+    {
+        // given - options that tolerate comments read such a body, but the stored envelope must stay strict JSON
+        var options = new MessagingOptions();
+        options.JsonSerializerOptions.ReadCommentHandling = JsonCommentHandling.Skip;
+        var serializer = new JsonUtf8Serializer(Options.Create(options));
+        var message = new Message(
+            new Dictionary<string, string?>(StringComparer.Ordinal) { ["headless-msg-id"] = "commented" },
+            new TestPayload { Name = "Commented", Value = 1 }
+        );
+
+        // when
+        var content = serializer.Serialize(message, """{"Name":"Commented","Value":1} // note"""u8.ToArray());
+
+        // then
+        content.Should().Be(serializer.Serialize(message));
+    }
+
+    [Fact]
+    public void should_serialize_the_envelope_when_there_is_no_value_or_no_body()
+    {
+        // given
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["headless-msg-id"] = "empty" };
+        var withoutValue = new Message(headers, value: null);
+        var withoutBody = new Message(headers, new TestPayload { Name = "NoBody", Value = 2 });
+
+        // when / then
+        _serializer.Serialize(withoutValue, "{}"u8.ToArray()).Should().Be(_serializer.Serialize(withoutValue));
+        _serializer.Serialize(withoutBody, ReadOnlyMemory<byte>.Empty).Should().Be(_serializer.Serialize(withoutBody));
+    }
+
+    [Fact]
+    public async Task should_serialize_the_value_when_the_type_resolver_cannot_describe_the_embedded_body()
+    {
+        // given - a resolver, such as a source-generated context, that knows only the consumer's own types
+        var options = new MessagingOptions();
+        options.JsonSerializerOptions.TypeInfoResolver = new HidingResolver(
+            new DefaultJsonTypeInfoResolver(),
+            typeof(JsonUtf8Serializer.SerializedJsonValue)
+        );
+        var serializer = new JsonUtf8Serializer(Options.Create(options));
+        var message = new Message(
+            new Dictionary<string, string?>(StringComparer.Ordinal) { ["headless-msg-id"] = "resolver" },
+            new TestPayload { Name = "Resolver", Value = 4 }
+        );
+        var transport = await serializer.SerializeToTransportMessageAsync(message, AbortToken);
+
+        // when
+        var content = serializer.Serialize(message, transport.Body);
+
+        // then
+        content.Should().Be(serializer.Serialize(message));
+    }
+
+    private sealed class HidingResolver(IJsonTypeInfoResolver inner, Type hidden) : IJsonTypeInfoResolver
+    {
+        public JsonTypeInfo? GetTypeInfo(Type type, JsonSerializerOptions options)
+        {
+            return type == hidden ? null : inner.GetTypeInfo(type, options);
+        }
     }
 
     private sealed class TestPayload

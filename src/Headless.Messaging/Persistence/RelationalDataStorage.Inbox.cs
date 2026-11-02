@@ -39,7 +39,7 @@ internal sealed partial class RelationalDataStorage
         );
         var storageId = _guidGenerator.Create();
         var incarnationId = _guidGenerator.Create();
-        var content = _serializer.Serialize(message.Origin);
+        var content = _ContentOf(message);
         var retentionSeconds = _ValidateInboxRetention(inboxRetention);
         var keyHash = _CreateInboxKeyHash(key, lifecycleId: null);
 

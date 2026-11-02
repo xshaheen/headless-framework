@@ -100,5 +100,12 @@ public class MediumMessage
     /// </summary>
     internal bool HasUnpersistedOriginChanges { get; set; }
 
+    /// <summary>
+    /// The transport message serialized at publish for the envelope it names, so the send that follows reuses the
+    /// payload bytes the stored row was built from instead of serializing the same object again. In-memory handoff
+    /// state only; a row read back from storage has none.
+    /// </summary>
+    internal (Message Origin, TransportMessage Transport)? PreparedTransport { get; set; }
+
     public string? ExceptionInfo { get; set; }
 }

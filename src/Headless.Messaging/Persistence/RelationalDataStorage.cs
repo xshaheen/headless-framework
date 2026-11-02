@@ -321,6 +321,15 @@ internal sealed partial class RelationalDataStorage
     }
 
     /// <summary>
+    /// The envelope's stored form: the content the caller already serialized for <see cref="MediumMessage.Origin"/>
+    /// when it supplied one, otherwise a fresh serialization of it.
+    /// </summary>
+    private string _ContentOf(MediumMessage message)
+    {
+        return string.IsNullOrEmpty(message.Content) ? _serializer.Serialize(message.Origin) : message.Content;
+    }
+
+    /// <summary>
     /// Re-serializes a mutated envelope and re-establishes the <c>Content == Serialize(Origin)</c> invariant on
     /// the caller's in-memory copy, so a later retry pickup that reads the row sees what this write persisted.
     /// </summary>
