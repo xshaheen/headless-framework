@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net.Http.Json;
+using System.Net.Sockets;
+using System.Text;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 
@@ -21,9 +23,13 @@ public sealed class ToxiproxyServer : IAsyncDisposable
     private const int _FirstProxyPort = 8666;
     private const int _MaxProxies = 3;
 
+    private static readonly TimeSpan _ForwardingTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan _ProbeAttemptTimeout = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan _ProbeInterval = TimeSpan.FromMilliseconds(100);
+
     private readonly IContainer _container = _BuildContainer();
 
-    // Serializes slot allocation, so a slot is counted only once its proxy exists and a failed create frees it.
+    // Serializes slot allocation, so a slot is counted once its proxy exists and a create Toxiproxy refuses frees it.
     private readonly SemaphoreSlim _createLock = new(1, 1);
 
     private HttpClient? _http;
@@ -59,9 +65,14 @@ public sealed class ToxiproxyServer : IAsyncDisposable
     }
 
     /// <summary>
-    /// Creates a proxy that forwards to <paramref name="upstreamHostPort"/> on the Docker host and returns it.
+    /// Creates a proxy that forwards to <paramref name="upstreamHostPort"/> on the Docker host and returns it once a
+    /// request from the test host reaches the proxy through its published port.
     /// Clients connect to <see cref="ToxiproxyProxy.Host"/>:<see cref="ToxiproxyProxy.Port"/> instead of the broker.
     /// </summary>
+    /// <remarks>
+    /// The upstream need not be listening yet: Toxiproxy dials it only when a client connects, so a caller may start
+    /// the broker after this returns.
+    /// </remarks>
     public async Task<ToxiproxyProxy> CreateProxyAsync(
         string name,
         int upstreamHostPort,
@@ -78,26 +89,134 @@ public sealed class ToxiproxyServer : IAsyncDisposable
             }
 
             var listenPort = _FirstProxyPort + _proxies;
-            using var response = await http.PostAsJsonAsync(
-                    "/proxies",
-                    new
-                    {
-                        name,
-                        listen = $"0.0.0.0:{listenPort}",
-                        upstream = $"host.docker.internal:{upstreamHostPort}",
-                        enabled = true,
-                    },
+
+            // The proxy first forwards to Toxiproxy's own API, which always answers, so the probe below proves the
+            // published port reaches the proxy without depending on an upstream the caller may start later.
+            using (
+                var created = await http.PostAsJsonAsync(
+                        "/proxies",
+                        new
+                        {
+                            name,
+                            listen = $"0.0.0.0:{listenPort}",
+                            upstream = $"127.0.0.1:{_ApiPort}",
+                            enabled = true,
+                        },
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false)
+            )
+            {
+                await _EnsureSuccessAsync(created, "create proxy", cancellationToken).ConfigureAwait(false);
+            }
+
+            // The proxy now holds its listen port, so the slot is taken even if a later step fails.
+            _proxies++;
+
+            var host = _container.Hostname;
+            var port = _container.GetMappedPublicPort(listenPort);
+            await _WaitUntilForwardingAsync(host, port, cancellationToken).ConfigureAwait(false);
+
+            using var repointed = await http.PostAsJsonAsync(
+                    $"/proxies/{name}",
+                    new { upstream = $"host.docker.internal:{upstreamHostPort}" },
                     cancellationToken
                 )
                 .ConfigureAwait(false);
-            await _EnsureSuccessAsync(response, "create proxy", cancellationToken).ConfigureAwait(false);
-            _proxies++;
+            await _EnsureSuccessAsync(repointed, "point proxy at upstream", cancellationToken).ConfigureAwait(false);
 
-            return new ToxiproxyProxy(http, name, _container.Hostname, _container.GetMappedPublicPort(listenPort));
+            return new ToxiproxyProxy(http, name, host, port);
         }
         finally
         {
             _createLock.Release();
+        }
+    }
+
+    // A container runtime's port forwarder (OrbStack, Docker Desktop, docker-proxy) accepts a connection on a
+    // published port and then closes it when it cannot reach the container's listener, so a client's first connect
+    // can fail although the proxy exists. Only a reply that came back through the proxy proves the path.
+    private async Task _WaitUntilForwardingAsync(string host, int port, CancellationToken cancellationToken)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(_ForwardingTimeout);
+        var attempts = 0;
+        string? failure;
+
+        while (true)
+        {
+            attempts++;
+            failure = await _ProbeAsync(host, port, deadline.Token).ConfigureAwait(false);
+
+            if (failure is null)
+            {
+                return;
+            }
+
+            try
+            {
+                await Task.Delay(_ProbeInterval, deadline.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+        }
+
+        // The Toxiproxy log tells a forwarder that never reached the container from a proxy that never accepted.
+        var (stdout, stderr) = await _container
+            .GetLogsAsync(timestampsEnabled: false, ct: cancellationToken)
+            .ConfigureAwait(false);
+
+        throw new InvalidOperationException(
+            $"Toxiproxy proxy at {host}:{port} did not answer through its published port within "
+                + $"{_ForwardingTimeout.TotalSeconds:0}s ({attempts} attempts; last: {failure}).\n"
+                + $"Toxiproxy log:\n{stdout}{stderr}"
+        );
+    }
+
+    // Returns null once Toxiproxy's API answers through the proxy, otherwise what the attempt saw.
+    private static async Task<string?> _ProbeAsync(string host, int port, CancellationToken cancellationToken)
+    {
+        using var attempt = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        attempt.CancelAfter(_ProbeAttemptTimeout);
+
+        try
+        {
+            using var client = new TcpClient();
+            await client.ConnectAsync(host, port, attempt.Token).ConfigureAwait(false);
+
+            var stream = client.GetStream();
+            var request = "GET /version HTTP/1.1\r\nHost: toxiproxy\r\nConnection: close\r\n\r\n"u8.ToArray();
+            await stream.WriteAsync(request, attempt.Token).ConfigureAwait(false);
+
+            var expected = "HTTP/1.1 200"u8.ToArray();
+            var reply = new byte[expected.Length];
+            var received = 0;
+
+            while (received < reply.Length)
+            {
+                var read = await stream.ReadAsync(reply.AsMemory(received), attempt.Token).ConfigureAwait(false);
+
+                if (read == 0)
+                {
+                    return $"accepted, then closed after {received} reply bytes";
+                }
+
+                received += read;
+            }
+
+            return reply.AsSpan().SequenceEqual(expected)
+                ? null
+                : $"unexpected reply '{Encoding.ASCII.GetString(reply)}'";
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return $"no reply within {_ProbeAttemptTimeout.TotalSeconds:0}s";
+        }
+        catch (Exception e) when (e is SocketException or IOException)
+        {
+            return $"{e.GetType().Name}: {e.Message}";
         }
     }
 

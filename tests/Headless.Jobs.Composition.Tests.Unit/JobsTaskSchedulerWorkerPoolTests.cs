@@ -182,9 +182,10 @@ public sealed class JobsTaskSchedulerWorkerPoolTests : TestBase
             await scheduler.QueueAsync(_ => release.Task, JobPriority.Normal, AbortToken, AbortToken, gate);
         }
 
-        // The permit holder still counts as queued between taking the permit and starting, so the counts settle
-        // only once it is active.
-        await _WaitUntilAsync(() => scheduler.ParkedTasks == 3 && scheduler.ActiveTasks == 1);
+        // The permit holder leaves the queued count only after it becomes active (active rises first so a drain never
+        // sees a false idle), so ActiveTasks == 1 can still read a total of 4. The total starts at 4 and only that
+        // decrement lowers it before the release, so a total below 4 means the counts have settled and stay put.
+        await _WaitUntilAsync(() => scheduler.ParkedTasks == 3 && scheduler.TotalQueuedTasks < 4);
         scheduler.TotalQueuedTasks.Should().Be(3);
         scheduler.GetDiagnostics().Should().NotContain("DISCREPANCY");
         (await scheduler.WaitForRunningTasksAsync(TimeSpan.FromMilliseconds(100))).Should().BeFalse();

@@ -105,8 +105,8 @@
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.402" />
     <PackageVersion Include="MimeTypes" Version="2.5.2" />
     <PackageVersion Include="MinVer" Version="8.0.0" />
-    <PackageVersion Include="NATS.Client.Core" Version="3.3.1" />
-    <PackageVersion Include="NATS.Client.JetStream" Version="3.3.1" />
+    <PackageVersion Include="NATS.Client.Core" Version="3.3.2" />
+    <PackageVersion Include="NATS.Client.JetStream" Version="3.3.2" />
     <PackageVersion Include="NCrontab.Signed" Version="3.4.0" />
     <PackageVersion Include="NetTopologySuite" Version="2.6.0" />
     <PackageVersion Include="NetTopologySuite.IO.GeoJSON4STJ" Version="4.0.0" />
