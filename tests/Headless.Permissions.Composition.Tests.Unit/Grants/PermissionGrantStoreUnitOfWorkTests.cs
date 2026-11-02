@@ -56,15 +56,10 @@ public sealed class PermissionGrantStoreUnitOfWorkTests : TestBase
             )
             .Returns([denied]);
 
+        _currentTenant.Id.Returns("t1");
+
         // when
-        await _sut.GrantEnlistedAsync(
-            _unit,
-            ["Users.Create", "Users.Delete"],
-            _ProviderName,
-            _ProviderKey,
-            tenantId: "t1",
-            AbortToken
-        );
+        await _sut.GrantEnlistedAsync(_unit, ["Users.Create", "Users.Delete"], _ProviderName, _ProviderKey, AbortToken);
 
         // then the denial is replaced and the new grant inserted, all inside the unit
         await _repository
@@ -88,7 +83,7 @@ public sealed class PermissionGrantStoreUnitOfWorkTests : TestBase
             .InsertManyEnlistedAsync(
                 _unit,
                 Arg.Is<IEnumerable<PermissionGrantRecord>>(x =>
-                    x.Single().Name == "Users.Delete" && x.Single().IsGranted
+                    x.Single().Name == "Users.Delete" && x.Single().IsGranted && x.Single().TenantId == "t1"
                 ),
                 AbortToken
             );
@@ -174,7 +169,7 @@ public sealed class PermissionGrantStoreUnitOfWorkTests : TestBase
             .Returns([]);
 
         // when the unit completes after the code left the tenant
-        await _sut.GrantEnlistedAsync(_unit, ["Users.Create"], _ProviderName, _ProviderKey, null, AbortToken);
+        await _sut.GrantEnlistedAsync(_unit, ["Users.Create"], _ProviderName, _ProviderKey, AbortToken);
         _currentTenant.Id.Returns((string?)null);
         await _CommitAsync();
 
@@ -198,7 +193,7 @@ public sealed class PermissionGrantStoreUnitOfWorkTests : TestBase
         _cache
             .RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("cache down"));
-        await _sut.GrantEnlistedAsync(_unit, ["Users.Create"], _ProviderName, _ProviderKey, null, AbortToken);
+        await _sut.GrantEnlistedAsync(_unit, ["Users.Create"], _ProviderName, _ProviderKey, AbortToken);
 
         // when
         var act = _CommitAsync;
@@ -272,8 +267,7 @@ public sealed class PermissionGrantStoreUnitOfWorkTests : TestBase
     public async Task should_refuse_a_padded_key_before_enlisting()
     {
         // when
-        var act = () =>
-            _sut.GrantEnlistedAsync(_unit, ["Users.Create"], _ProviderName, "admin ", tenantId: null, AbortToken);
+        var act = () => _sut.GrantEnlistedAsync(_unit, ["Users.Create"], _ProviderName, "admin ", AbortToken);
 
         // then
         await act.Should().ThrowExactlyAsync<ArgumentException>();

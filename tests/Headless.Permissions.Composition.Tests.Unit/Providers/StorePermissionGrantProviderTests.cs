@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Context;
-using Headless.MultiTenancy;
 using Headless.Permissions;
 using Headless.Testing.Tests;
 
@@ -10,14 +9,12 @@ namespace Tests.Providers;
 public sealed class StorePermissionGrantProviderTests : TestBase
 {
     private readonly IPermissionGrantStore _grantStore;
-    private readonly ICurrentTenant _currentTenant;
     private readonly TestStorePermissionGrantProvider _sut;
 
     public StorePermissionGrantProviderTests()
     {
         _grantStore = Substitute.For<IPermissionGrantStore>();
-        _currentTenant = Substitute.For<ICurrentTenant>();
-        _sut = new TestStorePermissionGrantProvider(_grantStore, _currentTenant);
+        _sut = new TestStorePermissionGrantProvider(_grantStore);
     }
 
     [Fact]
@@ -37,19 +34,40 @@ public sealed class StorePermissionGrantProviderTests : TestBase
     }
 
     [Fact]
-    public async Task should_grant_permission_with_tenant_context()
+    public async Task should_grant_permission_via_store()
     {
         // given
         var permission = _CreatePermission("Users.Create");
         const string providerKey = "admin-role";
-        const string tenantId = "tenant-1";
-        _currentTenant.Id.Returns(tenantId);
 
         // when
         await _sut.SetAsync(permission, providerKey, isGranted: true, AbortToken);
 
         // then
-        await _grantStore.Received(1).GrantAsync("Users.Create", "TestProvider", providerKey, tenantId, AbortToken);
+        await _grantStore.Received(1).GrantAsync("Users.Create", "TestProvider", providerKey, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_grant_permissions_via_store_in_one_batch()
+    {
+        // given
+        PermissionDefinition[] permissions = [_CreatePermission("Users.Create"), _CreatePermission("Users.Delete")];
+        const string providerKey = "admin-role";
+
+        // when
+        await _sut.SetAsync(permissions, providerKey, isGranted: true, AbortToken);
+
+        // then
+        await _grantStore
+            .Received(1)
+            .GrantAsync(
+                Arg.Is<IReadOnlyCollection<string>>(static names =>
+                    names.SequenceEqual(new[] { "Users.Create", "Users.Delete" })
+                ),
+                "TestProvider",
+                providerKey,
+                AbortToken
+            );
     }
 
     [Fact]
@@ -73,10 +91,8 @@ public sealed class StorePermissionGrantProviderTests : TestBase
     }
 
     /// <summary>Test implementation to verify base class behavior.</summary>
-    private sealed class TestStorePermissionGrantProvider(
-        IPermissionGrantStore grantStore,
-        ICurrentTenant currentTenant
-    ) : StorePermissionGrantProvider(grantStore, currentTenant)
+    private sealed class TestStorePermissionGrantProvider(IPermissionGrantStore grantStore)
+        : StorePermissionGrantProvider(grantStore)
     {
         public int CheckAsyncCallCount { get; private set; }
 

@@ -26,16 +26,31 @@ public sealed class ReCaptchaV3VerifierFixture : ICaptchaVerifierFixture, IDispo
         return _Build(handler).GetRequiredService<ICaptchaVerifier>();
     }
 
+    public ICaptchaVerifier CreateVerifier(StubSiteVerifyHandler handler, Action<ReCaptchaOptions> configure)
+    {
+        return _Build(handler, configure).GetRequiredService<ICaptchaVerifier>();
+    }
+
     public IReCaptchaV3Verifier CreateV3Verifier(StubSiteVerifyHandler handler)
     {
         return _Build(handler).GetRequiredService<IReCaptchaV3Verifier>();
     }
 
-    private ServiceProvider _Build(StubSiteVerifyHandler handler)
+    public IReCaptchaV3Verifier CreateV3Verifier(StubSiteVerifyHandler handler, Action<ReCaptchaOptions> configure)
+    {
+        return _Build(handler, configure).GetRequiredService<IReCaptchaV3Verifier>();
+    }
+
+    private ServiceProvider _Build(StubSiteVerifyHandler handler, Action<ReCaptchaOptions>? configure = null)
     {
         var services = new ServiceCollection();
 
         services.AddHeadlessCaptcha(builder => builder.UseReCaptchaV3(_Configuration()));
+
+        if (configure is not null)
+        {
+            services.Configure(CaptchaConstants.ReCaptchaV3Provider, configure);
+        }
 
         services.AddHttpClient(CaptchaConstants.ReCaptchaV3Provider).ConfigurePrimaryHttpMessageHandler(() => handler);
 

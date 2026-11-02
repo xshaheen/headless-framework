@@ -30,6 +30,24 @@ public enum ReCaptchaError
 
     /// <summary>The response is no longer valid because it expired or was already used.</summary>
     TimeOutOrDuplicate = 6,
+
+    /// <summary>
+    /// The token is valid, but its reCAPTCHA v3 score is below <see cref="ReCaptchaOptions.MinimumScore"/> or missing.
+    /// Reported by this library, not by Google.
+    /// </summary>
+    ScoreTooLow = 7,
+
+    /// <summary>
+    /// The token is valid, but it was minted for an action other than <see cref="ReCaptchaOptions.ExpectedAction"/>.
+    /// Reported by this library, not by Google.
+    /// </summary>
+    ActionMismatch = 8,
+
+    /// <summary>
+    /// The token is valid, but the challenge was solved on a host other than
+    /// <see cref="ReCaptchaOptions.ExpectedHostName"/>. Reported by this library, not by Google.
+    /// </summary>
+    HostNameMismatch = 9,
 }
 
 /// <summary>Provides extension methods for converting reCAPTCHA error code strings into <see cref="ReCaptchaError"/> values.</summary>

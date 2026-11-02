@@ -46,6 +46,45 @@ public sealed class AuthMiddlewareTests : TestBase
         nextCalled.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("/api/published/x.js")]
+    [InlineData("/api/received/assets/")]
+    [InlineData("/api/jobs/report.css")]
+    [InlineData("/api/data/negotiate")]
+    [InlineData("/api/auth/validate/extra")]
+    public async Task returns_401_for_unauthenticated_api_path_that_looks_static(string path)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDashboardAuthentication(
+            _Name,
+            config =>
+            {
+                config.Mode = AuthMode.ApiKey;
+                config.ApiKey = "secret";
+            }
+        );
+        await using var sp = services.BuildServiceProvider();
+
+        var nextCalled = false;
+        var middleware = new AuthMiddleware(
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            _Name,
+            _logger
+        );
+        var context = new DefaultHttpContext { RequestServices = sp };
+        context.Request.Path = path;
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeFalse();
+        context.Response.StatusCode.Should().Be(401);
+    }
+
     [Fact]
     public async Task skips_non_api_paths()
     {
