@@ -218,7 +218,7 @@ internal static class MappingExtensions
             CausationId = e.CausationId,
             TraceParent = e.TraceParent,
             TenantId = e.TenantId,
-            Request = e.Request,
+            // No payload: the scheduler builds a dispatch context from this row, and the run reads its request itself.
             ExecutionTime = e.ExecutionTime,
             // Carry the stored death policy through the executor-pick projection (mirrors ForQueueCronJobOccurrence,
             // which stamps BOTH the occurrence-level and the nested CronJob.OnNodeDeath). The sole consumer,
