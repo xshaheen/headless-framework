@@ -226,6 +226,26 @@ public static class BlobStorageHelpers
     }
 
     /// <summary>
+    /// Returns the directory part of a listing <paramref name="prefix"/>: everything up to and including its last
+    /// <c>/</c>, or an empty string when the prefix names no directory. A provider that stores keys as a directory
+    /// tree starts enumeration there instead of walking the whole container, since every matching key lives below it.
+    /// </summary>
+    /// <param name="prefix">The resolved key prefix, or <see langword="null"/> for no prefix.</param>
+    /// <returns>The prefix's directory part ending in <c>/</c>, or an empty string.</returns>
+    public static string GetPrefixDirectory(string? prefix)
+    {
+        if (string.IsNullOrEmpty(prefix))
+        {
+            return "";
+        }
+
+        var lastSlash = prefix.LastIndexOf('/');
+
+        // A leading slash ("/x") names no directory below the container root.
+        return lastSlash <= 0 ? "" : prefix[..(lastSlash + 1)];
+    }
+
+    /// <summary>
     /// Wraps a provider's native listing cursor (a sorted page's start-after key, a native S3/Azure continuation
     /// token, or a Redis scan cursor) in the shared opaque token envelope, so every provider's malformed-token
     /// failure shape is the same clean <see cref="ArgumentException"/> from <see cref="DecodeContinuationToken"/>.
