@@ -91,6 +91,46 @@ public sealed class NatsTransportTests : TestBase
             .Which.InnerException.Should()
             .BeOfType<NatsJSPublishNoResponseException>();
         result.Exception!.Message.Should().Contain("stream 'headless-bus-orders'");
+        result.Exception.Message.Should().Contain("lost or late", "no response can also mean a lost acknowledgement");
+        await js.Received(2).CreateStreamAsync(Arg.Any<StreamConfig>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_report_the_stream_as_gone_and_provision_it_again_when_no_stream_acknowledges_a_publish()
+    {
+        // given - the server answers the publish with seq=0, which only happens when no stream captures the subject
+        var js = _CreateJetStreamWithoutStreams();
+        var provisioner = new NatsStreamProvisioner(
+            MsOptions.Options.Create(new NatsMessagingOptions { StreamProvisioning = NatsStreamProvisioning.Verify })
+        );
+        await provisioner.EnsureForPublishAsync(js, MessageLane.Bus, "orders.placed", false, AbortToken);
+        var connection = _CreateConnection(call =>
+            ValueTask.FromResult(
+                new NatsMsg<PubAckResponse>(
+                    call.ArgAt<string>(0),
+                    replyTo: null,
+                    size: 0,
+                    headers: null,
+                    data: new PubAckResponse { Stream = "headless-bus-orders", Seq = 0 },
+                    connection: null
+                )
+            )
+        );
+        _pool.GetConnection().Returns(connection);
+        await using var transport = new NatsTransport(_logger, _pool, provisioner);
+
+        // when
+        var result = await transport.SendAsync(_CreateTransportMessage("msg-123", "orders.placed"), AbortToken);
+        await provisioner.EnsureForPublishAsync(js, MessageLane.Bus, "orders.placed", false, AbortToken);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        result
+            .Exception.Should()
+            .BeOfType<PublisherSentFailedException>()
+            .Which.Message.Should()
+            .Contain("seq=0")
+            .And.Contain("stream 'headless-bus-orders' no longer captures the subject");
         await js.Received(2).CreateStreamAsync(Arg.Any<StreamConfig>(), Arg.Any<CancellationToken>());
     }
 
