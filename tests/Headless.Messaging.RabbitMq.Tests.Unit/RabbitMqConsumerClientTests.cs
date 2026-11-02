@@ -124,6 +124,37 @@ public sealed class RabbitMqConsumerClientTests : TestBase
 
         // then
         await _channel.Received(1).BasicQosAsync(0, 20, false, Arg.Any<CancellationToken>());
+        await _channel
+            .Received(1)
+            .BasicQosAsync(Arg.Any<uint>(), Arg.Any<ushort>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData((byte)0, (ushort)4)]
+    [InlineData((byte)1, (ushort)4)]
+    [InlineData((byte)8, (ushort)32)]
+    [InlineData(byte.MaxValue, (ushort)1020)]
+    public async Task should_default_prefetch_to_four_per_handler_slot_when_no_prefetch_is_configured(
+        byte concurrency,
+        ushort expectedPrefetch
+    )
+    {
+        // given
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            concurrency,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+
+        // when
+        await client.ListeningAsync(TimeSpan.Zero, cts.Token);
+
+        // then
+        await _channel.Received(1).BasicQosAsync(0, expectedPrefetch, false, Arg.Any<CancellationToken>());
     }
 
     [Fact]
