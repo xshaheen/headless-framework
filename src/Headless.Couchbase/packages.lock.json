@@ -8,13 +8,25 @@
         "resolved": "2.1.0",
         "contentHash": "OOHNlH7GF39qk0Pv4cIQWA99hUh3nujDgGE2nADPpw88lD7s2qwlxEhuJIBfstC8ng3B1yY6SQy2JW/tddlMAQ=="
       },
-      "Couchbase.Transactions": {
+      "CouchbaseNetClient": {
         "type": "Direct",
-        "requested": "[3.9.0, )",
-        "resolved": "3.9.0",
-        "contentHash": "s26xoB1HwLR86lCpP4EpCM8FDFo+5y6m5S1G8kJnUFQrfIq6w3h/1FOrUIb9ePXX2lzIPkP3JYLThdT9J7rgVA==",
+        "requested": "[3.10.0, )",
+        "resolved": "3.10.0",
+        "contentHash": "ZsbuQ/ygvaDojdS3LNRpKlMGLOldZ+ppA4iD+haylp3CapgZSFM5vuVopN4Dz4hoNYCMgmbkERoCCvlKFXcycg==",
         "dependencies": {
-          "CouchbaseNetClient": "3.9.0"
+          "DnsClient": "1.8.0",
+          "Google.Api.CommonProtos": "2.17.0",
+          "Google.Protobuf": "3.33.2",
+          "Grpc.HealthCheck": "2.71.0",
+          "Grpc.Net.Client": "2.71.0",
+          "Grpc.Net.ClientFactory": "2.71.0",
+          "Microsoft.Extensions.DependencyInjection": "10.0.1",
+          "Microsoft.Extensions.Logging": "10.0.1",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.1",
+          "Microsoft.Extensions.ObjectPool": "10.0.1",
+          "Newtonsoft.Json": "13.0.4",
+          "Snappier": "1.3.1",
+          "System.IO.Hashing": "10.0.1"
         }
       },
       "ErrorProne.NET.CoreAnalyzers": {
@@ -356,27 +368,6 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
-        }
-      },
-      "CouchbaseNetClient": {
-        "type": "CentralTransitive",
-        "requested": "[3.10.0, )",
-        "resolved": "3.10.0",
-        "contentHash": "ZsbuQ/ygvaDojdS3LNRpKlMGLOldZ+ppA4iD+haylp3CapgZSFM5vuVopN4Dz4hoNYCMgmbkERoCCvlKFXcycg==",
-        "dependencies": {
-          "DnsClient": "1.8.0",
-          "Google.Api.CommonProtos": "2.17.0",
-          "Google.Protobuf": "3.33.2",
-          "Grpc.HealthCheck": "2.71.0",
-          "Grpc.Net.Client": "2.71.0",
-          "Grpc.Net.ClientFactory": "2.71.0",
-          "Microsoft.Extensions.DependencyInjection": "10.0.1",
-          "Microsoft.Extensions.Logging": "10.0.1",
-          "Microsoft.Extensions.Logging.Abstractions": "10.0.1",
-          "Microsoft.Extensions.ObjectPool": "10.0.1",
-          "Newtonsoft.Json": "13.0.4",
-          "Snappier": "1.3.1",
-          "System.IO.Hashing": "10.0.1"
         }
       },
       "FluentValidation": {

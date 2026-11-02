@@ -519,7 +519,7 @@
       "headless.couchbase": {
         "type": "Project",
         "dependencies": {
-          "Couchbase.Transactions": "[3.9.0, )",
+          "CouchbaseNetClient": "[3.10.0, )",
           "Headless.Domain": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Linq2Couchbase": "[2.2.0, )",
@@ -602,15 +602,6 @@
           "Microsoft.Extensions.Logging": "[10.0.13, )",
           "Microsoft.Extensions.TimeProvider.Testing": "[10.11.0, )",
           "xunit.v3.extensibility.core": "[4.0.2, )"
-        }
-      },
-      "Couchbase.Transactions": {
-        "type": "CentralTransitive",
-        "requested": "[3.9.0, )",
-        "resolved": "3.9.0",
-        "contentHash": "s26xoB1HwLR86lCpP4EpCM8FDFo+5y6m5S1G8kJnUFQrfIq6w3h/1FOrUIb9ePXX2lzIPkP3JYLThdT9J7rgVA==",
-        "dependencies": {
-          "CouchbaseNetClient": "3.9.0"
         }
       },
       "CouchbaseNetClient": {

@@ -24,8 +24,6 @@
     <PackageVersion Include="Bogus" Version="35.6.5" />
     <PackageVersion Include="Confluent.Kafka" Version="2.16.0" />
     <PackageVersion Include="Consul" Version="1.8.0" />
-    <PackageVersion Include="Couchbase.Transactions" Version="3.9.0" />
-    <!-- Transitive-only pin: never referenced directly; sets the client version under the Couchbase.Transactions and Linq2Couchbase packages. -->
     <PackageVersion Include="CouchbaseNetClient" Version="3.10.0" />
     <PackageVersion Include="DeviceDetector.NET" Version="6.5.2" />
     <PackageVersion Include="DocumentFormat.OpenXml" Version="3.5.1" />

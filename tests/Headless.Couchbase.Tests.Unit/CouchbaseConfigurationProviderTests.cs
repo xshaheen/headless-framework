@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Couchbase;
+using Couchbase.Client.Transactions.Config;
 using Couchbase.KeyValue;
-using Couchbase.Transactions.Config;
 using Headless.Couchbase.Clusters;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Hosting;
@@ -56,8 +56,8 @@ public sealed class CouchbaseConfigurationProviderTests : TestBase
         config.KeyValueTimeout.Should().Be(TimeSpan.FromSeconds(10));
         config.ExpirationTime.Should().Be(TimeSpan.FromSeconds(expirySeconds));
         config.DurabilityLevel.Should().Be(DurabilityLevel.Majority);
-        config.CleanupLostAttempts.Should().BeTrue();
-        config.CleanupClientAttempts.Should().BeTrue();
-        config.CleanupWindow.Should().Be(TimeSpan.FromSeconds(120));
+        config.CleanupConfig.CleanupLostAttempts.Should().BeTrue();
+        config.CleanupConfig.CleanupClientAttempts.Should().BeTrue();
+        config.CleanupConfig.CleanupWindow.Should().Be(TimeSpan.FromSeconds(120));
     }
 }
